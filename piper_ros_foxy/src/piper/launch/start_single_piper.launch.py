@@ -37,6 +37,11 @@ def generate_launch_description():
         default_value='15.0',
         description='Seconds to wait for all motors to report enabled.'
     )
+    joint_bounds_path_arg = DeclareLaunchArgument(
+        'joint_bounds_path',
+        default_value='',
+        description='JSON file containing hard joint command bounds.'
+    )
     girpper_exist_arg = DeclareLaunchArgument(
         'girpper_exist',
         default_value='true',
@@ -56,6 +61,7 @@ def generate_launch_description():
             'gripper_exist': LaunchConfiguration('gripper_exist'),
             'girpper_exist': LaunchConfiguration('girpper_exist'),
             'enable_timeout': LaunchConfiguration('enable_timeout'),
+            'joint_bounds_path': LaunchConfiguration('joint_bounds_path'),
         }],
         remappings=[
             ('joint_ctrl_single', LaunchConfiguration('joint_ctrl_topic')),
@@ -70,6 +76,7 @@ def generate_launch_description():
         joint_ctrl_topic_arg,
         gripper_exist_arg,
         enable_timeout_arg,
+        joint_bounds_path_arg,
         girpper_exist_arg,
         piper_node
     ])

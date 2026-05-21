@@ -17,6 +17,7 @@ PIPER_RVIZ_CTRL_FLAG="${PIPER_RVIZ_CTRL_FLAG:-false}"
 PIPER_JOINT_CTRL_TOPIC="${PIPER_JOINT_CTRL_TOPIC:-/joint_ctrl_single}"
 PIPER_ROS_DOMAIN_ID="${PIPER_ROS_DOMAIN_ID:-42}"
 PIPER_ENABLE_TIMEOUT="${PIPER_ENABLE_TIMEOUT:-15.0}"
+PIPER_JOINT_BOUNDS_PATH="${PIPER_JOINT_BOUNDS_PATH:-$SCRIPT_DIR/piper_joint_bounds.json}"
 export ROS_DOMAIN_ID="$PIPER_ROS_DOMAIN_ID"
 
 # 1. Source ROS 2 Foxy
@@ -155,4 +156,5 @@ ros2 launch piper start_single_piper.launch.py \
   gripper_exist:="$PIPER_GRIPPER_EXIST" \
   rviz_ctrl_flag:="$PIPER_RVIZ_CTRL_FLAG" \
   enable_timeout:="$PIPER_ENABLE_TIMEOUT" \
+  joint_bounds_path:="$PIPER_JOINT_BOUNDS_PATH" \
   joint_ctrl_topic:="$PIPER_JOINT_CTRL_TOPIC"

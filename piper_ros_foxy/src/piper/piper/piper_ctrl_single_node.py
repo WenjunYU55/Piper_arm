@@ -9,6 +9,8 @@ import time
 import threading
 import argparse
 import math
+import json
+import os
 from piper_sdk import *
 from piper_sdk import C_PiperInterface
 from piper_msgs.msg import PiperStatusMsg, PosCmd
@@ -16,6 +18,17 @@ from piper_msgs.srv import Enable
 from geometry_msgs.msg import Pose
 from scipy.spatial.transform import Rotation as R  # For Euler angle to quaternion conversion
 from numpy import clip
+
+
+DEFAULT_JOINT_BOUNDS = {
+    'joint1': (-2.8, 2.8),
+    'joint2': (-2.1, 2.1),
+    'joint3': (-2.8, 2.8),
+    'joint4': (-2.8, 2.8),
+    'joint5': (-2.1, 2.1),
+    'joint6': (-2.8, 2.8),
+    'joint7': (0.0, 0.08),
+}
 
 
 class PiperRosNode(Node):
@@ -30,6 +43,7 @@ class PiperRosNode(Node):
         self.declare_parameter('girpper_exist', True)
         self.declare_parameter('rviz_ctrl_flag', False)
         self.declare_parameter('enable_timeout', 15.0)
+        self.declare_parameter('joint_bounds_path', '')
 
         self.can_port = self.get_parameter('can_port').get_parameter_value().string_value
         self.auto_enable = self.get_parameter('auto_enable').get_parameter_value().bool_value
@@ -37,12 +51,15 @@ class PiperRosNode(Node):
         self.gripper_exist = self.get_parameter('girpper_exist').get_parameter_value().bool_value and self.gripper_exist
         self.rviz_ctrl_flag = self.get_parameter('rviz_ctrl_flag').get_parameter_value().bool_value
         self.enable_timeout = self.get_parameter('enable_timeout').get_parameter_value().double_value
+        self.joint_bounds_path = self.get_parameter('joint_bounds_path').get_parameter_value().string_value
+        self.joint_bounds = self.load_joint_bounds(self.joint_bounds_path)
 
         self.get_logger().info(f"can_port is {self.can_port}")
         self.get_logger().info(f"auto_enable is {self.auto_enable}")
         self.get_logger().info(f"gripper_exist is {self.gripper_exist}")
         self.get_logger().info(f"rviz_ctrl_flag is {self.rviz_ctrl_flag}")
         self.get_logger().info(f"enable_timeout is {self.enable_timeout}")
+        self.get_logger().info(f"joint_bounds_path is {self.joint_bounds_path or 'default limits'}")
         # Publishers
         self.joint_pub = self.create_publisher(JointState, 'joint_states_single', 10)
         self.arm_status_pub = self.create_publisher(PiperStatusMsg, 'arm_status', 10)
@@ -71,6 +88,45 @@ class PiperRosNode(Node):
 
     def GetEnableFlag(self):
         return self.__enable_flag
+
+    def load_joint_bounds(self, path):
+        bounds = dict(DEFAULT_JOINT_BOUNDS)
+        if not path:
+            return bounds
+        if not os.path.exists(path):
+            self.get_logger().warn(f"Joint bounds file not found: {path}. Using default limits.")
+            return bounds
+
+        try:
+            with open(path, 'r', encoding='utf-8') as handle:
+                data = json.load(handle)
+            saved = data.get('joints', {})
+            for joint_name in bounds:
+                record = saved.get(joint_name)
+                if record is None:
+                    continue
+                low = float(record.get('min', bounds[joint_name][0]))
+                high = float(record.get('max', bounds[joint_name][1]))
+                if low == high:
+                    self.get_logger().warn(f"Ignoring zero-width bound for {joint_name}")
+                    continue
+                bounds[joint_name] = (min(low, high), max(low, high))
+        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            self.get_logger().warn(f"Could not load joint bounds from {path}: {exc}. Using default limits.")
+            return bounds
+
+        self.get_logger().info(f"Loaded hard joint bounds from {path}: {bounds}")
+        return bounds
+
+    def enforce_joint_bound(self, joint_name, value):
+        low, high = self.joint_bounds[joint_name]
+        bounded = float(clip(value, low, high))
+        if bounded != value:
+            self.get_logger().warn(
+                f"Hard bound clipped {joint_name}: requested {value}, using {bounded} "
+                f"within [{low}, {high}]"
+            )
+        return bounded
 
     def get_joint_value(self, joint_data, joint_name, fallback_index, default=0.0):
         if joint_name in joint_data.name:
@@ -257,12 +313,12 @@ class PiperRosNode(Node):
             self.get_logger().warn("Ignoring JointState command with fewer than 6 arm joints")
             return
 
-        arm_joint_0 = self.get_joint_value(joint_data, 'joint1', 0)
-        arm_joint_1 = self.get_joint_value(joint_data, 'joint2', 1)
-        arm_joint_2 = self.get_joint_value(joint_data, 'joint3', 2)
-        arm_joint_3 = self.get_joint_value(joint_data, 'joint4', 3)
-        arm_joint_4 = self.get_joint_value(joint_data, 'joint5', 4)
-        arm_joint_5 = self.get_joint_value(joint_data, 'joint6', 5)
+        arm_joint_0 = self.enforce_joint_bound('joint1', self.get_joint_value(joint_data, 'joint1', 0))
+        arm_joint_1 = self.enforce_joint_bound('joint2', self.get_joint_value(joint_data, 'joint2', 1))
+        arm_joint_2 = self.enforce_joint_bound('joint3', self.get_joint_value(joint_data, 'joint3', 2))
+        arm_joint_3 = self.enforce_joint_bound('joint4', self.get_joint_value(joint_data, 'joint4', 3))
+        arm_joint_4 = self.enforce_joint_bound('joint5', self.get_joint_value(joint_data, 'joint5', 4))
+        arm_joint_5 = self.enforce_joint_bound('joint6', self.get_joint_value(joint_data, 'joint6', 5))
 
         self.get_logger().info(f"joint_0: {arm_joint_0}")
         self.get_logger().info(f"joint_1: {arm_joint_1}")
@@ -278,7 +334,7 @@ class PiperRosNode(Node):
         joint_4 = round(arm_joint_4*factor)
         joint_5 = round(arm_joint_5*factor)
         if(len(joint_data.position) >= 7):
-            gripper_joint = self.get_joint_value(joint_data, 'joint7', 6)
+            gripper_joint = self.enforce_joint_bound('joint7', self.get_joint_value(joint_data, 'joint7', 6))
             self.get_logger().info(f"joint_6: {gripper_joint}")
             joint_6 = round(gripper_joint*1000*1000)
             if(self.rviz_ctrl_flag):

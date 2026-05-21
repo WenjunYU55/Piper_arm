@@ -18,6 +18,7 @@ piper_ros_foxy/log/
 *.pcap
 *.bag
 *.db3
+piper_joint_bounds.json
 
 # Preserved upstream repository metadata
 piper_ros_foxy/.git.agilex-backup/
