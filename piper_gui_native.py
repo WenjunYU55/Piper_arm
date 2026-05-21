@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import math
+import json
 import os
 import queue
 import threading
@@ -17,7 +17,7 @@ from piper_msgs.msg import PiperStatusMsg
 from piper_msgs.srv import Enable
 
 
-JOINTS = [
+DEFAULT_JOINTS = [
     ("joint1", -2.8, 2.8, "rad"),
     ("joint2", -2.1, 2.1, "rad"),
     ("joint3", -2.8, 2.8, "rad"),
@@ -27,9 +27,41 @@ JOINTS = [
     ("gripper", 0.0, 0.08, "m"),
 ]
 
+BOUNDS_PATH = os.path.join(os.path.dirname(__file__), "piper_joint_bounds.json")
+
 
 def clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
+
+
+def load_joint_limits():
+    joints = list(DEFAULT_JOINTS)
+    if not os.path.exists(BOUNDS_PATH):
+        return joints, "default limits"
+
+    try:
+        with open(BOUNDS_PATH, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, json.JSONDecodeError) as exc:
+        return joints, f"bounds file ignored: {exc}"
+
+    saved = data.get("joints", {})
+    merged = []
+    for name, low, high, unit in joints:
+        record = saved.get(name)
+        if record is None:
+            merged.append((name, low, high, unit))
+            continue
+
+        measured_low = float(record.get("min", low))
+        measured_high = float(record.get("max", high))
+        if measured_low == measured_high:
+            merged.append((name, low, high, unit))
+            continue
+
+        merged.append((name, min(measured_low, measured_high), max(measured_low, measured_high), unit))
+
+    return merged, f"loaded {BOUNDS_PATH}"
 
 
 class PiperGuiRos(Node):
@@ -99,6 +131,7 @@ class PiperGuiApp:
         self.events = events
         self.vars: List[tk.DoubleVar] = []
         self.feedback_positions = None
+        self.joints, self.bounds_message = load_joint_limits()
 
         self.root.title("PiPER Control")
         self.root.geometry("980x650")
@@ -109,7 +142,9 @@ class PiperGuiApp:
         self.send_live_var = tk.BooleanVar(value=False)
         self.last_live_publish = 0.0
 
-        self.status_text = tk.StringVar(value=f"ROS domain {os.environ.get('ROS_DOMAIN_ID', 'default')}")
+        self.status_text = tk.StringVar(
+            value=f"ROS domain {os.environ.get('ROS_DOMAIN_ID', 'default')} | {self.bounds_message}"
+        )
         self.feedback_text = tk.StringVar(value="No feedback")
         self.command_text = tk.StringVar(value="No command sent")
         self.service_text = tk.StringVar(value="No service call")
@@ -155,7 +190,7 @@ class PiperGuiApp:
         joints_frame.grid(row=0, column=0, sticky="nsew")
         joints_frame.columnconfigure(1, weight=1)
 
-        for index, (name, low, high, unit) in enumerate(JOINTS):
+        for index, (name, low, high, unit) in enumerate(self.joints):
             var = tk.DoubleVar(value=0.0)
             self.vars.append(var)
 
@@ -225,7 +260,7 @@ class PiperGuiApp:
 
     def current_positions(self) -> List[float]:
         positions = []
-        for var, (_, low, high, _) in zip(self.vars, JOINTS):
+        for var, (_, low, high, _) in zip(self.vars, self.joints):
             positions.append(clamp(float(var.get()), low, high))
         return positions
 
@@ -265,7 +300,8 @@ class PiperGuiApp:
                 elif name == "status":
                     self.status_text.set(
                         f"domain {os.environ.get('ROS_DOMAIN_ID', 'default')} | "
-                        f"mode {payload.ctrl_mode} | arm {payload.arm_status} | err {payload.err_code}"
+                        f"mode {payload.ctrl_mode} | arm {payload.arm_status} | err {payload.err_code} | "
+                        f"{self.bounds_message}"
                     )
                 elif name == "command":
                     positions, speed, effort = payload
