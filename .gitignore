@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# ROS/colcon build artifacts
+build/
+install/
+log/
+piper_ros_foxy/build/
+piper_ros_foxy/install/
+piper_ros_foxy/log/
+
+# Local ROS/log/cache output
+.ros/
+*.log
+
+# Captures and generated data
+*.pcap
+*.bag
+*.db3
+
+# Preserved upstream repository metadata
+piper_ros_foxy/.git.agilex-backup/
+
+# Local editor/system files
+.vscode/
+.idea/
+*.swp
+*~
