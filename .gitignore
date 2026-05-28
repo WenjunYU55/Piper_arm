@@ -9,6 +9,12 @@ log/
 piper_ros_foxy/build/
 piper_ros_foxy/install/
 piper_ros_foxy/log/
+L515_camera/realsense_ws/build/
+L515_camera/realsense_ws/install/
+L515_camera/realsense_ws/log/
+L515_camera/realsense_ws/src/
+L515_camera/.agents/
+L515_camera/.codex/
 
 # Local ROS/log/cache output
 .ros/

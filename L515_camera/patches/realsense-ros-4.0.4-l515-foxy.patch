@@ -1,0 +1,34 @@
+diff --git a/realsense2_camera/launch/rs_launch.py b/realsense2_camera/launch/rs_launch.py
+index f82799b..ca47438 100644
+--- a/realsense2_camera/launch/rs_launch.py
++++ b/realsense2_camera/launch/rs_launch.py
+@@ -36,8 +36,15 @@ configurable_parameters = [{'name': 'camera_name',                  'default': '
+                            {'name': 'enable_depth',                 'default': 'true', 'description': 'enable depth stream'},
+                            {'name': 'rgb_camera.profile',           'default': '0,0,0', 'description': 'color image width'},
+                            {'name': 'enable_color',                 'default': 'true', 'description': 'enable color stream'},
++                           {'name': 'enable_infra',                 'default': 'false', 'description': 'enable L500 infrared stream'},
+                            {'name': 'enable_infra1',                'default': 'false', 'description': 'enable infra1 stream'},
+                            {'name': 'enable_infra2',                'default': 'false', 'description': 'enable infra2 stream'},
++                           {'name': 'color_qos',                    'default': 'SENSOR_DATA', 'description': 'color image QoS'},
++                           {'name': 'color_info_qos',               'default': 'SENSOR_DATA', 'description': 'color camera_info QoS'},
++                           {'name': 'depth_qos',                    'default': 'SENSOR_DATA', 'description': 'depth image QoS'},
++                           {'name': 'depth_info_qos',               'default': 'SENSOR_DATA', 'description': 'depth camera_info QoS'},
++                           {'name': 'infra_qos',                    'default': 'SENSOR_DATA', 'description': 'infra image QoS'},
++                           {'name': 'infra_info_qos',               'default': 'SENSOR_DATA', 'description': 'infra camera_info QoS'},
+                            {'name': 'infra_rgb',                    'default': 'false', 'description': 'enable infra2 stream'},
+                            {'name': 'tracking_module.profile',      'default': '0,0,0', 'description': 'fisheye width'},
+                            {'name': 'enable_fisheye1',              'default': 'true', 'description': 'enable fisheye1 stream'},
+diff --git a/realsense2_camera/src/sensor_params.cpp b/realsense2_camera/src/sensor_params.cpp
+index 44af25e..6384c97 100644
+--- a/realsense2_camera/src/sensor_params.cpp
++++ b/realsense2_camera/src/sensor_params.cpp
+@@ -105,7 +105,8 @@ void SensorParams::set_parameter(rs2::options sensor, rs2_option option, const s
+         rcl_interfaces::msg::IntegerRange range;
+         range.from_value = int(op_range.min);
+         range.to_value = int(op_range.max);
+-        crnt_descriptor.integer_range.push_back(range);
++        if (range.to_value >= range.from_value)
++            crnt_descriptor.integer_range.push_back(range);
+         if (std::is_same<T, bool>::value)
+             ROS_DEBUG_STREAM("Declare: BOOL::" << option_name << " = " << option_value << "[" << op_range.min << ", " << op_range.max << "]");
+         else

@@ -1,0 +1,7 @@
+std_msgs/Header header
+string command_type
+geometry_msgs/PoseStamped target_pose
+geometry_msgs/Vector3 push_direction
+float32 speed_limit
+float32 distance_limit
+bool execute

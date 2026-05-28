@@ -1,0 +1,10 @@
+/**:
+  ros__parameters:
+    task_command: "inspect"
+    pre_grasp_offset_m: 0.12
+    pre_push_offset_m: 0.10
+    final_servo_step_m: 0.01
+    grab_distance_threshold_m: 0.03
+    push_distance_m: 0.05
+    push_speed_mps: 0.02
+    command_period_s: 0.5

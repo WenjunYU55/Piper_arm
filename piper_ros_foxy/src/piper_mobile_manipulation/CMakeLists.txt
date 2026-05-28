@@ -1,0 +1,52 @@
+cmake_minimum_required(VERSION 3.5)
+project(piper_mobile_manipulation)
+
+find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_python REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/Detection2D.msg"
+  "msg/Target3D.msg"
+  "msg/TrackedTarget.msg"
+  "msg/HandoffTarget.msg"
+  "msg/ManipulationCommand.msg"
+  "msg/ManipulationState.msg"
+  DEPENDENCIES geometry_msgs std_msgs
+)
+
+ament_python_install_package(${PROJECT_NAME})
+
+install(PROGRAMS
+  piper_mobile_manipulation/target_handoff_node.py
+  piper_mobile_manipulation/tf_target_transform_node.py
+  piper_mobile_manipulation/l515_object_detector_node.py
+  piper_mobile_manipulation/depth_to_3d_node.py
+  piper_mobile_manipulation/target_tracker_node.py
+  piper_mobile_manipulation/manipulation_state_machine_node.py
+  piper_mobile_manipulation/fake_arm_interface_node.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY
+  config
+  launch
+  DESTINATION share/${PROJECT_NAME}
+)
+
+install(FILES
+  package.xml
+  DESTINATION share/${PROJECT_NAME}
+)
+
+if(BUILD_TESTING)
+  find_package(ament_lint_auto REQUIRED)
+  set(ament_cmake_copyright_FOUND TRUE)
+  set(ament_cmake_cpplint_FOUND TRUE)
+  ament_lint_auto_find_test_dependencies()
+endif()
+
+ament_package()

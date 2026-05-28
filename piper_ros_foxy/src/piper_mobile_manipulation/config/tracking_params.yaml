@@ -1,0 +1,10 @@
+/**:
+  ros__parameters:
+    filter_type: "kalman"
+    prediction_horizon_s: 0.3
+    max_missed_frames: 10
+    min_track_frames: 5
+    stable_speed_threshold_mps: 0.03
+    stable_time_s: 0.4
+    process_noise: 0.05
+    measurement_noise: 0.02

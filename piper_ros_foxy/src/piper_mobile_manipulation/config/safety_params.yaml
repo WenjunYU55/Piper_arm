@@ -1,0 +1,12 @@
+/**:
+  ros__parameters:
+    workspace_x_min: 0.10
+    workspace_x_max: 0.70
+    workspace_y_min: -0.40
+    workspace_y_max: 0.40
+    workspace_z_min: 0.02
+    workspace_z_max: 0.60
+    max_command_step_m: 0.02
+    require_stable_before_grab: true
+    require_valid_tf: true
+    require_valid_depth: true
