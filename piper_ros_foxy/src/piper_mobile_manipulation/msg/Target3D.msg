@@ -2,4 +2,8 @@ std_msgs/Header header
 geometry_msgs/Point point
 float32 depth
 float32 valid_depth_ratio
+float32 depth_stddev
+float32 roi_width
+float32 roi_height
+float32 measurement_confidence
 bool valid

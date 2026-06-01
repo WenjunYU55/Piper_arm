@@ -56,6 +56,14 @@ Then, in separate terminals:
 
 `realsense_ws/src`, `build`, `install`, and `log` are generated locally and intentionally not committed. Run `fetch_realsense_sources.sh` and `build_realsense_ws.sh` to recreate them on a new machine.
 
+For simple object recognition/tracking, set `target_color` in:
+
+```text
+/home/prl/Piper_arm/piper_ros_foxy/src/piper_mobile_manipulation/config/detection_params.yaml
+```
+
+Supported presets are `green`, `red`, `blue`, `yellow`, `orange`, `purple`, and `custom`. Use `custom` with `hsv_lower`/`hsv_upper` when the preset is not tight enough for the object.
+
 If `rqt_image_view` prints DDS deserialization errors, use the lighter viewers:
 
 ```bash

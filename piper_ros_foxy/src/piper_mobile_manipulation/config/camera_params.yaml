@@ -5,8 +5,13 @@
     camera_info_topic: "/camera/color/camera_info"
     target_topic: "/piper/target_3d"
     depth_min_m: 0.25
-    depth_max_m: 1.0
+    depth_max_m: 2.0
     use_median_depth: true
-    min_valid_depth_ratio: 0.4
+    min_valid_depth_ratio: 0.35
     crop_half_size_px: 8
-    max_detection_age_sec: 0.5
+    use_detection_bbox: true
+    bbox_scale: 0.6
+    depth_percentile: 50.0
+    max_depth_stddev_m: 0.08
+    sync_queue_size: 10
+    sync_slop_sec: 0.08

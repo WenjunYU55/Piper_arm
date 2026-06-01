@@ -1,7 +1,17 @@
 /**:
   ros__parameters:
+    # Presets: green, red, blue, yellow, orange, purple, custom.
+    target_color: "green"
     hsv_lower: [30, 50, 50]
     hsv_upper: [90, 255, 255]
-    min_contour_area: 200.0
+    min_contour_area: 500.0
     max_contour_area: 100000.0
+    morph_kernel_size: 5
+    min_extent: 0.35
+    min_circularity: 0.0
+    prefer_centered: true
+    log_valid_every_n: 30
     image_topic: "/camera/color/image_raw"
+    detection_topic: "/piper/detection_2d"
+    debug_image_topic: "/piper/detection_debug_image"
+    mask_topic: "/piper/detection_mask"

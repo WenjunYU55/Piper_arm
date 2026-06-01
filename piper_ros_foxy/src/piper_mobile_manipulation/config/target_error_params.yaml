@@ -1,0 +1,7 @@
+/**:
+  ros__parameters:
+    tracked_topic: "/piper/tracked_target"
+    error_topic: "/piper/target_error"
+    desired_distance_m: 0.55
+    position_tolerance_m: 0.03
+    distance_tolerance_m: 0.04

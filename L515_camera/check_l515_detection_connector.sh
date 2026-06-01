@@ -36,6 +36,17 @@ check_topic_type() {
   return 0
 }
 
+echo_one_message() {
+  local topic=$1
+
+  if ros2 topic echo -h 2>&1 | grep -q -- '--once'; then
+    timeout 5 ros2 topic echo --once "$topic" || echo "No $topic sample within 5 seconds."
+  else
+    timeout 5 bash -c 'ros2 topic echo "$1" 2>/dev/null | sed -n "1,/^---$/p; /^---$/q"' _ "$topic" \
+      || echo "No $topic sample within 5 seconds."
+  fi
+}
+
 echo "Camera-driver inputs:"
 camera_ok=0
 check_topic_type /camera/color/image_raw sensor_msgs/msg/Image || camera_ok=1
@@ -65,12 +76,12 @@ fi
 echo "One-message samples from the future base/arm connector topics:"
 echo
 echo "--- /piper/detection_2d ---"
-timeout 5 ros2 topic echo --once /piper/detection_2d || echo "No /piper/detection_2d sample within 5 seconds."
+echo_one_message /piper/detection_2d
 echo
 echo "--- /piper/target_3d ---"
-timeout 5 ros2 topic echo --once /piper/target_3d || echo "No /piper/target_3d sample within 5 seconds."
+echo_one_message /piper/target_3d
 echo
 echo "--- /piper/tracked_target ---"
-timeout 5 ros2 topic echo --once /piper/tracked_target || echo "No /piper/tracked_target sample within 5 seconds."
+echo_one_message /piper/tracked_target
 echo
 echo "Connector check complete."

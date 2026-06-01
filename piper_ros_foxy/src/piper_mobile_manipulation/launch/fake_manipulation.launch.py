@@ -42,7 +42,7 @@ def generate_launch_description():
             executable='target_tracker_node.py',
             name='target_tracker',
             output='screen',
-            parameters=[cfg('tracking_params.yaml')],
+            parameters=[cfg('tracking_params.yaml'), cfg('frames.yaml')],
         ),
         Node(
             package='piper_mobile_manipulation',

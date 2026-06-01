@@ -1,0 +1,9 @@
+std_msgs/Header header
+geometry_msgs/Vector3 error
+float32 desired_distance
+float32 distance_error
+float32 position_tolerance
+float32 distance_tolerance
+bool centered
+bool at_distance
+bool valid

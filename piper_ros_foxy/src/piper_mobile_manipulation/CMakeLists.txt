@@ -4,6 +4,7 @@ project(piper_mobile_manipulation)
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(message_filters REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
@@ -12,6 +13,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Detection2D.msg"
   "msg/Target3D.msg"
   "msg/TrackedTarget.msg"
+  "msg/TargetError.msg"
   "msg/HandoffTarget.msg"
   "msg/ManipulationCommand.msg"
   "msg/ManipulationState.msg"
@@ -26,6 +28,7 @@ install(PROGRAMS
   piper_mobile_manipulation/l515_object_detector_node.py
   piper_mobile_manipulation/depth_to_3d_node.py
   piper_mobile_manipulation/target_tracker_node.py
+  piper_mobile_manipulation/target_error_node.py
   piper_mobile_manipulation/manipulation_state_machine_node.py
   piper_mobile_manipulation/fake_arm_interface_node.py
   DESTINATION lib/${PROJECT_NAME}
