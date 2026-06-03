@@ -54,6 +54,12 @@ Then, in separate terminals:
 ./view_l515_camera.sh
 ```
 
+The perception pipeline now ends with a fake visual-servo command topic. It does not move the arm:
+
+```bash
+ros2 topic echo /piper/servo_cmd
+```
+
 `realsense_ws/src`, `build`, `install`, and `log` are generated locally and intentionally not committed. Run `fetch_realsense_sources.sh` and `build_realsense_ws.sh` to recreate them on a new machine.
 
 For simple object recognition/tracking, set `target_color` in:

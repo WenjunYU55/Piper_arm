@@ -1,0 +1,10 @@
+/**:
+  ros__parameters:
+    target_error_topic: "/piper/target_error"
+    servo_cmd_topic: "/piper/servo_cmd"
+    gain_xy: 0.8
+    gain_z: 0.6
+    max_lateral_speed_mps: 0.08
+    max_vertical_speed_mps: 0.08
+    max_forward_speed_mps: 0.06
+    command_deadband_m: 0.0

@@ -25,6 +25,7 @@ setup(
             'depth_to_3d = piper_mobile_manipulation.depth_to_3d_node:main',
             'target_tracker = piper_mobile_manipulation.target_tracker_node:main',
             'target_error = piper_mobile_manipulation.target_error_node:main',
+            'fake_visual_servo = piper_mobile_manipulation.fake_visual_servo_node:main',
             'manipulation_state_machine = piper_mobile_manipulation.manipulation_state_machine_node:main',
             'fake_arm_interface = piper_mobile_manipulation.fake_arm_interface_node:main',
         ],

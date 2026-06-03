@@ -14,6 +14,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Target3D.msg"
   "msg/TrackedTarget.msg"
   "msg/TargetError.msg"
+  "msg/ServoCommand.msg"
   "msg/HandoffTarget.msg"
   "msg/ManipulationCommand.msg"
   "msg/ManipulationState.msg"
@@ -29,6 +30,7 @@ install(PROGRAMS
   piper_mobile_manipulation/depth_to_3d_node.py
   piper_mobile_manipulation/target_tracker_node.py
   piper_mobile_manipulation/target_error_node.py
+  piper_mobile_manipulation/fake_visual_servo_node.py
   piper_mobile_manipulation/manipulation_state_machine_node.py
   piper_mobile_manipulation/fake_arm_interface_node.py
   DESTINATION lib/${PROJECT_NAME}

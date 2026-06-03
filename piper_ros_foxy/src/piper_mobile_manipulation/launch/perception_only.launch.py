@@ -38,4 +38,11 @@ def generate_launch_description():
             output='screen',
             parameters=[cfg('target_error_params.yaml')],
         ),
+        Node(
+            package='piper_mobile_manipulation',
+            executable='fake_visual_servo_node.py',
+            name='fake_visual_servo',
+            output='screen',
+            parameters=[cfg('fake_visual_servo_params.yaml')],
+        ),
     ])
