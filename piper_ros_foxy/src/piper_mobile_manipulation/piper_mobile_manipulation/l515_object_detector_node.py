@@ -36,6 +36,7 @@ class L515ObjectDetectorNode(Node):
         self.declare_parameter('min_extent', 0.15)
         self.declare_parameter('min_circularity', 0.0)
         self.declare_parameter('prefer_centered', True)
+        self.declare_parameter('area_confidence_full_scale', 5.0)
         self.declare_parameter('log_valid_every_n', 30)
 
         self.bridge = CvBridge()
@@ -166,13 +167,15 @@ class L515ObjectDetectorNode(Node):
                 circularity = float(4.0 * np.pi * area / (perimeter * perimeter))
             if circularity < self.min_circularity:
                 continue
-            area_score = float(np.clip(area / self.max_area, 0.0, 1.0))
+            area_full_scale = max(self.min_area * self.area_confidence_full_scale, self.min_area + 1.0)
+            area_score = float(np.clip((area - self.min_area) / (area_full_scale - self.min_area), 0.0, 1.0))
             center_score = 1.0
             if self.prefer_centered:
                 center = np.array([x + w / 2.0, y + h / 2.0], dtype=np.float32)
                 center_dist = float(np.linalg.norm(center - image_center))
                 center_score = 1.0 - float(np.clip(center_dist / max_center_dist, 0.0, 1.0))
-            score = 0.75 * area_score + 0.25 * center_score
+            extent_score = float(np.clip((extent - self.min_extent) / max(1.0 - self.min_extent, 1e-3), 0.0, 1.0))
+            score = 0.45 * area_score + 0.35 * extent_score + 0.20 * center_score
             if best is None or score > best[2]:
                 best = (contour, area, score, extent, circularity)
         return best
@@ -192,6 +195,7 @@ class L515ObjectDetectorNode(Node):
         self.min_extent = float(self.get_parameter('min_extent').value)
         self.min_circularity = float(self.get_parameter('min_circularity').value)
         self.prefer_centered = bool(self.get_parameter('prefer_centered').value)
+        self.area_confidence_full_scale = max(1.1, float(self.get_parameter('area_confidence_full_scale').value))
         self.log_valid_every_n = max(0, int(self.get_parameter('log_valid_every_n').value))
 
     @staticmethod

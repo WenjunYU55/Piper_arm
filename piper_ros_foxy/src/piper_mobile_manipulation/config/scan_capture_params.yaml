@@ -1,0 +1,22 @@
+/**:
+  ros__parameters:
+    color_image_topic: "/camera/color/image_raw"
+    depth_image_topic: "/camera/aligned_depth_to_color/image_raw"
+    camera_info_topic: "/camera/color/camera_info"
+    mask_topic: "/piper/detection_mask"
+    target_3d_topic: "/piper/target_3d"
+    scan_viewpoints_topic: "/piper/scan_viewpoints"
+    reachable_scan_viewpoints_topic: "/piper/reachable_scan_viewpoints"
+    scan_coverage_topic: "/piper/scan_coverage"
+    scan_capture_status_topic: "/piper/scan_capture_status"
+    scan_summary_topic: "/piper/scan_summary"
+
+    capture_interval_sec: 2.0
+    max_frames_per_scan: 30
+    require_valid_target: true
+    require_mask: true
+    require_depth: true
+    dataset_root: "/home/prl/Piper_arm/datasets/active_scan"
+    dry_run: true
+    enable_real_arm_motion: false
+    debug: true

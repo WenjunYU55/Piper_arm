@@ -5,5 +5,10 @@ float32 valid_depth_ratio
 float32 depth_stddev
 float32 roi_width
 float32 roi_height
+float32 source_u
+float32 source_v
+float32 detection_width
+float32 detection_height
+string depth_source
 float32 measurement_confidence
 bool valid

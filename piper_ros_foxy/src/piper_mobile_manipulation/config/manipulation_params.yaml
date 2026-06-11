@@ -1,6 +1,13 @@
 /**:
   ros__parameters:
     task_command: "inspect"
+    target_type: "plant"
+    manipulation_mode: "inspect"
+    approach_offset_m: 0.10
+    max_target_age_s: 0.5
+    stop_on_low_confidence: true
+    stop_on_target_lost: true
+    enable_real_arm_motion: false
     pre_grasp_offset_m: 0.12
     pre_push_offset_m: 0.10
     final_servo_step_m: 0.01

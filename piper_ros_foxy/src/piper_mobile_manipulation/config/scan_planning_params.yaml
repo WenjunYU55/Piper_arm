@@ -1,0 +1,35 @@
+/**:
+  ros__parameters:
+    desired_scan_angle_deg: 250
+    viewpoint_step_deg: 15
+    scan_radius_m: 0.45
+    min_scan_radius_m: 0.30
+    max_scan_radius_m: 0.80
+    camera_pitch_deg: -10
+    keep_object_centered: true
+    max_viewpoints: 20
+
+    min_reach_m: 0.20
+    max_reach_m: 0.75
+    min_camera_object_distance_m: 0.25
+    max_camera_object_distance_m: 0.80
+    max_height_change_m: 0.40
+
+    min_good_scan_quality: 0.65
+    min_acceptable_scan_quality: 0.40
+    max_depth_stddev_good_m: 0.03
+    min_valid_depth_ratio: 0.40
+    min_mask_area_px: 100
+    edge_margin_px: 40
+
+    occlusion_depth_margin_m: 0.03
+    occlusion_persistence_frames: 3
+    min_occluder_area_px: 80
+
+    enable_real_arm_motion: false
+    enable_real_push: false
+    dry_run: true
+    debug: true
+
+    first_push_distance_m: 0.01
+    max_push_distance_m: 0.03

@@ -1,6 +1,20 @@
 /**:
   ros__parameters:
     filter_type: "kalman"
+    min_depth_m: 0.25
+    max_depth_m: 1.20
+    roi_half_size_px: 10
+    min_valid_depth_pixels: 20
+    depth_gate_m: 0.15
+    max_pixel_jump: 80
+    max_3d_jump_m: 0.10
+    min_area_ratio: 0.5
+    max_area_ratio: 2.0
+    min_confidence: 0.20
+    lost_timeout_s: 1.0
+    low_confidence_timeout_s: 0.5
+    smoothing_alpha: 0.2
+    debug: true
     prediction_horizon_s: 0.15
     max_missed_frames: 10
     min_track_frames: 5
@@ -10,5 +24,5 @@
     measurement_noise: 0.03
     use_tf_transform: false
     transform_timeout_s: 0.2
-    min_measurement_confidence: 0.05
+    min_measurement_confidence: 0.03
     confidence_noise_scale: 4.0

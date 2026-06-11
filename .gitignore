@@ -24,6 +24,7 @@ L515_camera/.codex/
 *.pcap
 *.bag
 *.db3
+datasets/
 piper_joint_bounds.json
 
 # Preserved upstream repository metadata

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
+export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-42}
+
 L515_REQUIRE_REALSENSE=1
 # shellcheck disable=SC1091
 source /home/prl/Piper_arm/L515_camera/source_l515_environment.sh
@@ -15,6 +17,7 @@ if ! ros2 pkg prefix realsense2_camera >/dev/null 2>&1; then
 fi
 
 echo "Starting L515 with RGB, depth, and aligned depth-to-color enabled."
+echo "Using ROS_DOMAIN_ID=${ROS_DOMAIN_ID}"
 echo "Leave this running, then start ./run_l515_perception.sh in another terminal."
 ros2 launch realsense2_camera rs_launch.py \
   device_type:=l515 \
