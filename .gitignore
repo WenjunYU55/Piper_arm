@@ -27,6 +27,15 @@ L515_camera/.codex/
 datasets/
 piper_joint_bounds.json
 
+# Local AI model checkouts, environments, and weights
+AI_perception_tests/groundingdino_test/Grounded-SAM-2/
+AI_perception_tests/groundingdino_test/GroundingDINO/
+AI_perception_tests/groundingdino_test/weights/
+AI_perception_tests/groundingdino_test/checkpoints/
+AI_perception_tests/groundingdino_test/gdino_checkpoints/
+AI_perception_tests/groundingdino_test/envs/
+AI_perception_tests/groundingdino_test/micromamba/
+
 # Preserved upstream repository metadata
 piper_ros_foxy/.git.agilex-backup/
 
