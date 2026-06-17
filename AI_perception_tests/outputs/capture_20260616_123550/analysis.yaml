@@ -1,0 +1,65 @@
+analysis_type: static_rgbd_scene_analysis
+created_utc: '2026-06-16T16:55:22.552997+00:00'
+capture_folder: /home/prl/Piper_arm/L515_camera/captures/capture_20260616_123550
+output_folder: /home/prl/Piper_arm/AI_perception_tests/outputs/capture_20260616_123550
+files:
+  rgb.png:
+    exists: true
+    required: true
+    path: /home/prl/Piper_arm/L515_camera/captures/capture_20260616_123550/rgb.png
+  depth.npy:
+    exists: true
+    required: true
+    path: /home/prl/Piper_arm/L515_camera/captures/capture_20260616_123550/depth.npy
+  detection_mask.png:
+    exists: true
+    required: true
+    path: /home/prl/Piper_arm/L515_camera/captures/capture_20260616_123550/detection_mask.png
+  camera_info.yaml:
+    exists: true
+    required: true
+    path: /home/prl/Piper_arm/L515_camera/captures/capture_20260616_123550/camera_info.yaml
+  target_3d.yaml:
+    exists: true
+    required: true
+    path: /home/prl/Piper_arm/L515_camera/captures/capture_20260616_123550/target_3d.yaml
+  metadata.yaml:
+    exists: true
+    required: true
+    path: /home/prl/Piper_arm/L515_camera/captures/capture_20260616_123550/metadata.yaml
+  scan_quality.yaml:
+    exists: false
+    required: false
+    path: /home/prl/Piper_arm/L515_camera/captures/capture_20260616_123550/scan_quality.yaml
+  occlusion_status.yaml:
+    exists: true
+    required: false
+    path: /home/prl/Piper_arm/L515_camera/captures/capture_20260616_123550/occlusion_status.yaml
+parameters:
+  occlusion_depth_margin_m: 0.03
+  near_mask_dilation_px: 20
+  min_occluder_area_px: 80
+  partial_occlusion_ratio: 0.05
+  heavy_occlusion_ratio: 0.2
+  min_valid_depth_ratio: 0.4
+  min_mask_area_px: 100
+  min_valid_depth_m: 0.15
+  max_valid_depth_m: 1.2
+metrics:
+  mask_area_px: 2452
+  target_depth_m: 0.5080028772354126
+  target_depth_source: target_3d.depth
+  valid_depth_ratio: 0.9979608482871125
+  valid_depth_count_px: 2447
+  depth_mean_m: 0.5379570722579956
+  depth_stddev_m: 0.10440211743116379
+  foreground_closer_mask: foreground_closer_mask.png
+  near_region_area_px: 6313
+  closer_region_area_px: 0
+  closer_region_ratio: 0.0
+decision: CLEAR
+reason: no significant foreground closer region
+outputs:
+  analysis_yaml: /home/prl/Piper_arm/AI_perception_tests/outputs/capture_20260616_123550/analysis.yaml
+  debug_overlay_png: /home/prl/Piper_arm/AI_perception_tests/outputs/capture_20260616_123550/debug_overlay.png
+  foreground_closer_mask_png: /home/prl/Piper_arm/AI_perception_tests/outputs/capture_20260616_123550/foreground_closer_mask.png

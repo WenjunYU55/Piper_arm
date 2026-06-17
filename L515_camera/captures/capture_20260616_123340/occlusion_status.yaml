@@ -1,0 +1,23 @@
+closer_region_area_px: 444
+closer_region_persisted: true
+closer_region_ratio: 0.14068441064638784
+dry_run: true
+mask_area_px: 842
+occlusion_score: 0.42201330798479086
+occlusion_state: HEAVILY_OCCLUDED
+quality_label: ACCEPTABLE
+raw_occlusion_state: HEAVILY_OCCLUDED
+real_arm_motion: false
+reason: visible mask area dropped to 0.16 of clear reference
+reference_mask_area_px: 5235.451415908989
+roi_area_px: 3156
+stamp:
+  available: true
+  frame_id: camera_color_optical_frame
+  nanosec: 267134975
+  sec: 1781627618
+state_filter_count: 0
+target_depth_m: 0.7479103207588196
+target_valid: true
+valid_depth_ratio: 0.9795918367346939
+visible_mask_ratio: 0.16082662851982754

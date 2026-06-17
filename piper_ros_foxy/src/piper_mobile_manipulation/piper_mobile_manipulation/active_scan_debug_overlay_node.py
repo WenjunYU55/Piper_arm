@@ -24,6 +24,9 @@ class ActiveScanDebugOverlayNode(Node):
         self.declare_parameter('scan_viewpoints_topic', '/piper/scan_viewpoints')
         self.declare_parameter('scan_coverage_topic', '/piper/scan_coverage')
         self.declare_parameter('reachable_scan_viewpoints_topic', '/piper/reachable_scan_viewpoints')
+        self.declare_parameter('scan_quality_topic', '/piper/scan_quality')
+        self.declare_parameter('useful_scan_coverage_topic', '/piper/useful_scan_coverage')
+        self.declare_parameter('occlusion_status_topic', '/piper/occlusion_status')
         self.declare_parameter('debug_image_topic', '/piper/active_scan_debug_image')
         self.declare_parameter('prefer_detection_debug_image', True)
         self.declare_parameter('stale_timeout_s', 1.0)
@@ -37,6 +40,9 @@ class ActiveScanDebugOverlayNode(Node):
         self.latest_scan_viewpoints = None
         self.latest_scan_coverage = None
         self.latest_reachable_scan_viewpoints = None
+        self.latest_scan_quality = None
+        self.latest_useful_scan_coverage = None
+        self.latest_occlusion_status = None
         self.latest_color_stamp = 0.0
         self.latest_debug_stamp = 0.0
 
@@ -87,6 +93,24 @@ class ActiveScanDebugOverlayNode(Node):
             self.reachable_scan_viewpoints_cb,
             10,
         )
+        self.create_subscription(
+            String,
+            self.get_parameter('scan_quality_topic').value,
+            self.scan_quality_cb,
+            10,
+        )
+        self.create_subscription(
+            String,
+            self.get_parameter('useful_scan_coverage_topic').value,
+            self.useful_scan_coverage_cb,
+            10,
+        )
+        self.create_subscription(
+            String,
+            self.get_parameter('occlusion_status_topic').value,
+            self.occlusion_status_cb,
+            10,
+        )
         self.get_logger().warn(
             'Active scan debug overlay is visual-only; it does not publish /piper/servo_cmd or move the arm.'
         )
@@ -105,6 +129,15 @@ class ActiveScanDebugOverlayNode(Node):
 
     def reachable_scan_viewpoints_cb(self, msg):
         self.latest_reachable_scan_viewpoints = (self.parse_json_msg(msg), time.monotonic())
+
+    def scan_quality_cb(self, msg):
+        self.latest_scan_quality = (self.parse_json_msg(msg), time.monotonic())
+
+    def useful_scan_coverage_cb(self, msg):
+        self.latest_useful_scan_coverage = (self.parse_json_msg(msg), time.monotonic())
+
+    def occlusion_status_cb(self, msg):
+        self.latest_occlusion_status = (self.parse_json_msg(msg), time.monotonic())
 
     def color_image_cb(self, msg):
         self.latest_color_stamp = time.monotonic()
@@ -160,6 +193,9 @@ class ActiveScanDebugOverlayNode(Node):
         planned = self.planned_viewpoint_count()
         reachable = self.reachable_viewpoint_count()
         coverage = self.scan_coverage_target()
+        quality = self.scan_quality_status()
+        useful_coverage = self.useful_scan_coverage()
+        occlusion = self.occlusion_status()
         real_motion = 'enabled' if self.param_bool('enable_real_arm_motion') else 'disabled'
 
         return [
@@ -170,6 +206,9 @@ class ActiveScanDebugOverlayNode(Node):
             'planned viewpoints: %s' % planned,
             'reachable viewpoints: %s' % reachable,
             'scan coverage target: %s' % coverage,
+            'view quality: %s' % quality,
+            'useful coverage: %s' % useful_coverage,
+            'occlusion: %s' % occlusion,
             'dry-run mode: %s' % self.param_bool('dry_run'),
             'real arm motion: %s' % real_motion,
         ]
@@ -216,6 +255,39 @@ class ActiveScanDebugOverlayNode(Node):
             if len(angles) >= 2:
                 return '%.1f deg' % (max(angles) - min(angles))
         return 'unknown'
+
+    def scan_quality_status(self):
+        payload = self.latest_payload(self.latest_scan_quality)
+        if payload is None:
+            return 'unknown'
+        status = payload.get('quality_label', payload.get('status', 'unknown'))
+        score = payload.get('quality_score', payload.get('score'))
+        if score is None:
+            return str(status)
+        return '%s %.2f' % (status, float(score))
+
+    def useful_scan_coverage(self):
+        payload = self.latest_scan_payload(self.latest_useful_scan_coverage)
+        if payload is None:
+            return 'unknown'
+        coverage = payload.get('useful_coverage_deg', payload.get('useful_scan_coverage_deg'))
+        useful_frames = payload.get('useful_frame_count')
+        if coverage is None:
+            if useful_frames is None:
+                return 'unknown'
+            return '%s useful frames' % useful_frames
+        if useful_frames is None:
+            return '%.1f deg' % float(coverage)
+        return '%.1f deg (%s useful frames)' % (float(coverage), useful_frames)
+
+    def occlusion_status(self):
+        payload = self.latest_payload(self.latest_occlusion_status)
+        if payload is None:
+            return 'unknown'
+        state = payload.get('occlusion_state', 'unknown')
+        score = float(payload.get('occlusion_score', 0.0))
+        area = int(payload.get('closer_region_area_px', 0))
+        return '%s %.2f area=%d' % (state, score, area)
 
     def latest_payload(self, stored):
         if stored is None:

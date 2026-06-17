@@ -1,0 +1,34 @@
+/**:
+  ros__parameters:
+    color_image_topic: "/camera/color/image_raw"
+    depth_image_topic: "/camera/aligned_depth_to_color/image_raw"
+    mask_topic: "/piper/detection_mask"
+    detection_topic: "/piper/detection_2d"
+    target_3d_topic: "/piper/target_3d"
+    scan_quality_topic: "/piper/scan_quality"
+    occlusion_status_topic: "/piper/occlusion_status"
+    occlusion_debug_topic: "/piper/occlusion_debug"
+
+    evaluation_interval_sec: 0.25
+    stale_timeout_sec: 1.0
+    occlusion_depth_margin_m: 0.04
+    occlusion_persistence_frames: 3
+    min_occluder_area_px: 200
+    near_mask_dilation_px: 10
+    min_valid_depth_ratio: 0.20
+    min_mask_area_px: 40
+    edge_margin_px: 40
+    min_valid_depth_m: 0.15
+    max_valid_depth_m: 1.20
+    partial_occlusion_ratio: 0.12
+    heavy_occlusion_ratio: 0.60
+    state_transition_confirmations: 1
+    lost_transition_confirmations: 2
+    use_reference_mask_area: true
+    reference_update_alpha: 0.05
+    min_reference_mask_area_px: 300
+    partial_visible_ratio: 0.94
+    heavy_visible_ratio: 0.44
+    dry_run: true
+    enable_real_arm_motion: false
+    debug: true

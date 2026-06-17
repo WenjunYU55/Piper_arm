@@ -36,6 +36,8 @@ setup(
             'viewpoint_reachability_filter = piper_mobile_manipulation.viewpoint_reachability_filter_node:main',
             'active_scan_debug_overlay = piper_mobile_manipulation.active_scan_debug_overlay_node:main',
             'scan_capture = piper_mobile_manipulation.scan_capture_node:main',
+            'scan_quality = piper_mobile_manipulation.scan_quality_node:main',
+            'occlusion_checker = piper_mobile_manipulation.occlusion_checker_node:main',
         ],
     },
 )

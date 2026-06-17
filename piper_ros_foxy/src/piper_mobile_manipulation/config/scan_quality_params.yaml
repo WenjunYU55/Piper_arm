@@ -1,0 +1,26 @@
+/**:
+  ros__parameters:
+    depth_image_topic: "/camera/aligned_depth_to_color/image_raw"
+    color_image_topic: "/camera/color/image_raw"
+    mask_topic: "/piper/detection_mask"
+    detection_topic: "/piper/detection_2d"
+    target_3d_topic: "/piper/target_3d"
+    reachable_scan_viewpoints_topic: "/piper/reachable_scan_viewpoints"
+    scan_capture_status_topic: "/piper/scan_capture_status"
+    scan_quality_topic: "/piper/scan_quality"
+    scan_quality_debug_topic: "/piper/scan_quality_debug"
+    useful_scan_coverage_topic: "/piper/useful_scan_coverage"
+
+    evaluation_interval_sec: 1.0
+    stale_timeout_sec: 1.0
+    min_good_scan_quality: 0.65
+    min_acceptable_scan_quality: 0.40
+    max_depth_stddev_good_m: 0.03
+    min_valid_depth_ratio: 0.0
+    min_mask_area_px: 40
+    edge_margin_px: 40
+    min_valid_depth_m: 0.15
+    max_valid_depth_m: 1.20
+    dry_run: true
+    enable_real_arm_motion: false
+    debug: true

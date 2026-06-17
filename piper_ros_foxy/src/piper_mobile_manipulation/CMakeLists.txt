@@ -41,6 +41,8 @@ install(PROGRAMS
   piper_mobile_manipulation/viewpoint_reachability_filter_node.py
   piper_mobile_manipulation/active_scan_debug_overlay_node.py
   piper_mobile_manipulation/scan_capture_node.py
+  piper_mobile_manipulation/scan_quality_node.py
+  piper_mobile_manipulation/occlusion_checker_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

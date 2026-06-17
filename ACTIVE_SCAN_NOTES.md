@@ -30,20 +30,33 @@ The current implementation is intentionally passive. It does not move the PiPER 
 
 - `active_scan_debug_overlay_node.py`
   - Builds a visual debug image on `/piper/active_scan_debug_image`.
-  - Overlays detector state, target distance, planned viewpoint count, reachable viewpoint count, scan coverage, and safety status.
+  - Overlays detector state, target distance, planned viewpoint count, reachable viewpoint count, scan coverage, scan quality, useful coverage, and safety status.
 
 - `scan_capture_node.py`
   - Saves synchronized RGB, depth, mask, and metadata samples.
   - Publishes `/piper/scan_capture_status` and `/piper/scan_summary`.
   - Writes scan sessions under `/home/prl/Piper_arm/datasets/active_scan`.
 
+- `scan_quality_node.py`
+  - Scores each live RGB-D-mask view using mask size, edge margin, depth validity, and depth noise.
+  - Publishes per-view quality on `/piper/scan_quality`.
+  - Publishes readable quality details on `/piper/scan_quality_debug`.
+  - Publishes approximate useful dry-run coverage on `/piper/useful_scan_coverage`.
+  - Does not command the arm or publish `/piper/servo_cmd`.
+
+- `occlusion_checker_node.py`
+  - Uses aligned depth, the HSV mask, target 3D depth, and scan quality to detect closer-depth occlusion near the object.
+  - Publishes structured status on `/piper/occlusion_status`.
+  - Publishes readable status on `/piper/occlusion_debug`.
+  - Does not label occluders, plan pushes, command the arm, or publish `/piper/servo_cmd`.
+
 ## Added Launch Files
 
 - `active_scan_debug.launch.py`
-  - Starts the scan planner, reachability filter, and debug overlay.
+  - Starts the scan planner, reachability filter, debug overlay, scan quality node, and occlusion checker.
 
 - `active_scan_capture_debug.launch.py`
-  - Starts the scan planner, reachability filter, debug overlay, and scan capture node.
+  - Starts the scan planner, reachability filter, debug overlay, scan quality node, occlusion checker, and scan capture node.
   - Does not launch the camera or perception nodes.
 
 ## Typical Runtime Flow
@@ -85,6 +98,11 @@ TOPIC=/piper/active_scan_debug_image
 ```bash
 ros2 topic echo /piper/scan_capture_status
 ros2 topic echo /piper/scan_summary
+ros2 topic echo /piper/scan_quality
+ros2 topic echo /piper/scan_quality_debug
+ros2 topic echo /piper/occlusion_status
+ros2 topic echo /piper/occlusion_debug
+ros2 topic echo /piper/useful_scan_coverage
 ros2 topic echo /piper/scan_viewpoints
 ros2 topic echo /piper/reachable_scan_viewpoints
 ros2 topic list | grep servo

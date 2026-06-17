@@ -1,0 +1,21 @@
+header:
+  stamp:
+    sec: 1781627721
+    nanosec: 699074975
+  frame_id: camera_color_optical_frame
+point:
+  x: 0.05215207694657026
+  y: 0.10586347327284727
+  z: 0.5076279842155207
+depth: 0.5076279640197754
+valid_depth_ratio: 0.620414674282074
+depth_stddev: 0.003711493918672204
+roi_width: 33.0
+roi_height: 57.0
+source_u: 391.5
+source_v: 365.0
+detection_width: 33.0
+detection_height: 56.0
+depth_source: mask
+measurement_confidence: 0.6439920663833618
+valid: true

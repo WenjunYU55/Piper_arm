@@ -1,0 +1,28 @@
+bbox:
+  available: true
+  x0: 0
+  x1: 631
+  y0: 0
+  y1: 291
+centredness_score: 0.6081339160149506
+depth_mean_m: 0.7650058269500732
+depth_stddev_m: 0.04397950693964958
+detection_confidence: 0.5106009244918823
+detection_valid: true
+dry_run: true
+edge_margin_score: 0.0
+frame_index: 600
+mask_area_px: 875
+quality_label: GOOD
+quality_score: 0.6642150351359964
+real_arm_motion: false
+reason: ''
+score: 0.6642150351359964
+stamp:
+  available: true
+  frame_id: camera_color_optical_frame
+  nanosec: 851011974
+  sec: 1781627662
+status: GOOD
+target_valid: true
+valid_depth_ratio: 0.9805714285714285

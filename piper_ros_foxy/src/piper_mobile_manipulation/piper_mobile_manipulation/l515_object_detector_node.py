@@ -28,19 +28,26 @@ class L515ObjectDetectorNode(Node):
         self.declare_parameter('debug_image_topic', '/piper/detection_debug_image')
         self.declare_parameter('mask_topic', '/piper/detection_mask')
         self.declare_parameter('target_color', 'green')
+        self.declare_parameter('use_color_preset', True)
         self.declare_parameter('hsv_lower', [30, 50, 50])
         self.declare_parameter('hsv_upper', [90, 255, 255])
         self.declare_parameter('min_contour_area', 200.0)
         self.declare_parameter('max_contour_area', 100000.0)
         self.declare_parameter('morph_kernel_size', 5)
+        self.declare_parameter('morph_open_kernel_size', 0)
+        self.declare_parameter('morph_close_kernel_size', 0)
         self.declare_parameter('min_extent', 0.15)
         self.declare_parameter('min_circularity', 0.0)
+        self.declare_parameter('min_detection_confidence', 0.0)
         self.declare_parameter('prefer_centered', True)
         self.declare_parameter('area_confidence_full_scale', 5.0)
         self.declare_parameter('log_valid_every_n', 30)
 
         self.bridge = CvBridge()
         self.target_color = ''
+        self.use_color_preset = None
+        self.hsv_lower_param = None
+        self.hsv_upper_param = None
         self.hsv_ranges = []
         self.refresh_runtime_params()
         self.frame_count = 0
@@ -63,13 +70,19 @@ class L515ObjectDetectorNode(Node):
         )
 
     def load_hsv_ranges(self):
-        preset = self.COLOR_PRESETS.get(self.target_color)
+        use_color_preset = bool(self.get_parameter('use_color_preset').value)
+        preset = self.COLOR_PRESETS.get(self.target_color) if use_color_preset else None
         if preset is None:
             if self.target_color != 'custom':
-                self.get_logger().warn(
-                    'Unknown target_color=%s. Falling back to custom hsv_lower/hsv_upper.'
-                    % self.target_color
-                )
+                if use_color_preset:
+                    self.get_logger().warn(
+                        'Unknown target_color=%s. Falling back to hsv_lower/hsv_upper.'
+                        % self.target_color
+                    )
+                else:
+                    self.get_logger().info(
+                        'Using hsv_lower/hsv_upper for target_color=%s.' % self.target_color
+                    )
             lower = np.array(self.get_parameter('hsv_lower').value, dtype=np.uint8)
             upper = np.array(self.get_parameter('hsv_upper').value, dtype=np.uint8)
             return [(lower, upper)]
@@ -140,13 +153,17 @@ class L515ObjectDetectorNode(Node):
             )
 
     def clean_mask(self, mask):
-        if self.kernel_size <= 1:
-            return mask
-        kernel = cv2.getStructuringElement(
-            cv2.MORPH_ELLIPSE, (self.kernel_size, self.kernel_size)
-        )
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-        return cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        if self.open_kernel_size > 1:
+            open_kernel = cv2.getStructuringElement(
+                cv2.MORPH_ELLIPSE, (self.open_kernel_size, self.open_kernel_size)
+            )
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, open_kernel)
+        if self.close_kernel_size > 1:
+            close_kernel = cv2.getStructuringElement(
+                cv2.MORPH_ELLIPSE, (self.close_kernel_size, self.close_kernel_size)
+            )
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, close_kernel)
+        return mask
 
     def choose_best_contour(self, contours, image_width, image_height):
         best = None
@@ -176,6 +193,8 @@ class L515ObjectDetectorNode(Node):
                 center_score = 1.0 - float(np.clip(center_dist / max_center_dist, 0.0, 1.0))
             extent_score = float(np.clip((extent - self.min_extent) / max(1.0 - self.min_extent, 1e-3), 0.0, 1.0))
             score = 0.45 * area_score + 0.35 * extent_score + 0.20 * center_score
+            if score < self.min_detection_confidence:
+                continue
             if best is None or score > best[2]:
                 best = (contour, area, score, extent, circularity)
         return best
@@ -185,18 +204,41 @@ class L515ObjectDetectorNode(Node):
 
     def refresh_runtime_params(self):
         target_color = str(self.get_parameter('target_color').value).lower()
-        if target_color != self.target_color or target_color == 'custom':
+        hsv_lower_param = list(self.get_parameter('hsv_lower').value)
+        hsv_upper_param = list(self.get_parameter('hsv_upper').value)
+        use_color_preset = bool(self.get_parameter('use_color_preset').value)
+        if (
+            target_color != self.target_color
+            or use_color_preset != self.use_color_preset
+            or hsv_lower_param != self.hsv_lower_param
+            or hsv_upper_param != self.hsv_upper_param
+        ):
             self.target_color = target_color
+            self.use_color_preset = use_color_preset
+            self.hsv_lower_param = hsv_lower_param
+            self.hsv_upper_param = hsv_upper_param
             self.hsv_ranges = self.load_hsv_ranges()
 
         self.min_area = float(self.get_parameter('min_contour_area').value)
         self.max_area = float(self.get_parameter('max_contour_area').value)
         self.kernel_size = max(1, int(self.get_parameter('morph_kernel_size').value))
+        open_size = int(self.get_parameter('morph_open_kernel_size').value)
+        close_size = int(self.get_parameter('morph_close_kernel_size').value)
+        self.open_kernel_size = self.normalize_kernel_size(open_size or self.kernel_size)
+        self.close_kernel_size = self.normalize_kernel_size(close_size or self.kernel_size)
         self.min_extent = float(self.get_parameter('min_extent').value)
         self.min_circularity = float(self.get_parameter('min_circularity').value)
+        self.min_detection_confidence = float(self.get_parameter('min_detection_confidence').value)
         self.prefer_centered = bool(self.get_parameter('prefer_centered').value)
         self.area_confidence_full_scale = max(1.1, float(self.get_parameter('area_confidence_full_scale').value))
         self.log_valid_every_n = max(0, int(self.get_parameter('log_valid_every_n').value))
+
+    @staticmethod
+    def normalize_kernel_size(size):
+        size = max(1, int(size))
+        if size > 1 and size % 2 == 0:
+            size += 1
+        return size
 
     @staticmethod
     def draw_status(image, text, color):

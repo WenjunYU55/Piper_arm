@@ -11,6 +11,8 @@ def cfg(name):
 def generate_launch_description():
     scan_params = cfg('scan_planning_params.yaml')
     capture_params = cfg('scan_capture_params.yaml')
+    quality_params = cfg('scan_quality_params.yaml')
+    occlusion_params = cfg('occlusion_checker_params.yaml')
     return LaunchDescription([
         Node(
             package='piper_mobile_manipulation',
@@ -31,13 +33,27 @@ def generate_launch_description():
             executable='active_scan_debug_overlay_node.py',
             name='active_scan_debug_overlay',
             output='screen',
-            parameters=[scan_params],
+            parameters=[scan_params, quality_params],
+        ),
+        Node(
+            package='piper_mobile_manipulation',
+            executable='scan_quality_node.py',
+            name='scan_quality',
+            output='screen',
+            parameters=[scan_params, quality_params],
+        ),
+        Node(
+            package='piper_mobile_manipulation',
+            executable='occlusion_checker_node.py',
+            name='occlusion_checker',
+            output='screen',
+            parameters=[scan_params, occlusion_params],
         ),
         Node(
             package='piper_mobile_manipulation',
             executable='scan_capture_node.py',
             name='scan_capture',
             output='screen',
-            parameters=[scan_params, capture_params],
+            parameters=[scan_params, capture_params, occlusion_params],
         ),
     ])

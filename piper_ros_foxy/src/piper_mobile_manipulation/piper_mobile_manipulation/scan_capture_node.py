@@ -32,6 +32,8 @@ class ScanCaptureNode(Node):
         self.declare_parameter('scan_viewpoints_topic', '/piper/scan_viewpoints')
         self.declare_parameter('reachable_scan_viewpoints_topic', '/piper/reachable_scan_viewpoints')
         self.declare_parameter('scan_coverage_topic', '/piper/scan_coverage')
+        self.declare_parameter('scan_quality_topic', '/piper/scan_quality')
+        self.declare_parameter('occlusion_status_topic', '/piper/occlusion_status')
         self.declare_parameter('scan_capture_status_topic', '/piper/scan_capture_status')
         self.declare_parameter('scan_summary_topic', '/piper/scan_summary')
 
@@ -54,9 +56,19 @@ class ScanCaptureNode(Node):
         self.latest_scan_viewpoints = None
         self.latest_reachable_scan_viewpoints = None
         self.latest_scan_coverage = None
+        self.latest_scan_quality = None
+        self.latest_occlusion_status = None
         self.last_capture_time = None
         self.frame_index = 0
         self.skip_counts = {}
+        self.quality_counts = {'GOOD': 0, 'ACCEPTABLE': 0, 'POOR': 0, 'INVALID': 0}
+        self.occlusion_counts = {
+            'CLEAR': 0,
+            'PARTIALLY_OCCLUDED': 0,
+            'HEAVILY_OCCLUDED': 0,
+            'LOST': 0,
+            'UNKNOWN': 0,
+        }
 
         self.scan_dir = self.create_scan_dir()
         self.frames_dir = os.path.join(self.scan_dir, 'frames')
@@ -130,6 +142,18 @@ class ScanCaptureNode(Node):
             self.scan_coverage_cb,
             10,
         )
+        self.create_subscription(
+            String,
+            self.get_parameter('scan_quality_topic').value,
+            self.scan_quality_cb,
+            10,
+        )
+        self.create_subscription(
+            String,
+            self.get_parameter('occlusion_status_topic').value,
+            self.occlusion_status_cb,
+            10,
+        )
 
         self.timer = self.create_timer(0.25, self.timer_cb)
         self.publish_status('ready', 'scan capture initialized')
@@ -161,6 +185,12 @@ class ScanCaptureNode(Node):
 
     def scan_coverage_cb(self, msg):
         self.latest_scan_coverage = self.parse_json_msg(msg)
+
+    def scan_quality_cb(self, msg):
+        self.latest_scan_quality = self.parse_json_msg(msg)
+
+    def occlusion_status_cb(self, msg):
+        self.latest_occlusion_status = self.parse_json_msg(msg)
 
     def timer_cb(self):
         if self.frame_index >= int(self.get_parameter('max_frames_per_scan').value):
@@ -260,6 +290,8 @@ class ScanCaptureNode(Node):
             metadata_path,
         )
         self.write_yaml(metadata_path, metadata)
+        self.record_quality_count(metadata)
+        self.record_occlusion_count(metadata)
 
         self.frame_index += 1
         self.last_capture_time = now
@@ -273,6 +305,8 @@ class ScanCaptureNode(Node):
         planned_count = self.planned_viewpoint_count()
         reachable_count = self.reachable_viewpoint_count()
         coverage_target = self.scan_coverage_target()
+        quality = self.scan_quality_metadata()
+        occlusion = self.occlusion_metadata()
         return {
             'frame_index': int(index),
             'capture_timestamp': self.ros_time_to_dict(now.to_msg()),
@@ -285,6 +319,22 @@ class ScanCaptureNode(Node):
             'planned_viewpoint_count': planned_count,
             'reachable_viewpoint_count': reachable_count,
             'scan_coverage_target': coverage_target,
+            'scan_quality_available': quality['scan_quality_available'],
+            'scan_quality_score': quality['scan_quality_score'],
+            'scan_quality_label': quality['scan_quality_label'],
+            'mask_area_px': quality['mask_area_px'],
+            'valid_depth_ratio': quality['valid_depth_ratio'],
+            'depth_mean_m': quality['depth_mean_m'],
+            'depth_stddev_m': quality['depth_stddev_m'],
+            'centredness_score': quality['centredness_score'],
+            'edge_margin_score': quality['edge_margin_score'],
+            'scan_quality_target_valid': quality['target_valid'],
+            'occlusion_available': occlusion['occlusion_available'],
+            'occlusion_state': occlusion['occlusion_state'],
+            'occlusion_score': occlusion['occlusion_score'],
+            'closer_region_area_px': occlusion['closer_region_area_px'],
+            'closer_region_ratio': occlusion['closer_region_ratio'],
+            'occlusion_reason': occlusion['occlusion_reason'],
             'current_capture_mode': 'interval',
             'dry_run': True,
             'real_arm_motion': False,
@@ -301,6 +351,7 @@ class ScanCaptureNode(Node):
             'reason': reason,
             'scan_dir': self.scan_dir,
             'frames_captured': int(self.frame_index),
+            'captured_frame_count': int(self.frame_index),
             'max_frames_per_scan': int(self.get_parameter('max_frames_per_scan').value),
             'dry_run': True,
             'real_arm_motion': False,
@@ -315,10 +366,28 @@ class ScanCaptureNode(Node):
         payload = {
             'scan_dir': self.scan_dir,
             'frames_captured': int(self.frame_index),
+            'captured_frame_count': int(self.frame_index),
             'max_frames_per_scan': int(self.get_parameter('max_frames_per_scan').value),
             'planned_viewpoint_count': self.planned_viewpoint_count(),
             'reachable_viewpoint_count': self.reachable_viewpoint_count(),
             'scan_coverage_target': self.scan_coverage_target(),
+            'planned_coverage_deg': self.planned_coverage_deg(),
+            'reachable_coverage_deg': self.reachable_coverage_deg(),
+            'useful_coverage_deg': self.useful_coverage_deg(),
+            'useful_coverage_note': self.useful_coverage_note(),
+            'good_frame_count': int(self.quality_counts['GOOD']),
+            'acceptable_frame_count': int(self.quality_counts['ACCEPTABLE']),
+            'poor_frame_count': int(self.quality_counts['POOR']),
+            'invalid_frame_count': int(self.quality_counts['INVALID']),
+            'useful_frame_count': int(
+                self.quality_counts['GOOD'] + self.quality_counts['ACCEPTABLE']
+            ),
+            'occlusion_summary_available': self.occlusion_summary_available(),
+            'clear_frame_count': int(self.occlusion_counts['CLEAR']),
+            'partially_occluded_frame_count': int(self.occlusion_counts['PARTIALLY_OCCLUDED']),
+            'heavily_occluded_frame_count': int(self.occlusion_counts['HEAVILY_OCCLUDED']),
+            'lost_frame_count': int(self.occlusion_counts['LOST']),
+            'unknown_occlusion_frame_count': int(self.occlusion_counts['UNKNOWN']),
             'skip_counts': self.skip_counts,
             'dry_run': True,
             'real_arm_motion': False,
@@ -370,6 +439,124 @@ class ScanCaptureNode(Node):
             if len(angles) >= 2:
                 return float(max(angles) - min(angles))
         return 0.0
+
+    def planned_coverage_deg(self):
+        return self.scan_coverage_from_payload(self.latest_scan_coverage) or self.scan_coverage_from_payload(
+            self.latest_scan_viewpoints
+        )
+
+    def reachable_coverage_deg(self):
+        return self.scan_coverage_from_payload(self.latest_reachable_scan_viewpoints)
+
+    def useful_coverage_deg(self):
+        reachable = self.reachable_coverage_deg()
+        reachable_count = self.reachable_viewpoint_count()
+        useful_count = self.quality_counts['GOOD'] + self.quality_counts['ACCEPTABLE']
+        if reachable is None or reachable_count <= 0 or useful_count <= 0:
+            return None
+        useful_ratio = min(1.0, float(useful_count) / float(reachable_count))
+        return float(reachable * useful_ratio)
+
+    def useful_coverage_note(self):
+        if self.useful_coverage_deg() is None:
+            return 'unavailable: no exact viewpoint-to-frame mapping in dry-run capture'
+        return 'approximate: scaled reachable coverage by useful captured frame count'
+
+    def scan_coverage_from_payload(self, payload):
+        if not isinstance(payload, dict):
+            return None
+        for key in ('planned_scan_angle_deg', 'requested_scan_angle_deg', 'reachable_coverage_deg'):
+            value = payload.get(key)
+            if value is not None:
+                return float(value)
+        viewpoints = payload.get('viewpoints')
+        if isinstance(viewpoints, list):
+            angles = []
+            for viewpoint in viewpoints:
+                if not isinstance(viewpoint, dict):
+                    continue
+                if viewpoint.get('reachable') is False:
+                    continue
+                angle = viewpoint.get('viewpoint_angle_deg')
+                if self.is_finite_number(angle):
+                    angles.append(float(angle))
+            if len(angles) >= 2:
+                return float(max(angles) - min(angles))
+        return None
+
+    def scan_quality_metadata(self):
+        payload = self.latest_scan_quality if isinstance(self.latest_scan_quality, dict) else None
+        if payload is None:
+            return self.empty_scan_quality_metadata()
+
+        return {
+            'scan_quality_available': True,
+            'scan_quality_score': float(payload.get('quality_score', payload.get('score', 0.0))),
+            'scan_quality_label': str(payload.get('quality_label', payload.get('status', 'INVALID'))),
+            'mask_area_px': int(payload.get('mask_area_px', 0)),
+            'valid_depth_ratio': float(payload.get('valid_depth_ratio', 0.0)),
+            'depth_mean_m': float(payload.get('depth_mean_m', 0.0)),
+            'depth_stddev_m': float(payload.get('depth_stddev_m', 0.0)),
+            'centredness_score': float(payload.get('centredness_score', 0.0)),
+            'edge_margin_score': float(payload.get('edge_margin_score', 0.0)),
+            'target_valid': bool(payload.get('target_valid', False)),
+        }
+
+    @staticmethod
+    def empty_scan_quality_metadata():
+        return {
+            'scan_quality_available': False,
+            'scan_quality_score': 0.0,
+            'scan_quality_label': 'UNAVAILABLE',
+            'mask_area_px': 0,
+            'valid_depth_ratio': 0.0,
+            'depth_mean_m': 0.0,
+            'depth_stddev_m': 0.0,
+            'centredness_score': 0.0,
+            'edge_margin_score': 0.0,
+            'target_valid': False,
+        }
+
+    def record_quality_count(self, metadata):
+        if not metadata.get('scan_quality_available'):
+            return
+        label = str(metadata.get('scan_quality_label', '')).upper()
+        if label in self.quality_counts:
+            self.quality_counts[label] += 1
+
+    def occlusion_metadata(self):
+        payload = self.latest_occlusion_status if isinstance(self.latest_occlusion_status, dict) else None
+        if payload is None:
+            return self.empty_occlusion_metadata()
+        return {
+            'occlusion_available': True,
+            'occlusion_state': str(payload.get('occlusion_state', 'UNKNOWN')),
+            'occlusion_score': float(payload.get('occlusion_score', 0.0)),
+            'closer_region_area_px': int(payload.get('closer_region_area_px', 0)),
+            'closer_region_ratio': float(payload.get('closer_region_ratio', 0.0)),
+            'occlusion_reason': str(payload.get('reason', '')),
+        }
+
+    @staticmethod
+    def empty_occlusion_metadata():
+        return {
+            'occlusion_available': False,
+            'occlusion_state': 'UNAVAILABLE',
+            'occlusion_score': 0.0,
+            'closer_region_area_px': 0,
+            'closer_region_ratio': 0.0,
+            'occlusion_reason': '',
+        }
+
+    def record_occlusion_count(self, metadata):
+        if not metadata.get('occlusion_available'):
+            return
+        state = str(metadata.get('occlusion_state', '')).upper()
+        if state in self.occlusion_counts:
+            self.occlusion_counts[state] += 1
+
+    def occlusion_summary_available(self):
+        return any(count > 0 for count in self.occlusion_counts.values())
 
     @staticmethod
     def parse_json_msg(msg):
@@ -454,6 +641,8 @@ class ScanCaptureNode(Node):
             'scan_viewpoints': self.get_parameter('scan_viewpoints_topic').value,
             'reachable_scan_viewpoints': self.get_parameter('reachable_scan_viewpoints_topic').value,
             'scan_coverage': self.get_parameter('scan_coverage_topic').value,
+            'scan_quality': self.get_parameter('scan_quality_topic').value,
+            'occlusion_status': self.get_parameter('occlusion_status_topic').value,
             'scan_capture_status': self.get_parameter('scan_capture_status_topic').value,
             'scan_summary': self.get_parameter('scan_summary_topic').value,
         }
@@ -468,6 +657,13 @@ class ScanCaptureNode(Node):
     @staticmethod
     def wall_time_string():
         return datetime.now().isoformat(timespec='seconds')
+
+    @staticmethod
+    def is_finite_number(value):
+        try:
+            return math.isfinite(float(value))
+        except (TypeError, ValueError):
+            return False
 
     @staticmethod
     def write_yaml(path, data):
