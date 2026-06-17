@@ -35,6 +35,7 @@ AI_perception_tests/groundingdino_test/checkpoints/
 AI_perception_tests/groundingdino_test/gdino_checkpoints/
 AI_perception_tests/groundingdino_test/envs/
 AI_perception_tests/groundingdino_test/micromamba/
+AI_perception_tests/groundingdino_test/hf_cache/
 
 # Preserved upstream repository metadata
 piper_ros_foxy/.git.agilex-backup/

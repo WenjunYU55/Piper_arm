@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run offline GroundingDINO inference on one saved L515 capture."""
+"""Run offline Grounded-SAM-2 bundled GroundingDINO inference on one saved L515 capture."""
 
 from __future__ import annotations
 
@@ -17,7 +17,8 @@ import yaml
 SCRIPT_DIR = Path(__file__).resolve().parent
 AI_TEST_DIR = SCRIPT_DIR.parent
 DEFAULT_OUTPUT_ROOT = AI_TEST_DIR / "outputs"
-DEFAULT_REPO_DIR = SCRIPT_DIR / "GroundingDINO"
+DEFAULT_GROUNDED_SAM2_REPO_DIR = SCRIPT_DIR / "Grounded-SAM-2"
+DEFAULT_REPO_DIR = DEFAULT_GROUNDED_SAM2_REPO_DIR / "grounding_dino"
 DEFAULT_CONFIG_PATH = DEFAULT_REPO_DIR / "groundingdino" / "config" / "GroundingDINO_SwinT_OGC.py"
 DEFAULT_CHECKPOINT_PATH = SCRIPT_DIR / "weights" / "groundingdino_swint_ogc.pth"
 DEFAULT_BOX_THRESHOLD = 0.35
@@ -29,8 +30,14 @@ class GroundingDinoUnavailable(RuntimeError):
 
 
 def add_repo_to_path(repo_dir: Path) -> None:
-    if repo_dir.is_dir() and str(repo_dir) not in sys.path:
-        sys.path.insert(0, str(repo_dir))
+    candidates = []
+    if repo_dir.is_dir():
+        candidates.append(repo_dir)
+        if repo_dir.name == "grounding_dino":
+            candidates.append(repo_dir.parent)
+    for candidate in reversed(candidates):
+        if str(candidate) not in sys.path:
+            sys.path.insert(0, str(candidate))
 
 
 def require_groundingdino(repo_dir: Path):
@@ -39,8 +46,9 @@ def require_groundingdino(repo_dir: Path):
         from groundingdino.util.inference import annotate, load_image, load_model, predict
     except Exception as exc:
         raise GroundingDinoUnavailable(
-            "GroundingDINO is not importable. Install the official IDEA-Research/GroundingDINO "
-            "backend manually, or set GROUNDINGDINO_REPO_DIR to an installed checkout. Original error: %s" % exc
+            "GroundingDINO is not importable from the Grounded-SAM-2 checkout. Install the "
+            "Grounded-SAM-2 dependencies in the isolated env, or set GROUNDINGDINO_REPO_DIR "
+            "to its bundled grounding_dino folder. Original error: %s" % exc
         ) from exc
     return annotate, load_image, load_model, predict
 
@@ -149,7 +157,8 @@ def run_on_capture(
     cv2.imwrite(str(debug_path), annotated)
 
     payload = {
-        "backend": "IDEA-Research/GroundingDINO",
+        "backend": "IDEA-Research/Grounded-SAM-2 bundled GroundingDINO",
+        "grounded_sam2_repo": str(DEFAULT_GROUNDED_SAM2_REPO_DIR),
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "capture_name": capture_dir.name,
         "capture_path": str(capture_dir),

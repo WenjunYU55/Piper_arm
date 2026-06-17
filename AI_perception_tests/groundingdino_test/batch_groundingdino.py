@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run offline GroundingDINO over the labelled real L515 baseline manifest."""
+"""Run offline Grounded-SAM-2 bundled GroundingDINO over the L515 manifest."""
 
 from __future__ import annotations
 
@@ -124,7 +124,7 @@ def run_batch(
             failed_count += 1
 
     payload = {
-        "results_type": "offline_groundingdino_real_l515_baseline",
+        "results_type": "offline_grounded_sam2_groundingdino_real_l515_baseline",
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "manifest_path": str(manifest_path),
         "prompt": prompt,

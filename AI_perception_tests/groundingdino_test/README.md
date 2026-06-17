@@ -1,60 +1,45 @@
-# Offline GroundingDINO Test
+# Offline Grounded-SAM-2 / GroundingDINO Test
 
-This folder contains an offline-only GroundingDINO test scaffold for saved L515 captures.
+This folder contains an offline-only test scaffold for saved L515 captures.
 
-It reads `rgb.png` files from capture folders listed in:
-
-```text
-/home/prl/Piper_arm/AI_perception_tests/test_sets/real_l515_baseline/manifest.yaml
-```
-
-It does not:
-
-- use ROS
-- publish ROS topics
-- publish `/piper/servo_cmd`
-- move the PiPER arm
-- modify `piper_ros_foxy`
-- train a model
-- add SAM2
-- integrate GroundingDINO into ROS launch files
-
-The purpose is to test whether pretrained GroundingDINO can detect the green cube and possible occluders in real saved L515 snapshots.
-
-## Intended Backend
-
-Use the official IDEA-Research/GroundingDINO repository:
+It uses the official IDEA-Research Grounded-SAM-2 repository as the intended backend:
 
 ```text
-https://github.com/IDEA-Research/GroundingDINO
+https://github.com/IDEA-Research/Grounded-SAM-2
 ```
 
-The scripts expect the official Python inference API:
+The current scripts run the GroundingDINO detector bundled inside Grounded-SAM-2 on saved `rgb.png` files. They do not use ROS, publish ROS topics, publish `/piper/servo_cmd`, move the PiPER arm, modify `piper_ros_foxy`, train a model, or integrate anything into ROS launch files.
 
-```python
-from groundingdino.util.inference import load_model, load_image, predict, annotate
+## Local Install Layout
+
+The Grounded-SAM-2 checkout and Python environment are local helper dependencies:
+
+```text
+/home/prl/Piper_arm/AI_perception_tests/groundingdino_test/Grounded-SAM-2
+/home/prl/Piper_arm/AI_perception_tests/groundingdino_test/envs/grounded_sam2_py310
 ```
 
-## Expected Local Paths
+These are ignored by git so third-party code, environments, and model weights are not committed into your project repository.
 
 By default, the scripts look for:
 
 ```text
-/home/prl/Piper_arm/AI_perception_tests/groundingdino_test/GroundingDINO
-/home/prl/Piper_arm/AI_perception_tests/groundingdino_test/GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py
+/home/prl/Piper_arm/AI_perception_tests/groundingdino_test/Grounded-SAM-2/grounding_dino
+/home/prl/Piper_arm/AI_perception_tests/groundingdino_test/Grounded-SAM-2/grounding_dino/groundingdino/config/GroundingDINO_SwinT_OGC.py
 /home/prl/Piper_arm/AI_perception_tests/groundingdino_test/weights/groundingdino_swint_ogc.pth
 ```
 
 You can override those paths:
 
 ```bash
-export GROUNDINGDINO_REPO_DIR=/path/to/GroundingDINO
+export GROUNDED_SAM2_PYTHON=/path/to/python
+export GROUNDINGDINO_REPO_DIR=/path/to/Grounded-SAM-2/grounding_dino
 export GROUNDINGDINO_CONFIG_PATH=/path/to/GroundingDINO_SwinT_OGC.py
 export GROUNDINGDINO_CHECKPOINT_PATH=/path/to/groundingdino_swint_ogc.pth
 export GROUNDINGDINO_DEVICE=cpu
 ```
 
-Use `GROUNDINGDINO_DEVICE=cuda` only if your environment is already configured for CUDA.
+Use `GROUNDINGDINO_DEVICE=cuda` only if your machine has a working CUDA PyTorch install.
 
 ## Check Environment
 
@@ -62,7 +47,7 @@ Use `GROUNDINGDINO_DEVICE=cuda` only if your environment is already configured f
 /home/prl/Piper_arm/AI_perception_tests/groundingdino_test/check_env.sh
 ```
 
-This checks Python, torch, CUDA, `CUDA_HOME`, GroundingDINO imports, and model/config paths. It does not install anything.
+This checks Python, torch, CUDA, `CUDA_HOME`, GroundingDINO imports, SAM2 imports, and model/config paths. It does not install anything.
 
 ## Run One Capture
 
@@ -107,18 +92,8 @@ Per-capture outputs are written to:
 /home/prl/Piper_arm/AI_perception_tests/outputs/<capture_name>/groundingdino/
 ```
 
-## Manual Install Notes
+## Notes
 
-If GroundingDINO is missing, install it manually from the official repository in a Python environment you control. Do not install it from these scripts.
+This is not a training database. It is a small validation/debug workflow for checking pretrained models on real L515 RGB snapshots.
 
-Typical manual steps are:
-
-```bash
-git clone https://github.com/IDEA-Research/GroundingDINO.git
-cd GroundingDINO
-python3 -m pip install -e .
-```
-
-Then download the official pretrained checkpoint and set `GROUNDINGDINO_CHECKPOINT_PATH` to that `.pth` file.
-
-Run `check_env.sh` again before running inference.
+SAM2 is installed as part of the Grounded-SAM-2 environment, but this scaffold currently runs the bundled GroundingDINO detector only. Mask generation from SAM2 should be added as a separate offline step before any ROS integration.

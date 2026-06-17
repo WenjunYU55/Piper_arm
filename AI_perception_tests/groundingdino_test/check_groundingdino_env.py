@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the offline GroundingDINO test environment without installing anything."""
+"""Check the offline Grounded-SAM-2/GroundingDINO test environment."""
 
 from __future__ import annotations
 
@@ -15,9 +15,11 @@ import yaml
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_REPO_DIR = SCRIPT_DIR / "GroundingDINO"
+DEFAULT_GROUNDED_SAM2_REPO_DIR = SCRIPT_DIR / "Grounded-SAM-2"
+DEFAULT_REPO_DIR = DEFAULT_GROUNDED_SAM2_REPO_DIR / "grounding_dino"
 DEFAULT_CONFIG_PATH = DEFAULT_REPO_DIR / "groundingdino" / "config" / "GroundingDINO_SwinT_OGC.py"
 DEFAULT_CHECKPOINT_PATH = SCRIPT_DIR / "weights" / "groundingdino_swint_ogc.pth"
+DEFAULT_SAM2_CHECKPOINT_PATH = SCRIPT_DIR / "checkpoints" / "sam2.1_hiera_tiny.pt"
 
 
 def torch_status() -> dict[str, Any]:
@@ -64,8 +66,14 @@ def import_status(module_name: str) -> dict[str, Any]:
 
 
 def add_repo_to_path(repo_dir: Path) -> None:
-    if repo_dir.is_dir() and str(repo_dir) not in sys.path:
-        sys.path.insert(0, str(repo_dir))
+    candidates = []
+    if repo_dir.is_dir():
+        candidates.append(repo_dir)
+        if repo_dir.name == "grounding_dino":
+            candidates.append(repo_dir.parent)
+    for candidate in reversed(candidates):
+        if str(candidate) not in sys.path:
+            sys.path.insert(0, str(candidate))
 
 
 def check_env(config_path: Path, checkpoint_path: Path, repo_dir: Path) -> dict[str, Any]:
@@ -88,7 +96,12 @@ def check_env(config_path: Path, checkpoint_path: Path, repo_dir: Path) -> dict[
         },
         "groundingdino_import": import_status("groundingdino"),
         "official_inference_import": import_status("groundingdino.util.inference"),
+        "sam2_import": import_status("sam2"),
         "paths": {
+            "grounded_sam2_repo_dir": {
+                "path": str(DEFAULT_GROUNDED_SAM2_REPO_DIR),
+                "exists": DEFAULT_GROUNDED_SAM2_REPO_DIR.is_dir(),
+            },
             "repo_dir": {
                 "path": str(repo_dir),
                 "exists": repo_dir.is_dir(),
@@ -100,6 +113,10 @@ def check_env(config_path: Path, checkpoint_path: Path, repo_dir: Path) -> dict[
             "checkpoint_path": {
                 "path": str(checkpoint_path),
                 "exists": checkpoint_path.is_file(),
+            },
+            "sam2_checkpoint_path": {
+                "path": str(DEFAULT_SAM2_CHECKPOINT_PATH),
+                "exists": DEFAULT_SAM2_CHECKPOINT_PATH.is_file(),
             },
         },
     }
@@ -122,6 +139,7 @@ def print_human(status: dict[str, Any]) -> None:
     print("CUDA_HOME:", status["cuda_home"]["value"])
     print("GroundingDINO import:", status["groundingdino_import"]["available"])
     print("GroundingDINO inference import:", status["official_inference_import"]["available"])
+    print("SAM2 import:", status["sam2_import"]["available"])
     for key, value in status["paths"].items():
         print("%s exists: %s  %s" % (key, value["exists"], value["path"]))
 
@@ -146,6 +164,7 @@ def main() -> int:
         not status["torch"]["installed"],
         not status["groundingdino_import"]["available"],
         not status["official_inference_import"]["available"],
+        not status["sam2_import"]["available"],
         not status["paths"]["config_path"]["exists"],
         not status["paths"]["checkpoint_path"]["exists"],
     ]
