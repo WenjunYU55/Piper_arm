@@ -19,4 +19,7 @@ fi
 colcon build \
   --symlink-install \
   --cmake-clean-cache \
-  --cmake-args -DFORCE_RSUSB_BACKEND=ON
+  --cmake-args \
+    -DFORCE_RSUSB_BACKEND=ON \
+    -DBUILD_EXAMPLES=OFF \
+    -DBUILD_GRAPHICAL_EXAMPLES=OFF
