@@ -76,7 +76,7 @@ print('PASS  piper-sdk==0.6.1 and python-can==4.5.0')
 PY
 if [ "$?" -ne 0 ]; then failures=$((failures + 1)); fi
 
-for package_name in piper piper_description piper_mobile_manipulation piper_msgs piper_remote realsense2_camera; do
+for package_name in piper piper_description piper_mobile_manipulation piper_msgs realsense2_camera; do
   if ros2 pkg prefix "$package_name" >/dev/null 2>&1; then
     pass "ROS package: $package_name"
   else

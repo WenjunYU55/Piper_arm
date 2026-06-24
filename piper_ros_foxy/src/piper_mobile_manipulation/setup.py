@@ -24,8 +24,6 @@ setup(
             'l515_object_detector = piper_mobile_manipulation.l515_object_detector_node:main',
             'depth_to_3d = piper_mobile_manipulation.depth_to_3d_node:main',
             'target_tracker = piper_mobile_manipulation.target_tracker_node:main',
-            'vlm_detector = piper_mobile_manipulation.vlm_detector_node:main',
-            'yolo_seg_detector = piper_mobile_manipulation.yolo_seg_detector_node:main',
             'manipulation_target = piper_mobile_manipulation.manipulation_target_node:main',
             'safe_servo = piper_mobile_manipulation.safe_servo_node:main',
             'target_error = piper_mobile_manipulation.target_error_node:main',

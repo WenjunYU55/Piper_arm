@@ -17,10 +17,10 @@ def generate_launch_description():
         DeclareLaunchArgument('enable_real_arm_motion', default_value='false'),
         Node(
             package='piper_mobile_manipulation',
-            executable='vlm_detector_node.py',
-            name='vlm_detector',
+            executable='l515_object_detector_node.py',
+            name='l515_object_detector',
             output='screen',
-            parameters=[cfg('vlm_detection_params.yaml')],
+            parameters=[cfg('detection_params.yaml')],
         ),
         Node(
             package='piper_mobile_manipulation',

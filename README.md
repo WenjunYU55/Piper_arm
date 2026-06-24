@@ -39,13 +39,9 @@ source /opt/ros/foxy/setup.bash
 rosdep check --from-paths piper_ros_foxy/src --ignore-src --rosdistro foxy
 ```
 
-Start the arm only after its workspace is built and the USB-CAN adapter and arm are connected:
-
-```bash
-./start_piper
-```
-
-The startup script checks `python-can`, SciPy, `piper_sdk`, the ROS overlay, and the CAN interface before launching the controller. See `piper_ros_foxy/README(EN).MD` for arm and CAN-specific operation.
+Real-arm convenience launchers are intentionally not included in the repository. This project currently
+focuses on read-only perception and fake/safe integration. See `piper_ros_foxy/README(EN).MD` for the
+underlying arm and CAN packages if real-arm integration is resumed later.
 
 ## Install the L515 camera stack
 

@@ -29,8 +29,6 @@ install(PROGRAMS
   piper_mobile_manipulation/l515_object_detector_node.py
   piper_mobile_manipulation/depth_to_3d_node.py
   piper_mobile_manipulation/target_tracker_node.py
-  piper_mobile_manipulation/vlm_detector_node.py
-  piper_mobile_manipulation/yolo_seg_detector_node.py
   piper_mobile_manipulation/manipulation_target_node.py
   piper_mobile_manipulation/safe_servo_node.py
   piper_mobile_manipulation/target_error_node.py

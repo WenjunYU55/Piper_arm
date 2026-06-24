@@ -26,7 +26,9 @@ L515_camera/.codex/
 *.db3
 datasets/
 piper_joint_bounds.json
+L515_camera/captures/
 AI_perception_tests/outputs/
+AI_perception_tests/test_sets/real_l515_baseline/
 AI_perception_tests/test_sets/real_l515_baseline/*_results.yaml
 AI_perception_tests/test_sets/real_l515_baseline/ai_readiness_summary.yaml
 
