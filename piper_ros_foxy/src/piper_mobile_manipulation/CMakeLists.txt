@@ -43,6 +43,8 @@ install(PROGRAMS
   piper_mobile_manipulation/scan_capture_node.py
   piper_mobile_manipulation/scan_quality_node.py
   piper_mobile_manipulation/occlusion_checker_node.py
+  piper_mobile_manipulation/temporal_mask_tracker_node.py
+  piper_mobile_manipulation/heavy_refresh_bridge_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

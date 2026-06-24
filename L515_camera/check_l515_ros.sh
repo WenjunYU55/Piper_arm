@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 set -e
 
+ROOT="${PIPER_ARM_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+
 echo "Checking ROS 2 Foxy environment..."
 L515_REQUIRE_REALSENSE=1
 L515_REQUIRE_PIPER=1
 # shellcheck disable=SC1091
-source /home/prl/Piper_arm/L515_camera/source_l515_environment.sh
+source "$ROOT/L515_camera/source_l515_environment.sh"
 
 echo
 echo "librealsense packages installed through dpkg:"
@@ -29,7 +31,7 @@ if ros2 pkg prefix piper_mobile_manipulation >/dev/null 2>&1; then
   ros2 pkg prefix piper_mobile_manipulation
 else
   echo "piper_mobile_manipulation not found. Build it with:"
-  echo "  cd /home/prl/Piper_arm/piper_ros_foxy"
+  echo "  cd $ROOT/piper_ros_foxy"
   echo "  colcon build --packages-select piper_mobile_manipulation"
 fi
 

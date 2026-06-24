@@ -14,10 +14,22 @@ Files:
 - `check_l515_detection_connector.sh`: checks the camera input topics and the processed `/piper` connector topics for future base/arm integration.
 - `start_l515_camera.sh`: starts the RealSense ROS camera node with aligned depth enabled.
 - `run_l515_perception.sh`: starts the L515 perception-only pipeline after the RealSense camera driver is already running.
+- `run_temporal_tracking_readonly.sh`: starts optional lightweight mask tracking with HSV as a one-shot seed by default.
+- `run_heavy_refresh_bridge.sh`: snapshots heavy-refresh requests into filesystem jobs and publishes returned masks.
+- `run_heavy_model_worker.sh`: runs GroundingDINO/SAM2 in the isolated Python 3.10 environment.
 - `view_l515_camera.sh`: opens a simple image viewer for a camera topic.
 - `view_l515_showimage.sh`: opens ROS 2 `image_tools/showimage` for a camera topic.
 - `view_l515_opencv.sh`: opens a direct OpenCV viewer for a camera topic.
 - `view_l515_rviz.sh`: opens RViz with color, aligned depth, and detection debug image displays.
+
+Heavy-refresh mask topics:
+
+```text
+/piper/heavy_target_mask
+/piper/heavy_obstacle_mask
+/piper/candidate_movable_obstacle_mask
+/piper/unsafe_obstacle_mask
+```
 
 The ROS 2 package itself remains in:
 

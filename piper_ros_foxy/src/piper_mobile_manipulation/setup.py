@@ -38,6 +38,8 @@ setup(
             'scan_capture = piper_mobile_manipulation.scan_capture_node:main',
             'scan_quality = piper_mobile_manipulation.scan_quality_node:main',
             'occlusion_checker = piper_mobile_manipulation.occlusion_checker_node:main',
+            'temporal_mask_tracker = piper_mobile_manipulation.temporal_mask_tracker_node:main',
+            'heavy_refresh_bridge = piper_mobile_manipulation.heavy_refresh_bridge_node:main',
         ],
     },
 )

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
+_L515_ROOT="${PIPER_ARM_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 L515_ROS_SETUP=${L515_ROS_SETUP:-/opt/ros/foxy/setup.bash}
-L515_REALSENSE_SETUP=${L515_REALSENSE_SETUP:-/home/prl/Piper_arm/L515_camera/realsense_ws/install/setup.bash}
-L515_PIPER_SETUP=${L515_PIPER_SETUP:-/home/prl/Piper_arm/piper_ros_foxy/install/setup.bash}
+L515_REALSENSE_SETUP=${L515_REALSENSE_SETUP:-$_L515_ROOT/L515_camera/realsense_ws/install/setup.bash}
+L515_PIPER_SETUP=${L515_PIPER_SETUP:-$_L515_ROOT/piper_ros_foxy/install/setup.bash}
 case $- in
   *u*) _L515_RESTORE_NOUNSET=1 ;;
   *) _L515_RESTORE_NOUNSET=0 ;;
@@ -41,3 +42,4 @@ _l515_source_setup "$L515_PIPER_SETUP" "${L515_REQUIRE_PIPER:-0}"
 
 unset -f _l515_source_setup
 unset _L515_RESTORE_NOUNSET
+unset _L515_ROOT

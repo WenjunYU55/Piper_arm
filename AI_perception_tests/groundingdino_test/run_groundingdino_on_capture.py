@@ -23,6 +23,37 @@ DEFAULT_CONFIG_PATH = DEFAULT_REPO_DIR / "groundingdino" / "config" / "Grounding
 DEFAULT_CHECKPOINT_PATH = SCRIPT_DIR / "weights" / "groundingdino_swint_ogc.pth"
 DEFAULT_BOX_THRESHOLD = 0.35
 DEFAULT_TEXT_THRESHOLD = 0.25
+DEFAULT_LOCAL_BOX_THRESHOLD = 0.30
+DEFAULT_OBSTACLE_PROMPT = (
+    "whiteboard marker . | "
+    "dry erase marker . | "
+    "pen . marker . writing pen . | "
+    "hand . finger . | "
+    "wire . cable . | "
+    "tissue . paper tissue . paper ."
+)
+LOCAL_CROP_MIN_SIZE_PX = 128
+MIN_HSV_FALLBACK_AREA_PX = 100
+TARGET_TERMS = ("green cube", "cube", "box")
+UNSAFE_TERMS = (
+    "hand",
+    "human",
+    "person",
+    "finger",
+    "wire",
+    "cable",
+    "tool",
+    "occluder",
+    "blocker",
+    "unknown object",
+)
+CANDIDATE_SAFE_TERMS = (
+    "pen",
+    "marker",
+    "paper",
+    "tissue",
+)
+LOCAL_GROUP_RELATIVE_CONFIDENCE = 0.75
 
 
 class GroundingDinoUnavailable(RuntimeError):
@@ -92,7 +123,16 @@ def box_cxcywh_to_xyxy(box: list[float], width: int, height: int) -> list[float]
     ]
 
 
-def detection_records(boxes: Any, logits: Any, phrases: Any, width: int, height: int) -> list[dict[str, Any]]:
+def detection_records(
+    boxes: Any,
+    logits: Any,
+    phrases: Any,
+    width: int,
+    height: int,
+    detection_source: str = "full_frame",
+    crop_origin: tuple[int, int] = (0, 0),
+    full_size: tuple[int, int] | None = None,
+) -> list[dict[str, Any]]:
     boxes_list = tensor_to_list(boxes)
     logits_list = tensor_to_list(logits)
     phrases_list = list(phrases)
@@ -100,16 +140,167 @@ def detection_records(boxes: Any, logits: Any, phrases: Any, width: int, height:
     for index, box in enumerate(boxes_list):
         confidence = float(logits_list[index]) if index < len(logits_list) else 0.0
         label = str(phrases_list[index]) if index < len(phrases_list) else ""
-        box_norm = [float(v) for v in box]
+        local_box_norm = [float(v) for v in box]
+        x0, y0, x1, y1 = box_cxcywh_to_xyxy(local_box_norm, width, height)
+        origin_x, origin_y = crop_origin
+        x0 += origin_x
+        x1 += origin_x
+        y0 += origin_y
+        y1 += origin_y
+        full_width, full_height = full_size or (width, height)
+        box_norm = [
+            ((x0 + x1) / 2.0) / full_width,
+            ((y0 + y1) / 2.0) / full_height,
+            (x1 - x0) / full_width,
+            (y1 - y0) / full_height,
+        ]
+        area_px = max(0.0, x1 - x0) * max(0.0, y1 - y0)
         records.append(
             {
                 "label": label,
                 "confidence": confidence,
                 "box_cxcywh_norm": box_norm,
-                "box_xyxy_pixels": box_cxcywh_to_xyxy(box_norm, width, height),
+                "box_xyxy_pixels": [x0, y0, x1, y1],
+                "box_area_px": float(area_px),
+                "detection_source": detection_source,
+                "is_target_local_candidate": detection_source == "target_crop",
+                "is_target_candidate": label_matches(label, TARGET_TERMS),
+                "is_unsafe_candidate": label_matches(label, UNSAFE_TERMS),
+                "is_candidate_safe_class": label_matches(label, CANDIDATE_SAFE_TERMS),
             }
         )
     return records
+
+
+def label_matches(label: str, terms: tuple[str, ...]) -> bool:
+    normalized = " " + label.lower().replace("_", " ") + " "
+    return any((" " + term + " ") in normalized for term in terms)
+
+
+def best_detection(detections: list[dict[str, Any]], key: str) -> dict[str, Any] | None:
+    candidates = [record for record in detections if record.get(key)]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda record: float(record.get("confidence", 0.0)))
+
+
+def detection_summary(detections: list[dict[str, Any]]) -> dict[str, Any]:
+    target = best_detection(detections, "is_target_candidate")
+    obstacles = [
+        record
+        for record in detections
+        if not record.get("is_target_candidate") and record.get("is_target_local_candidate")
+    ]
+    unsafe = [record for record in obstacles if record.get("is_unsafe_candidate")]
+    candidate_safe = [record for record in obstacles if record.get("is_candidate_safe_class")]
+    return {
+        "best_target_detection": target,
+        "target_detected": target is not None,
+        "target_confidence": float(target.get("confidence", 0.0)) if target else 0.0,
+        "obstacle_candidates": obstacles,
+        "unsafe_candidates": unsafe,
+        "candidate_safe_class_detections": candidate_safe,
+        "has_unsafe_candidate": len(unsafe) > 0,
+        "has_candidate_safe_class": len(candidate_safe) > 0,
+    }
+
+
+def read_yaml(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    with path.open("r", encoding="utf-8") as stream:
+        data = yaml.safe_load(stream)
+    return data if isinstance(data, dict) else {}
+
+
+def hsv_target_fallback(capture_dir: Path) -> dict[str, Any] | None:
+    mask = cv2.imread(str(capture_dir / "detection_mask.png"), cv2.IMREAD_GRAYSCALE)
+    target = read_yaml(capture_dir / "target_3d.yaml")
+    if mask is None or not bool(target.get("valid", False)):
+        return None
+    source_u = int(round(float(target.get("source_u", -1))))
+    source_v = int(round(float(target.get("source_v", -1))))
+    if not (0 <= source_u < mask.shape[1] and 0 <= source_v < mask.shape[0]):
+        return None
+    count, labels, stats, _ = cv2.connectedComponentsWithStats((mask > 0).astype("uint8"), connectivity=8)
+    if count <= 1:
+        return None
+    component = int(labels[source_v, source_u])
+    if component <= 0 or int(stats[component, cv2.CC_STAT_AREA]) < MIN_HSV_FALLBACK_AREA_PX:
+        return None
+    x = int(stats[component, cv2.CC_STAT_LEFT])
+    y = int(stats[component, cv2.CC_STAT_TOP])
+    width = int(stats[component, cv2.CC_STAT_WIDTH])
+    height = int(stats[component, cv2.CC_STAT_HEIGHT])
+    return {
+        "label": "green cube (HSV fallback)",
+        "confidence": float(target.get("measurement_confidence", 0.0)),
+        "box_xyxy_pixels": [float(x), float(y), float(x + width), float(y + height)],
+        "box_area_px": float(width * height),
+        "detection_source": "hsv_detection_mask",
+        "is_target_local_candidate": False,
+        "is_target_candidate": True,
+        "is_unsafe_candidate": False,
+        "is_candidate_safe_class": False,
+    }
+
+
+def target_crop_bounds(target_box: list[float], width: int, height: int) -> tuple[int, int, int, int]:
+    x0, y0, x1, y1 = [float(value) for value in target_box]
+    center_x = (x0 + x1) / 2.0
+    center_y = (y0 + y1) / 2.0
+    half_width = max(LOCAL_CROP_MIN_SIZE_PX / 2.0, (x1 - x0) * 2.0)
+    half_height = max(LOCAL_CROP_MIN_SIZE_PX / 2.0, (y1 - y0) * 2.0)
+    crop_x0 = max(0, int(round(center_x - half_width)))
+    crop_y0 = max(0, int(round(center_y - half_height)))
+    crop_x1 = min(width, int(round(center_x + half_width)))
+    crop_y1 = min(height, int(round(center_y + half_height)))
+    return crop_x0, crop_y0, crop_x1, crop_y1
+
+
+def box_iou(first: list[float], second: list[float]) -> float:
+    ax0, ay0, ax1, ay1 = [float(value) for value in first]
+    bx0, by0, bx1, by1 = [float(value) for value in second]
+    intersection = max(0.0, min(ax1, bx1) - max(ax0, bx0)) * max(0.0, min(ay1, by1) - max(ay0, by0))
+    first_area = max(0.0, ax1 - ax0) * max(0.0, ay1 - ay0)
+    second_area = max(0.0, bx1 - bx0) * max(0.0, by1 - by0)
+    union = first_area + second_area - intersection
+    return intersection / union if union > 0.0 else 0.0
+
+
+def suppress_duplicate_boxes(detections: list[dict[str, Any]], iou_threshold: float = 0.5) -> list[dict[str, Any]]:
+    kept = []
+    for detection in sorted(detections, key=lambda item: float(item.get("confidence", 0.0)), reverse=True):
+        box = detection.get("box_xyxy_pixels", [])
+        if len(box) != 4:
+            continue
+        if any(box_iou(box, existing["box_xyxy_pixels"]) >= iou_threshold for existing in kept):
+            continue
+        kept.append(detection)
+    return kept
+
+
+def parse_prompt_groups(prompt: str) -> list[str]:
+    groups = [group.strip() for group in prompt.split("|") if group.strip()]
+    return groups or [prompt.strip()]
+
+
+def retain_strong_group_detections(detections: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not detections:
+        return []
+    strongest = max(float(detection.get("confidence", 0.0)) for detection in detections)
+    minimum = strongest * LOCAL_GROUP_RELATIVE_CONFIDENCE
+    return [detection for detection in detections if float(detection.get("confidence", 0.0)) >= minimum]
+
+
+def draw_local_detections(image: Any, detections: list[dict[str, Any]], path: Path) -> None:
+    debug = image.copy()
+    for record in detections:
+        x0, y0, x1, y1 = [int(round(value)) for value in record["box_xyxy_pixels"]]
+        cv2.rectangle(debug, (x0, y0), (x1, y1), (0, 0, 255), 2)
+        text = "%s %.2f" % (record.get("label", ""), float(record.get("confidence", 0.0)))
+        cv2.putText(debug, text, (x0, max(15, y0 - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 1)
+    cv2.imwrite(str(path), debug)
 
 
 def write_yaml(path: Path, data: dict[str, Any]) -> None:
@@ -128,6 +319,8 @@ def run_on_capture(
     box_threshold: float,
     text_threshold: float,
     device: str,
+    obstacle_prompt: str = DEFAULT_OBSTACLE_PROMPT,
+    local_box_threshold: float = DEFAULT_LOCAL_BOX_THRESHOLD,
 ) -> dict[str, Any]:
     capture_dir = capture_dir.expanduser().resolve()
     config_path = config_path.expanduser().resolve()
@@ -150,7 +343,63 @@ def run_on_capture(
         device=device,
     )
     height, width = image_source.shape[:2]
-    detections = detection_records(boxes, logits, phrases, width, height)
+    full_frame_detections = detection_records(boxes, logits, phrases, width, height)
+    model_target = best_detection(full_frame_detections, "is_target_candidate")
+    target = model_target or hsv_target_fallback(capture_dir)
+    local_detections: list[dict[str, Any]] = []
+    local_prompt_results: list[dict[str, Any]] = []
+    crop_path = output_dir / "target_crop.png"
+    local_debug_path = output_dir / "target_crop_detections.png"
+    crop_bounds = None
+    if target is not None:
+        crop_bounds = target_crop_bounds(target["box_xyxy_pixels"], width, height)
+        crop_x0, crop_y0, crop_x1, crop_y1 = crop_bounds
+        crop_bgr = image_source[crop_y0:crop_y1, crop_x0:crop_x1]
+        if crop_bgr.size > 0:
+            cv2.imwrite(str(crop_path), crop_bgr)
+            _, crop_image = load_image(str(crop_path))
+            crop_height, crop_width = crop_bgr.shape[:2]
+            grouped_detections = []
+            for prompt_group in parse_prompt_groups(obstacle_prompt):
+                local_boxes, local_logits, local_phrases = predict(
+                    model=model,
+                    image=crop_image,
+                    caption=prompt_group,
+                    box_threshold=float(local_box_threshold),
+                    text_threshold=float(text_threshold),
+                    device=device,
+                )
+                group_detections = detection_records(
+                    local_boxes,
+                    local_logits,
+                    local_phrases,
+                    crop_width,
+                    crop_height,
+                    detection_source="target_crop",
+                    crop_origin=(crop_x0, crop_y0),
+                    full_size=(width, height),
+                )
+                for detection in group_detections:
+                    detection["prompt_group"] = prompt_group
+                retained_detections = retain_strong_group_detections(group_detections)
+                grouped_detections.extend(retained_detections)
+                local_prompt_results.append(
+                    {
+                        "prompt": prompt_group,
+                        "raw_detection_count": len(group_detections),
+                        "retained_detection_count": len(retained_detections),
+                    }
+                )
+            local_detections = suppress_duplicate_boxes(grouped_detections)
+            draw_local_detections(image_source, local_detections, local_debug_path)
+
+    detections = list(full_frame_detections)
+    if model_target is None and target is not None:
+        detections.append(target)
+    detections.extend(local_detections)
+    summary = detection_summary(detections)
+    summary["model_target_detected"] = model_target is not None
+    summary["target_source"] = "groundingdino" if model_target is not None else ("hsv_detection_mask" if target is not None else "none")
 
     annotated = annotate(image_source=image_source, boxes=boxes, logits=logits, phrases=phrases)
     debug_path = output_dir / "groundingdino_debug.png"
@@ -164,18 +413,27 @@ def run_on_capture(
         "capture_path": str(capture_dir),
         "source_rgb_path": str(rgb_path),
         "prompt": prompt,
+        "obstacle_prompt": obstacle_prompt,
         "config_path": str(config_path),
         "checkpoint_path": str(checkpoint_path),
         "box_threshold": float(box_threshold),
         "text_threshold": float(text_threshold),
+        "local_box_threshold": float(local_box_threshold),
         "device": device,
         "image_width": int(width),
         "image_height": int(height),
         "detected_labels": [record["label"] for record in detections],
         "detections": detections,
+        "full_frame_detections": full_frame_detections,
+        "target_local_detections": local_detections,
+        "target_local_prompt_results": local_prompt_results,
+        "target_crop_bounds_xyxy": list(crop_bounds) if crop_bounds is not None else None,
+        "summary": summary,
         "outputs": {
             "boxes_yaml": str(output_dir / "groundingdino_boxes.yaml"),
             "debug_png": str(debug_path),
+            "target_crop_png": str(crop_path) if crop_path.is_file() else "",
+            "target_crop_debug_png": str(local_debug_path) if local_debug_path.is_file() else "",
         },
     }
     write_yaml(output_dir / "groundingdino_boxes.yaml", payload)
@@ -192,6 +450,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--box-threshold", type=float, default=DEFAULT_BOX_THRESHOLD)
     parser.add_argument("--text-threshold", type=float, default=DEFAULT_TEXT_THRESHOLD)
+    parser.add_argument("--obstacle-prompt", default=DEFAULT_OBSTACLE_PROMPT)
+    parser.add_argument("--local-box-threshold", type=float, default=DEFAULT_LOCAL_BOX_THRESHOLD)
     parser.add_argument("--device", default=os.environ.get("GROUNDINGDINO_DEVICE", "cpu"))
     return parser.parse_args()
 
@@ -209,6 +469,8 @@ def main() -> int:
             box_threshold=args.box_threshold,
             text_threshold=args.text_threshold,
             device=args.device,
+            obstacle_prompt=args.obstacle_prompt,
+            local_box_threshold=args.local_box_threshold,
         )
     except GroundingDinoUnavailable as exc:
         print("GroundingDINO unavailable:", exc, file=sys.stderr)

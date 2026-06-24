@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
+ROOT="${PIPER_ARM_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-42}"
+
 L515_REQUIRE_REALSENSE=1
 # shellcheck disable=SC1091
-source /home/prl/Piper_arm/L515_camera/source_l515_environment.sh
+source "$ROOT/L515_camera/source_l515_environment.sh"
 
 if ! ros2 pkg prefix realsense2_camera >/dev/null 2>&1; then
   echo "realsense2_camera is not available in the current ROS environment."
-  echo "Build and source /home/prl/Piper_arm/L515_camera/realsense_ws first:"
-  echo "  cd /home/prl/Piper_arm/L515_camera"
+  echo "Build and source $ROOT/L515_camera/realsense_ws first:"
+  echo "  cd $ROOT/L515_camera"
   echo "  ./build_realsense_ws.sh"
   exit 1
 fi

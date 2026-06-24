@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LIBREALSENSE_SRC=/home/prl/Piper_arm/L515_camera/realsense_ws/src/librealsense
+ROOT="${PIPER_ARM_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+LIBREALSENSE_SRC="$ROOT/L515_camera/realsense_ws/src/librealsense"
 
 if [ ! -d "$LIBREALSENSE_SRC" ]; then
   echo "Missing librealsense source at $LIBREALSENSE_SRC"
@@ -25,5 +26,5 @@ sudo udevadm trigger
 echo
 echo "Done. Unplug the L515, wait 10 seconds, then plug it back in."
 echo "After that, run:"
-echo "  cd /home/prl/Piper_arm/L515_camera"
+echo "  cd $ROOT/L515_camera"
 echo "  ./diagnose_l515_usb.sh"

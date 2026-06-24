@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 if [ "${EUID}" -eq 0 ]; then
   echo "Run this script as your normal user; it invokes sudo when needed." >&2
   exit 1
@@ -56,7 +58,7 @@ fi
 rosdep update
 # joint_state_publisher_gui is installed explicitly above. Foxy's archived
 # rosdep index no longer resolves that package key reliably after Foxy EOL.
-rosdep install --from-paths piper_ros_foxy/src --ignore-src -r -y \
+rosdep install --from-paths "$ROOT/piper_ros_foxy/src" --ignore-src -r -y \
   --rosdistro foxy \
   --skip-keys joint_state_publisher_gui
 

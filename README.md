@@ -1,5 +1,8 @@
 # PiPER Arm, L515 Camera, and Offline Perception
 
+For a fresh machine, runtime commands, generated-asset policy, and CPU/GPU/Jetson selection, see
+[`CLEAN_INSTALL.md`](CLEAN_INSTALL.md).
+
 This repository contains three separate dependency surfaces:
 
 1. The PiPER ROS 2 workspace in `piper_ros_foxy/`.

@@ -26,6 +26,9 @@ L515_camera/.codex/
 *.db3
 datasets/
 piper_joint_bounds.json
+AI_perception_tests/outputs/
+AI_perception_tests/test_sets/real_l515_baseline/*_results.yaml
+AI_perception_tests/test_sets/real_l515_baseline/ai_readiness_summary.yaml
 
 # Local AI model checkouts, environments, and weights
 AI_perception_tests/groundingdino_test/Grounded-SAM-2/

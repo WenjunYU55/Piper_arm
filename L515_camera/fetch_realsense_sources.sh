@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WORKSPACE=/home/prl/Piper_arm/L515_camera/realsense_ws
+ROOT="${PIPER_ARM_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+WORKSPACE="$ROOT/L515_camera/realsense_ws"
 SDK_TAG=${SDK_TAG:-v2.50.0}
 ROS_TAG=${ROS_TAG:-4.0.4}
 
