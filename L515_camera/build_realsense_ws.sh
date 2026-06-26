@@ -7,15 +7,20 @@ cd "$ROOT/L515_camera/realsense_ws"
 # shellcheck disable=SC1091
 source "$ROOT/L515_camera/source_l515_environment.sh"
 
-PATCH_FILE="$ROOT/L515_camera/patches/realsense-ros-4.0.4-l515-foxy.patch"
-if [ -f "$PATCH_FILE" ]; then
-  if git -C src/realsense-ros apply --check "$PATCH_FILE" >/dev/null 2>&1; then
-    echo "Applying RealSense ROS L515 Foxy patch."
-    git -C src/realsense-ros apply "$PATCH_FILE"
-  else
-    echo "RealSense ROS L515 Foxy patch is already applied or not applicable."
+for PATCH_FILE in \
+  "$ROOT/L515_camera/patches/realsense-ros-4.0.4-l515-foxy.patch" \
+  "$ROOT/L515_camera/patches/realsense-ros-4.0.4-no-default-profile-fallback.patch"
+do
+  if [ -f "$PATCH_FILE" ]; then
+    PATCH_NAME="$(basename "$PATCH_FILE")"
+    if git -C src/realsense-ros apply --check "$PATCH_FILE" >/dev/null 2>&1; then
+      echo "Applying $PATCH_NAME."
+      git -C src/realsense-ros apply "$PATCH_FILE"
+    else
+      echo "$PATCH_NAME is already applied or not applicable."
+    fi
   fi
-fi
+done
 
 colcon build \
   --symlink-install \

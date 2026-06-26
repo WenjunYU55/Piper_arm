@@ -50,3 +50,6 @@ piper_ros_foxy/.git.agilex-backup/
 .idea/
 *.swp
 *~
+
+# Local basic offline perception venv
+AI_perception_tests/.venv/

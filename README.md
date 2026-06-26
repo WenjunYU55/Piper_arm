@@ -6,6 +6,9 @@ For a fresh machine, runtime commands, generated-asset policy, and CPU/GPU/Jetso
 For day-to-day operation commands and what each script does, see
 [`OPERATOR_COMMANDS.md`](OPERATOR_COMMANDS.md).
 
+For the current Ubuntu 22.04 host, use the Docker-based Foxy environment documented in
+[`DOCKER_FOXY_COMMANDS.md`](DOCKER_FOXY_COMMANDS.md).
+
 This repository contains three separate dependency surfaces:
 
 1. The PiPER ROS 2 workspace in `piper_ros_foxy/`.

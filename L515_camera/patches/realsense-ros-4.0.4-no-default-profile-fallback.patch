@@ -1,0 +1,15 @@
+diff --git a/realsense2_camera/src/profile_manager.cpp b/realsense2_camera/src/profile_manager.cpp
+--- a/realsense2_camera/src/profile_manager.cpp
++++ b/realsense2_camera/src/profile_manager.cpp
+@@ -109,7 +109,11 @@ rs2::stream_profile ProfilesManager::getDefaultProfile()
+         }
+     }
+     if (!(default_profile.get()))
+-        throw std::runtime_error("No default profile found");
++    {
++        ROS_WARN_STREAM("No default profile marked by device; using first available profile as fallback.");
++        default_profile = _all_profiles.front();
++    }
+ 
+     return default_profile;
+ }
