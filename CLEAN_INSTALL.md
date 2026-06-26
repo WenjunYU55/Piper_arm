@@ -3,6 +3,8 @@
 This guide reproduces the current read-only L515 perception stack on a fresh device. Real PiPER arm
 motion remains disabled in the temporal/heavy-model workflow.
 
+For day-to-day command usage after installation, see [`OPERATOR_COMMANDS.md`](OPERATOR_COMMANDS.md).
+
 ## Supported control host
 
 - Ubuntu 20.04
@@ -34,6 +36,27 @@ colcon build --symlink-install
 source install/setup.bash
 cd ..
 ```
+
+## Optional real-arm tools
+
+The repository includes explicit `.sh` / `.py` tools for real PiPER operation:
+
+```bash
+./start_piper.sh
+./enable_piper.sh
+./disable_piper.sh
+./reset_piper.sh
+./reset_arm.sh
+./start_gui.sh
+./calibrate_bounds.sh
+```
+
+These are intentionally separate from the read-only L515 perception workflow. `start_piper.sh` does not
+auto-enable the arm by default, but after the arm is enabled, `reset_piper.sh`, `reset_arm.sh`, the GUI,
+and direct joint-topic commands can move the real robot.
+
+No-extension wrappers such as `start_piper`, `reset_arm`, or `start_gui` are intentionally omitted. Use
+the `.sh` names directly so a fresh clone is explicit and easier to audit.
 
 ## Build the pinned L515 driver
 

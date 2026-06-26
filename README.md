@@ -3,6 +3,9 @@
 For a fresh machine, runtime commands, generated-asset policy, and CPU/GPU/Jetson selection, see
 [`CLEAN_INSTALL.md`](CLEAN_INSTALL.md).
 
+For day-to-day operation commands and what each script does, see
+[`OPERATOR_COMMANDS.md`](OPERATOR_COMMANDS.md).
+
 This repository contains three separate dependency surfaces:
 
 1. The PiPER ROS 2 workspace in `piper_ros_foxy/`.
@@ -39,9 +42,16 @@ source /opt/ros/foxy/setup.bash
 rosdep check --from-paths piper_ros_foxy/src --ignore-src --rosdistro foxy
 ```
 
-Real-arm convenience launchers are intentionally not included in the repository. This project currently
-focuses on read-only perception and fake/safe integration. See `piper_ros_foxy/README(EN).MD` for the
-underlying arm and CAN packages if real-arm integration is resumed later.
+Real-arm convenience launchers are included as explicit `.sh` / `.py` tools only:
+
+- `start_piper.sh` starts the PiPER ROS driver and CAN interface, but does not auto-enable the arm by default.
+- `enable_piper.sh` and `disable_piper.sh` call the PiPER enable service.
+- `reset_piper.sh` / `reset_piper.py` and `reset_arm.sh` / `reset_arm.py` publish joint commands and can move the real arm.
+- `start_gui.sh` / `piper_gui_native.py` opens the manual control GUI and can publish joint commands.
+- `calibrate_bounds.sh` / `piper_calibrate_bounds.py` records measured joint limits into `piper_joint_bounds.json`.
+
+The no-extension wrapper shortcuts are intentionally not included. Use the `.sh` filenames directly on a fresh clone.
+The L515 perception and temporal tracking workflow remains read-only and does not call these real-arm tools.
 
 ## Install the L515 camera stack
 
