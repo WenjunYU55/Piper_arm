@@ -33,7 +33,7 @@ ros2 launch realsense2_camera rs_launch.py \
   enable_pose:=false \
   enable_gyro:=false \
   enable_accel:=false \
-  depth_module.profile:=320,240,30 \
+  depth_module.profile:=640,480,30 \
   rgb_camera.profile:=640,480,30 \
   color_qos:=SENSOR_DATA \
   color_info_qos:=SENSOR_DATA \
