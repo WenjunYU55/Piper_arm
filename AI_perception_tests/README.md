@@ -235,8 +235,8 @@ mask input (the order between bridge and worker is unimportant):
 ```
 
 Both sides use `/tmp/piper_heavy_refresh` by default. Override it consistently with
-`PIPER_HEAVY_REFRESH_SPOOL`. The worker is CPU-only, imports no ROS modules, and publishes no topics or
-motion commands. Status is available on `/piper/heavy_refresh_status`.
+`PIPER_HEAVY_REFRESH_SPOOL`. The production worker uses CUDA, imports no ROS modules, and publishes no
+topics or motion commands. Status is available on `/piper/heavy_refresh_status`.
 
 Heavy refresh responses also publish categorized obstacle masks:
 
@@ -267,9 +267,8 @@ Validated CPU result on the 40-frame scan:
 - propagation rate: 0.113 FPS (353.5 seconds for 40 frames)
 - peak resident memory: 2652 MB
 
-The mask quality supports SAM2 video as the planned Jetson tracker, including multi-object target and
-obstacle propagation. CPU throughput is not suitable for the live camera loop, so the lightweight
-adaptive appearance/depth tracker remains the current live path.
+The mask quality supports multi-object target and obstacle propagation. CPU throughput is not suitable
+for the live camera loop; the current live path uses incremental SAM2 on CUDA.
 
 Run the boundary test without loading either heavy model:
 

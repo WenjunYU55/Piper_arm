@@ -174,6 +174,24 @@ class HeavyModelWorker:
             )
             if mask is not None:
                 cv2.imwrite(str(response_tmp / "target_mask.png"), mask)
+                cv2.imwrite(str(response_tmp / "rgb.jpg"), rgb, [cv2.IMWRITE_JPEG_QUALITY, 95])
+            object_dir = response_tmp / "objects"
+            object_dir.mkdir()
+            tracked_objects = []
+            if mask is not None:
+                target_file = "objects/001_target.png"
+                cv2.imwrite(str(response_tmp / target_file), mask)
+                tracked_objects.append(
+                    {
+                        "object_id": 1,
+                        "role": "target",
+                        "label": str(result.get("target_label", "target")),
+                        "confidence": float(result.get("target_confidence", 0.0)),
+                        "unsafe": False,
+                        "candidate_movable": False,
+                        "mask_file": target_file,
+                    }
+                )
             movable_mask = np.zeros(rgb.shape[:2], dtype=np.uint8)
             unsafe_mask = np.zeros(rgb.shape[:2], dtype=np.uint8)
             all_obstacle_mask = np.zeros(rgb.shape[:2], dtype=np.uint8)
@@ -188,6 +206,21 @@ class HeavyModelWorker:
                 )
                 if obstacle_mask is None or obstacle_mask.shape != rgb.shape[:2]:
                     continue
+                object_id = len(tracked_objects) + 1
+                object_file = "objects/%03d_obstacle.png" % object_id
+                cv2.imwrite(str(response_tmp / object_file), obstacle_mask)
+                tracked_objects.append(
+                    {
+                        "object_id": object_id,
+                        "role": "obstacle",
+                        "label": str(obstacle.get("label", "unknown")),
+                        "confidence": float(obstacle.get("confidence", 0.0)),
+                        "unsafe": bool(obstacle.get("unsafe", True)),
+                        "candidate_movable": bool(obstacle.get("candidate_movable", False)),
+                        "closer_than_target": bool(obstacle.get("closer_than_target", False)),
+                        "mask_file": object_file,
+                    }
+                )
                 obstacle_binary = obstacle_mask > 0
                 all_obstacle_mask[obstacle_binary] = 255
                 if obstacle.get("candidate_movable", False):
@@ -207,6 +240,7 @@ class HeavyModelWorker:
                     "frame_id": request.get("frame_id", ""),
                     "dry_run": True,
                     "real_arm_motion": False,
+                    "tracked_objects": tracked_objects,
                 }
             )
             atomic_yaml(response_tmp / "result.yaml", payload)

@@ -161,6 +161,9 @@ def run_heavy_refresh(capture_dir: Path, output_root: Path, device: str = "cpu")
     return {
         "status": "ok" if target_mask_path else "target_mask_missing",
         "target_source": grounding.get("summary", {}).get("target_source", "none"),
+        "target_label": str(
+            (grounding.get("summary", {}).get("best_target_detection") or {}).get("label", "target")
+        ),
         "target_confidence": float(grounding.get("summary", {}).get("target_confidence", 0.0)),
         "target_mask_png": target_mask_path,
         "obstacle_count": len(obstacles),

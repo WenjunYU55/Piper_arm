@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import os
 import sys
 from datetime import datetime, timezone
@@ -74,6 +75,7 @@ def add_repo_to_path(repo_dir: Path) -> None:
 def require_groundingdino(repo_dir: Path):
     add_repo_to_path(repo_dir)
     try:
+        import torch
         from groundingdino.util.inference import annotate, load_image, load_model, predict
     except Exception as exc:
         raise GroundingDinoUnavailable(
@@ -81,6 +83,42 @@ def require_groundingdino(repo_dir: Path):
             "Grounded-SAM-2 dependencies in the isolated env, or set GROUNDINGDINO_REPO_DIR "
             "to its bundled grounding_dino folder. Original error: %s" % exc
         ) from exc
+
+    deform_modules = []
+    for module_name in (
+        "groundingdino.models.GroundingDINO.ms_deform_attn",
+        "grounding_dino.groundingdino.models.GroundingDINO.ms_deform_attn",
+    ):
+        try:
+            deform_modules.append(importlib.import_module(module_name))
+        except ImportError:
+            continue
+    for ms_deform_attn in deform_modules:
+        if hasattr(ms_deform_attn, "_C"):
+            continue
+
+        class TorchCudaDeformableAttention:
+            @staticmethod
+            def ms_deform_attn_forward(
+                value,
+                value_spatial_shapes,
+                _value_level_start_index,
+                sampling_locations,
+                attention_weights,
+                _im2col_step,
+            ):
+                if not value.is_cuda:
+                    raise RuntimeError("GroundingDINO fallback requires CUDA tensors")
+                return ms_deform_attn.multi_scale_deformable_attn_pytorch(
+                    value,
+                    value_spatial_shapes,
+                    sampling_locations,
+                    attention_weights,
+                )
+
+        ms_deform_attn._C = TorchCudaDeformableAttention
+    if not torch.cuda.is_available():
+        raise GroundingDinoUnavailable("CUDA-only GroundingDINO requires torch.cuda.is_available()")
     return annotate, load_image, load_model, predict
 
 

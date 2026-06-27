@@ -31,6 +31,8 @@ class HeavyRefreshBridgeNode(Node):
         self.declare_parameter('all_obstacle_mask_topic', '/piper/heavy_obstacle_mask')
         self.declare_parameter('status_topic', '/piper/heavy_refresh_status')
         self.declare_parameter('spool_dir', '/tmp/piper_heavy_refresh')
+        self.declare_parameter('sam2_live_spool_dir', '/tmp/piper_sam2_live')
+        self.declare_parameter('seed_sam2_live', True)
         self.declare_parameter('response_poll_period_sec', 0.20)
         self.declare_parameter('max_image_age_sec', 1.0)
         self.declare_parameter('dry_run', True)
@@ -197,6 +199,8 @@ class HeavyRefreshBridgeNode(Node):
                         obstacle_labels=result.get('obstacle_labels', []),
                         unsafe_obstacle_count=result.get('unsafe_obstacle_count', 0),
                     )
+                    if bool(self.get_parameter('seed_sam2_live').value):
+                        self.queue_sam2_live_seed(response, result)
                 destination = self.spool / 'consumed' / response.name
                 shutil.rmtree(destination, ignore_errors=True)
                 os.replace(str(response), str(destination))
@@ -210,6 +214,53 @@ class HeavyRefreshBridgeNode(Node):
         out = self.bridge.cv2_to_imgmsg(mask, encoding='mono8')
         out.header = header
         publisher.publish(out)
+
+    def queue_sam2_live_seed(self, response, result):
+        rgb_path = response / 'rgb.jpg'
+        objects = result.get('tracked_objects', [])
+        if not rgb_path.is_file() or not isinstance(objects, list) or not objects:
+            self.publish_status('sam2_seed_skipped', job_id=response.name, error='missing RGB or objects')
+            return
+        live_spool = Path(str(self.get_parameter('sam2_live_spool_dir').value))
+        seed_root = live_spool / 'seeds'
+        seed_root.mkdir(parents=True, exist_ok=True)
+        final = seed_root / response.name
+        temporary = seed_root / (response.name + '.tmp')
+        shutil.rmtree(temporary, ignore_errors=True)
+        temporary.mkdir(parents=True)
+        try:
+            shutil.copy2(str(rgb_path), str(temporary / 'rgb.jpg'))
+            copied_objects = []
+            for record in objects:
+                if not isinstance(record, dict):
+                    continue
+                source = response / str(record.get('mask_file', ''))
+                if not source.is_file():
+                    continue
+                destination_name = 'object_%03d.png' % int(record.get('object_id', 0))
+                shutil.copy2(str(source), str(temporary / destination_name))
+                copied = dict(record)
+                copied['mask_file'] = destination_name
+                copied_objects.append(copied)
+            if not copied_objects:
+                raise ValueError('no valid object masks')
+            manifest = {
+                'frame_key': response.name,
+                'source': 'groundingdino_sam2',
+                'image_stamp': result.get('image_stamp', {}),
+                'frame_id': result.get('frame_id', ''),
+                'objects': copied_objects,
+            }
+            with (temporary / 'seed.yaml').open('w', encoding='utf-8') as stream:
+                yaml.safe_dump(manifest, stream, sort_keys=False)
+            (temporary / 'READY').touch()
+            if final.exists():
+                shutil.rmtree(final)
+            os.replace(str(temporary), str(final))
+            self.publish_status('sam2_seed_queued', job_id=response.name, object_count=len(copied_objects))
+        except Exception as exc:
+            shutil.rmtree(temporary, ignore_errors=True)
+            self.publish_status('sam2_seed_failed', job_id=response.name, error='%s: %s' % (type(exc).__name__, exc))
 
     def publish_status(self, state, **values):
         payload = {'state': state, 'dry_run': True, 'real_arm_motion': False}

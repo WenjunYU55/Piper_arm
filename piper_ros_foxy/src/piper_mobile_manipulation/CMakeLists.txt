@@ -43,6 +43,9 @@ install(PROGRAMS
   piper_mobile_manipulation/occlusion_checker_node.py
   piper_mobile_manipulation/temporal_mask_tracker_node.py
   piper_mobile_manipulation/heavy_refresh_bridge_node.py
+  piper_mobile_manipulation/sam2_live_bridge_node.py
+  piper_mobile_manipulation/target_cloud_node.py
+  piper_mobile_manipulation/mask_to_detection_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

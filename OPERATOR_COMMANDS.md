@@ -47,6 +47,58 @@ ros2 topic list | grep piper
 
 ## Read-only L515 perception runtime
 
+### GPU SAM2 live tracking
+
+Install the CUDA AI environment once:
+
+```bash
+cd /home/prl/Piper_arm
+./AI_perception_tests/groundingdino_test/setup_gpu_env.sh
+```
+
+Start the complete read-only pipeline:
+
+```bash
+./L515_camera/run_gpu_vision_pipeline.sh
+```
+
+View the GPU-propagated mask:
+
+```bash
+./L515_camera/view_l515_opencv.sh /piper/sam2_target_mask
+```
+
+GroundingDINO identifies the target and obstacles at startup and on tracking, occlusion, scene-change,
+or periodic refresh events. SAM2 creates the initial masks and propagates all labelled objects between
+those events. Both inference workers require CUDA. Tracking status, measured FPS, object labels, IDs,
+mask areas, and device are published on `/piper/sam2_tracking_status`. This workflow does not command
+arm motion.
+
+Useful outputs:
+
+```text
+/piper/sam2_target_mask
+/piper/sam2_obstacle_mask
+/piper/sam2_unsafe_obstacle_mask
+/piper/sam2_candidate_movable_obstacle_mask
+/piper/sam2_object_ids
+/piper/target_3d
+/piper/target_cloud
+```
+
+Save or clear the accumulated target cloud:
+
+```bash
+export ROS_DOMAIN_ID=42
+source L515_camera/source_l515_environment.sh
+ros2 topic pub --once /piper/target_cloud_request std_msgs/msg/String "{data: save}"
+ros2 topic pub --once /piper/target_cloud_request std_msgs/msg/String "{data: clear}"
+```
+
+Saved PLY files are written to `datasets/target_clouds`. Camera-frame accumulation works for a fixed
+L515. Multi-view accumulation requires a published camera-to-base transform and
+`PIPER_CLOUD_FRAME=piper_base_link PIPER_CLOUD_REQUIRE_TF=true`.
+
 Use separate terminals.
 
 Terminal 1: start the RealSense L515 camera.
@@ -112,7 +164,7 @@ What it does:
 - Has no ROS imports.
 - Cannot command arm motion.
 
-CPU is the current default. For a validated CUDA environment later:
+The production GPU pipeline requires CUDA:
 
 ```bash
 export PIPER_HEAVY_DEVICE=cuda

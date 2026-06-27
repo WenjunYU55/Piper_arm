@@ -38,6 +38,9 @@ setup(
             'occlusion_checker = piper_mobile_manipulation.occlusion_checker_node:main',
             'temporal_mask_tracker = piper_mobile_manipulation.temporal_mask_tracker_node:main',
             'heavy_refresh_bridge = piper_mobile_manipulation.heavy_refresh_bridge_node:main',
+            'sam2_live_bridge = piper_mobile_manipulation.sam2_live_bridge_node:main',
+            'target_cloud = piper_mobile_manipulation.target_cloud_node:main',
+            'mask_to_detection = piper_mobile_manipulation.mask_to_detection_node:main',
         ],
     },
 )
