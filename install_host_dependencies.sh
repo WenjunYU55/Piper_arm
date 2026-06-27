@@ -34,6 +34,7 @@ sudo apt-get install -y \
   python3-tk \
   python3-yaml \
   ros-foxy-cv-bridge \
+  ros-foxy-diagnostic-updater \
   ros-foxy-image-tools \
   ros-foxy-joint-state-publisher-gui \
   ros-foxy-message-filters \

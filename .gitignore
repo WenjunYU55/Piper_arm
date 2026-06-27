@@ -13,6 +13,7 @@ L515_camera/realsense_ws/build/
 L515_camera/realsense_ws/install/
 L515_camera/realsense_ws/log/
 L515_camera/realsense_ws/src/
+L515_camera/vendor/
 L515_camera/.agents/
 L515_camera/.codex/
 
@@ -53,3 +54,4 @@ piper_ros_foxy/.git.agilex-backup/
 
 # Local basic offline perception venv
 AI_perception_tests/.venv/
+AI_perception_tests/.venv_basic/

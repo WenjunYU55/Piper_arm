@@ -1,194 +1,240 @@
-# Clean Installation and Device Profiles
+# Clean Installation
 
-This guide reproduces the current read-only L515 perception stack on a fresh device. Real PiPER arm
-motion remains disabled in the temporal/heavy-model workflow.
+This procedure recreates the PiPER arm and Intel RealSense L515 system on a clean host. Run commands as
+your normal user; the installers request `sudo` only for host changes.
 
-For day-to-day command usage after installation, see [`OPERATOR_COMMANDS.md`](OPERATOR_COMMANDS.md).
+For normal operation after installation, use [`OPERATOR_COMMANDS.md`](OPERATOR_COMMANDS.md).
 
-## Supported control host
+## 1. Supported host
 
-- Ubuntu 20.04
+- Ubuntu 20.04 (Focal), x86_64
 - ROS 2 Foxy installed at `/opt/ros/foxy`
-- Python 3.8 for ROS nodes
-- Intel RealSense L515
-- Python 3.10 in a separate environment for GroundingDINO/SAM2
+- Python 3.8 for ROS and PiPER
+- Intel RealSense L515 on a USB 3 port
+- SocketCAN-compatible USB-CAN adapter for the real arm
+- Internet access and a user with `sudo` permission
 
-ROS 2 Foxy is end-of-life. Use an isolated compatible host or container; changing Ubuntu or ROS versions
-requires a port and new validation.
+ROS 2 Foxy is end-of-life. This repository is pinned to Foxy-era dependencies and is not validated on
+another Ubuntu or ROS release. Use a dedicated Ubuntu 20.04 host.
 
-## Clone and host dependencies
+## 2. Install ROS 2 Foxy
 
-The repository can be cloned anywhere. Runtime scripts derive the repository root automatically.
+Skip this section when `/opt/ros/foxy/setup.bash` already exists.
+
+Configure the locale and ROS apt repository:
 
 ```bash
+sudo apt-get update
+sudo apt-get install -y curl gnupg2 locales lsb-release software-properties-common
+sudo locale-gen en_GB en_GB.UTF-8
+sudo update-locale LC_ALL=en_GB.UTF-8 LANG=en_GB.UTF-8
+sudo add-apt-repository -y universe
+sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+  -o /usr/share/keyrings/ros-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu focal main" \
+  | sudo tee /etc/apt/sources.list.d/ros2.list >/dev/null
+```
+
+Install Foxy:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y ros-foxy-desktop python3-argcomplete
+source /opt/ros/foxy/setup.bash
+ros2 --help >/dev/null
+```
+
+Optionally source Foxy in new shells automatically:
+
+```bash
+grep -qxF 'source /opt/ros/foxy/setup.bash' ~/.bashrc || \
+  echo 'source /opt/ros/foxy/setup.bash' >> ~/.bashrc
+```
+
+## 3. Clone and install host dependencies
+
+```bash
+cd ~
 git clone https://github.com/WenjunYU55/Piper_arm.git
 cd Piper_arm
-chmod +x install_host_dependencies.sh verify_installation.sh
 ./install_host_dependencies.sh
 ```
 
-## Build PiPER ROS packages
+The installer installs build, ROS, GUI, CAN, and Python dependencies. It pins `piper_sdk==0.6.1` and
+`python-can==4.5.0`; do not replace these with Ubuntu's older `python3-can` version.
+
+## 4. Build the PiPER workspace
 
 ```bash
+cd ~/Piper_arm/piper_ros_foxy
 source /opt/ros/foxy/setup.bash
-cd piper_ros_foxy
 colcon build --symlink-install
 source install/setup.bash
 cd ..
 ```
 
-## Optional real-arm tools
+The build must finish with all four packages successful: `piper_description`, `piper_msgs`,
+`piper_mobile_manipulation`, and `piper`.
 
-The repository includes explicit `.sh` / `.py` tools for real PiPER operation:
+## 5. Build and configure the L515
 
-```bash
-./start_piper.sh
-./enable_piper.sh
-./disable_piper.sh
-./reset_piper.sh
-./reset_arm.sh
-./start_gui.sh
-./calibrate_bounds.sh
-```
-
-These are intentionally separate from the read-only L515 perception workflow. `start_piper.sh` does not
-auto-enable the arm by default, but after the arm is enabled, `reset_piper.sh`, `reset_arm.sh`, the GUI,
-and direct joint-topic commands can move the real robot.
-
-No-extension wrappers such as `start_piper`, `reset_arm`, or `start_gui` are intentionally omitted. Use
-the `.sh` names directly so a fresh clone is explicit and easier to audit.
-
-## Build the pinned L515 driver
+Disconnect the L515 before installing its udev rules.
 
 ```bash
-cd L515_camera
+cd ~/Piper_arm/L515_camera
 ./fetch_realsense_sources.sh
 ./install_realsense_build_deps.sh
 ./install_l515_host_fixes.sh
+```
+
+The host-fix installer pauses while installing the RealSense udev rules. Follow its prompt, wait 10
+seconds after it completes, then reconnect the L515 directly to a USB 3 port.
+
+Confirm that the SDK can access the camera:
+
+```bash
+./diagnose_l515_usb.sh
+```
+
+The output must identify `Intel RealSense L515`, show USB type 3.x, and list its serial and firmware.
+An `RS2_USB_STATUS_ACCESS` error means the camera was not reconnected after installing the udev rule.
+
+Build the pinned camera stack:
+
+```bash
 ./build_realsense_ws.sh
 ./check_l515_ros.sh
 cd ..
+```
+
+The source pair is pinned to librealsense `v2.50.0` and realsense-ros `4.0.4`. Build warnings from this
+older source are expected; a failed package or nonzero command exit is not.
+
+## 6. Configure the PiPER CAN adapter
+
+Connect the USB-CAN adapter and arm, then identify its interface:
+
+```bash
+ip -brief link
+```
+
+For the default `can0` interface and PiPER's 1 Mbps bitrate:
+
+```bash
+sudo ip link set can0 down
+sudo ip link set can0 type can bitrate 1000000
+sudo ip link set can0 up
+ip -details link show can0
+```
+
+The result must contain `UP`, `can state ERROR-ACTIVE`, and `bitrate 1000000`. Use
+`PIPER_CAN_PORT=can1` with runtime scripts if the adapter appears as `can1`.
+
+CAN configuration is not persistent across reboot. `start_piper.sh` checks and configures the selected
+interface, requesting `sudo` when necessary.
+
+## 7. Verify the installation
+
+Run the software checks:
+
+```bash
+cd ~/Piper_arm
 ./verify_installation.sh
 ```
 
-The source pair is pinned to librealsense `v2.50.0` and realsense-ros `4.0.4` with the checked-in Foxy/L515
-patch.
+Every line must report `PASS`. This verifies the OS, Foxy, both workspace overlays, Python imports and
+versions, and ROS package discovery.
 
-## CPU AI environment
-
-Do not install AI packages into ROS Foxy's Python 3.8 environment. Provide `python3.10` using Conda,
-pyenv, or another maintained isolated distribution, then run:
-
-```bash
-chmod +x AI_perception_tests/groundingdino_test/setup_cpu_env.sh
-./AI_perception_tests/groundingdino_test/setup_cpu_env.sh
-```
-
-This creates `AI_perception_tests/groundingdino_test/envs/grounded_sam2_py310`, installs pinned CPU
-dependencies, checks out the pinned Grounded-SAM-2 revision, downloads GroundingDINO and SAM2.1 Hiera
-Tiny weights, and verifies imports and assets. These generated dependencies are intentionally ignored by
-Git.
-
-Run the software tests and rebuild the ROS package:
-
-```bash
-cd AI_perception_tests
-python3 -m unittest -v test_temporal_tracking.py test_heavy_model_worker.py
-cd ../piper_ros_foxy
-source /opt/ros/foxy/setup.bash
-colcon build --packages-select piper_mobile_manipulation
-cd ..
-```
-
-## Device selection
-
-| Device | Live target tracking | Heavy perception | Notes |
-|---|---|---|---|
-| CPU-only x86 host | Adaptive Lab appearance, depth and Lucas-Kanade; calibrated HSV is fallback only | Event-driven GroundingDINO + SAM2 image masks on CPU | Current validated live configuration |
-| NVIDIA desktop GPU | Same lightweight live tracker | Set `PIPER_HEAVY_DEVICE=cuda` in a CUDA-compatible isolated environment | Validate CUDA/PyTorch versions locally |
-| Jetson today | Same lightweight tracker until the Jetson path is validated | Isolated CUDA heavy worker with JetPack-compatible PyTorch | Do not install AI dependencies into Foxy Python |
-| Jetson planned | SAM2 video target and obstacle mask propagation | GroundingDINO for initialization/reacquisition | Offline quality validated; live Jetson integration is not yet implemented |
-
-Do not describe fixed HSV as the primary CPU tracker. The current CPU path learns a robust Lab appearance
-model from each SAM2 seed and uses HSV only when an appearance model is unavailable.
-
-The SAM2.1 Hiera Tiny CPU video benchmark achieved mean IoU `0.917` but only `0.113 FPS` and used about
-`2.65 GB` RAM. This is why SAM2 video is not enabled in the CPU live loop.
-
-### Jetson AI environment
-
-JetPack determines the compatible CUDA, PyTorch and torchvision versions. Install the NVIDIA-supported
-PyTorch build for the exact JetPack release first; do not install the CPU `requirements_ai.txt` file on a
-Jetson. Then install the remaining Grounded-SAM-2 dependencies and the pinned source revision documented
-in `AI_perception_tests/groundingdino_test/fetch_ai_assets.sh`.
-
-For the existing image worker after CUDA validation:
-
-```bash
-export GROUNDED_SAM2_PYTHON=/path/to/jetson/python
-export PIPER_HEAVY_DEVICE=cuda
-./L515_camera/run_heavy_model_worker.sh
-```
-
-If ROS/Foxy and the AI worker run on different machines, both must mount the same filesystem spool and use
-the same value:
-
-```bash
-export PIPER_HEAVY_REFRESH_SPOOL=/mnt/shared/piper_heavy_refresh
-```
-
-The current boundary is filesystem-based; it is not a network RPC service.
-
-## Read-only runtime
-
-Use separate terminals, in this order:
+Run a live camera test:
 
 ```bash
 ./L515_camera/start_l515_camera.sh
 ```
 
-```bash
-./L515_camera/run_heavy_refresh_bridge.sh
-```
+Wait for `RealSense Node Is Up!`. In another terminal:
 
 ```bash
-./L515_camera/run_heavy_model_worker.sh
-```
-
-```bash
+cd ~/Piper_arm
 export ROS_DOMAIN_ID=42
 source L515_camera/source_l515_environment.sh
-ros2 topic echo /piper/heavy_refresh_status
+ros2 topic list | sort
 ```
 
-```bash
-./L515_camera/run_temporal_tracking_readonly.sh /piper/heavy_target_mask
-```
-
-```bash
-./L515_camera/view_l515_opencv.sh /piper/temporal_tracking_debug_image
-```
-
-Heavy snapshot mask topics:
+At minimum, verify these topics exist:
 
 ```text
-/piper/heavy_target_mask
-/piper/heavy_obstacle_mask
-/piper/candidate_movable_obstacle_mask
-/piper/unsafe_obstacle_mask
+/camera/color/image_raw
+/camera/color/camera_info
+/camera/aligned_depth_to_color/image_raw
+/camera/depth/image_rect_raw
+/camera/imu
 ```
 
-Candidate-movable masks are advisory only. Hands, people, fingers, wires, cables, generic tools, and
-unknown objects remain blocked and must never become manipulation targets.
+Stop the camera with `Ctrl+C` in its terminal.
 
-## Generated files not committed
+## 8. Start the system
 
-- ROS `build/`, `install/`, and `log/`
-- RealSense source/build workspace
-- Python environments and caches
-- Grounded-SAM-2 checkout
-- Model weights and checkpoints
-- captures, datasets, benchmark images, and AI output reports
-- `/tmp/piper_heavy_refresh`
+Camera and read-only perception commands are listed in order in
+[`OPERATOR_COMMANDS.md`](OPERATOR_COMMANDS.md#read-only-l515-perception-runtime). The camera workflow
+does not move the arm.
 
-Run `fetch_ai_assets.sh` and the build steps above to recreate them.
+To start the real PiPER driver without automatically enabling motion:
+
+```bash
+cd ~/Piper_arm
+./start_piper.sh
+```
+
+Only enable the arm after the workspace is clear and an emergency-stop method is available:
+
+```bash
+./enable_piper.sh
+```
+
+## 9. Optional AI environment
+
+Do not install GroundingDINO, SAM2, or their Python dependencies into Foxy's Python 3.8 environment.
+Provide Python 3.10 through Conda, pyenv, or another isolated distribution, then run:
+
+```bash
+cd ~/Piper_arm
+./AI_perception_tests/groundingdino_test/setup_cpu_env.sh
+```
+
+This creates the ignored environment under `AI_perception_tests/groundingdino_test/envs/`, checks out
+the pinned Grounded-SAM-2 source, downloads model weights, and validates imports. NVIDIA and Jetson
+installations require PyTorch builds matching their exact CUDA or JetPack version.
+
+## Troubleshooting
+
+### Missing `diagnostic_updater`
+
+```bash
+sudo apt-get install ros-foxy-diagnostic-updater
+```
+
+Then rerun `./L515_camera/build_realsense_ws.sh`.
+
+### Missing `libusb.h` or `config.h`
+
+```bash
+sudo apt-get install libusb-1.0-0-dev libudev-dev
+```
+
+Then rerun `./L515_camera/build_realsense_ws.sh`.
+
+### Camera access denied
+
+Rerun `./L515_camera/install_l515_host_fixes.sh`, disconnect the L515, wait 10 seconds, reconnect it,
+and run `./L515_camera/diagnose_l515_usb.sh`.
+
+### ROS camera topics are absent
+
+Use `ROS_DOMAIN_ID=42` in every terminal communicating with the camera and source
+`L515_camera/source_l515_environment.sh` before running `ros2` commands.
+
+### Generated files
+
+ROS build directories, RealSense sources, Python environments, model checkouts, weights, captures, and
+logs are intentionally ignored. Recreate them with the installers and build commands above; do not
+commit them.
