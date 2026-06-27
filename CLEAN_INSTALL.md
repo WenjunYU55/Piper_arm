@@ -60,7 +60,8 @@ cd Piper_arm
 ./install_host_dependencies.sh
 ```
 
-The installer installs build, ROS, GUI, CAN, and Python dependencies. It pins `piper_sdk==0.6.1` and
+The installer installs build, ROS, GUI, CAN, and Python dependencies, including `can-utils` and
+`ethtool`, which are required by `start_piper.sh`. It pins `piper_sdk==0.6.1` and
 `python-can==4.5.0`; do not replace these with Ubuntu's older `python3-can` version.
 
 ## 4. Build the PiPER workspace
@@ -185,7 +186,9 @@ cd ~/Piper_arm
 ./start_piper.sh
 ```
 
-Only enable the arm after the workspace is clear and an emergency-stop method is available:
+Leave that terminal running. Wait until it reports that the PiPER node has started, then use a second
+terminal to enable the arm. Only enable it after the workspace is clear and an emergency-stop method is
+available:
 
 ```bash
 ./enable_piper.sh
@@ -232,6 +235,22 @@ and run `./L515_camera/diagnose_l515_usb.sh`.
 
 Use `ROS_DOMAIN_ID=42` in every terminal communicating with the camera and source
 `L515_camera/source_l515_environment.sh` before running `ros2` commands.
+
+### `ethtool` or `can-utils` is missing
+
+Rerun the host dependency installer, or install both packages directly:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y ethtool can-utils
+```
+
+Then rerun `./verify_installation.sh` before starting PiPER.
+
+### `/enable_srv` is unavailable
+
+Run `./start_piper.sh` first and leave it running. Wait for the PiPER node to start, then run
+`./enable_piper.sh` in a second terminal with the same `PIPER_ROS_DOMAIN_ID` value.
 
 ### Generated files
 

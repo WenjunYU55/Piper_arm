@@ -43,7 +43,7 @@ else
   fail "RealSense workspace has not been built"
 fi
 
-for command_name in colcon git ip ros2; do
+for command_name in candump colcon ethtool git ip ros2; do
   if command -v "$command_name" >/dev/null 2>&1; then
     pass "command: $command_name"
   else
