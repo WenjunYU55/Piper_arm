@@ -13,5 +13,4 @@ echo "Spool directory: $SPOOL_DIR"
 exec ros2 run piper_mobile_manipulation sam2_live_bridge_node.py --ros-args \
   -p spool_dir:="$SPOOL_DIR" \
   -p frame_rate_hz:="${PIPER_SAM2_FPS:-10.0}" \
-  -p auto_initial_mask:="${PIPER_SAM2_USE_HEAVY_INITIALIZER:-true}" \
-  -p allow_fallback_seed:="${PIPER_SAM2_ALLOW_FALLBACK_SEED:-false}"
+  -p auto_initial_mask:="${PIPER_SAM2_USE_HEAVY_INITIALIZER:-true}"

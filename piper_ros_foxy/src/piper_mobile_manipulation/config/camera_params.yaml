@@ -1,9 +1,9 @@
 /**:
   ros__parameters:
-    detection_topic: "/piper/detection_2d"
+    detection_topic: "/piper/sam2_detection_2d"
     depth_topic: "/camera/aligned_depth_to_color/image_raw"
     camera_info_topic: "/camera/color/camera_info"
-    mask_topic: "/piper/detection_mask"
+    mask_topic: "/piper/sam2_target_mask"
     target_topic: "/piper/target_3d"
     depth_min_m: 0.25
     depth_max_m: 1.20

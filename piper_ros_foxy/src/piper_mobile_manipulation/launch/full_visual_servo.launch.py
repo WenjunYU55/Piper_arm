@@ -17,17 +17,19 @@ def generate_launch_description():
         DeclareLaunchArgument('enable_real_arm_motion', default_value='false'),
         Node(
             package='piper_mobile_manipulation',
-            executable='l515_object_detector_node.py',
-            name='l515_object_detector',
+            executable='mask_to_detection_node.py',
+            name='sam2_mask_to_detection',
             output='screen',
-            parameters=[cfg('detection_params.yaml')],
         ),
         Node(
             package='piper_mobile_manipulation',
             executable='depth_to_3d_node.py',
             name='depth_to_3d',
             output='screen',
-            parameters=[cfg('camera_params.yaml')],
+            parameters=[cfg('camera_params.yaml'), {
+                'detection_topic': '/piper/sam2_detection_2d',
+                'mask_topic': '/piper/sam2_target_mask',
+            }],
         ),
         Node(
             package='piper_mobile_manipulation',

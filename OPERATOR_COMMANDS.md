@@ -196,43 +196,6 @@ What it does:
 - Useful for checking if the bridge and worker are communicating.
 - Does not move the arm.
 
-Terminal 5: start temporal mask tracking.
-
-```bash
-cd /home/prl/Piper_arm
-./L515_camera/run_temporal_tracking_readonly.sh /piper/heavy_target_mask
-```
-
-What it does:
-
-- Uses `/piper/heavy_target_mask` as the seed mask from GroundingDINO/SAM2.
-- Tracks the target with lightweight CPU tracking between heavy refreshes.
-- Publishes debug/status/mask topics.
-- Requests periodic or event-driven heavy refreshes.
-- Does not move the arm.
-
-Main topics:
-
-```text
-/piper/temporal_target_mask
-/piper/temporal_tracking_debug_image
-/piper/temporal_tracking_status
-/piper/heavy_refresh_request
-```
-
-Terminal 6: view the tracking debug image.
-
-```bash
-cd /home/prl/Piper_arm
-./L515_camera/view_l515_opencv.sh /piper/temporal_tracking_debug_image
-```
-
-What it does:
-
-- Opens an OpenCV image viewer.
-- Shows the live debug overlay from the temporal tracker.
-- Does not move the arm.
-
 Optional: view heavy snapshot masks.
 
 ```bash
@@ -442,12 +405,6 @@ Show joint feedback:
 ros2 topic echo /joint_states_single
 ```
 
-Show temporal tracker status:
-
-```bash
-ros2 topic echo /piper/temporal_tracking_status
-```
-
 Show heavy-refresh status:
 
 ```bash
@@ -459,10 +416,7 @@ ros2 topic echo /piper/heavy_refresh_status
 For read-only perception:
 
 1. Close viewer windows.
-2. Stop temporal tracker with `Ctrl+C`.
-3. Stop heavy model worker with `Ctrl+C`.
-4. Stop heavy-refresh bridge with `Ctrl+C`.
-5. Stop the L515 camera with `Ctrl+C`.
+2. Stop the GPU vision pipeline with `Ctrl+C`.
 
 For real arm operation:
 
@@ -483,7 +437,7 @@ For real arm operation:
 | `./L515_camera/start_l515_camera.sh` | Start L515 camera | No |
 | `./L515_camera/run_heavy_refresh_bridge.sh` | ROS/filesystem bridge for heavy refresh | No |
 | `./L515_camera/run_heavy_model_worker.sh` | Isolated GroundingDINO/SAM2 worker | No |
-| `./L515_camera/run_temporal_tracking_readonly.sh /piper/heavy_target_mask` | Live mask tracking | No |
+| `./L515_camera/run_gpu_vision_pipeline.sh` | Complete GroundingDINO/SAM2 perception | No |
 | `./L515_camera/view_l515_opencv.sh <topic>` | Image viewer | No |
 | `./start_piper.sh` | Start PiPER driver/CAN | Not by itself |
 | `./enable_piper.sh` | Enable real arm | Enables motion |

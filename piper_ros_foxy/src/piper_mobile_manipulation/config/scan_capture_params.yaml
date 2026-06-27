@@ -3,7 +3,7 @@
     color_image_topic: "/camera/color/image_raw"
     depth_image_topic: "/camera/aligned_depth_to_color/image_raw"
     camera_info_topic: "/camera/color/camera_info"
-    mask_topic: "/piper/detection_mask"
+    mask_topic: "/piper/sam2_target_mask"
     target_3d_topic: "/piper/target_3d"
     scan_viewpoints_topic: "/piper/scan_viewpoints"
     reachable_scan_viewpoints_topic: "/piper/reachable_scan_viewpoints"

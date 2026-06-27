@@ -2,8 +2,8 @@
   ros__parameters:
     depth_image_topic: "/camera/aligned_depth_to_color/image_raw"
     color_image_topic: "/camera/color/image_raw"
-    mask_topic: "/piper/detection_mask"
-    detection_topic: "/piper/detection_2d"
+    mask_topic: "/piper/sam2_target_mask"
+    detection_topic: "/piper/sam2_detection_2d"
     target_3d_topic: "/piper/target_3d"
     reachable_scan_viewpoints_topic: "/piper/reachable_scan_viewpoints"
     scan_capture_status_topic: "/piper/scan_capture_status"

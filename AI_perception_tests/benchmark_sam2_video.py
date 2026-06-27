@@ -34,7 +34,7 @@ def find_default_seed(scan_name: str) -> Path:
         (
             SCRIPT_DIR
             / "outputs"
-            / "temporal_tracking"
+            / "sam2_video"
             / (scan_name + "_heavy")
             / "heavy_outputs"
             / "frame_000"

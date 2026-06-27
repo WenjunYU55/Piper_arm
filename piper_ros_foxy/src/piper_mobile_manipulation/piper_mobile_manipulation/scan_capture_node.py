@@ -27,7 +27,7 @@ class ScanCaptureNode(Node):
         self.declare_parameter('color_image_topic', '/camera/color/image_raw')
         self.declare_parameter('depth_image_topic', '/camera/aligned_depth_to_color/image_raw')
         self.declare_parameter('camera_info_topic', '/camera/color/camera_info')
-        self.declare_parameter('mask_topic', '/piper/detection_mask')
+        self.declare_parameter('mask_topic', '/piper/sam2_target_mask')
         self.declare_parameter('target_3d_topic', '/piper/target_3d')
         self.declare_parameter('scan_viewpoints_topic', '/piper/scan_viewpoints')
         self.declare_parameter('reachable_scan_viewpoints_topic', '/piper/reachable_scan_viewpoints')

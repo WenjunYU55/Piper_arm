@@ -4,17 +4,13 @@ This folder contains helper files for testing the Intel RealSense L515 before ta
 
 Files:
 
-- `l515_camera_notes.md`: test workflow and topic notes.
 - `realsense_l515_version_notes.md`: L515-specific SDK/firmware guidance from RealSense release notes.
 - `fetch_realsense_sources.sh`: clones the selected librealsense and realsense-ros source tags.
 - `install_realsense_build_deps.sh`: installs system build dependencies that need sudo.
 - `build_realsense_ws.sh`: applies the local L515/Foxy patch and builds the RealSense source workspace.
 - `source_l515_environment.sh`: sources ROS 2 Foxy plus the local RealSense and PiPER overlays.
 - `check_l515_ros.sh`: checks whether RealSense ROS, this ROS package, and camera topics are visible.
-- `check_l515_detection_connector.sh`: checks the camera input topics and the processed `/piper` connector topics for future base/arm integration.
 - `start_l515_camera.sh`: starts the RealSense ROS camera node with aligned depth enabled.
-- `run_l515_perception.sh`: starts the L515 perception-only pipeline after the RealSense camera driver is already running.
-- `run_temporal_tracking_readonly.sh`: starts optional lightweight mask tracking with HSV as a one-shot seed by default.
 - `run_heavy_refresh_bridge.sh`: snapshots heavy-refresh requests into filesystem jobs and publishes returned masks.
 - `run_heavy_model_worker.sh`: runs GroundingDINO/SAM2 in the isolated Python 3.10 environment.
 - `run_sam2_live_bridge.sh`: spools live RGB frames and publishes GPU SAM2 masks back into ROS.
@@ -123,26 +119,10 @@ Then, in separate terminals:
 
 ```bash
 ./start_l515_camera.sh
-./run_l515_perception.sh
-./check_l515_detection_connector.sh
 ./view_l515_camera.sh
 ```
 
-The perception pipeline now ends with a fake visual-servo command topic. It does not move the arm:
-
-```bash
-ros2 topic echo /piper/servo_cmd
-```
-
 `realsense_ws/src`, `build`, `install`, and `log` are generated locally and intentionally not committed. Run `fetch_realsense_sources.sh` and `build_realsense_ws.sh` to recreate them on a new machine.
-
-For simple object recognition/tracking, set `target_color` in:
-
-```text
-/home/prl/Piper_arm/piper_ros_foxy/src/piper_mobile_manipulation/config/detection_params.yaml
-```
-
-Supported presets are `green`, `red`, `blue`, `yellow`, `orange`, `purple`, and `custom`. Use `custom` with `hsv_lower`/`hsv_upper` when the preset is not tight enough for the object.
 
 If `rqt_image_view` prints DDS deserialization errors, use the lighter viewers:
 

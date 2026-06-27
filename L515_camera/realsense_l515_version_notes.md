@@ -52,7 +52,7 @@ The perception stack now assumes:
 camera_color_optical_frame
 ```
 
-Aligned depth matters because HSV object detection produces color-image pixels. Projecting those pixels with unaligned depth can produce wrong 3D target points.
+Aligned depth matters because SAM2 masks use color-image pixels. Projecting those pixels with unaligned depth can produce wrong 3D target points.
 
 The camera launch keeps the RealSense wrapper's default `camera_name:=camera` so the topics stay under `/camera`. It also passes `device_type:=l515` to avoid accidentally binding to another RealSense camera on the same host.
 
@@ -76,7 +76,7 @@ cd /home/prl/Piper_arm/L515_camera
 
 ```bash
 cd /home/prl/Piper_arm/L515_camera
-./run_l515_perception.sh
+./run_gpu_vision_pipeline.sh
 ```
 
 4. Watch outputs:

@@ -74,7 +74,7 @@ def readiness_for_capture(
     elif not mask_reliable:
         reasons.append("target_mask_or_depth_unreliable")
 
-    fallback_target_detected = target_prompt_source == "hsv_detection_mask" and mask_reliable
+    fallback_target_detected = target_prompt_source == "tracked_target_mask" and mask_reliable
     target_confidence = max(model_target_confidence, fallback_target_confidence if fallback_target_detected else 0.0)
     target_visible = (
         (model_target_detected and model_target_confidence >= MIN_TARGET_CONFIDENCE)

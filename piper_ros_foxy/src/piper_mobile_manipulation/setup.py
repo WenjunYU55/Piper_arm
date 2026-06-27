@@ -21,7 +21,6 @@ setup(
         'console_scripts': [
             'target_handoff = piper_mobile_manipulation.target_handoff_node:main',
             'tf_target_transform = piper_mobile_manipulation.tf_target_transform_node:main',
-            'l515_object_detector = piper_mobile_manipulation.l515_object_detector_node:main',
             'depth_to_3d = piper_mobile_manipulation.depth_to_3d_node:main',
             'target_tracker = piper_mobile_manipulation.target_tracker_node:main',
             'manipulation_target = piper_mobile_manipulation.manipulation_target_node:main',
@@ -36,7 +35,6 @@ setup(
             'scan_capture = piper_mobile_manipulation.scan_capture_node:main',
             'scan_quality = piper_mobile_manipulation.scan_quality_node:main',
             'occlusion_checker = piper_mobile_manipulation.occlusion_checker_node:main',
-            'temporal_mask_tracker = piper_mobile_manipulation.temporal_mask_tracker_node:main',
             'heavy_refresh_bridge = piper_mobile_manipulation.heavy_refresh_bridge_node:main',
             'sam2_live_bridge = piper_mobile_manipulation.sam2_live_bridge_node:main',
             'target_cloud = piper_mobile_manipulation.target_cloud_node:main',

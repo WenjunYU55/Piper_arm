@@ -19,7 +19,7 @@ fi
 
 echo "Starting L515 with RGB, depth, and aligned depth-to-color enabled."
 echo "Using ROS_DOMAIN_ID=${ROS_DOMAIN_ID}"
-echo "Leave this running, then start ./run_l515_perception.sh in another terminal."
+echo "Leave this running, then start the GPU vision pipeline components as needed."
 ros2 launch realsense2_camera rs_launch.py \
   device_type:=l515 \
   enable_color:=true \

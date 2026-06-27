@@ -26,7 +26,6 @@ ament_python_install_package(${PROJECT_NAME})
 install(PROGRAMS
   piper_mobile_manipulation/target_handoff_node.py
   piper_mobile_manipulation/tf_target_transform_node.py
-  piper_mobile_manipulation/l515_object_detector_node.py
   piper_mobile_manipulation/depth_to_3d_node.py
   piper_mobile_manipulation/target_tracker_node.py
   piper_mobile_manipulation/manipulation_target_node.py
@@ -41,7 +40,6 @@ install(PROGRAMS
   piper_mobile_manipulation/scan_capture_node.py
   piper_mobile_manipulation/scan_quality_node.py
   piper_mobile_manipulation/occlusion_checker_node.py
-  piper_mobile_manipulation/temporal_mask_tracker_node.py
   piper_mobile_manipulation/heavy_refresh_bridge_node.py
   piper_mobile_manipulation/sam2_live_bridge_node.py
   piper_mobile_manipulation/target_cloud_node.py

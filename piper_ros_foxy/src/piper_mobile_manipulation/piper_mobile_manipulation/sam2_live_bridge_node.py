@@ -24,7 +24,6 @@ class Sam2LiveBridgeNode(Node):
         super().__init__('sam2_live_bridge_node')
         self.declare_parameter('color_image_topic', '/camera/color/image_raw')
         self.declare_parameter('seed_mask_topic', '/piper/heavy_target_mask')
-        self.declare_parameter('fallback_seed_mask_topic', '/piper/detection_mask')
         self.declare_parameter('output_mask_topic', '/piper/sam2_target_mask')
         self.declare_parameter('obstacle_mask_topic', '/piper/sam2_obstacle_mask')
         self.declare_parameter('unsafe_obstacle_mask_topic', '/piper/sam2_unsafe_obstacle_mask')
@@ -37,7 +36,6 @@ class Sam2LiveBridgeNode(Node):
         self.declare_parameter('frame_rate_hz', 10.0)
         self.declare_parameter('seed_cache_sec', 60.0)
         self.declare_parameter('auto_initial_mask', False)
-        self.declare_parameter('allow_fallback_seed', True)
         self.declare_parameter('allow_heavy_topic_seed', False)
         self.declare_parameter('semantic_refresh_interval_sec', 60.0)
         self.declare_parameter('refresh_cooldown_sec', 5.0)
@@ -88,12 +86,6 @@ class Sam2LiveBridgeNode(Node):
         )
         self.create_subscription(
             Image, self.get_parameter('seed_mask_topic').value, self.heavy_seed_cb, qos_profile_sensor_data
-        )
-        self.create_subscription(
-            Image,
-            self.get_parameter('fallback_seed_mask_topic').value,
-            self.fallback_seed_cb,
-            qos_profile_sensor_data,
         )
         self.create_timer(0.02, self.write_frame)
         self.create_timer(0.05, self.poll_results)
@@ -166,10 +158,6 @@ class Sam2LiveBridgeNode(Node):
     def heavy_seed_cb(self, msg):
         if bool(self.get_parameter('allow_heavy_topic_seed').value):
             self.seed_cb(msg, 'groundingdino_sam2')
-
-    def fallback_seed_cb(self, msg):
-        if bool(self.get_parameter('allow_fallback_seed').value) and not self.seed_queued:
-            self.seed_cb(msg, 'detection_mask_sam2_prompt')
 
     def occlusion_cb(self, msg):
         try:

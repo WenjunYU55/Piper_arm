@@ -24,7 +24,7 @@ DEFAULT_SAM2_CHECKPOINT = SCRIPT_DIR / "checkpoints" / "sam2.1_hiera_tiny.pt"
 TARGET_DEPTH_MARGIN_M = 0.03
 TARGET_SEARCH_MARGIN_PX = 24
 MIN_DEPTH_OCCLUDER_AREA_PX = 20
-MIN_HSV_FALLBACK_AREA_PX = 100
+MIN_TRACKED_MASK_FALLBACK_AREA_PX = 100
 TARGET_MASK_NEAR_MARGIN_PX = 6
 MIN_TARGET_NEAR_OVERLAP_PX = 10
 MIN_SEMANTIC_DEPTH_COVERAGE = 0.50
@@ -122,7 +122,7 @@ def target_depth_from_capture(capture_dir: Path, fallback_depth: np.ndarray | No
     return float(np.median(values))
 
 
-def hsv_target_fallback(capture_dir: Path) -> dict[str, Any] | None:
+def tracked_mask_target_fallback(capture_dir: Path) -> dict[str, Any] | None:
     mask = cv2.imread(str(capture_dir / "detection_mask.png"), cv2.IMREAD_GRAYSCALE)
     if mask is None:
         return None
@@ -139,7 +139,7 @@ def hsv_target_fallback(capture_dir: Path) -> dict[str, Any] | None:
     if not (0 <= source_u < mask.shape[1] and 0 <= source_v < mask.shape[0]):
         return None
     component = int(labels[source_v, source_u])
-    if component <= 0 or int(stats[component, cv2.CC_STAT_AREA]) < MIN_HSV_FALLBACK_AREA_PX:
+    if component <= 0 or int(stats[component, cv2.CC_STAT_AREA]) < MIN_TRACKED_MASK_FALLBACK_AREA_PX:
         return None
 
     x = int(stats[component, cv2.CC_STAT_LEFT])
@@ -149,13 +149,13 @@ def hsv_target_fallback(capture_dir: Path) -> dict[str, Any] | None:
     if width <= 0 or height <= 0:
         return None
     return {
-        "label": "green cube (HSV fallback)",
+        "label": "tracked target mask fallback",
         "confidence": float(target.get("measurement_confidence", 0.0)),
         "box_xyxy_pixels": [float(x), float(y), float(x + width), float(y + height)],
         "is_target_candidate": True,
         "is_unsafe_candidate": False,
         "is_candidate_safe_class": False,
-        "prompt_source": "hsv_detection_mask",
+        "prompt_source": "tracked_target_mask",
     }
 
 
@@ -178,8 +178,8 @@ def detections_for_masks(
     target = summary.get("best_target_detection")
     target_source = str(summary.get("target_source", "groundingdino"))
     if not isinstance(target, dict):
-        target = hsv_target_fallback(capture_dir)
-        target_source = "hsv_detection_mask"
+        target = tracked_mask_target_fallback(capture_dir)
+        target_source = "tracked_target_mask"
     if isinstance(target, dict):
         selected.append(dict(target, mask_role="target", prompt_source=target_source))
     target_box = target.get("box_xyxy_pixels", []) if isinstance(target, dict) else []

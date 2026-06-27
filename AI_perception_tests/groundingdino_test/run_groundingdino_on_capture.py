@@ -34,7 +34,7 @@ DEFAULT_OBSTACLE_PROMPT = (
     "tissue . paper tissue . paper ."
 )
 LOCAL_CROP_MIN_SIZE_PX = 128
-MIN_HSV_FALLBACK_AREA_PX = 100
+MIN_TRACKED_MASK_FALLBACK_AREA_PX = 100
 TARGET_TERMS = ("green cube", "cube", "box")
 UNSAFE_TERMS = (
     "hand",
@@ -251,7 +251,7 @@ def read_yaml(path: Path) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def hsv_target_fallback(capture_dir: Path) -> dict[str, Any] | None:
+def tracked_mask_target_fallback(capture_dir: Path) -> dict[str, Any] | None:
     mask = cv2.imread(str(capture_dir / "detection_mask.png"), cv2.IMREAD_GRAYSCALE)
     target = read_yaml(capture_dir / "target_3d.yaml")
     if mask is None or not bool(target.get("valid", False)):
@@ -264,18 +264,18 @@ def hsv_target_fallback(capture_dir: Path) -> dict[str, Any] | None:
     if count <= 1:
         return None
     component = int(labels[source_v, source_u])
-    if component <= 0 or int(stats[component, cv2.CC_STAT_AREA]) < MIN_HSV_FALLBACK_AREA_PX:
+    if component <= 0 or int(stats[component, cv2.CC_STAT_AREA]) < MIN_TRACKED_MASK_FALLBACK_AREA_PX:
         return None
     x = int(stats[component, cv2.CC_STAT_LEFT])
     y = int(stats[component, cv2.CC_STAT_TOP])
     width = int(stats[component, cv2.CC_STAT_WIDTH])
     height = int(stats[component, cv2.CC_STAT_HEIGHT])
     return {
-        "label": "green cube (HSV fallback)",
+        "label": "tracked target mask fallback",
         "confidence": float(target.get("measurement_confidence", 0.0)),
         "box_xyxy_pixels": [float(x), float(y), float(x + width), float(y + height)],
         "box_area_px": float(width * height),
-        "detection_source": "hsv_detection_mask",
+        "detection_source": "tracked_target_mask",
         "is_target_local_candidate": False,
         "is_target_candidate": True,
         "is_unsafe_candidate": False,
@@ -383,7 +383,7 @@ def run_on_capture(
     height, width = image_source.shape[:2]
     full_frame_detections = detection_records(boxes, logits, phrases, width, height)
     model_target = best_detection(full_frame_detections, "is_target_candidate")
-    target = model_target or hsv_target_fallback(capture_dir)
+    target = model_target or tracked_mask_target_fallback(capture_dir)
     local_detections: list[dict[str, Any]] = []
     local_prompt_results: list[dict[str, Any]] = []
     crop_path = output_dir / "target_crop.png"
@@ -437,7 +437,7 @@ def run_on_capture(
     detections.extend(local_detections)
     summary = detection_summary(detections)
     summary["model_target_detected"] = model_target is not None
-    summary["target_source"] = "groundingdino" if model_target is not None else ("hsv_detection_mask" if target is not None else "none")
+    summary["target_source"] = "groundingdino" if model_target is not None else ("tracked_target_mask" if target is not None else "none")
 
     annotated = annotate(image_source=image_source, boxes=boxes, logits=logits, phrases=phrases)
     debug_path = output_dir / "groundingdino_debug.png"

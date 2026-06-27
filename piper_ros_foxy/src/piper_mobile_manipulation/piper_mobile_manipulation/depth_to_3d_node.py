@@ -15,10 +15,10 @@ from piper_mobile_manipulation.msg import Detection2D, Target3D
 class DepthTo3DNode(Node):
     def __init__(self):
         super().__init__('depth_to_3d_node')
-        self.declare_parameter('detection_topic', '/piper/detection_2d')
+        self.declare_parameter('detection_topic', '/piper/sam2_detection_2d')
         self.declare_parameter('depth_topic', '/camera/aligned_depth_to_color/image_raw')
         self.declare_parameter('camera_info_topic', '/camera/color/camera_info')
-        self.declare_parameter('mask_topic', '/piper/detection_mask')
+        self.declare_parameter('mask_topic', '/piper/sam2_target_mask')
         self.declare_parameter('target_topic', '/piper/target_3d')
         self.declare_parameter('depth_min_m', 0.25)
         self.declare_parameter('depth_max_m', 1.0)

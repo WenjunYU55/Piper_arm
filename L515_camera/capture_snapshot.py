@@ -82,7 +82,7 @@ class SnapshotCaptureNode(Node):
         )
         self.create_subscription(
             Image,
-            "/piper/detection_mask",
+            "/piper/sam2_target_mask",
             self.mask_cb,
             qos_profile_sensor_data,
         )
@@ -91,7 +91,7 @@ class SnapshotCaptureNode(Node):
         self.create_subscription(String, "/piper/occlusion_status", self.occlusion_status_cb, 10)
 
         self.timer = self.create_timer(0.1, self.timer_cb)
-        self.get_logger().info("Waiting for RGB, depth, camera_info, detection_mask, and target_3d.")
+        self.get_logger().info("Waiting for RGB, depth, camera_info, SAM2 target mask, and target_3d.")
         self.get_logger().warn("Snapshot capture is read-only and never publishes /piper/servo_cmd.")
 
     def rgb_cb(self, msg: Image) -> None:
@@ -196,7 +196,7 @@ class SnapshotCaptureNode(Node):
                 "rgb": "/camera/color/image_raw",
                 "depth": "/camera/aligned_depth_to_color/image_raw",
                 "camera_info": "/camera/color/camera_info",
-                "detection_mask": "/piper/detection_mask",
+                "detection_mask": "/piper/sam2_target_mask",
                 "target_3d": "/piper/target_3d",
                 "scan_quality": "/piper/scan_quality",
                 "occlusion_status": "/piper/occlusion_status",

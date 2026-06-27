@@ -73,7 +73,7 @@ Terminal 2:
 ```bash
 export ROS_DOMAIN_ID=42
 cd /home/prl/Piper_arm/L515_camera
-./run_l515_perception.sh
+./run_gpu_vision_pipeline.sh
 ```
 
 Terminal 3:

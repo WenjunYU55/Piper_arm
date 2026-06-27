@@ -99,7 +99,7 @@ geometric occlusion decision instead.
 
 Each capture uses two GroundingDINO passes:
 
-1. The full frame finds the target. A valid HSV component is used only when that pass misses the cube.
+1. The full frame finds the target. A valid tracked-mask component is used only when that pass misses the target.
 2. A bounded crop around the selected target runs the obstacle-only prompt at a separate threshold.
 
 The obstacle prompt uses `|`-separated groups so visually competing classes are evaluated independently:
@@ -155,7 +155,7 @@ If SAM2 is not importable or the checkpoint is missing, the script writes `statu
 SAM2 refinement is target-centric:
 
 - GroundingDINO supplies the preferred target box.
-- A valid saved HSV target component can supply a fallback box when GroundingDINO misses a partly visible cube.
+- A valid saved tracked-target component can supply a fallback box when GroundingDINO misses a partly visible target.
 - GroundingDINO obstacle boxes are retained only when they are near the target box.
 - A closer-depth mask is generated only in a small region around a trusted target mask.
 - Depth-only obstacle masks are classified as unknown and unsafe; they cannot authorize manipulation.
