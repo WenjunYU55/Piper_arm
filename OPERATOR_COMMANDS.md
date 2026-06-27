@@ -86,14 +86,24 @@ Useful outputs:
 /piper/target_cloud
 ```
 
-Save or clear the accumulated target cloud:
+Live tracking uses a 384-pixel-wide SAM2 input by default and publishes masks restored to the native
+640x480 camera resolution. Set `PIPER_SAM2_INFERENCE_WIDTH=640` before startup to disable reduction.
+
+For the highest-quality cloud, start the pipeline with live-mask accumulation disabled, request one
+full-resolution capture at each stationary viewpoint, then save or clear the accumulated cloud:
 
 ```bash
+PIPER_CLOUD_ACCUMULATE_LIVE=false ./L515_camera/run_gpu_vision_pipeline.sh
+
 export ROS_DOMAIN_ID=42
 source L515_camera/source_l515_environment.sh
+ros2 topic pub --once /piper/target_cloud_request std_msgs/msg/String "{data: capture}"
 ros2 topic pub --once /piper/target_cloud_request std_msgs/msg/String "{data: save}"
 ros2 topic pub --once /piper/target_cloud_request std_msgs/msg/String "{data: clear}"
 ```
+
+Wait for `/piper/target_cloud_status` to report
+`mask_source: full_resolution_refinement` before moving to the next viewpoint or saving.
 
 Saved PLY files are written to `datasets/target_clouds`. Camera-frame accumulation works for a fixed
 L515. Multi-view accumulation requires a published camera-to-base transform and

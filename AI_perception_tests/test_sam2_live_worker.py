@@ -151,6 +151,28 @@ class Sam2LiveWorkerTest(unittest.TestCase):
             self.assertEqual(recovered['status'], 'ok')
             self.assertEqual(recovered['tracking_state'], 'TRACKING')
 
+    def test_reduced_inference_is_restored_to_native_output_size(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            spool = Path(temporary)
+            worker = Sam2LiveWorker(spool, device='cpu', inference_width=16)
+            worker.predictor = FakePredictor()
+            rgb = np.zeros((24, 32, 3), dtype=np.uint8)
+            target = np.zeros((24, 32), dtype=np.uint8)
+            target[4:16, 8:24] = 255
+            self.write_seed(spool, '0001_seed', rgb, target)
+            self.assertTrue(worker.process_once())
+            self.assertEqual(worker.last_masks[1].shape, (12, 16))
+
+            self.write_frame(spool, '0002', rgb)
+            self.assertTrue(worker.process_once())
+            result_dir = spool / 'results' / '0002'
+            mask = cv2.imread(str(result_dir / 'mask.png'), cv2.IMREAD_GRAYSCALE)
+            self.assertEqual(mask.shape, (24, 32))
+            with (result_dir / 'result.yaml').open('r', encoding='utf-8') as stream:
+                result = yaml.safe_load(stream)
+            self.assertEqual(result['inference_size'], [16, 12])
+            self.assertEqual(result['output_size'], [32, 24])
+
 
 if __name__ == '__main__':
     unittest.main()

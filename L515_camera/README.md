@@ -55,7 +55,9 @@ GroundingDINO detects the requested target and obstacles only at initialization 
 semantic refreshes. SAM2 creates their masks and then tracks every labelled object continuously. Both
 models are required to run on CUDA; the workers fail instead of silently falling back to CPU. The
 rolling SAM2 state resets every eight frames using the latest masks, bounding GPU memory on the
-validated RTX 3090.
+validated RTX 3090. Live SAM2 inference defaults to 384 pixels wide and its masks are restored to the
+native 640x480 RGB-D resolution with nearest-neighbour resizing. Override this with
+`PIPER_SAM2_INFERENCE_WIDTH`; use `640` for native-resolution live inference.
 
 View the output:
 
@@ -65,13 +67,20 @@ View the output:
 ./L515_camera/view_l515_opencv.sh /piper/sam2_object_ids
 ```
 
-Save the accumulated L515 target cloud:
+Request one full-resolution GroundingDINO/SAM2 cloud capture while the camera is stationary, then
+save the accumulated L515 target cloud:
 
 ```bash
 export ROS_DOMAIN_ID=42
 source L515_camera/source_l515_environment.sh
+ros2 topic pub --once /piper/target_cloud_request std_msgs/msg/String "{data: capture}"
 ros2 topic pub --once /piper/target_cloud_request std_msgs/msg/String "{data: save}"
 ```
+
+The delayed full-resolution mask is matched to its original cached RGB-D frame and eroded by one
+pixel before projection, reducing background leakage. Live upscaled masks still accumulate by
+default. For a refinement-only high-quality cloud, start with
+`PIPER_CLOUD_ACCUMULATE_LIVE=false` and issue `capture` once at each stationary viewpoint.
 
 Clouds are written under `datasets/target_clouds`. By default points remain in the camera frame. A
 multi-view arm scan requires a valid camera-to-base TF and these settings:

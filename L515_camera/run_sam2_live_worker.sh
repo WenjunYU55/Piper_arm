@@ -12,4 +12,5 @@ echo "Spool directory: $SPOOL_DIR"
 exec "$PYTHON_BIN" "$ROOT/AI_perception_tests/sam2_live_worker.py" \
   --spool-dir "$SPOOL_DIR" \
   --device "${PIPER_SAM2_DEVICE:-cuda}" \
-  --max-session-frames "${PIPER_SAM2_MAX_SESSION_FRAMES:-8}"
+  --max-session-frames "${PIPER_SAM2_MAX_SESSION_FRAMES:-8}" \
+  --inference-width "${PIPER_SAM2_INFERENCE_WIDTH:-384}"

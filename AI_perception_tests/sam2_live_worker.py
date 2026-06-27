@@ -43,6 +43,7 @@ class Sam2LiveWorker:
         config: str = DEFAULT_CONFIG,
         checkpoint: Path = DEFAULT_CHECKPOINT,
         max_session_frames: int = 8,
+        inference_width: int = 384,
     ) -> None:
         self.spool = Path(spool_dir)
         self.frames = self.spool / "frames"
@@ -55,6 +56,7 @@ class Sam2LiveWorker:
         self.config = config
         self.checkpoint = Path(checkpoint)
         self.max_session_frames = max(2, int(max_session_frames))
+        self.inference_width = max(0, int(inference_width))
         self.predictor = None
         self.state = None
         self.last_masks = {}
@@ -62,6 +64,23 @@ class Sam2LiveWorker:
         self.last_frame_key = ""
         self.session_frames = 0
         self.tracking_state = "WAITING_FOR_SEED"
+
+    def inference_image(self, image: np.ndarray, is_mask: bool = False) -> np.ndarray:
+        """Resize for live inference while retaining native-resolution ROS output."""
+        height, width = image.shape[:2]
+        if not self.inference_width or width <= self.inference_width:
+            return image.copy()
+        scale = self.inference_width / float(width)
+        size = (self.inference_width, max(1, int(round(height * scale))))
+        interpolation = cv2.INTER_NEAREST if is_mask else cv2.INTER_AREA
+        return cv2.resize(image, size, interpolation=interpolation)
+
+    @staticmethod
+    def output_mask(mask: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
+        mask = np.asarray(mask, dtype=np.uint8)
+        if mask.shape != shape:
+            mask = cv2.resize(mask, (shape[1], shape[0]), interpolation=cv2.INTER_NEAREST)
+        return mask > 0
 
     @staticmethod
     def prune_directories(root: Path, keep: int) -> None:
@@ -157,12 +176,13 @@ class Sam2LiveWorker:
             if legacy_mask is None:
                 raise ValueError("seed contains no object masks: %s" % seed)
             objects = [{"object_id": 1, "role": "target", "label": "target", "mask_file": "mask.png"}]
+        inference_rgb = self.inference_image(rgb)
         masks = {}
         for record in objects:
             mask = cv2.imread(str(seed / str(record.get("mask_file", ""))), cv2.IMREAD_GRAYSCALE)
             if mask is not None:
-                masks[int(record.get("object_id", 0))] = mask
-        self.reset(rgb, masks, objects, seed.name)
+                masks[int(record.get("object_id", 0))] = self.inference_image(mask, is_mask=True)
+        self.reset(inference_rgb, masks, objects, seed.name)
         # Frames captured before the new semantic seed are no longer useful and
         # must not be replayed into the recovered tracking session.
         for stale_frame in self.ready_directories(self.frames):
@@ -181,6 +201,7 @@ class Sam2LiveWorker:
             raise ValueError("unreadable frame: %s" % frame)
         with (frame / "frame.yaml").open("r", encoding="utf-8") as stream:
             metadata = yaml.safe_load(stream) or {}
+        inference_rgb = self.inference_image(rgb)
         started = time.perf_counter()
         target_was_valid = bool(
             1 in self.last_masks and np.count_nonzero(self.last_masks[1])
@@ -191,10 +212,10 @@ class Sam2LiveWorker:
             # the same failing reset forever.
             predictions = dict(self.last_masks)
         elif self.session_frames >= self.max_session_frames:
-            self.reset(rgb, self.last_masks, self.objects, frame.name)
+            self.reset(inference_rgb, self.last_masks, self.objects, frame.name)
             predictions = self.last_masks
         else:
-            rgb_input = cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB)
+            rgb_input = cv2.cvtColor(inference_rgb, cv2.COLOR_BGR2RGB)
             with torch.inference_mode(), torch.autocast(
                 device_type="cuda", dtype=torch.bfloat16, enabled=self.device == "cuda"
             ):
@@ -211,7 +232,11 @@ class Sam2LiveWorker:
         result_tmp.mkdir(parents=True)
         object_dir = result_tmp / "objects"
         object_dir.mkdir()
-        target_mask = predictions.get(1, np.zeros(rgb.shape[:2], dtype=bool))
+        output_predictions = {
+            object_id: self.output_mask(prediction, rgb.shape[:2])
+            for object_id, prediction in predictions.items()
+        }
+        target_mask = output_predictions.get(1, np.zeros(rgb.shape[:2], dtype=bool))
         cv2.imwrite(str(result_tmp / "mask.png"), target_mask.astype(np.uint8) * 255)
         all_obstacles = np.zeros(rgb.shape[:2], dtype=bool)
         unsafe_obstacles = np.zeros(rgb.shape[:2], dtype=bool)
@@ -219,7 +244,7 @@ class Sam2LiveWorker:
         object_ids_image = np.zeros(rgb.shape[:2], dtype=np.uint16)
         result_objects = []
         object_metadata = {int(item.get("object_id", 0)): item for item in self.objects}
-        for object_id, prediction in sorted(predictions.items()):
+        for object_id, prediction in sorted(output_predictions.items()):
             record = dict(object_metadata.get(object_id, {"object_id": object_id, "role": "obstacle"}))
             mask_file = "objects/object_%03d.png" % object_id
             cv2.imwrite(str(result_tmp / mask_file), prediction.astype(np.uint8) * 255)
@@ -249,6 +274,8 @@ class Sam2LiveWorker:
             "inference_fps": float(1.0 / elapsed) if elapsed else 0.0,
             "device": self.device,
             "session_frames": self.session_frames,
+            "inference_size": [int(inference_rgb.shape[1]), int(inference_rgb.shape[0])],
+            "output_size": [int(rgb.shape[1]), int(rgb.shape[0])],
             "dry_run": True,
             "real_arm_motion": False,
         }
@@ -290,6 +317,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", default=DEFAULT_CONFIG)
     parser.add_argument("--checkpoint", type=Path, default=DEFAULT_CHECKPOINT)
     parser.add_argument("--max-session-frames", type=int, default=8)
+    parser.add_argument("--inference-width", type=int, default=384)
     parser.add_argument("--poll-interval", type=float, default=0.01)
     return parser.parse_args()
 
@@ -297,7 +325,8 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     worker = Sam2LiveWorker(
-        args.spool_dir, args.device, args.config, args.checkpoint, args.max_session_frames
+        args.spool_dir, args.device, args.config, args.checkpoint,
+        args.max_session_frames, args.inference_width
     )
     worker.build()
     running = True
