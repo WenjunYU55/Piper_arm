@@ -18,6 +18,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/HandoffTarget.msg"
   "msg/ManipulationCommand.msg"
   "msg/ManipulationState.msg"
+  "msg/ObstacleInstance3D.msg"
+  "msg/ObstacleInstance3DArray.msg"
   DEPENDENCIES geometry_msgs std_msgs
 )
 
@@ -44,6 +46,9 @@ install(PROGRAMS
   piper_mobile_manipulation/sam2_live_bridge_node.py
   piper_mobile_manipulation/target_cloud_node.py
   piper_mobile_manipulation/mask_to_detection_node.py
+  piper_mobile_manipulation/obstacle_instance_3d_node.py
+  piper_mobile_manipulation/obstacle_repeatability_validator.py
+  piper_mobile_manipulation/target_landmark_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -59,6 +64,9 @@ install(FILES
 )
 
 if(BUILD_TESTING)
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(test_obstacle_geometry test/test_obstacle_geometry.py)
+  ament_add_pytest_test(test_target_landmark_geometry test/test_target_landmark_geometry.py)
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)

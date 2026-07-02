@@ -39,6 +39,10 @@ setup(
             'sam2_live_bridge = piper_mobile_manipulation.sam2_live_bridge_node:main',
             'target_cloud = piper_mobile_manipulation.target_cloud_node:main',
             'mask_to_detection = piper_mobile_manipulation.mask_to_detection_node:main',
+            'obstacle_instance_3d = piper_mobile_manipulation.obstacle_instance_3d_node:main',
+            'obstacle_repeatability_validator = '
+            'piper_mobile_manipulation.obstacle_repeatability_validator:main',
+            'target_landmark = piper_mobile_manipulation.target_landmark_node:main',
         ],
     },
 )

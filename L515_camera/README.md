@@ -139,6 +139,41 @@ The ROS 2 package itself remains in:
 /home/prl/Piper_arm/piper_ros_foxy/src/piper_mobile_manipulation
 ```
 
+The GPU geometry launch publishes one atomic obstacle snapshot per SAM2 frame on
+`/piper/obstacle_instances_3d`. Each record contains camera and `base_link` geometry;
+`scene_blocked` remains true for invalid, unsafe, unknown, or non-whitelisted objects.
+Writing tools use one canonical `pen` class. Marker label variants normalize to
+`pen`; it is the only whitelisted class.
+
+The geometry launch also maintains a stationary target landmark in `base_link`:
+
+- `/piper/target_landmark` is the conservative world-frame reference point.
+- `/piper/target_landmark_projection` is its predicted pixel in the current view.
+- `/piper/target_landmark_status` reports agreement and whether a rescan is needed.
+
+Meaningful viewpoint changes request a fresh full target mask. Target cloud points
+are fused in `base_link`; a timestamped transform is required, so no camera-frame
+fallback is used for multi-view accumulation.
+
+To validate a fixed marker after starting the normal perception and hand-eye TF terminals:
+
+```bash
+source /home/prl/Piper_arm/L515_camera/source_l515_environment.sh
+ros2 run piper_mobile_manipulation obstacle_repeatability_validator.py \
+  --ros-args -p scenario:=clear_view -p expected_label:=pen
+```
+
+At each stationary GUI-positioned viewpoint, capture one sample. Collect 5–8, then finalize:
+
+```bash
+ros2 service call /obstacle_repeatability_validator/capture_sample std_srvs/srv/Trigger '{}'
+ros2 service call /obstacle_repeatability_validator/finalize std_srvs/srv/Trigger '{}'
+```
+
+Reports are written under `/tmp/piper_obstacle_validation` by default. For unsafe-object and
+unknown-object scenarios, also pass `-p expect_scene_blocked:=true` and use a distinct scenario
+name. Neither node publishes any motion command.
+
 Run:
 
 ```bash

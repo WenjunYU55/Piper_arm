@@ -137,6 +137,7 @@ def run_heavy_refresh(capture_dir: Path, output_root: Path, device: str = "cpu")
         mask
         for mask in masks
         if mask.get("mask_role") == "obstacle" and mask.get("target_relevant_occluder", False)
+        and not mask.get("explained_by_semantic_label")
     ]
     target_mask_path = str(targets[0]["mask_png"]) if targets else ""
     candidate_safe_obstacles = [mask for mask in obstacles if is_candidate_safe_obstacle(mask)]

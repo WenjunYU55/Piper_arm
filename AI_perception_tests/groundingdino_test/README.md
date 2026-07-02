@@ -105,7 +105,7 @@ Each capture uses two GroundingDINO passes:
 The obstacle prompt uses `|`-separated groups so visually competing classes are evaluated independently:
 
 ```text
-whiteboard marker . | dry erase marker . | pen . marker . writing pen . | hand . finger . | wire . cable . | tissue . paper tissue . paper .
+pen . | hand . finger . | wire . cable . | tissue . paper tissue . paper .
 ```
 
 Generic `tool` and `unknown object` are not crop prompts. A geometrically detected region that does not

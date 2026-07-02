@@ -45,6 +45,7 @@ start_process gpu_geometry "$ROOT/L515_camera/run_gpu_geometry.sh"
 echo "GPU vision pipeline is running on ROS_DOMAIN_ID=$ROS_DOMAIN_ID."
 echo "Target: /piper/sam2_target_mask"
 echo "Obstacles: /piper/sam2_obstacle_mask"
+echo "Obstacle instances: /piper/obstacle_instances_3d"
 echo "Cloud: /piper/target_cloud"
 echo "Press Ctrl+C to stop all vision processes."
 

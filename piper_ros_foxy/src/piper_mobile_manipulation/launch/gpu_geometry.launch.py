@@ -55,4 +55,18 @@ def generate_launch_description():
                 'stale_timeout_sec': 2.5,
             }],
         ),
+        Node(
+            package='piper_mobile_manipulation',
+            executable='obstacle_instance_3d_node.py',
+            name='obstacle_instance_3d',
+            output='screen',
+            parameters=[cfg('obstacle_instance_3d_params.yaml')],
+        ),
+        Node(
+            package='piper_mobile_manipulation',
+            executable='target_landmark_node.py',
+            name='target_landmark',
+            output='screen',
+            parameters=[cfg('frames.yaml')],
+        ),
     ])

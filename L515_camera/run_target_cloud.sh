@@ -11,5 +11,5 @@ echo "Publish 'save' or 'clear' on /piper/target_cloud_request."
 exec ros2 run piper_mobile_manipulation target_cloud_node.py --ros-args \
   -p mask_topic:=/piper/sam2_target_mask \
   -p accumulate_live_masks:="${PIPER_CLOUD_ACCUMULATE_LIVE:-true}" \
-  -p target_frame:="${PIPER_CLOUD_FRAME:-camera_color_optical_frame}" \
-  -p require_transform:="${PIPER_CLOUD_REQUIRE_TF:-false}"
+  -p target_frame:="${PIPER_CLOUD_FRAME:-base_link}" \
+  -p require_transform:="${PIPER_CLOUD_REQUIRE_TF:-true}"

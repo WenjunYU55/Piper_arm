@@ -1,0 +1,4 @@
+std_msgs/Header header
+piper_mobile_manipulation/ObstacleInstance3D[] instances
+bool scene_blocked
+string blocking_reason

@@ -30,7 +30,7 @@ AI_TEST_DIR = SCRIPT_DIR.parent
 DEFAULT_MANIFEST = AI_TEST_DIR / "test_sets" / "real_l515_baseline" / "manifest.yaml"
 DEFAULT_RESULTS = AI_TEST_DIR / "test_sets" / "real_l515_baseline" / "groundingdino_results.yaml"
 DEFAULT_PROMPT = (
-    "green cube . cube . box . hand . pen . tissue . paper tissue . paper . "
+    "green cube . hand . pen . tissue . paper tissue . paper . cardboard . "
     "fruit . tool . wire . unknown object ."
 )
 

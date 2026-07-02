@@ -26,16 +26,18 @@ DEFAULT_BOX_THRESHOLD = 0.35
 DEFAULT_TEXT_THRESHOLD = 0.25
 DEFAULT_LOCAL_BOX_THRESHOLD = 0.30
 DEFAULT_OBSTACLE_PROMPT = (
-    "whiteboard marker . | "
-    "dry erase marker . | "
-    "pen . marker . writing pen . | "
+    "pen . | "
     "hand . finger . | "
     "wire . cable . | "
-    "tissue . paper tissue . paper ."
+    "tissue . paper tissue . paper . | "
+    "cardboard . cardboard box ."
 )
-LOCAL_CROP_MIN_SIZE_PX = 128
+LOCAL_CROP_MIN_SIZE_PX = 256
+LOCAL_CROP_HALF_EXTENT_SCALE = 3.0
 MIN_TRACKED_MASK_FALLBACK_AREA_PX = 100
-TARGET_TERMS = ("green cube", "cube", "box")
+# Target selection is intentionally strict. Generic "cube" and "box" prompts
+# can promote cardboard packaging to the target and poison the SAM2 session.
+TARGET_TERMS = ("green cube",)
 UNSAFE_TERMS = (
     "hand",
     "human",
@@ -47,10 +49,10 @@ UNSAFE_TERMS = (
     "occluder",
     "blocker",
     "unknown object",
+    "cardboard",
 )
 CANDIDATE_SAFE_TERMS = (
     "pen",
-    "marker",
     "paper",
     "tissue",
 )
@@ -287,8 +289,14 @@ def target_crop_bounds(target_box: list[float], width: int, height: int) -> tupl
     x0, y0, x1, y1 = [float(value) for value in target_box]
     center_x = (x0 + x1) / 2.0
     center_y = (y0 + y1) / 2.0
-    half_width = max(LOCAL_CROP_MIN_SIZE_PX / 2.0, (x1 - x0) * 2.0)
-    half_height = max(LOCAL_CROP_MIN_SIZE_PX / 2.0, (y1 - y0) * 2.0)
+    half_width = max(
+        LOCAL_CROP_MIN_SIZE_PX / 2.0,
+        (x1 - x0) * LOCAL_CROP_HALF_EXTENT_SCALE,
+    )
+    half_height = max(
+        LOCAL_CROP_MIN_SIZE_PX / 2.0,
+        (y1 - y0) * LOCAL_CROP_HALF_EXTENT_SCALE,
+    )
     crop_x0 = max(0, int(round(center_x - half_width)))
     crop_y0 = max(0, int(round(center_y - half_height)))
     crop_x1 = min(width, int(round(center_x + half_width)))

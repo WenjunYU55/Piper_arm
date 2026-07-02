@@ -1,0 +1,23 @@
+/**:
+  ros__parameters:
+    object_ids_topic: /piper/sam2_object_ids
+    metadata_topic: /piper/sam2_tracking_status
+    depth_topic: /camera/aligned_depth_to_color/image_raw
+    camera_info_topic: /camera/color/camera_info
+    output_topic: /piper/obstacle_instances_3d
+    base_frame: base_link
+    movable_whitelist: [pen]
+    depth_min_m: 0.25
+    depth_max_m: 1.20
+    min_valid_depth_pixels: 20
+    min_valid_depth_ratio: 0.40
+    mask_erode_px: 2
+    bounds_low_percentile: 2.0
+    bounds_high_percentile: 98.0
+    sync_slop_sec: 0.08
+    metadata_wait_sec: 0.25
+    # Heavy perception can add several seconds of latency while still carrying
+    # the correct camera timestamp for TF lookup.
+    max_source_age_sec: 10.0
+    transform_timeout_sec: 0.20
+    max_transform_age_sec: 0.20
