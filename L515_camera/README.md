@@ -82,11 +82,12 @@ pixel before projection, reducing background leakage. Live upscaled masks still 
 default. For a refinement-only high-quality cloud, start with
 `PIPER_CLOUD_ACCUMULATE_LIVE=false` and issue `capture` once at each stationary viewpoint.
 
-Clouds are written under `datasets/target_clouds`. By default points remain in the camera frame. A
-multi-view arm scan requires a valid camera-to-base TF and these settings:
+Clouds are written under `datasets/target_clouds`. Points are fused in `base_link` by default and a
+timestamped camera-to-base transform is mandatory. The explicit production command is:
 
 ```bash
-PIPER_CLOUD_FRAME=piper_base_link PIPER_CLOUD_REQUIRE_TF=true \
+export ROS_LOCALHOST_ONLY=0 L515_ROS_LOCALHOST_ONLY=0
+PIPER_CLOUD_FRAME=base_link PIPER_CLOUD_REQUIRE_TF=true \
   ./L515_camera/run_gpu_vision_pipeline.sh
 ```
 

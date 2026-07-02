@@ -30,8 +30,12 @@ Most scripts source their environment automatically. For manual ROS commands, us
 
 ```bash
 export ROS_DOMAIN_ID=42
+export ROS_LOCALHOST_ONLY=0
 source L515_camera/source_l515_environment.sh
 ```
+
+Keep `ROS_DOMAIN_ID=42` and `ROS_LOCALHOST_ONLY=0` identical in every terminal. The
+environment helper defaults to localhost-only discovery unless the variable is set first.
 
 Check that ROS can see the camera:
 
@@ -46,6 +50,169 @@ ros2 topic list | grep piper
 ```
 
 ## Read-only L515 perception runtime
+
+### Current perception-validation runbook
+
+This is the canonical workflow for validating the green cube, pen, stationary landmark, and
+multi-view target cloud. It does not start `full_visual_servo.launch.py` and does not publish arm
+commands. Repositioning the arm remains manual through the GUI.
+
+Before starting, put the green cube and one stationary pen in view. Start the PiPER driver separately
+if it is not already running; the hand-eye publisher needs `/joint_states_single`, but the arm does
+not need to be enabled for perception.
+
+Terminal 1 — PiPER driver and joint feedback:
+
+```bash
+cd /home/prl/Piper_arm
+export ROS_DOMAIN_ID=42 ROS_LOCALHOST_ONLY=0
+./start_piper.sh
+```
+
+What it does: starts CAN and the PiPER ROS driver with auto-enable disabled. It supplies timestamped
+joint feedback used by the hand-eye transform. Do not run `enable_piper.sh` for a stationary camera
+test.
+
+Terminal 2 — accepted hand-eye transform:
+
+```bash
+cd /home/prl/Piper_arm
+export ROS_DOMAIN_ID=42 ROS_LOCALHOST_ONLY=0
+./L515_camera/run_hand_eye_tf.sh
+```
+
+What it does: reads `/joint_states_single` and publishes the accepted dynamic
+`base_link -> camera_link` transform. It refuses a calibration not marked `accepted` and never
+commands motion.
+
+Terminal 3 — complete read-only GPU perception:
+
+```bash
+cd /home/prl/Piper_arm
+export ROS_DOMAIN_ID=42 ROS_LOCALHOST_ONLY=0 L515_ROS_LOCALHOST_ONLY=0
+PIPER_CLOUD_FRAME=base_link PIPER_CLOUD_REQUIRE_TF=true \
+  ./L515_camera/run_gpu_vision_pipeline.sh
+```
+
+What it starts:
+
+- L515 color and aligned-depth streams.
+- GroundingDINO heavy semantic refresh and SAM2 mask tracking on CUDA.
+- Per-object 3D geometry in the camera frame and `base_link`.
+- The stationary cube landmark and its image projection.
+- Target point-cloud fusion in `base_link`, with timestamped TF mandatory.
+
+Do not also start the individual camera, bridge, worker, geometry, or cloud scripts: the complete
+pipeline already owns them.
+
+Terminal 4 — live acceptance status:
+
+```bash
+cd /home/prl/Piper_arm
+export ROS_DOMAIN_ID=42 ROS_LOCALHOST_ONLY=0
+source L515_camera/source_l515_environment.sh
+ros2 topic echo /piper/target_landmark_status
+```
+
+In additional terminals, inspect the landmark vector and obstacle records:
+
+```bash
+ros2 topic echo /piper/target_landmark
+ros2 topic echo /piper/target_landmark_projection
+ros2 topic echo /piper/obstacle_instances_3d
+ros2 topic echo /piper/sam2_tracking_status
+```
+
+Expected initial acceptance state:
+
+```text
+green cube target: detected and tracked
+pen obstacle: one stable object ID, classification movable, geometry valid
+scene_blocked: false
+target landmark state: LOCKED
+target landmark frame_id: base_link
+```
+
+The landmark begins as `INITIALIZING`. Keep the camera still while it collects five consistent
+measurements. `LOCKED` means the stable reference is available. `RESCAN_NEEDED` means its projected
+pixel disagrees with the current target mask or a meaningful viewpoint change requires a semantic
+refresh. `INVALID` includes a `reason` field such as missing timestamped TF or inadequate depth.
+
+The landmark is a conservative visible-surface reference point, not the exact physical centre of the
+cube. It updates only after a viewpoint change of at least 12 degrees and a gated consistent
+measurement.
+
+### Pen repeatability validation
+
+First ensure only one validator process exists:
+
+```bash
+pgrep -af obstacle_repeatability_validator
+```
+
+If an old validator is present, stop its terminal with `Ctrl+C`; do not start a duplicate with the
+same ROS node name. Then start one validator:
+
+```bash
+cd /home/prl/Piper_arm
+export ROS_DOMAIN_ID=42 ROS_LOCALHOST_ONLY=0
+source L515_camera/source_l515_environment.sh
+ros2 run piper_mobile_manipulation obstacle_repeatability_validator.py \
+  --ros-args -p scenario:=clear_view -p expected_label:=pen
+```
+
+At each of 5–8 stationary, GUI-positioned viewpoints, verify the same pen object ID and then capture:
+
+```bash
+ros2 service call /obstacle_repeatability_validator/capture_sample \
+  std_srvs/srv/Trigger '{}'
+```
+
+After the final viewpoint:
+
+```bash
+ros2 service call /obstacle_repeatability_validator/finalize \
+  std_srvs/srv/Trigger '{}'
+```
+
+Acceptance requires maximum position drift no greater than 15 mm, a constant object ID, movable
+`pen` classification, valid timestamped transforms, and no unsafe classification. Reports are saved
+under `/tmp/piper_obstacle_validation` by default.
+
+For an unsafe or unknown-object blocking test, use a distinct scenario and require blocking:
+
+```bash
+ros2 run piper_mobile_manipulation obstacle_repeatability_validator.py \
+  --ros-args -p scenario:=unsafe_object -p expect_scene_blocked:=true
+```
+
+Never run this second validator concurrently with the clear-view validator. Unsafe, unknown,
+non-whitelisted, stale, or invalid objects must produce `scene_blocked: true`.
+
+### Multi-view cube cloud
+
+With the pipeline started using `base_link` and mandatory TF, keep the cube stationary and move only
+the camera/arm manually. At each stopped viewpoint request one full-resolution capture:
+
+```bash
+ros2 topic pub --once /piper/target_cloud_request \
+  std_msgs/msg/String "{data: capture}"
+ros2 topic echo --once /piper/target_cloud_status
+```
+
+Wait for a successful full-resolution refinement status before changing viewpoint. Save or clear:
+
+```bash
+ros2 topic pub --once /piper/target_cloud_request std_msgs/msg/String "{data: save}"
+ros2 topic pub --once /piper/target_cloud_request std_msgs/msg/String "{data: clear}"
+```
+
+Open RViz with fixed frame `base_link`, then display `/piper/target_landmark` as Point,
+`/piper/target_cloud` as PointCloud2, and TF:
+
+```bash
+./L515_camera/view_l515_rviz.sh
+```
 
 ### GPU SAM2 live tracking
 
@@ -105,9 +272,10 @@ ros2 topic pub --once /piper/target_cloud_request std_msgs/msg/String "{data: cl
 Wait for `/piper/target_cloud_status` to report
 `mask_source: full_resolution_refinement` before moving to the next viewpoint or saving.
 
-Saved PLY files are written to `datasets/target_clouds`. Camera-frame accumulation works for a fixed
-L515. Multi-view accumulation requires a published camera-to-base transform and
-`PIPER_CLOUD_FRAME=piper_base_link PIPER_CLOUD_REQUIRE_TF=true`.
+Saved PLY files are written to `datasets/target_clouds`. Multi-view accumulation requires the
+timestamped camera-to-base transform and
+`PIPER_CLOUD_FRAME=base_link PIPER_CLOUD_REQUIRE_TF=true`. These are now the script defaults, but
+setting them explicitly in operator commands makes the safety requirement visible.
 
 Use separate terminals.
 
@@ -469,6 +637,19 @@ Show heavy-refresh status:
 ros2 topic echo /piper/heavy_refresh_status
 ```
 
+Show the stationary cube landmark and status:
+
+```bash
+ros2 topic echo /piper/target_landmark
+ros2 topic echo /piper/target_landmark_status
+```
+
+Show per-obstacle 3D geometry and scene blocking:
+
+```bash
+ros2 topic echo /piper/obstacle_instances_3d
+```
+
 ## Shutdown order
 
 For read-only perception:
@@ -492,13 +673,24 @@ For real arm operation:
 
 | Command | Purpose | Can move real arm? |
 |---|---|---|
+| `./L515_camera/check_l515_ros.sh` | Check ROS packages and camera-topic visibility | No |
 | `./L515_camera/start_l515_camera.sh` | Start L515 camera | No |
+| `./L515_camera/start_l515_camera_low_bandwidth.sh` | Start reduced-bandwidth L515 streams for USB diagnosis | No |
 | `./L515_camera/run_heavy_refresh_bridge.sh` | ROS/filesystem bridge for heavy refresh | No |
 | `./L515_camera/run_heavy_model_worker.sh` | Isolated GroundingDINO/SAM2 worker | No |
+| `./L515_camera/run_sam2_live_bridge.sh` | Transfer ROS camera frames and SAM2 results through the live spool | No |
+| `./L515_camera/run_sam2_live_worker.sh` | Run incremental SAM2 propagation on CUDA | No |
 | `./L515_camera/run_gpu_vision_pipeline.sh` | Complete GroundingDINO/SAM2 perception | No |
+| `./L515_camera/run_gpu_geometry.sh` | Start mask geometry, obstacle instances, and landmark; included in complete pipeline | No |
+| `./L515_camera/run_target_cloud.sh` | Fuse masked cube depth in `base_link`; included in complete pipeline | No |
 | `./L515_camera/run_hand_eye_tf.sh` | Publish accepted live camera TF | No |
 | `./L515_camera/run_fixed_board_validation.sh` | Measure fixed-board TF repeatability | No |
 | `./L515_camera/view_l515_opencv.sh <topic>` | Image viewer | No |
+| `./L515_camera/view_l515_rviz.sh` | Open the checked-in RViz camera/perception layout | No |
+| `ros2 topic echo /piper/target_landmark_status` | Monitor landmark initialization, lock, rescan, and errors | No |
+| `ros2 topic echo /piper/obstacle_instances_3d` | Inspect obstacle identity, classification, geometry, and blocking | No |
+| `ros2 service call .../capture_sample` | Capture one stable pen repeatability sample | No |
+| `ros2 service call .../finalize` | Evaluate and save the 5–8-view repeatability report | No |
 | `./start_piper.sh` | Start PiPER driver/CAN | Not by itself |
 | `./enable_piper.sh` | Enable real arm | Enables motion |
 | `./disable_piper.sh` | Disable real arm through ROS service | Stops accepting normal commands after success |
