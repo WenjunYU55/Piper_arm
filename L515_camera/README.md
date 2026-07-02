@@ -18,6 +18,10 @@ Files:
 - `run_gpu_vision_pipeline.sh`: starts the complete read-only CUDA vision pipeline.
 - `run_gpu_geometry.sh`: converts the SAM2 target mask into 2D/3D tracking and occlusion inputs.
 - `run_target_cloud.sh`: accumulates the masked L515 depth into a target point cloud.
+- `capture_hand_eye_sample.py`: captures a strict full-board ChArUco hand-eye sample.
+- `solve_hand_eye.py`: solves and independently validates PiPER eye-in-hand calibration.
+- `run_hand_eye_tf.sh`: publishes the accepted dynamic `base_link` to camera TF.
+- `run_fixed_board_validation.sh`: interactively checks fixed-board repeatability across arm poses.
 - `view_l515_camera.sh`: opens a simple image viewer for a camera topic.
 - `view_l515_showimage.sh`: opens ROS 2 `image_tools/showimage` for a camera topic.
 - `view_l515_opencv.sh`: opens a direct OpenCV viewer for a camera topic.
@@ -88,6 +92,46 @@ PIPER_CLOUD_FRAME=piper_base_link PIPER_CLOUD_REQUIRE_TF=true \
 
 Status and performance are published on `/piper/sam2_tracking_status`; cloud status is published on
 `/piper/target_cloud_status`. This pipeline is read-only and does not publish real arm commands.
+
+## Eye-in-hand calibration
+
+The deployed calibration is:
+
+```text
+calibration/hand_eye/session_20260701_local/calibration_result.yaml
+```
+
+It is accepted from 12 fitting and 3 held-out validation samples. Do not use
+`session_20260629_resample3`, which was rejected. Reproduce the solve from the compact committed
+sample metadata:
+
+```bash
+python3 L515_camera/solve_hand_eye.py \
+  L515_camera/calibration/hand_eye/session_20260701_local
+```
+
+Start the runtime TF publisher after the PiPER driver and camera:
+
+```bash
+export ROS_DOMAIN_ID=42
+export ROS_LOCALHOST_ONLY=0
+./L515_camera/run_hand_eye_tf.sh
+```
+
+The publisher refuses any calibration whose status is not `accepted`. It reads
+`/joint_states_single`, computes PiPER modified-DH mode-0 FK, and publishes dynamic
+`base_link -> camera_link`; RealSense supplies the remaining static optical-frame transform.
+
+Validate the physical chain with the fixed ChArUco board left stationary:
+
+```bash
+./L515_camera/run_fixed_board_validation.sh
+```
+
+Stop the arm at each substantially different viewpoint, press Enter to average ten strict full-board
+detections, collect at least three poses, then enter `q`. The accepted physical test used five poses
+and measured maximum drift of 8.63 mm and 0.59 degrees against limits of 15 mm and 1.5 degrees.
+Neither the TF publisher nor validator commands arm motion.
 
 The ROS 2 package itself remains in:
 

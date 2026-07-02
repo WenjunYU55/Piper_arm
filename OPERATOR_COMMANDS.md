@@ -325,7 +325,7 @@ joint2 = -0.040347972
 joint3 =  0.03410302
 joint4 =  0.018979072
 joint5 =  0.320917268
-joint6 =  1.07777754
+joint6 = -0.09670954
 joint7 =  0.01981
 ```
 
@@ -372,6 +372,64 @@ This file is used by:
 start_piper.sh
 piper_gui_native.py
 ```
+
+## Eye-in-hand camera TF and fixed-board validation
+
+Use five terminals and leave each process running. The board must remain fixed throughout validation.
+
+Terminal 1 — PiPER driver and joint feedback (does not auto-enable):
+
+```bash
+cd /home/prl/Piper_arm
+export ROS_DOMAIN_ID=42 ROS_LOCALHOST_ONLY=0
+./start_piper.sh
+```
+
+Terminal 2 — L515 camera (does not move the arm):
+
+```bash
+cd /home/prl/Piper_arm
+export ROS_DOMAIN_ID=42 ROS_LOCALHOST_ONLY=0
+./L515_camera/start_l515_camera.sh
+```
+
+Terminal 3 — accepted hand-eye TF (does not move the arm):
+
+```bash
+cd /home/prl/Piper_arm
+export ROS_DOMAIN_ID=42 ROS_LOCALHOST_ONLY=0
+./L515_camera/run_hand_eye_tf.sh
+```
+
+Terminal 4 — manual GUI. This can enable and move the real arm:
+
+```bash
+cd /home/prl/Piper_arm
+export ROS_DOMAIN_ID=42 ROS_LOCALHOST_ONLY=0
+./start_gui.sh
+```
+
+Terminal 5 — fixed-board validator (does not move the arm):
+
+```bash
+cd /home/prl/Piper_arm
+export ROS_DOMAIN_ID=42 ROS_LOCALHOST_ONLY=0
+./L515_camera/run_fixed_board_validation.sh
+```
+
+At each pose, stop the arm, confirm the entire 5x5 ChArUco board is visible, and press Enter in
+Terminal 5. Use at least three substantially different viewpoints; five to eight is preferred. Enter
+`q` to finish. Results are written to
+`L515_camera/calibration/hand_eye/session_20260701_local/fixed_board_validation.yaml`.
+
+The accepted calibration uses 12 fitting and 3 held-out samples. Its independent limits are 15 mm
+and 1.5 degrees per pose. The completed five-pose physical check passed with maximum drift of 8.63 mm
+and 0.59 degrees. Keep at least 30 mm clearance for subsequent supervised experiments.
+
+Do not enable real motion in `full_visual_servo.launch.py`. The current GroundingDINO/SAM2 pipeline
+produces dry-run `/piper/servo_cmd` messages, but no verified Cartesian actuator bridge, watchdog, or
+collision checker consumes them. Setting `enable_real_arm_motion:=true` does not make that pipeline a
+safe real-arm controller.
 
 ## Useful ROS inspection commands
 
@@ -438,6 +496,8 @@ For real arm operation:
 | `./L515_camera/run_heavy_refresh_bridge.sh` | ROS/filesystem bridge for heavy refresh | No |
 | `./L515_camera/run_heavy_model_worker.sh` | Isolated GroundingDINO/SAM2 worker | No |
 | `./L515_camera/run_gpu_vision_pipeline.sh` | Complete GroundingDINO/SAM2 perception | No |
+| `./L515_camera/run_hand_eye_tf.sh` | Publish accepted live camera TF | No |
+| `./L515_camera/run_fixed_board_validation.sh` | Measure fixed-board TF repeatability | No |
 | `./L515_camera/view_l515_opencv.sh <topic>` | Image viewer | No |
 | `./start_piper.sh` | Start PiPER driver/CAN | Not by itself |
 | `./enable_piper.sh` | Enable real arm | Enables motion |

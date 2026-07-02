@@ -1,0 +1,141 @@
+status: accepted
+model: eye_in_hand
+method: OpenCV CALIB_HAND_EYE_PARK
+sample_count:
+  fitting: 12
+  held_out_validation: 3
+fk:
+  model: piper_sdk_modified_dh_mode_0
+  units: metres and radians
+  note: Mode 0 matches the live controller /end_pose; mode 1 applies optional 2-degree
+    J2/J3 offsets.
+camera_to_link6:
+  translation_m:
+  - -0.07458662907681177
+  - -0.002784323936391811
+  - 0.026640193194546618
+  quaternion_xyzw:
+  - -0.011408651475471102
+  - 0.012376424551900361
+  - 0.7291080936985735
+  - -0.684191533483172
+  matrix:
+  - - -0.06350357636291339
+    - 0.9974167727767885
+    - -0.03357197004431118
+    - -0.07458662907681177
+  - - -0.997981566033688
+    - -0.0634575392505132
+    - 0.002436097127725545
+    - -0.002784323936391811
+  - - 0.00029940952850257254
+    - 0.03365890811963562
+    - 0.9994333335736446
+    - 0.026640193194546618
+  - - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+target_to_base:
+  translation_m:
+  - 0.3991273138666724
+  - 0.02336812971606611
+  - 0.004466090386509194
+  quaternion_xyzw:
+  - 0.01201612801178296
+  - -0.0215048840633959
+  - -0.6990847385107529
+  - 0.7146143582453243
+  matrix:
+  - - 0.021636136685544538
+    - 0.9986351726603557
+    - -0.047535981266265584
+    - 0.3991273138666724
+  - - -0.9996687944194931
+    - 0.022272282097913654
+    - 0.012893677288858475
+    - 0.02336812971606611
+  - - 0.013934814430149493
+    - 0.047241267719794255
+    - 0.998786305258049
+    - 0.004466090386509194
+  - - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+fitting_residuals:
+  translation_rms_mm: 10.115093877565892
+  translation_max_mm: 16.520951549795324
+  rotation_rms_deg: 1.3600085422300832
+  rotation_max_deg: 2.063108239554349
+  per_sample:
+  - name: capture_20260701_172708_393976
+    translation_error_mm: 11.231846575614574
+    rotation_error_deg: 1.0631112270952097
+    reprojection_rms_px: 0.12852621699992334
+  - name: capture_20260701_172919_899040
+    translation_error_mm: 10.180927002404006
+    rotation_error_deg: 1.728368190072369
+    reprojection_rms_px: 0.07002939669477588
+  - name: capture_20260701_173052_703524
+    translation_error_mm: 10.472237441602052
+    rotation_error_deg: 2.063108239554349
+    reprojection_rms_px: 0.23615853370578688
+  - name: capture_20260701_173148_509536
+    translation_error_mm: 7.470655194730911
+    rotation_error_deg: 1.0842335113096888
+    reprojection_rms_px: 0.1010327911989292
+  - name: capture_20260701_173351_059999
+    translation_error_mm: 10.865372317545022
+    rotation_error_deg: 0.34777619980737734
+    reprojection_rms_px: 0.1412271897683541
+  - name: capture_20260701_173502_077438
+    translation_error_mm: 16.520951549795324
+    rotation_error_deg: 1.670123340489985
+    reprojection_rms_px: 0.09472606216079253
+  - name: capture_20260701_173543_233223
+    translation_error_mm: 7.996753757190849
+    rotation_error_deg: 1.158119922879703
+    reprojection_rms_px: 0.12224373407664758
+  - name: capture_20260701_173714_301681
+    translation_error_mm: 3.321464075358964
+    rotation_error_deg: 1.1419889123005484
+    reprojection_rms_px: 0.39751456955434233
+  - name: capture_20260701_173833_794018
+    translation_error_mm: 7.33330189008598
+    rotation_error_deg: 1.1883883935308368
+    reprojection_rms_px: 0.082849714328211
+  - name: capture_20260701_173938_195602
+    translation_error_mm: 5.5726740659426754
+    rotation_error_deg: 1.4857950138431606
+    reprojection_rms_px: 0.13941323250541168
+  - name: capture_20260701_174139_423178
+    translation_error_mm: 12.08200359104054
+    rotation_error_deg: 1.809398006536724
+    reprojection_rms_px: 0.23208646983137207
+  - name: capture_20260701_174354_057293
+    translation_error_mm: 11.649558705310971
+    rotation_error_deg: 0.44342213542223063
+    reprojection_rms_px: 0.09838265037322828
+held_out_validation:
+  accepted: true
+  acceptance_limits:
+    translation_mm_per_sample: 15.0
+    rotation_deg_per_sample: 1.5
+  translation_rms_mm: 8.637150472890145
+  translation_max_mm: 12.32094914564501
+  rotation_rms_deg: 0.8643355305724814
+  rotation_max_deg: 1.022050828476393
+  per_sample:
+  - name: capture_20260701_174502_086886
+    translation_error_mm: 12.32094914564501
+    rotation_error_deg: 1.022050828476393
+    reprojection_rms_px: 0.098052897180826
+  - name: capture_20260701_174954_329941
+    translation_error_mm: 5.753494772899823
+    rotation_error_deg: 0.6568108050998488
+    reprojection_rms_px: 0.10300536510334588
+  - name: capture_20260701_175047_629412
+    translation_error_mm: 6.236394384793446
+    rotation_error_deg: 0.8747796285607284
+    reprojection_rms_px: 0.0876705547881363

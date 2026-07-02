@@ -28,6 +28,11 @@ L515_camera/.codex/
 datasets/
 piper_joint_bounds.json
 L515_camera/captures/
+# Hand-eye RGB/depth captures are local evidence, not runtime assets. Compact
+# sample YAML and accepted calibration/validation YAML may be committed.
+L515_camera/calibration/hand_eye/**/*.png
+L515_camera/calibration/hand_eye/**/*.npy
+L515_camera/calibration/hand_eye/session_202606*/
 AI_perception_tests/outputs/
 AI_perception_tests/test_sets/real_l515_baseline/
 AI_perception_tests/test_sets/real_l515_baseline/*_results.yaml
