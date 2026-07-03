@@ -30,7 +30,12 @@ shutdown() {
 }
 trap shutdown INT TERM EXIT
 
-start_process camera "$ROOT/L515_camera/start_l515_camera.sh"
+if [ "${PIPER_CAMERA_LOW_BANDWIDTH:-0}" = "1" ]; then
+  echo "Using reduced-bandwidth L515 depth profile."
+  start_process camera "$ROOT/L515_camera/start_l515_camera_low_bandwidth.sh"
+else
+  start_process camera "$ROOT/L515_camera/start_l515_camera.sh"
+fi
 sleep "${PIPER_CAMERA_STARTUP_SEC:-7}"
 start_process heavy_bridge "$ROOT/L515_camera/run_heavy_refresh_bridge.sh"
 start_process heavy_cuda_worker "$ROOT/L515_camera/run_heavy_model_worker.sh"

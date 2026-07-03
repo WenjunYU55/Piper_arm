@@ -94,6 +94,15 @@ PIPER_CLOUD_FRAME=base_link PIPER_CLOUD_REQUIRE_TF=true \
   ./L515_camera/run_gpu_vision_pipeline.sh
 ```
 
+If the L515 reports repeated USB `Resource temporarily unavailable` errors at the normal depth
+profile, start the same complete pipeline with reduced depth bandwidth:
+
+```bash
+PIPER_CAMERA_LOW_BANDWIDTH=1 \
+PIPER_CLOUD_FRAME=base_link PIPER_CLOUD_REQUIRE_TF=true \
+  ./L515_camera/run_gpu_vision_pipeline.sh
+```
+
 What it starts:
 
 - L515 color and aligned-depth streams.
@@ -212,6 +221,68 @@ Open RViz with fixed frame `base_link`, then display `/piper/target_landmark` as
 
 ```bash
 ./L515_camera/view_l515_rviz.sh
+```
+
+### Supervised obstacle-removal and adaptive cube workflow
+
+This coordinator is dry-run only. It publishes a removal proposal and RViz markers, but it has no
+arm-command publisher. The operator performs approved movements manually through the GUI.
+
+After the normal PiPER, hand-eye, and GPU perception terminals are stable, start:
+
+```bash
+cd /home/prl/Piper_arm
+export ROS_DOMAIN_ID=42 ROS_LOCALHOST_ONLY=1 L515_ROS_LOCALHOST_ONLY=1
+./L515_camera/run_supervised_cube_workflow.sh
+```
+
+In two terminals with the same environment, start both monitors before calling the service (these
+topics publish workflow events and may otherwise appear silent):
+
+```bash
+source L515_camera/source_l515_environment.sh
+ros2 topic echo --full-length /piper/supervised_workflow_status
+```
+
+```bash
+source L515_camera/source_l515_environment.sh
+ros2 topic echo --full-length /piper/removal_plan
+```
+
+Then call the start service from a third terminal:
+
+```bash
+source L515_camera/source_l515_environment.sh
+timeout 10s ros2 service call /supervised_cube_workflow/start std_srvs/srv/Trigger '{}'
+```
+
+Review the plan and `/piper/supervised_workflow_markers` in RViz. A proposed drop zone is only a
+dry-run candidate until a dense support-surface sensor is added; it is never sent to the arm.
+Approve the proposal, manually perform it, then request post-action verification:
+
+```bash
+ros2 service call /supervised_cube_workflow/approve_plan std_srvs/srv/Trigger '{}'
+ros2 service call /supervised_cube_workflow/confirm_action_complete std_srvs/srv/Trigger '{}'
+```
+
+The coordinator repeats removal planning if another whitelisted obstacle remains. When status is
+`SCAN_READY`, stop at a viewpoint and request a quality-gated full-resolution capture:
+
+```bash
+ros2 service call /supervised_cube_workflow/capture_view std_srvs/srv/Trigger '{}'
+```
+
+After 5–8 accepted views, finish and save the cloud:
+
+```bash
+ros2 service call /supervised_cube_workflow/finish_scan std_srvs/srv/Trigger '{}'
+ros2 topic echo /piper/target_model
+```
+
+Abort at any time with:
+
+```bash
+ros2 service call /supervised_cube_workflow/abort std_srvs/srv/Trigger '{}'
 ```
 
 ### GPU SAM2 live tracking

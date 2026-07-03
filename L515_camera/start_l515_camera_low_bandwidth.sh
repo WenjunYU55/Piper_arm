@@ -18,6 +18,7 @@ fi
 
 echo "Starting L515 with reduced depth bandwidth."
 echo "Use this when the USB controller or DDS path resets during the normal launch."
+echo "RGB profile: 640x480@30; depth profile: 320x240@30."
 ros2 launch realsense2_camera rs_launch.py \
   device_type:=l515 \
   enable_color:=true \

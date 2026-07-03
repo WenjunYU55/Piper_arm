@@ -8,6 +8,7 @@ find_package(message_filters REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Detection2D.msg"
@@ -49,6 +50,7 @@ install(PROGRAMS
   piper_mobile_manipulation/obstacle_instance_3d_node.py
   piper_mobile_manipulation/obstacle_repeatability_validator.py
   piper_mobile_manipulation/target_landmark_node.py
+  piper_mobile_manipulation/supervised_cube_workflow_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -67,6 +69,7 @@ if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)
   ament_add_pytest_test(test_obstacle_geometry test/test_obstacle_geometry.py)
   ament_add_pytest_test(test_target_landmark_geometry test/test_target_landmark_geometry.py)
+  ament_add_pytest_test(test_supervised_workflow test/test_supervised_workflow.py)
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)
