@@ -1,0 +1,25 @@
+uint8 ACTION_NONE=0
+uint8 ACTION_PICK_AND_PLACE=1
+uint8 ACTION_PUSH=2
+
+std_msgs/Header header
+uint32 object_id
+string semantic_label
+uint8 action
+geometry_msgs/Pose approach_pose
+geometry_msgs/Pose action_pose
+geometry_msgs/Pose destination_pose
+geometry_msgs/Pose retreat_pose
+float64[6] approach_joints
+float64[6] action_joints
+float64[6] destination_joints
+float64[6] retreat_joints
+float32 risk_score
+float32 minimum_clearance_m
+bool destination_observed
+bool destination_empty
+bool ik_valid
+bool valid
+bool dry_run
+string reason
+string[] rejected_alternatives

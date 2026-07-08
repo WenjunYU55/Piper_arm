@@ -2,10 +2,14 @@
   ros__parameters:
     desired_scan_angle_deg: 250
     viewpoint_step_deg: 15
-    scan_radius_m: 0.45
-    min_scan_radius_m: 0.30
+    scan_radius_m: 0.30
+    min_scan_radius_m: 0.25
     max_scan_radius_m: 0.80
     camera_pitch_deg: -10
+    camera_height_offset_m: 0.15
+    replan_interval_sec: 1.0
+    replan_target_motion_m: 0.01
+    fallback_center_angle_deg: 180.0
     keep_object_centered: true
     max_viewpoints: 20
 

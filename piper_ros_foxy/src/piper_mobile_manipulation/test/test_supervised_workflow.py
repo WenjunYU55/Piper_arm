@@ -69,3 +69,13 @@ def test_cloud_model_rejects_outlier_for_center():
     assert model['valid']
     assert model['center'][0] < 0.32
     assert model['accepted_views'] == 5
+
+
+def test_ground_is_semantically_safe_for_drop_clearance():
+    item = obstacle()
+    ground = obstacle(
+        object_id=9, label='ground', center=(0.53, 0.0, 0.0), size=(0.5, 0.5, 0.01))
+    plan = choose_removal_plan(
+        item, (0.35, 0.0, 0.05), [item, ground], config())
+    assert plan['valid']
+    assert plan['action'] == 'pick_and_place'

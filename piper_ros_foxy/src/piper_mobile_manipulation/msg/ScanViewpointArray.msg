@@ -1,0 +1,6 @@
+std_msgs/Header header
+piper_mobile_manipulation/ScanViewpoint[] viewpoints
+float32 requested_coverage_deg
+float32 planned_coverage_deg
+uint32 reachable_count
+bool dry_run

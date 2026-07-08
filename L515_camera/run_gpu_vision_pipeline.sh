@@ -6,6 +6,10 @@ export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-42}"
 export PIPER_HEAVY_DEVICE=cuda
 export PIPER_SAM2_DEVICE=cuda
 
+# Needed here so the launcher can discover an already-running ROS camera.
+# Individual component launchers also source this file for standalone use.
+source "$ROOT/L515_camera/source_l515_environment.sh"
+
 declare -a PIDS=()
 
 start_process() {
@@ -30,13 +34,40 @@ shutdown() {
 }
 trap shutdown INT TERM EXIT
 
-if [ "${PIPER_CAMERA_LOW_BANDWIDTH:-0}" = "1" ]; then
-  echo "Using reduced-bandwidth L515 depth profile."
-  start_process camera "$ROOT/L515_camera/start_l515_camera_low_bandwidth.sh"
+topic_has_publisher() {
+  local topic=$1
+  local count
+  count=$(ros2 topic info "$topic" 2>/dev/null | awk '/Publisher count:/ {print $3}')
+  [ "${count:-0}" -gt 0 ] 2>/dev/null
+}
+
+topic_is_active() {
+  local topic=$1
+  local activity
+  activity=$(timeout "${PIPER_CAMERA_PROBE_SEC:-3}s" \
+    ros2 topic hz "$topic" 2>/dev/null || true)
+  [ -n "$activity" ]
+}
+
+camera_is_available() {
+  topic_is_active /camera/color/image_raw &&
+    topic_has_publisher /camera/aligned_depth_to_color/image_raw &&
+    topic_has_publisher /camera/color/camera_info
+}
+
+if [ "${PIPER_REUSE_EXISTING_CAMERA:-1}" = "1" ] && camera_is_available; then
+  echo "Reusing existing ROS L515 RGB-D streams; no second camera process will be started."
+  echo "The existing camera is externally managed and will not be stopped by this launcher."
+  sleep "${PIPER_EXTERNAL_CAMERA_SETTLE_SEC:-1}"
 else
-  start_process camera "$ROOT/L515_camera/start_l515_camera.sh"
+  if [ "${PIPER_CAMERA_LOW_BANDWIDTH:-0}" = "1" ]; then
+    echo "Using reduced-bandwidth L515 depth profile."
+    start_process camera "$ROOT/L515_camera/start_l515_camera_low_bandwidth.sh"
+  else
+    start_process camera "$ROOT/L515_camera/start_l515_camera.sh"
+  fi
+  sleep "${PIPER_CAMERA_STARTUP_SEC:-7}"
 fi
-sleep "${PIPER_CAMERA_STARTUP_SEC:-7}"
 start_process heavy_bridge "$ROOT/L515_camera/run_heavy_refresh_bridge.sh"
 start_process heavy_cuda_worker "$ROOT/L515_camera/run_heavy_model_worker.sh"
 start_process sam2_cuda_worker "$ROOT/L515_camera/run_sam2_live_worker.sh"

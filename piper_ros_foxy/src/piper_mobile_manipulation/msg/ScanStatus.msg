@@ -1,0 +1,24 @@
+uint8 IDLE=0
+uint8 SURVEYING_SCENE=1
+uint8 ASSESSING_SCENE=2
+uint8 PLAN_READY=3
+uint8 WAITING_FOR_OPERATOR=4
+uint8 VERIFYING_REMOVAL=5
+uint8 PLANNING_SCAN=6
+uint8 WAITING_FOR_VIEWPOINT=7
+uint8 CAPTURING=8
+uint8 REGISTERING=9
+uint8 COMPLETE=10
+uint8 PAUSED=11
+uint8 FAILED=12
+uint8 ABORTED=13
+
+std_msgs/Header header
+uint8 state
+string state_name
+string reason
+uint32 current_viewpoint
+uint32 accepted_views
+uint32 total_viewpoints
+bool dry_run
+bool motion_commands_enabled

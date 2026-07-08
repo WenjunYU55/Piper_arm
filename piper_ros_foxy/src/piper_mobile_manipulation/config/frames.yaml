@@ -3,6 +3,6 @@
     map_frame: "map"
     odom_frame: "odom"
     base_frame: "base_link"
-    piper_base_frame: "piper_base_link"
+    piper_base_frame: "base_link"
     end_effector_frame: "end_effector_link"
     camera_frame: "camera_color_optical_frame"

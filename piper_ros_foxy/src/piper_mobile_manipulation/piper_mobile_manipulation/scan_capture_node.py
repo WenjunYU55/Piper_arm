@@ -13,7 +13,7 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CameraInfo, Image
 from std_msgs.msg import String
 
-from piper_mobile_manipulation.msg import Target3D
+from piper_mobile_manipulation.msg import ScanViewpointArray, Target3D
 
 try:
     import yaml
@@ -125,13 +125,13 @@ class ScanCaptureNode(Node):
             10,
         )
         self.create_subscription(
-            String,
+            ScanViewpointArray,
             self.get_parameter('scan_viewpoints_topic').value,
             self.scan_viewpoints_cb,
             10,
         )
         self.create_subscription(
-            String,
+            ScanViewpointArray,
             self.get_parameter('reachable_scan_viewpoints_topic').value,
             self.reachable_scan_viewpoints_cb,
             10,
@@ -178,10 +178,10 @@ class ScanCaptureNode(Node):
         self.latest_target = msg
 
     def scan_viewpoints_cb(self, msg):
-        self.latest_scan_viewpoints = self.parse_json_msg(msg)
+        self.latest_scan_viewpoints = msg
 
     def reachable_scan_viewpoints_cb(self, msg):
-        self.latest_reachable_scan_viewpoints = self.parse_json_msg(msg)
+        self.latest_reachable_scan_viewpoints = msg
 
     def scan_coverage_cb(self, msg):
         self.latest_scan_coverage = self.parse_json_msg(msg)
@@ -400,27 +400,19 @@ class ScanCaptureNode(Node):
 
     def planned_viewpoint_count(self):
         payload = self.latest_scan_viewpoints
-        if isinstance(payload, dict):
-            viewpoints = payload.get('viewpoints')
-            if isinstance(viewpoints, list):
-                return len(viewpoints)
-            value = payload.get('candidate_viewpoints')
-            if value is not None:
-                return int(value)
+        if payload is not None:
+            return len(payload.viewpoints)
         return 0
 
     def reachable_viewpoint_count(self):
         payload = self.latest_reachable_scan_viewpoints
-        if isinstance(payload, dict):
-            filter_info = payload.get('filter')
-            if isinstance(filter_info, dict) and filter_info.get('reachable_viewpoints') is not None:
-                return int(filter_info.get('reachable_viewpoints'))
-            viewpoints = payload.get('viewpoints')
-            if isinstance(viewpoints, list):
-                return int(sum(1 for viewpoint in viewpoints if viewpoint.get('reachable')))
+        if payload is not None:
+            return int(payload.reachable_count)
         return 0
 
     def scan_coverage_target(self):
+        if self.latest_scan_viewpoints is not None:
+            return float(self.latest_scan_viewpoints.requested_coverage_deg)
         payload = self.latest_scan_coverage if isinstance(self.latest_scan_coverage, dict) else None
         if payload is None and isinstance(self.latest_scan_viewpoints, dict):
             payload = self.latest_scan_viewpoints
@@ -441,11 +433,17 @@ class ScanCaptureNode(Node):
         return 0.0
 
     def planned_coverage_deg(self):
+        if self.latest_scan_viewpoints is not None:
+            return float(self.latest_scan_viewpoints.planned_coverage_deg)
         return self.scan_coverage_from_payload(self.latest_scan_coverage) or self.scan_coverage_from_payload(
             self.latest_scan_viewpoints
         )
 
     def reachable_coverage_deg(self):
+        if self.latest_reachable_scan_viewpoints is not None:
+            angles = [float(item.view_angle_deg) for item in
+                      self.latest_reachable_scan_viewpoints.viewpoints if item.reachable]
+            return float(max(angles) - min(angles)) if len(angles) >= 2 else 0.0
         return self.scan_coverage_from_payload(self.latest_reachable_scan_viewpoints)
 
     def useful_coverage_deg(self):

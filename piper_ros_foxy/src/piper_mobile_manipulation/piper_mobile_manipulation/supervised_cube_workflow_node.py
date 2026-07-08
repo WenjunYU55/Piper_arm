@@ -2,23 +2,30 @@
 """Coordinate obstacle removal and adaptive cube scanning without moving the arm."""
 
 import json
-import math
-import struct
 import time
+from pathlib import Path
+from types import SimpleNamespace
 
+import numpy as np
 import rclpy
 from geometry_msgs.msg import PointStamped, TransformStamped
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
-from sensor_msgs.msg import PointCloud2
+from sensor_msgs.msg import JointState, PointCloud2
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from visualization_msgs.msg import Marker, MarkerArray
 from tf2_ros import TransformBroadcaster
 
-from piper_mobile_manipulation.msg import ObstacleInstance3DArray
+from piper_mobile_manipulation.msg import (
+    ObstacleInstance3DArray, RemovalPlan, ScanStatus, SceneObject, SceneObjectArray,
+)
+from piper_mobile_manipulation.srv import ScanCommand
 from piper_mobile_manipulation.supervised_workflow import (
     choose_removal_plan, cloud_model, distance, point,
 )
+from piper_mobile_manipulation.utils.piper_kinematics import forward_matrix, solve_link6_pose
 
 
 class SupervisedCubeWorkflowNode(Node):
@@ -36,7 +43,17 @@ class SupervisedCubeWorkflowNode(Node):
             'plan_topic': '/piper/removal_plan',
             'target_model_topic': '/piper/target_model',
             'marker_topic': '/piper/supervised_workflow_markers',
+            'typed_plan_topic': '/piper/removal_plan_typed',
+            'typed_status_topic': '/piper/scan_status',
+            'scene_map_topic': '/piper/scene_objects',
             'movable_whitelist': ['pen'],
+            'protected_labels': [
+                'person', 'hand', 'finger', 'wire', 'cable', 'tool', 'electronics',
+                'unknown object'],
+            'ground_labels': ['ground'],
+            'min_survey_views': 3,
+            'joint_states_topic': '/joint_states_single',
+            'joint_bounds_path': '/home/prl/Piper_arm/piper_joint_bounds.json',
             'min_views': 5, 'max_views': 8, 'min_quality_score': 0.40,
             'center_convergence_m': 0.005, 'target_motion_abort_m': 0.020,
             'obstacle_displacement_m': 0.050, 'data_timeout_sec': 2.0,
@@ -66,9 +83,21 @@ class SupervisedCubeWorkflowNode(Node):
         self.centers = []
         self.target_center = None
         self.updated = {}
+        self.survey_views = 0
+        self.survey_object_observations = {}
+        self.current_viewpoint = 0
+        self.latest_joint_state = None
+        self.joint_lower, self.joint_upper = self.load_joint_bounds()
+        self.service_group = MutuallyExclusiveCallbackGroup()
 
         self.status_pub = self.create_publisher(String, defaults['status_topic'], 10)
         self.plan_pub = self.create_publisher(String, defaults['plan_topic'], 10)
+        self.typed_plan_pub = self.create_publisher(
+            RemovalPlan, defaults['typed_plan_topic'], 10)
+        self.typed_status_pub = self.create_publisher(
+            ScanStatus, defaults['typed_status_topic'], 10)
+        self.scene_map_pub = self.create_publisher(
+            SceneObjectArray, defaults['scene_map_topic'], 10)
         self.model_pub = self.create_publisher(String, defaults['target_model_topic'], 10)
         self.marker_pub = self.create_publisher(MarkerArray, defaults['marker_topic'], 10)
         self.target_tf = TransformBroadcaster(self)
@@ -81,12 +110,30 @@ class SupervisedCubeWorkflowNode(Node):
         self.create_subscription(String, defaults['scan_quality_topic'], self.quality_cb, 10)
         self.create_subscription(PointCloud2, defaults['cloud_topic'], self.cloud_cb, 10)
         self.create_subscription(String, defaults['cloud_status_topic'], self.cloud_status_cb, 10)
-        self.create_service(Trigger, '~/start', self.start_cb)
-        self.create_service(Trigger, '~/approve_plan', self.approve_cb)
-        self.create_service(Trigger, '~/confirm_action_complete', self.confirm_action_cb)
-        self.create_service(Trigger, '~/capture_view', self.capture_view_cb)
-        self.create_service(Trigger, '~/finish_scan', self.finish_scan_cb)
-        self.create_service(Trigger, '~/abort', self.abort_cb)
+        self.create_subscription(
+            JointState, defaults['joint_states_topic'], self.joint_state_cb, 10)
+        self.create_service(
+            Trigger, '~/start', self.start_cb, callback_group=self.service_group)
+        self.create_service(
+            Trigger, '~/approve_plan', self.approve_cb,
+            callback_group=self.service_group)
+        self.create_service(
+            Trigger, '~/confirm_action_complete', self.confirm_action_cb,
+            callback_group=self.service_group)
+        self.create_service(
+            Trigger, '~/capture_view', self.capture_view_cb,
+            callback_group=self.service_group)
+        self.create_service(
+            Trigger, '~/finish_scan', self.finish_scan_cb,
+            callback_group=self.service_group)
+        self.create_service(
+            Trigger, '~/abort', self.abort_cb, callback_group=self.service_group)
+        self.create_service(
+            Trigger, '~/capture_survey', self.capture_survey_cb,
+            callback_group=self.service_group)
+        self.create_service(
+            ScanCommand, '~/command', self.command_cb,
+            callback_group=self.service_group)
         self.create_timer(0.5, self.tick)
         self.publish_status('dry-run coordinator ready; no arm command publisher exists')
 
@@ -103,6 +150,10 @@ class SupervisedCubeWorkflowNode(Node):
     def obstacle_cb(self, msg):
         self.obstacles = msg
         self.mark('obstacles')
+        self.publish_scene_map(msg)
+
+    def joint_state_cb(self, msg):
+        self.latest_joint_state = msg
 
     def landmark_cb(self, msg):
         self.landmark = point(msg.point)
@@ -126,10 +177,15 @@ class SupervisedCubeWorkflowNode(Node):
         if self.state == 'WAIT_CAPTURE' and self.cloud_status.get('state') == 'accumulating' and \
                 self.cloud_status.get('mask_source') == 'full_resolution_refinement':
             self.accepted_views += 1
-            self.state = 'SCAN_READY'
-            self.publish_status('full-resolution view accepted')
+            self.current_viewpoint += 1
+            self.state = 'WAIT_MODEL'
+            self.publish_status('full-resolution view accepted; waiting for cloud model')
 
     def cloud_cb(self, msg):
+        # Continuous clouds can be large. Decode only the first cloud needed
+        # to model a newly accepted view so service callbacks remain responsive.
+        if self.accepted_views <= self.modeled_views:
+            return
         if msg.header.frame_id != 'base_link':
             self.abort('target cloud frame is not base_link')
             return
@@ -139,6 +195,9 @@ class SupervisedCubeWorkflowNode(Node):
         if self.accepted_views > self.modeled_views:
             self.publish_model()
             self.modeled_views = self.accepted_views
+            if self.state == 'WAIT_MODEL':
+                self.state = 'SCAN_READY'
+                self.publish_status('accepted cloud modeled; ready for next scan view')
 
     def start_cb(self, _request, response):
         if self.state not in ('IDLE', 'COMPLETE', 'ABORTED'):
@@ -147,9 +206,40 @@ class SupervisedCubeWorkflowNode(Node):
         self.target_center = None
         self.plan = None
         self.initial_landmark = None
-        self.state = 'INITIALIZING'
-        self.publish_status('waiting for locked landmark and fresh obstacle geometry')
+        self.survey_views = 0
+        self.survey_object_observations = {}
+        self.state = 'SURVEYING_SCENE'
+        self.publish_status(
+            'operator-guided survey required; capture at least %d viewpoints' %
+            int(self.get_parameter('min_survey_views').value))
         return self.reply(response, True, 'workflow started')
+
+    def capture_survey_cb(self, _request, response):
+        ok, message = self.capture_survey()
+        return self.reply(response, ok, message)
+
+    def capture_survey(self):
+        if self.state != 'SURVEYING_SCENE':
+            return False, 'workflow is not surveying the scene'
+        if not (self.landmark_locked and self.landmark and self.fresh('landmark') and
+                self.fresh('obstacles') and self.obstacles is not None):
+            return False, 'locked landmark and fresh obstacle geometry are required'
+        if self.initial_landmark is None:
+            self.initial_landmark = self.landmark
+        for item in self.obstacles.instances:
+            if not item.valid:
+                continue
+            self.survey_object_observations.setdefault(int(item.object_id), []).append(
+                point(item.base_centroid))
+        self.survey_views += 1
+        minimum = int(self.get_parameter('min_survey_views').value)
+        if self.survey_views >= minimum:
+            self.state = 'ASSESSING_SCENE'
+            self.publish_status('survey complete; assessing protected and movable objects')
+            self.assess_scene()
+            return True, 'survey accepted and scene assessment started'
+        self.publish_status('survey view %d/%d accepted' % (self.survey_views, minimum))
+        return True, 'survey view accepted'
 
     def approve_cb(self, _request, response):
         if self.state != 'PLAN_READY' or not self.plan or not self.plan.get('valid'):
@@ -214,25 +304,25 @@ class SupervisedCubeWorkflowNode(Node):
     def tick(self):
         if self.target_center is not None:
             self.publish_target_frame(self.target_center)
-        if self.state == 'INITIALIZING':
-            if (self.landmark_locked and self.landmark and
-                    self.fresh('landmark') and self.fresh('obstacles')):
-                self.initial_landmark = self.landmark
-                self.assess_scene()
-        elif self.state == 'VERIFY_ACTION' and self.fresh('obstacles') and self.fresh('landmark'):
+        if self.state == 'VERIFY_ACTION' and self.fresh('obstacles') and self.fresh('landmark'):
             if self.verify_action():
-                self.state = 'INITIALIZING'
-                self.publish_status('obstacle action verified; reassessing scene')
+                self.state = 'SURVEYING_SCENE'
+                self.survey_views = 0
+                self.survey_object_observations = {}
+                self.publish_status(
+                    'obstacle action verified; repeat scene survey before replanning')
 
     def assess_scene(self):
         movable = [item for item in self.obstacles.instances
-                   if item.valid and int(item.classification) == item.CLASSIFICATION_MOVABLE]
+                   if item.valid and int(item.classification) == item.CLASSIFICATION_MOVABLE
+                   and self.canonical_label(item.semantic_label) != 'ground']
         unsafe = [item for item in self.obstacles.instances
-                  if not item.valid or int(item.classification) != item.CLASSIFICATION_MOVABLE]
-        if unsafe:
-            self.abort('scene contains unsafe, blocked, or invalid obstacle geometry')
-            return
+                  if (not item.valid or int(item.classification) != item.CLASSIFICATION_MOVABLE)
+                  and self.canonical_label(item.semantic_label) != 'ground']
         if not movable:
+            if self.obstacles.scene_blocked or unsafe:
+                self.abort('scene is blocked but no verified movable obstacle can be removed')
+                return
             self.state = 'SCAN_READY'
             self.publish_status('scene is clear; ready for first scan view')
             return
@@ -246,9 +336,11 @@ class SupervisedCubeWorkflowNode(Node):
             'workspace_x_min', 'workspace_x_max', 'workspace_y_min', 'workspace_y_max',
             'workspace_z_min', 'workspace_z_max')}
         self.plan = choose_removal_plan(selected, self.landmark, self.obstacles.instances, config)
+        self.validate_plan_ik(self.plan)
         self.obstacles_at_plan = {int(item.object_id): point(item.base_centroid)
                                   for item in self.obstacles.instances if item.valid}
         self.publish_json(self.plan_pub, self.plan)
+        self.publish_typed_plan(self.plan)
         self.publish_markers(self.plan)
         if not self.plan.get('valid'):
             self.abort('removal planning failed: %s' % self.plan.get('reason', 'unknown'))
@@ -306,6 +398,216 @@ class SupervisedCubeWorkflowNode(Node):
             'min_views': int(self.get_parameter('min_views').value),
             'max_views': int(self.get_parameter('max_views').value),
         })
+        typed = ScanStatus()
+        typed.header.stamp = self.get_clock().now().to_msg()
+        typed.header.frame_id = 'base_link'
+        typed.state_name = self.state
+        typed.state = self.status_code(self.state)
+        typed.reason = str(reason)
+        typed.current_viewpoint = int(self.current_viewpoint)
+        typed.accepted_views = int(self.accepted_views)
+        typed.total_viewpoints = int(self.get_parameter('max_views').value)
+        typed.dry_run = True
+        typed.motion_commands_enabled = False
+        self.typed_status_pub.publish(typed)
+
+    def publish_scene_map(self, obstacles):
+        output = SceneObjectArray()
+        output.header = obstacles.header
+        output.header.frame_id = 'base_link'
+        output.unseen_space_is_occupied = True
+        ground_heights = []
+        for item in obstacles.instances:
+            scene = SceneObject()
+            scene.header = item.header
+            scene.header.frame_id = 'base_link'
+            scene.object_id = int(item.object_id)
+            scene.semantic_label = self.canonical_label(item.semantic_label)
+            if scene.semantic_label == 'ground':
+                scene.classification = SceneObject.CLASS_GROUND
+                ground_heights.append(float(item.base_bounds_max.z))
+            elif item.valid and int(item.classification) == item.CLASSIFICATION_MOVABLE:
+                scene.classification = SceneObject.CLASS_MOVABLE
+            elif not item.valid or not scene.semantic_label:
+                scene.classification = SceneObject.CLASS_UNKNOWN
+            else:
+                scene.classification = SceneObject.CLASS_PROTECTED
+            scene.pose.pose.position = item.base_centroid
+            scene.pose.pose.orientation.w = 1.0
+            scene.size.x = max(0.0, item.base_bounds_max.x - item.base_bounds_min.x)
+            scene.size.y = max(0.0, item.base_bounds_max.y - item.base_bounds_min.y)
+            scene.size.z = max(0.0, item.base_bounds_max.z - item.base_bounds_min.z)
+            scene.confidence = float(item.confidence)
+            scene.observation_count = len(
+                self.survey_object_observations.get(int(item.object_id), []))
+            scene.valid = bool(item.valid)
+            scene.reason = str(item.validity_reason)
+            output.objects.append(scene)
+        output.ground_normal.z = 1.0
+        output.ground_valid = bool(ground_heights)
+        output.ground_offset = float(np.median(ground_heights)) if ground_heights else 0.0
+        self.scene_map_pub.publish(output)
+
+    def publish_typed_plan(self, plan):
+        output = RemovalPlan()
+        output.header.stamp = self.get_clock().now().to_msg()
+        output.header.frame_id = 'base_link'
+        output.object_id = int(plan.get('object_id', 0))
+        output.semantic_label = str(plan.get('label', ''))
+        output.action = (RemovalPlan.ACTION_PICK_AND_PLACE
+                         if plan.get('action') == 'pick_and_place'
+                         else RemovalPlan.ACTION_PUSH if plan.get('action') == 'push'
+                         else RemovalPlan.ACTION_NONE)
+        self.set_pose_position(output.approach_pose, plan.get('approach'))
+        self.set_pose_position(output.action_pose, plan.get('object_center'))
+        self.set_pose_position(
+            output.destination_pose, plan.get('drop_center', plan.get('push_end')))
+        self.set_pose_position(output.retreat_pose, plan.get('retreat'))
+        output.risk_score = float(plan.get('risk_score', 1.0))
+        output.minimum_clearance_m = float(self.get_parameter('drop_obstacle_clearance_m').value)
+        output.destination_observed = self.survey_views >= int(
+            self.get_parameter('min_survey_views').value)
+        output.destination_empty = bool(plan.get('valid', False))
+        output.ik_valid = bool(plan.get('ik_valid', False))
+        output.valid = bool(plan.get('valid', False))
+        output.dry_run = True
+        output.reason = str(plan.get('reason', ''))
+        solutions = plan.get('joint_solutions', {})
+        output.approach_joints = solutions.get('approach', [0.0] * 6)
+        output.action_joints = solutions.get('object_center', [0.0] * 6)
+        output.destination_joints = solutions.get('destination', [0.0] * 6)
+        output.retreat_joints = solutions.get('retreat', [0.0] * 6)
+        self.typed_plan_pub.publish(output)
+
+    def validate_plan_ik(self, plan):
+        plan['ik_valid'] = False
+        if not plan.get('valid'):
+            return
+        if self.latest_joint_state is None or len(self.latest_joint_state.position) < 6:
+            plan['valid'] = False
+            plan['reason'] = 'fresh joint feedback is required for removal IK'
+            return
+        seed = np.asarray(self.latest_joint_state.position[:6], dtype=float)
+        orientation = forward_matrix(seed)[:3, :3]
+        points = {
+            'approach': plan.get('approach'),
+            'object_center': plan.get('object_center'),
+            'destination': plan.get('drop_center', plan.get('push_end')),
+            'retreat': plan.get('retreat'),
+        }
+        solutions = {}
+        for name, xyz in points.items():
+            if xyz is None:
+                plan['valid'] = False
+                plan['reason'] = 'removal plan has no %s pose' % name
+                return
+            desired = np.eye(4)
+            desired[:3, :3] = orientation
+            desired[:3, 3] = np.asarray(xyz, dtype=float)
+            solution, converged, details = solve_link6_pose(
+                desired, seed, self.joint_lower, self.joint_upper,
+                position_tolerance=0.008, rotation_tolerance=np.deg2rad(5.0))
+            if not converged:
+                plan['valid'] = False
+                plan['reason'] = 'IK rejected %s pose (position %.3fm, rotation %.1fdeg)' % (
+                    name, details['position_error_m'],
+                    np.rad2deg(details['rotation_error_rad']))
+                return
+            solutions[name] = [float(value) for value in solution]
+            seed = solution
+        plan['joint_solutions'] = solutions
+        plan['ik_valid'] = True
+
+    def load_joint_bounds(self):
+        path = Path(str(self.get_parameter('joint_bounds_path').value)).expanduser()
+        with path.open('r', encoding='utf-8') as stream:
+            payload = json.load(stream)
+        lower, upper = [], []
+        for index in range(1, 7):
+            item = payload['joints']['joint%d' % index]
+            lower.append(float(item.get('command_min', item['min'])))
+            upper.append(float(item.get('command_max', item['max'])))
+        return np.asarray(lower), np.asarray(upper)
+
+    def command_cb(self, request, response):
+        accepted, message = False, 'command not valid in current state'
+        if request.command == ScanCommand.Request.START_SURVEY:
+            if self.state in ('IDLE', 'COMPLETE', 'ABORTED'):
+                self.survey_views = 0
+                self.survey_object_observations = {}
+                self.state = 'SURVEYING_SCENE'
+                accepted, message = True, 'survey started'
+        elif request.command == ScanCommand.Request.CAPTURE_SURVEY:
+            accepted, message = self.capture_survey()
+        elif request.command == ScanCommand.Request.APPROVE_PLAN and self.state == 'PLAN_READY':
+            self.state = 'WAIT_OPERATOR_ACTION'
+            accepted, message = True, 'plan approved; no motion commanded'
+        elif (request.command == ScanCommand.Request.CONFIRM_ACTION_COMPLETE and
+              self.state == 'WAIT_OPERATOR_ACTION'):
+            self.state = 'VERIFY_ACTION'
+            accepted, message = True, 'post-action verification started'
+        elif request.command == ScanCommand.Request.START_SCAN and self.state == 'SCAN_READY':
+            self.current_viewpoint = 0
+            accepted, message = True, 'dry-run scan sequence started'
+        elif (request.command == ScanCommand.Request.ACKNOWLEDGE_VIEWPOINT and
+              self.state == 'SCAN_READY'):
+            self.current_viewpoint = int(request.viewpoint_index)
+            accepted, message = True, 'viewpoint acknowledged; capture may be requested'
+        elif request.command == ScanCommand.Request.CAPTURE_VIEW:
+            legacy = self.capture_view_cb(None, SimpleNamespace())
+            accepted, message = bool(legacy.success), str(legacy.message)
+        elif request.command == ScanCommand.Request.SKIP_VIEW and self.state == 'SCAN_READY':
+            self.current_viewpoint = max(
+                self.current_viewpoint + 1, int(request.viewpoint_index) + 1)
+            accepted, message = True, 'viewpoint skipped'
+        elif request.command == ScanCommand.Request.FINALIZE:
+            legacy = self.finish_scan_cb(None, SimpleNamespace())
+            accepted, message = bool(legacy.success), str(legacy.message)
+        elif request.command == ScanCommand.Request.CLEAR:
+            clear = String()
+            clear.data = 'clear'
+            self.cloud_request_pub.publish(clear)
+            self.accepted_views, self.modeled_views, self.centers = 0, 0, []
+            self.state = 'IDLE'
+            accepted, message = True, 'workflow and target cloud cleared'
+        elif request.command == ScanCommand.Request.ABORT:
+            self.abort(request.reason or 'operator requested abort')
+            accepted, message = True, 'workflow aborted'
+        response.accepted = bool(accepted)
+        response.state = self.status_code(self.state)
+        response.state_name = self.state
+        response.message = message
+        self.publish_status(message)
+        return response
+
+    @staticmethod
+    def set_pose_position(pose, xyz):
+        pose.orientation.w = 1.0
+        if xyz is not None:
+            pose.position.x, pose.position.y, pose.position.z = [float(v) for v in xyz]
+
+    @staticmethod
+    def canonical_label(label):
+        words = set(str(label or '').lower().replace('_', ' ').split())
+        if words.intersection({'pen', 'marker'}):
+            return 'pen'
+        if 'ground' in words:
+            return 'ground'
+        return ' '.join(sorted(words)) or 'unknown object'
+
+    @staticmethod
+    def status_code(state):
+        mapping = {
+            'IDLE': ScanStatus.IDLE, 'SURVEYING_SCENE': ScanStatus.SURVEYING_SCENE,
+            'ASSESSING_SCENE': ScanStatus.ASSESSING_SCENE,
+            'PLAN_READY': ScanStatus.PLAN_READY,
+            'WAIT_OPERATOR_ACTION': ScanStatus.WAITING_FOR_OPERATOR,
+            'VERIFY_ACTION': ScanStatus.VERIFYING_REMOVAL,
+            'SCAN_READY': ScanStatus.PLANNING_SCAN,
+            'WAIT_CAPTURE': ScanStatus.CAPTURING, 'WAIT_MODEL': ScanStatus.REGISTERING,
+            'COMPLETE': ScanStatus.COMPLETE, 'ABORTED': ScanStatus.ABORTED,
+        }
+        return mapping.get(state, ScanStatus.PAUSED)
 
     def abort(self, reason):
         if self.state == 'ABORTED':
@@ -364,27 +666,31 @@ class SupervisedCubeWorkflowNode(Node):
         if not all(name in fields for name in ('x', 'y', 'z')):
             return []
         endian = '>' if msg.is_bigendian else '<'
-        points = []
-        for row in range(msg.height):
-            for col in range(msg.width):
-                offset = row * msg.row_step + col * msg.point_step
-                xyz = tuple(
-                    struct.unpack_from(
-                        endian + 'f', msg.data, offset + fields[name].offset)[0]
-                    for name in ('x', 'y', 'z'))
-                if all(math.isfinite(value) for value in xyz):
-                    points.append(xyz)
-        return points
+        dtype = np.dtype({
+            'names': ('x', 'y', 'z'),
+            'formats': (endian + 'f4',) * 3,
+            'offsets': tuple(fields[name].offset for name in ('x', 'y', 'z')),
+            'itemsize': msg.point_step,
+        })
+        values = np.ndarray(
+            shape=(msg.height, msg.width), dtype=dtype, buffer=msg.data,
+            strides=(msg.row_step, msg.point_step))
+        points = np.column_stack(
+            (values['x'].ravel(), values['y'].ravel(), values['z'].ravel()))
+        return points[np.all(np.isfinite(points), axis=1)]
 
 
 def main(args=None):
     rclpy.init(args=args)
     node = SupervisedCubeWorkflowNode()
+    executor = MultiThreadedExecutor(num_threads=2)
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
+        executor.shutdown()
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
