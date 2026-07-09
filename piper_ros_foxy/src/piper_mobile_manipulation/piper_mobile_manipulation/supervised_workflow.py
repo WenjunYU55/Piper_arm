@@ -13,11 +13,7 @@ def distance(a, b):
 
 def canonical_label(label):
     words = set(str(label or '').lower().replace('_', ' ').split())
-    if words.intersection({'pen', 'marker'}):
-        return 'pen'
-    if 'ground' in words:
-        return 'ground'
-    return ' '.join(sorted(words))
+    return 'pen' if words.intersection({'pen', 'marker'}) else ' '.join(sorted(words))
 
 
 def choose_removal_plan(instance, target, obstacles, config):
@@ -108,10 +104,6 @@ def clearance_ok(candidate, target, obstacles, ignored_id, config):
         return False
     for item in obstacles:
         if int(item.object_id) == ignored_id or not item.valid:
-            continue
-        # Ground is semantically safe for placement, but trajectory generation
-        # still treats its fitted plane as a no-penetration boundary.
-        if canonical_label(item.semantic_label) == 'ground':
             continue
         if distance(candidate, point(item.base_centroid)) < config['drop_obstacle_clearance_m']:
             return False

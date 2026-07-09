@@ -20,8 +20,7 @@
     max_depth_stddev_m: 0.20
     confidence_depth_stddev_m: 0.15
     max_depth_jump_m: 0.20
-    # Keep this output raw; target_tracker_node owns temporal filtering.
-    smoothing_alpha: 1.0
+    smoothing_alpha: 0.2
     use_mask_depth: true
     mask_max_age_s: 0.20
     mask_erode_px: 2

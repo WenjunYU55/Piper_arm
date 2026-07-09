@@ -11,7 +11,7 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
 
-from piper_mobile_manipulation.msg import Detection2D, ScanViewpointArray, Target3D
+from piper_mobile_manipulation.msg import Detection2D, Target3D
 
 
 class ScanQualityNode(Node):
@@ -103,7 +103,7 @@ class ScanQualityNode(Node):
             10,
         )
         self.create_subscription(
-            ScanViewpointArray,
+            String,
             self.get_parameter('reachable_scan_viewpoints_topic').value,
             self.reachable_scan_viewpoints_cb,
             10,
@@ -141,7 +141,7 @@ class ScanQualityNode(Node):
         self.latest_target_stamp = time.monotonic()
 
     def reachable_scan_viewpoints_cb(self, msg):
-        self.latest_reachable_scan_viewpoints = msg
+        self.latest_reachable_scan_viewpoints = self.parse_json_msg(msg)
         self.latest_reachable_stamp = time.monotonic()
 
     def scan_capture_status_cb(self, msg):
@@ -430,10 +430,16 @@ class ScanQualityNode(Node):
 
     def reachable_angles(self):
         payload = self.latest_reachable_scan_viewpoints
-        if not isinstance(payload, ScanViewpointArray):
+        if not isinstance(payload, dict):
             return []
-        return [float(viewpoint.view_angle_deg) for viewpoint in payload.viewpoints
-                if viewpoint.reachable]
+        angles = []
+        for viewpoint in payload.get('viewpoints', []):
+            if not isinstance(viewpoint, dict) or not viewpoint.get('reachable'):
+                continue
+            angle = viewpoint.get('viewpoint_angle_deg')
+            if self.is_finite_number(angle):
+                angles.append(float(angle))
+        return angles
 
     def message_stamp(self):
         msg = self.latest_depth or self.latest_color or self.latest_mask

@@ -82,20 +82,17 @@ class HandEyeTfPublisher(Node):
             self.get_logger().warning("joint state contains fewer than six arm joints")
             return
         base_from_calibration_frame = self.fk.calculate(positions) @ self.link6_from_camera
-        if self.camera_frame == self.calibration_frame:
-            camera_from_calibration_frame = np.eye(4)
-        else:
-            try:
-                camera_from_calibration_frame = message_transform(
-                    self.tf_buffer.lookup_transform(
-                        self.camera_frame, self.calibration_frame, rclpy.time.Time()
-                    )
+        try:
+            camera_from_calibration_frame = message_transform(
+                self.tf_buffer.lookup_transform(
+                    self.camera_frame, self.calibration_frame, rclpy.time.Time()
                 )
-            except TransformException as error:
-                if not self.wait_warning_emitted:
-                    self.get_logger().warning("waiting for camera static TF: %s" % error)
-                    self.wait_warning_emitted = True
-                return
+            )
+        except TransformException as error:
+            if not self.wait_warning_emitted:
+                self.get_logger().warning("waiting for camera static TF: %s" % error)
+                self.wait_warning_emitted = True
+            return
         self.wait_warning_emitted = False
         base_from_camera = base_from_calibration_frame @ inverse(camera_from_calibration_frame)
         quaternion = Rotation.from_matrix(base_from_camera[:3, :3]).as_quat()

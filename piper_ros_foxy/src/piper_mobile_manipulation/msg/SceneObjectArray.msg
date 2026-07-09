@@ -1,6 +1,0 @@
-std_msgs/Header header
-piper_mobile_manipulation/SceneObject[] objects
-geometry_msgs/Vector3 ground_normal
-float32 ground_offset
-bool ground_valid
-bool unseen_space_is_occupied

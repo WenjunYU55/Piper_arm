@@ -2,6 +2,7 @@
 """Build a bounded RGB point cloud from the live SAM2 target mask and L515 depth."""
 
 import json
+import math
 import os
 import struct
 import time
@@ -18,9 +19,6 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CameraInfo, Image, PointCloud2, PointField
 from std_msgs.msg import String
-
-from piper_mobile_manipulation.utils.icp import register as icp_register
-from piper_mobile_manipulation.utils.icp import transform_points as apply_transform
 
 
 class TargetCloudNode(Node):
@@ -49,11 +47,6 @@ class TargetCloudNode(Node):
         self.declare_parameter('max_voxels', 250000)
         self.declare_parameter('publish_period_sec', 0.25)
         self.declare_parameter('output_dir', '/home/prl/Piper_arm/datasets/target_clouds')
-        self.declare_parameter('enable_icp_registration', True)
-        self.declare_parameter('icp_max_correspondence_m', 0.015)
-        self.declare_parameter('icp_min_fitness', 0.50)
-        self.declare_parameter('icp_max_rmse_m', 0.010)
-        self.declare_parameter('icp_reference_points', 50000)
 
         self.bridge = CvBridge()
         self.latest_mask = None
@@ -63,9 +56,6 @@ class TargetCloudNode(Node):
         self.last_header = None
         self.frame_cache = deque(maxlen=max(10, int(self.get_parameter('frame_cache_size').value)))
         self.awaiting_refined_capture = False
-        self.icp_reference = None
-        self.registration_count = 0
-        self.registration_records = []
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
@@ -186,10 +176,6 @@ class TargetCloudNode(Node):
         points, frame = self.transform_points(points, depth_msg.header.frame_id, depth_msg.header.stamp)
         if points is None:
             return
-        points, registration = self.register_points(points)
-        if points is None:
-            self.publish_status('registration_rejected', mask_source=source, **registration)
-            return
         if self.cloud_frame and frame != self.cloud_frame:
             self.voxels.clear()
             self.publish_status('frame_changed_cloud_cleared', previous_frame=self.cloud_frame, frame=frame)
@@ -198,66 +184,8 @@ class TargetCloudNode(Node):
         self.last_header = depth_msg.header
         self.publish_status(
             'accumulating', frame=frame, frame_points=int(u.size),
-            voxel_count=len(self.voxels), mask_source=source,
-            icp_fitness=registration.get('fitness', 1.0),
-            icp_rmse_m=registration.get('rmse_m', 0.0),
-            registration_index=self.registration_count,
+            voxel_count=len(self.voxels), mask_source=source
         )
-        if source == 'full_resolution_refinement':
-            self.save_view_cloud(points, colors, frame, depth_msg.header.stamp, registration)
-
-    def register_points(self, points):
-        if not bool(self.get_parameter('enable_icp_registration').value):
-            return points, {'accepted': True, 'fitness': 1.0, 'rmse_m': 0.0,
-                            'reason': 'ICP disabled'}
-        limit = max(20, int(self.get_parameter('icp_reference_points').value))
-        if self.icp_reference is None:
-            self.icp_reference = np.asarray(points[:limit], dtype=np.float64).copy()
-            self.registration_count = 1
-            record = {'accepted': True, 'fitness': 1.0, 'rmse_m': 0.0,
-                      'reason': 'reference initialized'}
-            self.registration_records.append(record)
-            return points, record
-        transform, record = icp_register(
-            points, self.icp_reference,
-            max_correspondence_m=float(self.get_parameter('icp_max_correspondence_m').value),
-            voxel_size_m=float(self.get_parameter('voxel_size_m').value))
-        record['transform'] = transform.tolist()
-        accepted = (
-            record.get('accepted', False)
-            and float(record.get('fitness', 0.0)) >= float(self.get_parameter('icp_min_fitness').value)
-            and float(record.get('rmse_m', float('inf'))) <= float(
-                self.get_parameter('icp_max_rmse_m').value))
-        record['accepted'] = bool(accepted)
-        if not accepted:
-            record['reason'] = 'ICP confidence gate failed'
-            self.registration_records.append(record)
-            return None, record
-        aligned = apply_transform(np.asarray(points, dtype=np.float64), transform).astype(np.float32)
-        self.registration_count += 1
-        self.registration_records.append(record)
-        combined = np.vstack((self.icp_reference, aligned))
-        if len(combined) > limit:
-            indexes = np.linspace(0, len(combined) - 1, limit).astype(int)
-            combined = combined[indexes]
-        self.icp_reference = combined
-        return aligned, record
-
-    def save_view_cloud(self, points, colors, frame, stamp, registration):
-        root = os.path.expanduser(str(self.get_parameter('output_dir').value))
-        session = os.path.join(root, 'views')
-        os.makedirs(session, exist_ok=True)
-        key = '%010d_%09d' % (int(stamp.sec), int(stamp.nanosec))
-        ply_path = os.path.join(session, 'view_%s.ply' % key)
-        self.write_ply(ply_path, list(zip(points, colors)))
-        metadata = {
-            'stamp': {'sec': int(stamp.sec), 'nanosec': int(stamp.nanosec)},
-            'frame_id': frame, 'point_count': int(len(points)),
-            'registration': registration, 'dry_run': True,
-        }
-        with open(os.path.join(session, 'view_%s.yaml' % key), 'w', encoding='utf-8') as stream:
-            import yaml
-            yaml.safe_dump(metadata, stream, sort_keys=False)
 
     def transform_points(self, points, source_frame, stamp):
         target_frame = str(self.get_parameter('target_frame').value)
@@ -316,9 +244,6 @@ class TargetCloudNode(Node):
         command = msg.data.strip().lower()
         if command == 'clear':
             self.voxels.clear()
-            self.icp_reference = None
-            self.registration_count = 0
-            self.registration_records = []
             self.publish_status('cleared')
         elif command in ('save', 'snapshot'):
             self.save_ply()
@@ -349,21 +274,6 @@ class TargetCloudNode(Node):
         os.makedirs(output_dir, exist_ok=True)
         path = os.path.join(output_dir, 'target_%s.ply' % datetime.now().strftime('%Y%m%d_%H%M%S'))
         entries = list(self.voxels.values())
-        self.write_ply(path, entries)
-        manifest = os.path.splitext(path)[0] + '.yaml'
-        with open(manifest, 'w', encoding='utf-8') as stream:
-            import yaml
-            yaml.safe_dump({
-                'frame_id': self.cloud_frame,
-                'voxel_count': len(entries),
-                'registrations': self.registration_records,
-                'dry_run': True,
-            }, stream, sort_keys=False)
-        self.publish_status('saved', path=path, manifest=manifest,
-                            voxel_count=len(entries), frame=self.cloud_frame)
-
-    @staticmethod
-    def write_ply(path, entries):
         with open(path, 'w', encoding='ascii') as stream:
             stream.write('ply\nformat ascii 1.0\nelement vertex %d\n' % len(entries))
             stream.write('property float x\nproperty float y\nproperty float z\n')
@@ -372,6 +282,7 @@ class TargetCloudNode(Node):
                 stream.write('%.6f %.6f %.6f %d %d %d\n' % (
                     point[0], point[1], point[2], color[0], color[1], color[2]
                 ))
+        self.publish_status('saved', path=path, voxel_count=len(entries), frame=self.cloud_frame)
 
     def publish_status(self, state, **values):
         payload = {'state': state, 'voxel_count': len(self.voxels), 'dry_run': True}

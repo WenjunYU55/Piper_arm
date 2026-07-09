@@ -179,17 +179,14 @@ class DepthTo3DNode(Node):
             self.pub.publish(out)
             return
 
-        # Estimate the visible-surface centroid from every valid masked depth
-        # sample instead of projecting only the 2D bounding-box centre.
-        valid_v, valid_u = np.nonzero(valid)
-        full_u = valid_u.astype(np.float64) + float(x0)
-        full_v = valid_v.astype(np.float64) + float(y0)
-        sample_z = crop[valid].astype(np.float64)
-        new_point = np.array([
-            float(np.median((full_u - cx) * sample_z / fx)),
-            float(np.median((full_v - cy) * sample_z / fy)),
-            z,
-        ], dtype=np.float64)
+        new_point = np.array(
+            [
+                (detection_msg.u - cx) * z / fx,
+                (detection_msg.v - cy) * z / fy,
+                z,
+            ],
+            dtype=np.float64,
+        )
         if self.previous_point is not None:
             alpha = float(np.clip(self.smoothing_alpha, 0.0, 1.0))
             filtered_point = alpha * new_point + (1.0 - alpha) * self.previous_point

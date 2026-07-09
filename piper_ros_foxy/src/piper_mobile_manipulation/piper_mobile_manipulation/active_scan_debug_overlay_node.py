@@ -11,7 +11,7 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
 
-from piper_mobile_manipulation.msg import Detection2D, ScanViewpointArray, Target3D
+from piper_mobile_manipulation.msg import Detection2D, Target3D
 
 
 class ActiveScanDebugOverlayNode(Node):
@@ -76,13 +76,13 @@ class ActiveScanDebugOverlayNode(Node):
             10,
         )
         self.create_subscription(
-            ScanViewpointArray,
+            String,
             self.get_parameter('scan_viewpoints_topic').value,
             self.scan_viewpoints_cb,
             10,
         )
         self.create_subscription(
-            ScanViewpointArray,
+            String,
             self.get_parameter('scan_coverage_topic').value,
             self.scan_coverage_cb,
             10,
@@ -122,13 +122,13 @@ class ActiveScanDebugOverlayNode(Node):
         self.latest_target = (msg, time.monotonic())
 
     def scan_viewpoints_cb(self, msg):
-        self.latest_scan_viewpoints = (msg, time.monotonic())
+        self.latest_scan_viewpoints = (self.parse_json_msg(msg), time.monotonic())
 
     def scan_coverage_cb(self, msg):
         self.latest_scan_coverage = (self.parse_json_msg(msg), time.monotonic())
 
     def reachable_scan_viewpoints_cb(self, msg):
-        self.latest_reachable_scan_viewpoints = (msg, time.monotonic())
+        self.latest_reachable_scan_viewpoints = (self.parse_json_msg(msg), time.monotonic())
 
     def scan_quality_cb(self, msg):
         self.latest_scan_quality = (self.parse_json_msg(msg), time.monotonic())
@@ -217,8 +217,6 @@ class ActiveScanDebugOverlayNode(Node):
         payload = self.latest_scan_payload(self.latest_scan_viewpoints)
         if payload is None:
             return 'unknown'
-        if isinstance(payload, ScanViewpointArray):
-            return str(len(payload.viewpoints))
         if isinstance(payload.get('viewpoints'), list):
             return str(len(payload['viewpoints']))
         value = payload.get('candidate_viewpoints')
@@ -228,8 +226,6 @@ class ActiveScanDebugOverlayNode(Node):
         payload = self.latest_scan_payload(self.latest_reachable_scan_viewpoints)
         if payload is None:
             return 'unknown'
-        if isinstance(payload, ScanViewpointArray):
-            return str(payload.reachable_count)
         filter_info = payload.get('filter')
         if isinstance(filter_info, dict):
             value = filter_info.get('reachable_viewpoints')
@@ -245,8 +241,6 @@ class ActiveScanDebugOverlayNode(Node):
             payload = self.latest_scan_payload(self.latest_scan_viewpoints)
         if payload is None:
             return 'unknown'
-        if isinstance(payload, ScanViewpointArray):
-            return '%.1f deg' % float(payload.requested_coverage_deg)
         for key in ('requested_scan_angle_deg', 'planned_scan_angle_deg'):
             value = payload.get(key)
             if value is not None:
@@ -301,7 +295,7 @@ class ActiveScanDebugOverlayNode(Node):
         payload, stamp = stored
         if time.monotonic() - stamp > self.stale_timeout():
             return None
-        return payload if isinstance(payload, (dict, ScanViewpointArray)) else None
+        return payload if isinstance(payload, dict) else None
 
     def latest_scan_payload(self, stored):
         if stored is None:
@@ -309,7 +303,7 @@ class ActiveScanDebugOverlayNode(Node):
         payload, stamp = stored
         if time.monotonic() - stamp > self.scan_stale_timeout():
             return None
-        return payload if isinstance(payload, (dict, ScanViewpointArray)) else None
+        return payload if isinstance(payload, dict) else None
 
     def stale_timeout(self):
         return max(0.1, float(self.get_parameter('stale_timeout_s').value))

@@ -1,62 +1,44 @@
 #!/usr/bin/env python3
 import json
 import math
-from collections import Counter
-from pathlib import Path
 
-import numpy as np
 import rclpy
-import yaml
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
-
-from piper_mobile_manipulation.msg import ScanViewpoint, ScanViewpointArray
-from piper_mobile_manipulation.utils.piper_kinematics import pose_matrix, solve_camera_pose
 
 
 class ViewpointReachabilityFilterNode(Node):
     def __init__(self):
         super().__init__('viewpoint_reachability_filter_node')
         self.declare_parameter('scan_viewpoints_topic', '/piper/scan_viewpoints')
-        self.declare_parameter(
-            'reachable_scan_viewpoints_topic', '/piper/reachable_scan_viewpoints')
+        self.declare_parameter('reachable_scan_viewpoints_topic', '/piper/reachable_scan_viewpoints')
         self.declare_parameter('joint_states_topic', '/joint_states_single')
         self.declare_parameter('arm_status_topic', '/arm_status')
         self.declare_parameter('target_status_topic', '/piper/target_status')
-        self.declare_parameter('base_frame', 'base_link')
 
         self.declare_parameter('min_reach_m', 0.20)
         self.declare_parameter('max_reach_m', 0.75)
         self.declare_parameter('min_camera_object_distance_m', 0.25)
         self.declare_parameter('max_camera_object_distance_m', 0.80)
         self.declare_parameter('max_height_change_m', 0.40)
-        self.declare_parameter('dry_run', True)
+        self.declare_parameter('dry_run', False)
         self.declare_parameter('debug', True)
-        self.declare_parameter(
-            'joint_bounds_path', '/home/prl/Piper_arm/piper_joint_bounds.json')
-        self.declare_parameter(
-            'hand_eye_path',
-            '/home/prl/Piper_arm/L515_camera/calibration/hand_eye/'
-            'session_20260701_local/calibration_result.yaml')
-        self.declare_parameter('max_joint_step_rad', 2.5)
 
         self.arm_status = ''
         self.target_status = 'UNKNOWN'
         self.latest_joint_state = None
-        self.lower, self.upper = self.load_joint_bounds()
-        self.link6_from_camera = self.load_hand_eye()
 
         self.pub = self.create_publisher(
-            ScanViewpointArray,
+            String,
             self.get_parameter('reachable_scan_viewpoints_topic').value,
-            1,
+            10,
         )
         self.scan_sub = self.create_subscription(
-            ScanViewpointArray,
+            String,
             self.get_parameter('scan_viewpoints_topic').value,
             self.scan_cb,
-            1,
+            10,
         )
         self.joint_sub = self.create_subscription(
             JointState,
@@ -77,8 +59,7 @@ class ViewpointReachabilityFilterNode(Node):
             10,
         )
         self.get_logger().warn(
-            'Viewpoint reachability filter is dry-run only; it does not publish '
-            '/piper/servo_cmd or move the arm.'
+            'Viewpoint reachability filter is dry-run only; it does not publish /piper/servo_cmd or move the arm.'
         )
 
     def joint_cb(self, msg):
@@ -91,58 +72,57 @@ class ViewpointReachabilityFilterNode(Node):
         self.target_status = msg.data
 
     def scan_cb(self, msg):
-        viewpoints = msg.viewpoints
+        try:
+            payload = json.loads(msg.data)
+        except json.JSONDecodeError as exc:
+            self.publish_rejected_payload('invalid scan viewpoint JSON: %s' % exc)
+            return
+
+        viewpoints = payload.get('viewpoints', [])
+        if not isinstance(viewpoints, list):
+            self.publish_rejected_payload('scan viewpoint JSON has no viewpoints list')
+            return
+
         filtered = []
         reachable_count = 0
         safe_count = 0
-        message_reasons = self.message_reject_reasons(msg)
         for viewpoint in viewpoints:
-            result = viewpoint
-            reasons = list(message_reasons)
-            reasons.extend(self.reject_reasons(result))
+            if not isinstance(viewpoint, dict):
+                continue
+            result = dict(viewpoint)
+            reasons = self.reject_reasons(result)
             accepted = len(reasons) == 0
-            if accepted:
-                solution, converged, details = self.solve_ik(result)
-                if not converged:
-                    if details.get('reason') == 'missing joint feedback':
-                        reasons.append('IK unavailable: missing joint feedback')
-                    else:
-                        reasons.append(
-                            'IK failed position=%.3fm rotation=%.1fdeg' % (
-                                details['position_error_m'],
-                                math.degrees(details['rotation_error_rad'])))
-                else:
-                    result.joint_solution = [float(value) for value in solution]
-            accepted = len(reasons) == 0
-            result.reachable = bool(accepted)
-            # Collision checking is unavailable, therefore safe remains false.
-            result.safe = False
-            result.status = (
-                ScanViewpoint.STATUS_REACHABLE if accepted else ScanViewpoint.STATUS_REJECTED)
-            result.rejection_reasons = reasons
-            result.safety_score = 0.5 if accepted else 0.0
+            result['reachable'] = bool(accepted)
+            result['safe'] = bool(accepted)
+            result['reject_reasons'] = reasons
             filtered.append(result)
             if accepted:
                 reachable_count += 1
-        out = ScanViewpointArray()
-        out.header = msg.header
-        out.viewpoints = filtered
-        out.requested_coverage_deg = msg.requested_coverage_deg
-        out.planned_coverage_deg = msg.planned_coverage_deg
-        out.reachable_count = reachable_count
-        out.dry_run = True
+                safe_count += 1
+
+        output = dict(payload)
+        output['dry_run'] = True
+        output['filter'] = {
+            'node': 'viewpoint_reachability_filter_node',
+            'mode': 'conservative_workspace_check',
+            'input_viewpoints': len(viewpoints),
+            'output_viewpoints': len(filtered),
+            'reachable_viewpoints': reachable_count,
+            'safe_viewpoints': safe_count,
+            'arm_status': self.arm_status,
+            'target_status': self.target_status,
+            'dry_run_config_loaded': self.param_bool('dry_run'),
+        }
+        output['viewpoints'] = filtered
+
+        out = String()
+        out.data = json.dumps(output, sort_keys=True)
         self.pub.publish(out)
 
         if self.param_bool('debug'):
-            reason_counts = Counter(
-                reason for viewpoint in filtered
-                for reason in viewpoint.rejection_reasons)
-            summary = '; '.join(
-                '%s (%d)' % (reason, count)
-                for reason, count in reason_counts.most_common(4))
             self.get_logger().info(
-                'filtered scan viewpoints: %d/%d reachable safe=%d reasons=%s'
-                % (reachable_count, len(filtered), safe_count, summary or 'none')
+                'filtered scan viewpoints: %d/%d reachable safe=%d'
+                % (reachable_count, len(filtered), safe_count)
             )
 
     def reject_reasons(self, viewpoint):
@@ -150,19 +130,20 @@ class ViewpointReachabilityFilterNode(Node):
         if not self.param_bool('dry_run'):
             reasons.append('dry_run safety config missing or false')
 
-        expected_frame = str(self.get_parameter('base_frame').value)
-        if viewpoint.header.frame_id and viewpoint.header.frame_id != expected_frame:
-            reasons.append(
-                'viewpoint frame %s != %s' % (viewpoint.header.frame_id, expected_frame))
-
         if self.status_has_error(self.arm_status):
             reasons.append('arm status reports error')
 
         if self.target_status in ('LOW_CONFIDENCE', 'LOST'):
             reasons.append('target_status=%s' % self.target_status)
 
-        camera_position = viewpoint.camera_pose.position
-        target_center = viewpoint.target_center
+        camera_position = viewpoint.get('desired_camera_position')
+        target_center = viewpoint.get('target_object_center')
+        if not self.valid_vector(camera_position):
+            reasons.append('missing desired camera position')
+            return reasons
+        if not self.valid_vector(target_center):
+            reasons.append('missing target object center')
+            return reasons
 
         reach = self.vector_norm(camera_position)
         min_reach = float(self.get_parameter('min_reach_m').value)
@@ -172,8 +153,8 @@ class ViewpointReachabilityFilterNode(Node):
         if reach > max_reach:
             reasons.append('camera target position too far %.3fm > %.3fm' % (reach, max_reach))
 
-        camera_object_distance = viewpoint.camera_distance_m
-        if not self.is_finite_number(camera_object_distance) or camera_object_distance <= 0.0:
+        camera_object_distance = viewpoint.get('camera_object_distance_m')
+        if not self.is_finite_number(camera_object_distance):
             camera_object_distance = self.distance(camera_position, target_center)
         min_dist = float(self.get_parameter('min_camera_object_distance_m').value)
         max_dist = float(self.get_parameter('max_camera_object_distance_m').value)
@@ -188,7 +169,7 @@ class ViewpointReachabilityFilterNode(Node):
                 % (camera_object_distance, max_dist)
             )
 
-        height_change = abs(float(camera_position.z) - float(target_center.z))
+        height_change = abs(float(camera_position['z']) - float(target_center['z']))
         max_height_change = float(self.get_parameter('max_height_change_m').value)
         if height_change > max_height_change:
             reasons.append(
@@ -198,53 +179,22 @@ class ViewpointReachabilityFilterNode(Node):
 
         return reasons
 
-    def message_reject_reasons(self, msg):
-        reasons = []
-        expected_frame = str(self.get_parameter('base_frame').value)
-        if msg.header.frame_id and msg.header.frame_id != expected_frame:
-            reasons.append('viewpoint array frame %s != %s' % (msg.header.frame_id, expected_frame))
-        if not msg.dry_run:
-            reasons.append('input scan viewpoint array is not dry_run')
-        return reasons
-
-    def solve_ik(self, viewpoint):
-        if self.latest_joint_state is None or len(self.latest_joint_state.position) < 6:
-            return np.zeros(6), False, {
-                'position_error_m': float('inf'), 'rotation_error_rad': float('inf'),
-                'reason': 'missing joint feedback'}
-        seed = np.asarray(self.latest_joint_state.position[:6], dtype=float)
-        solution, converged, details = solve_camera_pose(
-            pose_matrix(viewpoint.camera_pose), self.link6_from_camera,
-            seed, self.lower, self.upper)
-        if converged and np.max(np.abs(solution - seed)) > float(
-                self.get_parameter('max_joint_step_rad').value):
-            converged = False
-            details['position_error_m'] = float('inf')
-            details['rotation_error_rad'] = float('inf')
-        return solution, converged, details
-
-    def load_joint_bounds(self):
-        path = Path(str(self.get_parameter('joint_bounds_path').value)).expanduser()
-        with path.open('r', encoding='utf-8') as stream:
-            payload = json.load(stream)
-        lower, upper = [], []
-        for index in range(1, 7):
-            record = payload['joints']['joint%d' % index]
-            lower.append(float(record.get('command_min', record['min'])))
-            upper.append(float(record.get('command_max', record['max'])))
-        return np.asarray(lower), np.asarray(upper)
-
-    def load_hand_eye(self):
-        path = Path(str(self.get_parameter('hand_eye_path').value)).expanduser()
-        with path.open('r', encoding='utf-8') as stream:
-            payload = yaml.safe_load(stream) or {}
-        if payload.get('status') != 'accepted':
-            raise RuntimeError('hand-eye calibration is not accepted')
-        return np.asarray(payload['camera_to_link6']['matrix'], dtype=float)
-
     def publish_rejected_payload(self, reason):
-        out = ScanViewpointArray()
-        out.dry_run = True
+        out = String()
+        out.data = json.dumps(
+            {
+                'dry_run': True,
+                'filter': {
+                    'node': 'viewpoint_reachability_filter_node',
+                    'reachable_viewpoints': 0,
+                    'safe_viewpoints': 0,
+                    'reject_reasons': [reason],
+                    'dry_run_config_loaded': self.param_bool('dry_run'),
+                },
+                'viewpoints': [],
+            },
+            sort_keys=True,
+        )
         self.pub.publish(out)
         self.get_logger().warn(reason)
 
@@ -272,17 +222,17 @@ class ViewpointReachabilityFilterNode(Node):
     @staticmethod
     def vector_norm(value):
         return math.sqrt(
-            float(value.x) ** 2
-            + float(value.y) ** 2
-            + float(value.z) ** 2
+            float(value['x']) ** 2
+            + float(value['y']) ** 2
+            + float(value['z']) ** 2
         )
 
     @staticmethod
     def distance(a, b):
         return math.sqrt(
-            (float(a.x) - float(b.x)) ** 2
-            + (float(a.y) - float(b.y)) ** 2
-            + (float(a.z) - float(b.z)) ** 2
+            (float(a['x']) - float(b['x'])) ** 2
+            + (float(a['y']) - float(b['y'])) ** 2
+            + (float(a['z']) - float(b['z'])) ** 2
         )
 
     def param_bool(self, name):

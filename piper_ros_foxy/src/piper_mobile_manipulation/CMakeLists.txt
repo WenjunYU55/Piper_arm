@@ -21,14 +21,6 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ManipulationState.msg"
   "msg/ObstacleInstance3D.msg"
   "msg/ObstacleInstance3DArray.msg"
-  "msg/TargetEstimate.msg"
-  "msg/ScanViewpoint.msg"
-  "msg/ScanViewpointArray.msg"
-  "msg/ScanStatus.msg"
-  "msg/SceneObject.msg"
-  "msg/SceneObjectArray.msg"
-  "msg/RemovalPlan.msg"
-  "srv/ScanCommand.srv"
   DEPENDENCIES geometry_msgs std_msgs
 )
 
@@ -78,8 +70,6 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_obstacle_geometry test/test_obstacle_geometry.py)
   ament_add_pytest_test(test_target_landmark_geometry test/test_target_landmark_geometry.py)
   ament_add_pytest_test(test_supervised_workflow test/test_supervised_workflow.py)
-  ament_add_pytest_test(test_icp test/test_icp.py)
-  ament_add_pytest_test(test_piper_kinematics test/test_piper_kinematics.py)
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)

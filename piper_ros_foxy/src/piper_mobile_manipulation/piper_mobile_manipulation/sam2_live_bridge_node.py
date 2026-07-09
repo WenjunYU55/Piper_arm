@@ -32,9 +32,7 @@ class Sam2LiveBridgeNode(Node):
         self.declare_parameter('status_topic', '/piper/sam2_tracking_status')
         self.declare_parameter('heavy_request_topic', '/piper/heavy_refresh_request')
         self.declare_parameter('occlusion_status_topic', '/piper/occlusion_status')
-        self.declare_parameter('target_status_topic', '/piper/target_status')
         self.declare_parameter('spool_dir', '/tmp/piper_sam2_live')
-        self.declare_parameter('heavy_refresh_spool_dir', '/tmp/piper_heavy_refresh')
         self.declare_parameter('frame_rate_hz', 10.0)
         self.declare_parameter('seed_cache_sec', 60.0)
         self.declare_parameter('auto_initial_mask', False)
@@ -42,10 +40,6 @@ class Sam2LiveBridgeNode(Node):
         self.declare_parameter('semantic_refresh_interval_sec', 60.0)
         self.declare_parameter('refresh_cooldown_sec', 5.0)
         self.declare_parameter('lost_refresh_retry_sec', 10.0)
-        self.declare_parameter('target_status_refresh_age_sec', 1.5)
-        self.declare_parameter('low_confidence_refresh_age_sec', 3.0)
-        self.declare_parameter('lost_recovery_reset_age_sec', 20.0)
-        self.declare_parameter('lost_recovery_reset_cooldown_sec', 30.0)
         self.declare_parameter('min_target_area_px', 100)
         self.declare_parameter('max_target_area_ratio_change', 2.5)
 
@@ -64,9 +58,6 @@ class Sam2LiveBridgeNode(Node):
         self.last_refresh_request = 0.0
         self.last_semantic_refresh = time.monotonic()
         self.target_lost = False
-        self.target_status_state = 'UNKNOWN'
-        self.target_status_since = time.monotonic()
-        self.last_recovery_reset = 0.0
 
         self.mask_pub = self.create_publisher(
             Image, self.get_parameter('output_mask_topic').value, qos_profile_sensor_data
@@ -94,15 +85,11 @@ class Sam2LiveBridgeNode(Node):
             String, self.get_parameter('occlusion_status_topic').value, self.occlusion_cb, 10
         )
         self.create_subscription(
-            String, self.get_parameter('target_status_topic').value, self.target_status_cb, 10
-        )
-        self.create_subscription(
             Image, self.get_parameter('seed_mask_topic').value, self.heavy_seed_cb, qos_profile_sensor_data
         )
         self.create_timer(0.02, self.write_frame)
         self.create_timer(0.05, self.poll_results)
         self.create_timer(1.0, self.retry_lost_refresh)
-        self.create_timer(1.0, self.recovery_watchdog)
         self.get_logger().warn('SAM2 live bridge is read-only; real arm motion is disabled.')
 
     @staticmethod
@@ -180,26 +167,6 @@ class Sam2LiveBridgeNode(Node):
         status = str(payload.get('status', payload.get('occlusion_status', ''))).upper()
         if status in ('PARTIALLY_OCCLUDED', 'HEAVILY_OCCLUDED', 'LOST'):
             self.request_heavy_refresh('occlusion_%s' % status.lower())
-
-    def target_status_cb(self, msg):
-        status = str(msg.data).upper()
-        now = time.monotonic()
-        if status != self.target_status_state:
-            self.target_status_state = status
-            self.target_status_since = now
-        if status == 'LOST':
-            age = now - self.target_status_since
-            threshold = float(self.get_parameter('target_status_refresh_age_sec').value)
-            if age >= threshold:
-                self.target_lost = True
-                self.request_heavy_refresh('target_tracker_lost_age_%.1fs' % age)
-        elif status == 'LOW_CONFIDENCE':
-            age = now - self.target_status_since
-            threshold = float(self.get_parameter('low_confidence_refresh_age_sec').value)
-            if age >= threshold:
-                self.request_heavy_refresh('target_tracker_low_confidence_age_%.1fs' % age)
-        elif status in ('TRACKING', 'LOCKED'):
-            self.target_lost = False
 
     def seed_cb(self, msg, source):
         try:
@@ -322,72 +289,9 @@ class Sam2LiveBridgeNode(Node):
         if time.monotonic() - self.last_refresh_request >= retry:
             self.request_heavy_refresh('sam2_target_lost_retry')
 
-    def recovery_watchdog(self):
-        status = str(self.target_status_state).upper()
-        if status != 'LOST':
-            return
+    def request_heavy_refresh(self, reason):
         now = time.monotonic()
-        lost_age = now - self.target_status_since
-        reset_age = float(self.get_parameter('lost_recovery_reset_age_sec').value)
-        reset_cooldown = float(self.get_parameter('lost_recovery_reset_cooldown_sec').value)
-        if lost_age < reset_age:
-            return
-        if now - self.last_recovery_reset < reset_cooldown:
-            return
-        self.last_recovery_reset = now
-        self.reset_recovery_state(lost_age)
-        self.request_heavy_refresh('lost_recovery_reset_age_%.1fs' % lost_age, force=True)
-
-    def reset_recovery_state(self, lost_age):
-        self.target_lost = True
-        self.seed_queued = False
-        self.pending_seeds.clear()
-        self.previous_target_area = None
-        self.initial_requested = False
-        stamp = int(time.time())
-        removed = []
-        sam2_root = self.spool
-        heavy_root = Path(str(self.get_parameter('heavy_refresh_spool_dir').value))
-        removed.extend(self.archive_spool_children(
-            sam2_root, ('seeds', 'results'), 'recovery_lost_%d' % stamp))
-        removed.extend(self.archive_spool_children(
-            heavy_root, ('requests', 'processing', 'responses'), 'recovery_lost_%d' % stamp))
-        self.publish_status(
-            'lost_recovery_reset',
-            lost_age_s=float(lost_age),
-            archived_paths=removed,
-        )
-
-    def archive_spool_children(self, root, names, reason):
-        archived = []
-        archive_root = Path(root) / 'recovery_archive' / reason
-        for name in names:
-            directory = Path(root) / name
-            if not directory.is_dir():
-                continue
-            for child in sorted(directory.iterdir()):
-                destination = archive_root / name / child.name
-                try:
-                    destination.parent.mkdir(parents=True, exist_ok=True)
-                    if destination.exists():
-                        if destination.is_dir():
-                            shutil.rmtree(destination, ignore_errors=True)
-                        else:
-                            destination.unlink()
-                    os.replace(str(child), str(destination))
-                    archived.append(str(child))
-                except Exception as exc:
-                    self.get_logger().warn(
-                        'Recovery archive failed for %s: %s' % (child, exc))
-        return archived
-
-    def request_heavy_refresh(self, reason, force=False):
-        now = time.monotonic()
-        if (
-            not force
-            and now - self.last_refresh_request
-            < float(self.get_parameter('refresh_cooldown_sec').value)
-        ):
+        if now - self.last_refresh_request < float(self.get_parameter('refresh_cooldown_sec').value):
             return
         msg = String()
         msg.data = json.dumps({
