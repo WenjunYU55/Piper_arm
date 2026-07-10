@@ -32,6 +32,7 @@ class Sam2LiveBridgeNode(Node):
         self.declare_parameter('status_topic', '/piper/sam2_tracking_status')
         self.declare_parameter('heavy_request_topic', '/piper/heavy_refresh_request')
         self.declare_parameter('occlusion_status_topic', '/piper/occlusion_status')
+        self.declare_parameter('target_status_topic', '/piper/target_status')
         self.declare_parameter('spool_dir', '/tmp/piper_sam2_live')
         self.declare_parameter('frame_rate_hz', 10.0)
         self.declare_parameter('seed_cache_sec', 60.0)
@@ -40,6 +41,7 @@ class Sam2LiveBridgeNode(Node):
         self.declare_parameter('semantic_refresh_interval_sec', 60.0)
         self.declare_parameter('refresh_cooldown_sec', 5.0)
         self.declare_parameter('lost_refresh_retry_sec', 10.0)
+        self.declare_parameter('no_mask_refresh_timeout_sec', 8.0)
         self.declare_parameter('min_target_area_px', 100)
         self.declare_parameter('max_target_area_ratio_change', 2.5)
 
@@ -57,6 +59,7 @@ class Sam2LiveBridgeNode(Node):
         self.previous_target_area = None
         self.last_refresh_request = 0.0
         self.last_semantic_refresh = time.monotonic()
+        self.last_mask_publish = 0.0
         self.target_lost = False
 
         self.mask_pub = self.create_publisher(
@@ -83,6 +86,9 @@ class Sam2LiveBridgeNode(Node):
         )
         self.create_subscription(
             String, self.get_parameter('occlusion_status_topic').value, self.occlusion_cb, 10
+        )
+        self.create_subscription(
+            String, self.get_parameter('target_status_topic').value, self.target_status_cb, 10
         )
         self.create_subscription(
             Image, self.get_parameter('seed_mask_topic').value, self.heavy_seed_cb, qos_profile_sensor_data
@@ -166,7 +172,14 @@ class Sam2LiveBridgeNode(Node):
             return
         status = str(payload.get('status', payload.get('occlusion_status', ''))).upper()
         if status in ('PARTIALLY_OCCLUDED', 'HEAVILY_OCCLUDED', 'LOST'):
+            self.target_lost = True
             self.request_heavy_refresh('occlusion_%s' % status.lower())
+
+    def target_status_cb(self, msg):
+        status = str(msg.data).strip().upper()
+        if status in ('LOST', 'SEARCHING', 'LOW_CONFIDENCE'):
+            self.target_lost = True
+            self.request_heavy_refresh('target_status_%s' % status.lower())
 
     def seed_cb(self, msg, source):
         try:
@@ -224,6 +237,7 @@ class Sam2LiveBridgeNode(Node):
                     out.header.stamp.nanosec = int(stamp.get('nanosec', 0))
                     out.header.frame_id = result.get('frame_id', '')
                     self.mask_pub.publish(out)
+                    self.last_mask_publish = time.monotonic()
                     self.publish_result_mask(result_dir / 'all_obstacle_mask.png', self.obstacle_pub, out.header)
                     self.publish_result_mask(
                         result_dir / 'unsafe_obstacle_mask.png', self.unsafe_obstacle_pub, out.header
@@ -280,13 +294,26 @@ class Sam2LiveBridgeNode(Node):
             self.request_heavy_refresh('periodic_semantic_refresh')
 
     def retry_lost_refresh(self):
+        now = time.monotonic()
+        if self.initial_requested and self.last_mask_publish <= 0.0:
+            if now - self.last_refresh_request >= float(
+                self.get_parameter('no_mask_refresh_timeout_sec').value
+            ):
+                self.request_heavy_refresh('sam2_no_mask_after_initial')
+            return
+        if self.last_mask_publish > 0.0:
+            age = now - self.last_mask_publish
+            if age >= float(self.get_parameter('no_mask_refresh_timeout_sec').value):
+                self.target_lost = True
+                self.request_heavy_refresh('sam2_no_recent_mask')
+                return
         if not self.target_lost:
             return
         retry = max(
             float(self.get_parameter('refresh_cooldown_sec').value),
             float(self.get_parameter('lost_refresh_retry_sec').value),
         )
-        if time.monotonic() - self.last_refresh_request >= retry:
+        if now - self.last_refresh_request >= retry:
             self.request_heavy_refresh('sam2_target_lost_retry')
 
     def request_heavy_refresh(self, reason):

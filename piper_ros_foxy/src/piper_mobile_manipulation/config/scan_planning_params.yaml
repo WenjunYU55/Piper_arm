@@ -30,6 +30,8 @@
     enable_real_push: false
     dry_run: true
     debug: true
+    tracked_target_topic: "/piper/tracked_target"
+    use_predicted_target_for_scan: true
 
     first_push_distance_m: 0.01
     max_push_distance_m: 0.03

@@ -50,6 +50,7 @@ install(PROGRAMS
   piper_mobile_manipulation/obstacle_instance_3d_node.py
   piper_mobile_manipulation/obstacle_repeatability_validator.py
   piper_mobile_manipulation/target_landmark_node.py
+  piper_mobile_manipulation/object_frame_broadcaster_node.py
   piper_mobile_manipulation/supervised_cube_workflow_node.py
   DESTINATION lib/${PROJECT_NAME}
 )

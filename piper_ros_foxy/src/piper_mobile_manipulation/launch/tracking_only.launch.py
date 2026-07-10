@@ -13,8 +13,8 @@ def generate_launch_description():
             name='target_tracker',
             output='screen',
             parameters=[
-                os.path.join(pkg, 'config', 'tracking_params.yaml'),
                 os.path.join(pkg, 'config', 'frames.yaml'),
+                os.path.join(pkg, 'config', 'tracking_params.yaml'),
             ],
         ),
     ])

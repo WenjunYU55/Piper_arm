@@ -7,13 +7,14 @@ from rclpy.node import Node
 from sensor_msgs.msg import CameraInfo
 from std_msgs.msg import String
 
-from piper_mobile_manipulation.msg import Target3D
+from piper_mobile_manipulation.msg import Target3D, TrackedTarget
 
 
 class ScanViewpointPlannerNode(Node):
     def __init__(self):
         super().__init__('scan_viewpoint_planner_node')
         self.declare_parameter('object_topic', '/piper/object_of_interest_3d')
+        self.declare_parameter('tracked_target_topic', '/piper/tracked_target')
         self.declare_parameter('fallback_target_topic', '/piper/target_3d')
         self.declare_parameter('target_status_topic', '/piper/target_status')
         self.declare_parameter('camera_info_topic', '/camera/color/camera_info')
@@ -30,9 +31,12 @@ class ScanViewpointPlannerNode(Node):
         self.declare_parameter('max_viewpoints', 20)
         self.declare_parameter('dry_run', True)
         self.declare_parameter('debug', True)
+        self.declare_parameter('use_predicted_target_for_scan', True)
+        self.declare_parameter('tracked_preference_timeout_s', 1.0)
 
         self.target_status = 'UNKNOWN'
         self.latest_camera_info = None
+        self.last_tracked_time = None
         self.pub_viewpoints = self.create_publisher(
             String, self.get_parameter('scan_viewpoints_topic').value, 10
         )
@@ -44,6 +48,12 @@ class ScanViewpointPlannerNode(Node):
             Target3D,
             self.get_parameter('object_topic').value,
             lambda msg: self.target_cb(msg, 'object_of_interest_3d'),
+            10,
+        )
+        self.tracked_sub = self.create_subscription(
+            TrackedTarget,
+            self.get_parameter('tracked_target_topic').value,
+            self.tracked_target_cb,
             10,
         )
         self.fallback_sub = self.create_subscription(
@@ -76,6 +86,8 @@ class ScanViewpointPlannerNode(Node):
 
     def target_cb(self, msg, source):
         if not msg.valid:
+            return
+        if source in ('target_3d', 'object_of_interest_3d') and self.recent_tracked_target_available():
             return
 
         dry_run = self.param_bool('dry_run')
@@ -146,6 +158,30 @@ class ScanViewpointPlannerNode(Node):
                 'planned %d dry-run scan viewpoints around target from %s coverage=%.1fdeg radius=%.2fm'
                 % (len(viewpoints), source, achieved_dry_run_coverage, radius)
             )
+
+    def tracked_target_cb(self, msg):
+        if not msg.valid:
+            return
+        self.last_tracked_time = self.get_clock().now()
+        use_predicted = self.param_bool('use_predicted_target_for_scan')
+        point = msg.predicted_position if use_predicted else msg.position
+        target = Target3D()
+        target.header = msg.header
+        target.point.x = float(point.x)
+        target.point.y = float(point.y)
+        target.point.z = float(point.z)
+        target.measurement_confidence = float(msg.confidence)
+        target.valid = True
+        self.target_cb(
+            target,
+            'tracked_target_predicted' if use_predicted else 'tracked_target_filtered',
+        )
+
+    def recent_tracked_target_available(self):
+        if self.last_tracked_time is None:
+            return False
+        age = (self.get_clock().now() - self.last_tracked_time).nanoseconds * 1e-9
+        return age <= float(self.get_parameter('tracked_preference_timeout_s').value)
 
     def make_viewpoint(self, index, angle_deg, radius, center, frame_id):
         angle_rad = math.radians(angle_deg)

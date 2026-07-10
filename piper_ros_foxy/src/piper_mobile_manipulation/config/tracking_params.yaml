@@ -22,7 +22,9 @@
     stable_time_s: 0.4
     process_noise: 0.05
     measurement_noise: 0.03
-    use_tf_transform: false
+    use_tf_transform: true
+    piper_base_frame: "base_link"
+    camera_frame: "camera_color_optical_frame"
     transform_timeout_s: 0.2
     min_measurement_confidence: 0.03
     confidence_noise_scale: 4.0

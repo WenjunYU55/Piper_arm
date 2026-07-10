@@ -35,6 +35,8 @@ class HeavyRefreshBridgeNode(Node):
         self.declare_parameter('seed_sam2_live', True)
         self.declare_parameter('response_poll_period_sec', 0.20)
         self.declare_parameter('max_image_age_sec', 1.0)
+        self.declare_parameter('min_target_depth_valid_ratio', 0.05)
+        self.declare_parameter('min_target_depth_valid_px', 25)
         self.declare_parameter('dry_run', True)
         self.declare_parameter('enable_real_arm_motion', False)
 
@@ -173,6 +175,7 @@ class HeavyRefreshBridgeNode(Node):
                 if result.get('status') != 'ok' or mask is None or not np.count_nonzero(mask):
                     self.publish_status('worker_result_rejected', job_id=response.name, worker_status=result.get('status'))
                 else:
+                    self.publish_target_depth_diagnostic(mask, response.name, result)
                     out = self.bridge.cv2_to_imgmsg(mask, encoding='mono8')
                     stamp = result.get('image_stamp', {})
                     out.header.stamp.sec = int(stamp.get('sec', 0))
@@ -214,6 +217,59 @@ class HeavyRefreshBridgeNode(Node):
         out = self.bridge.cv2_to_imgmsg(mask, encoding='mono8')
         out.header = header
         publisher.publish(out)
+
+    def publish_target_depth_diagnostic(self, mask, job_id, result):
+        if self.latest_depth is None:
+            self.publish_status(
+                'target_mask_depth_unchecked',
+                job_id=job_id,
+                request_id=result.get('request_id'),
+                reason='no aligned depth frame received yet',
+            )
+            return
+        if mask.shape[:2] != self.latest_depth.shape[:2]:
+            self.publish_status(
+                'target_mask_depth_shape_mismatch',
+                job_id=job_id,
+                request_id=result.get('request_id'),
+                mask_shape=list(mask.shape[:2]),
+                depth_shape=list(self.latest_depth.shape[:2]),
+            )
+            return
+        mask_bool = mask > 0
+        mask_px = int(np.count_nonzero(mask_bool))
+        if mask_px <= 0:
+            return
+        depth = self.latest_depth
+        if np.issubdtype(depth.dtype, np.floating):
+            valid_depth = np.isfinite(depth) & (depth > 0.0)
+        else:
+            valid_depth = depth > 0
+        valid_px = int(np.count_nonzero(valid_depth & mask_bool))
+        ratio = valid_px / float(mask_px)
+        min_ratio = float(self.get_parameter('min_target_depth_valid_ratio').value)
+        min_px = int(self.get_parameter('min_target_depth_valid_px').value)
+        if valid_px < min_px or ratio < min_ratio:
+            self.publish_status(
+                'target_mask_depth_warning',
+                job_id=job_id,
+                request_id=result.get('request_id'),
+                mask_px=mask_px,
+                valid_depth_px=valid_px,
+                valid_depth_ratio=ratio,
+                min_valid_depth_px=min_px,
+                min_valid_depth_ratio=min_ratio,
+                reason='heavy target mask has little valid aligned depth; publishing mask anyway',
+            )
+        else:
+            self.publish_status(
+                'target_mask_depth_ok',
+                job_id=job_id,
+                request_id=result.get('request_id'),
+                mask_px=mask_px,
+                valid_depth_px=valid_px,
+                valid_depth_ratio=ratio,
+            )
 
     def queue_sam2_live_seed(self, response, result):
         rgb_path = response / 'rgb.jpg'

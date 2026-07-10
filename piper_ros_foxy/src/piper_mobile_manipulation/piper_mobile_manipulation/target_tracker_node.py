@@ -59,6 +59,7 @@ class TargetTrackerNode(Node):
         self.last_area = None
         self.last_depth = None
         self.last_measurement = None
+        self.last_stable = False
         self.status = 'SEARCHING'
 
         self.pub = self.create_publisher(
@@ -151,6 +152,7 @@ class TargetTrackerNode(Node):
             and stable_now
             and stable_duration >= self.stable_time_s
         )
+        self.last_stable = bool(out.stable)
         out.valid = self.track_frames >= self.min_track_frames
         self.pub.publish(out)
         self.publish_status('LOCKED' if out.stable else 'TRACKING')
@@ -166,6 +168,7 @@ class TargetTrackerNode(Node):
             self.filter.reset()
             self.track_frames = 0
             self.stable_since = None
+            self.last_stable = False
             self.last_time = None
         out.valid = False
         out.confidence = 0.0
@@ -225,10 +228,12 @@ class TargetTrackerNode(Node):
             self.status = 'LOST'
         elif age >= self.low_confidence_timeout_s:
             self.status = 'LOW_CONFIDENCE'
+        elif self.last_stable:
+            self.status = 'LOCKED'
         elif self.track_frames >= self.min_track_frames:
             self.status = 'TRACKING'
         else:
-            self.status = 'LOCKED'
+            self.status = 'SEARCHING'
 
     def publish_status(self, status):
         self.status = status
@@ -245,6 +250,8 @@ class TargetTrackerNode(Node):
         if not point.header.frame_id:
             point.header.frame_id = self.camera_frame
         point.point = msg.point
+        if point.header.frame_id == self.output_frame:
+            return [point.point.x, point.point.y, point.point.z]
         try:
             transformed = self.tf_buffer.transform(
                 point,

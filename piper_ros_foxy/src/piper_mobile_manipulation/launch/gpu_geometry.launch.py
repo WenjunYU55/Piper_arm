@@ -31,7 +31,14 @@ def generate_launch_description():
             executable='target_tracker_node.py',
             name='sam2_target_tracker',
             output='screen',
-            parameters=[cfg('tracking_params.yaml'), cfg('frames.yaml')],
+            parameters=[cfg('frames.yaml'), cfg('tracking_params.yaml')],
+        ),
+        Node(
+            package='piper_mobile_manipulation',
+            executable='object_frame_broadcaster_node.py',
+            name='object_frame_broadcaster',
+            output='screen',
+            parameters=[cfg('tracking_params.yaml')],
         ),
         Node(
             package='piper_mobile_manipulation',
