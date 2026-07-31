@@ -31,7 +31,11 @@ _l515_source_setup() {
 
 _l515_source_setup "$L515_ROS_SETUP" 1
 
-export ROS_LOCALHOST_ONLY=${L515_ROS_LOCALHOST_ONLY:-1}
+# Preserve an explicitly selected ROS discovery scope.  The previous assignment
+# silently changed ROS_LOCALHOST_ONLY=0 back to 1 unless callers also knew to
+# set the L515-specific alias, splitting one supervised stack across two DDS
+# discovery domains.
+export ROS_LOCALHOST_ONLY=${L515_ROS_LOCALHOST_ONLY:-${ROS_LOCALHOST_ONLY:-1}}
 
 if [ "${L515_USE_CYCLONE:-0}" = "1" ] && [ -z "${RMW_IMPLEMENTATION:-}" ] && ros2 pkg prefix rmw_cyclonedds_cpp >/dev/null 2>&1; then
   export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp

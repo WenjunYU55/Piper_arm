@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import cv2
+import numpy as np
 import yaml
 
 
@@ -25,16 +26,23 @@ DEFAULT_CHECKPOINT_PATH = SCRIPT_DIR / "weights" / "groundingdino_swint_ogc.pth"
 DEFAULT_BOX_THRESHOLD = 0.35
 DEFAULT_TEXT_THRESHOLD = 0.25
 DEFAULT_LOCAL_BOX_THRESHOLD = 0.30
+DEFAULT_TARGET_PROMPT = "green cube ."
 DEFAULT_OBSTACLE_PROMPT = (
     "pen . | "
-    "hand . finger . | "
-    "wire . cable . | "
-    "tissue . paper tissue . paper . | "
-    "cardboard . cardboard box ."
+    "hand . finger ."
 )
 LOCAL_CROP_MIN_SIZE_PX = 256
 LOCAL_CROP_HALF_EXTENT_SCALE = 3.0
 MIN_TRACKED_MASK_FALLBACK_AREA_PX = 100
+MIN_TRACKED_MASK_FALLBACK_CONFIDENCE = 0.35
+MIN_TARGET_SEMANTIC_CONFIDENCE = 0.60
+MIN_TARGET_GREEN_FRACTION = 0.15
+MIN_TARGET_BOX_ASPECT_RATIO = 0.50
+MAX_TARGET_BOX_ASPECT_RATIO = 1.60
+TARGET_GREEN_HUE_MIN = 35
+TARGET_GREEN_HUE_MAX = 95
+TARGET_GREEN_SATURATION_MIN = 60
+TARGET_GREEN_VALUE_MIN = 35
 # Target selection is intentionally strict. Generic "cube" and "box" prompts
 # can promote cardboard packaging to the target and poison the SAM2 session.
 TARGET_TERMS = ("green cube",)
@@ -43,18 +51,14 @@ UNSAFE_TERMS = (
     "human",
     "person",
     "finger",
-    "wire",
-    "cable",
-    "tool",
-    "occluder",
-    "blocker",
-    "unknown object",
-    "cardboard",
 )
 CANDIDATE_SAFE_TERMS = (
     "pen",
     "paper",
     "tissue",
+    "wire",
+    "cable",
+    "cardboard",
 )
 LOCAL_GROUP_RELATIVE_CONFIDENCE = 0.75
 
@@ -217,6 +221,129 @@ def label_matches(label: str, terms: tuple[str, ...]) -> bool:
     return any((" " + term + " ") in normalized for term in terms)
 
 
+def green_pixel_fraction(image_bgr: np.ndarray, mask: np.ndarray) -> float:
+    """Return the fraction of supported pixels matching the calibrated green."""
+    if (
+        image_bgr is None
+        or mask is None
+        or image_bgr.ndim != 3
+        or image_bgr.shape[:2] != mask.shape[:2]
+    ):
+        return 0.0
+    support = np.asarray(mask) > 0
+    count = int(np.count_nonzero(support))
+    if count <= 0:
+        return 0.0
+    hsv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HSV)
+    green = (
+        (hsv[:, :, 0] >= TARGET_GREEN_HUE_MIN)
+        & (hsv[:, :, 0] <= TARGET_GREEN_HUE_MAX)
+        & (hsv[:, :, 1] >= TARGET_GREEN_SATURATION_MIN)
+        & (hsv[:, :, 2] >= TARGET_GREEN_VALUE_MIN)
+    )
+    return float(np.count_nonzero(green & support) / count)
+
+
+def box_support_mask(shape: tuple[int, int], box: list[float]) -> np.ndarray:
+    """Rasterize one clipped detection box for deterministic appearance checks."""
+    mask = np.zeros(shape, dtype=np.uint8)
+    if len(box) != 4:
+        return mask
+    height, width = shape
+    x0, y0, x1, y1 = [float(value) for value in box]
+    left = max(0, min(width, int(np.floor(x0))))
+    top = max(0, min(height, int(np.floor(y0))))
+    right = max(0, min(width, int(np.ceil(x1))))
+    bottom = max(0, min(height, int(np.ceil(y1))))
+    if right > left and bottom > top:
+        mask[top:bottom, left:right] = 255
+    return mask
+
+
+def target_mask_appearance_validation(
+    image_bgr: np.ndarray,
+    mask: np.ndarray,
+) -> dict[str, Any]:
+    """Validate that a proposed target mask contains enough observed green."""
+    green_fraction = green_pixel_fraction(image_bgr, mask)
+    accepted = green_fraction >= MIN_TARGET_GREEN_FRACTION
+    return {
+        "accepted": bool(accepted),
+        "green_fraction": float(green_fraction),
+        "minimum_green_fraction": float(MIN_TARGET_GREEN_FRACTION),
+        "rejection_reasons": [] if accepted else [
+            "green fraction %.3f is below %.3f"
+            % (green_fraction, MIN_TARGET_GREEN_FRACTION)
+        ],
+    }
+
+
+def target_detection_validation(
+    detection: dict[str, Any],
+    image_bgr: np.ndarray,
+) -> dict[str, Any]:
+    """Validate semantic confidence, observed colour, and box proportions."""
+    confidence = float(detection.get("confidence", 0.0))
+    box = detection.get("box_xyxy_pixels", [])
+    mask = box_support_mask(image_bgr.shape[:2], box)
+    appearance = target_mask_appearance_validation(image_bgr, mask)
+    aspect_ratio = 0.0
+    if len(box) == 4:
+        width = max(0.0, float(box[2]) - float(box[0]))
+        height = max(0.0, float(box[3]) - float(box[1]))
+        aspect_ratio = width / height if height > 0.0 else 0.0
+    reasons = []
+    if confidence < MIN_TARGET_SEMANTIC_CONFIDENCE:
+        reasons.append(
+            "semantic confidence %.3f is below %.3f"
+            % (confidence, MIN_TARGET_SEMANTIC_CONFIDENCE)
+        )
+    reasons.extend(appearance["rejection_reasons"])
+    if not (
+        MIN_TARGET_BOX_ASPECT_RATIO
+        <= aspect_ratio
+        <= MAX_TARGET_BOX_ASPECT_RATIO
+    ):
+        reasons.append(
+            "box aspect ratio %.3f is outside [%.3f, %.3f]"
+            % (
+                aspect_ratio,
+                MIN_TARGET_BOX_ASPECT_RATIO,
+                MAX_TARGET_BOX_ASPECT_RATIO,
+            )
+        )
+    return {
+        "accepted": not reasons,
+        "semantic_confidence": confidence,
+        "minimum_semantic_confidence": MIN_TARGET_SEMANTIC_CONFIDENCE,
+        "green_fraction": appearance["green_fraction"],
+        "minimum_green_fraction": MIN_TARGET_GREEN_FRACTION,
+        "box_aspect_ratio": aspect_ratio,
+        "minimum_box_aspect_ratio": MIN_TARGET_BOX_ASPECT_RATIO,
+        "maximum_box_aspect_ratio": MAX_TARGET_BOX_ASPECT_RATIO,
+        "rejection_reasons": reasons,
+    }
+
+
+def validate_target_detections(
+    detections: list[dict[str, Any]],
+    image_bgr: np.ndarray,
+) -> list[dict[str, Any]]:
+    """Mark semantic target candidates valid only after appearance checks."""
+    rejected = []
+    for detection in detections:
+        semantic_candidate = bool(detection.get("is_target_candidate", False))
+        detection["is_semantic_target_candidate"] = semantic_candidate
+        if not semantic_candidate:
+            continue
+        validation = target_detection_validation(detection, image_bgr)
+        detection["target_validation"] = validation
+        detection["is_target_candidate"] = bool(validation["accepted"])
+        if not validation["accepted"]:
+            rejected.append(detection)
+    return rejected
+
+
 def best_detection(detections: list[dict[str, Any]], key: str) -> dict[str, Any] | None:
     candidates = [record for record in detections if record.get(key)]
     if not candidates:
@@ -255,8 +382,16 @@ def read_yaml(path: Path) -> dict[str, Any]:
 
 def tracked_mask_target_fallback(capture_dir: Path) -> dict[str, Any] | None:
     mask = cv2.imread(str(capture_dir / "detection_mask.png"), cv2.IMREAD_GRAYSCALE)
+    image = cv2.imread(str(capture_dir / "rgb.png"), cv2.IMREAD_COLOR)
     target = read_yaml(capture_dir / "target_3d.yaml")
-    if mask is None or not bool(target.get("valid", False)):
+    tracking_confidence = float(target.get("measurement_confidence", 0.0))
+    if (
+        mask is None
+        or image is None
+        or image.shape[:2] != mask.shape[:2]
+        or not bool(target.get("valid", False))
+        or tracking_confidence < MIN_TRACKED_MASK_FALLBACK_CONFIDENCE
+    ):
         return None
     source_u = int(round(float(target.get("source_u", -1))))
     source_v = int(round(float(target.get("source_v", -1))))
@@ -268,13 +403,17 @@ def tracked_mask_target_fallback(capture_dir: Path) -> dict[str, Any] | None:
     component = int(labels[source_v, source_u])
     if component <= 0 or int(stats[component, cv2.CC_STAT_AREA]) < MIN_TRACKED_MASK_FALLBACK_AREA_PX:
         return None
+    component_mask = (labels == component).astype(np.uint8) * 255
+    appearance = target_mask_appearance_validation(image, component_mask)
+    if not appearance["accepted"]:
+        return None
     x = int(stats[component, cv2.CC_STAT_LEFT])
     y = int(stats[component, cv2.CC_STAT_TOP])
     width = int(stats[component, cv2.CC_STAT_WIDTH])
     height = int(stats[component, cv2.CC_STAT_HEIGHT])
     return {
         "label": "tracked target mask fallback",
-        "confidence": float(target.get("measurement_confidence", 0.0)),
+        "confidence": tracking_confidence,
         "box_xyxy_pixels": [float(x), float(y), float(x + width), float(y + height)],
         "box_area_px": float(width * height),
         "detection_source": "tracked_target_mask",
@@ -282,6 +421,12 @@ def tracked_mask_target_fallback(capture_dir: Path) -> dict[str, Any] | None:
         "is_target_candidate": True,
         "is_unsafe_candidate": False,
         "is_candidate_safe_class": False,
+        "is_semantic_target_candidate": False,
+        "target_validation": dict(
+            appearance,
+            source="tracked_target_mask",
+            semantic_confidence=tracking_confidence,
+        ),
     }
 
 
@@ -390,6 +535,10 @@ def run_on_capture(
     )
     height, width = image_source.shape[:2]
     full_frame_detections = detection_records(boxes, logits, phrases, width, height)
+    rejected_target_candidates = validate_target_detections(
+        full_frame_detections,
+        image_source,
+    )
     model_target = best_detection(full_frame_detections, "is_target_candidate")
     target = model_target or tracked_mask_target_fallback(capture_dir)
     local_detections: list[dict[str, Any]] = []
@@ -446,6 +595,16 @@ def run_on_capture(
     summary = detection_summary(detections)
     summary["model_target_detected"] = model_target is not None
     summary["target_source"] = "groundingdino" if model_target is not None else ("tracked_target_mask" if target is not None else "none")
+    summary["rejected_target_candidates"] = rejected_target_candidates
+    summary["target_validation_policy"] = {
+        "minimum_semantic_confidence": MIN_TARGET_SEMANTIC_CONFIDENCE,
+        "minimum_green_fraction": MIN_TARGET_GREEN_FRACTION,
+        "box_aspect_ratio": [
+            MIN_TARGET_BOX_ASPECT_RATIO,
+            MAX_TARGET_BOX_ASPECT_RATIO,
+        ],
+        "fail_closed": True,
+    }
 
     annotated = annotate(image_source=image_source, boxes=boxes, logits=logits, phrases=phrases)
     debug_path = output_dir / "groundingdino_debug.png"

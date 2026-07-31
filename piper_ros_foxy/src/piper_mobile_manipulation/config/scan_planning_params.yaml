@@ -1,19 +1,37 @@
 /**:
   ros__parameters:
-    desired_scan_angle_deg: 250
-    viewpoint_step_deg: 15
-    scan_radius_m: 0.45
+    # Workstation acceptance sector selected from the 2026-07-21 live
+    # Tesseract IK/collision sweep around the tracked cube.
+    # The original 120-210 degree sector produced nine qualified poses, while
+    # its final four positions had no bounded IK solution at the live
+    # workstation. Keep all thirteen captures inside the robust 120-175
+    # degree sector rather than weakening any Tesseract gate.
+    desired_scan_angle_deg: 55
+    viewpoint_center_angle_deg: 147.5
+    # Seven azimuths across the qualified sector, at three camera elevations,
+    # form a 21-candidate dome. Tesseract chooses exactly 13 collision-valid
+    # views from this larger set.
+    viewpoint_step_deg: 9.166666666666666
+    scan_radius_m: 0.30
     min_scan_radius_m: 0.30
     max_scan_radius_m: 0.80
-    camera_pitch_deg: -10
+    camera_pitch_deg: -55
+    camera_pitch_offsets_deg: [0.0, 10.0, -10.0]
     keep_object_centered: true
-    max_viewpoints: 20
+    max_viewpoints: 21
+    session_max_views: 13
+    scan_session_history_topic: "/piper/scan_session_history"
+    # A retried scan excludes only a camera pose that is close in both
+    # translation and viewing direction to an already accepted capture.
+    duplicate_position_tolerance_m: 0.012
+    duplicate_look_tolerance_deg: 2.0
 
     min_reach_m: 0.20
     max_reach_m: 0.75
     min_camera_object_distance_m: 0.25
     max_camera_object_distance_m: 0.80
     max_height_change_m: 0.40
+    arm_status_timeout_sec: 1.0
 
     min_good_scan_quality: 0.65
     min_acceptable_scan_quality: 0.40
@@ -31,7 +49,28 @@
     dry_run: true
     debug: true
     tracked_target_topic: "/piper/tracked_target"
-    use_predicted_target_for_scan: true
+    # Stationary-cube plans freeze the latest qualified measured position.
+    use_predicted_target_for_scan: false
+
+    # A typed /scan_target_acquisition/prepare call atomically binds the session
+    # ID and rough base_link coordinate. The guarded executor still requires
+    # exact approval before any real motion.
+    acquisition_viewpoints_topic: "/piper/acquisition_viewpoints"
+    reachable_acquisition_viewpoints_topic: "/piper/reachable_acquisition_viewpoints"
+    hint_max_age_sec: 5.0
+    # Maximum search radius. If the live camera is already closer to the hint,
+    # acquisition preserves that current radius and aims at the hint instead
+    # of overshooting through/behind the robot base.
+    standoff_m: 0.45
+    # Extra compact candidates cover centreline hints whose five
+    # minimum-translation look-at orientations have no bounded IK.
+    fallback_standoff_m: 0.30
+    # Retained for configuration compatibility; live camera-to-hint pitch owns
+    # the centered minimum-translation acquisition look.
+    acquisition_camera_pitch_deg: -10.0
+    # Cover the full 0.30 m accepted rough-hint error from a compact camera
+    # pose. Diagonal yaw/pitch candidates keep lateral errors inside view.
+    sweep_angle_deg: 45.0
 
     first_push_distance_m: 0.01
     max_push_distance_m: 0.03

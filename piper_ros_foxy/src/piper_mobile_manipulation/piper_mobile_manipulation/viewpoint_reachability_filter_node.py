@@ -1,18 +1,40 @@
 #!/usr/bin/env python3
 import json
 import math
+import time
 
 import rclpy
+from piper_msgs.msg import PiperStatusMsg
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
+
+
+ROUGH_ACQUISITION = 'ROUGH_ACQUISITION'
+
+
+def target_status_rejection_reason(target_status, plan_kind):
+    """Keep normal tracking gates while allowing LOST acquisition bootstrap."""
+    status = str(target_status)
+    if status == 'LOW_CONFIDENCE':
+        return 'target_status=LOW_CONFIDENCE'
+    if status == 'LOST' and plan_kind != ROUGH_ACQUISITION:
+        return 'target_status=LOST'
+    return ''
 
 
 class ViewpointReachabilityFilterNode(Node):
     def __init__(self):
         super().__init__('viewpoint_reachability_filter_node')
         self.declare_parameter('scan_viewpoints_topic', '/piper/scan_viewpoints')
-        self.declare_parameter('reachable_scan_viewpoints_topic', '/piper/reachable_scan_viewpoints')
+        self.declare_parameter(
+            'reachable_scan_viewpoints_topic', '/piper/reachable_scan_viewpoints')
+        self.declare_parameter(
+            'acquisition_viewpoints_topic', '/piper/acquisition_viewpoints')
+        self.declare_parameter(
+            'reachable_acquisition_viewpoints_topic',
+            '/piper/reachable_acquisition_viewpoints')
         self.declare_parameter('joint_states_topic', '/joint_states_single')
         self.declare_parameter('arm_status_topic', '/arm_status')
         self.declare_parameter('target_status_topic', '/piper/target_status')
@@ -22,10 +44,12 @@ class ViewpointReachabilityFilterNode(Node):
         self.declare_parameter('min_camera_object_distance_m', 0.25)
         self.declare_parameter('max_camera_object_distance_m', 0.80)
         self.declare_parameter('max_height_change_m', 0.40)
+        self.declare_parameter('arm_status_timeout_sec', 1.0)
         self.declare_parameter('dry_run', False)
         self.declare_parameter('debug', True)
 
-        self.arm_status = ''
+        self.arm_status = None
+        self.arm_status_at = None
         self.target_status = 'UNKNOWN'
         self.latest_joint_state = None
 
@@ -34,10 +58,29 @@ class ViewpointReachabilityFilterNode(Node):
             self.get_parameter('reachable_scan_viewpoints_topic').value,
             10,
         )
-        self.scan_sub = self.create_subscription(
+        self.acquisition_pub = self.create_publisher(
             String,
-            self.get_parameter('scan_viewpoints_topic').value,
-            self.scan_cb,
+            self.get_parameter('reachable_acquisition_viewpoints_topic').value,
+            10,
+        )
+        # PiPER publishes reliable status at high rate. Retain only the newest
+        # sample. Missing or stale status rejects every viewpoint without
+        # destroying/recreating DDS entities in the running safety stack.
+        self.arm_status_qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+        self.arm_status_sub = self.create_subscription(
+            PiperStatusMsg,
+            self.get_parameter('arm_status_topic').value,
+            self.arm_status_cb,
+            self.arm_status_qos,
+        )
+        self.target_status_sub = self.create_subscription(
+            String,
+            self.get_parameter('target_status_topic').value,
+            self.target_status_cb,
             10,
         )
         self.joint_sub = self.create_subscription(
@@ -46,41 +89,70 @@ class ViewpointReachabilityFilterNode(Node):
             self.joint_cb,
             10,
         )
-        self.arm_status_sub = self.create_subscription(
+        # Create the high-rate scan input last so safety-state subscriptions are
+        # established before the first candidate burst arrives.
+        self.scan_sub = self.create_subscription(
             String,
-            self.get_parameter('arm_status_topic').value,
-            self.arm_status_cb,
+            self.get_parameter('scan_viewpoints_topic').value,
+            self.scan_cb,
             10,
         )
-        self.target_status_sub = self.create_subscription(
+        self.acquisition_sub = self.create_subscription(
             String,
-            self.get_parameter('target_status_topic').value,
-            self.target_status_cb,
+            self.get_parameter('acquisition_viewpoints_topic').value,
+            self.acquisition_cb,
             10,
         )
         self.get_logger().warn(
-            'Viewpoint reachability filter is dry-run only; it does not publish /piper/servo_cmd or move the arm.'
+            'Viewpoint reachability filter is dry-run only; it does not publish '
+            '/piper/servo_cmd or move the arm.'
         )
 
     def joint_cb(self, msg):
         self.latest_joint_state = msg
 
     def arm_status_cb(self, msg):
-        self.arm_status = msg.data
+        self.arm_status = msg
+        self.arm_status_at = time.monotonic()
 
     def target_status_cb(self, msg):
         self.target_status = msg.data
 
     def scan_cb(self, msg):
+        self.filter_payload(
+            msg, self.pub, expected_plan_kind='MULTIVIEW_SCAN')
+
+    def acquisition_cb(self, msg):
+        self.filter_payload(
+            msg, self.acquisition_pub, expected_plan_kind=ROUGH_ACQUISITION)
+
+    def filter_payload(self, msg, publisher, expected_plan_kind):
         try:
             payload = json.loads(msg.data)
         except json.JSONDecodeError as exc:
-            self.publish_rejected_payload('invalid scan viewpoint JSON: %s' % exc)
+            self.publish_rejected_payload(
+                'invalid scan viewpoint JSON: %s' % exc,
+                publisher,
+                expected_plan_kind,
+            )
             return
 
+        plan_kind = payload.get('plan_kind', 'MULTIVIEW_SCAN')
+        if expected_plan_kind is not None and plan_kind != expected_plan_kind:
+            self.publish_rejected_payload(
+                'viewpoint plan_kind on this topic must be %s'
+                % expected_plan_kind,
+                publisher,
+                expected_plan_kind,
+            )
+            return
         viewpoints = payload.get('viewpoints', [])
         if not isinstance(viewpoints, list):
-            self.publish_rejected_payload('scan viewpoint JSON has no viewpoints list')
+            self.publish_rejected_payload(
+                'scan viewpoint JSON has no viewpoints list',
+                publisher,
+                plan_kind,
+            )
             return
 
         filtered = []
@@ -90,7 +162,7 @@ class ViewpointReachabilityFilterNode(Node):
             if not isinstance(viewpoint, dict):
                 continue
             result = dict(viewpoint)
-            reasons = self.reject_reasons(result)
+            reasons = self.reject_reasons(result, plan_kind)
             accepted = len(reasons) == 0
             result['reachable'] = bool(accepted)
             result['safe'] = bool(accepted)
@@ -109,7 +181,7 @@ class ViewpointReachabilityFilterNode(Node):
             'output_viewpoints': len(filtered),
             'reachable_viewpoints': reachable_count,
             'safe_viewpoints': safe_count,
-            'arm_status': self.arm_status,
+            'arm_status': self.arm_status_summary(),
             'target_status': self.target_status,
             'dry_run_config_loaded': self.param_bool('dry_run'),
         }
@@ -117,24 +189,25 @@ class ViewpointReachabilityFilterNode(Node):
 
         out = String()
         out.data = json.dumps(output, sort_keys=True)
-        self.pub.publish(out)
+        publisher.publish(out)
 
         if self.param_bool('debug'):
             self.get_logger().info(
-                'filtered scan viewpoints: %d/%d reachable safe=%d'
-                % (reachable_count, len(filtered), safe_count)
+                'filtered %s viewpoints: %d/%d reachable safe=%d'
+                % (plan_kind, reachable_count, len(filtered), safe_count)
             )
 
-    def reject_reasons(self, viewpoint):
+    def reject_reasons(self, viewpoint, plan_kind='MULTIVIEW_SCAN'):
         reasons = []
         if not self.param_bool('dry_run'):
             reasons.append('dry_run safety config missing or false')
 
-        if self.status_has_error(self.arm_status):
-            reasons.append('arm status reports error')
+        reasons.extend(self.arm_status_reasons())
 
-        if self.target_status in ('LOW_CONFIDENCE', 'LOST'):
-            reasons.append('target_status=%s' % self.target_status)
+        target_reason = target_status_rejection_reason(
+            self.target_status, plan_kind)
+        if target_reason:
+            reasons.append(target_reason)
 
         camera_position = viewpoint.get('desired_camera_position')
         target_center = viewpoint.get('target_object_center')
@@ -179,10 +252,14 @@ class ViewpointReachabilityFilterNode(Node):
 
         return reasons
 
-    def publish_rejected_payload(self, reason):
+    def publish_rejected_payload(
+            self, reason, publisher=None, plan_kind='MULTIVIEW_SCAN'):
+        if publisher is None:
+            publisher = self.pub
         out = String()
         out.data = json.dumps(
             {
+                'plan_kind': plan_kind or 'MULTIVIEW_SCAN',
                 'dry_run': True,
                 'filter': {
                     'node': 'viewpoint_reachability_filter_node',
@@ -195,13 +272,62 @@ class ViewpointReachabilityFilterNode(Node):
             },
             sort_keys=True,
         )
-        self.pub.publish(out)
+        publisher.publish(out)
         self.get_logger().warn(reason)
 
-    @staticmethod
-    def status_has_error(status):
-        lowered = status.lower()
-        return 'error' in lowered or 'fault' in lowered
+    def arm_status_reasons(self):
+        if self.arm_status is None or self.arm_status_at is None:
+            return ['arm status is missing']
+        age = time.monotonic() - self.arm_status_at
+        timeout = float(self.get_parameter('arm_status_timeout_sec').value)
+        if age > timeout:
+            return ['arm status is stale %.3fs > %.3fs' % (age, timeout)]
+        reasons = []
+        if int(self.arm_status.err_code) != 0:
+            reasons.append('arm err_code=%d' % int(self.arm_status.err_code))
+        if any((
+                self.arm_status.joint_1_angle_limit,
+                self.arm_status.joint_2_angle_limit,
+                self.arm_status.joint_3_angle_limit,
+                self.arm_status.joint_4_angle_limit,
+                self.arm_status.joint_5_angle_limit,
+                self.arm_status.joint_6_angle_limit)):
+            reasons.append('arm reports a joint angle-limit fault')
+        if any((
+                self.arm_status.communication_status_joint_1,
+                self.arm_status.communication_status_joint_2,
+                self.arm_status.communication_status_joint_3,
+                self.arm_status.communication_status_joint_4,
+                self.arm_status.communication_status_joint_5,
+                self.arm_status.communication_status_joint_6)):
+            reasons.append('arm reports a joint communication fault')
+        return reasons
+
+    def arm_status_summary(self):
+        if self.arm_status is None or self.arm_status_at is None:
+            return {'available': False}
+        age = max(0.0, time.monotonic() - self.arm_status_at)
+        return {
+            'available': True,
+            'age_sec': age,
+            'err_code': int(self.arm_status.err_code),
+            'angle_limit_fault': any((
+                self.arm_status.joint_1_angle_limit,
+                self.arm_status.joint_2_angle_limit,
+                self.arm_status.joint_3_angle_limit,
+                self.arm_status.joint_4_angle_limit,
+                self.arm_status.joint_5_angle_limit,
+                self.arm_status.joint_6_angle_limit,
+            )),
+            'communication_fault': any((
+                self.arm_status.communication_status_joint_1,
+                self.arm_status.communication_status_joint_2,
+                self.arm_status.communication_status_joint_3,
+                self.arm_status.communication_status_joint_4,
+                self.arm_status.communication_status_joint_5,
+                self.arm_status.communication_status_joint_6,
+            )),
+        }
 
     @staticmethod
     def valid_vector(value):

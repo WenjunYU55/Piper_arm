@@ -6,7 +6,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
-from piper_mobile_manipulation.msg import ServoCommand, Target3D
+from piper_mobile_manipulation.msg import ServoCommand, Target3D, TrackingHealth
 
 
 class SafeServoNode(Node):
@@ -15,6 +15,7 @@ class SafeServoNode(Node):
         self.declare_parameter('manipulation_target_topic', '/piper/manipulation_target')
         self.declare_parameter('target_status_topic', '/piper/target_status')
         self.declare_parameter('servo_cmd_topic', '/piper/servo_cmd')
+        self.declare_parameter('tracking_health_topic', '/piper/tracking_health')
         self.declare_parameter('enable_real_arm_motion', False)
         self.declare_parameter('min_depth_m', 0.25)
         self.declare_parameter('max_target_jump_m', 0.03)
@@ -25,6 +26,8 @@ class SafeServoNode(Node):
         self.target_status = 'SEARCHING'
         self.arm_status = ''
         self.last_target = None
+        self.tracking_speed_scale = 0.0
+        self.tracking_lifecycle = 'WAITING_TO_REACQUIRE'
         self.pub = self.create_publisher(ServoCommand, self.get_parameter('servo_cmd_topic').value, 10)
         self.target_sub = self.create_subscription(
             Target3D,
@@ -35,6 +38,12 @@ class SafeServoNode(Node):
         self.status_sub = self.create_subscription(String, self.get_parameter('target_status_topic').value, self.status_cb, 10)
         self.arm_status_sub = self.create_subscription(String, '/arm_status', self.arm_status_cb, 10)
         self.joint_sub = self.create_subscription(JointState, '/joint_states_single', self.joint_cb, 10)
+        self.health_sub = self.create_subscription(
+            TrackingHealth,
+            self.get_parameter('tracking_health_topic').value,
+            self.health_cb,
+            10,
+        )
         self.get_logger().warn('Safe servo started with enable_real_arm_motion=false by default')
 
     def status_cb(self, msg):
@@ -46,11 +55,20 @@ class SafeServoNode(Node):
     def joint_cb(self, _msg):
         pass
 
+    def health_cb(self, msg):
+        self.tracking_speed_scale = max(
+            0.0, min(1.0, float(msg.recommended_speed_scale))
+        )
+        self.tracking_lifecycle = msg.lifecycle_state
+
     def target_cb(self, msg):
         cmd = ServoCommand()
         cmd.header = msg.header
         cmd.command = 'hold'
-        cmd.max_speed = float(self.get_parameter('max_speed').value)
+        cmd.max_speed = (
+            float(self.get_parameter('max_speed').value)
+            * self.tracking_speed_scale
+        )
         cmd.gain_xy = float(self.get_parameter('gain_xy').value)
         cmd.gain_z = float(self.get_parameter('gain_z').value)
 
@@ -76,7 +94,9 @@ class SafeServoNode(Node):
             )
 
     def stop_reason(self, msg):
-        if self.target_status in ('LOW_CONFIDENCE', 'LOST'):
+        if self.tracking_speed_scale <= 0.0:
+            return 'tracking_health=%s' % self.tracking_lifecycle
+        if self.target_status not in ('TRACKING', 'LOCKED'):
             return 'target_status=%s' % self.target_status
         if not msg.valid or not math.isfinite(msg.point.z):
             return 'invalid target depth'

@@ -5,15 +5,19 @@ find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(message_filters REQUIRED)
+find_package(piper_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(trajectory_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Detection2D.msg"
   "msg/Target3D.msg"
   "msg/TrackedTarget.msg"
+  "msg/TrackingHealth.msg"
+  "msg/CameraTimestampHealth.msg"
   "msg/TargetError.msg"
   "msg/ServoCommand.msg"
   "msg/HandoffTarget.msg"
@@ -21,7 +25,15 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ManipulationState.msg"
   "msg/ObstacleInstance3D.msg"
   "msg/ObstacleInstance3DArray.msg"
-  DEPENDENCIES geometry_msgs std_msgs
+  "msg/ScanExecutionPlan.msg"
+  "msg/ScanExecutionStatus.msg"
+  "msg/TesseractPlan.msg"
+  "msg/TesseractPlanStatus.msg"
+  "msg/TesseractReadiness.msg"
+  "srv/ApproveScanExecution.srv"
+  "srv/PrepareAcquisition.srv"
+  "srv/RequestTesseractPlan.srv"
+  DEPENDENCIES geometry_msgs std_msgs trajectory_msgs
 )
 
 ament_python_install_package(${PROJECT_NAME})
@@ -38,6 +50,7 @@ install(PROGRAMS
   piper_mobile_manipulation/manipulation_state_machine_node.py
   piper_mobile_manipulation/fake_arm_interface_node.py
   piper_mobile_manipulation/scan_viewpoint_planner_node.py
+  piper_mobile_manipulation/scan_target_acquisition_node.py
   piper_mobile_manipulation/viewpoint_reachability_filter_node.py
   piper_mobile_manipulation/active_scan_debug_overlay_node.py
   piper_mobile_manipulation/scan_capture_node.py
@@ -45,6 +58,7 @@ install(PROGRAMS
   piper_mobile_manipulation/occlusion_checker_node.py
   piper_mobile_manipulation/heavy_refresh_bridge_node.py
   piper_mobile_manipulation/sam2_live_bridge_node.py
+  piper_mobile_manipulation/motion_compensated_prompt_node.py
   piper_mobile_manipulation/target_cloud_node.py
   piper_mobile_manipulation/mask_to_detection_node.py
   piper_mobile_manipulation/obstacle_instance_3d_node.py
@@ -52,6 +66,8 @@ install(PROGRAMS
   piper_mobile_manipulation/target_landmark_node.py
   piper_mobile_manipulation/object_frame_broadcaster_node.py
   piper_mobile_manipulation/supervised_cube_workflow_node.py
+  piper_mobile_manipulation/scan_viewpoint_executor_node.py
+  piper_mobile_manipulation/camera_timestamp_watchdog_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -71,6 +87,17 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_obstacle_geometry test/test_obstacle_geometry.py)
   ament_add_pytest_test(test_target_landmark_geometry test/test_target_landmark_geometry.py)
   ament_add_pytest_test(test_supervised_workflow test/test_supervised_workflow.py)
+  ament_add_pytest_test(test_tracking_recovery test/test_tracking_recovery.py)
+  ament_add_pytest_test(test_depth_to_3d test/test_depth_to_3d.py)
+  ament_add_pytest_test(test_mask_reprojection test/test_mask_reprojection.py)
+  ament_add_pytest_test(test_scan_motion test/test_scan_motion.py)
+  ament_add_pytest_test(
+    test_scan_session_memory test/test_scan_session_memory.py)
+  ament_add_pytest_test(test_scan_capture test/test_scan_capture.py)
+  ament_add_pytest_test(
+    test_scan_target_acquisition test/test_scan_target_acquisition.py)
+  ament_add_pytest_test(
+    test_camera_timestamp_health test/test_camera_timestamp_health.py)
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)

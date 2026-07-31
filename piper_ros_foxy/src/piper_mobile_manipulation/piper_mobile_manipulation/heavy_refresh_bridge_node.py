@@ -15,7 +15,13 @@ from cv_bridge import CvBridge
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
-from std_msgs.msg import String
+from std_msgs.msg import Header, String
+
+from piper_mobile_manipulation.heavy_refresh_contract import (
+    image_satisfies_request,
+    request_minimum_stamp_ns,
+    ros_stamp_to_dict,
+)
 
 
 class HeavyRefreshBridgeNode(Node):
@@ -35,6 +41,7 @@ class HeavyRefreshBridgeNode(Node):
         self.declare_parameter('seed_sam2_live', True)
         self.declare_parameter('response_poll_period_sec', 0.20)
         self.declare_parameter('max_image_age_sec', 1.0)
+        self.declare_parameter('idle_status_interval_sec', 2.0)
         self.declare_parameter('min_target_depth_valid_ratio', 0.05)
         self.declare_parameter('min_target_depth_valid_px', 25)
         self.declare_parameter('dry_run', True)
@@ -69,6 +76,10 @@ class HeavyRefreshBridgeNode(Node):
         self.create_subscription(Image, self.get_parameter('tracked_mask_topic').value, self.mask_cb, qos_profile_sensor_data)
         self.create_subscription(String, self.get_parameter('request_topic').value, self.request_cb, 10)
         self.create_timer(float(self.get_parameter('response_poll_period_sec').value), self.poll_responses)
+        self.create_timer(
+            max(0.5, float(self.get_parameter('idle_status_interval_sec').value)),
+            self.publish_idle_status,
+        )
         self.get_logger().warn('Heavy refresh bridge is read-only; real arm motion is disabled.')
 
     def color_cb(self, msg):
@@ -76,7 +87,10 @@ class HeavyRefreshBridgeNode(Node):
             self.latest_color = np.asarray(self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')).copy()
             self.latest_color_msg = msg
             self.latest_color_time = time.monotonic()
-            if self.pending_request is not None:
+            if (
+                    self.pending_request is not None
+                    and image_satisfies_request(
+                        self.pending_request, msg.header.stamp)):
                 request = self.pending_request
                 self.pending_request = None
                 self.enqueue_request(request)
@@ -101,21 +115,54 @@ class HeavyRefreshBridgeNode(Node):
         except (TypeError, ValueError) as exc:
             self.publish_status('request_rejected', error='invalid JSON: %s' % exc)
             return
+        request_id = str(request.get('request_id', '')).strip()
+        if not request_id:
+            self.publish_status(
+                'request_rejected', error='request_id is required')
+            return
+        try:
+            request_minimum_stamp_ns(request)
+        except ValueError as exc:
+            self.publish_status(
+                'request_rejected', request_id=request_id, error=str(exc))
+            return
+        if self.pending_request is not None:
+            pending_id = str(self.pending_request.get('request_id', ''))
+            if pending_id == request_id:
+                return
+            self.publish_status(
+                'request_ignored_busy', request_id=request_id,
+                reason=request.get('reason', ''),
+            )
+            return
         if self.latest_color is None or self.latest_color_msg is None:
             self.pending_request = request
-            self.publish_status('waiting_for_image', request_id=request.get('request_id'))
+            self.publish_status(
+                'waiting_for_fresh_image', request_id=request_id,
+                reason=request.get('reason', ''),
+            )
             return
         age = time.monotonic() - self.latest_color_time
-        if age > float(self.get_parameter('max_image_age_sec').value):
+        if (
+                age > float(self.get_parameter('max_image_age_sec').value)
+                or not image_satisfies_request(
+                    request, self.latest_color_msg.header.stamp)):
             self.pending_request = request
-            self.publish_status('waiting_for_image', request_id=request.get('request_id'), image_age_sec=age)
+            self.publish_status(
+                'waiting_for_fresh_image', request_id=request_id,
+                reason=request.get('reason', ''), image_age_sec=age,
+                min_image_stamp=request.get('min_image_stamp'),
+            )
             return
         self.enqueue_request(request)
 
     def enqueue_request(self, request):
         request_id = request.get('request_id', 'unknown')
         if self.worker_busy():
-            self.publish_status('request_ignored_busy', request_id=request_id)
+            self.publish_status(
+                'request_ignored_busy', request_id=request_id,
+                reason=request.get('reason', ''),
+            )
             return
         stamp = self.latest_color_msg.header.stamp
         job_id = '%d_%09d_request_%s' % (
@@ -143,6 +190,7 @@ class HeavyRefreshBridgeNode(Node):
                 'reason': request.get('reason', ''),
                 'tracking_confidence': request.get('tracking', {}).get('tracking_confidence', 0.0),
                 'image_stamp': {'sec': int(stamp.sec), 'nanosec': int(stamp.nanosec)},
+                'min_image_stamp': request.get('min_image_stamp'),
                 'frame_id': self.latest_color_msg.header.frame_id,
                 'dry_run': True,
                 'real_arm_motion': False,
@@ -151,10 +199,19 @@ class HeavyRefreshBridgeNode(Node):
                 yaml.safe_dump(manifest, stream, sort_keys=False)
             (temporary / 'READY').touch()
             os.replace(str(temporary), str(final_dir))
-            self.publish_status('queued', job_id=job_id, request_id=request_id)
+            self.publish_status(
+                'queued', job_id=job_id, request_id=request_id,
+                reason=manifest['reason'], image_stamp=manifest['image_stamp'],
+            )
         except Exception as exc:
             shutil.rmtree(temporary, ignore_errors=True)
-            self.publish_status('request_failed', job_id=job_id, error='%s: %s' % (type(exc).__name__, exc))
+            self.publish_status(
+                'request_failed',
+                job_id=job_id,
+                request_id=request_id,
+                image_stamp=ros_stamp_to_dict(stamp),
+                error='%s: %s' % (type(exc).__name__, exc),
+            )
 
     def worker_busy(self):
         for name in ('requests', 'processing', 'responses'):
@@ -162,6 +219,11 @@ class HeavyRefreshBridgeNode(Node):
             if directory.is_dir() and any(directory.iterdir()):
                 return True
         return False
+
+    def publish_idle_status(self):
+        """Confirm quiescence so consumers can recover a lost terminal event."""
+        if self.pending_request is None and not self.worker_busy():
+            self.publish_status('idle')
 
     def poll_responses(self):
         response_root = self.spool / 'responses'
@@ -171,9 +233,40 @@ class HeavyRefreshBridgeNode(Node):
             try:
                 with (response / 'result.yaml').open('r', encoding='utf-8') as stream:
                     result = yaml.safe_load(stream) or {}
+                request_manifest = self.request_manifest(response.name)
+                request_id = (
+                    result.get('request_id')
+                    or request_manifest.get('request_id')
+                )
+                reason = str(request_manifest.get('reason', ''))
+                image_stamp = result.get(
+                    'image_stamp', request_manifest.get('image_stamp', {}))
                 mask = cv2.imread(str(response / 'target_mask.png'), cv2.IMREAD_GRAYSCALE)
                 if result.get('status') != 'ok' or mask is None or not np.count_nonzero(mask):
-                    self.publish_status('worker_result_rejected', job_id=response.name, worker_status=result.get('status'))
+                    self.publish_status(
+                        'worker_result_rejected', job_id=response.name,
+                        request_id=request_id, reason=reason,
+                        worker_status=result.get('status'),
+                        image_stamp=image_stamp,
+                        target_confidence=result.get('target_confidence'),
+                        obstacle_count=result.get('obstacle_count', 0),
+                        obstacle_labels=result.get('obstacle_labels', []),
+                        unsafe_obstacle_count=result.get('unsafe_obstacle_count', 0),
+                    )
+                    header = self.result_header(result)
+                    self.publish_response_mask(
+                        response / 'candidate_movable_obstacle_mask.png',
+                        self.movable_obstacle_pub, header)
+                    self.publish_response_mask(
+                        response / 'unsafe_obstacle_mask.png',
+                        self.unsafe_obstacle_pub, header)
+                    self.publish_response_mask(
+                        response / 'all_obstacle_mask.png',
+                        self.all_obstacle_pub, header)
+                    if (
+                            bool(self.get_parameter('seed_sam2_live').value)
+                            and result.get('tracked_objects')):
+                        self.queue_sam2_live_seed(response, result)
                 else:
                     self.publish_target_depth_diagnostic(mask, response.name, result)
                     out = self.bridge.cv2_to_imgmsg(mask, encoding='mono8')
@@ -196,7 +289,9 @@ class HeavyRefreshBridgeNode(Node):
                     self.publish_status(
                         'published',
                         job_id=response.name,
-                        request_id=result.get('request_id'),
+                        request_id=request_id,
+                        reason=reason,
+                        image_stamp=image_stamp,
                         target_confidence=result.get('target_confidence'),
                         obstacle_count=result.get('obstacle_count', 0),
                         obstacle_labels=result.get('obstacle_labels', []),
@@ -210,6 +305,25 @@ class HeavyRefreshBridgeNode(Node):
             except Exception as exc:
                 self.get_logger().error('Failed to consume %s: %s' % (response, exc))
 
+    def request_manifest(self, job_id):
+        for path in (
+            self.spool / 'archive' / job_id / 'request.yaml',
+            self.spool / 'processing' / job_id / 'request.yaml',
+            self.spool / 'requests' / job_id / 'request.yaml',
+        ):
+            if not path.is_file():
+                continue
+            try:
+                with path.open('r', encoding='utf-8') as stream:
+                    value = yaml.safe_load(stream) or {}
+                    return value if isinstance(value, dict) else {}
+            except (OSError, ValueError, TypeError):
+                return {}
+        return {}
+
+    def request_reason(self, job_id):
+        return str(self.request_manifest(job_id).get('reason', ''))
+
     def publish_response_mask(self, path, publisher, header):
         mask = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
         if mask is None:
@@ -217,6 +331,15 @@ class HeavyRefreshBridgeNode(Node):
         out = self.bridge.cv2_to_imgmsg(mask, encoding='mono8')
         out.header = header
         publisher.publish(out)
+
+    @staticmethod
+    def result_header(result):
+        header = Header()
+        stamp = result.get('image_stamp', {})
+        header.stamp.sec = int(stamp.get('sec', 0))
+        header.stamp.nanosec = int(stamp.get('nanosec', 0))
+        header.frame_id = str(result.get('frame_id', ''))
+        return header
 
     def publish_target_depth_diagnostic(self, mask, job_id, result):
         if self.latest_depth is None:

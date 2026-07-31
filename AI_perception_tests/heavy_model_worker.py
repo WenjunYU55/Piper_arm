@@ -172,13 +172,16 @@ class HeavyModelWorker:
                 if mask is not None and mask.shape == rgb.shape[:2] and np.count_nonzero(mask)
                 else "target_mask_missing"
             )
-            if mask is not None:
+            target_valid = status == "ok"
+            if target_valid:
                 cv2.imwrite(str(response_tmp / "target_mask.png"), mask)
-                cv2.imwrite(str(response_tmp / "rgb.jpg"), rgb, [cv2.IMWRITE_JPEG_QUALITY, 95])
+            # Obstacle-only semantic seeds still need the exact RGB frame when
+            # GroundingDINO does not find the target.
+            cv2.imwrite(str(response_tmp / "rgb.jpg"), rgb, [cv2.IMWRITE_JPEG_QUALITY, 95])
             object_dir = response_tmp / "objects"
             object_dir.mkdir()
             tracked_objects = []
-            if mask is not None:
+            if target_valid:
                 target_file = "objects/001_target.png"
                 cv2.imwrite(str(response_tmp / target_file), mask)
                 tracked_objects.append(
@@ -195,7 +198,8 @@ class HeavyModelWorker:
             movable_mask = np.zeros(rgb.shape[:2], dtype=np.uint8)
             unsafe_mask = np.zeros(rgb.shape[:2], dtype=np.uint8)
             all_obstacle_mask = np.zeros(rgb.shape[:2], dtype=np.uint8)
-            for obstacle in result.get("obstacle_masks", []):
+            for object_id, obstacle in enumerate(
+                    result.get("obstacle_masks", []), start=2):
                 if not isinstance(obstacle, dict):
                     continue
                 obstacle_path = Path(str(obstacle.get("mask_png", "")))
@@ -206,7 +210,8 @@ class HeavyModelWorker:
                 )
                 if obstacle_mask is None or obstacle_mask.shape != rgb.shape[:2]:
                     continue
-                object_id = len(tracked_objects) + 1
+                # ID 1 is permanently reserved for the target, including in
+                # obstacle-only results.
                 object_file = "objects/%03d_obstacle.png" % object_id
                 cv2.imwrite(str(response_tmp / object_file), obstacle_mask)
                 tracked_objects.append(
@@ -230,6 +235,10 @@ class HeavyModelWorker:
             cv2.imwrite(str(response_tmp / "candidate_movable_obstacle_mask.png"), movable_mask)
             cv2.imwrite(str(response_tmp / "unsafe_obstacle_mask.png"), unsafe_mask)
             cv2.imwrite(str(response_tmp / "all_obstacle_mask.png"), all_obstacle_mask)
+            obstacle_records = [
+                item for item in tracked_objects
+                if item.get("role") == "obstacle"
+            ]
             payload = dict(result)
             payload.update(
                 {
@@ -241,6 +250,13 @@ class HeavyModelWorker:
                     "dry_run": True,
                     "real_arm_motion": False,
                     "tracked_objects": tracked_objects,
+                    "obstacle_count": len(obstacle_records),
+                    "obstacle_labels": [
+                        str(item.get("label", "unknown"))
+                        for item in obstacle_records
+                    ],
+                    "unsafe_obstacle_count": sum(
+                        1 for item in obstacle_records if item.get("unsafe", True)),
                 }
             )
             atomic_yaml(response_tmp / "result.yaml", payload)

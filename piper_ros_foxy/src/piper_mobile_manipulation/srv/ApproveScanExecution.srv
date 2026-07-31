@@ -1,0 +1,6 @@
+string plan_id
+string trajectory_sha256
+string confirmation
+---
+bool accepted
+string message

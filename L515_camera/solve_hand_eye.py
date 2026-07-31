@@ -92,7 +92,7 @@ def board_points(target):
     return np.asarray(board.chessboardCorners, dtype=np.float64)
 
 
-def load_sample(path, fk):
+def load_sample(path, fk, joint6_reference_shift_rad=0.0):
     with path.open() as stream:
         data = yaml.safe_load(stream)
     target = data["target"]
@@ -112,6 +112,10 @@ def load_sample(path, fk):
     projected, _ = cv2.projectPoints(object_points, rotation_vector, translation, camera_matrix, distortion)
     reprojection = np.linalg.norm(projected.reshape(-1, 2) - image_points, axis=1)
     positions = np.asarray(data["joints"]["position_rad"][:6], dtype=float)
+    # Saved telemetry predates any later controller-zero change. Convert it to
+    # the current joint convention before FK so the solved extrinsic remains
+    # physically equivalent.
+    positions[5] -= joint6_reference_shift_rad
     return {
         "name": path.parent.name,
         "path": str(path),
@@ -121,9 +125,9 @@ def load_sample(path, fk):
     }
 
 
-def load_group(path, fk):
+def load_group(path, fk, joint6_reference_shift_rad=0.0):
     files = sorted(path.glob("capture_*/sample.yaml"))
-    return [load_sample(file, fk) for file in files]
+    return [load_sample(file, fk, joint6_reference_shift_rad) for file in files]
 
 
 def solve(fitting):
@@ -175,13 +179,20 @@ def main():
     parser.add_argument("session_root", type=Path)
     parser.add_argument("--translation-limit-mm", type=float, default=15.0)
     parser.add_argument("--rotation-limit-deg", type=float, default=1.5)
+    parser.add_argument(
+        "--joint6-reference-shift-deg",
+        type=float,
+        default=0.0,
+        help="old J6 feedback at the new physical zero; subtracted from saved sample telemetry",
+    )
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     output = args.output or args.session_root / "calibration_result.yaml"
 
     fk = PiperModifiedDhFk()
-    fitting = load_group(args.session_root / "fitting", fk)
-    validation = load_group(args.session_root / "validation", fk)
+    joint6_reference_shift_rad = math.radians(args.joint6_reference_shift_deg)
+    fitting = load_group(args.session_root / "fitting", fk, joint6_reference_shift_rad)
+    validation = load_group(args.session_root / "validation", fk, joint6_reference_shift_rad)
     if len(fitting) < 3:
         parser.error("at least 3 fitting samples are required")
     if not validation:
@@ -221,6 +232,14 @@ def main():
             **held_out_summary,
         },
     }
+    if joint6_reference_shift_rad:
+        result["joint_reference_adjustment"] = {
+            "joint": "joint6",
+            "old_feedback_at_new_physical_zero_deg": args.joint6_reference_shift_deg,
+            "old_feedback_at_new_physical_zero_rad": joint6_reference_shift_rad,
+            "operation": "subtract shift from saved joint6 telemetry before FK and hand-eye solve",
+            "physical_fixed_board_revalidation": "required",
+        }
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w") as stream:
         yaml.safe_dump(result, stream, sort_keys=False)

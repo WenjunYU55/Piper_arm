@@ -5,20 +5,40 @@ import json
 import math
 import struct
 import time
+import uuid
 
 import rclpy
 from geometry_msgs.msg import PointStamped, TransformStamped
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import PointCloud2
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from visualization_msgs.msg import Marker, MarkerArray
 from tf2_ros import TransformBroadcaster
 
-from piper_mobile_manipulation.msg import ObstacleInstance3DArray
-from piper_mobile_manipulation.supervised_workflow import (
-    choose_removal_plan, cloud_model, distance, point,
+from piper_mobile_manipulation.msg import (
+    ObstacleInstance3DArray,
+    TrackedTarget,
+    TrackingHealth,
 )
+from piper_mobile_manipulation.scan_execution_modes import (
+    measured_target_lock_rejection,
+)
+from piper_mobile_manipulation.supervised_workflow import (
+    capture_cloud_ready, choose_removal_plan, cloud_model,
+    corroborated_target_motion_rejection, distance, point,
+    occlusion_capture_rejection,
+    should_cache_capture_cloud, tracking_allows_target_motion_check,
+)
+
+
+def target_motion_is_terminal(allow_motion_during_scan, workflow_state):
+    """Keep the pre-scan lock strict without aborting an active moving-target scan."""
+    return not (
+        bool(allow_motion_during_scan)
+        and str(workflow_state) in ('SCAN_READY', 'WAIT_CAPTURE')
+    )
 
 
 class SupervisedCubeWorkflowNode(Node):
@@ -28,7 +48,11 @@ class SupervisedCubeWorkflowNode(Node):
             'obstacle_topic': '/piper/obstacle_instances_3d',
             'landmark_topic': '/piper/target_landmark',
             'landmark_status_topic': '/piper/target_landmark_status',
+            'tracked_target_topic': '/piper/tracked_target',
+            'tracking_health_topic': '/piper/tracking_health',
+            'target_status_topic': '/piper/target_status',
             'scan_quality_topic': '/piper/scan_quality',
+            'occlusion_status_topic': '/piper/occlusion_status',
             'cloud_topic': '/piper/target_cloud',
             'cloud_status_topic': '/piper/target_cloud_status',
             'cloud_request_topic': '/piper/target_cloud_request',
@@ -37,9 +61,13 @@ class SupervisedCubeWorkflowNode(Node):
             'target_model_topic': '/piper/target_model',
             'marker_topic': '/piper/supervised_workflow_markers',
             'movable_whitelist': ['pen'],
-            'min_views': 5, 'max_views': 8, 'min_quality_score': 0.40,
+            'min_views': 13, 'max_views': 13, 'min_quality_score': 0.40,
+            'request_optional_cloud_refinement': False,
             'center_convergence_m': 0.005, 'target_motion_abort_m': 0.020,
+            'allow_target_motion_during_scan': True,
+            'target_surface_measurement_uncertainty_m': 0.015,
             'obstacle_displacement_m': 0.050, 'data_timeout_sec': 2.0,
+            'max_tracking_measurement_age_sec': 0.75,
             'target_clearance_m': 0.040, 'drop_target_clearance_m': 0.120,
             'drop_obstacle_clearance_m': 0.080, 'drop_search_radius_m': 0.180,
             'max_grasp_width_m': 0.070, 'approach_height_m': 0.100,
@@ -52,20 +80,30 @@ class SupervisedCubeWorkflowNode(Node):
             self.declare_parameter(name, value)
         self.state = 'IDLE'
         self.landmark = None
+        self.target_landmark = None
         self.initial_landmark = None
-        self.landmark_locked = False
+        self.target_landmark_state = 'UNKNOWN'
+        self.target_landmark_status = {}
+        self.tracked_target = None
+        self.tracking_health = None
+        self.target_status = 'UNKNOWN'
         self.obstacles = None
         self.obstacles_at_plan = {}
         self.plan = None
         self.quality = None
+        self.occlusion = None
         self.cloud_points = []
         self.cloud_frame = ''
         self.cloud_status = None
+        self.pending_cloud_msg = None
         self.accepted_views = 0
+        self.session_id = ''
         self.modeled_views = 0
         self.centers = []
         self.target_center = None
         self.updated = {}
+        self.last_idle_lock_status = None
+        self.last_reason = ''
 
         self.status_pub = self.create_publisher(String, defaults['status_topic'], 10)
         self.plan_pub = self.create_publisher(String, defaults['plan_topic'], 10)
@@ -73,20 +111,41 @@ class SupervisedCubeWorkflowNode(Node):
         self.marker_pub = self.create_publisher(MarkerArray, defaults['marker_topic'], 10)
         self.target_tf = TransformBroadcaster(self)
         self.cloud_request_pub = self.create_publisher(String, defaults['cloud_request_topic'], 10)
-        self.create_subscription(
-            ObstacleInstance3DArray, defaults['obstacle_topic'], self.obstacle_cb, 10)
-        self.create_subscription(PointStamped, defaults['landmark_topic'], self.landmark_cb, 10)
-        self.create_subscription(
-            String, defaults['landmark_status_topic'], self.landmark_status_cb, 10)
-        self.create_subscription(String, defaults['scan_quality_topic'], self.quality_cb, 10)
-        self.create_subscription(PointCloud2, defaults['cloud_topic'], self.cloud_cb, 10)
-        self.create_subscription(String, defaults['cloud_status_topic'], self.cloud_status_cb, 10)
+        # Retain explicit references for Foxy: otherwise endpoints can disappear
+        # after discovery when the Python wrapper is garbage-collected.
+        self._input_subscriptions = [
+            self.create_subscription(
+                ObstacleInstance3DArray, defaults['obstacle_topic'], self.obstacle_cb, 10),
+            self.create_subscription(
+                PointStamped, defaults['landmark_topic'], self.landmark_cb, 10),
+            self.create_subscription(
+                String, defaults['landmark_status_topic'], self.landmark_status_cb, 10),
+            self.create_subscription(
+                TrackedTarget, defaults['tracked_target_topic'],
+                self.tracked_target_cb, 10),
+            self.create_subscription(
+                TrackingHealth, defaults['tracking_health_topic'],
+                self.tracking_health_cb, 10),
+            self.create_subscription(
+                String, defaults['target_status_topic'], self.target_status_cb, 10),
+            self.create_subscription(
+                String, defaults['scan_quality_topic'], self.quality_cb, 10),
+            self.create_subscription(
+                String, defaults['occlusion_status_topic'],
+                self.occlusion_cb, 10),
+            self.create_subscription(
+                PointCloud2, defaults['cloud_topic'], self.cloud_cb,
+                qos_profile_sensor_data),
+            self.create_subscription(
+                String, defaults['cloud_status_topic'], self.cloud_status_cb, 10),
+        ]
         self.create_service(Trigger, '~/start', self.start_cb)
         self.create_service(Trigger, '~/approve_plan', self.approve_cb)
         self.create_service(Trigger, '~/confirm_action_complete', self.confirm_action_cb)
         self.create_service(Trigger, '~/capture_view', self.capture_view_cb)
         self.create_service(Trigger, '~/finish_scan', self.finish_scan_cb)
         self.create_service(Trigger, '~/abort', self.abort_cb)
+        self.create_service(Trigger, '~/diagnostic_state', self.diagnostic_state_cb)
         self.create_timer(0.5, self.tick)
         self.publish_status('dry-run coordinator ready; no arm command publisher exists')
 
@@ -105,45 +164,114 @@ class SupervisedCubeWorkflowNode(Node):
         self.mark('obstacles')
 
     def landmark_cb(self, msg):
-        self.landmark = point(msg.point)
-        self.mark('landmark')
-        if self.initial_landmark and distance(self.landmark, self.initial_landmark) > float(
-                self.get_parameter('target_motion_abort_m').value):
-            self.abort('cube landmark moved beyond tolerance')
+        self.target_landmark = point(msg.point)
+        self.mark('target_landmark')
+
+    def tracked_target_cb(self, msg):
+        self.tracked_target = msg
+        self.mark('tracked_target')
+        if not msg.valid:
+            return
+        self.landmark = point(msg.position)
 
     def landmark_status_cb(self, msg):
         payload = self.parse(msg)
-        self.landmark_locked = str(payload.get('state', '')).upper() == 'LOCKED'
-        self.mark('landmark_status')
+        self.target_landmark_status = payload
+        self.target_landmark_state = str(
+            payload.get('state', 'UNKNOWN')).upper()
+        self.mark('target_landmark_status')
+
+    def tracking_health_cb(self, msg):
+        self.tracking_health = msg
+        self.mark('tracking_health')
+        if (
+                self.initial_landmark
+                and self.landmark
+                and self.fresh('tracked_target')
+                and self.fresh('target_status')
+                and self.target_status in ('TRACKING', 'LOCKED')
+                and tracking_allows_target_motion_check(
+                    msg,
+                    float(self.get_parameter(
+                        'max_tracking_measurement_age_sec').value))):
+            threshold = float(
+                self.get_parameter('target_motion_abort_m').value)
+            rejection = corroborated_target_motion_rejection(
+                distance(self.landmark, self.initial_landmark),
+                threshold,
+                self.target_landmark_status,
+                self.fresh('target_landmark_status'),
+                float(self.get_parameter(
+                    'target_surface_measurement_uncertainty_m').value),
+            )
+            if (
+                    rejection
+                    and target_motion_is_terminal(
+                        self.get_parameter(
+                            'allow_target_motion_during_scan').value,
+                        self.state)):
+                self.abort(rejection)
+
+    def target_status_cb(self, msg):
+        self.target_status = str(msg.data).upper()
+        self.mark('target_status')
 
     def quality_cb(self, msg):
         self.quality = self.parse(msg)
         self.mark('quality')
 
+    def occlusion_cb(self, msg):
+        self.occlusion = self.parse(msg)
+        self.mark('occlusion')
+
     def cloud_status_cb(self, msg):
         self.cloud_status = self.parse(msg)
         self.mark('cloud_status')
-        if self.state == 'WAIT_CAPTURE' and self.cloud_status.get('state') == 'accumulating' and \
+        if (
+                self.state == 'WAIT_CAPTURE'
+                and self.cloud_status.get('state') == 'refined_capture_rejected'):
+            self.abort(
+                'full-resolution cloud capture failed: %s'
+                % self.cloud_status.get('error', 'unknown refinement failure'))
+        elif self.state == 'WAIT_CAPTURE' and self.cloud_status.get('state') == 'accumulating' and \
                 self.cloud_status.get('mask_source') == 'full_resolution_refinement':
             self.accepted_views += 1
             self.state = 'SCAN_READY'
+            self.process_pending_cloud()
             self.publish_status('full-resolution view accepted')
 
     def cloud_cb(self, msg):
+        # The capture cloud and its acceptance status may arrive in either
+        # order. Cache the message while WAIT_CAPTURE, but defer expensive
+        # deserialization until the corresponding acceptance is known.
+        if not should_cache_capture_cloud(
+                self.state, self.accepted_views, self.modeled_views):
+            return
+        self.pending_cloud_msg = msg
+        self.mark('cloud')
+        self.process_pending_cloud()
+
+    def process_pending_cloud(self):
+        if not capture_cloud_ready(
+                self.accepted_views,
+                self.modeled_views,
+                self.pending_cloud_msg is not None):
+            return
+        msg = self.pending_cloud_msg
         if msg.header.frame_id != 'base_link':
             self.abort('target cloud frame is not base_link')
             return
         self.cloud_points = self.read_xyz(msg)
         self.cloud_frame = msg.header.frame_id
-        self.mark('cloud')
-        if self.accepted_views > self.modeled_views:
-            self.publish_model()
-            self.modeled_views = self.accepted_views
+        self.publish_model()
+        self.modeled_views = self.accepted_views
+        self.pending_cloud_msg = None
 
     def start_cb(self, _request, response):
         if self.state not in ('IDLE', 'COMPLETE', 'ABORTED'):
             return self.reply(response, False, 'workflow already active')
         self.accepted_views, self.modeled_views, self.centers = 0, 0, []
+        self.session_id = uuid.uuid4().hex
         self.target_center = None
         self.plan = None
         self.initial_landmark = None
@@ -168,23 +296,25 @@ class SupervisedCubeWorkflowNode(Node):
     def capture_view_cb(self, _request, response):
         if self.state != 'SCAN_READY':
             return self.reply(response, False, 'scan is not ready for a view')
-        if self.modeled_views < self.accepted_views:
-            return self.reply(response, False, 'waiting for the accepted cloud to be modeled')
         if self.accepted_views >= int(self.get_parameter('max_views').value):
             return self.reply(response, False, 'maximum view count reached; finish the scan')
-        if not self.fresh('quality') or not self.quality:
-            return self.reply(response, False, 'scan quality is missing or stale')
-        label = str(self.quality.get('quality_label', self.quality.get('status', ''))).upper()
-        score = float(self.quality.get('quality_score', self.quality.get('score', 0.0)))
-        minimum = float(self.get_parameter('min_quality_score').value)
-        if label not in ('GOOD', 'ACCEPTABLE') or score < minimum:
-            return self.reply(response, False, 'view quality rejected: %s %.2f' % (label, score))
-        msg = String()
-        msg.data = 'capture'
-        self.cloud_request_pub.publish(msg)
-        self.state = 'WAIT_CAPTURE'
-        self.publish_status('full-resolution cloud capture requested')
-        return self.reply(response, True, 'capture requested; hold the arm stationary')
+        # The executor calls this only after the synchronized RGB-D/mask/
+        # metadata files have been saved. Quality, occlusion and accumulated
+        # cloud products remain useful diagnostics, but they do not invalidate
+        # a completed viewpoint record or stop the fixed 13-view sweep.
+        self.accepted_views += 1
+        self.modeled_views = self.accepted_views
+        if bool(self.get_parameter(
+                'request_optional_cloud_refinement').value):
+            msg = String()
+            msg.data = 'capture'
+            self.cloud_request_pub.publish(msg)
+        self.publish_status(
+            'synchronized RGB-D viewpoint accepted; diagnostic quality and '
+            'occlusion recorded')
+        return self.reply(
+            response, True,
+            'synchronized RGB-D viewpoint accepted')
 
     def finish_scan_cb(self, _request, response):
         if self.state != 'SCAN_READY':
@@ -211,18 +341,85 @@ class SupervisedCubeWorkflowNode(Node):
         self.abort('operator requested abort')
         return self.reply(response, True, 'workflow aborted; no arm stop command was required')
 
+    def diagnostic_state_cb(self, _request, response):
+        now = self.now()
+        timeout = float(self.get_parameter('data_timeout_sec').value)
+        lock_rejection = self.measured_lock_rejection()
+        payload = {
+            'state': self.state,
+            'reason': self.last_reason,
+            'measured_lock_ready': not bool(lock_rejection),
+            'measured_lock_rejection': lock_rejection,
+            'lock_source': 'tracked_target',
+            'target_landmark_diagnostic_state': self.target_landmark_state,
+            'landmark_present': self.landmark is not None,
+            'target_landmark_present': self.target_landmark is not None,
+            'obstacles_present': self.obstacles is not None,
+            'quality_present': self.quality is not None,
+            'occlusion_present': self.occlusion is not None,
+            'occlusion_state': (
+                str(self.occlusion.get('occlusion_state', 'UNKNOWN'))
+                if isinstance(self.occlusion, dict) else 'UNKNOWN'),
+            'accepted_views': self.accepted_views,
+            'session_id': self.session_id,
+            'modeled_views': self.modeled_views,
+            'data_timeout_sec': timeout,
+            'input_age_sec': {
+                key: round(now - stamp, 3)
+                for key, stamp in sorted(self.updated.items())
+            },
+        }
+        if self.obstacles is not None:
+            payload['obstacle_count'] = len(self.obstacles.instances)
+            payload['invalid_or_blocked_obstacles'] = sum(
+                1 for item in self.obstacles.instances
+                if not item.valid
+                or int(item.classification) != item.CLASSIFICATION_MOVABLE
+            )
+        return self.reply(response, True, json.dumps(payload, sort_keys=True))
+
     def tick(self):
         if self.target_center is not None:
             self.publish_target_frame(self.target_center)
+        lock_rejection = self.measured_lock_rejection()
+        if self.state == 'IDLE':
+            lock_status = (self.state, lock_rejection)
+            if lock_status != self.last_idle_lock_status:
+                self.last_idle_lock_status = lock_status
+                self.publish_status(
+                    'measured target lock is available for explicit scan adoption'
+                    if not lock_rejection
+                    else 'waiting for a measured target lock')
+        else:
+            self.last_idle_lock_status = None
         if self.state == 'INITIALIZING':
-            if (self.landmark_locked and self.landmark and
-                    self.fresh('landmark') and self.fresh('obstacles')):
+            if (
+                    not lock_rejection
+                    and self.landmark
+                    and self.fresh('obstacles')):
                 self.initial_landmark = self.landmark
                 self.assess_scene()
-        elif self.state == 'VERIFY_ACTION' and self.fresh('obstacles') and self.fresh('landmark'):
+        elif (
+                self.state == 'VERIFY_ACTION'
+                and self.fresh('obstacles')
+                and not lock_rejection):
             if self.verify_action():
                 self.state = 'INITIALIZING'
                 self.publish_status('obstacle action verified; reassessing scene')
+
+    def measured_lock_rejection(self):
+        return measured_target_lock_rejection(
+            self.tracked_target,
+            self.tracking_health,
+            self.target_status,
+            self.updated.get('tracked_target', -1e9),
+            self.updated.get('tracking_health', -1e9),
+            self.updated.get('target_status', -1e9),
+            self.now(),
+            float(self.get_parameter('data_timeout_sec').value),
+            float(self.get_parameter(
+                'max_tracking_measurement_age_sec').value),
+        )
 
     def assess_scene(self):
         movable = [item for item in self.obstacles.instances
@@ -300,11 +497,18 @@ class SupervisedCubeWorkflowNode(Node):
         self.target_tf.sendTransform(transform)
 
     def publish_status(self, reason):
+        self.last_reason = str(reason)
+        lock_rejection = self.measured_lock_rejection()
         self.publish_json(self.status_pub, {
             'state': self.state, 'reason': reason, 'dry_run': True,
             'real_arm_motion': False, 'accepted_views': self.accepted_views,
+            'session_id': self.session_id,
             'min_views': int(self.get_parameter('min_views').value),
             'max_views': int(self.get_parameter('max_views').value),
+            'measured_lock_ready': not bool(lock_rejection),
+            'measured_lock_rejection': lock_rejection,
+            'lock_source': 'tracked_target',
+            'target_landmark_diagnostic_state': self.target_landmark_state,
         })
 
     def abort(self, reason):
@@ -312,6 +516,7 @@ class SupervisedCubeWorkflowNode(Node):
             return
         self.state = 'ABORTED'
         self.publish_status(reason)
+        self.get_logger().error(reason)
 
     def publish_markers(self, plan):
         if not plan.get('valid'):

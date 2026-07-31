@@ -32,7 +32,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-foxy-geometry-msgs \
     ros-foxy-image-tools \
     ros-foxy-image-transport \
-    ros-foxy-joint-state-publisher-gui \
     ros-foxy-message-filters \
     ros-foxy-nav-msgs \
     ros-foxy-rclcpp \
@@ -50,7 +49,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-foxy-tf2 \
     ros-foxy-tf2-geometry-msgs \
     ros-foxy-tf2-ros \
-    ros-foxy-xacro \
     udev \
     usbutils \
   && rm -rf /var/lib/apt/lists/*

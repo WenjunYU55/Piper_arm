@@ -1,0 +1,232 @@
+schema_version: 1
+document: runtime_contracts
+ros_environment:
+  domain_id: 42
+  localhost_only: Must be identical in every participating terminal; recommended 1 for single-machine tests.
+  middleware_porting_note: DDS discovery replaces fixed application ports; no project-specific TCP/HTTP ports exist.
+core_topics:
+  camera_color: {name: /camera/color/image_raw, type: sensor_msgs/Image, frame: camera_color_optical_frame, timestamp: RealSense host-corrected global time; rgb_camera.global_time_enabled must be true}
+  aligned_depth: {name: /camera/aligned_depth_to_color/image_raw, type: sensor_msgs/Image, units: uint16 millimetres or float metres as handled by nodes, timestamp: RealSense host-corrected global time; depth_module.global_time_enabled must be true}
+  camera_info: {name: /camera/color/camera_info, type: sensor_msgs/CameraInfo, timestamp: Same host-corrected per-frame color measurement time as camera_color; authoritative lightweight clock sample for camera_timestamp_watchdog}
+  arm_feedback: {name: /joint_states_single, type: sensor_msgs/JointState, publisher_timing: executor-owned Node timer at 200 Hz; former unmanaged loop removed, invariant: first six positions are arm radians and provide authoritative sustained-motion/stationarity detection; instantaneous PiPER velocity may be noisy at rest and is not the watchdog's sole gate; watchdog and hand-eye TF request reliable depth-1 latest-sample QoS to avoid replaying a 200 Hz backlog}
+  arm_status: {name: /arm_status, type: piper_msgs/PiperStatusMsg, publisher_timing: same monotonic driver loop as arm feedback, invariant: reachability requires a sample no older than arm_status_timeout_sec with err_code zero and no joint angle-limit or communication fault; missing/stale status rejects every viewpoint; the filter owns one reliable depth-1 subscription for its lifetime and never recreates it at runtime}
+  arm_motion_limits: {name: /piper/motion_limits, type: piper_msgs/PiperMotionLimits, publisher_timing: 1 Hz with SDK controller queries every 5 seconds, fields: ["joint1..joint6 order", "max_velocity_rad_s[6]", "max_acceleration_rad_s2[6]", valid, "canonical limits_sha256", source, reason], invariant: values must be fresh, finite, positive, no greater than PiPER protocol caps 3 rad/s and 5 rad/s2, and hash-bound into schema-v5 planning plus exact approval; missing/stale/changed feedback rejects planning or execution}
+  arm_joint_command: {name: /joint_ctrl_single, type: sensor_msgs/JointState, effect: real motion when arm enabled, invariant: positions 0..5 are arm radians and are clipped by driver bounds; position 6 is gripper metres; velocity 6 is global SDK speed percent 0..100}
+  arm_pose_command: {name: /pos_cmd, type: piper_msgs/PosCmd, effect: real Cartesian motion when enabled}
+  enable_service: {name: /enable_srv, type: piper_msgs/srv/Enable, effect: real motor enable or software disable, behavior: retries the SDK feedback-confirmed EnablePiper or DisablePiper operation every 10 ms until success or enable_timeout; returns true only after target motor feedback and sends gripper enable/disable once after success}
+  driver_launch_parameters: {supported: [can_port, auto_enable, joint_ctrl_topic, gripper_exist, enable_timeout, joint_bounds_path], invariant: auto_enable defaults false; removed aliases girpper_exist and rviz_ctrl_flag are rejected as unsupported rather than silently changing gripper units}
+  live_manual_motion_validation: On 2026-07-20 one exclusive GUI-equivalent publisher commanded a supervised J6-only +0.02 rad round trip at 5 percent. Feedback measured +0.02029 rad outward and a 0.00210 rad final return error with err_code zero. On 2026-07-30 the production J2 lower limit was aligned to exact enabled compact-pose feedback -0.044796192 rad after OMPL demonstrably clamped the live start to the previous bound. The compact start is covered by a qualified acquisition-only recovery; snapshots still must not be clipped and collision pairs remain enabled.
+gui_3d_joint_preview:
+  set_topic: {name: /piper_gui/preview_set, type: sensor_msgs/JointState, effect: preview only, writer: piper_gui_native.py}
+  state_topic: {name: /piper_gui/preview_joint_states, type: sensor_msgs/JointState, effect: preview only, writer: piper_joint_preview_node.py, invariant: first six values are clamped URDF joint angles}
+  tf: {root: preview_world, frames: preview_base_link through preview_link8, source: namespaced robot_state_publisher using an in-memory preview_-prefixed copy of the source URDF}
+  interaction: {server: /piper_gui_joint_editor, update: /piper_gui_joint_editor/update, controls: six ROTATE_AXIS markers located from URDF joint origins}
+  mirror: {topic: /joint_ctrl_single, writer: piper_gui_native.py only after confirmation, speed_percent: 1 to 10, preserves: current gripper position, gates: [feedback age at most 1 second, arm err_code zero, conservative joint and robot/floor path valid with 60 mm nonadjacent-link proxy clearance]}
+  limitation: The mirror path check has no live obstacle boxes; clear-workspace supervision remains mandatory.
+tf_contracts:
+  robot_chain: {path: "world -> base_link -> link1 -> link2 -> link3 -> link4 -> link5 -> link6", source: piper_description/display_live_robot.launch.py, joint_input: /joint_states_single, invariant: URDF origins match piper_sdk modified-DH mode 0 and visualization publishes no command topic}
+  camera_chain: {path: "base_link -> camera_link -> camera optical frames", source: L515_camera/publish_hand_eye_tf.py plus RealSense static TF, startup_contract: hand-eye loads and freezes camera_link to camera_color_optical_frame before subscribing to reliable depth-1 joint feedback; missing static TF fails closed}
+perception_topics:
+  camera_timestamp_health: {name: /piper/camera_timestamp_health, type: piper_mobile_manipulation/CameraTimestampHealth, invariant: healthy only after consecutive current monotonic image stamps; dry_run true and real_arm_motion false}
+  target_mask: {name: /piper/sam2_target_mask, type: sensor_msgs/Image, encoding: mono8, invariant: nonzero pixels are target}
+  object_ids: {name: /piper/sam2_object_ids, type: sensor_msgs/Image, invariant: integer ID image aligned to color}
+  detection_2d: {name: /piper/sam2_detection_2d, type: piper_mobile_manipulation/Detection2D}
+  target_3d: {name: /piper/target_3d, type: piper_mobile_manipulation/Target3D, frame: camera optical frame}
+  tracked_target: {name: /piper/tracked_target, type: piper_mobile_manipulation/TrackedTarget, frame: base_link when use_tf_transform=true}
+  tracking_health: {name: /piper/tracking_health, type: piper_mobile_manipulation/TrackingHealth}
+  target_status: {name: /piper/target_status, type: std_msgs/String, values: [SEARCHING, TRACKING, LOCKED, LOW_CONFIDENCE, LOST]}
+  obstacle_instances: {name: /piper/obstacle_instances_3d, type: piper_mobile_manipulation/ObstacleInstance3DArray, invariant: scene_blocked remains true for unsafe/non-movable objects for the supervised manipulation workflow; the Tesseract bridge forwards every valid instance as a collision box and blocks only missing/invalid geometry}
+custom_message_invariants:
+  CameraTimestampHealth: "header; state; healthy; wall/ROS-to-image offset_sec; consecutive healthy count; monotonicity; fresh-feedback stationary proof; recovery request latch; reason; dry_run; real_arm_motion"
+  Detection2D: "header; center u,v; width,height; confidence; valid"
+  Target3D: "header; point; depth statistics; source pixel and detection box; depth_source; measurement_confidence; valid"
+  TrackedTarget: "header; position; velocity; predicted_position; speed; confidence; stable; valid"
+  TrackingHealth: "header; lifecycle_state; arm_moving; camera_settled; prediction_only; measurement_age_sec; measurement_quality; heavy_attempt_count; recommended_speed_scale; reason; dry_run; real_arm_motion"
+  ObstacleInstance3D: "IDs and semantic label; BLOCKED=0 MOVABLE=1 UNSAFE=2; camera/base centroids and AABBs; depth and TF validity"
+  ScanExecutionPlan: "Typed base_link proposal; plan_id; plan_kind; source_request_id; planner_backend; trajectory_sha256; collision_model_qualified; valid/dry_run/real_arm_motion; candidate/planned counts; target_center bound to the proposal; viewpoint indices; flattened six-joint targets and trajectory points; camera positions and look directions. ROUGH_ACQUISITION source_request_id must equal the initiating PrepareAcquisition session. Proposals are always dry_run=true and real_arm_motion=false."
+  ScanExecutionStatus: "plan_id; state and reason; dry_run/real_arm_motion; approval_required; current/total views; capped speed, tracking scale, and joint error"
+  TesseractPlan: "Validated command-free worker result on reliable transient-local depth-1 QoS; plan/request/trajectory hashes; source_request_id; exact J1-J6 JointTrajectory segments; clearances and limiting pairs. ROUGH_ACQUISITION requires a nonempty source_request_id copied from canonical target provenance; MULTIVIEW_SCAN requires it empty. Per-segment bootstrap_recovery_end_points/joints/delta/evidence arrays are mandatory. -1/0/0 means none. A nonnegative endpoint is valid only for ROUGH_ACQUISITION segment zero, must describe one bounded single-joint prefix, and is already included in the trajectory hash. J6 may change normally."
+  TesseractPlanStatus: "request ID; IDLE/PLANNING/PROPOSAL_READY/REJECTED state; reason; dry_run=true; real_arm_motion=false; pending queue counts"
+  TesseractReadiness: "Header plus worker generation_id; worker_ready; acquisition_ready; multiview_ready; and separate acquisition/multiview blocker lists. Consumers require a fresh sample; worker readiness requires a valid atomic heartbeat no older than 1.5 seconds."
+tracking_invariants:
+  lifecycle_states: [TRACKING, DEGRADED, WAITING_TO_REACQUIRE, REACQUIRING, ABSENT, CAMERA_CLOCK_INVALID]
+  no_measurement_age: 1000000.0
+  speed_scale: 1.0 only for current tracking while settled; degraded scale while DEGRADED or moving; 0.0 while waiting/absent.
+  timestamp_order: GPU results retain camera image stamps; tracker rejects out-of-order measurements when configured.
+  camera_clock_gate: SAM2 TrackingHealth reports CAMERA_CLOCK_INVALID with speed scale 0 unless fresh CameraTimestampHealth is healthy; the executor independently requires the same typed health.
+  camera_motion: Camera-space pixel/area/depth gates are disabled by default; transformed base-frame observation is authoritative.
+  heavy_recovery: A loss episode gets max_reacquisition_attempts burst attempts, then remains ABSENT while requesting at most one serialized motion-gated heavy refresh per absent_retry_sec until valid tracking recovers; defaults are 2 attempts and 30 seconds.
+  low_confidence_heavy_refresh:
+    source: /piper/tracked_target confidence on a valid TrackedTarget.
+    trigger: Confidence below low_confidence_refresh_threshold, default 0.60, continuously for low_confidence_refresh_duration_sec, default 1.0 second.
+    behavior: sam2_live_bridge begins a loss episode without using the motion-prompt shortcut, then requests one serialized heavy refresh only when the camera is settled. Existing cooldown, attempt limits, and single-flight rules apply.
+    rearm: Confidence must reach threshold plus low_confidence_refresh_hysteresis, default 0.10, before another low-confidence episode can trigger.
+json_string_topics:
+  heavy_refresh_request:
+    name: /piper/heavy_refresh_request
+    required_fields: [request_id, reason]
+    acquisition_fields: [min_image_stamp.sec, min_image_stamp.nanosec]
+    behavior: Normal recovery may snapshot the newest frame. Acquisition requests wait for a frame at or after min_image_stamp and publish waiting_for_fresh_image until it exists. Duplicate/in-flight work is suppressed; a busy acquisition request gets request_ignored_busy and may be retried once after an idle status.
+  heavy_refresh_status:
+    name: /piper/heavy_refresh_status
+    common_fields: [state, dry_run, real_arm_motion]
+    acquisition_states: [waiting_for_fresh_image, request_ignored_busy, queued, published, worker_result_rejected, request_failed, request_rejected, idle]
+    optional_fields: [job_id, request_id, image_stamp, min_image_stamp, worker_status, target_confidence, mask_px, object_count, obstacle_count, obstacle_labels, error]
+    acquisition_invariant: Only the exact request_id may affect an acquisition look; queued/published image_stamp must be at or after min_image_stamp. target_mask_missing enters WAITING_FOR_OBSTACLE_SCENE, and a later move is allowed only after a typed scene whose header stamp is at or after that semantic result. Other worker/correlation errors abort.
+  sam2_tracking_status:
+    name: /piper/sam2_tracking_status
+    common_fields: [state, dry_run, real_arm_motion]
+    optional_fields: [frame_key, source, target_area_px, object_count, error]
+  scan_quality:
+    name: /piper/scan_quality
+    fields_used_by_supervisor: [quality_label, quality_score]
+  occlusion_status:
+    name: /piper/occlusion_status
+    status_values: [CLEAR, PARTIALLY_OCCLUDED, HEAVILY_OCCLUDED, LOST]
+  workflow_status:
+    name: /piper/supervised_workflow_status
+    fields: [state, reason, dry_run, real_arm_motion, accepted_views, min_views, max_views]
+  removal_plan:
+    name: /piper/removal_plan
+    invariants: [valid and dry_run and execute=false, object_id and label, action is pick_and_place or push when valid, reason always explains decision]
+  target_model:
+    name: /piper/target_model
+    fields_when_valid: [valid, frame_id, point_count, center, bounds_min, bounds_max, accepted_views, center_delta_m, confidence]
+  scan_viewpoints:
+    names: [/piper/scan_viewpoints, /piper/reachable_scan_viewpoints]
+    executor_required_fields: [header.frame_id=base_link, dry_run=true, target_object_center, viewpoints]
+    viewpoint_required_fields: [index, desired_camera_position, desired_look_at_direction, reachable=true, safe=true]
+  acquisition_viewpoints:
+    names: [/piper/acquisition_viewpoints, /piper/reachable_acquisition_viewpoints]
+    type: std_msgs/String canonical JSON
+    required_fields: [header.frame_id=base_link, plan_kind=ROUGH_ACQUISITION, dry_run=true, source_request_id, rough_hint_stamp_ns, target_provenance, target_object_center, acquisition_pattern, viewpoints]
+    pattern: [current optical view when available, center, left/right azimuth 45 degrees, camera-up/down pitch 45 degrees, four diagonal yaw 45/pitch 30 degree looks, collision-qualified compact fallback poses]
+    geometry: The primary search preserves the live camera position when already within the configured 0.45 m maximum and changes only optical direction. Its diagonal candidates cover the known 0.30 m rough-coordinate error from compact camera distances, including the deliberate 0.25/0/0 hint for a cube near 0.25/-0.25/0. At most twenty candidate poses are offered to Tesseract, which returns no more than five reachable collision-qualified acquisition looks; no candidate itself is a motion command.
+    acquisition_pattern_fields: [order, sweep_angle_deg, maximum_standoff_m, effective_standoff_m]
+    invariant: Only the dedicated acquisition topic may relax target_status LOST; arm-status and workspace checks remain mandatory.
+supervised_services:
+  names: [/supervised_cube_workflow/start, /supervised_cube_workflow/approve_plan, /supervised_cube_workflow/confirm_action_complete, /supervised_cube_workflow/capture_view, /supervised_cube_workflow/finish_scan, /supervised_cube_workflow/abort, /supervised_cube_workflow/diagnostic_state]
+  type: std_srvs/srv/Trigger
+  invariant: Approval never commands motion in current implementation.
+  diagnostic_state: Read-only JSON contains state, landmark/obstacle/quality presence, input ages, obstacle count, invalid-or-blocked count, and accepted/modeled view counters.
+  target_cloud_qos: /piper/target_cloud is best-effort sensor QoS and the workflow subscriber must match it. A cloud received while WAIT_CAPTURE is retained until the full_resolution_refinement accumulating status increments accepted_views; the opposite arrival order is also valid.
+scan_execution:
+  proposal_runtime_inputs: {reachability_arm_status_timeout_sec: 1.0, tesseract_feedback_timeout_sec: 1.0, worker_heartbeat_timeout_sec: 1.5, acquisition_handoff_retry_sec: 0.5, acquisition_handoff_timeout_sec: 10.0, invariant: endpoint discovery alone is insufficient; only fresh callbacks and a fresh ready worker heartbeat satisfy their gates; scan bridge and reachability subscriptions are created once and stale data blocks without DDS graph mutation}
+  readiness_topic: {name: /piper/tesseract_readiness, type: piper_mobile_manipulation/TesseractReadiness, behavior: acquisition_ready requires fresh worker heartbeat, joints, controller limits, and camera clock but deliberately not acquisition candidates; multiview_ready additionally requires the complete normal tracking/scene/candidate inputs}
+  plan_topic: {name: /piper/scan_execution_plan, type: piper_mobile_manipulation/ScanExecutionPlan, discriminator: plan_kind, target_binding: ROUGH_ACQUISITION target_center and source_request_id must match the current GUI session; MULTIVIEW_SCAN must correlate to the explicit current-lock request}
+  status_topic: {name: /piper/scan_execution_status, type: piper_mobile_manipulation/ScanExecutionStatus, discriminator: execution_mode}
+  rough_acquisition_prepare:
+    name: /scan_target_acquisition/prepare
+    type: piper_mobile_manipulation/srv/PrepareAcquisition
+    request: [session_id, rough_target PointStamped]
+    response: [accepted, session_id, message]
+    behavior: Atomically validates and binds a unique session ID to one fresh finite base_link target, freezes five command-free look candidates, and waits for matching reachable output. An exact duplicate ID and payload is idempotently accepted even after the original call times out; reusing an ID with different target data is rejected. The command-free payload is republished for at most 10 seconds; rejected bridge calls that queued no plan are retried no faster than 0.5 seconds with at most one call in flight. Once accepted, exactly one Tesseract request exists and republishing stops. source_request_id is preserved through candidate JSON, schema-v5 spool provenance, TesseractPlan, ScanExecutionPlan, and GUI acceptance. It never approves or executes motion.
+  rough_acquisition_plan_request:
+    name: /tesseract_plan_bridge/request_acquisition_plan
+    type: piper_mobile_manipulation/srv/RequestTesseractPlan
+    behavior: Builds a ROUGH_ACQUISITION request with min_viewpoints=1 and max_viewpoints=5; skips only measured-target tracking gates.
+  rough_acquisition_detection:
+    request: Each settled look publishes a unique "<plan>-acquire-<view>-attempt-<n>" request_id plus a ROS min_image_stamp taken after settle.
+    timeouts: {fresh_frame_or_idle_worker_sec: 10, matching_groundingdino_job_sec: 60, post_detection_tracking_lock_sec: 10, correlated_obstacle_scene_sec: 15}
+    first_look_scene: Schema-v5 observation_mode=bootstrap_static deliberately carries obstacles=[] and does not require a preexisting /piper/obstacle_instances_3d callback. Only the first ROUGH_ACQUISITION path may use this exception; normal scan and every later acquisition path remain perception-scene gated.
+    target_absent_scene: A target_mask_missing result with no detected obstacles publishes one typed empty ObstacleInstance3DArray at the exact result stamp. If obstacles exist, target ID 1 remains reserved, GroundingDINO emits IDs 2+, and SAM2 propagates those masks for normal depth projection. No later move occurs until that correlated scene is fresh and its exact path passes obstacle-box validation.
+    success: Requires post-result target/status/health callbacks, target_status exactly LOCKED, TrackingHealth TRACKING with camera_settled=true and prediction_only=false, a valid stable TrackedTarget in base_link whose measurement stamp is not older than the GroundingDINO image, and Euclidean distance from the rough hint no more than 0.30 m.
+    handoff: ACQUIRED publishes a hold, cancels remaining acquisition poses, calls /supervised_cube_workflow/start once, and waits for SCAN_READY and fresh normal reachable viewpoints. It does not request a MULTIVIEW_SCAN plan; the GUI owns that later explicit transition.
+  normal_scan_plan_request:
+    name: /tesseract_plan_bridge/request_plan
+    type: piper_mobile_manipulation/srv/RequestTesseractPlan
+    request: force_refresh=false
+    response: [accepted, exact request_id, message]
+    behavior: Available only through explicit Prepare Scan from Current Lock. Normal ACQUIRED handoff uses its fresh measured lock; if acquisition terminated but a fresh authoritative measured lock is independently present, the same action may adopt it as a new scan phase, start/restart workflow assessment, and wait for SCAN_READY. It never converts the terminal acquisition to success or reuses its approval. The GUI retries only the bounded already-pending response case, accepts only a returned plan whose short plan_id matches the request_id prefix, and requires exactly five qualified views before enabling a separate scan confirmation.
+  approve_service:
+    name: /scan_viewpoint_executor/approve
+    type: piper_mobile_manipulation/srv/ApproveScanExecution
+    request: [exact current plan_id, exact trajectory_sha256, "confirmation exactly EXECUTE APPROVED SCAN"]
+    invariant: MULTIVIEW_SCAN requires enable_real_arm_motion=true, fresh plan, target drift no more than 0.015 m, fresh healthy tracking, a valid perception scene, and SCAN_READY. ROUGH_ACQUISITION instead requires fresh base-link provenance plus joints/arm/camera-clock, exact hash approval, and collision_model_qualified=true for its first bootstrap-static segment; subsequent segments additionally require a fresh correlated valid obstacle scene. It never captures.
+  cancel_service: {name: /scan_viewpoint_executor/cancel, type: std_srvs/srv/Trigger, behavior: Clears a proposal or requests a current-joint hold while active.}
+  refresh_service: {name: /scan_viewpoint_executor/refresh_plan, type: std_srvs/srv/Trigger, behavior: Replans only while motion is inactive.}
+  command_contract:
+    topic: /joint_ctrl_single
+    publisher_presence: Absent in proposal-only mode; created only when real motion is explicitly enabled at launch.
+    source_acceptance: Every Tesseract target record must contain finite six-element positions, velocities, and accelerations plus a finite strictly increasing order stamp. A normal segment contains exactly start plus final target; folded-start acquisition may contain exactly one declared bootstrap target between them. Missing or nonzero derivative fields fail closed even though the JointState adapter does not forward them.
+    timing_adapter: Policy sdk_movej_targets_v1 lives in the isolated worker. OMPL/ISP establishes a feasible all-six-joint goal, then the worker writes one final SDK MoveJ target per viewpoint with exact-zero qdot/qddot placeholders and adaptively Bullet-validates the actual direct SDK-interpolated segment. MULTIVIEW_SCAN appends one equally validated return segment to the configured user-feedback home pose; it is inside the same trajectory hash and exact approval but is not a capture viewpoint. Only folded-start rough acquisition may add one separately proven bootstrap target. Paths requiring a detour are rejected. Dense validation samples are not serialized or published.
+    execution_hash: TesseractPlan and ScanExecutionPlan carry the same exact worker trajectory_sha256. It covers each bound start/final target, optional bootstrap target, zero derivative placeholder, order stamp, and segment plus request/model/calibration/position limits, controller motion-limit values/hash, selected aggregate SDK speed, 100 Hz maximum order-stamp rate, and sdk_movej_targets_v1 policy. Exact approval binds this hash.
+    runtime_stream: Publishes one six-position arm-only JointState endpoint exactly once per viewpoint with frozen SDK speed percent in velocity index 6; repeated publication is forbidden because it can restart PiPER interpolation. Folded-start acquisition may use its one proven bootstrap target first. It waits for fresh measured feedback to enter the 0.025 rad target tolerance before capture or the next target. After the thirteenth persisted capture, it executes the hash-bound Tesseract return-home segment, requests a hold at the configured pose, requires 1.5 seconds of stable position/velocity feedback in SETTLING_HOME, and reports COMPLETE without requesting another capture. A target taking more than 90 seconds or showing no 0.001 rad total-joint improvement for 20 seconds aborts to current-position hold. A return-only failure after all captures holds the exact current feedback pose and reports COMPLETE with a warning rather than restarting Step 4/5. A non-safety abort at a reached endpoint may reverse only already executed approved acquisition/scan targets to the original loaded pose after fresh runtime and exact-path validation; any safety-related abort holds. Endpoint capture requires both final position convergence and velocity settling.
+    speed: The GUI validates one finite session speed from 1 through 100 percent, default 5. MULTIVIEW_SCAN freezes a TrackingHealth-scaled aggregate SDK speed in the schema-v5 request; ROUGH_ACQUISITION uses the selected speed directly because measured tracking is not yet available. If controller limits change or later tracking allows less than the approved frozen scan speed, execution aborts and requires a new plan/hash rather than silently changing speed. Physical acceptance of sdk_movej_targets_v1 is pending; the historical 5-percent run used the former stop-per-sample executor, and higher-speed dynamics remain unqualified.
+    driver_mode: piper_ctrl_single_node sends every JointCtrl target in SDK MoveJ mode and caches unchanged MotionCtrl_2 mode/speed. Six-position commands are arm-only and never send GripperCtrl; only an explicit seventh position can update the gripper, with unchanged signatures cached. Enable/disable resets the caches so the next command reasserts state.
+    enable: Executor never calls /enable_srv; the operator controls motor enable separately.
+  qualified_runtime_parameters:
+    normal_scan_candidates: {desired_scan_angle_deg: 55, qualified_sector_deg: [120, 175], viewpoint_step_deg: 9.166666666666666, camera_pitch_deg: -55, camera_pitch_offsets_deg: [0, 10, -10], expected_candidates: 21, required_selected_views: 13, visit_order: camera-space-diverse subset followed by nearest-neighbour route from calibrated current camera position}
+    command_schedule: {adapter_policy: sdk_movej_targets_v1, maximum_order_stamp_rate_hz: 100, unique_targets_per_viewpoint: 1, identical_target_republish_period_sec: null, multiview_return_home_unique_targets: 1, return_home_positions_rad: [0.0, -0.032, -0.026, -0.039, 0.346, 0.107], home_derivation: nearest single-joint collision-qualified adjustment from operator feedback pose is J3 minus 0.050 rad, rough_acquisition_bootstrap_unique_targets_max: 1, runtime_collision_sample_step_rad: 0.025, plan_start_tolerance_rad: 0.025, target_reached_tolerance_rad: 0.025, target_timeout_sec: 90.0, target_progress_epsilon_rad: 0.001, target_progress_timeout_sec: 20.0}
+    settle_gate: {joint_goal_tolerance_rad: 0.025, joint_velocity_settled_rad_s: 0.20, invariant: velocity is checked only after position convergence and must not independently establish arrival}
+    tracking_measurement_stale_sec: 0.75
+    depth_jump_reacquisition: {max_depth_jump_m: 0.20, consistent_samples: 3, consistency_tolerance_m: 0.03, disabled_when_max_jump_nonpositive: true}
+  j6_planning_policy:
+    operator_confirmation: J6 was confirmed fully safe on 2026-07-17.
+    current_implementation: The legacy_fixed_j6 backend and solve_fixed_j6_viewpoint helper were removed on 2026-07-24. Tesseract is the only planning backend and the executor accepts and executes six-joint samples.
+    tesseract_policy: Collision-aware Tesseract planning treats J1-J6 equally, applying the available controller/URDF limits and ordinary collision checks. There is no J6 lock or J6-specific soft cost; camera-cable clearance is scene geometry.
+    historical_records: The pre-zero measured J6 bounds remain invalid historical data, and the rejected analytical hand-eye compensation remains historical and must not be reinstated. No replacement bounds or new calibration result are implied by the operational confirmation.
+gui_acquire_and_scan:
+  owner: [piper_gui_native.py, piper_gui_automation.py]
+  externally_started: [PiPER driver, L515 camera, GroundingDINO/SAM2 and ROS perception]
+  gui_owned: [motion_planning/tesseract/run_worker.sh, L515_camera/run_supervised_viewpoint_execution.sh]
+  environment_contract: start_gui.sh and run_supervised_viewpoint_execution.sh must source source_piper_foxy_environment.sh. The helper clears inherited colcon/Python/library paths, sources /opt/ros/foxy and only piper_ros_foxy/install, requires exact canonical prefixes for piper_mobile_manipulation and piper_tesseract_foxy, imports scan_capture, and checks PrepareAcquisition, TesseractReadiness, source_request_id, all four bootstrap_recovery fields, schema-v5 speed/rate/policy/motion-limit fields, and the complete PiperMotionLimits interface. A generated /home/prl/Piper_arm/install overlay is unsupported and must never enter this process tree. Both launchers then load fastdds_gui_udp_only.xml with RMW_FASTRTPS_USE_QOS_FROM_XML=0 and force ROS_LOCALHOST_ONLY=0; the XML restricts UDPv4 to 127.0.0.1 and disables builtin/shared-memory transport while Foxy's native rmw endpoint QoS preserves reallocating histories for variable-size topics and services. This exception is required because Foxy ROS_LOCALHOST_ONLY=1 replaces the participant transport profile and re-enables the stale shared-memory path.
+  worker_lifecycle: run_worker.sh must remain alive as Bubblewrap's direct parent while --die-with-parent is active. The GUI starts the wrapper from a short-lived setup thread, so the wrapper must not exec Bubblewrap or the worker is killed with SIGKILL when that thread returns.
+  publisher_exclusivity: Before starting children, the GUI destroys its manual /joint_ctrl_single publisher and refuses any remaining publisher. Before planning it waits up to two seconds only while the command endpoint list is empty or contains a Foxy _UNKNOWN_ identity. It accepts the exact list [/scan_viewpoint_executor], or one still-UNKNOWN endpoint only when the zero-publisher prelaunch check passed, the GUI-owned stack process remains live, and /scan_viewpoint_executor is graph-present. A missing endpoint, external stack, missing executor node, or any additional publisher fails closed. Manual controls return only after GUI-owned children stop and the topic has no publisher.
+  startup_readiness: Step 1 is not reported ready until the worker and scan parent processes remain alive, the expected critical scan nodes and required services exist, the worker heartbeat is fresh, TesseractReadiness reports acquisition_ready, and the executor is the sole command publisher. The GUI shows blockers for up to 25 seconds. Timeout, service disappearance, or either owned parent exit disables automation and terminates the exact owned process groups; launch supervision makes any critical child exit shut down the scan parent.
+  acquisition_confirmation: Step 2 generates one unique acq-* session and immutable XYZ payload, calls the atomic PrepareAcquisition service through a fresh client endpoint, and retries that exact payload once after an 8-second response timeout. A second timeout leaves Step 2 retryable with the same session/payload; definite rejection, cancel, or a managed-stack generation change clears it. Late acknowledgements from retired attempts are ignored. Only a fresh ROUGH_ACQUISITION plan received in the active WAITING_PLAN phase within 185 seconds and carrying that same source_request_id and entered XYZ can enable Step 3. The first explicit dialog then binds the exact plan_id, execution trajectory_sha256, at most five acquisition poses, and displayed GUI-selected 1-100 percent speed. It authorizes no normal scan.
+  current_lock_transition: Step 4 has IDLE, STARTING_STACK, CHECKING_WORKFLOW, WAITING_SCAN_READY, REQUESTING_PLAN, WAITING_PLAN, PLAN_READY, and FAILED phases bound to the current managed-stack/attempt generation. Freshly received settled nonprediction TrackingHealth enables the action without cached workflow state. The action uses /supervised_cube_workflow/diagnostic_state as authority, starts terminal IDLE/COMPLETE/ABORTED workflow state, requires a later measured_lock_ready SCAN_READY diagnostic within 15 seconds, and rejects removal PLAN_READY with a clear-workspace instruction. It then requires fresh multiview_ready, queues one correlated normal request within 12 seconds, and accepts only its exact 13-view result within 185 seconds. It does not reuse acquisition authorization; the returned scan still needs its own exact confirmation.
+  scan_confirmation: A second explicit dialog binds exactly one correlated collision-qualified MULTIVIEW_SCAN plan_id and execution trajectory_sha256 with exactly 13 views. It cannot be confirmed before the current-lock transition and cannot be reused.
+  lifetime: There is no reusable 15-minute authorization window. Each exact confirmation remains subject to the executor's normal plan_max_age_sec and freshness checks.
+  terminal_behavior: Any rejection, abort, acquisition failure, cancellation, process exit, duplicate/retry/replan, changed plan, or failed approval ends the session and requests executor cancel/hold. A new attempt requires new exact confirmations.
+  enable_boundary: The GUI retains its manual Enable/Disable buttons but never enables motors as part of Acquire & Scan.
+filesystem_contracts:
+  tesseract_spool:
+    root: XDG_RUNTIME_DIR/piper_tesseract_plans, with /tmp/piper_tesseract_plans fallback
+    queues: [requests, processing, responses, failed]
+    permissions: Root and queue directories are owned by the current user and forced to mode 0700; entries are regular single-link files no larger than 8 MiB; symlink roots/queues/entries are rejected.
+    write_protocol: Canonical finite JSON is written mode 0600 with O_EXCL and O_NOFOLLOW where available, fsynced, atomically renamed, then the directory is fsynced. Worker claims by atomic rename; bridge consumes each response after validation.
+    request: Version 5 binds plan_kind, target_provenance, scene.observation_mode, request ID, boot ID, creation/expiry, exact six-joint start state and order, frozen target/candidate views, mode-0 model hashes, accepted hand-eye hash and 4x4 transform, six position limits, fresh controller velocity/acceleration values plus canonical hash/source, selected aggregate SDK speed, sdk_movej_targets_v1, 100 Hz maximum waypoint-order stamp rate, min/max viewpoint count, exact RRTConnect/OMPL_ISP pipeline label, roll samples, and no joint-specific costs. MULTIVIEW_SCAN requires perception_snapshot plus valid box obstacles, min=max, no source_request_id, camera-space-diverse subset selection followed by calibrated-current-position nearest-neighbour route ordering, and exactly six finite in-limit return_home_positions_rad. For a retry inside one workflow session min=max is the exact remaining count, and scan_session binds the session ID, accepted count, configured maximum, and remaining count. ROUGH_ACQUISITION requires bootstrap_static, obstacles=[], min=1, max no more than 5, an empty return-home field, and a valid immutable source_request_id. The isolated worker enforces a 150-second internal planning budget below the bridge's 180-second response timeout.
+    planning_seed: The canonical request requires deterministic_seed 42. The worker applies that seed to OMPL before any planner or sampler exists, records it in successful responses, and rejects a request/worker seed mismatch.
+  capture_correlation:
+    full_resolution_frame: target_cloud pins the RGB-D tuple selected by the exact correlated heavy-refresh queued/published image stamp until the matching mask is consumed or the request fails. The rolling cache is not the sole lifetime owner.
+    synchronization: The pinned frame still must match the returned mask within 0.08 seconds; correlation extends frame lifetime and does not relax timestamp agreement.
+    obstacle_refresh: Missing obstacle data is tolerated only during stationary multiview settle/capture phases. The bounded pre-motion runtime refresh still requires fresh valid geometry before another SDK target.
+    scan_session_memory: /piper/scan_session_history is a reliable transient-local JSON record owned by the executor. It records a camera position, look direction, actual six-joint feedback, plan ID, and accepted index only after synchronized RGB-D save plus workflow acceptance. The planner removes a candidate only when it is within 0.012 m and 2 degrees of an accepted pose and preserves deterministic candidate geometry order; the bridge selects a diverse remaining subset and smooth route using the current calibrated camera position. Retries preserve this memory under the same workflow session ID; a new workflow session or capture-session finish clears it.
+    controller_limit_stability: Valid controller-limit hashes are accepted immediately at startup. A distinct valid hash must repeat for at least 7 seconds and three samples before replacing the accepted set; recovery of the accepted hash cancels the candidate. Invalid messages never refresh freshness. Thus asynchronous twelve-reply CAN query snapshots cannot abort a scan, while persistent changes and stale data still fail closed.
+    response: Version 5 binds matching plan_kind/provenance/source_request_id/request/model/calibration/position and controller motion limits, aggregate speed/rate/policy, backend version and deterministic seed, selected views, exact finite start/final targets with zero qdot/qddot placeholders and monotonic order stamps, collision qualification, rejection codes, trajectory_sha256, and response_sha256. A successful thirteen-view MULTIVIEW_SCAN contains thirteen capture segments plus one final is_return_home segment whose endpoint exactly equals the request; all fourteen segments are hashed while ROS capture counts remain thirteen. Any compact-start recovery is exactly one intermediate target whose metadata and evidence are inside the hashed segment. Foxy publishes parallel typed recovery arrays, verifies their lengths/scope/joint/delta against the exact targets, independently rechecks monotonic proxy clearance, and retains the same exact trajectory hash for approval.
+    worker_health: worker_health.json is a bounded canonical record atomically replaced at 0.5-second intervals. It contains schema_version, a UUID generation_id, timestamp, ready flag, backend/version, and error. The bridge rejects missing, malformed, stale, wrong-backend, or not-ready health; the record is liveness evidence, not authentication.
+    isolation: Worker has no ROS, DDS, CAN, camera, GPU, motor-enable, or network access; it receives read-only model/calibration assets and bounded spool access.
+    worker_exclusivity: run_worker.sh holds a nonblocking flock at XDG_RUNTIME_DIR/piper_tesseract_worker.lock, or the /tmp fallback, and exits with code 3 if another worker owns it.
+    worker_supervision: In the Bubblewrap route, run_worker.sh remains as the direct parent and waits for the isolated worker. This preserves --die-with-parent across the GUI's short-lived Python startup thread and lets GUI process-group cleanup stop both wrapper and sandbox.
+    current_qualification: On 2026-07-27 the exact production 30 mm decomposition manifest hash 237c06f03ef248c535b28fbf588e65160325a5f8f48632a9f0237e59c7a10956 passed core and compact suites with collision_model_qualified_for_hardware=true. The exact compact start for target [0.33,-0.14,0.0] produced J3 delta -0.05 rad, recovery endpoint 55, 352 points, and 5608 validation samples. The normal post-recovery clearance was 0.001006 m under its named policy. No collision pair is disabled. The nanobind continuous manager remains disabled; no response claims BulletCast or FCL.
+  vision_recovery:
+    root: /tmp/piper_vision_recovery
+    request: request.yaml written atomically only after a sustained timestamp fault and latest-sample fresh joint positions remain within stationary_position_tolerance_rad, default 0.001, for stationary_duration_sec, default 0.75; consumed by run_gpu_vision_pipeline.sh. Velocity-only feedback is a fail-closed compatibility fallback; health reason distinguishes missing/stale feedback from position settling.
+    behavior: The owned camera and complete perception stack restart with 2/5/10/30-second capped backoff; PIPER_REUSE_EXISTING_CAMERA disables automatic camera restart.
+    process_manifest: process_groups.txt is atomically rewritten under /tmp/piper_vision_recovery after each owned setsid child starts; each line contains an allowlisted process name and numeric group leader.
+    orphan_cleanup: stop_gpu_vision_pipeline.sh accepts only the validated manifest path, allowlisted names, live group leaders, and project/ROS command paths before sending INT then TERM. It never targets the driver, GUI, hand-eye TF, RViz, or separate scan executor.
+  heavy_spool:
+    root: /tmp/piper_heavy_refresh
+    queues: [requests, processing, responses]
+    request_shape: "directory containing rgb.jpg, optional depth, request.yaml, then READY"
+    response_shape: "result.yaml plus target/object mask PNGs and copied rgb.jpg, then READY"
+  sam2_spool:
+    root: /tmp/piper_sam2_live
+    queues: [frames, seeds, results, consumed]
+    frame_shape: "timestamp-keyed directory with rgb.jpg, frame.yaml{image_stamp,frame_id}, READY"
+    seed_shape: "rgb.jpg, object_NNN.png files, seed.yaml{frame_key,source,image_stamp,frame_id,objects}, READY; objects is mandatory even for a target-only seed and objectless mask.png compatibility seeds are rejected"
+    result_shape: "timestamp-keyed result manifest and object masks; bridge publishes ROS images with original image stamp"
+  atomicity: Writers build .tmp directories, touch READY last, and os.replace into the final queue.
+services:
+  scan_executor_diagnostic: {name: /scan_viewpoint_executor/diagnostic_state, type: std_srvs/srv/Trigger, effect: read-only JSON summary of state/reason/plan identity/count/collision qualification/motion opt-in/camera-clock health for Foxy systems where topic echo is unreliable}
+  supervised_workflow_diagnostic: {name: /supervised_cube_workflow/diagnostic_state, type: std_srvs/srv/Trigger, effect: read-only JSON summary of workflow state, measured_lock_ready/rejection from TrackedTarget plus TrackingHealth plus target status, diagnostic target-landmark state, fresh input ages, obstacles, and accepted/modeled capture counts}
+  raw_rgbd_capture: {name: /scan_capture/capture_view, type: std_srvs/srv/Trigger, caller: scan_viewpoint_executor_node.py after workflow capture quality is accepted, behavior: service mode rejects acquisition/dry-run/noncapture states and stale or unsynchronized RGB/depth/camera-info; success writes one RGB PNG, raw depth NPY, 16-bit millimetre depth PNG, mask PNG, and YAML metadata before execution advances}
+persisted_files:
+  joint_bounds:
+    path: piper_joint_bounds.json
+    shape: "{joints:{joint1..joint7:{min,max,valid,...}}, ...}"
+    invariant: invalid records are ignored and driver/GUI fallback limits apply; J6 controller zero was recalibrated at physical neutral on 2026-07-14, but its old bounds remain invalid until controlled limits are re-recorded.
+  hand_eye_calibration:
+    path: L515_camera/calibration/hand_eye/session_20260701_local/calibration_result.yaml
+    invariant: Publisher loads only an accepted calibration and composes it with live six-joint FK. The deployed camera_to_link6 is the original unadjusted solve; a proposed +67.875-degree J6-frame compensation was rejected by the 2026-07-15 physical three-pose test. Snapshot replay with the unadjusted transform was within 10.8 mm and 1.37 degrees, but a fresh live fixed-board run remains mandatory before motion.

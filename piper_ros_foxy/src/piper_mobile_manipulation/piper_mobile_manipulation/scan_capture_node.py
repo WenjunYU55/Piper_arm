@@ -2,18 +2,25 @@
 import json
 import math
 import os
+import time
 from datetime import datetime
 
 import cv2
 import numpy as np
 import rclpy
 from cv_bridge import CvBridge
+from message_filters import ApproximateTimeSynchronizer, Subscriber
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
-from sensor_msgs.msg import CameraInfo, Image
+from sensor_msgs.msg import CameraInfo, Image, JointState
 from std_msgs.msg import String
+from std_srvs.srv import Trigger
 
-from piper_mobile_manipulation.msg import Target3D
+from piper_mobile_manipulation.msg import ScanExecutionStatus, Target3D
+from piper_mobile_manipulation.scan_capture import (
+    depth_millimetres,
+    synchronized_bundle_rejection,
+)
 
 try:
     import yaml
@@ -36,9 +43,15 @@ class ScanCaptureNode(Node):
         self.declare_parameter('occlusion_status_topic', '/piper/occlusion_status')
         self.declare_parameter('scan_capture_status_topic', '/piper/scan_capture_status')
         self.declare_parameter('scan_summary_topic', '/piper/scan_summary')
+        self.declare_parameter(
+            'scan_execution_status_topic', '/piper/scan_execution_status')
+        self.declare_parameter('joint_state_topic', '/joint_states_single')
 
+        self.declare_parameter('capture_mode', 'interval')
         self.declare_parameter('capture_interval_sec', 2.0)
         self.declare_parameter('max_frames_per_scan', 30)
+        self.declare_parameter('max_bundle_age_sec', 1.0)
+        self.declare_parameter('synchronization_slop_sec', 0.08)
         self.declare_parameter('require_valid_target', True)
         self.declare_parameter('require_mask', True)
         self.declare_parameter('require_depth', True)
@@ -51,8 +64,11 @@ class ScanCaptureNode(Node):
         self.latest_color = None
         self.latest_depth = None
         self.latest_camera_info = None
+        self.latest_bundle_received_at = None
         self.latest_mask = None
         self.latest_target = None
+        self.latest_joint_state = None
+        self.latest_execution_status = None
         self.latest_scan_viewpoints = None
         self.latest_reachable_scan_viewpoints = None
         self.latest_scan_coverage = None
@@ -82,6 +98,7 @@ class ScanCaptureNode(Node):
                 'dry_run': self.param_bool('dry_run'),
                 'real_arm_motion': False,
                 'max_frames_per_scan': int(self.get_parameter('max_frames_per_scan').value),
+                'capture_mode': self.capture_mode(),
                 'capture_interval_sec': float(self.get_parameter('capture_interval_sec').value),
                 'topics': self.topic_metadata(),
             },
@@ -94,88 +111,105 @@ class ScanCaptureNode(Node):
             String, self.get_parameter('scan_summary_topic').value, 10
         )
 
-        self.create_subscription(
-            Image,
-            self.get_parameter('color_image_topic').value,
-            self.color_cb,
-            qos_profile_sensor_data,
+        self.color_sub = Subscriber(
+            self, Image, self.get_parameter('color_image_topic').value,
+            qos_profile=qos_profile_sensor_data)
+        self.depth_sub = Subscriber(
+            self, Image, self.get_parameter('depth_image_topic').value,
+            qos_profile=qos_profile_sensor_data)
+        self.camera_info_sub = Subscriber(
+            self, CameraInfo, self.get_parameter('camera_info_topic').value,
+            qos_profile=qos_profile_sensor_data)
+        self.rgbd_sync = ApproximateTimeSynchronizer(
+            [self.color_sub, self.depth_sub, self.camera_info_sub],
+            10,
+            float(self.get_parameter('synchronization_slop_sec').value),
         )
-        self.create_subscription(
-            Image,
-            self.get_parameter('depth_image_topic').value,
-            self.depth_cb,
-            qos_profile_sensor_data,
-        )
-        self.create_subscription(
-            CameraInfo,
-            self.get_parameter('camera_info_topic').value,
-            self.camera_info_cb,
-            qos_profile_sensor_data,
-        )
-        self.create_subscription(
+        self.rgbd_sync.registerCallback(self.rgbd_cb)
+        self._retained_subscriptions = []
+        self._retained_subscriptions.append(self.create_subscription(
             Image,
             self.get_parameter('mask_topic').value,
             self.mask_cb,
             qos_profile_sensor_data,
-        )
-        self.create_subscription(
+        ))
+        self._retained_subscriptions.append(self.create_subscription(
             Target3D,
             self.get_parameter('target_3d_topic').value,
             self.target_cb,
             10,
-        )
-        self.create_subscription(
+        ))
+        self._retained_subscriptions.append(self.create_subscription(
+            JointState,
+            self.get_parameter('joint_state_topic').value,
+            self.joint_state_cb,
+            10,
+        ))
+        self._retained_subscriptions.append(self.create_subscription(
+            ScanExecutionStatus,
+            self.get_parameter('scan_execution_status_topic').value,
+            self.execution_status_cb,
+            10,
+        ))
+        self._retained_subscriptions.append(self.create_subscription(
             String,
             self.get_parameter('scan_viewpoints_topic').value,
             self.scan_viewpoints_cb,
             10,
-        )
-        self.create_subscription(
+        ))
+        self._retained_subscriptions.append(self.create_subscription(
             String,
             self.get_parameter('reachable_scan_viewpoints_topic').value,
             self.reachable_scan_viewpoints_cb,
             10,
-        )
-        self.create_subscription(
+        ))
+        self._retained_subscriptions.append(self.create_subscription(
             String,
             self.get_parameter('scan_coverage_topic').value,
             self.scan_coverage_cb,
             10,
-        )
-        self.create_subscription(
+        ))
+        self._retained_subscriptions.append(self.create_subscription(
             String,
             self.get_parameter('scan_quality_topic').value,
             self.scan_quality_cb,
             10,
-        )
-        self.create_subscription(
+        ))
+        self._retained_subscriptions.append(self.create_subscription(
             String,
             self.get_parameter('occlusion_status_topic').value,
             self.occlusion_status_cb,
             10,
-        )
+        ))
 
-        self.timer = self.create_timer(0.25, self.timer_cb)
+        self.capture_service = self.create_service(
+            Trigger, '~/capture_view', self.capture_view_cb)
+        self.timer = None
+        if self.capture_mode() == 'interval':
+            self.timer = self.create_timer(0.25, self.timer_cb)
         self.publish_status('ready', 'scan capture initialized')
         self.publish_summary()
         self.get_logger().warn(
-            'Scan capture is dry-run only; it saves RGB-D data and never publishes /piper/servo_cmd.'
+            'Scan capture is command-free; it saves RGB-D data and never publishes arm commands.'
         )
 
-    def color_cb(self, msg):
-        self.latest_color = msg
-
-    def depth_cb(self, msg):
-        self.latest_depth = msg
-
-    def camera_info_cb(self, msg):
-        self.latest_camera_info = msg
+    def rgbd_cb(self, color, depth, camera_info):
+        self.latest_color = color
+        self.latest_depth = depth
+        self.latest_camera_info = camera_info
+        self.latest_bundle_received_at = time.monotonic()
 
     def mask_cb(self, msg):
         self.latest_mask = msg
 
     def target_cb(self, msg):
         self.latest_target = msg
+
+    def joint_state_cb(self, msg):
+        self.latest_joint_state = msg
+
+    def execution_status_cb(self, msg):
+        self.latest_execution_status = msg
 
     def scan_viewpoints_cb(self, msg):
         self.latest_scan_viewpoints = self.parse_json_msg(msg)
@@ -212,17 +246,43 @@ class ScanCaptureNode(Node):
 
         self.capture_frame(now)
 
+    def capture_view_cb(self, _request, response):
+        if self.capture_mode() != 'service':
+            response.success = False
+            response.message = 'capture_mode is not service'
+            return response
+        if self.frame_index >= int(self.get_parameter('max_frames_per_scan').value):
+            response.success = False
+            response.message = 'maximum frame count reached'
+            return response
+        ok, reason = self.capture_ready()
+        if not ok:
+            self.note_skip(reason)
+            self.publish_status('skipped', reason)
+            response.success = False
+            response.message = reason
+            return response
+        saved, message = self.capture_frame(self.get_clock().now())
+        response.success = bool(saved)
+        response.message = str(message)
+        return response
+
     def capture_ready(self):
         if not self.param_bool('dry_run'):
             return False, 'dry_run is false'
         if self.param_bool('enable_real_arm_motion'):
             return False, 'enable_real_arm_motion is true'
-        if self.latest_color is None:
-            return False, 'missing RGB image'
-        if self.param_bool('require_depth') and self.latest_depth is None:
-            return False, 'missing depth image'
-        if self.latest_camera_info is None:
-            return False, 'missing camera_info'
+        bundle_reason = synchronized_bundle_rejection(
+            self.latest_color,
+            self.latest_depth,
+            self.latest_camera_info,
+            self.latest_bundle_received_at,
+            time.monotonic(),
+            float(self.get_parameter('max_bundle_age_sec').value),
+            float(self.get_parameter('synchronization_slop_sec').value),
+        )
+        if bundle_reason:
+            return False, bundle_reason
         if self.param_bool('require_mask') and self.latest_mask is None:
             return False, 'missing detection mask'
         if self.param_bool('require_valid_target'):
@@ -230,6 +290,14 @@ class ScanCaptureNode(Node):
                 return False, 'missing target_3d'
             if not self.latest_target.valid:
                 return False, 'target_3d invalid'
+        if self.capture_mode() == 'service':
+            status = self.latest_execution_status
+            if status is None:
+                return False, 'missing scan execution status'
+            if str(status.execution_mode) != 'MULTIVIEW_SCAN':
+                return False, 'scan execution is not MULTIVIEW_SCAN'
+            if str(status.state) not in ('CAPTURING', 'CAPTURING_RGBD'):
+                return False, 'executor is not at an accepted settled capture'
         return True, ''
 
     def capture_frame(self, now):
@@ -237,47 +305,59 @@ class ScanCaptureNode(Node):
         prefix = 'view_%03d' % index
         rgb_path = os.path.join(self.frames_dir, prefix + '_rgb.png')
         depth_path = os.path.join(self.frames_dir, prefix + '_depth.npy')
+        depth_png_path = os.path.join(self.frames_dir, prefix + '_depth.png')
         mask_path = os.path.join(self.frames_dir, prefix + '_mask.png')
         metadata_path = os.path.join(self.frames_dir, prefix + '_metadata.yaml')
 
         try:
             rgb = self.bridge.imgmsg_to_cv2(self.latest_color, desired_encoding='bgr8')
-            cv2.imwrite(rgb_path, rgb)
+            if not cv2.imwrite(rgb_path, rgb):
+                raise OSError('cv2.imwrite returned false')
         except Exception as exc:
             self.note_skip('RGB save failed')
             self.publish_status('skipped', 'RGB save failed: %s' % exc)
-            return
+            return False, 'RGB save failed: %s' % exc
 
         depth_saved = False
+        depth_dtype = ''
         if self.latest_depth is not None:
             try:
                 depth = self.bridge.imgmsg_to_cv2(self.latest_depth, desired_encoding='passthrough')
-                np.save(depth_path, np.asarray(depth))
+                depth = np.asarray(depth)
+                depth_dtype = str(depth.dtype)
+                np.save(depth_path, depth)
+                if not cv2.imwrite(
+                        depth_png_path,
+                        depth_millimetres(depth, self.latest_depth.encoding)):
+                    raise OSError('depth PNG cv2.imwrite returned false')
                 depth_saved = True
             except Exception as exc:
                 if self.param_bool('require_depth'):
                     self.note_skip('depth save failed')
                     self.publish_status('skipped', 'depth save failed: %s' % exc)
-                    return
+                    return False, 'depth save failed: %s' % exc
                 depth_path = ''
+                depth_png_path = ''
                 self.get_logger().warn('optional depth save failed: %s' % exc)
 
         mask_saved = False
         if self.latest_mask is not None:
             try:
                 mask = self.bridge.imgmsg_to_cv2(self.latest_mask, desired_encoding='mono8')
-                cv2.imwrite(mask_path, mask)
+                if not cv2.imwrite(mask_path, mask):
+                    raise OSError('cv2.imwrite returned false')
                 mask_saved = True
             except Exception as exc:
                 if self.param_bool('require_mask'):
                     self.note_skip('mask save failed')
                     self.publish_status('skipped', 'mask save failed: %s' % exc)
-                    return
+                    return False, 'mask save failed: %s' % exc
                 mask_path = ''
                 self.get_logger().warn('optional mask save failed: %s' % exc)
 
         if not depth_saved:
             depth_path = ''
+            depth_png_path = ''
         if not mask_saved:
             mask_path = ''
 
@@ -286,6 +366,8 @@ class ScanCaptureNode(Node):
             now,
             rgb_path,
             depth_path,
+            depth_png_path,
+            depth_dtype,
             mask_path,
             metadata_path,
         )
@@ -299,8 +381,11 @@ class ScanCaptureNode(Node):
         self.publish_summary()
         if self.param_bool('debug'):
             self.get_logger().info('saved scan frame %03d to %s' % (index, self.frames_dir))
+        return True, 'saved viewpoint %03d to %s' % (index, self.frames_dir)
 
-    def frame_metadata(self, index, now, rgb_path, depth_path, mask_path, metadata_path):
+    def frame_metadata(
+            self, index, now, rgb_path, depth_path, depth_png_path, depth_dtype,
+            mask_path, metadata_path):
         target = self.target_metadata(self.latest_target)
         planned_count = self.planned_viewpoint_count()
         reachable_count = self.reachable_viewpoint_count()
@@ -334,14 +419,33 @@ class ScanCaptureNode(Node):
             'occlusion_score': occlusion['occlusion_score'],
             'closer_region_area_px': occlusion['closer_region_area_px'],
             'closer_region_ratio': occlusion['closer_region_ratio'],
+            'occlusion_target_depth_m': occlusion['target_depth_m'],
+            'occlusion_reference_mask_area_px': occlusion[
+                'reference_mask_area_px'],
+            'occlusion_reference_target_depth_m': occlusion[
+                'reference_target_depth_m'],
+            'occlusion_reference_normalized_mask_area_m2': occlusion[
+                'reference_normalized_mask_area_m2'],
+            'occlusion_current_normalized_mask_area_m2': occlusion[
+                'current_normalized_mask_area_m2'],
+            'occlusion_visible_mask_ratio': occlusion['visible_mask_ratio'],
+            'occlusion_reference_session_id': occlusion[
+                'reference_session_id'],
             'occlusion_reason': occlusion['occlusion_reason'],
-            'current_capture_mode': 'interval',
+            'current_capture_mode': self.capture_mode(),
             'dry_run': True,
             'real_arm_motion': False,
             'rgb_file_path': rgb_path,
             'depth_file_path': depth_path,
+            'depth_png_file_path': depth_png_path,
+            'depth_encoding': str(self.latest_depth.encoding),
+            'depth_npy_dtype': depth_dtype,
+            'depth_png_units': 'millimetres',
             'mask_file_path': mask_path,
             'metadata_file_path': metadata_path,
+            'joint_state': self.joint_state_metadata(self.latest_joint_state),
+            'scan_execution': self.execution_status_metadata(
+                self.latest_execution_status),
         }
 
     def publish_status(self, state, reason, frame_index=None):
@@ -534,6 +638,18 @@ class ScanCaptureNode(Node):
             'occlusion_score': float(payload.get('occlusion_score', 0.0)),
             'closer_region_area_px': int(payload.get('closer_region_area_px', 0)),
             'closer_region_ratio': float(payload.get('closer_region_ratio', 0.0)),
+            'target_depth_m': float(payload.get('target_depth_m', 0.0)),
+            'reference_mask_area_px': float(
+                payload.get('reference_mask_area_px', 0.0)),
+            'reference_target_depth_m': float(
+                payload.get('reference_target_depth_m', 0.0)),
+            'reference_normalized_mask_area_m2': float(
+                payload.get('reference_normalized_mask_area_m2', 0.0)),
+            'current_normalized_mask_area_m2': float(
+                payload.get('current_normalized_mask_area_m2', 0.0)),
+            'visible_mask_ratio': float(payload.get('visible_mask_ratio', 0.0)),
+            'reference_session_id': str(
+                payload.get('reference_session_id', '')),
             'occlusion_reason': str(payload.get('reason', '')),
         }
 
@@ -545,6 +661,13 @@ class ScanCaptureNode(Node):
             'occlusion_score': 0.0,
             'closer_region_area_px': 0,
             'closer_region_ratio': 0.0,
+            'target_depth_m': 0.0,
+            'reference_mask_area_px': 0.0,
+            'reference_target_depth_m': 0.0,
+            'reference_normalized_mask_area_m2': 0.0,
+            'current_normalized_mask_area_m2': 0.0,
+            'visible_mask_ratio': 0.0,
+            'reference_session_id': '',
             'occlusion_reason': '',
         }
 
@@ -611,6 +734,33 @@ class ScanCaptureNode(Node):
         }
 
     @staticmethod
+    def joint_state_metadata(msg):
+        if msg is None:
+            return {'available': False}
+        return {
+            'available': True,
+            'header': ScanCaptureNode.header_metadata(msg.header),
+            'name': [str(value) for value in msg.name],
+            'position': [float(value) for value in msg.position],
+            'velocity': [float(value) for value in msg.velocity],
+        }
+
+    @staticmethod
+    def execution_status_metadata(msg):
+        if msg is None:
+            return {'available': False}
+        return {
+            'available': True,
+            'header': ScanCaptureNode.header_metadata(msg.header),
+            'plan_id': str(msg.plan_id),
+            'execution_mode': str(msg.execution_mode),
+            'state': str(msg.state),
+            'current_view': int(msg.current_view),
+            'total_views': int(msg.total_views),
+            'commanded_speed_percent': float(msg.commanded_speed_percent),
+        }
+
+    @staticmethod
     def header_metadata(header):
         return {
             'stamp': ScanCaptureNode.ros_time_to_dict(header.stamp),
@@ -645,6 +795,10 @@ class ScanCaptureNode(Node):
             'occlusion_status': self.get_parameter('occlusion_status_topic').value,
             'scan_capture_status': self.get_parameter('scan_capture_status_topic').value,
             'scan_summary': self.get_parameter('scan_summary_topic').value,
+            'scan_execution_status': self.get_parameter(
+                'scan_execution_status_topic').value,
+            'joint_state': self.get_parameter('joint_state_topic').value,
+            'capture_service': '/scan_capture/capture_view',
         }
 
     def create_scan_dir(self):
@@ -679,6 +833,10 @@ class ScanCaptureNode(Node):
         if isinstance(value, str):
             return value.lower() in ('1', 'true', 'yes', 'on')
         return bool(value)
+
+    def capture_mode(self):
+        value = str(self.get_parameter('capture_mode').value).strip().lower()
+        return value if value in ('interval', 'service') else 'invalid'
 
 
 def main(args=None):

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+<profiles>
+  <!--
+    ROS 2 Foxy on this workstation uses Fast DDS 2.1.4.  Its shared-memory
+    transport retained stale port state after crashed GUI participants and
+    subsequently attempted an unbounded vector allocation while deserializing
+    the internal ParticipantEntitiesInfo graph sample on domain 42.
+
+    Keep the GUI and every ROS scan process it owns on the normal ROS domain,
+    but use loopback UDPv4 only for those participants.  Foxy's
+    ROS_LOCALHOST_ONLY=1 path replaces participant transports and re-enables
+    shared memory, so start_gui.sh sets that variable to 0 while this explicit
+    127.0.0.1 allowlist preserves local-only communication.  The isolated
+    Tesseract worker has no DDS access and is unaffected.
+
+    The launchers deliberately set RMW_FASTRTPS_USE_QOS_FROM_XML=0.  Foxy's
+    rmw_fastrtps must retain its native reallocating endpoint histories for
+    variable-size ROS topics and services; this XML governs only the
+    participant transport.
+  -->
+  <transport_descriptors>
+    <transport_descriptor>
+      <transport_id>piper_gui_udp_v4</transport_id>
+      <type>UDPv4</type>
+      <interfaceWhiteList>
+        <address>127.0.0.1</address>
+      </interfaceWhiteList>
+    </transport_descriptor>
+  </transport_descriptors>
+
+  <participant profile_name="piper_gui_udp_only" is_default_profile="true">
+    <rtps>
+      <userTransports>
+        <transport_id>piper_gui_udp_v4</transport_id>
+      </userTransports>
+      <useBuiltinTransports>false</useBuiltinTransports>
+    </rtps>
+  </participant>
+
+</profiles>
+</dds>

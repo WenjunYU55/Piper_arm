@@ -29,6 +29,7 @@ class ObstacleInstance3DNode(Node):
         defaults = {
             'object_ids_topic': '/piper/sam2_object_ids',
             'metadata_topic': '/piper/sam2_tracking_status',
+            'heavy_status_topic': '/piper/heavy_refresh_status',
             'depth_topic': '/camera/aligned_depth_to_color/image_raw',
             'camera_info_topic': '/camera/color/camera_info',
             'output_topic': '/piper/obstacle_instances_3d',
@@ -39,6 +40,7 @@ class ObstacleInstance3DNode(Node):
             'sync_queue_size': 20, 'metadata_wait_sec': 0.25,
             'max_source_age_sec': 10.0, 'transform_timeout_sec': 0.20,
             'max_transform_age_sec': 0.20,
+            'transform_listener_retry_sec': 2.0,
         }
         for name, value in defaults.items():
             self.declare_parameter(name, value)
@@ -46,12 +48,17 @@ class ObstacleInstance3DNode(Node):
         self.bridge = CvBridge()
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.tf_reset_requested = False
+        self.last_tf_listener_reset_at = time.monotonic()
         self.metadata = OrderedDict()
         self.pending = OrderedDict()
         self.publisher = self.create_publisher(
             ObstacleInstance3DArray, self.get_parameter('output_topic').value, 10)
         self.create_subscription(
             String, self.get_parameter('metadata_topic').value, self.metadata_cb, 10)
+        self.create_subscription(
+            String, self.get_parameter('heavy_status_topic').value,
+            self.heavy_status_cb, 10)
         ids_sub = Subscriber(self, Image, self.get_parameter('object_ids_topic').value,
                              qos_profile=qos_profile_sensor_data)
         depth_sub = Subscriber(self, Image, self.get_parameter('depth_topic').value,
@@ -88,6 +95,31 @@ class ObstacleInstance3DNode(Node):
         except (KeyError, TypeError, ValueError, json.JSONDecodeError):
             return
 
+    def heavy_status_cb(self, msg):
+        """Emit a correlated typed clear scene for one completed empty look."""
+        try:
+            payload = json.loads(msg.data)
+            if (
+                    payload.get('state') != 'worker_result_rejected'
+                    or payload.get('worker_status') != 'target_mask_missing'
+                    or payload.get('reason') != 'rough_acquisition_viewpoint'
+                    or int(payload.get('obstacle_count', -1)) != 0):
+                return
+            stamp = payload.get('image_stamp', {})
+            sec = int(stamp['sec'])
+            nanosec = int(stamp['nanosec'])
+            if sec < 0 or nanosec < 0 or nanosec >= 1_000_000_000:
+                return
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            return
+        out = ObstacleInstance3DArray()
+        out.header.stamp.sec = sec
+        out.header.stamp.nanosec = nanosec
+        out.header.frame_id = str(self.get_parameter('base_frame').value)
+        out.scene_blocked = False
+        out.blocking_reason = 'clear:post_settle_semantic_result'
+        self.publisher.publish(out)
+
     def synced_cb(self, ids_msg, depth_msg, info_msg):
         key = self.stamp_key(ids_msg.header.stamp)
         metadata = self.metadata.get(key)
@@ -100,11 +132,29 @@ class ObstacleInstance3DNode(Node):
             self.process(*messages, None)
 
     def flush_pending(self):
+        self.maybe_recreate_tf_listener()
         cutoff = time.monotonic() - float(self.get_parameter('metadata_wait_sec').value)
         expired = [key for key, value in self.pending.items() if value[0] < cutoff]
         for key in expired:
             _, messages = self.pending.pop(key)
             self.process(*messages, None)
+
+    def maybe_recreate_tf_listener(self):
+        if not self.tf_reset_requested:
+            return
+        now = time.monotonic()
+        retry = max(0.5, float(
+            self.get_parameter('transform_listener_retry_sec').value))
+        if now - self.last_tf_listener_reset_at < retry:
+            return
+        self.tf_listener.unregister()
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.tf_reset_requested = False
+        self.last_tf_listener_reset_at = now
+        self.get_logger().warn(
+            'Recreated stalled TF listener; obstacle geometry remains blocked '
+            'until a fresh base-to-camera transform arrives.')
 
     def config(self):
         names = ('depth_min_m', 'depth_max_m', 'min_valid_depth_pixels',
@@ -150,8 +200,10 @@ class ObstacleInstance3DNode(Node):
                 timeout=Duration(seconds=float(self.get_parameter('transform_timeout_sec').value)))
         except TransformException as exc:
             transform_error = 'transform_unavailable:%s' % exc
+            self.tf_reset_requested = True
         transform_age = 0.0
         if transform is not None:
+            self.tf_reset_requested = False
             tf_stamp = transform.header.stamp.sec + transform.header.stamp.nanosec * 1e-9
             # Static transforms conventionally carry a zero stamp and do not become stale.
             transform_age = 0.0 if tf_stamp == 0.0 else abs(source_seconds - tf_stamp)

@@ -1,0 +1,93 @@
+/**:
+  ros__parameters:
+    reachable_viewpoints_topic: "/piper/reachable_scan_viewpoints"
+    joint_states_topic: "/joint_states_single"
+    arm_status_topic: "/arm_status"
+    motion_limits_topic: "/piper/motion_limits"
+    tracking_health_topic: "/piper/tracking_health"
+    tracked_target_topic: "/piper/tracked_target"
+    camera_timestamp_health_topic: "/piper/camera_timestamp_health"
+    target_status_topic: "/piper/target_status"
+    obstacle_topic: "/piper/obstacle_instances_3d"
+    workflow_status_topic: "/piper/supervised_workflow_status"
+    scan_session_history_topic: "/piper/scan_session_history"
+    joint_command_topic: "/joint_ctrl_single"
+    plan_topic: "/piper/scan_execution_plan"
+    status_topic: "/piper/scan_execution_status"
+    capture_service: "/supervised_cube_workflow/capture_view"
+    finish_scan_service: "/supervised_cube_workflow/finish_scan"
+    rgbd_capture_service: "/scan_capture/capture_view"
+    heavy_refresh_request_topic: "/piper/heavy_refresh_request"
+    heavy_refresh_status_topic: "/piper/heavy_refresh_status"
+    tesseract_plan_topic: "/piper/tesseract_plan"
+
+    enable_real_arm_motion: false
+    auto_capture: true
+    speed_percent: 5.0
+    max_execution_viewpoints: 13
+    min_execution_viewpoints: 13
+    # Runtime collision sampling only. These samples are never commands.
+    trajectory_joint_step_rad: 0.025
+    # Order-stamp ceiling in the Tesseract transport contract. Runtime
+    # commands advance only after measured feedback reaches each waypoint.
+    trajectory_command_rate_hz: 100.0
+    # Poll feedback and safety state independently of command issuance.
+    executor_tick_rate_hz: 200.0
+    plan_start_tolerance_rad: 0.025
+    joint_goal_tolerance_rad: 0.025
+    waypoint_reached_tolerance_rad: 0.025
+    waypoint_progress_epsilon_rad: 0.001
+    waypoint_timeout_sec: 90.0
+    # At 5% SDK speed, judge progress across all moving joints and allow a
+    # full twenty seconds between measurable improvements.
+    waypoint_progress_timeout_sec: 20.0
+    # PiPER's reported velocity jitters while physically held. Position must
+    # already be within joint_goal_tolerance_rad before this settle gate runs.
+    joint_velocity_settled: 0.20
+    # Readback-only allowance for one encoder quantum at an inclusive URDF
+    # boundary. Planned/commanded targets remain inside the exact limits.
+    joint_feedback_limit_tolerance_rad: 0.001
+    motion_limits_timeout_sec: 3.0
+    # PiPER refreshes 12 CAN limit replies asynchronously. A distinct valid
+    # hash must persist beyond one five-second query cycle before promotion.
+    motion_limits_change_confirmation_sec: 7.0
+    motion_limits_change_minimum_samples: 3
+    # Path validation is synchronous in Foxy. Process freshly queued safety
+    # telemetry before the first command instead of using cache aged by it.
+    runtime_refresh_timeout_sec: 3.0
+    runtime_recovery_timeout_sec: 10.0
+    settle_duration_sec: 1.5
+    settle_timeout_sec: 15.0
+    capture_timeout_sec: 20.0
+    finish_scan_timeout_sec: 10.0
+    # scan_capture_node independently gates service saves using the executor
+    # status topic. Republish CAPTURING_RGBD briefly before the service call
+    # so DDS scheduling cannot expose the previous WAIT_CAPTURE state.
+    capture_status_propagation_sec: 0.25
+    acquisition_fresh_frame_timeout_sec: 10.0
+    acquisition_grounding_timeout_sec: 60.0
+    acquisition_tracking_lock_timeout_sec: 10.0
+    acquisition_scene_timeout_sec: 15.0
+    acquisition_target_tolerance_m: 0.30
+    acquisition_max_viewpoints: 5
+    data_timeout_sec: 2.0
+    max_tracking_measurement_age_sec: 0.75
+    min_tracking_speed_scale: 0.10
+    # The timer starts when the executor receives the completed proposal.
+    # Runtime safety and exact-path validation are repeated at approval, so
+    # this is an operator inspection window rather than a cached-safety waiver.
+    plan_max_age_sec: 300.0
+    max_target_drift_before_approval_m: 0.015
+    # The exact approval remains bound to the collision-checked arm targets.
+    # Target motion is handled by live tracking/capture and is not itself an
+    # arm-safety reason to reject those already-planned camera poses.
+    allow_target_motion_during_scan: true
+    # Nearest one-joint collision-qualified low-drop home adjustment from GUI
+    # feedback. J3 is 0.050 rad lower than the collision-rejected folded pose.
+    # Exact approval covers this final return and all capture segments.
+    return_home_positions_rad: [0.0, -0.032, -0.026, -0.039, 0.346, 0.107]
+    floor_z_m: 0.0
+    link_radius_m: 0.025
+    self_clearance_m: 0.060
+    approval_confirmation: "EXECUTE APPROVED SCAN"
+    debug: true

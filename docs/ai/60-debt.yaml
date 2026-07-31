@@ -1,0 +1,252 @@
+schema_version: 1
+document: technical_debt
+deferred_cleanup:
+  - id: gui_step2_prepare_service_timeout_regression
+    issue: >-
+      Active as of 2026-07-28. A live GUI Step 2 attempt saw
+      /scan_target_acquisition/prepare in discovery but timed out twice waiting
+      for its response, so the correlated acquisition plan could not enable
+      Step 3. A real GUI-to-service regression reproduced the cause: forcing
+      Foxy endpoint QoS from XML selected a fixed 55-byte history and Fast DDS
+      rejected the 84-byte service sample. Keeping native rmw endpoint QoS
+      made the same command-free round trip pass. The launchers now keep the
+      loopback-only participant XML but set RMW_FASTRTPS_USE_QOS_FROM_XML=0.
+      The GUI also dispatches services on a re-entrant two-thread executor,
+      gives each bounded call a fresh client endpoint, preserves the exact
+      session/payload across timeout recovery, ignores old-generation
+      callbacks, and bounds the plan result to 185 seconds.
+    next_cut: >-
+      With motion unapproved and motors left disabled, repeat the real GUI
+      Step-1/Step-2 loopback-UDP path. Require the PrepareAcquisition response
+      within 8 seconds and a matching source_request_id plan that enables Step
+      3. Then inject the first and second timeout paths and prove exact-session
+      retry, fresh endpoints, no approval, no command, and no late-plan unlock
+      before marking this regression resolved.
+  - id: live_start_model_validation_blocker
+    issue: Resolved in software on 2026-07-25 for the recorded rough-acquisition start. Complete-link convex hulls for link1/link2/link5 were replaced by deterministic overlapping 30 mm pieces with verified source, piece, and manifest hashes. A bounded acquisition-only recovery leaves remaining folded-start convex-piece overlap monotonically, reaches normal clearance, and is inside the exact approved trajectory. Foxy independently checks that prefix and resumes the ordinary 60 mm proxy threshold at the boundary. No collision pair is globally disabled.
+    next_cut: Reconnect hardware and repeat Step 1/Step 2 proposal acceptance from the same compact start, then run one supervised 5-percent acquisition and cancel-to-hold. Preserve manifest hash 237c06f03ef248c535b28fbf588e65160325a5f8f48632a9f0237e59c7a10956 and the J3 -0.05/point-50 regression. Any geometry, allowlist, bound, search, timing, or proxy change requires both qualification suites again.
+  - id: live_can_feedback_blocker
+    issue: On 2026-07-20 GUI disable worked but GUI enable failed because the repository service used a hand-written 500 ms EnableArm retry loop and interleaved GripperCtrl on every attempt, unlike the installed official SDK example's 10 ms feedback-confirmed EnablePiper handshake. The service now uses EnablePiper/DisablePiper every 10 ms, returns success only after target feedback, and sends one gripper command after success. Three focused tests, the piper Foxy rebuild, and a supported live disable/re-enable cycle pass. On 2026-07-25 a separate feedback stall left CAN and graph endpoints active but stopped joint/status delivery. The unmanaged publisher was replaced by an executor-owned 200 Hz timer; after a disabled restart an application-level subscriber measured about 201.82 Hz. A later long-running graph again required a disabled driver restart before fresh subscribers received samples, so sustained delivery remains open debt.
+    next_cut: Preserve the 10 ms SDK handshake and executor-owned 200 Hz timer. Add a driver-side delivered-sample watchdog or startup/soak health signal, repeat long GUI/camera/scan-stack churn, and fail planning on stale application-level samples; never treat endpoint visibility, CLI ros2 topic hz, or CAN counters alone as feedback. On the next intentional arm reboot, re-run the read-only feedback and one supported GUI enable/disable smoke.
+  - id: target_tracker_tf_starvation_acceptance
+    issue: Resolved on 2026-07-24. A live restart exposed target_tracker and target_landmark TF starvation under single-thread executors when timestamped callbacks waited for transforms. Both now retain two-thread executor capacity, and live acceptance produced stable measured base_link tracking plus a LOCKED landmark through physical arm motion.
+    next_cut: Preserve concurrent TF callback capacity and repeat the stationary/moving TF regression after any executor, callback-group, or transform-timeout change.
+  - id: gpu_pipeline_orphan_shutdown_acceptance
+    issue: A live Ctrl+C stopped the camera but left watchdog, bridges, cloud, and geometry setsid groups re-parented to systemd. A validated atomic process-group manifest and dedicated orphan-safe stop script are implemented but need normal and forced-wrapper-loss live acceptance runs.
+    next_cut: Start with motors disabled, verify all eight owned groups are recorded, test Ctrl+C, then force only the wrapper to exit and verify the stop script removes recorded children while driver, GUI, TF, and proposal executor remain.
+  - id: camera_timestamp_recovery_acceptance
+    issue: >-
+      Typed fail-closed camera timestamp health, position-stability-based stationary-only full-stack
+      recovery requests, capped periodic restart backoff, SAM2 health suppression, and independent
+      scan-executor gating are implemented and unit-tested. A live 15-second probe measured the L515
+      clock at about 0.9953 host seconds per second with global time disabled, growing offset by about
+      42 ms. Launch overrides reached realsense-ros but the late-declared live L515 controls still
+      initialized false, so both startup scripts now set and verify RGB/depth global time after device
+      open and fail closed otherwise. Full RGB consumption first starved the watchdog; after switching
+      to lightweight CameraInfo, live custom multi-thread callback groups still exposed endpoints
+      without delivering joint feedback or health even though an isolated QoS probe received about
+      198 Hz on both reliable and sensor-data readers. The production watchdog now uses Foxy's
+      standard serialized executor plus a bounded three-attempt startup gate. Clean-restart static
+      acceptance passed on 2026-07-17: both global-time controls true; 76 health samples over 15
+      seconds all HEALTHY with about 76 ms median offset, -0.000660 seconds/second short-window slope,
+      8646 consecutive frames, stationary feedback, and no recovery request; a later three-second
+      direct probe received 141 joint samples and 12 healthy clock samples; tracking was live rather
+      than prediction-only at quality 1.0, the target was valid/stable at 0.795 confidence in
+      base_link, tracked_object_frame resolved, and /joint_ctrl_single had zero publishers. The
+      five-minute stationary run then passed with 1490 all-healthy clock samples, about 74 ms median
+      and 165 ms maximum offset, +0.0000022 seconds/second slope, 26807 consecutive healthy frames,
+      zero recovery requests, and exactly zero joint-position span across 59970 samples. A clearly
+      marked dry-run supervisor-boundary request with the arm stationary replaced the owned camera
+      and watchdog processes; post-restart global time remained true, clock health returned at about
+      75 ms, live tracking returned at quality 1.0, the target returned valid/stable at 0.862
+      confidence, tracked_object_frame resolved, and no joint-command publisher appeared. A later
+      three-minute operator-controlled J1 sweep through about plus/minus 17.3 degrees produced zero
+      clock faults or recovery requests, all 898 health samples remained TRACKING, target validity
+      was 100 percent and stability 98 percent, and confidence remained at least 0.599. A raw
+      in-motion base-position outlier reached 111.5 mm, but the held extreme pose settled near 12 mm
+      drift and return to the baseline pose returned below 1 mm without target invalidation.
+    next_cut: Repeat the supervised motion check on a small J2 sweep, characterize or bound transient in-motion base-position lag before automatic capture uses it, and verify /joint_ctrl_single returns to zero publishers after the GUI command source is stopped.
+  - id: manual_gui_feedback_sync_gap
+    issue: The Manual GUI creates all seven target controls at zero and publishes the complete target array whenever Send Joint Target or Live send runs. If Use Feedback was not pressed after startup or an external/manual reposition, changing one control can command every other joint toward stale slider values. This behavior caused multiple rejected physical test runs before feedback synchronization was identified; the driver bounds limited values but cannot infer operator intent.
+    next_cut: Initialize the Manual target from the first fresh feedback, visibly mark it unsynchronized after stale or missing feedback, refuse Send and Live send until synchronized, and confirm the full target plus per-joint deltas before publishing. Add GUI tests for startup, external reposition, zero target, and one-joint edits.
+  - id: gui_preview_world_model_gap
+    issue: The native GUI now coordinates a real-STL RViz digital twin with six URDF-axis rotation handles, private preview TF/topics, conservative joint/robot/floor path checks, and a confirmed 10-percent-capped mirror command, but the RViz window is separate from Tk and the mirror gate does not consume live obstacle boxes.
+    next_cut: Feed reviewed fresh obstacle geometry into the mirror gate and migrate the operator shell to Qt if an embedded RViz panel is required.
+  - id: execution_validation_gap
+    issue: >-
+      A separate proposal-first executor now accepts only Tesseract all-six-joint trajectories,
+      applies conservative bounds and capsule/AABB rechecks, typed approval/status, cancellation,
+      TrackingHealth gating, and automatic capture sequencing. It is not a full mesh/world collision
+      planner. The former fixed-J6 IK/backend was removed on 2026-07-24 after the operator confirmed
+      J6 fully safe on 2026-07-17. The Foxy-facing Tesseract adapter accepts all-six-joint paths with no J6-specific cost,
+      exact trajectory hashes, and a collision-qualification gate. Its checked-in worker/model
+      scope passed qualification on 2026-07-23 and repeated with identical seed-42 output after the
+      worker began applying the canonical seed before planner construction on 2026-07-24.
+      The 2026-07-14 live proposal-only test rejected the compact starting pose because J2 was
+      slightly below its URDF lower bound, wrist/base clearance failed, and -10-degree orbit
+      viewpoints were below the configured camera-height floor for the live target. On 2026-07-17
+      the current pose produced 12 workspace-safe candidates, but the nearest required a 0.380 m
+      initial camera move and was correctly rejected by the 0.250 m ingress limit. Workflow
+      subscription retention and idle-cloud starvation were repaired; the same run then remained
+      fail-closed before SCAN_READY because the SAM2 target-mask publisher was absent and the
+      landmark could not publish a fresh LOCKED state.
+      On 2026-07-21 the restarted perception path was healthy and the staggered proposal launch
+      produced 11 of 18 workspace-safe candidates. Two canonical requests reached the isolated
+      worker and returned structured rejections because live J2 near -0.034 rad was below the
+      mode-0 0.0 rad lower limit. A separately supervised normalization then enabled a successful
+      five-view proposal. The 2026-07-23 collision qualification closes the model gate for its
+      declared scope. A 2026-07-24 rough-coordinate replay reached the
+      worker with four of five workspace-safe looks and reproduced the same fail-closed boundary at
+      exact live J2 -0.03164 rad; the snapshot was not clipped or loosened. After an in-limit start,
+      rough acquisition succeeded at 5 percent and a fresh exact all-six-joint Tesseract plan
+      completed five physical viewpoints with five accepted/modeled clouds on 2026-07-24. Acceptance
+      exposed and fixed post-motion depth latching, TF starvation, tracking-freshness mismatch,
+      target-cloud QoS incompatibility, and capture/status ordering.
+    next_cut: Preserve the successful 2026-07-24 5-percent path as a historical regression fixture, noting that it used the former stop-per-sample executor. The 2026-07-29 live timed_movej_v2 acquisition reached SCAN_READY but emitted 7281 targets and proved that the PiPER SDK ignored transported qdot/qddot. sdk_movej_targets_v1 now binds one collision-validated direct target per viewpoint, with only one optional folded-start bootstrap target, passes both rootless qualifications, and completed exact 13-view physical plan 7474484cfd3ddb50 at 5 percent. Repeat a deliberate cancel-to-hold and cold-start 13-view run. Characterize measured progress and endpoint settling at 1/5/10/100 percent before treating higher speeds as dynamically qualified. Do not clip/fake snapshots or weaken limits.
+  - id: foxy_proposal_callback_delivery
+    issue: >-
+      On 2026-07-21 Foxy/Fast DDS exposed already-running /arm_status and
+      /joint_states_single endpoints while safety callbacks stalled. The proposal wrapper now
+      sources only Foxy/PiPER overlays and staggers participants. On 2026-07-25 the GUI also saw
+      the sole executor publisher with transient _UNKNOWN_ identity; its bounded identity proof
+      still requires exact sole ownership. On 2026-07-27 two GUI participants consumed
+      approximately 125 GiB and were OOM-killed; GDB located corrupt ParticipantEntitiesInfo graph
+      deserialization through shared memory. The loopback-only UDP profile avoids that path. A
+      later acquisition child exit exposed a second stability gap: the service disappeared while
+      its launch parent stayed alive, and stale-input recovery was itself creating DDS graph churn.
+      The bridge and reachability filter now create subscriptions once and fail closed on stale
+      data; the worker emits an atomic heartbeat; typed readiness gates GUI startup; and launch
+      treats every nonvisual scan child as critical. A three-package build, 58 focused stability
+      tests, a 143-test wider suite, both rootless qualifications, and a 12-second isolated
+      proposal-only launch pass. No physical motion was used for this repair.
+    next_cut: Preserve fastdds_gui_udp_only.xml, stable lifetime-owned scan subscriptions, heartbeat/readiness gates, and critical-child supervision. Repeat complete GUI start/stop, exact duplicate acquisition retry, child-kill, worker-crash, stale-feedback, and service-disappearance acceptance over multiple live domain-42 cycles while confirming GPU workers and driver remain alive. Do not restore runtime endpoint recreation or weaken freshness gates.
+  - id: tesseract_runtime_qualification
+    issue: Rootless Ubuntu 24.04 via Bubblewrap removed the Podman/sudo blocker. On 2026-07-20/21 Tesseract 0.35.0.6 imported, loaded the PiPER model and KDL/Bullet plugins, matched the mode-0 FK oracle to 2.78e-16, and produced finite timed all-six-joint paths. The high-level freespace TrajOpt composition aborted after raw OMPL succeeded, so the current qualified scaffold explicitly runs OMPL then ISP, densifies, and revalidates the exact path. A live request with a valid foreground collision box selected five of seven views and reached Foxy PROPOSAL_READY. On 2026-07-24 a marginal stochastic detour result exposed that deterministic_seed existed in the request but was not applied to OMPL. The worker now seeds OMPL with pinned seed 42 before constructing any planner, rejects seed mismatch, and two complete qualifications returned identical PASS metrics without weakening collision margins. Runtime inspection confirmed a distinct network namespace, cleared ROS environment, and minimal synthetic /dev without CAN/camera/GPU devices. Rootfs and complete Conda/pip lock hashes are recorded locally. A formal SBOM, repeated environment lifecycle, malformed spool soak, FCL cross-check, and crash recovery remain incomplete.
+    next_cut: Preserve the exact Canonical rootfs and wheel hashes, export the complete Micromamba/pip lock and SBOM, run repeated import/plugin/KDL/OMPL/ISP/Bullet teardown and crash soak, investigate TrajOpt and FCL separately without placing either unqualified path into production, and replace the Python worker with a pinned C++ executable if binding lifetime acceptance fails. Do not fall back to production Tesseract 0.4.
+  - id: tesseract_collision_qualification
+    issue: >-
+      Resolved for the checked-in supervised guarded scope on 2026-07-23:
+      collision_model.yaml is qualified_for_hardware true after conservative L515/mount/local-cable
+      envelopes, reviewed pair overrides, a 0.005 m global margin, bounded adaptive exact-path Bullet
+      validation, and deterministic clear-endpoint/midpoint-collision OMPL-detour regression passed.
+      On 2026-07-25 a captured exact all-zero ROUGH_ACQUISITION request exposed nonpenetrating
+      base_link/link2 and link2/link4 clearances below the generic margin. Named positive
+      pair-specific compact-design margins with conservative relative-motion bounds were reviewed,
+      the global 0.005 m margin was retained, and the complete qualification plus a 51-point,
+      3501-sample zero-start acquisition regression passed.
+      Later that day the exact nonzero folded start was qualified with deterministic 30 mm
+      link1/link2/link5 pieces and a first-segment-only monotonic recovery. It produced J3 -0.05
+      rad through point 55 of 352 and passed 5608 validation samples. Core and compact suites both
+      returned collision_model_qualified_for_hardware true.
+      The repeatably crashing nanobind continuous-manager path is disabled and no result claims
+      BulletCast or FCL. This is not functional-safety certification; the later successful
+      five-view physical run does not remove the need for supervised regression and cancel-to-hold.
+    next_cut: >-
+      Preserve the exact qualified model/runtime hashes and rerun the full qualification whenever
+      geometry, margins, pair overrides, planner, waypoint generation, or validation changes.
+      Complete formal SBOM/lifecycle/fuzz/crash soak and a deliberate supervised cancel-to-hold
+      acceptance; do not broaden the declared model scope without new reviewed evidence.
+  - id: tesseract_timing_adapter
+    issue: >-
+      The 2026-07-27 timed_movej_v2 path was physically exercised at 5 percent on 2026-07-29.
+      It reached measured SCAN_READY with 0.016 rad maximum observed position error, but emitted
+      7281 targets and confirmed a fundamental interface mismatch: PiPER MoveJ accepts joint
+      positions and one aggregate speed, while it ignores transported per-joint qdot/qddot.
+      The resulting target churn was slow/choppy and also repeatedly ran the gripper-bound check.
+      A later feedback-gated waypoint attempt completed acquisition with 70 commands but still
+      looked segmented, while one GUI target returned smoothly to compact. sdk_movej_targets_v1
+      now emits one final target per viewpoint, uses exact-zero derivative placeholders, adaptively
+      collision-validates the direct SDK-interpolated segment, and hashes it with controller limits
+      and selected speed. Only folded-start acquisition may add one proven bootstrap target. Foxy
+      waits for measured convergence and applies bounded target/no-progress timeouts.
+      The driver never sends GripperCtrl for that six-position form. The packages build, the
+      focused suite passes 184 tests, and both rootless collision qualifications pass with
+      real_arm_motion=false; physical acceptance is still pending.
+    next_cut: Preserve the completed 5-percent 13-view run as the direct-target regression, then deliberately cancel a new safe run to verify hold and repeat from a cold start. Confirm there is one JointCtrl target per viewpoint except the optional acquisition bootstrap, the gripper receives no automation command, controller-limit hashes stay stable, feedback advances each target once, and endpoint position/velocity settle. Characterize measured motion at 1/5/10/100 percent before qualifying higher speeds; do not claim qdot/qddot tracking through MoveJ.
+  - id: rough_target_acquisition_hardware_acceptance
+    issue: >-
+      Command-free rough-coordinate acquisition, schema-v5 plan-kind/provenance/scene-mode/controller-limit/timing binding,
+      five distinct centered bounded-radius orbit poses whose first look preserves the live camera
+      pose when it is already within the 0.45 m maximum standoff, acquisition-only tracking-gate relaxation,
+      GUI-selected 1-100 percent SDK execution, post-settle image/request correlation, 10-second fresh-frame,
+      60-second GroundingDINO and 10-second measured-lock stages, 0.30 m rough-to-measured
+      association, ACQUIRED workflow handoff, and ACQUISITION_FAILED hold are implemented. The
+      2026-07-27 Step 4 blocker was an authority mismatch: acquisition trusted measured
+      TrackedTarget/TrackingHealth/LOCKED while the workflow/GUI waited on target_landmark. The
+      workflow and GUI now use the same measured tuple, report measured_lock_ready/rejection, retain
+      target_landmark as diagnostics only, and ignore late heavy-worker status after cancellation.
+      A later live 100-percent timed acquisition triggered the sustained following-error hold before
+      ACQUIRED, while perception subsequently reported a valid settled measured lock and the
+      workflow remained IDLE. Step 4 now explicitly adopts such a fresh current lock as a new scan
+      phase, starts/restarts workflow assessment, waits for SCAN_READY, and requests a new plan
+      under a separate approval. It does not relabel or reuse the failed acquisition.
+      If the GUI-owned worker/scan stack was stopped, Step 4 now uses direct fresh settled measured
+      tracking only to restart it, then waits for the workflow to validate the full authoritative
+      lock before adoption or planning. The current targeted regression command passes 104 tests,
+      including the GUI/scan Fast DDS transport contract.
+      This repair has focused test/build coverage but still needs the next live measured-lock handoff.
+      The
+      GUI now manages worker/scan ownership with one exact acquisition confirmation and a separate
+      exact five-view confirmation after explicit Prepare Scan from Current Lock. A 2026-07-24 live attempt produced four of five workspace-safe acquisition looks
+      but exposed Foxy callback loss for the one-shot reachable payload and continuous obstacle
+      scene at the bridge. The handoff now has bounded 0.5-second republish/non-queued-call retry
+      for at most 10 seconds, while bridge and reachability subscriptions remain stable for node
+      lifetime and stale data fails closed. PrepareAcquisition atomically binds a unique session,
+      exact duplicate retries are idempotent, and source_request_id reaches both typed plans and GUI
+      acceptance. At most one service call remains in flight and one spool request is accepted. The focused package rebuild,
+      relevant integration/Tesseract tests, and rootless qualification pass. Later on 2026-07-24 an
+      exact approved ROUGH_ACQUISITION trajectory moved the physical arm at 5 percent, used a fresh
+      GroundingDINO result, recovered measured LOCKED tracking near the hint, held, and handed off to
+      the normal workflow. The former pre-first-look obstacle dependency is removed: only the first
+      segment uses bootstrap_static, and target-missing results now require an exact-stamp empty
+      scene or obstacle-only SAM2/depth scene before a later segment. On 2026-07-25 a cold all-zero
+      request for [0.33, -0.14, 0.0] reached four workspace-safe candidates but OMPL rejected its
+      nonpenetrating start against the generic margin. The qualified named compact-pair margins and
+      permanent zero-start regression now cover that valid start without weakening the global
+      margin or allowing penetration. Invalid Tesseract responses also preserve their original
+      ROUGH_ACQUISITION plan kind instead of being relabelled MULTIVIEW_SCAN.
+    next_cut: >-
+      Run proposal-only tests with duplicate, rebound, stale, wrong-frame, unreachable, occluded,
+      collision-blocked, and cross-session requests; retain the successful centered 5-percent acquisition as historical
+      physical acceptance, validate selected-speed propagation at 1/5/10/100 percent, and retain correlated
+      heavy-detection/workflow handoff as regression fixtures; then complete cancel-to-hold and a
+      deliberately failed bounded sweep under supervision. Confirm driver/camera/perception survive GUI stack
+      stop, that ACQUIRED/SCAN_READY never auto-request a plan, that only the explicitly correlated
+      current-lock request can be separately confirmed, and that a second plan cannot consume the
+      finished session. Do not widen the sweep,
+      extend hint life, broaden the first-segment scene exception, bypass the correlated scene gate
+      on later looks, or reuse a session merely to make acquisition appear successful.
+  - id: reconstruction_gap
+    issue: Multi-view target model is accumulated PointCloud2 geometry, not TSDF/mesh reconstruction; Open3D is not a declared dependency. The supervised executor records synchronized raw RGB, raw depth, viewable 16-bit depth, mask, intrinsics, joints, and execution metadata once per accepted viewpoint. The 2026-07-29 dataset scan_20260729_150616 live-audited all 13 records with one plan/session, GOOD quality, CLEAR occlusion, and exact RGB/depth stamps.
+    next_cut: Repeat the stationary 13-view run for registration repeatability, then add an isolated reconstruction worker that consumes those immutable records and publishes typed mesh status without changing the qualified motion boundary.
+  - id: json_topics
+    issue: Many runtime contracts use std_msgs/String JSON and can truncate visibly in ros2 topic echo or drift silently.
+    next_cut: Migrate stable heavy-refresh, SAM2 status, scan quality, occlusion, viewpoints, and workflow plan/status contracts to custom messages incrementally.
+  - id: launch_fragmentation
+    issue: Shell wrappers and multiple overlays still duplicate some environment/topic defaults. The unused command-coupled piper/start_single_piper_rviz.launch.py, display_xacro.launch.py, joint_state_publisher_gui dependency, Gazebo/transmission stubs, simulation configs, girpper_exist alias, and rviz_ctrl_flag were removed on 2026-07-24. The safe live path remains piper_description/display_live_robot.launch.py, and the private interactive path remains joint_preview.launch.py.
+    next_cut: Centralize remaining launch arguments and keep wrappers as thin validated operator entrypoints. If simulation is needed later, add it as a separately owned model/launch path that cannot share the hardware command topic.
+  - id: stale_operator_docs
+    issue: OPERATOR_COMMANDS references a reverted GitHub main while the active worktree contains substantial uncommitted recovery changes.
+    next_cut: Record a tested worktree baseline and remove commit-specific claims once changes are reviewed.
+  - id: duplicate_build_tree
+    status: resolved_2026-07-25
+    issue: An obsolete generated repository-root build/install/log tree shadowed piper_ros_foxy/install, lacked scan_capture and the schema-v3 bootstrap-recovery message fields, and caused GUI Step 2 child-process failure.
+    next_cut: Keep root build/install/log absent and ignored, build only from piper_ros_foxy, and preserve source_piper_foxy_environment.sh exact-prefix/import/schema preflight in every GUI or scan launcher.
+  - id: hardcoded_paths
+    issue: Active scan dataset defaults to /home/prl/Piper_arm and several scripts assume the current host layout.
+    next_cut: Resolve package/share or PIPER_ARM_ROOT consistently and make dataset roots launch arguments.
+  - id: foxy_eol
+    issue: ROS 2 Foxy and Python 3.8 are end-of-life, forcing an isolated mixed-Python stack.
+    next_cut: Plan a versioned migration only after current hardware/perception acceptance tests are captured.
+  - id: safety_model
+    issue: Joint bounds are measured JSON plus SDK fallbacks; J6 controller zero was recalibrated and verified at physical neutral on 2026-07-14, its previous measured bound record remains invalid historical data, and no full kinematic/collision safety layer exists. The operator confirmed J6 fully safe on 2026-07-17, so Tesseract treats it like every other joint using the available controller/URDF limit source. A mathematically proposed J6-frame hand-eye adjustment failed the 2026-07-15 physical test and must not be reinstated; the original transform remains deployed. This confirmation does not claim replacement measured bounds or a new calibration run.
+    next_cut: Preserve the completed ordinary six-joint Tesseract model/limit/collision qualification and rerun it after any model, limit, planner, timing, or validator change. Re-record controlled J6 limits and repeat fixed-board/FK validation when new measurement evidence is available, preserving both as provenance improvements rather than prerequisites invented by this policy update.
+recommended_sequence:
+  - Preserve the accepted stationary-cube tracking and five-view 5-percent run as repeatable regressions.
+  - Lock hand-eye/TF repeatability acceptance data.
+  - Repeat rough-coordinate acquisition from a cold start and complete the bounded no-lock/cancel-to-hold cases before relying on an external coordinate publisher.
+  - Preserve source-level regression coverage proving the removed fixed-J6 backend/helper do not return, plus the qualified typed Tesseract boundary that treats all six joints equally, including collision planning, exact hash approval, cancellation, and proposal-only mode.
+  - Repeat the completed five-view automatic capture after cold restart and characterize feedback-gated SDK MoveJ waypoint progress and endpoint settling.
+  - Replace conservative collision proxies with a reviewed full robot/environment collision model before expanding workspace or speed.
+  - Add gated multi-view TSDF reconstruction.
+out_of_scope_until_core_passes: [autonomous pushing, reinforcement learning, unsupervised real-arm motion]

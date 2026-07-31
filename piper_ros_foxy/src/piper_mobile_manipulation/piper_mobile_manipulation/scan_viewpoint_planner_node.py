@@ -1,13 +1,52 @@
 #!/usr/bin/env python3
 import json
-import math
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import CameraInfo
 from std_msgs.msg import String
 
 from piper_mobile_manipulation.msg import Target3D, TrackedTarget
+from piper_mobile_manipulation.scan_motion import orbit_camera_view
+from piper_mobile_manipulation.scan_session_memory import (
+    filter_and_order_viewpoints,
+    validate_history_payload,
+)
+
+
+def build_viewpoint_angles(center_deg, desired_deg, step_deg, max_viewpoints):
+    """Build one ordered orbit sector without duplicating a full-circle endpoint."""
+    center = float(center_deg)
+    desired = min(abs(float(desired_deg)), 360.0)
+    step = max(abs(float(step_deg)), 1e-3)
+    max_count = max(int(max_viewpoints), 1)
+    half = desired * 0.5
+    angles = []
+    current = center - half
+    terminal = center + half
+    full_circle = desired >= 360.0 - 1e-9
+    while current < terminal - 1e-6 if full_circle else current <= terminal + 1e-6:
+        angles.append(round(current, 6))
+        current += step
+    if not angles:
+        angles = [round(center, 6)]
+    elif not full_circle and angles[-1] < terminal - 1e-6:
+        angles.append(round(terminal, 6))
+    if len(angles) > max_count:
+        angles = evenly_downsample(angles, max_count)
+    return angles
+
+
+def evenly_downsample(values, max_count):
+    if max_count == 1:
+        return [values[len(values) // 2]]
+    last = len(values) - 1
+    indexes = [
+        int(round(i * last / float(max_count - 1)))
+        for i in range(max_count)
+    ]
+    return [values[i] for i in indexes]
 
 
 class ScanViewpointPlannerNode(Node):
@@ -20,23 +59,31 @@ class ScanViewpointPlannerNode(Node):
         self.declare_parameter('camera_info_topic', '/camera/color/camera_info')
         self.declare_parameter('scan_viewpoints_topic', '/piper/scan_viewpoints')
         self.declare_parameter('scan_coverage_topic', '/piper/scan_coverage')
+        self.declare_parameter(
+            'scan_session_history_topic', '/piper/scan_session_history')
 
         self.declare_parameter('desired_scan_angle_deg', 250)
+        self.declare_parameter('viewpoint_center_angle_deg', 0.0)
         self.declare_parameter('viewpoint_step_deg', 15)
         self.declare_parameter('scan_radius_m', 0.45)
         self.declare_parameter('min_scan_radius_m', 0.30)
         self.declare_parameter('max_scan_radius_m', 0.80)
         self.declare_parameter('camera_pitch_deg', -10)
+        self.declare_parameter('camera_pitch_offsets_deg', [0.0])
         self.declare_parameter('keep_object_centered', True)
         self.declare_parameter('max_viewpoints', 20)
         self.declare_parameter('dry_run', True)
         self.declare_parameter('debug', True)
         self.declare_parameter('use_predicted_target_for_scan', True)
         self.declare_parameter('tracked_preference_timeout_s', 1.0)
+        self.declare_parameter('session_max_views', 13)
+        self.declare_parameter('duplicate_position_tolerance_m', 0.012)
+        self.declare_parameter('duplicate_look_tolerance_deg', 2.0)
 
         self.target_status = 'UNKNOWN'
         self.latest_camera_info = None
         self.last_tracked_time = None
+        self.latest_history = None
         self.pub_viewpoints = self.create_publisher(
             String, self.get_parameter('scan_viewpoints_topic').value, 10
         )
@@ -74,8 +121,20 @@ class ScanViewpointPlannerNode(Node):
             self.camera_info_cb,
             10,
         )
+        history_qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self.history_sub = self.create_subscription(
+            String,
+            self.get_parameter('scan_session_history_topic').value,
+            self.history_cb,
+            history_qos,
+        )
         self.get_logger().warn(
-            'Scan viewpoint planner is dry-run only; it does not publish /piper/servo_cmd or move the arm.'
+            'Scan viewpoint planner is dry-run only; it does not publish '
+            '/piper/servo_cmd or move the arm.'
         )
 
     def status_cb(self, msg):
@@ -84,15 +143,26 @@ class ScanViewpointPlannerNode(Node):
     def camera_info_cb(self, msg):
         self.latest_camera_info = msg
 
+    def history_cb(self, msg):
+        try:
+            payload = json.loads(msg.data)
+            self.latest_history = validate_history_payload(
+                payload, self.get_parameter('session_max_views').value)
+        except (TypeError, ValueError, json.JSONDecodeError) as error:
+            self.latest_history = None
+            self.get_logger().warn('Ignoring invalid scan session history: %s' % error)
+
     def target_cb(self, msg, source):
         if not msg.valid:
             return
-        if source in ('target_3d', 'object_of_interest_3d') and self.recent_tracked_target_available():
+        if source in ('target_3d', 'object_of_interest_3d') and \
+                self.recent_tracked_target_available():
             return
 
         dry_run = self.param_bool('dry_run')
         if not dry_run:
-            self.get_logger().warn('dry_run parameter was false; forcing planner output to dry-run semantics')
+            self.get_logger().warn(
+                'dry_run parameter was false; forcing planner output to dry-run semantics')
 
         center = {
             'x': float(msg.point.x),
@@ -103,9 +173,37 @@ class ScanViewpointPlannerNode(Node):
         angles = self.viewpoint_angles()
         radius = self.scan_radius()
         viewpoints = []
-        for index, angle_deg in enumerate(angles):
-            viewpoint = self.make_viewpoint(index, angle_deg, radius, center, frame_id)
-            viewpoints.append(viewpoint)
+        index = 0
+        for pitch_offset_deg in self.get_parameter(
+                'camera_pitch_offsets_deg').value:
+            pitch_deg = (
+                float(self.get_parameter('camera_pitch_deg').value)
+                + float(pitch_offset_deg))
+            for angle_deg in angles:
+                viewpoint = self.make_viewpoint(
+                    index, angle_deg, radius, center, frame_id, pitch_deg)
+                viewpoints.append(viewpoint)
+                index += 1
+        history = self.latest_history or {
+            'session_id': '',
+            'accepted_views': 0,
+            'max_views': int(self.get_parameter('session_max_views').value),
+            'entries': [],
+        }
+        viewpoints = filter_and_order_viewpoints(
+            viewpoints,
+            history['entries'],
+            self.get_parameter('duplicate_position_tolerance_m').value,
+            self.get_parameter('duplicate_look_tolerance_deg').value,
+        )
+        remaining = max(
+            0, int(history['max_views']) - int(history['accepted_views']))
+        # Keep extra collision/workspace-qualified candidates as fallbacks.
+        # Tesseract still selects exactly ``remaining`` views.  This permits a
+        # two-dimensional azimuth/elevation candidate dome without weakening
+        # the exact 13-capture contract.
+        if remaining == 0:
+            viewpoints = []
 
         requested_coverage = float(self.get_parameter('desired_scan_angle_deg').value)
         achieved_dry_run_coverage = self.coverage_from_angles(angles)
@@ -127,6 +225,12 @@ class ScanViewpointPlannerNode(Node):
                 'target_status': self.target_status,
                 'target_object_center': center,
                 'camera_info': camera_info,
+                'scan_session': {
+                    'session_id': history['session_id'],
+                    'accepted_views': int(history['accepted_views']),
+                    'max_views': int(history['max_views']),
+                },
+                'remaining_viewpoints': int(remaining),
                 'viewpoints': viewpoints,
             },
             sort_keys=True,
@@ -145,9 +249,13 @@ class ScanViewpointPlannerNode(Node):
                 'planned_scan_angle_deg': achieved_dry_run_coverage,
                 'viewpoint_step_deg': float(self.get_parameter('viewpoint_step_deg').value),
                 'candidate_viewpoints': len(viewpoints),
+                'session_accepted_views': int(history['accepted_views']),
+                'session_remaining_views': int(remaining),
                 'reachable_viewpoints': 0,
                 'safe_viewpoints': 0,
-                'note': 'reachability and safety are intentionally false until a later dry-run evaluator is added',
+                'note': (
+                    'reachability and safety are intentionally false until a later '
+                    'dry-run evaluator is added'),
             },
             sort_keys=True,
         )
@@ -155,7 +263,8 @@ class ScanViewpointPlannerNode(Node):
 
         if self.param_bool('debug'):
             self.get_logger().info(
-                'planned %d dry-run scan viewpoints around target from %s coverage=%.1fdeg radius=%.2fm'
+                'planned %d dry-run scan viewpoints around target from %s '
+                'coverage=%.1fdeg radius=%.2fm'
                 % (len(viewpoints), source, achieved_dry_run_coverage, radius)
             )
 
@@ -183,27 +292,24 @@ class ScanViewpointPlannerNode(Node):
         age = (self.get_clock().now() - self.last_tracked_time).nanoseconds * 1e-9
         return age <= float(self.get_parameter('tracked_preference_timeout_s').value)
 
-    def make_viewpoint(self, index, angle_deg, radius, center, frame_id):
-        angle_rad = math.radians(angle_deg)
+    def make_viewpoint(
+            self, index, angle_deg, radius, center, frame_id,
+            pitch_deg=None):
+        if pitch_deg is None:
+            pitch_deg = float(self.get_parameter('camera_pitch_deg').value)
+        pitch_deg = float(pitch_deg)
+        camera_vector, look_vector = orbit_camera_view(
+            [center['x'], center['y'], center['z']], angle_deg, radius, pitch_deg)
         camera_position = {
-            'x': center['x'] + radius * math.cos(angle_rad),
-            'y': center['y'] + radius * math.sin(angle_rad),
-            'z': center['z'],
+            'x': float(camera_vector[0]),
+            'y': float(camera_vector[1]),
+            'z': float(camera_vector[2]),
         }
-        look = {
-            'x': center['x'] - camera_position['x'],
-            'y': center['y'] - camera_position['y'],
-            'z': center['z'] - camera_position['z'],
+        look_direction = {
+            'x': float(look_vector[0]),
+            'y': float(look_vector[1]),
+            'z': float(look_vector[2]),
         }
-        look_norm = math.sqrt(look['x'] ** 2 + look['y'] ** 2 + look['z'] ** 2)
-        if look_norm > 1e-9:
-            look_direction = {
-                'x': look['x'] / look_norm,
-                'y': look['y'] / look_norm,
-                'z': look['z'] / look_norm,
-            }
-        else:
-            look_direction = {'x': 0.0, 'y': 0.0, 'z': 0.0}
 
         return {
             'index': int(index),
@@ -213,38 +319,23 @@ class ScanViewpointPlannerNode(Node):
             'desired_camera_position': camera_position,
             'desired_look_at_direction': look_direction,
             'camera_object_distance_m': float(radius),
-            'camera_pitch_deg': float(self.get_parameter('camera_pitch_deg').value),
+            'camera_pitch_deg': pitch_deg,
             'keep_object_centered': self.param_bool('keep_object_centered'),
             'reachable': False,
             'safe': False,
         }
 
     def viewpoint_angles(self):
-        desired = abs(float(self.get_parameter('desired_scan_angle_deg').value))
-        step = max(abs(float(self.get_parameter('viewpoint_step_deg').value)), 1e-3)
-        max_viewpoints = max(int(self.get_parameter('max_viewpoints').value), 1)
-        half = desired * 0.5
-        angles = []
-        current = -half
-        while current <= half + 1e-6:
-            angles.append(round(current, 6))
-            current += step
-        if angles[-1] < half:
-            angles.append(round(half, 6))
-        if len(angles) > max_viewpoints:
-            angles = self.evenly_downsample(angles, max_viewpoints)
-        return angles
+        return build_viewpoint_angles(
+            self.get_parameter('viewpoint_center_angle_deg').value,
+            self.get_parameter('desired_scan_angle_deg').value,
+            self.get_parameter('viewpoint_step_deg').value,
+            self.get_parameter('max_viewpoints').value,
+        )
 
     @staticmethod
     def evenly_downsample(values, max_count):
-        if max_count == 1:
-            return [values[len(values) // 2]]
-        last = len(values) - 1
-        indexes = [
-            int(round(i * last / float(max_count - 1)))
-            for i in range(max_count)
-        ]
-        return [values[i] for i in indexes]
+        return evenly_downsample(values, max_count)
 
     @staticmethod
     def coverage_from_angles(angles):

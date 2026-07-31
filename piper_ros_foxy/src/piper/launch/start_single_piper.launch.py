@@ -3,6 +3,7 @@ from launch_ros.actions import Node
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 
+
 def generate_launch_description():
     # Declare the launch arguments
     can_port_arg = DeclareLaunchArgument(
@@ -12,21 +13,16 @@ def generate_launch_description():
     )
     auto_enable_arg = DeclareLaunchArgument(
         'auto_enable',
-        default_value='true',
-        description='Automatically enable the Piper node.'
+        default_value='false',
+        description='Explicit motor-enable opt-in; the supported system leaves this false.'
     )
 
-    rviz_ctrl_flag_arg = DeclareLaunchArgument(
-        'rviz_ctrl_flag',
-        default_value='false',
-        description='Start rviz flag.'
-    )
     joint_ctrl_topic_arg = DeclareLaunchArgument(
         'joint_ctrl_topic',
         default_value='/joint_ctrl_single',
         description='JointState command topic consumed by the Piper node.'
     )
-    
+
     gripper_exist_arg = DeclareLaunchArgument(
         'gripper_exist',
         default_value='true',
@@ -42,12 +38,6 @@ def generate_launch_description():
         default_value='',
         description='JSON file containing hard joint command bounds.'
     )
-    girpper_exist_arg = DeclareLaunchArgument(
-        'girpper_exist',
-        default_value='true',
-        description='Deprecated alias for gripper_exist.'
-    )
-    
     # Define the node
     piper_node = Node(
         package='piper',
@@ -57,9 +47,7 @@ def generate_launch_description():
         parameters=[{
             'can_port': LaunchConfiguration('can_port'),
             'auto_enable': LaunchConfiguration('auto_enable'),
-            'rviz_ctrl_flag': LaunchConfiguration('rviz_ctrl_flag'),
             'gripper_exist': LaunchConfiguration('gripper_exist'),
-            'girpper_exist': LaunchConfiguration('girpper_exist'),
             'enable_timeout': LaunchConfiguration('enable_timeout'),
             'joint_bounds_path': LaunchConfiguration('joint_bounds_path'),
         }],
@@ -72,11 +60,9 @@ def generate_launch_description():
     return LaunchDescription([
         can_port_arg,
         auto_enable_arg,
-        rviz_ctrl_flag_arg,
         joint_ctrl_topic_arg,
         gripper_exist_arg,
         enable_timeout_arg,
         joint_bounds_path_arg,
-        girpper_exist_arg,
         piper_node
     ])

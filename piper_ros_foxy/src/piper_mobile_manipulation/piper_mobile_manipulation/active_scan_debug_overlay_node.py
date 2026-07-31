@@ -165,14 +165,16 @@ class ActiveScanDebugOverlayNode(Node):
         self.pub.publish(out)
 
     def overlay_lines(self, base_source):
-        detection_status = 'detector: unknown'
+        detection_status = 'live mask/depth confidence: unknown'
         if self.latest_detection is not None:
             det, age_stamp = self.latest_detection
             age = time.monotonic() - age_stamp
             if age <= self.stale_timeout():
-                detection_status = 'detector: valid=%s conf=%.2f' % (det.valid, det.confidence)
+                detection_status = (
+                    'live mask/depth confidence: valid=%s score=%.2f'
+                    % (det.valid, det.confidence))
             else:
-                detection_status = 'detector: stale %.1fs' % age
+                detection_status = 'live mask/depth confidence: stale %.1fs' % age
 
         target_status = 'target: unknown'
         target_depth = 'distance: unknown'

@@ -48,6 +48,17 @@ class EmptyThenRecoverPredictor(FakePredictor):
         return super().infer_single_frame(state, frame_idx)
 
 
+class ShiftOnInferencePredictor(FakePredictor):
+    """Move every mask one column per propagated frame."""
+
+    def infer_single_frame(self, state, frame_idx):
+        state['masks'] = {
+            key: np.roll(mask, 1, axis=1)
+            for key, mask in state['masks'].items()
+        }
+        return super().infer_single_frame(state, frame_idx)
+
+
 class Sam2LiveWorkerTest(unittest.TestCase):
     @staticmethod
     def write_seed(spool, name, rgb, mask):
@@ -70,6 +81,24 @@ class Sam2LiveWorkerTest(unittest.TestCase):
         with (frame / 'frame.yaml').open('w', encoding='utf-8') as stream:
             yaml.safe_dump({'image_stamp': {'sec': 1, 'nanosec': 2}, 'frame_id': 'camera'}, stream)
         (frame / 'READY').touch()
+
+    def test_objectless_single_mask_seed_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            spool = Path(temporary)
+            worker = Sam2LiveWorker(spool, device='cpu')
+            seed = spool / 'seeds' / '0001_old_single_mask'
+            seed.mkdir(parents=True)
+            rgb = np.zeros((24, 32, 3), dtype=np.uint8)
+            mask = np.zeros((24, 32), dtype=np.uint8)
+            mask[5:12, 4:10] = 255
+            cv2.imwrite(str(seed / 'rgb.jpg'), rgb)
+            cv2.imwrite(str(seed / 'mask.png'), mask)
+            with (seed / 'seed.yaml').open('w', encoding='utf-8') as stream:
+                yaml.safe_dump({'frame_key': seed.name}, stream)
+            (seed / 'READY').touch()
+
+            with self.assertRaisesRegex(ValueError, 'no labelled objects'):
+                worker.consume_latest_seed()
 
     def test_labelled_target_and_obstacles_are_propagated(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -172,6 +201,67 @@ class Sam2LiveWorkerTest(unittest.TestCase):
                 result = yaml.safe_load(stream)
             self.assertEqual(result['inference_size'], [16, 12])
             self.assertEqual(result['output_size'], [32, 24])
+
+    def test_obstacle_only_seed_remains_live_without_claiming_target(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            spool = Path(temporary)
+            worker = Sam2LiveWorker(spool, device='cpu')
+            worker.predictor = ShiftOnInferencePredictor()
+            rgb = np.zeros((12, 16, 3), dtype=np.uint8)
+            obstacle = np.zeros((12, 16), dtype=np.uint8)
+            obstacle[4:8, 2:5] = 255
+            seed = spool / 'seeds' / '0001_obstacle_only'
+            seed.mkdir(parents=True)
+            cv2.imwrite(str(seed / 'rgb.jpg'), rgb)
+            cv2.imwrite(str(seed / 'obstacle.png'), obstacle)
+            with (seed / 'seed.yaml').open('w', encoding='utf-8') as stream:
+                yaml.safe_dump({'objects': [{
+                    'object_id': 2,
+                    'role': 'obstacle',
+                    'label': 'hand',
+                    'unsafe': True,
+                    'mask_file': 'obstacle.png',
+                }]}, stream)
+            (seed / 'READY').touch()
+            self.assertTrue(worker.process_once())
+
+            self.write_frame(spool, '0002', rgb)
+            self.assertTrue(worker.process_once())
+            with (spool / 'results' / '0002' / 'result.yaml').open(
+                    'r', encoding='utf-8') as stream:
+                result = yaml.safe_load(stream)
+            ids = cv2.imread(
+                str(spool / 'results' / '0002' / 'object_ids.png'),
+                cv2.IMREAD_UNCHANGED)
+            self.assertEqual(result['status'], 'empty_target_mask')
+            self.assertEqual(result['tracking_state'], 'OBSTACLE_ONLY')
+            self.assertIsNotNone(worker.state)
+            self.assertEqual(set(np.unique(ids)), {0, 2})
+
+    def test_rolling_reset_uses_mask_propagated_to_current_frame(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            spool = Path(temporary)
+            worker = Sam2LiveWorker(spool, device='cpu', max_session_frames=2)
+            worker.predictor = ShiftOnInferencePredictor()
+            rgb = np.zeros((12, 16, 3), dtype=np.uint8)
+            target = np.zeros((12, 16), dtype=np.uint8)
+            target[4:8, 2:5] = 255
+
+            self.write_seed(spool, '0001_seed', rgb, target)
+            self.assertTrue(worker.process_once())
+            self.write_frame(spool, '0002', rgb)
+            self.assertTrue(worker.process_once())
+            self.write_frame(spool, '0003', rgb)
+            self.assertTrue(worker.process_once())
+
+            mask = cv2.imread(
+                str(spool / 'results' / '0003' / 'mask.png'),
+                cv2.IMREAD_GRAYSCALE,
+            )
+            expected = np.zeros_like(target)
+            expected[4:8, 4:7] = 255
+            np.testing.assert_array_equal(mask, expected)
+            self.assertEqual(worker.session_frames, 1)
 
 
 if __name__ == '__main__':

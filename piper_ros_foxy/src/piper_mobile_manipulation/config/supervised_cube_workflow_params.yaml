@@ -1,11 +1,19 @@
 /**:
   ros__parameters:
     movable_whitelist: ["pen"]
-    min_views: 5
-    max_views: 8
+    min_views: 13
+    max_views: 13
     min_quality_score: 0.40
     center_convergence_m: 0.005
     target_motion_abort_m: 0.020
+    # A moving tracked target may change base_link position during an active
+    # scan. Keep the initial measured-lock gate, but do not abort SCAN_READY
+    # or WAIT_CAPTURE solely because the target moved.
+    allow_target_motion_during_scan: true
+    # A cube's visible-surface centroid shifts with view angle even while its
+    # physical center is stationary. This uncertainty is subtracted before the
+    # unchanged 20 mm physical-motion abort threshold is evaluated.
+    target_surface_measurement_uncertainty_m: 0.015
     obstacle_displacement_m: 0.050
     target_clearance_m: 0.040
     drop_target_clearance_m: 0.120

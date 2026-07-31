@@ -1,0 +1,8 @@
+std_msgs/Header header
+string request_id
+string state
+string reason
+bool dry_run
+bool real_arm_motion
+uint32 pending_requests
+uint32 pending_responses

@@ -12,6 +12,35 @@ from sensor_msgs.msg import CameraInfo, Image
 from piper_mobile_manipulation.msg import Detection2D, Target3D
 
 
+def depth_jump_reacquisition(
+        previous_depth, candidate_depth, maximum_jump, pending_depth,
+        pending_count, required_samples, consistency_tolerance):
+    """Reject one-off depth jumps but accept a short consistent new depth."""
+    if (
+            previous_depth is None
+            or maximum_jump <= 0.0
+            or abs(candidate_depth - previous_depth) <= maximum_jump):
+        return True, None, 0, False
+
+    required = max(int(required_samples), 1)
+    tolerance = max(float(consistency_tolerance), 0.0)
+    if (
+            pending_depth is None
+            or abs(candidate_depth - pending_depth) > tolerance):
+        if required == 1:
+            return True, None, 0, True
+        return False, float(candidate_depth), 1, False
+
+    count = int(pending_count) + 1
+    mean_depth = (
+        float(pending_depth) * float(max(count - 1, 1))
+        + float(candidate_depth)
+    ) / float(count)
+    if count >= required:
+        return True, None, 0, True
+    return False, mean_depth, count, False
+
+
 class DepthTo3DNode(Node):
     def __init__(self):
         super().__init__('depth_to_3d_node')
@@ -35,6 +64,8 @@ class DepthTo3DNode(Node):
         self.declare_parameter('max_depth_stddev_m', 0.08)
         self.declare_parameter('confidence_depth_stddev_m', 0.15)
         self.declare_parameter('max_depth_jump_m', 0.20)
+        self.declare_parameter('depth_jump_reacquire_samples', 3)
+        self.declare_parameter('depth_jump_reacquire_tolerance_m', 0.03)
         self.declare_parameter('smoothing_alpha', 0.2)
         self.declare_parameter('use_mask_depth', True)
         self.declare_parameter('mask_max_age_s', 0.20)
@@ -47,6 +78,8 @@ class DepthTo3DNode(Node):
         self.latest_mask_msg = None
         self.previous_depth = None
         self.previous_point = None
+        self.pending_jump_depth = None
+        self.pending_jump_count = 0
         self.refresh_runtime_params()
         self.sync_queue_size = int(self.get_parameter('sync_queue_size').value)
         self.sync_slop_sec = float(self.get_parameter('sync_slop_sec').value)
@@ -92,6 +125,8 @@ class DepthTo3DNode(Node):
         if not detection_msg.valid:
             self.previous_depth = None
             self.previous_point = None
+            self.pending_jump_depth = None
+            self.pending_jump_count = 0
             out.valid = False
             self.pub.publish(out)
             return
@@ -161,15 +196,36 @@ class DepthTo3DNode(Node):
         else:
             percentile = float(np.clip(self.depth_percentile, 0.0, 100.0))
             z = float(np.percentile(valid_depths, percentile))
-        if self.previous_depth is not None and abs(z - self.previous_depth) > self.max_depth_jump:
+        accept_depth, self.pending_jump_depth, self.pending_jump_count, resynced = \
+            depth_jump_reacquisition(
+                self.previous_depth,
+                z,
+                self.max_depth_jump,
+                self.pending_jump_depth,
+                self.pending_jump_count,
+                self.depth_jump_reacquire_samples,
+                self.depth_jump_reacquire_tolerance,
+            )
+        if not accept_depth:
             out.valid = False
             self.pub.publish(out)
             self.log_debug(
-                'Depth rejected jump %.3fm -> %.3fm max=%.3fm'
-                % (self.previous_depth, z, self.max_depth_jump),
+                'Depth jump awaiting consistent reacquisition %.3fm -> %.3fm '
+                'max=%.3fm sample=%d/%d'
+                % (
+                    self.previous_depth,
+                    z,
+                    self.max_depth_jump,
+                    self.pending_jump_count,
+                    self.depth_jump_reacquire_samples,
+                ),
                 warn=True,
             )
             return
+        if resynced:
+            # Camera-frame smoothing must not blend a newly accepted viewpoint
+            # with the stale pre-motion point.
+            self.previous_point = None
         fx = float(camera_info.k[0])
         fy = float(camera_info.k[4])
         cx = float(camera_info.k[2])
@@ -316,6 +372,13 @@ class DepthTo3DNode(Node):
         self.max_depth_stddev = float(self.get_parameter('max_depth_stddev_m').value)
         self.confidence_depth_stddev = float(self.get_parameter('confidence_depth_stddev_m').value)
         self.max_depth_jump = float(self.get_parameter('max_depth_jump_m').value)
+        self.depth_jump_reacquire_samples = max(
+            1, int(self.get_parameter('depth_jump_reacquire_samples').value))
+        self.depth_jump_reacquire_tolerance = max(
+            0.0,
+            float(self.get_parameter(
+                'depth_jump_reacquire_tolerance_m').value),
+        )
         self.smoothing_alpha = float(self.get_parameter('smoothing_alpha').value)
         self.use_mask_depth = bool(self.get_parameter('use_mask_depth').value)
         self.mask_max_age_s = float(self.get_parameter('mask_max_age_s').value)

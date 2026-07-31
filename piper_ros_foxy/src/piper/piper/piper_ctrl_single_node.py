@@ -2,18 +2,19 @@
 # -*-coding:utf8-*-
 # This file controls a single robotic arm node and handles the movement of the robotic arm with a gripper.
 import rclpy
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool
 import time
 import threading
-import argparse
 import math
+import hashlib
 import json
 import os
-from piper_sdk import *
 from piper_sdk import C_PiperInterface
-from piper_msgs.msg import PiperStatusMsg, PosCmd
+from piper_msgs.msg import PiperMotionLimits, PiperStatusMsg, PosCmd
 from piper_msgs.srv import Enable
 from geometry_msgs.msg import Pose
 from scipy.spatial.transform import Rotation as R  # For Euler angle to quaternion conversion
@@ -26,9 +27,111 @@ DEFAULT_JOINT_BOUNDS = {
     'joint3': (-2.8, 2.8),
     'joint4': (-2.8, 2.8),
     'joint5': (-2.1, 2.1),
-    'joint6': (-2.8, 2.8),
+    'joint6': (-2.0944, 2.0944),
     'joint7': (0.0, 0.08),
 }
+
+ENABLE_RETRY_PERIOD_SEC = 0.01
+MOTION_LIMIT_JOINT_NAMES = [
+    'joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6',
+]
+MAX_PROTOCOL_JOINT_SPEED_RAD_S = 3.0
+MAX_PROTOCOL_JOINT_ACCELERATION_RAD_S2 = 5.0
+
+
+def motion_limits_sha256(velocities, accelerations):
+    """Hash the controller limit values used to time a trajectory."""
+    payload = {
+        'joint_names': list(MOTION_LIMIT_JOINT_NAMES),
+        'max_velocity_rad_s': [round(float(value), 9) for value in velocities],
+        'max_acceleration_rad_s2': [
+            round(float(value), 9) for value in accelerations
+        ],
+        'source': 'piper_sdk_controller_feedback',
+    }
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(',', ':'), allow_nan=False,
+    ).encode('utf-8')
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def controller_motion_limits(piper, now_sec=None, maximum_age_sec=10.0):
+    """Return validated read-only J1-J6 limits cached by the PiPER SDK."""
+    now = time.time() if now_sec is None else float(now_sec)
+    try:
+        speed_feedback = piper.GetAllMotorAngleLimitMaxSpd()
+        acceleration_feedback = piper.GetAllMotorMaxAccLimit()
+        speed_stamp = float(speed_feedback.time_stamp)
+        acceleration_stamp = float(acceleration_feedback.time_stamp)
+        speed_motors = speed_feedback.all_motor_angle_limit_max_spd.motor
+        acceleration_motors = \
+            acceleration_feedback.all_motor_max_acc_limit.motor
+        velocities = []
+        accelerations = []
+        for index in range(1, 7):
+            speed = speed_motors[index]
+            acceleration = acceleration_motors[index]
+            if int(speed.motor_num) != index:
+                raise ValueError('speed feedback is missing joint%d' % index)
+            if int(acceleration.joint_motor_num) != index:
+                raise ValueError(
+                    'acceleration feedback is missing joint%d' % index)
+            velocities.append(float(speed.max_joint_spd) * 0.001)
+            accelerations.append(float(acceleration.max_joint_acc) * 0.001)
+        if not all(
+                math.isfinite(value)
+                and 0.0 < value <= MAX_PROTOCOL_JOINT_SPEED_RAD_S
+                for value in velocities):
+            raise ValueError('controller velocity limits are invalid')
+        if not all(
+                math.isfinite(value)
+                and 0.0 < value <= MAX_PROTOCOL_JOINT_ACCELERATION_RAD_S2
+                for value in accelerations):
+            raise ValueError('controller acceleration limits are invalid')
+        source_stamp = min(speed_stamp, acceleration_stamp)
+        if (
+                not math.isfinite(source_stamp)
+                or source_stamp <= 0.0
+                or now - source_stamp > float(maximum_age_sec)):
+            raise ValueError('controller motion-limit feedback is stale')
+        return {
+            'valid': True,
+            'velocities': velocities,
+            'accelerations': accelerations,
+            'limits_sha256': motion_limits_sha256(
+                velocities, accelerations),
+            'reason': 'fresh controller limits',
+        }
+    except (AttributeError, IndexError, TypeError, ValueError) as error:
+        # Keep the serialized shape at its maximum even while invalid. Foxy's
+        # Fast DDS can size a writer history from the first sample; publishing
+        # empty arrays first makes the later valid six-joint payload too large
+        # for that history and it is silently lost. The valid flag remains the
+        # authoritative fail-closed gate.
+        return {
+            'valid': False,
+            'velocities': [0.0] * 6,
+            'accelerations': [0.0] * 6,
+            'limits_sha256': '0' * 64,
+            'reason': str(error),
+        }
+
+
+def request_piper_enable_state(piper, enabled, timeout_sec,
+                               monotonic_fn=time.monotonic, sleep_fn=time.sleep):
+    """Use the SDK's feedback-confirmed enable/disable handshake."""
+    deadline = monotonic_fn() + max(0.0, float(timeout_sec))
+    while True:
+        if enabled:
+            target_reached = bool(piper.EnablePiper())
+        else:
+            target_reached = not bool(piper.DisablePiper())
+
+        if target_reached:
+            return True
+        if monotonic_fn() >= deadline:
+            return False
+        sleep_fn(ENABLE_RETRY_PERIOD_SEC)
 
 
 class PiperRosNode(Node):
@@ -40,16 +143,14 @@ class PiperRosNode(Node):
         self.declare_parameter('can_port', 'can0')
         self.declare_parameter('auto_enable', False)
         self.declare_parameter('gripper_exist', True)
-        self.declare_parameter('girpper_exist', True)
-        self.declare_parameter('rviz_ctrl_flag', False)
         self.declare_parameter('enable_timeout', 15.0)
         self.declare_parameter('joint_bounds_path', '')
+        self.declare_parameter('motion_limit_query_period_sec', 5.0)
+        self.declare_parameter('motion_limit_max_age_sec', 10.0)
 
         self.can_port = self.get_parameter('can_port').get_parameter_value().string_value
         self.auto_enable = self.get_parameter('auto_enable').get_parameter_value().bool_value
         self.gripper_exist = self.get_parameter('gripper_exist').get_parameter_value().bool_value
-        self.gripper_exist = self.get_parameter('girpper_exist').get_parameter_value().bool_value and self.gripper_exist
-        self.rviz_ctrl_flag = self.get_parameter('rviz_ctrl_flag').get_parameter_value().bool_value
         self.enable_timeout = self.get_parameter('enable_timeout').get_parameter_value().double_value
         self.joint_bounds_path = self.get_parameter('joint_bounds_path').get_parameter_value().string_value
         self.joint_bounds = self.load_joint_bounds(self.joint_bounds_path)
@@ -57,15 +158,26 @@ class PiperRosNode(Node):
         self.get_logger().info(f"can_port is {self.can_port}")
         self.get_logger().info(f"auto_enable is {self.auto_enable}")
         self.get_logger().info(f"gripper_exist is {self.gripper_exist}")
-        self.get_logger().info(f"rviz_ctrl_flag is {self.rviz_ctrl_flag}")
         self.get_logger().info(f"enable_timeout is {self.enable_timeout}")
         self.get_logger().info(f"joint_bounds_path is {self.joint_bounds_path or 'default limits'}")
+        self.feedback_callback_group = MutuallyExclusiveCallbackGroup()
+        self.motion_limit_callback_group = MutuallyExclusiveCallbackGroup()
+        self.motion_limit_query_callback_group = MutuallyExclusiveCallbackGroup()
+        self.service_callback_group = MutuallyExclusiveCallbackGroup()
+        self.command_callback_group = MutuallyExclusiveCallbackGroup()
         # Publishers
         self.joint_pub = self.create_publisher(JointState, 'joint_states_single', 10)
         self.arm_status_pub = self.create_publisher(PiperStatusMsg, 'arm_status', 10)
+        self.motion_limits_pub = self.create_publisher(
+            PiperMotionLimits, '/piper/motion_limits', 10)
         self.end_pose_pub = self.create_publisher(Pose, 'end_pose', 10)
         # Service
-        self.motor_srv = self.create_service(Enable, 'enable_srv', self.handle_enable_service)
+        self.motor_srv = self.create_service(
+            Enable,
+            'enable_srv',
+            self.handle_enable_service,
+            callback_group=self.service_callback_group,
+        )
         # Joint
         self.joint_states = JointState()
         self.joint_states.name = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6', 'joint7', 'joint8']
@@ -74,20 +186,81 @@ class PiperRosNode(Node):
         self.joint_states.effort = [0.0] * 8
         # Enable flag
         self.__enable_flag = False
+        self._command_cache_lock = threading.Lock()
+        self._motion_ctrl_2_signature = None
+        self._gripper_command_signature = None
         # Create piper class and open CAN interface
         self.piper = C_PiperInterface(can_name=self.can_port)
         self.piper.ConnectPort()
 
         # Start subscription thread
-        self.create_subscription(PosCmd, 'pos_cmd', self.pos_callback, 10)
-        self.create_subscription(JointState, 'joint_ctrl_single', self.joint_callback, 10)
-        self.create_subscription(Bool, 'enable_flag', self.enable_callback, 10)
+        self.create_subscription(
+            PosCmd, 'pos_cmd', self.pos_callback, 10,
+            callback_group=self.command_callback_group)
+        self.create_subscription(
+            JointState, 'joint_ctrl_single', self.joint_callback, 10,
+            callback_group=self.command_callback_group)
+        self.create_subscription(
+            Bool, 'enable_flag', self.enable_callback, 10,
+            callback_group=self.command_callback_group)
 
-        self.publisher_thread = threading.Thread(target=self.publish_thread)
-        self.publisher_thread.start()
+        # Keep all ROS publication on the node executor. Publishing from an
+        # unmanaged Python thread can silently stop delivering after prolonged
+        # Foxy graph churn even while CAN reception and the process stay alive.
+        self.feedback_timer = self.create_timer(
+            1.0 / 200.0,
+            self.publish_feedback,
+            callback_group=self.feedback_callback_group,
+        )
+        self.motion_limits_timer = self.create_timer(
+            1.0,
+            self.publish_motion_limits,
+            callback_group=self.motion_limit_callback_group,
+        )
+        self.motion_limit_query_timer = self.create_timer(
+            float(self.get_parameter('motion_limit_query_period_sec').value),
+            self.query_motion_limits,
+            callback_group=self.motion_limit_query_callback_group,
+        )
+        self.feedback_timer_started = False
+        self.motion_limits_timer_started = False
+        if self.auto_enable:
+            self.auto_enable_thread = threading.Thread(
+                target=self.auto_enable_loop, daemon=True)
+            self.auto_enable_thread.start()
 
     def GetEnableFlag(self):
         return self.__enable_flag
+
+    def reset_command_cache(self):
+        with self._command_cache_lock:
+            self._motion_ctrl_2_signature = None
+            self._gripper_command_signature = None
+
+    def send_motion_ctrl_2_if_changed(self, mode_ctrl, move_mode, speed_percent):
+        """Set the SDK MoveJ mode/speed only when its value actually changes."""
+        signature = (
+            int(mode_ctrl),
+            int(move_mode),
+            int(clip(round(float(speed_percent)), 0, 100)),
+        )
+        with self._command_cache_lock:
+            if signature == self._motion_ctrl_2_signature:
+                return False
+            self.piper.MotionCtrl_2(*signature)
+            self._motion_ctrl_2_signature = signature
+        return True
+
+    def send_gripper_if_changed(self, angle, effort, status_code, set_zero=0):
+        """Avoid resending an unchanged gripper command with every arm sample."""
+        signature = (
+            int(angle), int(effort), int(status_code), int(set_zero))
+        with self._command_cache_lock:
+            if signature == self._gripper_command_signature:
+                return False
+            self.piper.GripperCtrl(*signature)
+            self._gripper_command_signature = signature
+        return True
 
     def load_joint_bounds(self, path):
         bounds = dict(DEFAULT_JOINT_BOUNDS)
@@ -103,7 +276,7 @@ class PiperRosNode(Node):
             saved = data.get('joints', {})
             for joint_name in bounds:
                 record = saved.get(joint_name)
-                if record is None:
+                if record is None or record.get('valid', True) is False:
                     continue
                 low = float(record.get('min', bounds[joint_name][0]))
                 high = float(record.get('max', bounds[joint_name][1]))
@@ -155,50 +328,39 @@ class PiperRosNode(Node):
             return joint_data.velocity[fallback_index]
         return default
 
-    def publish_thread(self):
-        """Publish messages from the robotic arm
-        """
-        rate = self.create_rate(200)  # 200 Hz
+    def auto_enable_loop(self):
+        """Perform the optional startup enable handshake outside the executor."""
         enable_flag = False
-        # Set timeout (seconds)
-        timeout = self.enable_timeout
-        # Record the time before entering the loop
-        start_time = time.time()
-        elapsed_time_flag = False
-        while rclpy.ok():
-            if(self.auto_enable):
-                while not (enable_flag):
-                    elapsed_time = time.time() - start_time
-                    print("--------------------")
-                    enable_flag = self.piper.GetArmLowSpdInfoMsgs().motor_1.foc_status.driver_enable_status and \
-                        self.piper.GetArmLowSpdInfoMsgs().motor_2.foc_status.driver_enable_status and \
-                        self.piper.GetArmLowSpdInfoMsgs().motor_3.foc_status.driver_enable_status and \
-                        self.piper.GetArmLowSpdInfoMsgs().motor_4.foc_status.driver_enable_status and \
-                        self.piper.GetArmLowSpdInfoMsgs().motor_5.foc_status.driver_enable_status and \
-                        self.piper.GetArmLowSpdInfoMsgs().motor_6.foc_status.driver_enable_status
-                    print("Enable status:", enable_flag)
-                    self.piper.EnableArm(7)
-                    self.piper.GripperCtrl(0, 1000, 0x01, 0)
-                    if(enable_flag):
-                        self.__enable_flag = True
-                    print("--------------------")
-                    # Check if the timeout has been exceeded
-                    if elapsed_time > timeout:
-                        print("Timeout....")
-                        elapsed_time_flag = True
-                        enable_flag = True
-                        break
-                    time.sleep(1)
-                    pass
-            if(elapsed_time_flag):
-                print("Automatic enable timeout, exiting program")
-                exit(0)
+        deadline = time.monotonic() + self.enable_timeout
+        while rclpy.ok() and not enable_flag:
+            enable_flag = (
+                self.piper.GetArmLowSpdInfoMsgs().motor_1.foc_status.driver_enable_status
+                and self.piper.GetArmLowSpdInfoMsgs().motor_2.foc_status.driver_enable_status
+                and self.piper.GetArmLowSpdInfoMsgs().motor_3.foc_status.driver_enable_status
+                and self.piper.GetArmLowSpdInfoMsgs().motor_4.foc_status.driver_enable_status
+                and self.piper.GetArmLowSpdInfoMsgs().motor_5.foc_status.driver_enable_status
+                and self.piper.GetArmLowSpdInfoMsgs().motor_6.foc_status.driver_enable_status
+            )
+            if enable_flag:
+                self.__enable_flag = True
+                return
+            self.piper.EnableArm(7)
+            self.send_gripper_if_changed(0, 1000, 0x01, 0)
+            if time.monotonic() >= deadline:
+                self.get_logger().error(
+                    'Automatic enable timed out; feedback publication remains active')
+                return
+            time.sleep(1.0)
 
-            self.PublishArmState()
-            self.PublishArmJointAndGripper()
-            self.PublishArmEndPose()
-
-            rate.sleep()
+    def publish_feedback(self):
+        """Publish one executor-owned feedback sample from the robotic arm."""
+        if not self.feedback_timer_started:
+            self.feedback_timer_started = True
+            self.get_logger().info(
+                'Executor-owned 200 Hz feedback timer is active')
+        self.PublishArmState()
+        self.PublishArmJointAndGripper()
+        self.PublishArmEndPose()
 
     def PublishArmState(self):
         arm_status = PiperStatusMsg()
@@ -266,6 +428,56 @@ class PiperRosNode(Node):
         endpos.orientation.w = quaternion[3]
         self.end_pose_pub.publish(endpos)
 
+    def query_motion_limits(self):
+        """Refresh SDK limit caches without blocking their 1 Hz publisher."""
+        try:
+            self.piper.SearchAllMotorMaxAngleSpd()
+            self.piper.SearchAllMotorMaxAccLimit()
+            if not getattr(self, 'motion_limits_first_query_logged', False):
+                self.motion_limits_first_query_logged = True
+                self.get_logger().info(
+                    'Independent controller-limit CAN query timer is active')
+        except Exception as error:
+            self.get_logger().warn(
+                'Controller motion-limit query failed: %s' % error)
+
+    def publish_motion_limits(self):
+        """Publish fresh controller-reported J1-J6 velocity/acceleration limits."""
+        if not self.motion_limits_timer_started:
+            self.motion_limits_timer_started = True
+            self.get_logger().info(
+                'Independent 1 Hz controller-limit publisher is active')
+        maximum_age = (
+            self.get_parameter('motion_limit_max_age_sec')
+            .get_parameter_value().double_value
+        )
+        limits = controller_motion_limits(
+            self.piper, maximum_age_sec=maximum_age)
+        if not getattr(self, 'motion_limits_first_result_logged', False):
+            self.motion_limits_first_result_logged = True
+            self.get_logger().info(
+                'First controller-limit cache result: valid=%s reason=%s'
+                % (limits['valid'], limits['reason']))
+        try:
+            message = PiperMotionLimits()
+            message.header.stamp = self.get_clock().now().to_msg()
+            message.joint_names = list(MOTION_LIMIT_JOINT_NAMES)
+            message.max_velocity_rad_s = limits['velocities']
+            message.max_acceleration_rad_s2 = limits['accelerations']
+            message.valid = bool(limits['valid'])
+            message.limits_sha256 = limits['limits_sha256']
+            message.source = 'piper_sdk_controller_feedback'
+            message.reason = limits['reason']
+            self.motion_limits_pub.publish(message)
+            if not getattr(self, 'motion_limits_first_publish_logged', False):
+                self.motion_limits_first_publish_logged = True
+                self.get_logger().info(
+                    'First controller-limit message published: valid=%s hash=%s'
+                    % (message.valid, message.limits_sha256))
+        except Exception as error:
+            self.get_logger().error(
+                'Controller-limit message publication failed: %r' % error)
+
     def pos_callback(self, pos_data):
         """Callback function for subscribing to the end effector pose
 
@@ -291,7 +503,7 @@ class PiperRosNode(Node):
         rz = round(pos_data.yaw*1000*factor)
         if(self.GetEnableFlag()):
             self.piper.MotionCtrl_1(0x00, 0x00, 0x00)
-            self.piper.MotionCtrl_2(0x01, 0x00, 50)
+            self.send_motion_ctrl_2_if_changed(0x01, 0x00, 50)
             self.piper.EndPoseCtrl(x, y, z, rx, ry, rz)
             gripper = round(pos_data.gripper * 1000 * 1000)
             if pos_data.gripper > 80000:
@@ -299,7 +511,7 @@ class PiperRosNode(Node):
             if pos_data.gripper < 0:
                 gripper = 0
             if self.gripper_exist:
-                self.piper.GripperCtrl(abs(gripper), 1000, 0x01, 0)
+                self.send_gripper_if_changed(abs(gripper), 1000, 0x01, 0)
 
     def joint_callback(self, joint_data):
         """Callback function for joint angles
@@ -308,7 +520,7 @@ class PiperRosNode(Node):
             joint_data (): The joint data
         """
         factor = 57324.840764  # 1000*180/3.14
-        self.get_logger().info(f"Received Joint States:")
+        self.get_logger().debug("Received JointState command")
         if len(joint_data.position) < 6:
             self.get_logger().warn("Ignoring JointState command with fewer than 6 arm joints")
             return
@@ -320,12 +532,12 @@ class PiperRosNode(Node):
         arm_joint_4 = self.enforce_joint_bound('joint5', self.get_joint_value(joint_data, 'joint5', 4))
         arm_joint_5 = self.enforce_joint_bound('joint6', self.get_joint_value(joint_data, 'joint6', 5))
 
-        self.get_logger().info(f"joint_0: {arm_joint_0}")
-        self.get_logger().info(f"joint_1: {arm_joint_1}")
-        self.get_logger().info(f"joint_2: {arm_joint_2}")
-        self.get_logger().info(f"joint_3: {arm_joint_3}")
-        self.get_logger().info(f"joint_4: {arm_joint_4}")
-        self.get_logger().info(f"joint_5: {arm_joint_5}")
+        self.get_logger().debug(
+            "arm joints: %.6f %.6f %.6f %.6f %.6f %.6f"
+            % (
+                arm_joint_0, arm_joint_1, arm_joint_2,
+                arm_joint_3, arm_joint_4, arm_joint_5,
+            ))
 
         joint_0 = round(arm_joint_0*factor)
         joint_1 = round(arm_joint_1*factor)
@@ -335,10 +547,8 @@ class PiperRosNode(Node):
         joint_5 = round(arm_joint_5*factor)
         if(len(joint_data.position) >= 7):
             gripper_joint = self.enforce_joint_bound('joint7', self.get_joint_value(joint_data, 'joint7', 6))
-            self.get_logger().info(f"joint_6: {gripper_joint}")
+            self.get_logger().debug(f"gripper: {gripper_joint}")
             joint_6 = round(gripper_joint*1000*1000)
-            if(self.rviz_ctrl_flag):
-                joint_6 = joint_6 * 2
             joint_6 = int(clip(joint_6, 0, 80000))
         else: joint_6 = 0
         if(self.GetEnableFlag()):
@@ -351,22 +561,27 @@ class PiperRosNode(Node):
                 lens = len(joint_data.velocity)
                 if lens >= 7:
                     vel_all = int(clip(round(self.get_joint_velocity(joint_data, 'joint7', 6)), 0, 100))
-                    self.get_logger().info(f"vel_all: {vel_all}")
-                    self.piper.MotionCtrl_2(0x01, 0x01, vel_all)
+                    self.get_logger().debug(f"vel_all: {vel_all}")
+                    self.send_motion_ctrl_2_if_changed(0x01, 0x01, vel_all)
                 else:
-                    self.piper.MotionCtrl_2(0x01, 0x01, 30)
+                    self.send_motion_ctrl_2_if_changed(0x01, 0x01, 30)
             else:
-                self.piper.MotionCtrl_2(0x01, 0x01, 30)
+                self.send_motion_ctrl_2_if_changed(0x01, 0x01, 30)
             self.piper.JointCtrl(joint_0, joint_1, joint_2,
                                  joint_3, joint_4, joint_5)
-            if self.gripper_exist:
+            # A six-position JointState is an explicit arm-only MoveJ command.
+            # Do not invent a zero gripper target: automation uses this form so
+            # scan waypoints cannot clip, warn about, or actuate the gripper.
+            if self.gripper_exist and len(joint_data.position) >= 7:
                 if len(joint_data.effort) >= 7:
                     gripper_effort = float(clip(self.get_joint_effort(joint_data, 'joint7', 6), 0.5, 3))
-                    self.get_logger().info(f"gripper_effort: {gripper_effort}")
+                    self.get_logger().debug(f"gripper_effort: {gripper_effort}")
                     gripper_effort = round(gripper_effort * 1000)
-                    self.piper.GripperCtrl(abs(joint_6), gripper_effort, 0x01, 0)
+                    self.send_gripper_if_changed(
+                        abs(joint_6), gripper_effort, 0x01, 0)
                 else:
-                    self.piper.GripperCtrl(abs(joint_6), 1000, 0x01, 0)
+                    self.send_gripper_if_changed(
+                        abs(joint_6), 1000, 0x01, 0)
 
     def enable_callback(self, enable_flag: Bool):
         """Callback function for enabling the robotic arm
@@ -376,68 +591,39 @@ class PiperRosNode(Node):
         """
         self.get_logger().info(f"Received enable flag:")
         self.get_logger().info(f"enable_flag: {enable_flag.data}")
+        self.reset_command_cache()
         if enable_flag.data:
             self.__enable_flag = True
             self.piper.EnableArm(7)
             if self.gripper_exist:
-                self.piper.GripperCtrl(0, 1000, 0x01, 0)
+                self.send_gripper_if_changed(0, 1000, 0x01, 0)
         else:
             self.__enable_flag = False
             self.piper.DisableArm(7)
             if self.gripper_exist:
-                self.piper.GripperCtrl(0, 1000, 0x00, 0)
+                self.send_gripper_if_changed(0, 1000, 0x00, 0)
 
     def handle_enable_service(self, req, resp):
         """Handle enable service for the robotic arm"""
         self.get_logger().info(f"Received request: {req.enable_request}")
-        enable_flag = False
-        loop_flag = False
-        # Set timeout duration (seconds)
-        timeout = self.enable_timeout
-        # Record the time before entering the loop
-        start_time = time.time()
-        while not loop_flag:
-            elapsed_time = time.time() - start_time
-            self.get_logger().info(f"--------------------")
-            enable_list = []
-            enable_list.append(self.piper.GetArmLowSpdInfoMsgs().motor_1.foc_status.driver_enable_status)
-            enable_list.append(self.piper.GetArmLowSpdInfoMsgs().motor_2.foc_status.driver_enable_status)
-            enable_list.append(self.piper.GetArmLowSpdInfoMsgs().motor_3.foc_status.driver_enable_status)
-            enable_list.append(self.piper.GetArmLowSpdInfoMsgs().motor_4.foc_status.driver_enable_status)
-            enable_list.append(self.piper.GetArmLowSpdInfoMsgs().motor_5.foc_status.driver_enable_status)
-            enable_list.append(self.piper.GetArmLowSpdInfoMsgs().motor_6.foc_status.driver_enable_status)
-            self.get_logger().info(f"Motor enable flags: {enable_list}")
-
+        succeeded = request_piper_enable_state(
+            self.piper,
+            bool(req.enable_request),
+            self.enable_timeout,
+        )
+        self.reset_command_cache()
+        if succeeded:
             if req.enable_request:
-                enable_flag = all(enable_list)
-                self.piper.EnableArm(7)
-                self.piper.GripperCtrl(0, 1000, 0x01, 0)
+                self.send_gripper_if_changed(0, 1000, 0x01, 0)
             else:
-                enable_flag = any(enable_list)
-                self.piper.DisableArm(7)
-                self.piper.GripperCtrl(0, 1000, 0x02, 0)
+                self.send_gripper_if_changed(0, 1000, 0x02, 0)
+        else:
+            self.get_logger().error(
+                f"Timed out waiting for motors to {'enable' if req.enable_request else 'disable'}"
+            )
 
-            self.get_logger().info(f"Enable status: {enable_flag}")
-            self.__enable_flag = enable_flag
-            self.get_logger().info(f"--------------------")
-
-            if enable_flag == req.enable_request:
-                loop_flag = True
-                enable_flag = True
-            else:
-                loop_flag = False
-                enable_flag = False
-
-            # Check if timeout duration has been exceeded
-            if elapsed_time > timeout:
-                self.get_logger().info(f"Timeout...")
-                enable_flag = False
-                loop_flag = True
-                break
-
-            time.sleep(0.5)
-
-        resp.enable_response = enable_flag
+        self.__enable_flag = bool(succeeded and req.enable_request)
+        resp.enable_response = bool(succeeded)
         self.get_logger().info(f"Returning response: {resp.enable_response}")
         return resp
 
@@ -445,10 +631,13 @@ class PiperRosNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     piper_single_node = PiperRosNode()
+    executor = MultiThreadedExecutor(num_threads=4)
+    executor.add_node(piper_single_node)
     try:
-        rclpy.spin(piper_single_node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
+        executor.shutdown()
         piper_single_node.destroy_node()
         rclpy.shutdown()

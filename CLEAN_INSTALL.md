@@ -60,8 +60,8 @@ cd Piper_arm
 ./install_host_dependencies.sh
 ```
 
-The installer installs build, ROS, GUI, CAN, and Python dependencies, including `can-utils` and
-`ethtool`, which are required by `start_piper.sh`. It pins `piper_sdk==0.6.1` and
+The installer installs build, ROS, GUI, CAN, rootless-worker, and Python dependencies, including
+`bubblewrap`, `bzip2`, `can-utils`, and `ethtool`. It pins `piper_sdk==0.6.1` and
 `python-can==4.5.0`; do not replace these with Ubuntu's older `python3-can` version.
 
 ## 4. Build the PiPER workspace
@@ -70,14 +70,52 @@ The installer installs build, ROS, GUI, CAN, and Python dependencies, including 
 cd ~/Piper_arm/piper_ros_foxy
 source /opt/ros/foxy/setup.bash
 colcon build --symlink-install
-source install/setup.bash
 cd ..
+source source_piper_foxy_environment.sh
 ```
 
-The build must finish with all four packages successful: `piper_description`, `piper_msgs`,
-`piper_mobile_manipulation`, and `piper`.
+The build must finish with all five packages successful: `piper_description`, `piper_msgs`,
+`piper_mobile_manipulation`, `piper_tesseract_foxy`, and `piper`.
+The helper must report no error. It rejects stale inherited overlays and verifies that the scan
+capture module and recovery-bearing Tesseract message come from this canonical workspace. Do not
+run colcon from `~/Piper_arm` or source `~/Piper_arm/install/setup.bash`.
 
-## 5. Build and configure the L515
+## 5. Install and qualify the isolated Tesseract worker
+
+The planning worker uses a networkless Bubblewrap runtime with Tesseract 0.35.0.6. It does not join
+ROS, access CAN, use the camera, or publish arm commands. Install Micromamba using the official
+Linux x86-64 package when it is not already available:
+
+```bash
+mkdir -p "$HOME/.local/bin"
+temporary_dir="$(mktemp -d)"
+curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest \
+  | tar -xj -C "$temporary_dir" bin/micromamba
+install -m 0755 "$temporary_dir/bin/micromamba" "$HOME/.local/bin/micromamba"
+rm -r "$temporary_dir"
+export PATH="$HOME/.local/bin:$PATH"
+micromamba --version
+```
+
+Add `$HOME/.local/bin` to future login shells if it is not already present:
+
+```bash
+grep -qxF 'export PATH="$HOME/.local/bin:$PATH"' ~/.bashrc || \
+  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+```
+
+Create and qualify the pinned runtime:
+
+```bash
+cd ~/Piper_arm
+./motion_planning/tesseract/setup_rootless_worker.sh
+./motion_planning/tesseract/qualify_rootless_worker.sh
+```
+
+Both the core and compact qualification suites must pass. The runtime is generated under
+`motion_planning/tesseract/.runtime/` and is intentionally not committed.
+
+## 6. Build and configure the L515
 
 Disconnect the L515 before installing its udev rules.
 
@@ -111,7 +149,7 @@ cd ..
 The source pair is pinned to librealsense `v2.50.0` and realsense-ros `4.0.4`. Build warnings from this
 older source are expected; a failed package or nonzero command exit is not.
 
-## 6. Configure the PiPER CAN adapter
+## 7. Configure the PiPER CAN adapter
 
 Connect the USB-CAN adapter and arm, then identify its interface:
 
@@ -134,7 +172,28 @@ The result must contain `UP`, `can state ERROR-ACTIVE`, and `bitrate 1000000`. U
 CAN configuration is not persistent across reboot. `start_piper.sh` checks and configures the selected
 interface, requesting `sudo` when necessary.
 
-## 7. Verify the installation
+## 8. Install the scan perception environment
+
+Do not install GroundingDINO, SAM2, or their dependencies into Foxy's Python 3.8 environment. The
+full GUI scan pipeline requires an NVIDIA driver, a CUDA-capable GPU, and the isolated Python 3.10
+environment below:
+
+```bash
+cd ~/Piper_arm
+export PATH="$HOME/.local/bin:$PATH"
+micromamba create --yes \
+  --prefix AI_perception_tests/groundingdino_test/envs/python310_base \
+  --channel conda-forge --strict-channel-priority \
+  python=3.10.20 pip
+PYTHON310="$PWD/AI_perception_tests/groundingdino_test/envs/python310_base/bin/python3.10" \
+  ./AI_perception_tests/groundingdino_test/setup_gpu_env.sh
+```
+
+The GPU setup is pinned to the versions in `setup_gpu_env.sh` and must finish by printing the CUDA
+device name. For offline CPU-only perception development, use `setup_cpu_env.sh` instead; that does
+not qualify the real-time GPU scan launcher.
+
+## 9. Verify the installation
 
 Run the software checks:
 
@@ -143,8 +202,13 @@ cd ~/Piper_arm
 ./verify_installation.sh
 ```
 
-Every line must report `PASS`. This verifies the OS, Foxy, both workspace overlays, Python imports and
-versions, and ROS package discovery.
+Every line must report `PASS`. This verifies the OS, Foxy, the canonical PiPER and RealSense
+overlays, the isolated Tesseract runtime, Python imports and versions, and ROS package discovery.
+Also validate the isolated AI environment:
+
+```bash
+./AI_perception_tests/groundingdino_test/check_env.sh
+```
 
 Run a live camera test:
 
@@ -173,13 +237,13 @@ At minimum, verify these topics exist:
 
 Stop the camera with `Ctrl+C` in its terminal.
 
-## 8. Start the system
+## 10. Start the supported GUI system
 
 Camera and read-only perception commands are listed in order in
 [`OPERATOR_COMMANDS.md`](OPERATOR_COMMANDS.md#read-only-l515-perception-runtime). The camera workflow
 does not move the arm.
 
-To start the real PiPER driver without automatically enabling motion:
+Use four terminals. Start the real PiPER driver without automatically enabling motion:
 
 ```bash
 cd ~/Piper_arm
@@ -187,26 +251,47 @@ cd ~/Piper_arm
 ```
 
 Leave that terminal running. Wait until it reports that the PiPER node has started, then use a second
-terminal to enable the arm. Only enable it after the workspace is clear and an emergency-stop method is
-available:
-
-```bash
-./enable_piper.sh
-```
-
-## 9. Optional AI environment
-
-Do not install GroundingDINO, SAM2, or their Python dependencies into Foxy's Python 3.8 environment.
-Provide Python 3.10 through Conda, pyenv, or another isolated distribution, then run:
+terminal for the accepted hand-eye transform:
 
 ```bash
 cd ~/Piper_arm
-./AI_perception_tests/groundingdino_test/setup_cpu_env.sh
+./L515_camera/run_hand_eye_tf.sh
 ```
 
-This creates the ignored environment under `AI_perception_tests/groundingdino_test/envs/`, checks out
-the pinned Grounded-SAM-2 source, downloads model weights, and validates imports. NVIDIA and Jetson
-installations require PyTorch builds matching their exact CUDA or JetPack version.
+Start the L515, camera timestamp watchdog, GroundingDINO, SAM2, and geometry pipeline in the third
+terminal:
+
+```bash
+cd ~/Piper_arm
+./L515_camera/run_gpu_vision_pipeline.sh
+```
+
+When camera and perception health are ready, start the GUI in the fourth terminal:
+
+```bash
+cd ~/Piper_arm
+./start_gui.sh
+```
+
+Do not use `enable_piper.sh` for the supervised scan workflow. Clear and support the workspace,
+prepare an emergency-stop method, then use the GUI Enable button. The Acquire & Scan tab performs a
+separately approved rough-coordinate acquisition followed by a separately approved correlated
+13-view plan. Neither approval is reusable.
+
+At completion or before shutdown, press GUI **Disable**. The GUI must first command the fresh
+current-feedback pose, prove target error no greater than 0.025 rad and sample motion no greater than
+0.005 rad continuously for one second, and only then report a successful motor disable. If that
+eight-second proof fails, the motors remain enabled; do not stop the driver until the arm is safely
+supported and Disable succeeds.
+
+After the arm is disabled, stop the managed scan stack from the GUI, then stop camera and perception:
+
+```bash
+cd ~/Piper_arm
+./L515_camera/stop_gpu_vision_pipeline.sh
+```
+
+Close the GUI and stop the hand-eye and driver terminals only after the disable acknowledgement.
 
 ## Troubleshooting
 
@@ -250,7 +335,30 @@ Then rerun `./verify_installation.sh` before starting PiPER.
 ### `/enable_srv` is unavailable
 
 Run `./start_piper.sh` first and leave it running. Wait for the PiPER node to start, then run
-`./enable_piper.sh` in a second terminal with the same `PIPER_ROS_DOMAIN_ID` value.
+`./start_gui.sh` with the same `PIPER_ROS_DOMAIN_ID` value. For supervised operation, enable and
+disable only through the GUI.
+
+### Step 2 reports a service timeout
+
+Restart the GUI so it loads the current code, and confirm that every terminal uses
+`ROS_DOMAIN_ID=42`, `fastdds_gui_udp_only.xml`, `RMW_FASTRTPS_USE_QOS_FROM_XML=0`, and
+`ROS_LOCALHOST_ONLY=0`. Always start the GUI through `./start_gui.sh`; do not source an old
+repository-root colcon overlay. Step 2 retries its immutable request through a fresh Foxy client
+endpoint after eight seconds and preserves the session for an operator retry after two failures.
+
+### Tesseract readiness is blocked
+
+Rerun:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+./motion_planning/tesseract/qualify_rootless_worker.sh
+source source_piper_foxy_environment.sh
+```
+
+Do not bypass acquisition or multiview readiness. The worker has a 150-second internal budget,
+checks it before every OMPL attempt and during adaptive collision validation, and reserves five
+seconds to serialize its response before the bridge's 180-second timeout.
 
 ### Generated files
 

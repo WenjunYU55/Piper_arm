@@ -1,0 +1,12 @@
+std_msgs/Header header
+string lifecycle_state
+bool arm_moving
+bool camera_settled
+bool prediction_only
+float32 measurement_age_sec
+float32 measurement_quality
+uint32 heavy_attempt_count
+float32 recommended_speed_scale
+string reason
+bool dry_run
+bool real_arm_motion

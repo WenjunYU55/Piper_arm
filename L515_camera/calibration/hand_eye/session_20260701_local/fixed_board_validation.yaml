@@ -1,4 +1,8 @@
-status: passed
+status: historical_pass_requires_revalidation
+original_status: passed
+applicability:
+  joint6_reference: before_2026-07-14_controller_zero_recalibration
+  current_physical_validation: pending
 limits:
   translation_mm: 15.0
   rotation_deg: 1.5

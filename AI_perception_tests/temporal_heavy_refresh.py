@@ -29,6 +29,7 @@ from run_groundingdino_on_capture import (  # noqa: E402
     DEFAULT_REPO_DIR,
     DEFAULT_TEXT_THRESHOLD,
     run_on_capture,
+    target_mask_appearance_validation,
 )
 from sam2_refine_on_capture import (  # noqa: E402
     DEFAULT_GROUNDED_SAM2_REPO_DIR,
@@ -106,6 +107,36 @@ def prepare_event_capture(
     )
 
 
+def validated_refined_target(
+    capture_dir: Path,
+    target: dict[str, Any],
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    """Accept a SAM2 target only when its exact RGB mask remains green."""
+    image = cv2.imread(str(capture_dir / "rgb.png"), cv2.IMREAD_COLOR)
+    mask_path = Path(str(target.get("mask_png", "")))
+    mask = (
+        cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+        if mask_path.is_file()
+        else None
+    )
+    validation = target_mask_appearance_validation(image, mask)
+    target["target_appearance_validation"] = validation
+    return (target if validation["accepted"] else None), validation
+
+
+def classify_refined_obstacles(
+    obstacles: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Keep semantic unsafe status explicit instead of treating unknown as hand."""
+    candidate_movable = [
+        mask for mask in obstacles if is_candidate_safe_obstacle(mask)
+    ]
+    unsafe = [
+        mask for mask in obstacles if mask.get("is_unsafe_candidate", False)
+    ]
+    return candidate_movable, unsafe
+
+
 def run_heavy_refresh(capture_dir: Path, output_root: Path, device: str = "cpu") -> dict[str, Any]:
     grounding = run_on_capture(
         capture_dir=capture_dir,
@@ -132,20 +163,32 @@ def run_heavy_refresh(capture_dir: Path, output_root: Path, device: str = "cpu")
         max_masks=8,
     )
     masks = [mask for mask in sam2.get("masks", []) if isinstance(mask, dict)]
-    targets = [mask for mask in masks if mask.get("mask_role") == "target" and mask.get("mask_png")]
+    target_candidates = [
+        mask
+        for mask in masks
+        if mask.get("mask_role") == "target" and mask.get("mask_png")
+    ]
+    target = None
+    target_validation = {
+        "accepted": False,
+        "green_fraction": 0.0,
+        "rejection_reasons": ["no refined target mask"],
+    }
+    if target_candidates:
+        target, target_validation = validated_refined_target(
+            capture_dir,
+            target_candidates[0],
+        )
+    targets = [target] if target is not None else []
     obstacles = [
         mask
         for mask in masks
         if mask.get("mask_role") == "obstacle" and mask.get("target_relevant_occluder", False)
-        and not mask.get("explained_by_semantic_label")
     ]
     target_mask_path = str(targets[0]["mask_png"]) if targets else ""
-    candidate_safe_obstacles = [mask for mask in obstacles if is_candidate_safe_obstacle(mask)]
-    unsafe_obstacles = [
-        mask
-        for mask in obstacles
-        if mask.get("is_unsafe_candidate", False) or mask not in candidate_safe_obstacles
-    ]
+    candidate_safe_obstacles, unsafe_obstacles = classify_refined_obstacles(
+        obstacles
+    )
     obstacle_masks = [
         {
             "label": str(mask.get("label", "unknown")),
@@ -167,6 +210,10 @@ def run_heavy_refresh(capture_dir: Path, output_root: Path, device: str = "cpu")
         ),
         "target_confidence": float(grounding.get("summary", {}).get("target_confidence", 0.0)),
         "target_mask_png": target_mask_path,
+        "target_appearance_validation": target_validation,
+        "target_rejection_reason": "; ".join(
+            target_validation.get("rejection_reasons", [])
+        ),
         "obstacle_count": len(obstacles),
         "obstacle_labels": [str(mask.get("label", "unknown")) for mask in obstacles],
         "obstacle_confidences": [float(mask.get("confidence", 0.0)) for mask in obstacles],

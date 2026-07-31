@@ -8,13 +8,15 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclpy REQUIRED)
+find_package(std_msgs REQUIRED)
 
 find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/PiperStatusMsg.msg"  
+  "msg/PiperStatusMsg.msg"
+  "msg/PiperMotionLimits.msg"
   "msg/PosCmd.msg"
   "srv/Enable.srv"
-  DEPENDENCIES # Add packages that above messages depend on, in this case geometry_msgs for Sphere.msg
+  DEPENDENCIES std_msgs
 )
 
 if(BUILD_TESTING)

@@ -1,6 +1,9 @@
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
+from piper_mobile_manipulation.target_landmark_node import TargetLandmarkNode
 from piper_mobile_manipulation.target_landmark_geometry import (
     direction_angle_degrees,
     maximum_pairwise_distance,
@@ -25,3 +28,18 @@ def test_project_landmark():
 def test_reject_landmark_behind_camera():
     with pytest.raises(ValueError, match='landmark_behind_camera'):
         project_camera_point([0, 0, -1], [500, 0, 320, 0, 500, 240, 0, 0, 1])
+
+
+def test_mask_disagreement_refresh_is_disabled_independently():
+    parameters = {
+        'request_refresh_on_new_view': True,
+        'request_refresh_on_mask_disagreement': False,
+    }
+    landmark = SimpleNamespace(
+        get_parameter=lambda name: SimpleNamespace(value=parameters[name])
+    )
+
+    assert TargetLandmarkNode.refresh_enabled(landmark, 'new_viewpoint')
+    assert not TargetLandmarkNode.refresh_enabled(
+        landmark, 'landmark_mask_disagreement'
+    )

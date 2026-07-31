@@ -122,8 +122,8 @@ class Sam2LiveWorker:
             for object_id, mask in masks.items()
             if np.asarray(mask).shape == rgb_bgr.shape[:2] and np.count_nonzero(mask)
         }
-        if not valid_masks or 1 not in valid_masks:
-            raise ValueError("seed must contain a non-empty target mask with object_id=1")
+        if not valid_masks:
+            raise ValueError("seed must contain at least one non-empty labelled mask")
         if self.state is not None:
             self.state = None
             gc.collect()
@@ -171,11 +171,8 @@ class Sam2LiveWorker:
         with manifest_path.open("r", encoding="utf-8") as stream:
             manifest = yaml.safe_load(stream) or {}
         objects = manifest.get("objects", [])
-        if not objects:
-            legacy_mask = cv2.imread(str(seed / "mask.png"), cv2.IMREAD_GRAYSCALE)
-            if legacy_mask is None:
-                raise ValueError("seed contains no object masks: %s" % seed)
-            objects = [{"object_id": 1, "role": "target", "label": "target", "mask_file": "mask.png"}]
+        if not isinstance(objects, list) or not objects:
+            raise ValueError("seed manifest contains no labelled objects: %s" % seed)
         inference_rgb = self.inference_image(rgb)
         masks = {}
         for record in objects:
@@ -203,25 +200,30 @@ class Sam2LiveWorker:
             metadata = yaml.safe_load(stream) or {}
         inference_rgb = self.inference_image(rgb)
         started = time.perf_counter()
-        target_was_valid = bool(
-            1 in self.last_masks and np.count_nonzero(self.last_masks[1])
-        )
-        if not target_was_valid:
-            # Never try to initialize a new SAM2 session from an empty target.
-            # Consume this frame and wait for a semantic seed instead of retrying
-            # the same failing reset forever.
-            predictions = dict(self.last_masks)
+        has_valid_objects = any(
+            np.count_nonzero(mask) for mask in self.last_masks.values())
+        if not has_valid_objects:
+            # Consume this frame and wait for a semantic seed instead of
+            # retrying the same empty session forever.
+            predictions = {}
         elif self.session_frames >= self.max_session_frames:
-            self.reset(inference_rgb, self.last_masks, self.objects, frame.name)
-            predictions = self.last_masks
+            # First propagate the old session onto this image.  Reusing
+            # ``last_masks`` directly here would apply masks expressed in the
+            # previous image coordinates to the current image.  That is mostly
+            # invisible with a static camera, but it is destructive for an
+            # eye-in-hand camera during fast motion.
+            predictions = self.infer_current_frame(inference_rgb)
+            if any(np.count_nonzero(mask) for mask in predictions.values()):
+                # Bound SAM2 memory by starting the new rolling session on the
+                # same image and with masks predicted for this image.
+                self.reset(inference_rgb, predictions, self.objects, frame.name)
+                predictions = dict(self.last_masks)
+            else:
+                self.last_masks = predictions
+                self.last_frame_key = frame.name
+                self.session_frames += 1
         else:
-            rgb_input = cv2.cvtColor(inference_rgb, cv2.COLOR_BGR2RGB)
-            with torch.inference_mode(), torch.autocast(
-                device_type="cuda", dtype=torch.bfloat16, enabled=self.device == "cuda"
-            ):
-                frame_index = self.predictor.add_new_frame(self.state, rgb_input)
-                _, object_ids, logits = self.predictor.infer_single_frame(self.state, frame_index)
-            predictions = self.masks_from_logits(object_ids, logits)
+            predictions = self.infer_current_frame(inference_rgb)
             self.last_masks = predictions
             self.last_frame_key = frame.name
             self.session_frames += 1
@@ -281,6 +283,13 @@ class Sam2LiveWorker:
         }
         if np.count_nonzero(target_mask):
             self.tracking_state = "TRACKING"
+        elif any(
+                object_id != 1 and np.count_nonzero(mask)
+                for object_id, mask in output_predictions.items()):
+            # Keep obstacle-only sessions alive while target acquisition tries
+            # another approved look.  The target status remains absent because
+            # mask.png is empty, but obstacle geometry continues to update.
+            self.tracking_state = "OBSTACLE_ONLY"
         else:
             self.tracking_state = "WAITING_FOR_SEED"
             self.state = None
@@ -294,6 +303,18 @@ class Sam2LiveWorker:
         shutil.rmtree(destination, ignore_errors=True)
         os.replace(str(frame), str(destination))
         self.prune_directories(self.consumed, keep=200)
+
+    def infer_current_frame(self, inference_rgb: np.ndarray) -> dict[int, np.ndarray]:
+        """Propagate the active session and return masks in current-frame coordinates."""
+        rgb_input = cv2.cvtColor(inference_rgb, cv2.COLOR_BGR2RGB)
+        with torch.inference_mode(), torch.autocast(
+            device_type="cuda", dtype=torch.bfloat16, enabled=self.device == "cuda"
+        ):
+            frame_index = self.predictor.add_new_frame(self.state, rgb_input)
+            _, object_ids, logits = self.predictor.infer_single_frame(
+                self.state, frame_index
+            )
+        return self.masks_from_logits(object_ids, logits)
 
     def process_once(self) -> bool:
         seeded = self.consume_latest_seed()

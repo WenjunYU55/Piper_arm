@@ -20,6 +20,36 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CameraInfo, Image, PointCloud2, PointField
 from std_msgs.msg import String
 
+from piper_mobile_manipulation.supervised_workflow import (
+    heavy_refinement_status_action,
+)
+
+
+def status_image_stamp(payload, request_id):
+    """Return the correlated heavy-job image stamp, or ``None``."""
+    if not isinstance(payload, dict):
+        return None
+    if str(payload.get('request_id', '')) != str(request_id):
+        return None
+    if str(payload.get('state', '')) not in ('queued', 'published'):
+        return None
+    stamp = payload.get('image_stamp', {})
+    try:
+        sec = int(stamp['sec'])
+        nanosec = int(stamp['nanosec'])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if sec < 0 or nanosec < 0 or nanosec >= 1_000_000_000:
+        return None
+    return float(sec) + float(nanosec) * 1e-9
+
+
+def closest_cached_frame(frames, stamp):
+    """Select the cached RGB-D tuple nearest to one image timestamp."""
+    if stamp is None or not frames:
+        return None
+    return min(frames, key=lambda item: abs(float(item[0]) - float(stamp)))
+
 
 class TargetCloudNode(Node):
     def __init__(self):
@@ -30,6 +60,7 @@ class TargetCloudNode(Node):
         self.declare_parameter('mask_topic', '/piper/sam2_target_mask')
         self.declare_parameter('refined_mask_topic', '/piper/heavy_target_mask')
         self.declare_parameter('heavy_request_topic', '/piper/heavy_refresh_request')
+        self.declare_parameter('heavy_status_topic', '/piper/heavy_refresh_status')
         self.declare_parameter('cloud_topic', '/piper/target_cloud')
         self.declare_parameter('status_topic', '/piper/target_cloud_status')
         self.declare_parameter('request_topic', '/piper/target_cloud_request')
@@ -38,14 +69,24 @@ class TargetCloudNode(Node):
         self.declare_parameter('depth_min_m', 0.20)
         self.declare_parameter('depth_max_m', 1.20)
         self.declare_parameter('mask_max_age_sec', 0.30)
-        self.declare_parameter('refined_match_tolerance_sec', 0.08)
+        # Refined captures are requested only after the executor has accepted
+        # a settled hold. Keep a bounded fallback for worker/service latency;
+        # the nearest cached RGB-D tuple remains internally synchronized and
+        # the mask still carries the correlated worker image stamp.
+        self.declare_parameter('refined_match_tolerance_sec', 0.15)
         self.declare_parameter('frame_cache_size', 180)
         self.declare_parameter('mask_erode_px', 1)
-        self.declare_parameter('accumulate_live_masks', True)
+        # Per-frame live voxelization can starve this single-threaded node and
+        # make its synchronized RGB-D cache sparse. The supervised scan already
+        # requests one full-resolution refinement per accepted view, which is
+        # the authoritative accumulated cloud source.
+        self.declare_parameter('accumulate_live_masks', False)
         self.declare_parameter('pixel_stride', 2)
         self.declare_parameter('voxel_size_m', 0.004)
         self.declare_parameter('max_voxels', 250000)
         self.declare_parameter('publish_period_sec', 0.25)
+        self.declare_parameter('refined_capture_retry_sec', 0.50)
+        self.declare_parameter('refined_capture_timeout_sec', 12.0)
         self.declare_parameter('output_dir', '/home/prl/Piper_arm/datasets/target_clouds')
 
         self.bridge = CvBridge()
@@ -56,6 +97,15 @@ class TargetCloudNode(Node):
         self.last_header = None
         self.frame_cache = deque(maxlen=max(10, int(self.get_parameter('frame_cache_size').value)))
         self.awaiting_refined_capture = False
+        self.refined_capture_request_id = ''
+        self.refined_capture_request = None
+        self.refined_capture_started = 0.0
+        self.refined_capture_retry_at = 0.0
+        # Pin the exact RGB-D frame selected by the heavy bridge. The worker
+        # can legitimately take several seconds, longer than the rolling
+        # frame cache at the actual synchronized callback rate.
+        self.refined_capture_image_stamp = None
+        self.refined_capture_frame = None
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
@@ -73,6 +123,10 @@ class TargetCloudNode(Node):
             Image, self.get_parameter('refined_mask_topic').value,
             self.refined_mask_cb, qos_profile_sensor_data
         )
+        self.create_subscription(
+            String, self.get_parameter('heavy_status_topic').value,
+            self.heavy_status_cb, 10
+        )
         self.create_subscription(String, self.get_parameter('request_topic').value, self.request_cb, 10)
         color_sub = Subscriber(
             self, Image, self.get_parameter('color_topic').value, qos_profile=qos_profile_sensor_data
@@ -86,6 +140,7 @@ class TargetCloudNode(Node):
         self.sync = ApproximateTimeSynchronizer([color_sub, depth_sub, info_sub], 10, 0.08)
         self.sync.registerCallback(self.frame_cb)
         self.create_timer(float(self.get_parameter('publish_period_sec').value), self.publish_cloud)
+        self.create_timer(0.10, self.refined_capture_tick)
 
     def mask_cb(self, msg):
         try:
@@ -97,9 +152,22 @@ class TargetCloudNode(Node):
             self.publish_status('mask_error', error=str(exc))
 
     def frame_cb(self, color_msg, depth_msg, camera_info):
-        self.frame_cache.append((
+        frame = (
             self.stamp_seconds(depth_msg.header.stamp), color_msg, depth_msg, camera_info
-        ))
+        )
+        self.frame_cache.append(frame)
+        if (
+                self.awaiting_refined_capture
+                and self.refined_capture_image_stamp is not None):
+            delta = abs(
+                frame[0] - self.refined_capture_image_stamp)
+            old_delta = (
+                abs(
+                    self.refined_capture_frame[0]
+                    - self.refined_capture_image_stamp)
+                if self.refined_capture_frame is not None else math.inf)
+            if delta < old_delta:
+                self.refined_capture_frame = frame
         if not bool(self.get_parameter('accumulate_live_masks').value):
             return
         if self.latest_mask is None or self.latest_mask_stamp is None:
@@ -119,18 +187,28 @@ class TargetCloudNode(Node):
                 self.bridge.imgmsg_to_cv2(msg, desired_encoding='mono8')
             ).copy()
         except Exception as exc:
-            self.publish_status('refined_mask_error', error=str(exc))
+            self.fail_refined_capture(
+                'could not decode full-resolution mask: %s' % exc)
             return
         if not self.frame_cache:
-            self.publish_status('refined_capture_rejected', error='RGB-D frame cache is empty')
+            self.fail_refined_capture('RGB-D frame cache is empty')
             return
         stamp = self.stamp_seconds(msg.header.stamp)
-        match = min(self.frame_cache, key=lambda item: abs(item[0] - stamp))
+        candidates = list(self.frame_cache)
+        if self.refined_capture_frame is not None:
+            candidates.append(self.refined_capture_frame)
+        match = closest_cached_frame(candidates, stamp)
         delta = abs(match[0] - stamp)
         if delta > float(self.get_parameter('refined_match_tolerance_sec').value):
-            self.publish_status('refined_capture_rejected', error='matching RGB-D frame expired', delta_sec=delta)
+            self.fail_refined_capture(
+                'matching RGB-D frame expired (delta %.3fs)' % delta)
             return
         self.awaiting_refined_capture = False
+        self.refined_capture_request_id = ''
+        self.refined_capture_request = None
+        self.refined_capture_retry_at = 0.0
+        self.refined_capture_image_stamp = None
+        self.refined_capture_frame = None
         self.accumulate_frame(match[1], match[2], match[3], mask, source='full_resolution_refinement')
 
     def accumulate_frame(self, color_msg, depth_msg, camera_info, mask, source):
@@ -254,17 +332,89 @@ class TargetCloudNode(Node):
         if self.awaiting_refined_capture:
             self.publish_status('refined_capture_already_pending')
             return
-        request = String()
-        request.data = json.dumps({
-            'request_id': 'cloud_capture_%d' % int(time.time() * 1000),
+        self.refined_capture_request_id = (
+            'cloud_capture_%d' % int(time.time() * 1000))
+        self.refined_capture_request = {
+            'request_id': self.refined_capture_request_id,
             'reason': 'full_resolution_cloud_capture',
             'tracking': {'tracking_confidence': 0.0},
             'dry_run': True,
             'real_arm_motion': False,
-        })
-        self.heavy_request_pub.publish(request)
+        }
         self.awaiting_refined_capture = True
+        self.refined_capture_started = time.monotonic()
+        self.refined_capture_retry_at = 0.0
+        self.refined_capture_image_stamp = None
+        self.refined_capture_frame = None
+        self.publish_refined_capture_request()
         self.publish_status('full_resolution_refinement_requested')
+
+    def publish_refined_capture_request(self):
+        if not self.awaiting_refined_capture or self.refined_capture_request is None:
+            return
+        request = String()
+        request.data = json.dumps(self.refined_capture_request)
+        self.heavy_request_pub.publish(request)
+
+    def heavy_status_cb(self, msg):
+        if not self.awaiting_refined_capture:
+            return
+        try:
+            payload = json.loads(msg.data)
+        except (TypeError, ValueError):
+            return
+        action = heavy_refinement_status_action(
+            payload, self.refined_capture_request_id)
+        image_stamp = status_image_stamp(
+            payload, self.refined_capture_request_id)
+        if image_stamp is not None:
+            self.refined_capture_image_stamp = image_stamp
+            candidate = closest_cached_frame(self.frame_cache, image_stamp)
+            if candidate is not None:
+                self.refined_capture_frame = candidate
+        if action == 'retry':
+            self.refined_capture_retry_at = (
+                time.monotonic()
+                + float(self.get_parameter('refined_capture_retry_sec').value))
+        elif action == 'fail':
+            self.fail_refined_capture(
+                str(payload.get(
+                    'error',
+                    payload.get('worker_status', payload.get('state', 'failed')))))
+        elif (
+                str(payload.get('request_id', ''))
+                == self.refined_capture_request_id
+                and str(payload.get('state', '')) in ('queued', 'published')):
+            self.refined_capture_retry_at = 0.0
+
+    def refined_capture_tick(self):
+        if not self.awaiting_refined_capture:
+            return
+        now = time.monotonic()
+        timeout = float(
+            self.get_parameter('refined_capture_timeout_sec').value)
+        if now - self.refined_capture_started >= timeout:
+            self.fail_refined_capture(
+                'heavy full-resolution refinement timed out after %.1f seconds'
+                % timeout)
+            return
+        if self.refined_capture_retry_at and now >= self.refined_capture_retry_at:
+            self.refined_capture_retry_at = 0.0
+            self.publish_refined_capture_request()
+
+    def fail_refined_capture(self, reason):
+        self.awaiting_refined_capture = False
+        request_id = self.refined_capture_request_id
+        self.refined_capture_request_id = ''
+        self.refined_capture_request = None
+        self.refined_capture_retry_at = 0.0
+        self.refined_capture_image_stamp = None
+        self.refined_capture_frame = None
+        self.publish_status(
+            'refined_capture_rejected',
+            request_id=request_id,
+            error=str(reason),
+        )
 
     def save_ply(self):
         if not self.voxels:

@@ -1,5 +1,8 @@
 # PiPER Arm, L515 Camera, and Offline Perception
 
+For the current whole-system architecture, validated behavior, limitations, safety boundaries, and
+recommended continuation point, see [`SYSTEM_HANDOFF.md`](SYSTEM_HANDOFF.md).
+
 For a fresh machine, runtime commands, generated-asset policy, and CPU/GPU/Jetson selection, see
 [`CLEAN_INSTALL.md`](CLEAN_INSTALL.md).
 
@@ -9,11 +12,13 @@ For day-to-day operation commands and what each script does, see
 For the current Ubuntu 22.04 host, use the Docker-based Foxy environment documented in
 [`DOCKER_FOXY_COMMANDS.md`](DOCKER_FOXY_COMMANDS.md).
 
-This repository contains three separate dependency surfaces:
+This repository contains four separate dependency surfaces:
 
 1. The PiPER ROS 2 workspace in `piper_ros_foxy/`.
 2. Intel RealSense L515 source-build helpers in `L515_camera/`.
 3. Offline AI experiments in `AI_perception_tests/`.
+4. The isolated CPU Tesseract 0.35 worker in `motion_planning/tesseract/`, connected to Foxy only
+   through the command-free `piper_tesseract_foxy` filesystem adapter.
 
 Do not install the offline AI packages into the ROS Python environment.
 
@@ -33,8 +38,14 @@ chmod +x install_host_dependencies.sh
 source /opt/ros/foxy/setup.bash
 cd piper_ros_foxy
 colcon build --symlink-install
-source install/setup.bash
+cd ..
+source source_piper_foxy_environment.sh
 ```
+
+`source_piper_foxy_environment.sh` is the supported runtime loader for GUI and scan tools. It clears
+inherited overlay paths, sources Foxy plus the canonical `piper_ros_foxy/install`, and verifies the
+installed scan packages and recovery-bearing message schema. Do not create or source a generated
+repository-root `install/`; it can shadow the canonical ROS interfaces.
 
 The installer installs the ROS, Python, GUI, build, and CAN packages used by the checked-in code. It also installs the tested `piper_sdk==0.6.1` and Python 3.8-compatible `python-can==4.5.0` with pip because the SDK has no ROS dependency key and Ubuntu 20.04's Python CAN package is too old. It then runs `rosdep` against every package manifest.
 
@@ -50,11 +61,51 @@ Real-arm convenience launchers are included as explicit `.sh` / `.py` tools only
 - `start_piper.sh` starts the PiPER ROS driver and CAN interface, but does not auto-enable the arm by default.
 - `enable_piper.sh` and `disable_piper.sh` call the PiPER enable service.
 - `reset_piper.sh` / `reset_piper.py` and `reset_arm.sh` / `reset_arm.py` publish joint commands and can move the real arm.
-- `start_gui.sh` / `piper_gui_native.py` opens the manual control GUI and can publish joint commands.
+- `start_gui.sh` / `piper_gui_native.py` opens manual/Graphical controls plus a publisher-exclusive
+  Acquire & Scan tab for rough-coordinate acquisition and one exact 13-view session.
 - `calibrate_bounds.sh` / `piper_calibrate_bounds.py` records measured joint limits into `piper_joint_bounds.json`.
+- `calibrate_joint6_zero.sh` / `piper_joint6_zero.py` diagnoses joint-six feedback and, only with
+  `--calibrate` plus two typed confirmations, writes the physically aligned J6 position as controller zero.
+- `L515_camera/run_supervised_viewpoint_execution.sh` starts a separate proposal-first scan executor.
+  It has no joint-command publisher by default; real motion requires launch opt-in, an exact fresh-plan
+  approval, healthy tracking/obstacles/workflow, and a separately enabled arm. See `OPERATOR_COMMANDS.md`.
+
+The selectable Tesseract backend has Foxy interfaces, a command-free bridge, an isolated rootless
+Ubuntu 24.04 worker, model builder, tests, and a collision manifest initially qualified on
+2026-07-23 and requalified with deterministic seed handling on 2026-07-24 for its
+declared supervised guarded scope. Automatic motion still requires launch opt-in, a fresh exact
+approval, and every executor health gate. On 2026-07-29 rough-coordinate acquisition and an exact
+13-view Tesseract plan completed supervised physical acceptance at 5 percent, with all 13
+capture/model handoffs succeeding. J6 is fully safe by operator confirmation and the Tesseract path
+treats J1-J6 equally with no J6-specific lock or cost. The bounded acquisition cone aims camera
+optical +Z around the rough hint;
+the first exact segment uses a schema-v5 static bootstrap without DINO/SAM obstacle output, while
+retaining robot/camera/cable/floor collision and runtime gates. GroundingDINO is then bound to a
+post-settle frame and exact request. A second look cannot start until the matching typed semantic
+scene is ready, and a measured stable lock within 0.30 m starts the normal workflow. The GUI manages
+only the worker/scan stack and never enables motors. Acquisition uses one exact confirmation;
+after measured lock plus `SCAN_READY`, explicit Prepare Scan from Current Lock creates one fresh
+correlated 13-view request, which requires a separate exact confirmation. There is no reusable
+15-minute authorization.
+
+Automation speed is now selected in the GUI from 1 through 100 percent, default 5, for both rough
+acquisition and the later scan. The executor clamps only to the PiPER SDK's 1-100 percent range.
+It now creates a hash-bound, collision-validated all-six-joint SDK MoveJ target path and issues one
+arm-only target per viewpoint. A folded acquisition start may use one separately proven bootstrap
+target first. Dense collision samples are validation-only and are never sent to the arm. PiPER
+MoveJ uses aggregate speed rather than Tesseract qdot/qddot, and automation cannot command the
+gripper. The packages build, 258 focused tests and both rootless collision qualifications pass.
+The target-only adapter completed the 13-view physical acceptance at 5 percent; higher-speed
+dynamics remain unqualified. At every
+accepted settled scan viewpoint, the supervised stack additionally records synchronized RGB, raw
+depth, a 16-bit millimetre depth PNG, mask, intrinsics, joints, and plan/view metadata under
+`datasets/active_scan`. GUI Safe Disable commands and verifies a settled current-feedback hold
+before requesting motor disable. The historical live acceptance remains at 5 percent; higher
+selections still require a live repeatability audit.
 
 The no-extension wrapper shortcuts are intentionally not included. Use the `.sh` filenames directly on a fresh clone.
-The L515 perception and temporal tracking workflow remains read-only and does not call these real-arm tools.
+The L515 perception and temporal tracking pipeline and the supervised cube coordinator remain
+read-only. Only the separately opted-in and approved viewpoint executor can publish slow scan targets.
 
 ## Install the L515 camera stack
 

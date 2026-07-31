@@ -121,6 +121,7 @@ def build_bounds(
             "label": label,
             "index": index,
             "unit": unit,
+            "valid": True,
             "min": low,
             "max": high,
             "samples": {

@@ -11,6 +11,89 @@ def distance(a, b):
     return math.sqrt(sum((float(x) - float(y)) ** 2 for x, y in zip(a, b)))
 
 
+def tracking_allows_target_motion_check(health, maximum_measurement_age_sec):
+    """Use only a settled measured observation to declare target motion.
+
+    A valid tracked position can be prediction-influenced while the
+    eye-in-hand camera is moving. That transient is useful for monitoring but
+    must not be compared with the pre-motion landmark as if it were a settled
+    physical displacement.
+    """
+    return (
+        health is not None
+        and str(health.lifecycle_state) == 'TRACKING'
+        and not bool(health.arm_moving)
+        and bool(health.camera_settled)
+        and not bool(health.prediction_only)
+        and float(health.measurement_age_sec)
+        <= float(maximum_measurement_age_sec)
+    )
+
+
+def heavy_refinement_status_action(payload, request_id):
+    """Classify a heavy-worker status for one correlated cloud capture."""
+    if not request_id or not isinstance(payload, dict):
+        return 'ignore'
+    payload_request_id = str(payload.get('request_id', ''))
+    if payload_request_id != str(request_id):
+        return 'ignore'
+    state = str(payload.get('state', ''))
+    if state == 'request_ignored_busy':
+        return 'retry'
+    if state in (
+            'request_rejected', 'request_failed', 'worker_result_rejected'):
+        return 'fail'
+    return 'wait'
+
+
+def corroborated_target_motion_rejection(
+        tracked_displacement_m, threshold_m, landmark_status,
+        landmark_status_fresh, surface_measurement_uncertainty_m=0.0):
+    """Require agreeing independent geometry before declaring target motion.
+
+    ``measurement_error_m`` is a residual against the stationary landmark.
+    A gross mask/depth/TF outlier can therefore be large without representing
+    the same displacement reported by the tracker. A bounded uncertainty also
+    accounts for the visible surface centroid changing as a stationary cube is
+    viewed from a new angle. Treat motion as corroborated only when both
+    magnitudes exceed that uncertainty plus the physical-motion threshold and
+    agree within the physical threshold.
+    """
+    displacement = float(tracked_displacement_m)
+    threshold = float(threshold_m)
+    uncertainty = max(0.0, float(surface_measurement_uncertainty_m))
+    physical_displacement = max(0.0, displacement - uncertainty)
+    if physical_displacement <= threshold:
+        return ''
+    if not landmark_status_fresh or not isinstance(landmark_status, dict):
+        return (
+            'tracked target shifted %.3fm but stationary-landmark '
+            'corroboration is missing or stale' % displacement)
+    state = str(landmark_status.get('state', '')).upper()
+    if state not in ('LOCKED', 'RESCAN_NEEDED'):
+        return (
+            'tracked target shifted %.3fm and stationary-landmark state is %s'
+            % (displacement, state or 'MISSING'))
+    try:
+        landmark_error = float(landmark_status['measurement_error_m'])
+    except (KeyError, TypeError, ValueError):
+        return (
+            'tracked target shifted %.3fm but stationary-landmark '
+            'measurement error is unavailable' % displacement)
+    if not math.isfinite(landmark_error):
+        return (
+            'tracked target shifted %.3fm but stationary-landmark '
+            'measurement error is invalid' % displacement)
+    if (
+            max(0.0, landmark_error - uncertainty) > threshold
+            and abs(landmark_error - displacement) <= threshold):
+        return (
+            'cube landmark moved beyond tolerance '
+            '(tracked %.3fm, independent landmark %.3fm)'
+            % (displacement, landmark_error))
+    return ''
+
+
 def canonical_label(label):
     words = set(str(label or '').lower().replace('_', ' ').split())
     return 'pen' if words.intersection({'pen', 'marker'}) else ' '.join(sorted(words))
@@ -127,3 +210,31 @@ def cloud_model(points, frame_id, accepted_views):
         'point_count': int(len(values)), 'center': center.tolist(),
         'bounds_min': lower.tolist(), 'bounds_max': upper.tolist(),
     }
+
+
+def should_cache_capture_cloud(state, accepted_views, modeled_views):
+    """Keep the capture cloud across either valid message ordering."""
+    return (
+        str(state) == 'WAIT_CAPTURE'
+        or int(accepted_views) > int(modeled_views)
+    )
+
+
+def capture_cloud_ready(accepted_views, modeled_views, cloud_available):
+    """A cloud can be modeled only after its acceptance event is known."""
+    return (
+        bool(cloud_available)
+        and int(accepted_views) > int(modeled_views)
+    )
+
+
+def occlusion_capture_rejection(payload, fresh):
+    """Reject capture unless the depth checker freshly confirms a clear view."""
+    if not fresh or not isinstance(payload, dict):
+        return 'occlusion status is missing or stale'
+    state = str(payload.get('occlusion_state', 'UNKNOWN')).upper()
+    if state != 'CLEAR':
+        reason = str(payload.get('reason', '')).strip()
+        suffix = ': %s' % reason if reason else ''
+        return 'view occlusion is %s%s' % (state, suffix)
+    return ''

@@ -27,6 +27,7 @@
     use_reference_mask_area: true
     reference_update_alpha: 0.05
     min_reference_mask_area_px: 300
+    reference_initialization_frames: 8
     partial_visible_ratio: 0.94
     heavy_visible_ratio: 0.44
     dry_run: true

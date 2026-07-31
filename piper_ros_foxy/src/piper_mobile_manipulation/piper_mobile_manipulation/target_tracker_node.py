@@ -5,7 +5,9 @@ import rclpy
 import tf2_geometry_msgs
 from geometry_msgs.msg import PointStamped
 from rclpy.duration import Duration
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+from rclpy.time import Time
 from std_msgs.msg import String
 from tf2_ros import Buffer, TransformException, TransformListener
 
@@ -37,6 +39,9 @@ class TargetTrackerNode(Node):
         self.declare_parameter('max_3d_jump_m', 0.10)
         self.declare_parameter('min_area_ratio', 0.5)
         self.declare_parameter('max_area_ratio', 2.0)
+        self.declare_parameter('use_camera_space_gates', False)
+        self.declare_parameter('max_target_speed_mps', 1.0)
+        self.declare_parameter('reject_out_of_order_measurements', True)
         self.declare_parameter('min_confidence', 0.40)
         self.declare_parameter('low_confidence_timeout_s', 0.5)
         self.declare_parameter('lost_timeout_s', 1.0)
@@ -80,8 +85,20 @@ class TargetTrackerNode(Node):
     def target_cb(self, msg):
         self.refresh_runtime_params()
         now = self.get_clock().now()
+        measurement_time = self.measurement_time(msg, now)
         out = TrackedTarget()
         out.header = msg.header
+
+        if (
+            self.reject_out_of_order_measurements
+            and self.last_time is not None
+            and measurement_time.nanoseconds <= self.last_time.nanoseconds
+        ):
+            self.get_logger().warn(
+                'Ignoring out-of-order Target3D measurement stamp=%d last=%d'
+                % (measurement_time.nanoseconds, self.last_time.nanoseconds)
+            )
+            return
 
         if not msg.valid:
             self.publish_invalid(out)
@@ -100,7 +117,15 @@ class TargetTrackerNode(Node):
         if measurement is None:
             self.publish_invalid(out)
             return
-        gate_reason = self.gate_measurement(msg, measurement, measurement_confidence)
+        if self.last_time is None:
+            measurement_gap_s = 0.0
+        else:
+            measurement_gap_s = max(
+                0.0, (measurement_time - self.last_time).nanoseconds * 1e-9
+            )
+        gate_reason = self.gate_measurement(
+            msg, measurement, measurement_confidence, measurement_gap_s
+        )
         if gate_reason:
             self.get_logger().warn('Target3D rejected by tracker gate: %s' % gate_reason)
             self.publish_invalid(out)
@@ -109,8 +134,8 @@ class TargetTrackerNode(Node):
         if self.last_time is None:
             dt = 0.033
         else:
-            dt = max((now - self.last_time).nanoseconds * 1e-9, 1e-3)
-        self.last_time = now
+            dt = max((measurement_time - self.last_time).nanoseconds * 1e-9, 1e-3)
+        self.last_time = measurement_time
         self.filter.measurement_noise = self.scaled_measurement_noise(measurement_confidence)
         state = self.filter.step(measurement, dt)
         self.track_frames += 1
@@ -161,15 +186,18 @@ class TargetTrackerNode(Node):
             % (out.header.frame_id, out.valid, out.stable, x, y, z, speed, out.confidence)
         )
 
+    @staticmethod
+    def measurement_time(msg, fallback):
+        stamp = msg.header.stamp
+        if int(stamp.sec) == 0 and int(stamp.nanosec) == 0:
+            return fallback
+        return Time.from_msg(stamp)
+
     def publish_invalid(self, out):
         self.missed_frames += 1
         self.update_status_from_timeout()
         if self.missed_frames > self.max_missed:
-            self.filter.reset()
-            self.track_frames = 0
-            self.stable_since = None
-            self.last_stable = False
-            self.last_time = None
+            self.reset_tracking_state()
         out.valid = False
         out.confidence = 0.0
         if self.use_tf_transform:
@@ -177,31 +205,62 @@ class TargetTrackerNode(Node):
         self.pub.publish(out)
         self.publish_status(self.status)
 
-    def gate_measurement(self, msg, measurement, confidence):
+    def reset_tracking_state(self):
+        """Reset both the Kalman state and the gates tied to the old track."""
+        self.filter.reset()
+        self.track_frames = 0
+        self.missed_frames = 0
+        self.stable_since = None
+        self.last_stable = False
+        self.last_time = None
+        self.last_source_u = None
+        self.last_source_v = None
+        self.last_area = None
+        self.last_depth = None
+        self.last_measurement = None
+        self.get_logger().info(
+            'Tracker reset after missed-frame limit; next valid measurement starts a new track'
+        )
+
+    def gate_measurement(self, msg, measurement, confidence, elapsed_s=0.0):
         if confidence < self.min_confidence:
             return 'confidence %.2f < %.2f' % (confidence, self.min_confidence)
-        if self.last_depth is not None and abs(float(msg.depth) - self.last_depth) > self.depth_gate_m:
-            return 'depth %.3f outside gate around %.3f +/- %.3f' % (
-                float(msg.depth),
-                self.last_depth,
-                self.depth_gate_m,
-            )
-        if self.last_source_u is not None and self.last_source_v is not None:
-            du = float(msg.source_u) - self.last_source_u
-            dv = float(msg.source_v) - self.last_source_v
-            pixel_jump = math.sqrt(du * du + dv * dv)
-            if pixel_jump > self.max_pixel_jump:
-                return 'pixel jump %.1f > %.1f' % (pixel_jump, self.max_pixel_jump)
+        if self.use_camera_space_gates:
+            if (
+                self.last_depth is not None
+                and abs(float(msg.depth) - self.last_depth) > self.depth_gate_m
+            ):
+                return 'depth %.3f outside gate around %.3f +/- %.3f' % (
+                    float(msg.depth), self.last_depth, self.depth_gate_m
+                )
+            if self.last_source_u is not None and self.last_source_v is not None:
+                du = float(msg.source_u) - self.last_source_u
+                dv = float(msg.source_v) - self.last_source_v
+                pixel_jump = math.sqrt(du * du + dv * dv)
+                if pixel_jump > self.max_pixel_jump:
+                    return 'pixel jump %.1f > %.1f' % (
+                        pixel_jump, self.max_pixel_jump
+                    )
         if self.last_measurement is not None:
             jump = math.sqrt(
                 (measurement[0] - self.last_measurement[0]) ** 2
                 + (measurement[1] - self.last_measurement[1]) ** 2
                 + (measurement[2] - self.last_measurement[2]) ** 2
             )
-            if jump > self.max_3d_jump:
-                return '3d jump %.3f > %.3f' % (jump, self.max_3d_jump)
+            allowed_jump = self.max_3d_jump + self.max_target_speed * max(
+                0.0, float(elapsed_s)
+            )
+            if jump > allowed_jump:
+                return '3d jump %.3f > %.3f for dt %.3fs' % (
+                    jump, allowed_jump, elapsed_s
+                )
         area = self.detection_area(msg)
-        if self.last_area is not None and self.last_area > 0.0 and area > 0.0:
+        if (
+            self.use_camera_space_gates
+            and self.last_area is not None
+            and self.last_area > 0.0
+            and area > 0.0
+        ):
             ratio = area / self.last_area
             if ratio < self.min_area_ratio or ratio > self.max_area_ratio:
                 return 'area ratio %.2f outside %.2f..%.2f' % (
@@ -293,6 +352,15 @@ class TargetTrackerNode(Node):
         self.max_3d_jump = float(self.get_parameter('max_3d_jump_m').value)
         self.min_area_ratio = float(self.get_parameter('min_area_ratio').value)
         self.max_area_ratio = float(self.get_parameter('max_area_ratio').value)
+        self.use_camera_space_gates = bool(
+            self.get_parameter('use_camera_space_gates').value
+        )
+        self.max_target_speed = float(
+            self.get_parameter('max_target_speed_mps').value
+        )
+        self.reject_out_of_order_measurements = bool(
+            self.get_parameter('reject_out_of_order_measurements').value
+        )
         self.min_confidence = float(self.get_parameter('min_confidence').value)
         self.low_confidence_timeout_s = float(self.get_parameter('low_confidence_timeout_s').value)
         self.lost_timeout_s = float(self.get_parameter('lost_timeout_s').value)
@@ -302,9 +370,17 @@ class TargetTrackerNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = TargetTrackerNode()
+    # A Target3D callback may wait briefly for a timestamped transform.  TF
+    # subscriptions use a re-entrant callback group, so two executor threads
+    # let the buffer receive /tf while that lookup is waiting.  A
+    # SingleThreadedExecutor can otherwise starve TF continuously when target
+    # measurements arrive at the same rate as the transform timeout.
+    executor = MultiThreadedExecutor(num_threads=2)
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     finally:
+        executor.shutdown()
         node.destroy_node()
         rclpy.shutdown()
 

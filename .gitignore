@@ -20,6 +20,7 @@ L515_camera/.codex/
 # Local ROS/log/cache output
 .ros/
 *.log
+motion_planning/tesseract/.runtime/
 
 # Captures and generated data
 *.pcap

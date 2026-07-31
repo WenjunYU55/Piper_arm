@@ -13,6 +13,7 @@ from cv_bridge import CvBridge
 from geometry_msgs.msg import PointStamped
 from message_filters import ApproximateTimeSynchronizer, Subscriber
 from rclpy.duration import Duration
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CameraInfo, Image
@@ -56,6 +57,7 @@ class TargetLandmarkNode(Node):
             'transform_timeout_sec': 0.20,
             'refresh_cooldown_sec': 10.0,
             'request_refresh_on_new_view': True,
+            'request_refresh_on_mask_disagreement': False,
         }
         for name, value in defaults.items():
             self.declare_parameter(name, value)
@@ -233,7 +235,7 @@ class TargetLandmarkNode(Node):
             depth_ratio=ratio, depth_pixels=count)
 
     def request_refresh(self, reason):
-        if not bool(self.get_parameter('request_refresh_on_new_view').value):
+        if not self.refresh_enabled(reason):
             return
         now = time.monotonic()
         cooldown = float(self.get_parameter('refresh_cooldown_sec').value)
@@ -249,6 +251,13 @@ class TargetLandmarkNode(Node):
         })
         self.refresh_pub.publish(msg)
         self.last_refresh_time = now
+
+    def refresh_enabled(self, reason):
+        if reason == 'landmark_mask_disagreement':
+            return bool(
+                self.get_parameter('request_refresh_on_mask_disagreement').value
+            )
+        return bool(self.get_parameter('request_refresh_on_new_view').value)
 
     def lookup(self, target, source, stamp):
         return self.tf_buffer.lookup_transform(
@@ -282,9 +291,15 @@ class TargetLandmarkNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = TargetLandmarkNode()
+    # The synchronized image callback performs timestamped TF lookups. Give
+    # TransformListener another executor thread so those waits cannot starve
+    # the TF subscriptions that must fill the buffer.
+    executor = MultiThreadedExecutor(num_threads=2)
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     finally:
+        executor.shutdown()
         node.destroy_node()
         rclpy.shutdown()
 

@@ -1,0 +1,6 @@
+string session_id
+geometry_msgs/PointStamped rough_target
+---
+bool accepted
+string session_id
+string message

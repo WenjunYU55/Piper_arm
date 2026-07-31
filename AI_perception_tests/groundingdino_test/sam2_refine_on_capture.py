@@ -14,6 +14,8 @@ import cv2
 import numpy as np
 import yaml
 
+from run_groundingdino_on_capture import target_mask_appearance_validation
+
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 AI_TEST_DIR = SCRIPT_DIR.parent
@@ -25,6 +27,7 @@ TARGET_DEPTH_MARGIN_M = 0.03
 TARGET_SEARCH_MARGIN_PX = 24
 MIN_DEPTH_OCCLUDER_AREA_PX = 20
 MIN_TRACKED_MASK_FALLBACK_AREA_PX = 100
+MIN_TRACKED_MASK_FALLBACK_CONFIDENCE = 0.35
 TARGET_MASK_NEAR_MARGIN_PX = 6
 MIN_TARGET_NEAR_OVERLAP_PX = 10
 MIN_SEMANTIC_DEPTH_COVERAGE = 0.50
@@ -124,7 +127,12 @@ def target_depth_from_capture(capture_dir: Path, fallback_depth: np.ndarray | No
 
 def tracked_mask_target_fallback(capture_dir: Path) -> dict[str, Any] | None:
     mask = cv2.imread(str(capture_dir / "detection_mask.png"), cv2.IMREAD_GRAYSCALE)
-    if mask is None:
+    image = cv2.imread(str(capture_dir / "rgb.png"), cv2.IMREAD_COLOR)
+    if (
+        mask is None
+        or image is None
+        or image.shape[:2] != mask.shape[:2]
+    ):
         return None
     mask_bool = (mask > 0).astype(np.uint8)
     component_count, labels, stats, _ = cv2.connectedComponentsWithStats(mask_bool, connectivity=8)
@@ -132,7 +140,11 @@ def tracked_mask_target_fallback(capture_dir: Path) -> dict[str, Any] | None:
         return None
 
     target = read_yaml(capture_dir / "target_3d.yaml")
-    if not bool(target.get("valid", False)):
+    tracking_confidence = float(target.get("measurement_confidence", 0.0))
+    if (
+        not bool(target.get("valid", False))
+        or tracking_confidence < MIN_TRACKED_MASK_FALLBACK_CONFIDENCE
+    ):
         return None
     source_u = int(round(float(target.get("source_u", -1))))
     source_v = int(round(float(target.get("source_v", -1))))
@@ -148,14 +160,23 @@ def tracked_mask_target_fallback(capture_dir: Path) -> dict[str, Any] | None:
     height = int(stats[component, cv2.CC_STAT_HEIGHT])
     if width <= 0 or height <= 0:
         return None
+    component_mask = (labels == component).astype(np.uint8) * 255
+    appearance = target_mask_appearance_validation(image, component_mask)
+    if not appearance["accepted"]:
+        return None
     return {
         "label": "tracked target mask fallback",
-        "confidence": float(target.get("measurement_confidence", 0.0)),
+        "confidence": tracking_confidence,
         "box_xyxy_pixels": [float(x), float(y), float(x + width), float(y + height)],
         "is_target_candidate": True,
         "is_unsafe_candidate": False,
         "is_candidate_safe_class": False,
         "prompt_source": "tracked_target_mask",
+        "target_validation": dict(
+            appearance,
+            source="tracked_target_mask",
+            semantic_confidence=tracking_confidence,
+        ),
     }
 
 

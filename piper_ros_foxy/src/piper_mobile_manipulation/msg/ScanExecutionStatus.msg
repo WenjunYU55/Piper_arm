@@ -1,0 +1,13 @@
+std_msgs/Header header
+string plan_id
+string execution_mode
+string state
+string reason
+bool dry_run
+bool real_arm_motion
+bool approval_required
+uint32 current_view
+uint32 total_views
+float32 commanded_speed_percent
+float32 tracking_speed_scale
+float32 max_joint_error_rad

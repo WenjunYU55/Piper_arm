@@ -1,6 +1,17 @@
 status: accepted
 model: eye_in_hand
 method: OpenCV CALIB_HAND_EYE_PARK
+joint_reference_assessment:
+  joint: joint6
+  assessed_dates: ['2026-07-14', '2026-07-15']
+  proposed_feedback_shift_deg: 67.875
+  deployed_operation: none
+  reason: The analytically shifted transform reproduced saved sample algebra but failed
+    a three-pose physical fixed-board test. Replaying the three physical snapshots with
+    the original unadjusted transform produced approximately 10.8 mm maximum translation
+    drift and 1.37 degree maximum rotation drift, within the configured limits.
+  failed_shifted_report: fixed_board_validation_post_j6_20260715_gui.yaml
+  physical_fixed_board_revalidation_with_deployed_transform: required
 sample_count:
   fitting: 12
   held_out_validation: 3

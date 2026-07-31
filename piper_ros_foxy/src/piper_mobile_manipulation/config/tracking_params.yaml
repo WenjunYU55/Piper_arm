@@ -10,6 +10,12 @@
     max_3d_jump_m: 0.10
     min_area_ratio: 0.5
     max_area_ratio: 2.0
+    # Eye-in-hand camera motion legitimately changes pixels, apparent area and
+    # camera-relative depth.  Gate the timestamped base-frame observation.
+    use_camera_space_gates: false
+    max_target_speed_mps: 1.0
+    # GPU results may arrive late; never update velocity with an older image stamp.
+    reject_out_of_order_measurements: true
     min_confidence: 0.20
     lost_timeout_s: 1.0
     low_confidence_timeout_s: 0.5

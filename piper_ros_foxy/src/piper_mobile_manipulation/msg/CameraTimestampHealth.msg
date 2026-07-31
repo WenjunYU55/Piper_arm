@@ -1,0 +1,11 @@
+std_msgs/Header header
+string state
+bool healthy
+float64 offset_sec
+uint32 consecutive_healthy_frames
+bool image_stamp_monotonic
+bool arm_stationary
+bool recovery_requested
+string reason
+bool dry_run
+bool real_arm_motion

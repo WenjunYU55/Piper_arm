@@ -1,0 +1,34 @@
+/**:
+  ros__parameters:
+    reachable_viewpoints_topic: "/piper/reachable_scan_viewpoints"
+    reachable_acquisition_viewpoints_topic: "/piper/reachable_acquisition_viewpoints"
+    joint_states_topic: "/joint_states_single"
+    motion_limits_topic: "/piper/motion_limits"
+    tracking_health_topic: "/piper/tracking_health"
+    camera_timestamp_health_topic: "/piper/camera_timestamp_health"
+    obstacle_topic: "/piper/obstacle_instances_3d"
+    plan_topic: "/piper/tesseract_plan"
+    status_topic: "/piper/tesseract_plan_status"
+    readiness_topic: "/piper/tesseract_readiness"
+    data_timeout_sec: 1.0
+    motion_limits_timeout_sec: 3.0
+    motion_limits_change_confirmation_sec: 7.0
+    motion_limits_change_minimum_samples: 3
+    worker_heartbeat_timeout_sec: 1.5
+    request_ttl_sec: 180.0
+    response_timeout_sec: 180.0
+    max_tracking_measurement_age_sec: 0.75
+    max_execution_viewpoints: 13
+    joint_limit_margin_rad: 0.03
+    # Positive compatibility value bound into the request. The worker validates
+    # direct SDK-interpolated target segments; it does not emit intermediate
+    # hardware commands from this value.
+    trajectory_joint_step_rad: 0.025
+    trajectory_command_rate_hz: 100.0
+    speed_percent: 5.0
+    roll_samples_rad: [-2.094395102, -1.047197551, 0.0, 1.047197551, 2.094395102, 3.141592654]
+    deterministic_seed: 42
+    # Nearest one-joint collision-qualified adjustment of the operator's
+    # feedback pose; J3 is 0.050 rad lower than the folded original.
+    return_home_positions_rad: [0.0, -0.032, -0.026, -0.039, 0.346, 0.107]
+    debug: true

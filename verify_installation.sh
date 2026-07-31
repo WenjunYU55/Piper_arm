@@ -43,7 +43,7 @@ else
   fail "RealSense workspace has not been built"
 fi
 
-for command_name in candump colcon ethtool git ip ros2; do
+for command_name in bwrap candump colcon ethtool git ip micromamba ros2; do
   if command -v "$command_name" >/dev/null 2>&1; then
     pass "command: $command_name"
   else
@@ -76,13 +76,26 @@ print('PASS  piper-sdk==0.6.1 and python-can==4.5.0')
 PY
 if [ "$?" -ne 0 ]; then failures=$((failures + 1)); fi
 
-for package_name in piper piper_description piper_mobile_manipulation piper_msgs realsense2_camera; do
+for package_name in \
+  piper \
+  piper_description \
+  piper_mobile_manipulation \
+  piper_msgs \
+  piper_tesseract_foxy \
+  realsense2_camera; do
   if ros2 pkg prefix "$package_name" >/dev/null 2>&1; then
     pass "ROS package: $package_name"
   else
     fail "ROS package: $package_name"
   fi
 done
+
+if [ -x "$ROOT/motion_planning/tesseract/.runtime/rootfs/opt/tesseract/bin/python" ] &&
+   [ -f "$ROOT/motion_planning/tesseract/.runtime/runtime.lock" ]; then
+  pass "isolated Tesseract worker runtime"
+else
+  fail "isolated Tesseract worker runtime (run setup_rootless_worker.sh)"
+fi
 
 if [ "$failures" -eq 0 ]; then
   echo "Installation verification passed. Hardware connectivity is not tested."

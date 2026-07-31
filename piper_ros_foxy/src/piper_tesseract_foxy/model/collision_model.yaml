@@ -1,0 +1,121 @@
+schema_version: 1
+model: piper_l515_planning
+qualified_for_hardware: true
+qualification_date: '2026-07-25'
+hardware_qualification_scope: >-
+  Supervised collision-aware PiPER execution through the sole guarded Foxy executor, with exact
+  trajectory-hash approval, incremental feedback convergence, normal joint limits, runtime health
+  gates, and all six joints freely planned. This qualification covers model/path collision
+  validity, not execution dynamics at every SDK speed. Physical acceptance remains at 5 percent;
+  the executor exposes the SDK's 1-100 percent setting, and higher speeds require separate dynamic
+  characterization.
+qualification_reason: >-
+  The generated model contains conservative L515 housing, mount, connector, and local strain-relief
+  envelopes. Link1, link2, and link5 use hash-verified overlapping 30 mm longitudinal pieces so
+  convexification no longer wraps each complete concave link in one hull. Mode-0 FK, free
+  six-joint/J6 motion, finite ISP output, bounded adaptive exact-path validation, a
+  clear-endpoints/midpoint-collision OMPL detour, an all-zero acquisition, and the recorded compact
+  folded start all pass under pinned OMPL seed 42 in the isolated worker. The compact-start
+  regression proves a 0.05 rad J3-only prefix, and the live-boundary regression proves one
+  combined J2/J3 target can monotonically recover two deviations of at most 0.04 rad before
+  normal clearance and global planning resume. Each prefix is trajectory-hash bound and receives
+  an independent Foxy proxy check; no collision pair is globally disabled. The nonlocal cable
+  run remains an explicit physical routing and operator-clearance control.
+robot_collision_source: >-
+  Detailed PiPER STL meshes; link1, link2, and link5 are deterministically divided into
+  overlapping 30 mm longitudinal pieces before Tesseract convexifies each piece.
+collision_mesh_decomposition:
+  generator: longitudinal_triangle_slab_v1
+  manifest_uri: package://piper_description/meshes/planning_30mm/collision_mesh_manifest.json
+  manifest_sha256: 237c06f03ef248c535b28fbf588e65160325a5f8f48632a9f0237e59c7a10956
+  mesh_uri_prefix: package://piper_description/meshes/planning_30mm
+  containment_policy: >-
+    Every source triangle is copied to every longitudinal slab intersected by its local-axis
+    extent. Tesseract convexifies the individual overlapping pieces; source surface triangles
+    are never discarded.
+bootstrap_start_recovery:
+  enabled: true
+  plan_kind: ROUGH_ACQUISITION
+  observation_mode: bootstrap_static
+  search_step_rad: 0.01
+  maximum_single_joint_delta_rad: 0.15
+  maximum_recovery_joints: 2
+  maximum_start_limit_violation_rad: 0.04
+  allowed_start_limit_joints: [2, 3]
+  monotonic_tolerance_m: 0.0002
+  allowed_start_contacts:
+    - links: [gripper_base, link1]
+      maximum_penetration_m: 0.0001
+      reason: >-
+        Positive-clearance folded-start proximity below the global motion-bound margin;
+        penetration remains rejected and recovery must monotonically increase clearance.
+    - links: [gripper_base, link2]
+      maximum_penetration_m: 0.0001
+      reason: >-
+        Positive-clearance folded-start proximity below the global motion-bound margin;
+        penetration remains rejected and recovery must monotonically increase clearance.
+    - links: [link1, link5]
+      maximum_penetration_m: 0.0065
+      reason: bounded folded-start model overlap; recovery must monotonically leave it
+    - links: [link2, link5]
+      maximum_penetration_m: 0.008
+      reason: bounded folded-start convex-piece overlap; recovery must monotonically leave it
+proposal_collision_margin_m: 0.005
+hardware_clearance_margin_m: 0.005
+clearance_report_distance_m: 0.050
+validation_max_joint_l1_step_rad: 0.001
+default_relative_motion_radius_m: 1.6
+pair_clearance_overrides_m:
+  - links: [base_link, link2]
+    margin_m: 0.0025
+    relative_motion_radius_m: 0.30
+    reason: >-
+      Reviewed compact shoulder design corridor at the valid all-zero controller pose; the
+      adaptive motion bound covers motion through joints 1 and 2 and penetration remains forbidden.
+  - links: [link2, link4]
+    margin_m: 0.0005
+    relative_motion_radius_m: 1.00
+    reason: >-
+      Reviewed folded-arm design corridor at the valid all-zero controller pose; the conservative
+      relative-motion bound is retained and penetration remains forbidden.
+  - links: [gripper_base, link5]
+    margin_m: 0.0005
+    relative_motion_radius_m: 0.15
+    reason: reviewed compact fixed-wrist design clearance; penetration remains forbidden
+  - links: [l515_camera_cable_envelope, link5]
+    margin_m: 0.0015
+    relative_motion_radius_m: 0.20
+    reason: >-
+      The envelope already includes 9.5 mm radial housing padding; this pair preserves at least
+      11.0 mm from the official housing while allowing the compact wrist's designed proximity.
+  - links: [l515_mount_envelope, link5]
+    margin_m: 0.002
+    relative_motion_radius_m: 0.15
+    reason: compact wrist-to-mount design corridor; penetration remains forbidden
+attached_envelopes:
+  - name: l515_camera_cable_envelope
+    parent_link: camera_optical_frame
+    origin_xyz_m: [0.0, 0.0, -0.020]
+    origin_rpy_rad: [0.0, 0.0, 0.0]
+    size_m: [0.080, 0.080, 0.050]
+    containment_basis: >-
+      The official 61 mm diameter by 26 mm L515 housing plus at least 9.5 mm radial and 12 mm
+      depth allowance for the connector and local strain relief.
+  - name: l515_mount_envelope
+    parent_link: link6
+    origin_xyz_m: [-0.040, -0.002, 0.015]
+    origin_rpy_rad: [0.0, 0.0, 0.0]
+    size_m: [0.040, 0.020, 0.025]
+    containment_basis: >-
+      Conservative bridge from the wrist toward the accepted approximately 75 mm
+      link6-to-optical offset, covering the local mount and fasteners without falsely filling the
+      intentional wrist/link5 clearance.
+unresolved_geometry:
+  - further collision-mesh simplification may reduce planning cost but is not required by this qualification
+  - cable run beyond the local wrist envelope remains a physical routing and operator-clearance control
+allowed_collision_policy: mechanically adjacent or rigidly fixed design-contact pairs only
+final_validation: >-
+  Adaptive dense discrete Bullet on the exact post-ISP path. Each interval has at most 0.001 rad
+  total joint change and must retain its pair clearance plus a conservative relative-link motion
+  bound. The 0.35.0.6 nanobind continuous-manager path is disabled after a repeatable qualification
+  segfault; no response claims BulletCast or FCL validation.

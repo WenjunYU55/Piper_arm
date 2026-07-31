@@ -12,6 +12,13 @@ def generate_launch_description():
     return LaunchDescription([
         Node(
             package='piper_mobile_manipulation',
+            executable='motion_compensated_prompt_node.py',
+            name='motion_compensated_prompt',
+            output='screen',
+            parameters=[cfg('frames.yaml')],
+        ),
+        Node(
+            package='piper_mobile_manipulation',
             executable='mask_to_detection_node.py',
             name='sam2_mask_to_detection',
             output='screen',

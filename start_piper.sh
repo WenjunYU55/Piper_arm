@@ -13,12 +13,25 @@ CAN_BITRATE="${PIPER_CAN_BITRATE:-1000000}"
 CAN_USB_ADDRESS="${PIPER_CAN_USB_ADDRESS:-}"
 PIPER_AUTO_ENABLE="${PIPER_AUTO_ENABLE:-false}"
 PIPER_GRIPPER_EXIST="${PIPER_GRIPPER_EXIST:-true}"
-PIPER_RVIZ_CTRL_FLAG="${PIPER_RVIZ_CTRL_FLAG:-false}"
 PIPER_JOINT_CTRL_TOPIC="${PIPER_JOINT_CTRL_TOPIC:-/joint_ctrl_single}"
 PIPER_ROS_DOMAIN_ID="${PIPER_ROS_DOMAIN_ID:-42}"
 PIPER_ENABLE_TIMEOUT="${PIPER_ENABLE_TIMEOUT:-15.0}"
 PIPER_JOINT_BOUNDS_PATH="${PIPER_JOINT_BOUNDS_PATH:-$SCRIPT_DIR/piper_joint_bounds.json}"
+PIPER_FASTRTPS_PROFILE="${PIPER_FASTRTPS_PROFILE:-$SCRIPT_DIR/fastdds_gui_udp_only.xml}"
 export ROS_DOMAIN_ID="$PIPER_ROS_DOMAIN_ID"
+
+# Foxy/Fast DDS shared-memory participants on this workstation can retain
+# stale port state across GUI/driver restarts.  Run the driver on the same
+# loopback UDP transport as the GUI-owned scan processes so feedback, enable
+# services and one-target MoveJ commands cannot split across transports.
+if [ -f "$PIPER_FASTRTPS_PROFILE" ]; then
+    export FASTRTPS_DEFAULT_PROFILES_FILE="$PIPER_FASTRTPS_PROFILE"
+    export RMW_FASTRTPS_USE_QOS_FROM_XML=0
+else
+    echo "ERROR: Fast DDS transport profile not found."
+    echo "Expected: $PIPER_FASTRTPS_PROFILE"
+    exit 1
+fi
 
 # 1. Source ROS 2 Foxy
 if [ -f /opt/ros/foxy/setup.bash ]; then
@@ -147,6 +160,7 @@ echo "CAN interface is UP."
 # 11. Launch PiPER driver
 echo "Launching PiPER driver."
 echo "ROS_DOMAIN_ID is $ROS_DOMAIN_ID."
+echo "Using UDP-only Fast DDS transport: $FASTRTPS_DEFAULT_PROFILES_FILE"
 echo "Arm will NOT auto-enable."
 echo "Use a second terminal for enable_piper.sh, disable_piper.sh, and topic commands."
 echo "WARNING: once enabled, reset/gui/joint commands can move the real arm."
@@ -155,7 +169,6 @@ ros2 launch piper start_single_piper.launch.py \
   can_port:="$CAN_PORT" \
   auto_enable:="$PIPER_AUTO_ENABLE" \
   gripper_exist:="$PIPER_GRIPPER_EXIST" \
-  rviz_ctrl_flag:="$PIPER_RVIZ_CTRL_FLAG" \
   enable_timeout:="$PIPER_ENABLE_TIMEOUT" \
   joint_bounds_path:="$PIPER_JOINT_BOUNDS_PATH" \
   joint_ctrl_topic:="$PIPER_JOINT_CTRL_TOPIC"

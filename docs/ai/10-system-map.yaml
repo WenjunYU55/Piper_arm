@@ -1,0 +1,196 @@
+schema_version: 1
+document: system_map
+runtime_surfaces:
+  real_arm:
+    process: piper_ctrl_single_node
+    transport: SocketCAN can0 at 1 Mbps through piper_sdk
+    enable_handshake: /enable_srv uses the installed SDK's EnablePiper or DisablePiper feedback-confirmed handshake every 10 ms up to enable_timeout; gripper control is sent once only after motor-state success.
+    joint_command_translation: Every accepted JointState target becomes JointCtrl in SDK MoveJ mode. MotionCtrl_2 mode/speed is reasserted only when its signature changes. A six-position command is arm-only and cannot emit GripperCtrl; an explicitly supplied seventh position retains normal cached gripper behavior. Enable/disable resets both caches.
+    input: [/joint_ctrl_single, /pos_cmd, /enable_flag, /enable_srv]
+    output: [/joint_states_single, /arm_status, /end_pose, /piper/motion_limits]
+    feedback_loop: An executor-owned 200 Hz Node timer publishes current telemetry. The former unmanaged thread and Node.create_rate loop were removed after live stalls; graph-visible endpoints still do not prove delivery, so startup and planning require actual fresh samples.
+    launch_defaults: start_single_piper.launch.py defaults auto_enable=false and exposes only can_port, auto_enable, joint_ctrl_topic, gripper_exist, enable_timeout, and joint_bounds_path. The removed girpper_exist and rviz_ctrl_flag compatibility parameters must not return.
+  live_robot_description:
+    launch: piper_description/display_live_robot.launch.py
+    role: Read-only robot_state_publisher and optional RViz; consumes real /joint_states_single feedback and publishes world through base_link through link/gripper TF frames.
+    safety_boundary: Starts no fake joint-state publisher, command publisher, driver, or motor-enable client. The former command-coupled RViz/display launches and joint_state_publisher_gui dependency were deleted.
+  draggable_joint_preview:
+    launch: piper_description/joint_preview.launch.py
+    role: Separate preview_-prefixed robot_state_publisher, real STL RobotModel, and six RViz revolute interactive markers driven only by private preview JointState topics.
+    safety_boundary: Dragging and preview reset never publish /joint_ctrl_single. The native GUI alone may mirror the latest preview after fresh-feedback/status/path checks and explicit confirmation.
+  camera:
+    process: realsense2_camera
+    output: [/camera/color/image_raw, /camera/color/camera_info, /camera/aligned_depth_to_color/image_raw, camera static TF]
+    timestamp_mode: Both camera startup scripts set and verify RGB and depth global_time_enabled after the live sensor options are declared, because L515 firmware initializes these controls false even when launch overrides are present. Startup fails closed unless both are true, allowing librealsense to continuously map device hardware time into the host clock instead of accumulating oscillator drift from a one-time startup anchor.
+  camera_timestamp_watchdog:
+    process: camera_timestamp_watchdog_node.py
+    role: Compares each per-frame color CameraInfo stamp with ROS time, rejects backwards/large clock offsets, requires consecutive healthy frames, and publishes typed health without deserializing full RGB images.
+    recovery_boundary: Retains its CameraInfo and joint subscription objects for the node lifetime and services the lightweight timestamp, latest-sample joint, and timer callbacks on Foxy's standard single-thread executor. This avoids the live failure in which custom multi-thread callback groups exposed endpoints but stopped delivering joint feedback and health. It uses reliable depth-1 latest-sample joint QoS and recreates only the read-only joint subscription on a bounded 10-second default interval if callbacks become stale. Recovery remains blocked until fresh positions prove stationarity, so 200 Hz feedback cannot accumulate a backlog or silently leave recovery unavailable. It writes a full-pipeline recovery request only after positions remain within 0.001 rad for 0.75 seconds; noisy PiPER instantaneous velocity telemetry is not treated as physical motion. It never commands or enables the arm.
+  foxy_geometry:
+    launch: piper_mobile_manipulation/gpu_geometry.launch.py
+    role: ROS image/depth conversion, TF-aware tracking, quality, occlusion, obstacles, and target landmark. Obstacle geometry recreates a stalled read-only TF listener on a bounded interval and remains blocked until a fresh transform arrives. For ROUGH_ACQUISITION only, an exact target_mask_missing result with obstacle_count=0 is authoritative for a timestamp-correlated typed empty scene; both the geometry relay and executor can construct that same clear scene so one missed relay cannot stop the bounded search. Obstacle-bearing results still require SAM2 IDs and depth projection.
+  isolated_gpu:
+    heavy_worker: AI_perception_tests/heavy_model_worker.py
+    live_worker: AI_perception_tests/sam2_live_worker.py
+    boundary: Filesystem only; workers import no ROS code and cannot command the arm.
+  supervised_workflow:
+    process: supervised_cube_workflow_node.py
+    role: Dry-run, command-free obstacle/capture coordinator. It exposes /supervised_cube_workflow/diagnostic_state, treats fresh valid stable base_link TrackedTarget plus TrackingHealth TRACKING and exact LOCKED status as the authoritative scan-ready lock, keeps target_landmark as diagnostic only, consumes /piper/target_cloud with matching best-effort sensor QoS, and preserves a capture cloud across either cloud/status arrival order before advancing modeled_views; it deliberately has no arm command publisher.
+  supervised_viewpoint_executor:
+    process: scan_viewpoint_executor_node.py
+    role: Separate proposal-first executor that accepts only collision-qualified Tesseract all-six-joint paths. The former legacy fixed-J6 numerical IK backend was removed on 2026-07-24. It validates the exact finite schema-v5 sdk_movej_targets_v1 start/target path, zero derivative placeholders, controller-limit hash, selected speed, and target-order rate without altering it. Real joint commands require launch opt-in plus exact plan ID and exact trajectory hash approval.
+    command_boundary: Proposal-only mode creates no /joint_ctrl_single publisher. Motion mode never enables motors and applies the GUI-selected finite 1-100 percent aggregate SDK speed to both ROUGH_ACQUISITION and MULTIVIEW_SCAN. It sends each arm-only six-position MoveJ endpoint exactly once, waits for measured progress and 0.025 rad target convergence, and only then advances. A folded-start acquisition may send one proven bootstrap target first. A 90-second target deadline or 20-second total-joint no-progress watchdog aborts to current-position hold. Endpoint position plus velocity convergence remains mandatory before capture, and acquisition never calls capture.
+  rough_target_acquisition:
+    process: scan_target_acquisition_node.py
+    role: Exposes the typed /scan_target_acquisition/prepare service, which atomically binds a unique session_id to one fresh finite base_link PointStamped. An exact duplicate request is idempotent; the same ID cannot be rebound to different target data. It uses current camera TF to create a minimum-translation centered look plus left/right/up/down 15-degree fallbacks at the lesser of the live camera-target range and the configured 0.45 m maximum, then requests a command-free ROUGH_ACQUISITION proposal after matching reachability. source_request_id is preserved through candidates, schema-v5 planning, executor normalization, and GUI acceptance. Its two-thread executor keeps TF subscriptions runnable while the service obtains the current transform; the bounded handoff allows only one bridge call in flight.
+    handoff: On executor ACQUIRED, calls /supervised_cube_workflow/start once and waits for SCAN_READY plus matching tracked-target viewpoints. It does not request the normal plan. If acquisition terminates while a fresh authoritative measured lock is nevertheless available, explicit Prepare Scan from Current Lock may adopt that lock as a new scan phase, call /supervised_cube_workflow/start, and wait for SCAN_READY; it does not change the acquisition terminal result or reuse its approval. The GUI owns the explicit later /tesseract_plan_bridge/request_plan call. The coordinator never approves a plan, publishes /joint_ctrl_single, or calls /enable_srv.
+  tesseract_foxy_bridge:
+    process: piper_tesseract_foxy/tesseract_plan_bridge
+    role: Freezes healthy Foxy state, target/viewpoints, model/calibration hashes, six-joint position limits, fresh hash-bound controller velocity/acceleration feedback, selected speed, and—on MULTIVIEW_SCAN—valid collision-box obstacles into a canonical schema-v5 atomic filesystem request; validates the bound response and publishes typed TesseractPlan/Status. MULTIVIEW_SCAN requires measured tracking and a perception_snapshot scene. ROUGH_ACQUISITION binds rough-coordinate provenance to bootstrap_static, intentionally omits perception obstacles for its first camera-facing segment, and retains fresh joints, camera clock, model geometry, limits, and collision checks.
+    command_boundary: Has no command publisher, enable client, CAN access, or worker DDS connection.
+    feedback_boundary: Creates every read-only subscription once, retains it for node lifetime, consumes /joint_states_single through reliable depth-1 latest-sample QoS, and rejects missing or stale feedback without destroying/recreating DDS entities. It validates the worker's atomic heartbeat by schema, backend, generation, ready flag, and 1.5-second freshness, then publishes /piper/tesseract_readiness with separate acquisition and multiview blockers. TesseractPlan uses reliable transient-local depth-1 QoS so a one-shot validated proposal survives late Foxy discovery and is still rechecked for expiry and health.
+  isolated_tesseract_worker:
+    process: piper_tesseract_foxy.worker inside the pinned rootless Ubuntu 24.04 Bubblewrap userspace or equivalent OCI image
+    role: ROS-free CPU proposal worker using Tesseract 0.35, hash-verified 30 mm longitudinal collision pieces for link1/link2/link5, explicit six-joint look-at roll/IK branch selection, request-bound OMPL seed 42 applied before planner construction, OMPL/ISP goal establishment, one direct SDK MoveJ target per viewpoint, and adaptive exact-segment Bullet validation. Paths that require an OMPL detour are rejected because the PiPER SDK cannot consume that detour as one target. Because MoveJ exposes positions plus aggregate speed rather than per-joint velocity/acceleration control, schema-v5 derivative arrays are exact zeros under sdk_movej_targets_v1. A bounded one-target start recovery exists only for the first bootstrap_static ROUGH_ACQUISITION segment. The internal planning budget is 150 seconds so a response is emitted before the bridge's 180-second timeout. The global clearance remains 0.005 m and no pair is globally disabled.
+    current_status: Core qualification and the exact compact-start qualification passed on 2026-07-27 with collision_model_qualified_for_hardware=true. The recorded compact start and target [0.33,-0.14,0.0] produced a J3 -0.05 rad recovery ending at point 55 of a 352-point smooth trajectory; 5608 validation samples passed and the post-recovery minimum qualified clearance was 0.001006 m. J6 remains fully free. The nanobind continuous manager is disabled after a repeatable segfault, so no output claims BulletCast or FCL validation. The latest live evidence is the 2026-07-29 exact 13-view sdk_movej_targets_v1 physical acceptance at 5 percent.
+  operator_ui:
+    process: piper_gui_native.py
+    role: Real enable/disable and joint command GUI; its Graphical tab controls a draggable RViz twin. Its Acquire & Scan tab accepts rough base_link XYZ, owns the Tesseract worker and scan-stack child processes, displays status, and requires one exact confirmation for acquisition plus a separate exact confirmation for the later qualified 13-view scan.
+    preview_boundary: Opening, loading, and dragging the 3D model are motion-free. Mirror Preview requires fresh feedback, clean arm status, a valid conservative path, a confirmation dialog, and caps speed at 10 percent.
+    automation_boundary: >-
+      Driver, camera, and perception remain externally owned. Starting
+      automation destroys the GUI manual /joint_ctrl_single publisher, refuses
+      any existing automation stack or command publisher, and accepts a finite
+      GUI speed from 1 through 100 percent. Step 1 stays pending until both
+      owned parents, required critical nodes/services, a fresh ready worker
+      heartbeat, acquisition readiness, and sole executor ownership are
+      proven; Step 2 stays disabled otherwise. Step 2 binds one immutable
+      acquisition session, dispatches service responses on a re-entrant
+      two-thread GUI executor, retries the exact payload through a fresh client
+      endpoint after an 8-second timeout, preserves it for an operator retry
+      after two timeouts, and accepts only its correlated plan within 185
+      seconds. Step 4 is a generation-bound state machine driven by fresh
+      tracking and authoritative workflow diagnostics; it uses multiview
+      rather than acquisition readiness and has 15/12/185-second
+      workflow/queue/result deadlines. Any owned parent exit disables
+      automation and stops the other group. The GUI never enables motors and
+      restores manual ownership only after GUI-owned processes stop and no
+      command publisher remains. Disable is not a direct service call: the
+      sole command owner must send fresh current feedback, prove 0.025 rad
+      target and 0.005 rad sample-motion tolerances continuously for one
+      second, and only then request motor disable; the eight-second failure
+      path leaves motors enabled.
+    current_validation: On 2026-07-20 a supervised GUI-equivalent direct command moved J6 by +0.02029 rad at 5 percent and returned it within 0.00210 rad of its measured start with err_code zero. On 2026-07-23 the planning collision model was separately qualified. On 2026-07-24 rough acquisition and a complete five-view automatic capture executed successfully at 5 percent under exact approval using the former stop-per-sample executor. On 2026-07-25 an obsolete generated root overlay was removed after it caused scan_capture import and TesseractPlan recovery-schema mismatches. On 2026-07-29 the repaired GUI Step 2 returned promptly and a 5-percent acquisition reached SCAN_READY. The position-only sdk_movej_targets_v1 route then completed exact 13-view plan 7474484cfd3ddb50 at 5 percent with 13 accepted full-resolution clouds and 13 synchronized records in scan_20260729_150616. Correlated frame pinning prevents heavy-inference cache eviction, stationary capture phases wait boundedly through transient obstacle-stream gaps, and every next motion still requires fresh obstacle geometry. The GUI returned to the compact pose, disabled successfully, and all camera/driver/automation processes were verified stopped.
+environment_load_order:
+  - source source_piper_foxy_environment.sh for GUI, driver-side scan tools, and manual Foxy checks; it clears inherited overlay variables, sources /opt/ros/foxy then piper_ros_foxy/install, and preflights exact package/import/schema identity
+  - L515_camera/realsense_ws/install/setup.bash when camera packages are required
+  - L515_camera/source_l515_environment.sh is the camera-specific loader for Foxy, RealSense, then the canonical PiPER overlay
+  - consistent ROS_DOMAIN_ID=42 across every terminal; driver/camera/perception may use ROS_LOCALHOST_ONLY=1, while start_gui.sh and run_supervised_viewpoint_execution.sh intentionally force 0 only because fastdds_gui_udp_only.xml provides an explicit 127.0.0.1-only UDP transport and disables shared memory
+  - never source /home/prl/Piper_arm/install/setup.bash; the repository-root build/install/log trees are unsupported generated duplicates and must not shadow piper_ros_foxy/install
+  - supervised viewpoint proposal exception: run_supervised_viewpoint_execution.sh calls the canonical helper and therefore sources only Foxy then piper_ros_foxy because it consumes camera-derived messages but does not link RealSense packages; do not add the RealSense overlay to this wrapper without repeating live callback-delivery tests
+  - Foxy DDS exception: start_gui.sh and run_supervised_viewpoint_execution.sh must export FASTRTPS_DEFAULT_PROFILES_FILE=fastdds_gui_udp_only.xml and RMW_FASTRTPS_USE_QOS_FROM_XML=0 after sourcing; this retains native reallocating endpoint histories while the XML controls the participant transport. ROS_LOCALHOST_ONLY=1 must not be restored in their process tree because Foxy replaces the profile and re-enables shared memory
+process_start_order:
+  gpu_pipeline:
+    - camera unless PIPER_REUSE_EXISTING_CAMERA=1
+    - camera_timestamp_watchdog
+    - heavy_refresh_bridge
+    - heavy_model_worker
+    - sam2_live_worker
+    - target_cloud
+    - sam2_live_bridge
+    - gpu_geometry launch
+  rationale: Bridges/workers must exist before the SAM2 bridge emits its initialization request; geometry consumes published masks.
+  supervised_scan:
+    - disabled PiPER driver plus hand-eye TF
+    - GPU perception until target tracking and obstacle geometry are healthy
+    - supervised_viewpoint_execution launch in proposal-only mode first
+    - enter and inspect the mandatory rough coordinate and exact acquisition plan
+    - separately enable motors and confirm only that acquisition execution hash
+    - wait for measured ACQUIRED, TRACKING/LOCKED, and workflow SCAN_READY
+    - explicitly Prepare Scan from Current Lock; review the fresh correlated 13-view plan
+    - separately confirm only that 13-view execution hash
+  tesseract_proposal:
+    - run setup_rootless_worker.sh once and verify the Canonical rootfs plus pinned dependency hashes, or build the equivalent pinned OCI image
+    - run qualify_rootless_worker.sh and retain its PASS report
+    - run the networkless read-only CPU worker against the private spool
+    - start supervised_viewpoint_execution with motion disabled; Tesseract is mandatory
+    - request a frozen plan through /tesseract_plan_bridge/request_plan
+    - review TesseractPlan, trajectory hash, rejection codes, and collision qualification
+  supervised_viewpoint_launch_internal:
+    - active_scan_debug_overlay starts first as a command-free visual/discovery participant
+    - viewpoint_reachability_filter starts after 0.5 seconds with arm-status freshness gating
+    - supervised_cube_workflow starts after 1.0 second
+    - scan_viewpoint_executor starts after 1.5 seconds
+    - scan_viewpoint_planner starts after 2.0 seconds, after its safety consumers
+    - scan_target_acquisition starts after 2.25 seconds; it remains command-free while bridge services appear
+    - mandatory tesseract_plan_bridge starts after 2.5 seconds
+    - scan_capture starts after 3.0 seconds in service-triggered mode so executor approval can require its RGB-D capture service
+    - every child except the visual-only overlay is critical; any critical child exit emits launch Shutdown so the GUI can observe the scan parent failure
+    - startup completion is readiness-driven rather than delay-driven; the fixed staggering only controls discovery order
+  live_tf_inspection:
+    - disabled PiPER driver publishing /joint_states_single
+    - piper_description display_live_robot.launch.py
+    - hand-eye publisher and camera when camera/object frames are required
+load_order_contracts:
+  - PiPER driver must be the sole process owning the CAN interface; stop it before direct-SDK J6 calibration.
+  - Hand-eye TF requires /joint_states_single and the RealSense camera static camera_link-to-optical transform.
+  - Live robot link TF requires display_live_robot.launch.py after the driver; this launch must remain feedback-only and remap robot_state_publisher joint_states input to /joint_states_single.
+  - A piper_mobile_manipulation source/interface change requires rebuild and fresh overlay sourcing before runtime.
+  - Changes to piper_mobile_manipulation planning interfaces require rebuilding both piper_mobile_manipulation and piper_tesseract_foxy, then sourcing a fresh overlay.
+  - Heavy and live workers use separate Python environments and communicate only through atomic READY-marked spool directories.
+  - GPU pipeline clears expected /tmp spool queues by default; arbitrary spool paths are refused for destructive cleanup.
+  - GPU pipeline atomically records each owned setsid process group in /tmp/piper_vision_recovery/process_groups.txt; stop_gpu_vision_pipeline.sh validates the manifest before stopping orphaned groups.
+  - Camera timestamp health must be HEALTHY before SAM2 advertises usable TRACKING or the scan executor creates/executes a plan. A timestamp fault blocks motion immediately; full-stack restart is requested only while the arm is stationary.
+  - GPU pipeline startup confirms the watchdog node and health publisher before starting downstream perception, retries only that process up to three times, and fails closed if camera timestamp safety never joins the graph.
+  - Automatic scan execution requires the accepted hand-eye calibration, measured joint-bound file, fresh arm/tracking/obstacle feedback, and a SCAN_READY supervised workflow.
+  - Rough acquisition is the only exception to target-tracking/SCAN_READY requirements. It requires explicit start, base_link hint freshness, exact ROUGH_ACQUISITION type/provenance/scene-mode/hash binding, camera-clock/joint/arm freshness, qualified collision output, exact approval, and the same GUI-selected 1-100 percent speed as the later scan. The first bootstrap-static segment alone omits perception obstacles; every later segment requires a fresh scene correlated to its settled semantic result.
+  - Every acquisition semantic request must include a unique request_id and min_image_stamp after settling. Only a matching status and image stamp may advance the executor. A target lock must be a new stable base_link TrackedTarget after that result and within 0.30 m of the hint.
+  - GUI-managed automation owns exactly one Tesseract worker and one scan stack. The worker lock prevents duplicates. Acquisition and scan require two separate exact confirmations. ACQUIRED/SCAN_READY never auto-request or auto-approve a scan. Prepare Scan from Current Lock may explicitly adopt a fresh authoritative measured lock after a terminal acquisition, but starts a new scan phase and cannot reuse or reinterpret the failed acquisition approval; it creates exactly one fresh normal request, and only its correlated 13-view result may be separately confirmed. Cancellation, retry, replan, process exit, or another plan remains terminal for the phase that produced it.
+  - The supervised viewpoint launch order is safety-relevant on this Foxy/Fast DDS host. Preserve the validated staggered order and freshness/retry gates; graph-visible endpoints without callbacks are not evidence of usable feedback.
+  - Manual GUI command publication and automatic execution are mutually exclusive. The Acquire & Scan tab enforces this by removing its manual publisher before launch; external publishers remain a hard refusal.
+  - Proposal-only viewpoint execution must not create a /joint_ctrl_single publisher; motion mode must never call /enable_srv.
+  - Tesseract is the only scan-planning backend and treats J1-J6 equally under the available controller/URDF limits and ordinary collision checks. The removed fixed-J6 fallback must not be restored; do not add a J6 lock or J6-specific cost.
+  - The production robot description contains kinematics, inertials, visual/collision geometry, and joint limits only. Unused Gazebo plugins, ros_control transmissions, fake joint-state control, and simulation configs were removed; keep simulation isolated if it is introduced later.
+  - The isolated worker must remain ROS/DDS/CAN/GPU/network-free at runtime and writable only to its bounded private spool queues needed for atomic request claim, response write, and completed-request removal.
+  - Tesseract hardware approval must reject collision_model_qualified=false even if the trajectory and approval hashes are otherwise valid.
+  - The canonical request must contain deterministic_seed 42. The worker seeds OMPL before constructing any planner and rejects a request whose seed differs from its pinned worker seed.
+  - A Tesseract route may exceed the legacy 0.45 rad cumulative per-view goal delta only when every exact hash-bound sample is at most 0.025 rad from the previous sample and the qualified final validator accepted that same path; start-state, feedback, health, and hold-on-abort gates remain mandatory.
+  - Valid unsafe/non-movable obstacle instances are planning geometry, not a reason to skip collision planning. Invalid, missing, stale, or untransformable obstacle geometry remains a fail-closed snapshot blocker.
+state_owners:
+  arm_enable_and_feedback: piper_ctrl_single_node.py
+  robot_link_tf: piper_description/display_live_robot.launch.py plus piper_description.xacro, driven by /joint_states_single
+  manual_joint_targets: piper_gui_native.py while automation is stopped
+  manual_3d_joint_preview: piper_description/piper_joint_preview_node.py owns private preview angles and interactive markers; piper_gui_native.py owns the separately confirmed real mirror action.
+  base_to_camera_tf: L515_camera/publish_hand_eye_tf.py first resolves and freezes the RealSense static camera_link-to-camera_color_optical_frame transform, then consumes reliable depth-1 latest-sample joint feedback and publishes dynamic base_link-to-camera_link. Startup fails closed if the static edge is unavailable; no reliable 200 Hz backlog is retained.
+  semantic_refresh_in_flight: heavy_refresh_bridge_node.py plus sam2_live_bridge_node.py
+  live_segmentation_session: sam2_live_worker.py
+  camera_timestamp_health: camera_timestamp_watchdog_node.py owns typed clock diagnostics; run_gpu_vision_pipeline.sh owns stationary-approved full-stack restart, capped 2/5/10/30-second recovery backoff, and the process-group manifest; stop_gpu_vision_pipeline.sh owns orphan-safe cleanup.
+  tracking_lifecycle_and_reacquisition: sam2_live_bridge_node.py; two-attempt recovery burst followed by motion-gated serialized periodic retries while ABSENT, plus one direct heavy refresh after valid TrackedTarget confidence remains below 0.60 for one second and rearms above 0.70.
+  metric_target_state: target_tracker_node.py; its two-thread executor keeps TF subscription callbacks live while timestamped target callbacks wait for transforms.
+  fixed_target_landmark: target_landmark_node.py; two-thread TF executor prevents timestamped lookup starvation.
+  scan_workflow_state: supervised_cube_workflow_node.py; owns capture/status ordering, target-cloud sensor QoS, accepted/modelled counters, and read-only diagnostic state.
+  scan_motion_proposal_and_execution: scan_viewpoint_executor_node.py
+  raw_rgbd_capture: scan_capture_node.py; owns fresh synchronized color/depth/camera-info buffering and one immutable RGB/depth/mask/metadata record after each accepted settled MULTIVIEW_SCAN viewpoint.
+  atomic_rough_target_acquisition_and_handoff: scan_target_acquisition_node.py plus target_acquisition.py
+  gui_automation_session_and_processes: piper_gui_native.py plus piper_gui_automation.py
+  scan_kinematics_and_collision_validation: scan_motion.py
+  timed_joint_command_schedule: scan_trajectory.py plus scan_viewpoint_executor_node.py
+  tesseract_request_and_ros_plan: piper_tesseract_foxy/bridge_node.py
+  tesseract_plan_generation: piper_tesseract_foxy/worker.py
+storage_owners:
+  joint_bounds: {path: piper_joint_bounds.json, writers: [piper_calibrate_bounds.py, piper_joint6_zero.py], readers: [piper_gui_native.py, piper_ctrl_single_node.py]}
+  hand_eye_calibration: {path: L515_camera/calibration/hand_eye/session_20260701_local/calibration_result.yaml, writer: L515_camera/solve_hand_eye.py; optional J6 shift is experimental and not deployed, reader: L515_camera/publish_hand_eye_tf.py}
+  heavy_spool: {path: /tmp/piper_heavy_refresh, ros_owner: heavy_refresh_bridge_node.py, worker_owner: heavy_model_worker.py}
+  sam2_spool: {path: /tmp/piper_sam2_live, ros_owner: sam2_live_bridge_node.py, worker_owner: sam2_live_worker.py}
+  tesseract_spool: {path: /run/user/<uid>/piper_tesseract_plans when XDG_RUNTIME_DIR exists, fallback: /tmp/piper_tesseract_plans, ros_owner: tesseract_plan_bridge, worker_owner: isolated Tesseract worker, mode: private 0700 directories with atomic canonical request/response JSON plus atomic bounded worker_health.json}
+  active_scan_dataset: {path: datasets/active_scan, writer: scan_capture_node.py, per_view: [RGB PNG, raw depth NPY, 16-bit millimetre depth PNG, mask PNG, YAML metadata with intrinsics/joints/execution identity]}
+message_boundaries:
+  ros_native: sensor_msgs, geometry_msgs, visualization_msgs, trajectory_msgs, piper_msgs, custom perception messages, ScanExecutionPlan/Status, TesseractPlan/Status/Readiness, PrepareAcquisition, ApproveScanExecution, and RequestTesseractPlan.
+  ros_json_strings: Heavy/SAM2 status and request, scan quality/occlusion/viewpoints, removal plan, target model, and workflow status.
+  filesystem_manifests: YAML metadata plus image/mask files and READY markers in both GPU spools; canonical hashed JSON requests/responses in the Tesseract spool.
+  tf: world to base_link is fixed and base_link through link1..link8/gripper frames comes from robot_state_publisher; base_link to camera_link is dynamic from joint feedback; RealSense owns camera_link to optical frames; tracker outputs remain in base_link when TF is enabled.
+ui_boundaries:
+  piper_gui_native: Hardware-capable. Manual mode publishes /joint_ctrl_single and calls /enable_srv. Acquire & Scan destroys that publisher, owns the worker/scan child processes, and uses executor approval/cancel services; it never calls enable automatically.
+  rviz_and_debug_viewers: Read-only visualizers for camera, masks, point clouds, markers, and scan overlays.
+  ros2_cli: Services under /supervised_cube_workflow are operator approvals but remain dry-run.
+  scan_executor_cli: /scan_viewpoint_executor/approve can start real low-speed motion only when the executor was launched with motion opt-in and the exact plan ID and confirmation phrase are supplied; Tesseract also requires the exact trajectory_sha256 and qualified model. Cancel requests a current-position hold.

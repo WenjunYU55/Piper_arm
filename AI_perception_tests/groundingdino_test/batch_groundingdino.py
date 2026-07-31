@@ -19,6 +19,7 @@ from run_groundingdino_on_capture import (
     DEFAULT_OBSTACLE_PROMPT,
     DEFAULT_OUTPUT_ROOT,
     DEFAULT_REPO_DIR,
+    DEFAULT_TARGET_PROMPT,
     DEFAULT_TEXT_THRESHOLD,
     GroundingDinoUnavailable,
     run_on_capture,
@@ -29,10 +30,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 AI_TEST_DIR = SCRIPT_DIR.parent
 DEFAULT_MANIFEST = AI_TEST_DIR / "test_sets" / "real_l515_baseline" / "manifest.yaml"
 DEFAULT_RESULTS = AI_TEST_DIR / "test_sets" / "real_l515_baseline" / "groundingdino_results.yaml"
-DEFAULT_PROMPT = (
-    "green cube . hand . pen . tissue . paper tissue . paper . cardboard . "
-    "fruit . tool . wire . unknown object ."
-)
+DEFAULT_PROMPT = DEFAULT_TARGET_PROMPT
 
 
 def read_yaml(path: Path) -> dict[str, Any]:

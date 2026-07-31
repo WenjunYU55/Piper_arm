@@ -130,26 +130,24 @@ auto_enable:是否自动使能，True则开启程序就自动使能
 # 注意这个设置为False，中断程序后再启动节点，机械臂会保持上次启动程序的状态
 # 若上次启动程序机械臂状态为使能，则中断程序后再启动节点，机械臂仍为使能
 # 若上次启动程序机械臂状态为失能，则中断程序后再启动节点，机械臂仍为失能
-girpper_exist:是否有末端夹爪，True则说明有末端夹爪，会开启夹爪控制
-rviz_ctrl_flag:是否使用rviz来发送关节角消息，True则接收rviz发送的关节角消息
-#由于rviz中的joint7范围是[0,0.04]，而真实夹爪行程为0.08m，打开rviz控制后会将rviz发出的joint7乘2倍
+gripper_exist:是否有末端夹爪，True则说明有末端夹爪，会开启夹爪控制
 ```
-
-有两个启动单臂的launch文件`start_single_piper_rviz.launch.py` 和 `start_single_piper.launch.py`
-
-前者是可以一起将rviz启动，然后可以拖动滑动条控制机械臂
 
 启动控制节点
 
 ```shell
 # 启动节点
-ros2 run piper piper_single_ctrl --ros-args -p can_port:=can0 -p auto_enable:=false -p gripper_exist:=true -p rviz_ctrl_flag:=true
+ros2 run piper piper_single_ctrl --ros-args -p can_port:=can0 -p auto_enable:=false -p gripper_exist:=true
 # 启动launch
-ros2 launch piper start_single_piper.launch.py can_port:=can0 auto_enable:=false gripper_exist:=false rviz_ctrl_flag:=true
+ros2 launch piper start_single_piper.launch.py can_port:=can0 auto_enable:=false gripper_exist:=false
 # 或，会以默认参数运行
 ros2 launch piper start_single_piper.launch.py
-# 也可以用rviz开启控制,需要更改的参数如上
-ros2 launch piper start_single_piper_rviz.launch.py
+```
+
+真实机械臂的 RViz 只读取反馈：
+
+```shell
+ros2 launch piper_description display_live_robot.launch.py
 ```
 
 `ros2 topic list`
@@ -303,24 +301,6 @@ int32 mode1
 int32 mode2
 ```
 
-## 使用仿真
-
-打开rviz
-
-```shell
-ros2 launch piper_description display_xacro.launch.py
-```
-
-运行后会发布`/joint_states`,可以通过`ros2 topic echo /joint_states` 查看
-
-同时会弹出两个页面如下，滑动条数值对应`/joint_states`数值，拖动滑动条可以改变其数值，rviz中的模型也会随动
-
-![ ](./asserts/pictures/rviz_display.jpg)
-
-### gazebo
-
-coming...
-
 ## Q&A
 
 1. 出现
@@ -405,24 +385,8 @@ sudo apt install ros-$ROS_DISTRO-ros2-controllers
 sudo apt install ros-$ROS_DISTRO-controller-manager
 ```
 
-3. 
-
-```shell
- "package 'joint_state_publisher_gui' not found
-```
-
-```shell
-sudo apt install ros-$ROS_DISTRO-joint-state-publisher-gui
-```
-
-4. 
+3.
 
 ```shell
 sudo apt install ros-$ROS_DISTRO-robot-state-publisher
-```
-
-5. 
-
-```shell
-sudo apt install ros-foxy-xacro
 ```

@@ -5,9 +5,11 @@
     camera_info_topic: "/camera/color/camera_info"
     mask_topic: "/piper/sam2_target_mask"
     target_topic: "/piper/target_3d"
-    depth_min_m: 0.25
+    # The L515 physical minimum is 0.25 m. A small software tolerance avoids
+    # rejecting valid boundary pixels because the node uses a strict comparison.
+    depth_min_m: 0.24
     depth_max_m: 1.20
-    min_depth_m: 0.25
+    min_depth_m: 0.24
     max_depth_m: 1.20
     use_median_depth: true
     min_valid_depth_ratio: 0.0
@@ -20,6 +22,10 @@
     max_depth_stddev_m: 0.20
     confidence_depth_stddev_m: 0.15
     max_depth_jump_m: 0.20
+    # A real post-motion depth step is accepted after three mutually
+    # consistent samples instead of permanently latching to the old view.
+    depth_jump_reacquire_samples: 3
+    depth_jump_reacquire_tolerance_m: 0.03
     smoothing_alpha: 0.2
     use_mask_depth: true
     mask_max_age_s: 0.20

@@ -13,10 +13,16 @@
   <exec_depend>urdf</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
-  <exec_depend>joint_state_publisher_gui</exec_depend>
-  <exec_depend>xacro</exec_depend>
   <exec_depend>rviz2</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>interactive_markers</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
+
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>python3-numpy</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

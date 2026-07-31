@@ -109,6 +109,46 @@ class HeavyModelWorkerTest(unittest.TestCase):
             self.assertIn("inference failed", result["error"])
             self.assertTrue((spool / "failed" / "job_failure").is_dir())
 
+    def test_target_missing_keeps_rgb_and_reserves_id_one_for_target(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            spool = Path(temporary)
+            job = spool / "requests" / "job_obstacle_only"
+            job.mkdir(parents=True)
+            rgb = np.zeros((20, 30, 3), dtype=np.uint8)
+            cv2.imwrite(str(job / "rgb.png"), rgb)
+            with (job / "request.yaml").open("w", encoding="utf-8") as stream:
+                yaml.safe_dump({
+                    "request_id": 9,
+                    "image_stamp": {"sec": 5, "nanosec": 6},
+                }, stream)
+            (job / "READY").touch()
+
+            def obstacle_only(_capture_dir, output_dir, _device):
+                obstacle = np.zeros((20, 30), dtype=np.uint8)
+                obstacle[4:12, 15:24] = 255
+                path = output_dir / "obstacle.png"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                cv2.imwrite(str(path), obstacle)
+                return {
+                    "target_mask_png": "",
+                    "obstacle_masks": [{
+                        "label": "hand",
+                        "mask_png": str(path),
+                        "unsafe": True,
+                    }],
+                }
+
+            worker = HeavyModelWorker(spool, inference=obstacle_only)
+            self.assertTrue(worker.process_one())
+            response = spool / "responses" / "job_obstacle_only"
+            with (response / "result.yaml").open("r", encoding="utf-8") as stream:
+                result = yaml.safe_load(stream)
+            self.assertEqual(result["status"], "target_mask_missing")
+            self.assertTrue((response / "rgb.jpg").is_file())
+            self.assertEqual(result["obstacle_count"], 1)
+            self.assertEqual(result["unsafe_obstacle_count"], 1)
+            self.assertEqual(result["tracked_objects"][0]["object_id"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

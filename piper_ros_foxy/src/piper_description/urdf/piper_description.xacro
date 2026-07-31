@@ -1,7 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<robot
-  name="arm"
-  xmlns:xacro="http://ros.org/wiki/xacro">
+<robot name="arm">
 <!-- world -->
   <link name="world"/>
   <joint name="fixed_base_joint" type="fixed">
@@ -123,18 +121,22 @@
   <joint
     name="joint2"
     type="revolute">
+    <!-- Mode-0 controller/FK offset. Do not add the optional SDK mode-1
+         two-degree J2/J3 correction to the robot_state_publisher model. -->
     <origin
       xyz="0 0 0"
-      rpy="1.5708 -0.1359 -3.1416" />
-      <!-- rpy="1.5708 -0.10095-0.03490659 -3.1416" /> -->
+      rpy="1.5707963267948966 -0.10088003076527219 -3.141592653589793" />
     <parent
       link="link1" />
     <child
       link="link2" />
     <axis
       xyz="0 0 1" />
+    <!-- Existing validated controller-coordinate bound from
+         piper_joint_bounds.json. This small negative range is required for
+         the reported mode-0 zero state; it is not a new measurement. -->
     <limit
-      lower="0"
+      lower="-0.044796192"
       upper="3.14"
       effort="100"
       velocity="5" />
@@ -175,8 +177,7 @@
     type="revolute">
     <origin
       xyz="0.28503 0 0"
-      rpy="0 0 -1.7939" />
-      <!-- rpy="0 0 -1.759-0.03490659" /> -->
+      rpy="0 0 -1.7589428201598853" />
     <parent
       link="link2" />
     <child
@@ -224,8 +225,8 @@
     name="joint4"
     type="revolute">
     <origin
-      xyz="-0.021984 -0.25075 0"
-      rpy="1.5708 0 0" />
+      xyz="-0.02198 -0.25075 0"
+      rpy="1.5707963267948966 0 0" />
     <parent
       link="link3" />
     <child
@@ -274,7 +275,7 @@
     type="revolute">
     <origin
       xyz="0 0 0"
-      rpy="-1.5708 0 0" />
+      rpy="-1.5707963267948966 0 0" />
     <parent
       link="link4" />
     <child
@@ -322,8 +323,8 @@
     name="joint6"
     type="revolute">
     <origin
-      xyz="8.8259E-05 -0.091 0"
-      rpy="1.5708 0 0" />
+      xyz="0 -0.091 0"
+      rpy="1.5707963267948966 0 0" />
     <parent
       link="link5" />
     <child
@@ -504,69 +505,4 @@
       velocity="1" />
   </joint>
 
-<!-- controller -->
-  <xacro:macro name="transmission_block" params="tran_name joint_name motor_name">
-    <transmission name="${tran_name}">
-        <type>transmission_interface/SimpleTransmission</type>
-        <joint name="${joint_name}">
-            <hardwareInterface>hardware_interface/PositionJointInterface</hardwareInterface>
-        </joint>
-        <actuator name="$motor_name">
-            <hardwareInterface>hardware_interface/PositionJointInterface</hardwareInterface>
-            <mechanicalReduction>1</mechanicalReduction>
-        </actuator>
-    </transmission>
-  </xacro:macro>
-
-  <xacro:transmission_block tran_name="tran1" joint_name="joint1" motor_name="motor1"/>
-  <xacro:transmission_block tran_name="tran2" joint_name="joint2" motor_name="motor2"/>
-  <xacro:transmission_block tran_name="tran3" joint_name="joint3" motor_name="motor3"/>
-  <xacro:transmission_block tran_name="tran4" joint_name="joint4" motor_name="motor4"/>
-  <xacro:transmission_block tran_name="tran5" joint_name="joint5" motor_name="motor5"/>
-  <xacro:transmission_block tran_name="tran6" joint_name="joint6" motor_name="motor6"/>
-  <xacro:transmission_block tran_name="tran7" joint_name="joint7" motor_name="motor7"/>
-  <xacro:transmission_block tran_name="tran8" joint_name="joint8" motor_name="motor8"/>
-<!-- gazebo -->
-  <gazebo>
-    <plugin name="gazebo_ros_control" filename="libgazebo_ros_control.so">
-        <robotNamespace>/piper_description</robotNamespace>
-        <legacyModeNS>true</legacyModeNS>
-    </plugin>
-  </gazebo>
- 
-  <gazebo reference="base_link">
-    <material>Gazebo/Black</material>
-  </gazebo>
-
-  <gazebo reference="link1">
-    <material>Gazebo/White</material>
-  </gazebo>
- 
-  <gazebo reference="link2">
-    <material>Gazebo/White</material>
-  </gazebo>
-
-  <gazebo reference="link3">
-    <material>Gazebo/White</material>
-  </gazebo>
- 
-  <gazebo reference="link4">
-    <material>Gazebo/Black</material>
-  </gazebo>
- 
-  <gazebo reference="link5">
-    <material>Gazebo/White</material>
-  </gazebo>
- 
-  <gazebo reference="link6">
-    <material>Gazebo/White</material>
-  </gazebo>
- 
-  <gazebo reference="link7">
-    <material>Gazebo/Orange</material>
-  </gazebo>
- 
-  <gazebo reference="link8">
-    <material>Gazebo/Orange</material>
-  </gazebo>
 </robot>

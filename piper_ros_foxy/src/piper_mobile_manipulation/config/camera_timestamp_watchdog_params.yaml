@@ -1,0 +1,19 @@
+/**:
+  ros__parameters:
+    image_topic: "/camera/color/camera_info"
+    joint_states_topic: "/joint_states_single"
+    health_topic: "/piper/camera_timestamp_health"
+    recovery_request_path: "/tmp/piper_vision_recovery/request.yaml"
+    enable_recovery_request: true
+    max_timestamp_offset_sec: 0.5
+    backward_tolerance_sec: 0.001
+    healthy_frames_required: 15
+    frame_timeout_sec: 2.0
+    startup_grace_sec: 3.0
+    joint_state_timeout_sec: 1.0
+    joint_subscription_retry_sec: 10.0
+    stationary_velocity_rad_s: 0.03
+    stationary_position_tolerance_rad: 0.001
+    stationary_duration_sec: 0.75
+    unhealthy_frames_before_recovery: 5
+    publish_period_sec: 0.2

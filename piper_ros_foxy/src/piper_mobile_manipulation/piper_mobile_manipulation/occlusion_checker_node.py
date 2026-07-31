@@ -12,7 +12,11 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
 
-from piper_mobile_manipulation.msg import Detection2D, Target3D
+from piper_mobile_manipulation.msg import (
+    Detection2D,
+    ScanExecutionStatus,
+    Target3D,
+)
 
 
 class OcclusionCheckerNode(Node):
@@ -24,6 +28,8 @@ class OcclusionCheckerNode(Node):
         self.declare_parameter('detection_topic', '/piper/sam2_detection_2d')
         self.declare_parameter('target_3d_topic', '/piper/target_3d')
         self.declare_parameter('scan_quality_topic', '/piper/scan_quality')
+        self.declare_parameter(
+            'scan_execution_status_topic', '/piper/scan_execution_status')
         self.declare_parameter('occlusion_status_topic', '/piper/occlusion_status')
         self.declare_parameter('occlusion_debug_topic', '/piper/occlusion_debug')
 
@@ -45,6 +51,7 @@ class OcclusionCheckerNode(Node):
         self.declare_parameter('use_reference_mask_area', True)
         self.declare_parameter('reference_update_alpha', 0.05)
         self.declare_parameter('min_reference_mask_area_px', 300)
+        self.declare_parameter('reference_initialization_frames', 8)
         self.declare_parameter('partial_visible_ratio', 0.75)
         self.declare_parameter('heavy_visible_ratio', 0.35)
         self.declare_parameter('dry_run', True)
@@ -70,6 +77,12 @@ class OcclusionCheckerNode(Node):
         self.pending_occlusion_state = None
         self.pending_occlusion_count = 0
         self.reference_mask_area_px = 0.0
+        self.reference_target_depth_m = 0.0
+        self.reference_normalized_mask_area_m2 = 0.0
+        self.reference_mask_area_samples = []
+        self.reference_target_depth_samples = []
+        self.reference_normalized_area_samples = []
+        self.reference_session_id = ''
 
         self.status_pub = self.create_publisher(
             String, self.get_parameter('occlusion_status_topic').value, 10
@@ -114,6 +127,12 @@ class OcclusionCheckerNode(Node):
             self.scan_quality_cb,
             10,
         )
+        self.create_subscription(
+            ScanExecutionStatus,
+            self.get_parameter('scan_execution_status_topic').value,
+            self.scan_execution_status_cb,
+            10,
+        )
 
         self.timer = self.create_timer(0.20, self.timer_cb)
         self.get_logger().warn(
@@ -143,6 +162,38 @@ class OcclusionCheckerNode(Node):
     def scan_quality_cb(self, msg):
         self.latest_scan_quality = self.parse_json_msg(msg)
         self.latest_quality_stamp = time.monotonic()
+
+    def scan_execution_status_cb(self, msg):
+        mode = str(msg.execution_mode).upper()
+        state = str(msg.state).upper()
+        plan_id = str(msg.plan_id).strip()
+        reset_state = (
+            mode == 'ROUGH_ACQUISITION' and state == 'ACQUIRED'
+        ) or (
+            mode == 'MULTIVIEW_SCAN' and state == 'PROPOSAL_READY'
+        )
+        if not reset_state or not plan_id:
+            return
+        session_id = '%s:%s:%s' % (mode, plan_id, state)
+        if session_id == self.reference_session_id:
+            return
+        self.reset_reference(session_id)
+
+    def reset_reference(self, session_id=''):
+        self.reference_mask_area_px = 0.0
+        self.reference_target_depth_m = 0.0
+        self.reference_normalized_mask_area_m2 = 0.0
+        self.reference_mask_area_samples = []
+        self.reference_target_depth_samples = []
+        self.reference_normalized_area_samples = []
+        self.reference_session_id = str(session_id)
+        self.occlusion_history = []
+        self.filtered_occlusion_state = None
+        self.pending_occlusion_state = None
+        self.pending_occlusion_count = 0
+        self.get_logger().info(
+            'reset occlusion reference for session %s'
+            % (self.reference_session_id or 'unscoped'))
 
     def timer_cb(self):
         now = time.monotonic()
@@ -211,32 +262,39 @@ class OcclusionCheckerNode(Node):
         quality_valid_depth_ratio = float(quality.get('valid_depth_ratio', 0.0))
         mask_bool = mask > 0
         mask_area_px = int(np.count_nonzero(mask_bool))
+        current_target_depth = self.latest_target_depth_field()
 
         if not target_valid:
-            state, reason = self.classify_by_visible_ratio(mask_area_px)
+            state, reason = self.classify_by_visible_ratio(
+                mask_area_px, current_target_depth)
             payload = self.base_payload(
                 state or 'LOST',
                 reason or 'target invalid',
                 quality=quality,
                 mask_area_px=mask_area_px,
             )
-            payload.update(self.reference_payload(mask_area_px))
+            payload.update(self.reference_payload(
+                mask_area_px, current_target_depth))
             return payload
         if self.latest_detection is not None and not self.latest_detection.valid:
-            state, reason = self.classify_by_visible_ratio(mask_area_px)
+            state, reason = self.classify_by_visible_ratio(
+                mask_area_px, current_target_depth)
             payload = self.base_payload(
                 state or 'LOST',
                 reason or 'detection_2d invalid',
                 quality=quality,
                 mask_area_px=mask_area_px,
             )
-            payload.update(self.reference_payload(mask_area_px))
+            payload.update(self.reference_payload(
+                mask_area_px, current_target_depth))
             return payload
         if mask_area_px < int(self.get_parameter('min_mask_area_px').value):
-            state, reason = self.classify_by_visible_ratio(mask_area_px)
+            state, reason = self.classify_by_visible_ratio(
+                mask_area_px, current_target_depth)
             if state is not None:
                 payload = self.base_payload(state, reason, quality=quality, mask_area_px=mask_area_px)
-                payload.update(self.reference_payload(mask_area_px))
+                payload.update(self.reference_payload(
+                    mask_area_px, current_target_depth))
                 return payload
             return self.base_payload('LOST', 'object mask missing or too small', quality=quality, mask_area_px=mask_area_px)
         if depth.shape[:2] != mask_bool.shape[:2]:
@@ -267,9 +325,10 @@ class OcclusionCheckerNode(Node):
             closer_ratio,
             persisted,
             mask_area_px,
+            target_depth,
         )
         if state == 'CLEAR':
-            self.update_reference_mask_area(mask_area_px)
+            self.update_reference_mask_area(mask_area_px, target_depth)
 
         payload = self.base_payload(state, reason, quality=quality, mask_area_px=mask_area_px)
         payload.update(
@@ -287,7 +346,7 @@ class OcclusionCheckerNode(Node):
                 'real_arm_motion': False,
             }
         )
-        payload.update(self.reference_payload(mask_area_px))
+        payload.update(self.reference_payload(mask_area_px, target_depth))
         return payload
 
     def stabilize_payload(self, payload):
@@ -341,7 +400,9 @@ class OcclusionCheckerNode(Node):
         partial_ratio = float(self.get_parameter('partial_occlusion_ratio').value)
         return closer_area >= min_area and closer_ratio >= partial_ratio
 
-    def classify(self, quality_label, valid_depth_ratio, closer_area, closer_ratio, persisted, mask_area_px):
+    def classify(
+            self, quality_label, valid_depth_ratio, closer_area, closer_ratio,
+            persisted, mask_area_px, target_depth_m):
         partial_ratio = float(self.get_parameter('partial_occlusion_ratio').value)
         heavy_ratio = float(self.get_parameter('heavy_occlusion_ratio').value)
         min_depth_ratio = float(self.get_parameter('min_valid_depth_ratio').value)
@@ -349,15 +410,17 @@ class OcclusionCheckerNode(Node):
 
         has_closer = closer_area >= min_area and closer_ratio >= partial_ratio
         heavy_closer = closer_area >= min_area and closer_ratio >= heavy_ratio
-        visible_state, visible_reason = self.classify_by_visible_ratio(mask_area_px)
+        visible_state, visible_reason = self.classify_by_visible_ratio(
+            mask_area_px, target_depth_m)
 
         if heavy_closer:
             return 'HEAVILY_OCCLUDED', 'large closer depth region'
-        if visible_state == 'HEAVILY_OCCLUDED':
-            return visible_state, visible_reason
-        if visible_state == 'PARTIALLY_OCCLUDED':
-            return visible_state, visible_reason
         if has_closer or persisted:
+            if visible_state == 'HEAVILY_OCCLUDED':
+                return (
+                    visible_state,
+                    visible_reason + ' with corroborating closer depth region',
+                )
             if quality_label in ('ACCEPTABLE', 'POOR'):
                 return 'PARTIALLY_OCCLUDED', 'closer depth region near object and reduced scan quality'
             return 'PARTIALLY_OCCLUDED', 'closer depth region near object mask'
@@ -369,10 +432,24 @@ class OcclusionCheckerNode(Node):
             return 'LOST', 'poor scan quality without reliable occlusion evidence'
         return 'UNKNOWN', 'scan quality unavailable'
 
-    def classify_by_visible_ratio(self, mask_area_px):
-        if not self.param_bool('use_reference_mask_area') or self.reference_mask_area_px <= 0.0:
+    @staticmethod
+    def normalized_mask_area(mask_area_px, target_depth_m):
+        depth = float(target_depth_m)
+        if not math.isfinite(depth) or depth <= 0.0:
+            return 0.0
+        return float(mask_area_px) * depth * depth
+
+    def classify_by_visible_ratio(self, mask_area_px, target_depth_m=0.0):
+        if (
+                not self.param_bool('use_reference_mask_area')
+                or self.reference_normalized_mask_area_m2 <= 0.0):
             return None, ''
-        visible_ratio = float(mask_area_px) / max(1.0, self.reference_mask_area_px)
+        current_normalized = OcclusionCheckerNode.normalized_mask_area(
+            mask_area_px, target_depth_m)
+        if current_normalized <= 0.0:
+            return None, ''
+        visible_ratio = current_normalized / max(
+            1e-9, self.reference_normalized_mask_area_m2)
         heavy_visible_ratio = float(self.get_parameter('heavy_visible_ratio').value)
         partial_visible_ratio = float(self.get_parameter('partial_visible_ratio').value)
         if visible_ratio <= heavy_visible_ratio:
@@ -381,26 +458,77 @@ class OcclusionCheckerNode(Node):
             return 'PARTIALLY_OCCLUDED', 'visible mask area dropped to %.2f of clear reference' % visible_ratio
         return None, ''
 
-    def update_reference_mask_area(self, mask_area_px):
+    def update_reference_mask_area(self, mask_area_px, target_depth_m):
         if not self.param_bool('use_reference_mask_area'):
             return
         min_reference = float(self.get_parameter('min_reference_mask_area_px').value)
         if mask_area_px < min_reference:
             return
+        normalized_area = OcclusionCheckerNode.normalized_mask_area(
+            mask_area_px, target_depth_m)
+        if normalized_area <= 0.0:
+            return
+        if self.reference_normalized_mask_area_m2 <= 0.0:
+            required = max(
+                1, int(self.get_parameter('reference_initialization_frames').value)
+            )
+            self.reference_mask_area_samples.append(float(mask_area_px))
+            self.reference_target_depth_samples.append(float(target_depth_m))
+            self.reference_normalized_area_samples.append(normalized_area)
+            if len(self.reference_mask_area_samples) > required:
+                self.reference_mask_area_samples = self.reference_mask_area_samples[-required:]
+                self.reference_target_depth_samples = (
+                    self.reference_target_depth_samples[-required:])
+                self.reference_normalized_area_samples = (
+                    self.reference_normalized_area_samples[-required:])
+            if len(self.reference_mask_area_samples) < required:
+                return
+            self.reference_mask_area_px = float(
+                np.median(np.asarray(self.reference_mask_area_samples, dtype=float))
+            )
+            self.reference_target_depth_m = float(
+                np.median(np.asarray(
+                    self.reference_target_depth_samples, dtype=float)))
+            self.reference_normalized_mask_area_m2 = float(
+                np.median(np.asarray(
+                    self.reference_normalized_area_samples, dtype=float)))
+            self.reference_mask_area_samples = []
+            self.reference_target_depth_samples = []
+            self.reference_normalized_area_samples = []
+            return
         alpha = float(self.get_parameter('reference_update_alpha').value)
         alpha = max(0.0, min(1.0, alpha))
-        if self.reference_mask_area_px <= 0.0:
-            self.reference_mask_area_px = float(mask_area_px)
-            return
-        self.reference_mask_area_px = (1.0 - alpha) * self.reference_mask_area_px + alpha * float(mask_area_px)
+        self.reference_mask_area_px = (
+            (1.0 - alpha) * self.reference_mask_area_px
+            + alpha * float(mask_area_px)
+        )
+        self.reference_target_depth_m = (
+            (1.0 - alpha) * self.reference_target_depth_m
+            + alpha * float(target_depth_m)
+        )
+        self.reference_normalized_mask_area_m2 = (
+            (1.0 - alpha) * self.reference_normalized_mask_area_m2
+            + alpha * normalized_area
+        )
 
-    def reference_payload(self, mask_area_px):
+    def reference_payload(self, mask_area_px, target_depth_m=0.0):
+        current_normalized = OcclusionCheckerNode.normalized_mask_area(
+            mask_area_px, target_depth_m)
         visible_ratio = 0.0
-        if self.reference_mask_area_px > 0.0:
-            visible_ratio = float(mask_area_px) / max(1.0, self.reference_mask_area_px)
+        if (
+                self.reference_normalized_mask_area_m2 > 0.0
+                and current_normalized > 0.0):
+            visible_ratio = current_normalized / max(
+                1e-9, self.reference_normalized_mask_area_m2)
         return {
             'reference_mask_area_px': float(self.reference_mask_area_px),
+            'reference_target_depth_m': float(self.reference_target_depth_m),
+            'reference_normalized_mask_area_m2': float(
+                self.reference_normalized_mask_area_m2),
+            'current_normalized_mask_area_m2': float(current_normalized),
             'visible_mask_ratio': float(visible_ratio),
+            'reference_initialization_count': int(len(self.reference_mask_area_samples)),
+            'reference_session_id': self.reference_session_id,
         }
 
     def base_payload(self, state, reason, quality=None, mask_area_px=0):

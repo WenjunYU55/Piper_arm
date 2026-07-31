@@ -1,0 +1,271 @@
+schema_version: 1
+document: ai_context_index
+project:
+  name: Piper_arm
+  purpose: Eye-in-hand RGB-D perception, tracking, dry-run scan planning, and operator-approved low-speed scan execution research for an AgileX PiPER arm with Intel RealSense L515.
+  runtime: Ubuntu 20.04; ROS 2 Foxy; ROS nodes on Python 3.8; isolated Grounded-SAM-2 workers on Python 3.10+.
+  current_reality: >-
+    The worktree contains uncommitted tracking-recovery, GPU-pipeline, supervised executor, and
+    Tesseract-adapter changes; inspect git status before editing and preserve them. On 2026-07-30
+    a GUI-only wrong-coordinate run used (0.25,-0.25,0.0), recovered a fresh measured cube lock near
+    (0.305,-0.200,0.029), generated one valid 13-view plan, and saved four GOOD/CLEAR synchronized
+    records before an oversized low-confidence cardboard/cable scene blocked the remainder. Those
+    records are preserved. The live obstacle prompt is now bounded to pen and hand/finger, the
+    worker has a 150-second internal budget below the 180/185-second bridge/GUI deadlines, GUI
+    Disable enforces a settled current-feedback hold, and eligible non-safety aborts may retrace
+    only already executed approved targets. Camera/perception/scan processes are stopped and the
+    arm is disabled pending explicit authorization for another physical run. On 2026-07-20
+    the pinned Tesseract 0.35.0.6 binding ran successfully in the rootless Ubuntu 24.04/Bubblewrap
+    worker, matched the mode-0 FK oracle to 2.78e-16, and produced a 137-point smooth timed proposal with
+    J6 changing by 0.35 rad. On 2026-07-23 the augmented L515/mount/local-cable model, bounded
+    exact-path Bullet validator, and thin-obstacle OMPL-detour regression passed and
+    collision_model.yaml was qualified for supervised guarded hardware execution. The nanobind
+    continuous manager is deliberately disabled after a repeatable segfault; no result claims
+    BulletCast or FCL validation. The driver enable service now uses the installed SDK's
+    feedback-confirmed EnablePiper/DisablePiper handshake at 10 ms; focused tests, rebuild, and live
+    disable/re-enable acceptance pass. Continued checks found 200.05 Hz feedback, normal CAN status,
+    ERROR-ACTIVE can0, exclusive command ownership, and live base_link-to-link6 TF agreement with
+    mode-0 FK to numerical precision. After explicit operator workspace/E-stop confirmation, a
+    GUI-equivalent manual J6 smoke at 5 percent moved from 0.006018 rad to 0.026306 rad and returned
+    to 0.008111 rad, with err_code zero, motion_status zero, healthy CAN, and zero command publishers
+    afterward. The controller normalized the slightly negative J2 start to 0.0 during the first
+    command, so the recorded-bound/URDF/feedback mismatch remains technical debt. This smoke validates
+    the driver and free physical J6 motion only; it does not qualify the Tesseract collision model or
+    automatic execution. On 2026-07-25 the compact-start planning failure was separately resolved
+    with hash-verified 30 mm longitudinal collision pieces for link1/link2/link5 and an
+    acquisition-only, bounded, monotonically improving start-recovery prefix. The Foxy capsule
+    proxy retains its 60 mm normal threshold and permits the same prefix only until it reaches that
+    threshold; no pair is globally disabled. The operator
+    confirmed J6 fully safe on 2026-07-17. On 2026-07-24 the legacy fixed-J6 executor and IK helper
+    were removed; Tesseract is now the only scan-planning backend and treats J1-J6 equally with no
+    J6 lock or special cost.
+    On 2026-07-23 the enabled arm was moved under supervision to an in-limit scan-start state and a
+    fresh live request returned five collision-validated six-joint segments. The first viewpoint
+    changes J2 by about 1.393 rad over 61 samples whose individual change is at most 0.025 rad.
+    Tesseract paths are governed by exact hash, first-state, per-sample, collision, feedback, health,
+    and hold-on-abort checks; the legacy 0.45 rad cumulative goal gate does not apply to a validated
+    Tesseract detour.
+    Rough-coordinate target acquisition is implemented and completed supervised 5-percent hardware
+    acceptance on 2026-07-24. The native
+    GUI accepts XYZ in base_link, manages one isolated Tesseract worker and one motion-enabled Foxy
+    scan stack, removes its own manual command publisher, and refuses automation unless the executor
+    is the sole /joint_ctrl_single publisher. One atomic typed PrepareAcquisition request binds a
+    unique session ID to a fresh PointStamped and creates five distinct bounded orbit poses
+    (center/left/right/up/down), each with camera optical +Z aimed at the hint. Exact duplicate
+    retries are idempotent, changed data cannot reuse the ID, and source_request_id is preserved
+    through Tesseract and GUI acceptance. The 0.45 m setting is a maximum radius: when the live camera is already closer, the
+    center look preserves its position/radius and the neighboring looks sweep around that live
+    camera-to-hint direction, avoiding a nominal standoff overshoot through the robot base. Each
+    first approved look is now explicitly schema-v5 `bootstrap_static`: its Tesseract request and
+    Foxy exact-path recheck omit DINO/SAM obstacle output so an initially unseen cube cannot
+    circularly block the camera-facing move. Robot self-collision, the qualified camera/mount/cable
+    model, joint limits, floor proxy, feedback, arm status, camera-clock health, exact approval, and
+    hold-on-abort remain active. After that move, each
+    settled look binds GroundingDINO to a new post-settle image: 10 seconds for a fresh
+    frame/idle worker, 60 seconds for the matching semantic job, then 10 seconds for a new measured
+    LOCKED target no more than 0.30 m from the hint. Target-not-found waits for a correlated typed
+    semantic scene before any later look: zero detected obstacles produces an explicit timestamped
+    clear scene, while obstacle-only results reserve object ID 1 for the target and let SAM2
+    propagate IDs 2+ for depth projection. Missing, stale, or invalid geometry aborts and holds.
+    ACQUIRED starts the existing supervised workflow and waits for SCAN_READY, but it does not
+    request or approve the normal 13-view plan. The operator must explicitly select Prepare Scan
+    from Current Lock; if a previous acquisition ended after the camera nevertheless obtained a
+    fresh authoritative measured lock, that same explicit action may adopt the current lock as a
+    new scan phase, start/restart workflow assessment, and wait for SCAN_READY without relabeling
+    the failed acquisition as ACQUIRED or reusing its approval. The GUI then makes one fresh request through
+    /tesseract_plan_bridge/request_plan, correlates the returned plan to that request, and requires a
+    second exact confirmation for the collision-qualified 13-view execution hash. Acquisition and
+    scan approvals are separate, have no reusable time-window authorization, and cannot be reused
+    for a retry or replan. Failure, cancellation, replan, or process exit ends the session. The GUI
+    never enables motors. On 2026-07-23 the focused Foxy package rebuilt, 53 relevant
+    motion/acquisition/workflow/tracking/GUI tests and 28 Tesseract tests passed. On 2026-07-24 the
+    worker began seeding OMPL with the request-bound seed 42 before constructing any planner, and
+    two isolated qualification runs returned identical PASS output with normal J6 motion. A live hint at
+    [0.38, -0.12, 0.0] produced four of five workspace-safe acquisition looks and reached the
+    isolated worker. The exact snapshot was correctly rejected because live J2 was -0.03164 rad
+    below the then-current stale mode-0 0.0 rad lower limit. A Foxy logger call-site severity bug exposed by the
+    rejected-then-accepted handoff was fixed and its focused test/build passed; the start state was
+    not clipped or altered. Later on 2026-07-24 the rough-coordinate acquisition moved the arm at
+    5 percent, obtained a measured GroundingDINO/SAM2 lock, and handed off to the normal workflow.
+    A qualified all-six-joint Tesseract plan then completed five physical viewpoints at 5 percent;
+    all five full-resolution clouds were accepted, modeled, and saved. Live faults found and fixed
+    during acceptance were: depth projection permanently latching to the pre-motion depth,
+    landmark TF callback starvation, a 0.25-second tracking-measurement gate shorter than live SAM2
+    inference time, a stale command-free workflow/bridge process, incompatible reliable-versus-
+    best-effort target-cloud QoS, and capture-cloud/status ordering. The current repeatable orbit emits
+    exactly 13 candidates over the qualified 120–175 degree sector, and held PiPER velocity
+    telemetry is accepted up to 0.20 rad/s only after joint position has already converged within
+    0.025 rad. This is successful supervised guarded five-view acceptance, not functional-safety
+    certification or permission to remove exact approval, collision, tracking, or hold gates.
+    On 2026-07-24 automation speed was expanded to the SDK's finite 1-100 percent range, default 5,
+    for acquisition and the later scan. The historical physical acceptance remains at 5 percent;
+    higher selections are implemented and unit-tested but not yet physically characterized.
+    Collision-model qualification covers path geometry, not high-speed dynamics. The supervised
+    stack now launches scan_capture in service mode. After each
+    workflow-accepted settled viewpoint, the executor requires one fresh synchronized RGB, raw depth,
+    16-bit millimetre depth PNG, mask, intrinsics/joint/plan metadata record before advancing. The
+    On 2026-07-29 exact plan 7474484cfd3ddb50 completed all 13 views at 5 percent.
+    Dataset scan_20260729_150616 live-audited 13 correlated synchronized records, all GOOD/CLEAR,
+    after correlated heavy-frame pinning and bounded stationary obstacle-refresh waiting were added.
+    On 2026-07-24 unused legacy control/simulation surfaces were removed from the current system:
+    the command-coupled fake-joint-state RViz launch, its display launch and dependency, unused
+    Gazebo/transmission/config stubs, the misspelled girpper_exist alias, the unused RViz gripper
+    scaling parameter, a dead executor helper, and the objectless SAM2 mask.png seed compatibility
+    branch. Current SAM2 seed producers emit labelled object manifests. The supported live RViz
+    remains feedback-only, the separate preview remains private, and direct driver launch now
+    defaults auto_enable=false. The cleaned source rebuilt successfully; 126 non-linter
+    ROS/GUI/planner tests, 5 isolated SAM2 worker tests, and deterministic Tesseract seed-42
+    qualification pass. The PiPER package's pre-existing broad flake8/pydocstyle debt remains
+    separate from this behavioral cleanup. The 2026-07-24 bootstrap-static acquisition change then
+    rebuilt both focused ROS packages, passed 57 focused Foxy/Tesseract tests, 10 isolated
+    heavy/SAM2 worker tests, and rootless qualification. The broader non-linter run passed 138 tests
+    with one skip; only the pre-existing repository-wide piper pep257 test failed after scanning
+    vendored environments/build trees.
+    On 2026-07-25 a Foxy discovery race briefly exposed the sole executor command publisher with an
+    unresolved node identity and caused the GUI to reject Prepare Acquisition Plan before publishing
+    a hint. The ownership gate waits up to two seconds for an empty or UNKNOWN publisher identity to
+    resolve. If Foxy's GUI-local graph cache remains UNKNOWN, it accepts only when the GUI proved
+    zero publishers before launch, its own scan-stack process remains live, exactly one publisher
+    endpoint exists, and the owned /scan_viewpoint_executor node is present; every missing, external,
+    or additional publisher still fails closed.
+    The same live run exposed a separate Foxy driver-feedback stall: CAN and the driver process
+    remained active while /joint_states_single and /arm_status stopped delivering, leaving Step 2
+    without reachability inputs. The unmanaged publication loop was replaced by an executor-owned
+    200 Hz timer; after rebuild and disabled-arm restart an application-level subscriber measured
+    about 201.82 Hz. The camera/robot TF trees were reconnected by making hand-eye startup first
+    freeze the RealSense static camera-frame edge and then consume reliable depth-1 feedback.
+    A second live Step 2 run exposed the stale J2 model lower limit. The production Xacro and
+    planning constant now use the already-recorded valid controller-coordinate lower bound
+    -0.044796192 rad from exact enabled compact-pose feedback on 2026-07-30. The exact compact live start
+    [-0.010100076,-0.033632032,-0.014356412,0.04517996,0.533315412,-0.052018008]
+    now passes the isolated regression for rough target [0.33,-0.14,0.0]. Tesseract emits a
+    hash-bound J3 -0.05 rad recovery ending at trajectory point 55, then resumes ordinary
+    collision-aware six-joint planning; the 352-point result passed 5608 validation samples. Core
+    qualification, 36 Tesseract package tests, and the 15 scan-motion tests pass. Hardware remained
+    unplugged during this repair, so no arm or camera process was started and no motion occurred.
+    On 2026-07-25 the later GUI Step 2 process exit was traced to an obsolete generated
+    /home/prl/Piper_arm/install overlay being inherited ahead of the canonical piper_ros_foxy
+    workspace. That overlay lacked scan_capture and the four schema-v3 bootstrap-recovery fields, so
+    scan_capture exited at import and a successful recovery-bearing plan could not be converted into
+    the installed ROS message. The generated root build/install/log trees were removed. GUI and scan
+    launchers now source source_piper_foxy_environment.sh, which clears inherited colcon paths,
+    sources only Foxy plus the canonical PiPER workspace, verifies exact package prefixes, imports
+    scan_capture, and checks the recovery schema before starting children. The canonical packages
+    rebuilt; 79 focused tests and both core and compact-start rootless qualifications pass. A live
+    proposal-only restart then queued a fresh [0.33,-0.14,0.0] rough hint and returned valid
+    hardware-qualified plan 4f8fc210be5b17a9: three six-joint camera-facing viewpoints, 443 points,
+    trajectory hash 50534f4fedae546b76f3690c524e8b9aa18e122c40186156b0f626c015020f35,
+    and real_arm_motion=false. The executor reached PROPOSAL_READY, scan_capture stayed graph-live,
+    and /joint_ctrl_single retained zero publishers. No approval was submitted, the disabled arm did
+    not move, and every temporary validation process was stopped afterward. No planner, collision,
+    limit, command, or J6 behavior changed.
+    On 2026-07-27 the acquisition/scan handoff was split at the measured-lock and SCAN_READY
+    boundary. scan_target_acquisition now starts the workflow only; the GUI owns the explicit fresh
+    MULTIVIEW_SCAN request and the separate exact scan confirmation. A 2026-07-29 live 5-percent
+    acquisition showed that timed_movej_v2 sent 7281 tiny targets even though PiPER MoveJ consumes
+    only joint positions and one aggregate speed; its qdot/qddot fields were not controller inputs.
+    sdk_movej_targets_v1 now binds the same fresh controller-limit hash and selected 1-100 percent
+    speed, uses OMPL/ISP to establish all-six-joint goals, sets derivative placeholders to exact
+    zero, and collision-validates the actual direct SDK-interpolated target segment. Foxy sends one
+    six-position arm-only target per viewpoint; only folded-start acquisition may add one proven
+    bootstrap target. Dense 0.025 rad validation samples are never commands. Each endpoint is
+    published once; a 90-second target deadline or 20-second total-joint no-progress interval
+    aborts to hold.
+    The driver caches unchanged MotionCtrl_2 mode/speed, never emits GripperCtrl for six-position
+    automation commands, and continues sending every JointCtrl target. The measured-lock handoff
+    now uses the authoritative TrackedTarget/TrackingHealth/LOCKED tuple in both acquisition and
+    workflow Step 4; target_landmark remains diagnostic. This timing path has not
+    yet repeated physical acceptance; its focused software suite passes 184 tests and both rootless
+    collision qualifications pass with real_arm_motion=false. The
+    2026-07-24 5-percent run remains historical evidence for the former stop-per-sample executor.
+    A live 2026-07-27 100-percent ROUGH_ACQUISITION run then triggered the unchanged sustained
+    following-error hold before ACQUIRED even though perception subsequently reported a valid
+    settled measured lock; the workflow stayed IDLE and Step 4 remained disabled. The GUI now lets
+    explicit Step 4 use direct fresh TrackingHealth to bootstrap its stopped GUI-owned worker/scan
+    stack when necessary, wait for the workflow's authoritative measured-lock assessment, adopt that
+    independently fresh lock, start the workflow, wait for SCAN_READY, and request a new separately
+    approved scan plan. The 2026-07-27 targeted suite passes 104 tests. This recovery has
+    build/unit validation only;
+    it does not qualify 100-percent dynamics or convert the aborted acquisition into success.
+    Later on 2026-07-27, two GUI starts on domain 42 exhausted approximately 125 GiB and the
+    kernel OOM killer terminated the GUI, indirectly causing perception supervision to restart.
+    GDB located the allocation in Foxy's rmw_dds_common ParticipantEntitiesInfo graph
+    deserializer, not in Tesseract, perception, or an application topic. start_gui.sh and the
+    supervised scan wrapper now load fastdds_gui_udp_only.xml, set
+    RMW_FASTRTPS_USE_QOS_FROM_XML=0 to retain Foxy's native variable-size endpoint histories, force
+    ROS_LOCALHOST_ONLY=0 so Foxy cannot re-enable shared memory, and restrict their UDP transport to
+    127.0.0.1. A bounded live Step-1 regression held the GUI at 71.5 MiB peak,
+    started all scan processes, preserved both GPU worker PIDs, produced no new OOM, issued no
+    approval or motion, and cleaned up every temporary GUI-owned process.
+    Later on 2026-07-27, scan_target_acquisition exited during startup and its service disappeared
+    while the scan launch parent remained alive, producing GUI service timeouts before Step 3. The
+    startup/acquisition boundary is now explicit: the ROS interface is one atomic
+    PrepareAcquisition session request; schema-v5 and both typed plan messages carry
+    source_request_id; the worker writes an atomic 0.5-second heartbeat; the bridge publishes fresh
+    acquisition and multiview readiness with blockers; the bridge and reachability filter keep one
+    stable subscription per input rather than mutating DDS entities on stale callbacks; and every
+    critical scan child shuts down the launch parent on exit. Step 1 is successful only after both
+    owned parents, required services/nodes, worker heartbeat, acquisition readiness, and sole
+    executor publisher are proven. Step 2 remains disabled otherwise, retries only the exact same
+    typed request once after timeout, and ignores a plan from another session. The three affected
+    packages rebuilt, 58 focused stability tests and a 143-test wider suite passed, both rootless
+    qualifications returned PASS, and a 12-second isolated proposal-only launch kept all critical
+    nodes alive until intentional shutdown. This repair issued no approval or physical arm motion;
+    repeated live restart and sdk_movej_targets_v1 hardware acceptance remain pending.
+repo_shape:
+  piper_ros_foxy: ROS workspace containing piper, piper_description, piper_msgs, piper_mobile_manipulation, and the command-free piper_tesseract_foxy adapter.
+  motion_planning: Isolated Tesseract 0.35 worker container plus rootless Bubblewrap userspace and qualification scripts; CPU-only and ROS/CAN/GPU/network isolated at runtime.
+  L515_camera: Camera build/start scripts, hand-eye calibration, launch wrappers, viewers, and dataset capture tools.
+  AI_perception_tests: Offline analysis plus isolated GroundingDINO/SAM2 workers and their unit tests.
+  root_tools: Real-arm startup, enable/disable/reset/calibration, native GUI, installation, and operator documentation.
+entrypoints:
+  canonical_foxy_environment: source_piper_foxy_environment.sh
+  gui_scan_dds_profile: fastdds_gui_udp_only.xml
+  system_handoff: SYSTEM_HANDOFF.md
+  arm_driver: start_piper.sh
+  manual_arm_ui: start_gui.sh; manual joints, RViz STL digital-twin mirroring, and Acquire & Scan session controls
+  hand_eye_tf: L515_camera/run_hand_eye_tf.sh
+  gpu_perception: L515_camera/run_gpu_vision_pipeline.sh
+  dry_run_supervisor: L515_camera/run_supervised_cube_workflow.sh
+  supervised_viewpoint_execution: L515_camera/run_supervised_viewpoint_execution.sh
+  tesseract_worker_build: motion_planning/tesseract/build_worker_image.sh
+  tesseract_worker_rootless_setup: motion_planning/tesseract/setup_rootless_worker.sh
+  tesseract_worker_qualification: motion_planning/tesseract/qualify_rootless_worker.sh
+  tesseract_worker_run: motion_planning/tesseract/run_worker.sh
+  operator_reference: OPERATOR_COMMANDS.md
+source_of_truth:
+  supported_foxy_overlay: source_piper_foxy_environment.sh; generated /home/prl/Piper_arm/install must not exist or be sourced
+  current_repository_handoff: SYSTEM_HANDOFF.md
+  ros_interfaces: piper_ros_foxy/src/piper_mobile_manipulation/msg
+  node_behavior: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation
+  runtime_composition: [L515_camera/run_gpu_vision_pipeline.sh, L515_camera/run_supervised_viewpoint_execution.sh, piper_ros_foxy/src/piper_mobile_manipulation/launch]
+  parameters: piper_ros_foxy/src/piper_mobile_manipulation/config
+  robot_model: piper_ros_foxy/src/piper_description/urdf/piper_description.xacro
+  hand_eye_transform: L515_camera/calibration/hand_eye/session_20260701_local/calibration_result.yaml
+  measured_joint_bounds: piper_joint_bounds.json
+  operator_procedure: OPERATOR_COMMANDS.md
+read_order:
+  - docs/ai/00-index.yaml
+  - docs/ai/05-admin.yaml
+  - docs/ai/10-system-map.yaml
+  - docs/ai/30-contracts.yaml
+  - docs/ai/20-modules.yaml
+  - docs/ai/40-flows.yaml
+  - docs/ai/50-guardrails.yaml
+  - docs/ai/60-debt.yaml
+hot_paths:
+  tracking: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_tracker_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/sam2_live_bridge_node.py, piper_ros_foxy/src/piper_mobile_manipulation/config/tracking_params.yaml]
+  gpu_refresh: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/heavy_refresh_bridge_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/heavy_refresh_contract.py, AI_perception_tests/heavy_model_worker.py, AI_perception_tests/sam2_live_worker.py]
+  camera_clock_safety: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/camera_timestamp_watchdog_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/camera_timestamp_health.py, L515_camera/run_gpu_vision_pipeline.sh]
+  camera_motion_compensation: [L515_camera/publish_hand_eye_tf.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/motion_compensated_prompt_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/utils/mask_reprojection.py]
+  hardware_commands: [piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py, piper_gui_native.py, piper_gui_automation.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_motion.py, start_piper.sh]
+  supervised_dry_run: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/supervised_cube_workflow_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/supervised_workflow.py]
+  supervised_scan_motion: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_trajectory.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_target_acquisition_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_motion.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture_node.py, piper_ros_foxy/src/piper_mobile_manipulation/config/scan_execution_params.yaml, piper_ros_foxy/src/piper_mobile_manipulation/config/scan_capture_params.yaml]
+  tesseract_planning_boundary: [piper_ros_foxy/src/piper_tesseract_foxy, motion_planning/tesseract]
+update_rules:
+  - Update 10-system-map and 40-flows when launch composition, process order, TF ownership, or state ownership changes.
+  - Update 30-contracts when topics, services, custom messages, JSON String payloads, spool manifests, parameters, or persisted files change.
+  - Update 20-modules and 50-guardrails when ownership or safety boundaries change.
+  - Update 30-contracts, 40-flows, and operator procedures when scan proposal, approval, cancellation, capture, or command gating changes.
+  - Update project-structure.txt when top-level or ROS package layout changes.
+  - Describe checked-out source, including intentional uncommitted work; never infer behavior solely from generated build/install trees.
