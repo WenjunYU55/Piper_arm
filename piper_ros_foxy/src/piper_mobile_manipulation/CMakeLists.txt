@@ -3,6 +3,8 @@ project(piper_mobile_manipulation)
 
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
+find_package(action_msgs REQUIRED)
+find_package(builtin_interfaces REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(message_filters REQUIRED)
 find_package(piper_msgs REQUIRED)
@@ -13,6 +15,7 @@ find_package(trajectory_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
+  "action/RunTargetScan.action"
   "msg/Detection2D.msg"
   "msg/Target3D.msg"
   "msg/TrackedTarget.msg"
@@ -30,10 +33,13 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/TesseractPlan.msg"
   "msg/TesseractPlanStatus.msg"
   "msg/TesseractReadiness.msg"
+  "msg/OccluderAction.msg"
+  "srv/AuthorizeMission.srv"
+  "srv/GetTargetScanResult.srv"
   "srv/ApproveScanExecution.srv"
   "srv/PrepareAcquisition.srv"
   "srv/RequestTesseractPlan.srv"
-  DEPENDENCIES geometry_msgs std_msgs trajectory_msgs
+  DEPENDENCIES action_msgs builtin_interfaces geometry_msgs std_msgs trajectory_msgs
 )
 
 ament_python_install_package(${PROJECT_NAME})
@@ -68,6 +74,8 @@ install(PROGRAMS
   piper_mobile_manipulation/supervised_cube_workflow_node.py
   piper_mobile_manipulation/scan_viewpoint_executor_node.py
   piper_mobile_manipulation/camera_timestamp_watchdog_node.py
+  piper_mobile_manipulation/target_scan_mission_node.py
+  piper_mobile_manipulation/target_scan_gateway_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -98,6 +106,10 @@ if(BUILD_TESTING)
     test_scan_target_acquisition test/test_scan_target_acquisition.py)
   ament_add_pytest_test(
     test_camera_timestamp_health test/test_camera_timestamp_health.py)
+  ament_add_pytest_test(test_mission_core test/test_mission_core.py)
+  ament_add_pytest_test(test_home_pose test/test_home_pose.py)
+  ament_add_pytest_test(test_startup_gates test/test_startup_gates.py)
+  ament_add_pytest_test(test_occlusion_policy test/test_occlusion_policy.py)
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)

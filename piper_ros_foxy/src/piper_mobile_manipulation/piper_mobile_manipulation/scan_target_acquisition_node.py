@@ -54,7 +54,11 @@ class ScanTargetAcquisitionNode(Node):
             'acquisition_camera_pitch_deg': -10.0,
             'sweep_angle_deg': 45.0,
             'handoff_retry_sec': 0.50,
-            'handoff_timeout_sec': 10.0,
+            # Camera-clock health can briefly flap after every process reports
+            # ready. Keep the exact session payload fresh long enough for one
+            # bounded recovery instead of turning a transient rejection into
+            # a permanently stale acquisition request.
+            'handoff_timeout_sec': 30.0,
             'dry_run': True,
         }
         for name, value in defaults.items():
@@ -338,6 +342,9 @@ class ScanTargetAcquisitionNode(Node):
                     self.last_acquisition_publish_at = now
             elif not self.acquisition_handoff_timeout_reported:
                 self.acquisition_handoff_timeout_reported = True
+                self.pending_acquisition_message = None
+                self.pending_acquisition_payload_ready = False
+                self.acquisition_request_sent = False
                 self.get_logger().error(
                     'ROUGH_ACQUISITION handoff timed out before Tesseract '
                     'accepted a command-free request')

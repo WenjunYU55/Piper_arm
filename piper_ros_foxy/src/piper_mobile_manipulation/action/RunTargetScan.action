@@ -1,0 +1,34 @@
+uint8 OUTCOME_SUCCEEDED=0
+uint8 OUTCOME_FAILED=1
+uint8 OUTCOME_CANCELLED=2
+uint8 OUTCOME_BUSY=3
+uint8 OUTCOME_UNSUPPORTED_TARGET_PROFILE=4
+uint8 OUTCOME_NEEDS_OPERATOR=5
+string task_id
+string task_type
+string target_label
+string target_profile
+geometry_msgs/PoseWithCovarianceStamped rough_target
+float32 target_confidence
+float32 deadline_sec
+---
+uint8 outcome
+string reason
+bool safe_shutdown
+string dataset_path
+string manifest_sha256
+uint32 capture_count
+string mesh_job_id
+string action_summary_json
+---
+string phase
+string reason
+float32 elapsed_sec
+float32 remaining_sec
+uint32 acquisition_attempt
+uint32 occlusion_action
+uint32 occlusion_action_limit
+uint32 accepted_captures
+uint32 required_captures
+string process_health_json
+string shutdown_phase

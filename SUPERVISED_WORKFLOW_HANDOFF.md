@@ -52,12 +52,10 @@ subset, and orders that subset as a smooth nearest-neighbour route from the
 calibrated current camera position. This removes the former endpoint
 pendulum without restoring the four wider-sector poses that previously lacked
 bounded IK. MULTIVIEW_SCAN also includes one Tesseract/OMPL planned and
-collision-validated return to the operator-recorded feedback pose
-with its nearest one-joint collision-qualified adjustment,
-`[0.0, -0.032, -0.026, -0.039, 0.346, 0.107]` rad. The exact recorded J3
-value of `+0.024` rad violates the folded link1/link5 and link2/link5 model;
-lowering only J3 by 0.050 rad passed a ROS-free return from the new final
-capture pose with 4,764 dense samples. That segment is in the same trajectory
+collision-validated return to the operator-recorded powered feedback pose,
+`[0.000366362, 0.0, 0.0, 0.0, 0.43869236, 0.0]` rad. The first operator screenshot is authoritative;
+its raw disabled feedback was `[0.000366362, -0.02888726, 0.00624495, 0.0, 0.43869236, 0.0]`,
+with J2/J3 normalized to their powered limits. The powered pose must be reached and verified before disable. That segment is in the same trajectory
 hash and approval, runs only after all 13 records exist, never captures, and
 ends in a current-position hold rather than automatic disable. If return-only
 telemetry fails after all 13 records exist, the executor holds the current pose
@@ -169,7 +167,9 @@ No pair is globally disabled and J6 remains free.
   finalization deletes the memory even when the optional return segment ends in a held-pose warning.
 - Controller motion-limit snapshots are stabilized across the driver's asynchronous CAN query:
   a new valid hash must persist for seven seconds and three samples. Invalid/stale data still blocks,
-  and a persistent controller change still requires replanning.
+  while a persistent fresh valid six-joint generation may replace the runtime hash for the
+  position-only SDK MoveJ interface. Planning and approval remain bound to their original snapshot;
+  the rollover cannot change the selected speed or approved joint targets.
 - The later acquisition child exit/service disappearance is repaired separately from planning:
   the worker writes an atomic heartbeat, the bridge publishes typed acquisition/multiview
   readiness, scan subscriptions are stable rather than recreated on stale input, and every
@@ -225,6 +225,13 @@ although a fresh settled measured lock appeared afterward. Step 4 now explicitly
   removal workflow. The current targeted command
   passes its software tests, including the GUI/scan Fast DDS transport contract; this recovery is not
   acceptance of 100-percent motion.
+
+The Automatic Scan tab is isolated from the manual tab's cached sessions, delayed recovery timers,
+plan callbacks, and terminal execution messages. Its ACQUIRED handoff waits for a fresh stable
+multiview-readiness generation for one second before the only request is queued. During execution,
+temporary target-tracker reacquisition does not cancel an approved view; the arm must still be
+stationary and the RGB-D clock healthy. Completion and non-safety abort use the approved return or
+exact executed reverse route, with a 30-second saved-home proof before hold, disable, and shutdown.
 On 2026-07-27 the GUI/Step-1 crash was independently traced with GDB to Foxy's internal
 `ParticipantEntitiesInfo` graph deserializer replaying corrupt shared-memory state. It was not a
 Tesseract, perception, CAN, or arm-motion fault. The GUI and supervised scan wrapper now use
@@ -251,7 +258,13 @@ is historical scene evidence, not a permanent planner blocker. Invalid obstacle 
 fails closed. The 2026-07-29 run validates the declared supervised 13-view path only; higher speed,
 dynamic targets, changed collision assets, or unattended use remain unqualified.
 
-Safe shutdown starts with GUI **Cancel / Hold**. GUI **Disable** then explicitly
+Safe shutdown starts with GUI **Cancel and Home**, which holds, retraces executed approved
+endpoints to configured home, proves the final hold, disables, and stops the managed stack.
+The exact reverse of the first rough-acquisition segment reuses that segment's qualified
+bootstrap-static scene when perception obstacle geometry has not been created yet; this exception
+does not apply to later acquisition looks or multiview motion. Once the executor reports
+`configured home reached`, the shutdown hold cannot start the reverse history a second time.
+GUI **Disable** also explicitly
 commands the fresh current feedback pose, requires at most 0.025 rad target
 error and 0.005 rad sample motion for one full second, and only then calls the
 disable service. If the eight-second proof fails it leaves the motors enabled.

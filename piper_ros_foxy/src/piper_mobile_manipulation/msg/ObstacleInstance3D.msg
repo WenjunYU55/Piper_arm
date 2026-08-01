@@ -20,3 +20,13 @@ uint32 valid_depth_pixels
 float32 transform_age_sec
 bool valid
 string validity_reason
+# Session-scoped identity and target-centred visibility evidence. Zero/empty
+# values mean that the legacy single-frame geometry producer has not yet
+# supplied the optional evidence; they never authorize contact by themselves.
+string track_id
+uint32 observation_count
+geometry_msgs/Polygon tabletop_footprint
+float32 position_uncertainty_m
+float32 target_overlap_ratio
+float32 closer_depth_occlusion_ratio
+bool confirmed_in_probe_view

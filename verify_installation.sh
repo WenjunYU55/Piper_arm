@@ -51,6 +51,31 @@ for command_name in bwrap candump colcon ethtool git ip micromamba ros2; do
   fi
 done
 
+if python3 - <<'PY'
+from piper_mobile_manipulation.action import RunTargetScan
+from piper_mobile_manipulation.msg import OccluderAction, TesseractReadiness
+from piper_mobile_manipulation.srv import AuthorizeMission, GetTargetScanResult
+
+assert hasattr(RunTargetScan.Goal(), 'rough_target')
+assert hasattr(TesseractReadiness(), 'manipulation_ready')
+assert hasattr(OccluderAction(), 'mission_sha256')
+assert hasattr(AuthorizeMission.Request(), 'expires_at')
+assert hasattr(GetTargetScanResult.Response(), 'result_json')
+PY
+then
+  pass "autonomous target-scan interfaces"
+else
+  fail "autonomous target-scan interfaces (rebuild piper_mobile_manipulation)"
+fi
+
+for script in run_target_scan_mission.sh run_target_scan_gateway.sh; do
+  if [ -x "$ROOT/$script" ]; then
+    pass "executable: $script"
+  else
+    fail "executable: $script"
+  fi
+done
+
 python3 - <<'PY'
 import sys
 from importlib import import_module

@@ -50,21 +50,22 @@ class TargetSelectionTest(unittest.TestCase):
 
     def test_only_human_terms_are_unsafe(self):
         self.assertTrue(label_matches('hand finger', UNSAFE_TERMS))
-        self.assertFalse(label_matches('wire cable', UNSAFE_TERMS))
+        self.assertFalse(label_matches('leaf branch', UNSAFE_TERMS))
         self.assertFalse(label_matches('cardboard box', UNSAFE_TERMS))
-        self.assertTrue(label_matches('wire cable', CANDIDATE_SAFE_TERMS))
-        self.assertTrue(label_matches('cardboard box', CANDIDATE_SAFE_TERMS))
+        self.assertTrue(label_matches('leaf branch', CANDIDATE_SAFE_TERMS))
+        self.assertFalse(label_matches('cardboard box', CANDIDATE_SAFE_TERMS))
 
-    def test_live_obstacle_prompt_is_bounded_to_pen_and_hand(self):
-        self.assertIn('pen', DEFAULT_OBSTACLE_PROMPT)
+    def test_live_obstacle_prompt_is_bounded_to_leaf_branch_and_hand(self):
+        self.assertIn('leaf', DEFAULT_OBSTACLE_PROMPT)
+        self.assertIn('branch', DEFAULT_OBSTACLE_PROMPT)
         self.assertIn('hand', DEFAULT_OBSTACLE_PROMPT)
-        for ignored_label in ('wire', 'cable', 'paper', 'cardboard'):
+        for ignored_label in ('wire', 'cable', 'paper', 'cardboard', 'obstacle'):
             self.assertNotIn(ignored_label, DEFAULT_OBSTACLE_PROMPT)
 
     def test_only_explicit_human_mask_is_reported_unsafe(self):
         movable, unsafe = classify_refined_obstacles([
             {
-                'label': 'wire cable',
+                'label': 'leaf branch',
                 'confidence': 0.8,
                 'is_candidate_safe_class': True,
                 'is_unsafe_candidate': False,
@@ -83,7 +84,7 @@ class TargetSelectionTest(unittest.TestCase):
             },
         ])
 
-        self.assertEqual([item['label'] for item in movable], ['wire cable'])
+        self.assertEqual([item['label'] for item in movable], ['leaf branch'])
         self.assertEqual([item['label'] for item in unsafe], ['hand finger'])
 
     @staticmethod

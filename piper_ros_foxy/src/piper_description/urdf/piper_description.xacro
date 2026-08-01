@@ -132,9 +132,9 @@
       link="link2" />
     <axis
       xyz="0 0 1" />
-    <!-- Existing validated controller-coordinate bound from
-         piper_joint_bounds.json. This small negative range is required for
-         the reported mode-0 zero state; it is not a new measurement. -->
+    <!-- Admit the measured disabled gravity-droop start for collision-checked
+         bootstrap recovery. Powered command targets are separately restricted
+         to controller-representable J2 >= 0. -->
     <limit
       lower="-0.044796192"
       upper="3.14"

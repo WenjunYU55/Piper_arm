@@ -30,5 +30,8 @@
     deterministic_seed: 42
     # Nearest one-joint collision-qualified adjustment of the operator's
     # feedback pose; J3 is 0.050 rad lower than the folded original.
-    return_home_positions_rad: [0.0, -0.032, -0.026, -0.039, 0.346, 0.107]
+    return_home_positions_rad: [0.000366362, 0.0, 0.0, 0.0, 0.43869236, 0.0]
+    # Must remain false until gripper TCP/open/closed/attached-object/contact
+    # collision qualification has been completed on the installed hardware.
+    manipulation_model_qualified: false
     debug: true

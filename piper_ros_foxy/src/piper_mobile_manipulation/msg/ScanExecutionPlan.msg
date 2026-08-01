@@ -1,4 +1,9 @@
 std_msgs/Header header
+string KIND_MULTIVIEW_SCAN="MULTIVIEW_SCAN"
+string KIND_ROUGH_ACQUISITION="ROUGH_ACQUISITION"
+string KIND_OCCLUSION_PROBE="OCCLUSION_PROBE"
+string KIND_OCCLUDER_PICK_PLACE="OCCLUDER_PICK_PLACE"
+string KIND_OCCLUDER_PUSH="OCCLUDER_PUSH"
 string plan_id
 string plan_kind
 string source_request_id

@@ -55,10 +55,10 @@ def build_acquisition_viewpoints(
 
     ``standoff_m`` is the maximum acquisition radius.  When the camera is
     already closer to the rough target, the center look stays at the current
-    camera position.  The five primary looks keep that camera position and
-    sweep its optical direction through the configured yaw/pitch cone.  This
-    searches around an imperfect coordinate instead of repeatedly centering
-    that coordinate from different orbit positions, and keeps a hint near the
+    camera position.  The first view always rotates the optical axis toward
+    the supplied landmark; later views sweep through the configured yaw/pitch
+    cone.  This searches around an imperfect coordinate without first running
+    perception from an unrelated camera direction, and keeps a hint near the
     arm from pushing the camera through or behind the robot base.
 
     ``camera_pitch_deg`` remains in the signature for configuration/API
@@ -146,8 +146,6 @@ def build_acquisition_viewpoints(
             ('compact_right_mid_low', -sweep, 5.0),
             ('compact_left_deep_low', sweep, 15.0),
         ]
-        if current_look is None:
-            fallback_offsets.append(('compact_center', 0.0, 0.0))
     center = dict(zip(('x', 'y', 'z'), (float(value) for value in target)))
     viewpoints = []
     pose_keys = set()
@@ -165,35 +163,6 @@ def build_acquisition_viewpoints(
     center_camera, center_look = orbit_camera_view(
         target, azimuth_deg, effective_standoff, center_pitch_deg)
     world_up = np.asarray([0.0, 0.0, 1.0])
-
-    def append_current_view():
-        if current_look is None:
-            return
-        pose_key = tuple(np.round(np.concatenate((
-            current_camera, current_look)), 9))
-        pose_keys.add(pose_key)
-        viewpoints.append({
-            'index': len(viewpoints),
-            'acquisition_look': 'current_view',
-            'acquisition_yaw_offset_deg': 0.0,
-            'acquisition_pitch_offset_deg': 0.0,
-            'acquisition_search_stage': 'current_camera',
-            'frame_id': 'base_link',
-            'target_object_center': center,
-            'desired_camera_position': dict(
-                zip(
-                    ('x', 'y', 'z'),
-                    (float(value) for value in current_camera))),
-            'desired_look_at_direction': dict(
-                zip(
-                    ('x', 'y', 'z'),
-                    (float(value) for value in current_look))),
-            'camera_object_distance_m': current_distance,
-            'maximum_standoff_m': maximum_standoff,
-            'keep_object_centered': False,
-            'reachable': False,
-            'safe': False,
-        })
 
     def append_cone_view(name, yaw_deg, pitch_deg):
         if len(viewpoints) >= 20:
@@ -262,8 +231,16 @@ def build_acquisition_viewpoints(
             'safe': False,
         })
 
-    append_current_view()
-    for name, yaw_deg, pitch_deg in cone_offsets:
+    # The centered landmark view is a mandatory semantic first step. Offer a
+    # compact centered alternative immediately after it so Tesseract can solve
+    # a different camera radius without starting from a cone-offset view.
+    name, yaw_deg, pitch_deg = cone_offsets[0]
+    append_cone_view(name, yaw_deg, pitch_deg)
+    if fallback_radius is not None:
+        append_view(
+            'compact_center', 0.0, 0.0, fallback_radius,
+            'compact_fallback')
+    for name, yaw_deg, pitch_deg in cone_offsets[1:]:
         append_cone_view(name, yaw_deg, pitch_deg)
     for name, yaw_deg, pitch_deg in fallback_offsets:
         append_view(

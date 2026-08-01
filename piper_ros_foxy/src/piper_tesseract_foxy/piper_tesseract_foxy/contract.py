@@ -227,6 +227,18 @@ def validate_request(payload, now_ns=None):
             candidate.get('look_direction'), 3, 'candidate look_direction')
         if sum(value * value for value in direction) <= 1e-12:
             raise ContractError('candidate look_direction must be non-zero')
+        required_first = candidate.get('required_first', False)
+        if not isinstance(required_first, bool):
+            raise ContractError('candidate required_first must be boolean')
+        if plan_kind != 'ROUGH_ACQUISITION' and required_first:
+            raise ContractError(
+                'required_first candidate is acquisition-only')
+    if (
+            plan_kind == 'ROUGH_ACQUISITION'
+            and not any(candidate.get('required_first', False)
+                        for candidate in candidates)):
+        raise ContractError(
+            'ROUGH_ACQUISITION requires a centered required-first candidate')
     obstacles = scene.get('obstacles', [])
     if not isinstance(obstacles, list) or len(obstacles) > MAX_OBSTACLES:
         raise ContractError('scene obstacles must be a bounded list')

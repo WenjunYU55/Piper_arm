@@ -7,7 +7,7 @@
     camera_info_topic: /camera/color/camera_info
     output_topic: /piper/obstacle_instances_3d
     base_frame: base_link
-    movable_whitelist: [pen]
+    movable_whitelist: [leaf, branch]
     depth_min_m: 0.25
     depth_max_m: 1.20
     min_valid_depth_pixels: 20

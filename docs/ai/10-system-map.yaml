@@ -194,3 +194,12 @@ ui_boundaries:
   rviz_and_debug_viewers: Read-only visualizers for camera, masks, point clouds, markers, and scan overlays.
   ros2_cli: Services under /supervised_cube_workflow are operator approvals but remain dry-run.
   scan_executor_cli: /scan_viewpoint_executor/approve can start real low-speed motion only when the executor was launched with motion opt-in and the exact plan ID and confirmation phrase are supplied; Tesseract also requires the exact trajectory_sha256 and qualified model. Cancel requests a current-position hold.
+autonomous_target_scan:
+  external_api: /piper/run_target_scan (RunTargetScan action)
+  network_gateway: target_scan_gateway_node.py owns tracked-network action/TF and snapshots odom to piper_base_link.
+  isolation_boundary: The gateway writes atomic 0600 records beneath a 0700 mission spool; no arbitrary command or TF topics enter the loopback motion domain.
+  local_owner: target_scan_mission_node.py owns one bounded task, process groups, mission authorization, enable/hold/disable, and durable results.
+  lifecycle: [GOAL_LATCHED, STARTING, PREFLIGHT, ENABLE_AND_HOLD, ROUGH_ACQUISITION, TARGET_LOCK, OCCLUSION_PROBE, OCCLUSION_CLEARANCE, VIEW_PLANNING, CAPTURING, RETURNING_HOME, HOLDING, DISABLING, STOPPING, SUCCEEDED]
+  terminal_failures: [FAILED, NEEDS_OPERATOR]
+  heartbeat: 2 Hz gateway heartbeat; five seconds stale triggers safe shutdown in two-host mode.
+  reconstruction: reconstruction/tsdf_reconstruct.py consumes exact 13-view manifests after shutdown.

@@ -71,6 +71,11 @@
     # Cover the full 0.30 m accepted rough-hint error from a compact camera
     # pose. Diagonal yaw/pitch candidates keep lateral errors inside view.
     sweep_angle_deg: 45.0
+    # Continue refreshing the same correlated proposal through a transient
+    # post-start camera-health flap, then stop cleanly instead of retrying a
+    # stale payload forever.
+    handoff_retry_sec: 0.50
+    handoff_timeout_sec: 30.0
 
     first_push_distance_m: 0.01
     max_push_distance_m: 0.03

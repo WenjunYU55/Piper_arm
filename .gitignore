@@ -28,6 +28,8 @@ motion_planning/tesseract/.runtime/
 *.db3
 datasets/
 piper_joint_bounds.json
+piper_home_pose.json
+piper_home_pose_*.png
 L515_camera/captures/
 # Hand-eye RGB/depth captures are local evidence, not runtime assets. Compact
 # sample YAML and accepted calibration/validation YAML may be committed.

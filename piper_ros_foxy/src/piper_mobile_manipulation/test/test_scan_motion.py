@@ -21,6 +21,7 @@ from piper_mobile_manipulation.scan_motion import (
     bootstrap_start_limit_recovery_reasons,
     bootstrap_recovery_declaration_reasons,
     CollisionBox,
+    energized_hold_target,
     feedback_joint_limit_reasons,
     PiperScanKinematics,
     configuration_collision_reasons,
@@ -40,13 +41,19 @@ from piper_mobile_manipulation.scan_trajectory import (
     validate_tesseract_point,
 )
 from piper_mobile_manipulation.scan_viewpoint_executor_node import (
+    bootstrap_abort_retrace_uses_static_scene,
     abort_return_home_blocker,
+    approved_retrace_validation_reasons,
+    approved_return_home_obstacle_snapshot,
+    home_position_sample_settled,
     joint_progress_error,
     missing_obstacles_can_wait,
     rgbd_capture_handoff_action,
+    retryable_rgbd_capture_rejection,
     runtime_gate_action,
     runtime_refresh_action,
     target_drift_before_approval_rejection,
+    terminal_home_hold_required,
     waypoint_motion_action,
     ScanViewpointExecutorNode,
 )
@@ -58,6 +65,265 @@ LINK6_FROM_CAMERA = np.asarray([
     [0.0002994095, 0.0336589081, 0.9994333336, 0.0266401932],
     [0.0, 0.0, 0.0, 1.0],
 ])
+
+
+def test_energized_hold_uses_the_measured_powered_pose():
+    disabled_pose = [-0.017, -0.041, 0.033, -0.082, 0.290, 0.102]
+    np.testing.assert_allclose(
+        energized_hold_target(disabled_pose),
+        [-0.017, 0.0, 0.0, -0.082, 0.290, 0.102],
+    )
+
+
+def test_only_future_tf_publication_lag_is_a_retryable_rgbd_rejection():
+    assert retryable_rgbd_capture_rejection(
+        'timestamped camera transform is unavailable: Lookup would require '
+        'extrapolation into the future')
+    assert not retryable_rgbd_capture_rejection(
+        'timestamped camera transform is unavailable: invalid frame')
+    assert not retryable_rgbd_capture_rejection('camera files could not be saved')
+
+
+def test_return_home_reuses_only_a_present_collision_qualified_scene():
+    scene = SimpleNamespace(instances=[])
+    assert approved_return_home_obstacle_snapshot(True, True, scene)
+    assert not approved_return_home_obstacle_snapshot(False, True, scene)
+    assert not approved_return_home_obstacle_snapshot(True, False, scene)
+    assert not approved_return_home_obstacle_snapshot(True, True, None)
+
+
+def test_only_first_qualified_acquisition_segment_uses_static_abort_scene():
+    assert bootstrap_abort_retrace_uses_static_scene(
+        ROUGH_ACQUISITION, 0, True)
+    assert not bootstrap_abort_retrace_uses_static_scene(
+        ROUGH_ACQUISITION, 1, True)
+    assert not bootstrap_abort_retrace_uses_static_scene(
+        ROUGH_ACQUISITION, 0, False)
+    assert not bootstrap_abort_retrace_uses_static_scene(
+        MULTIVIEW_SCAN, 0, True)
+
+
+def test_terminal_home_cancel_becomes_hold_instead_of_second_retrace():
+    assert terminal_home_hold_required(
+        'ABORTED',
+        'operator cancelled; configured home reached')
+    assert not terminal_home_hold_required(
+        'ABORTED',
+        'operator cancelled; current joint hold requested')
+    assert not terminal_home_hold_required(
+        'MOVING',
+        'configured home reached')
+
+    executor = SimpleNamespace(
+        state='ABORTED',
+        reason='operator cancelled; configured home reached',
+        publish_hold=lambda: True,
+    )
+    response = SimpleNamespace(success=False, message='')
+    ScanViewpointExecutorNode.cancel_cb(executor, None, response)
+    assert response.success
+    assert 'current joint hold requested' in response.message
+
+
+def test_first_acquisition_cancel_retraces_without_new_obstacle_array():
+    calls = []
+    home = np.zeros(6)
+    reached = np.full(6, 0.1)
+    executor = SimpleNamespace(
+        abort_return_in_progress=False,
+        abort_return_reason='',
+        plan_kind=ROUGH_ACQUISITION,
+        plan_collision_model_qualified=True,
+        plan_returns_home=False,
+        state='WAITING_FOR_GROUNDING_DINO',
+        retrace_joint_targets=[home, reached],
+        current_joints=lambda: reached.copy(),
+        get_parameter=lambda _name: SimpleNamespace(value=0.025),
+        runtime_reasons=lambda **kwargs: (
+            calls.append(('runtime', kwargs)) or []),
+        validate_path=lambda path, boxes: (
+            calls.append(('validate', path, boxes)) or []),
+        obstacle_boxes=lambda: (_ for _ in ()).throw(
+            AssertionError('bootstrap retrace must use its static scene')),
+        plan_capture_count=3,
+        current_view=0,
+        current_path=[], current_path_velocities=[],
+        current_path_accelerations=[], current_path_times=[], path_index=0,
+        command_target=None, command_sent_at=0.0, command_samples_sent=0,
+        motion_started_at=None, waypoint_started_at=None,
+        waypoint_last_progress_at=None, waypoint_best_error=0.0,
+        current_waypoint_error=0.0,
+        acquisition_scene_snapshot_validated=False,
+        publish_hold=lambda: calls.append(('hold',)),
+        begin_runtime_refresh=lambda reason, require_workflow,
+        allow_missing_obstacles: calls.append((
+            'refresh', reason, require_workflow, allow_missing_obstacles)),
+    )
+
+    started, blocker = ScanViewpointExecutorNode.try_start_abort_return(
+        executor, 'operator cancelled scan execution')
+
+    assert started and blocker == ''
+    runtime = next(item[1] for item in calls if item[0] == 'runtime')
+    assert runtime['allow_missing_obstacles']
+    assert runtime['allow_stale_obstacles']
+    validation = next(item for item in calls if item[0] == 'validate')
+    assert validation[2] == []
+    assert calls[-1][0] == 'refresh'
+    assert calls[-1][3]
+    assert executor.acquisition_scene_snapshot_validated
+
+
+def test_invalid_new_plan_preserves_already_executed_retrace_history():
+    history = [np.zeros(6), np.ones(6) * 0.2]
+    executor = SimpleNamespace(
+        state='IDLE',
+        plan_kind=MULTIVIEW_SCAN,
+        plan_source_request_id='',
+        plan_candidate_count=13,
+        plan_id='old-plan',
+        retrace_joint_targets=[item.copy() for item in history],
+        clear_plan=lambda: executor.retrace_joint_targets.clear(),
+        now=lambda: 10.0,
+        param_bool=lambda _name: False,
+        publish_plan=lambda *_args: None,
+        publish_status=lambda: None,
+    )
+
+    ScanViewpointExecutorNode.invalidate_plan(
+        executor,
+        'Tesseract proposal rejected',
+        plan_kind=MULTIVIEW_SCAN,
+        plan_id='full-request-id',
+    )
+
+    assert executor.plan_id == 'full-request-id'
+    assert len(executor.retrace_joint_targets) == 2
+    np.testing.assert_allclose(executor.retrace_joint_targets[0], history[0])
+    np.testing.assert_allclose(executor.retrace_joint_targets[1], history[1])
+
+
+def test_valid_but_rejected_tesseract_proposal_keeps_full_request_id():
+    captured = {}
+    executor = SimpleNamespace(
+        state='IDLE',
+        scan_history=[],
+        latest_motion_limits=None,
+        latest_tracking_health=None,
+        fresh=lambda *_args: False,
+        get_parameter=lambda name: SimpleNamespace(value={
+            'min_execution_viewpoints': 13,
+            'max_execution_viewpoints': 13,
+            'acquisition_max_viewpoints': 5,
+            'trajectory_joint_step_rad': 0.025,
+            'trajectory_command_rate_hz': 100.0,
+            'motion_limits_timeout_sec': 2.0,
+            'speed_percent': 5.0,
+        }[name]),
+        invalidate_plan=lambda reason, **kwargs: captured.update(
+            reason=reason, **kwargs),
+    )
+    proposal = SimpleNamespace(
+        plan_kind=MULTIVIEW_SCAN,
+        source_request_id='',
+        valid=True,
+        dry_run=True,
+        real_arm_motion=False,
+        backend='tesseract',
+        plan_id='0123456789abcdef0123456789abcdef',
+        trajectory_sha256='a' * 64,
+        timing_policy=TIMING_POLICY_VERSION,
+        trajectories=[],
+        viewpoint_indices=[],
+        bootstrap_recovery_end_points=[],
+        bootstrap_recovery_joints=[],
+        bootstrap_recovery_delta_rad=[],
+        bootstrap_recovery_evidence_json=[],
+        command_rate_hz=100.0,
+        motion_limits_sha256='b' * 64,
+        execution_speed_percent=5.0,
+    )
+
+    ScanViewpointExecutorNode.tesseract_plan_cb(executor, proposal)
+
+    assert captured['plan_id'] == proposal.plan_id
+    assert captured['plan_kind'] == MULTIVIEW_SCAN
+    assert captured['reason'].startswith('invalid Tesseract proposal:')
+
+
+def test_terminal_folded_home_recovery_validates_its_safe_reverse(monkeypatch):
+    current = np.asarray([0.4] * 6)
+    entry = np.asarray([0.0, 0.04, -0.04, 0.0, 0.439, 0.0])
+    home = np.asarray([0.0, 0.0, 0.0, 0.0, 0.439, 0.0])
+    checked = {}
+
+    def monotonic(_kinematics, path, *_args, **_kwargs):
+        checked['recovery'] = [np.asarray(item).copy() for item in path]
+        return []
+
+    monkeypatch.setattr(
+        'piper_mobile_manipulation.scan_viewpoint_executor_node.'
+        'validate_monotonic_self_clearance_escape',
+        monotonic,
+    )
+
+    def parameter(name):
+        return SimpleNamespace(value={
+            'plan_start_tolerance_rad': 0.05,
+            'floor_z_m': -1.0,
+            'link_radius_m': 0.01,
+            'self_clearance_m': 0.01,
+            'trajectory_joint_step_rad': 0.01,
+        }[name])
+
+    def validate_normal(path, _obstacles):
+        checked['normal'] = [np.asarray(item).copy() for item in path]
+        return []
+
+    executor = SimpleNamespace(
+        current_joints=lambda: current.copy(),
+        plan_collision_model_qualified=True,
+        plan_paths=[[]] * 13 + [[current.copy(), entry.copy(), home.copy()]],
+        plan_path_times=[[]] * 13 + [[0.0, 1.0, 2.0]],
+        plan_path_velocities=[[]] * 13 + [[
+            np.zeros(6), np.zeros(6), np.zeros(6)]],
+        plan_path_accelerations=[[]] * 13 + [[
+            np.zeros(6), np.zeros(6), np.zeros(6)]],
+        current_view=13,
+        plan_capture_count=13,
+        plan_kind=MULTIVIEW_SCAN,
+        plan_returns_home=True,
+        plan_bootstrap_recovery_end_points=[-1] * 13 + [1],
+        plan_bootstrap_recovery_joint_sets=[[]] * 13 + [[2, 3]],
+        kinematics=object(),
+        joint_limits=[(-1.0, 1.0)] * 6,
+        get_parameter=parameter,
+        obstacle_boxes=lambda: [],
+        validation_path=lambda path: [np.asarray(item).copy() for item in path],
+        validate_path=validate_normal,
+        is_acquisition=lambda: False,
+    )
+
+    reasons = ScanViewpointExecutorNode.prepare_current_view(executor)
+
+    assert reasons == []
+    np.testing.assert_allclose(checked['recovery'], [home, entry])
+    np.testing.assert_allclose(checked['normal'], [current, entry])
+    np.testing.assert_allclose(executor.current_path, [entry, home])
+
+
+def test_home_settle_uses_target_error_and_successive_position_delta():
+    target = np.asarray([0.0, 0.0, 0.0, -0.041, 0.355, 0.043])
+    first = target + np.asarray([0.0, 0.021, -0.001, 0.0, 0.001, 0.0])
+    second = first + np.asarray([0.0, 0.0005, 0.0, 0.0, -0.0005, 0.0])
+    assert not home_position_sample_settled(
+        first, target, None, 0.025, 0.005)
+    assert home_position_sample_settled(
+        second, target, first, 0.025, 0.005)
+    assert not home_position_sample_settled(
+        target + 0.026, target, target, 0.025, 0.005)
+    assert not home_position_sample_settled(
+        target, target, target + 0.006, 0.025, 0.005)
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 
@@ -129,7 +395,46 @@ def test_abort_return_home_rejects_safety_faults_but_allows_capture_faults():
         'runtime safety gate: invalid obstacle geometry is present')
     assert abort_return_home_blocker(
         'SDK MoveJ waypoint made no measurable joint progress')
-    assert abort_return_home_blocker('operator cancelled scan execution')
+    assert abort_return_home_blocker('operator cancelled scan execution') == ''
+
+
+def test_approved_retrace_ignores_only_repeated_static_self_clearance():
+    reasons = approved_retrace_validation_reasons([
+        'trajectory step 125: self-collision clearance between link segments 2 and 5',
+        'trajectory step 12: obstacle collision with box leaf',
+        'trajectory step 4: joint 3 is outside configured limits',
+    ])
+
+    assert reasons == [
+        'trajectory step 12: obstacle collision with box leaf',
+        'trajectory step 4: joint 3 is outside configured limits',
+    ]
+
+
+def test_multiview_capture_settle_does_not_require_tracking_lock():
+    executor = SimpleNamespace(
+        latest_camera_timestamp_health=SimpleNamespace(healthy=True),
+        latest_tracking_health=SimpleNamespace(
+            lifecycle_state='LOST', camera_settled=False,
+            prediction_only=True),
+        latest_target_status='LOST',
+        joints_settled=lambda: True,
+    )
+
+    assert ScanViewpointExecutorNode.capture_pose_settled(executor)
+    assert not ScanViewpointExecutorNode.settled_and_tracking(executor)
+
+
+def test_multiview_capture_still_requires_stationary_arm_and_healthy_clock():
+    executor = SimpleNamespace(
+        latest_camera_timestamp_health=SimpleNamespace(healthy=False),
+        joints_settled=lambda: True,
+    )
+    assert not ScanViewpointExecutorNode.capture_pose_settled(executor)
+
+    executor.latest_camera_timestamp_health.healthy = True
+    executor.joints_settled = lambda: False
+    assert not ScanViewpointExecutorNode.capture_pose_settled(executor)
 
 
 def test_non_safety_abort_retraces_only_reached_approved_targets():
@@ -189,13 +494,95 @@ def test_non_safety_abort_retraces_only_reached_approved_targets():
     assert events[-2:] == [
         ('hold',),
         (
-            'refresh',
-            'non-safety abort accepted; retracing already executed approved '
-            'targets to the scan start',
+                'refresh',
+                'non-safety abort accepted; retracing already executed approved '
+                'targets to the configured home',
             False,
             False,
         ),
     ]
+
+
+def test_cancelled_acquisition_retraces_to_original_powered_home():
+    events = []
+    home = np.zeros(6)
+    reached = np.full(6, 0.1)
+    executor = SimpleNamespace(
+        abort_return_in_progress=False,
+        plan_kind='ROUGH_ACQUISITION',
+        plan_returns_home=False,
+        state='ACQUIRED',
+        retrace_joint_targets=[home, reached],
+        current_joints=lambda: reached.copy(),
+        get_parameter=lambda name: SimpleNamespace(value={
+            'plan_start_tolerance_rad': 0.025,
+        }[name]),
+        runtime_reasons=lambda **_kwargs: [],
+        validate_path=lambda path, _boxes: (
+            events.append([item.copy() for item in path]) or []),
+        obstacle_boxes=lambda: [],
+        plan_capture_count=2,
+        current_view=2,
+        current_path=[],
+        current_path_velocities=[],
+        current_path_accelerations=[],
+        current_path_times=[],
+        path_index=0,
+        command_target=None,
+        command_sent_at=0.0,
+        command_samples_sent=0,
+        motion_started_at=None,
+        waypoint_started_at=None,
+        waypoint_last_progress_at=None,
+        waypoint_best_error=0.0,
+        current_waypoint_error=0.0,
+        publish_hold=lambda: None,
+        begin_runtime_refresh=lambda *_args, **_kwargs: None,
+    )
+
+    started, blocker = ScanViewpointExecutorNode.try_start_abort_return(
+        executor, 'operator cancelled scan execution')
+
+    assert started and not blocker
+    assert np.allclose(executor.current_path, [home])
+    assert np.allclose(events[0], [reached, home])
+
+
+def test_cancelled_inflight_move_first_retraces_to_last_reached_endpoint():
+    validated = []
+    home = np.zeros(6)
+    reached = np.full(6, 0.1)
+    stopped = np.full(6, 0.15)
+    executor = SimpleNamespace(
+        abort_return_in_progress=False,
+        plan_kind=MULTIVIEW_SCAN,
+        plan_returns_home=True,
+        state='ABORTED',
+        retrace_joint_targets=[home, reached],
+        current_joints=lambda: stopped.copy(),
+        get_parameter=lambda _name: SimpleNamespace(value=0.025),
+        runtime_reasons=lambda **_kwargs: [],
+        validate_path=lambda path, _boxes: (
+            validated.extend(item.copy() for item in path) or []),
+        obstacle_boxes=lambda: [],
+        plan_capture_count=13,
+        current_view=1,
+        current_path=[], current_path_velocities=[],
+        current_path_accelerations=[], current_path_times=[], path_index=0,
+        command_target=None, command_sent_at=0.0, command_samples_sent=0,
+        motion_started_at=None, waypoint_started_at=None,
+        waypoint_last_progress_at=None, waypoint_best_error=0.0,
+        current_waypoint_error=0.0,
+        publish_hold=lambda: None,
+        begin_runtime_refresh=lambda *_args, **_kwargs: None,
+    )
+
+    started, blocker = ScanViewpointExecutorNode.try_start_abort_return(
+        executor, 'operator cancelled scan execution')
+
+    assert started and not blocker
+    assert np.allclose(executor.current_path, [reached, home])
+    assert np.allclose(validated, [stopped, reached, home])
 
 
 def test_safety_abort_never_starts_return_motion():
@@ -230,6 +617,18 @@ def test_fixed_j6_planner_cannot_return_as_a_fallback():
     assert "'planning_backend'" not in combined
     assert "msg.backend != 'tesseract'" in executor_source
     assert "msg.planner_backend = 'tesseract'" in executor_source
+
+
+def test_execution_plan_publisher_is_latched_for_sequential_consumers():
+    executor_source = (
+        PACKAGE_ROOT / 'piper_mobile_manipulation' /
+        'scan_viewpoint_executor_node.py'
+    ).read_text()
+    plan_block = executor_source.split(
+        'self.plan_pub = self.create_publisher(', 1)[1].split(
+            'self.status_pub =', 1)[0]
+    assert 'ScanExecutionPlan' in plan_block
+    assert 'history_qos' in plan_block
 
 
 def test_fk_position_matches_piper_sdk_mode_zero():
@@ -612,13 +1011,14 @@ def test_acquisition_uses_configured_speed_with_sdk_range():
     assert commanded_speed_percent(100.0, ROUGH_ACQUISITION, 0.0) == 100.0
     assert commanded_speed_percent(120.0, ROUGH_ACQUISITION, 0.0) == 100.0
     assert commanded_speed_percent(4.0, ROUGH_ACQUISITION, 0.0) == 4.0
-    assert commanded_speed_percent(100.0, MULTIVIEW_SCAN, 0.5) == 50.0
+    assert commanded_speed_percent(100.0, MULTIVIEW_SCAN, 0.5) == 100.0
 
 
-def test_planned_speed_accepts_a_safer_older_tracking_scale_only():
+def test_planned_speed_is_bound_only_by_the_selected_sdk_percentage():
     assert planned_speed_rejection(5.0, MULTIVIEW_SCAN, 1.0, 4.0) == ''
-    assert 'allowance' in planned_speed_rejection(
-        5.0, MULTIVIEW_SCAN, 0.8, 5.0)
+    assert planned_speed_rejection(5.0, MULTIVIEW_SCAN, 0.1, 5.0) == ''
+    assert 'configured limit' in planned_speed_rejection(
+        5.0, MULTIVIEW_SCAN, 1.0, 5.1)
     assert planned_speed_rejection(
         5.0, ROUGH_ACQUISITION, 0.0, 5.0) == ''
     assert 'acquisition speed' in planned_speed_rejection(
@@ -649,6 +1049,9 @@ def test_multiview_obstacle_gap_waits_only_while_arm_is_stationary():
     assert not missing_obstacles_can_wait('MULTIVIEW_SCAN', 2, 'MOVING')
     assert not missing_obstacles_can_wait(
         'MULTIVIEW_SCAN', 2, 'WAITING_FOR_RUNTIME_REFRESH')
+    assert missing_obstacles_can_wait(
+        ROUGH_ACQUISITION, 3, 'MOVING',
+        bootstrap_abort_retrace=True)
 
 
 def test_correlated_acquisition_scene_may_age_during_its_exact_segment():
@@ -734,7 +1137,7 @@ def executor_runtime_fixture(health):
     )
 
 
-def test_tracking_speed_allowance_is_enforced_before_but_not_during_move():
+def test_tracking_scale_does_not_override_the_selected_sdk_speed():
     fake = executor_runtime_fixture(SimpleNamespace(
         lifecycle_state='TRACKING',
         camera_settled=False,
@@ -756,7 +1159,7 @@ def test_tracking_speed_allowance_is_enforced_before_but_not_during_move():
         enforce_tracking_speed_allowance=False,
     )
 
-    assert any('tracking speed allowance' in reason for reason in before_target)
+    assert not any('tracking speed allowance' in reason for reason in before_target)
     assert not any('tracking speed allowance' in reason for reason in in_flight)
 
 
@@ -940,39 +1343,25 @@ def test_executor_sends_each_sdk_movej_endpoint_only_once():
     assert fake.waypoint_last_progress_at == pytest.approx(1.0)
 
 
-def test_runtime_limit_change_requires_a_fresh_exact_target_plan():
-    path = [
-        np.zeros(6),
-        np.full(6, 0.01),
-    ]
-    velocities = [
-        np.zeros(6),
-        np.full(6, 0.1),
-    ]
-    accelerations = [
-        np.zeros(6),
-        np.full(6, 0.2),
-    ]
-    fake = SimpleNamespace(
-        plan_paths=[path],
-        plan_path_velocities=[velocities],
-        plan_path_accelerations=[accelerations],
-        plan_path_times=[[0.0, 0.1]],
-        current_view=0,
-        get_parameter=lambda name: SimpleNamespace(
-            value={
-                'trajectory_command_rate_hz': 100.0,
-                'trajectory_joint_step_rad': 0.025,
-            }[name]),
-    )
+def test_runtime_limit_change_accepts_fresh_valid_sdk_limits():
+    fake = SimpleNamespace()
     changed_limits = SimpleNamespace(
         max_velocity_rad_s=[0.05] * 6,
         max_acceleration_rad_s2=[0.3] * 6,
     )
     rejection = ScanViewpointExecutorNode.runtime_motion_limit_rejection(
         fake, changed_limits)
-    assert 'request a fresh' in rejection
-    assert 'target plan' in rejection
+    assert rejection == ''
+
+
+def test_runtime_limit_change_rejects_malformed_sdk_limits():
+    malformed = SimpleNamespace(
+        max_velocity_rad_s=[0.05] * 5,
+        max_acceleration_rad_s2=[0.3] * 6,
+    )
+    rejection = ScanViewpointExecutorNode.runtime_motion_limit_rejection(
+        SimpleNamespace(), malformed)
+    assert 'malformed' in rejection
 
 
 def test_acquisition_lock_requires_post_refresh_measured_tracking():
@@ -1093,10 +1482,10 @@ def test_return_home_waits_for_stable_feedback_before_complete():
         settle_started=0.5,
         now=lambda: 2.0,
         get_parameter=lambda name: SimpleNamespace(value={
-            'settle_timeout_sec': 15.0,
-            'settle_duration_sec': 1.0,
+            'home_settle_timeout_sec': 30.0,
+            'home_settle_duration_sec': 1.0,
         }[name]),
-        joints_settled=lambda: True,
+        home_joints_settled=lambda: True,
         abort_motion=lambda reason: events.append(('abort', reason)),
         complete_return_home=lambda: events.append(('complete',)),
     )
@@ -1112,9 +1501,9 @@ def test_return_home_unsettled_feedback_resets_stability_window():
         settle_started=0.5,
         now=lambda: 2.0,
         get_parameter=lambda name: SimpleNamespace(value={
-            'settle_timeout_sec': 15.0,
+            'home_settle_timeout_sec': 30.0,
         }[name]),
-        joints_settled=lambda: False,
+        home_joints_settled=lambda: False,
         abort_motion=lambda _reason: None,
     )
 

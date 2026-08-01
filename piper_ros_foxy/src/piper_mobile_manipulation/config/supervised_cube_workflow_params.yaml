@@ -1,6 +1,6 @@
 /**:
   ros__parameters:
-    movable_whitelist: ["pen"]
+    movable_whitelist: ["leaf", "branch"]
     min_views: 13
     max_views: 13
     min_quality_score: 0.40

@@ -171,6 +171,11 @@ def test_arm_only_movej_commands_cannot_actuate_the_gripper():
                 'joint%d' % index: (-3.0, 3.0) for index in range(1, 7)}
             self.joint_bounds['joint7'] = (0.00035, 0.08)
             self.gripper_exist = True
+            self._joint_feedback_lock = threading.Lock()
+            self.last_commanded_joint_positions = None
+            self.last_command_feedback_best_error = None
+            self.last_joint_commanded_at = 0.0
+            self.last_joint_feedback_positions = None
             self.logger = SimpleNamespace(
                 debug=lambda *_args: None,
                 warn=lambda *_args: None,

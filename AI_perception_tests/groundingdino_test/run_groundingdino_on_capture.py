@@ -28,7 +28,7 @@ DEFAULT_TEXT_THRESHOLD = 0.25
 DEFAULT_LOCAL_BOX_THRESHOLD = 0.30
 DEFAULT_TARGET_PROMPT = "green cube ."
 DEFAULT_OBSTACLE_PROMPT = (
-    "pen . | "
+    "leaf . branch . | "
     "hand . finger ."
 )
 LOCAL_CROP_MIN_SIZE_PX = 256
@@ -53,12 +53,8 @@ UNSAFE_TERMS = (
     "finger",
 )
 CANDIDATE_SAFE_TERMS = (
-    "pen",
-    "paper",
-    "tissue",
-    "wire",
-    "cable",
-    "cardboard",
+    "leaf",
+    "branch",
 )
 LOCAL_GROUP_RELATIVE_CONFIDENCE = 0.75
 

@@ -44,12 +44,15 @@ def plan_count_rejection(
 
 
 def commanded_speed_percent(configured_speed, plan_kind, tracking_scale):
-    """Apply the SDK's 1-100% range and normal-scan tracking scale."""
+    """Return the operator-selected SDK MoveJ speed within its 1-100% range.
+
+    Tracking health is a readiness/diagnostic input, not a second motion
+    controller. Binding a plan to a live confidence-derived multiplier made an
+    otherwise identical 5% plan reject itself while Tesseract was computing.
+    """
+    del plan_kind, tracking_scale
     configured = max(1.0, min(100.0, float(configured_speed)))
-    if plan_kind == ROUGH_ACQUISITION:
-        return configured
-    scale = max(0.0, min(1.0, float(tracking_scale)))
-    return max(1.0, min(configured, configured * scale))
+    return configured
 
 
 def planned_speed_rejection(
@@ -62,19 +65,14 @@ def planned_speed_rejection(
         return 'Tesseract execution speed is invalid'
     if not math.isfinite(planned) or planned < 1.0 or planned > configured + 1e-6:
         return 'Tesseract execution speed is outside the configured limit'
-    allowed = commanded_speed_percent(
-        configured, plan_kind, tracking_scale)
+    del tracking_scale
     if plan_kind == ROUGH_ACQUISITION:
         if abs(planned - configured) > 1e-4:
             return 'Tesseract acquisition speed does not match the selected speed'
     elif plan_kind == MULTIVIEW_SCAN:
-        # The tracker scale is live evidence and may improve while Tesseract is
-        # computing. A plan made at a lower speed remains safe; a plan above
-        # the current allowance must be rejected and replanned.
-        if planned > allowed + 1e-4:
-            return (
-                'Tesseract execution speed exceeds the current tracking '
-                'allowance; replan at the lower speed')
+        # The configured SDK percentage is the complete motion-speed contract.
+        # Tracking cannot raise this bound and must not invalidate it.
+        pass
     else:
         return 'unsupported plan_kind=%s' % plan_kind
     return ''

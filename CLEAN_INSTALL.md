@@ -80,6 +80,24 @@ The helper must report no error. It rejects stale inherited overlays and verifie
 capture module and recovery-bearing Tesseract message come from this canonical workspace. Do not
 run colcon from `~/Piper_arm` or source `~/Piper_arm/install/setup.bash`.
 
+Confirm the autonomous mission interfaces and launchers:
+
+```bash
+ros2 interface show piper_mobile_manipulation/action/RunTargetScan
+ros2 interface show piper_mobile_manipulation/srv/AuthorizeMission
+./verify_installation.sh
+```
+
+For two computers, install the same interface package on the tracked-robot
+side, use a wired DDS network, and prefix the arm mount as `piper_base_link`.
+Only `run_target_scan_gateway.sh` joins that network; never expose local driver,
+camera, planning, or command topics. Configure CAN at boot through a narrowly
+scoped system unit or sudo rule so headless startup cannot wait for a password.
+Mount one deployment-owned, mode-0700 shared directory at the same path on both
+hosts and export that path as `PIPER_MISSION_SPOOL_ROOT` for both launchers.
+The filesystem must support atomic rename. The default local `/tmp` spool is
+valid only when the gateway and mission run on the same computer.
+
 ## 5. Install and qualify the isolated Tesseract worker
 
 The planning worker uses a networkless Bubblewrap runtime with Tesseract 0.35.0.6. It does not join
@@ -193,7 +211,23 @@ The GPU setup is pinned to the versions in `setup_gpu_env.sh` and must finish by
 device name. For offline CPU-only perception development, use `setup_cpu_env.sh` instead; that does
 not qualify the real-time GPU scan launcher.
 
-## 9. Verify the installation
+## 9. Optional offline TSDF reconstruction
+
+Keep Open3D outside Foxy's Python environment:
+
+```bash
+python3 -m venv reconstruction/.venv
+reconstruction/.venv/bin/pip install -r reconstruction/requirements.txt
+reconstruction/.venv/bin/python reconstruction/tsdf_reconstruct.py \
+  datasets/active_scan/<completed-scan> --output /tmp/target_mesh.ply
+```
+
+The prototype requires exactly 13 RGB/depth/mask records, calibrated
+intrinsics, and the timestamped `base_link -> camera_color_optical_frame` 4x4
+matrix saved with each view. Reconstruction is an asynchronous post-scan job;
+mesh failure does not change the already completed arm shutdown result.
+
+## 10. Verify the installation
 
 Run the software checks:
 

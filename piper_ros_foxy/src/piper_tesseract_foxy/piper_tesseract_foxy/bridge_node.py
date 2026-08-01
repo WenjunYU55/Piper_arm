@@ -193,8 +193,9 @@ class TesseractPlanBridge(Node):
                                  1.047197551, 2.094395102, 3.141592654],
             'deterministic_seed': 42,
             'return_home_positions_rad': [
-                0.0, -0.032, -0.026, -0.039, 0.346, 0.107,
+                0.000366362, 0.0, 0.0, 0.0, 0.43869236, 0.0,
             ],
+            'manipulation_model_qualified': False,
             'debug': True,
         }
         for name, value in defaults.items():
@@ -545,6 +546,10 @@ class TesseractPlanBridge(Node):
                     item.get('desired_camera_position'), 'camera position'),
                 'look_direction': self.vector(
                     item.get('desired_look_at_direction'), 'look direction'),
+                'required_first': bool(
+                    plan_kind == 'ROUGH_ACQUISITION'
+                    and item.get('acquisition_look')
+                    in ('center', 'compact_center')),
             })
         configured_maximum = max(
             1, int(self.get_parameter('max_execution_viewpoints').value))
@@ -885,6 +890,10 @@ class TesseractPlanBridge(Node):
         msg = TesseractPlan()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'base_link'
+        # Rejections are plans too for correlation purposes. Preserve the
+        # complete request ID so a caller can fail this attempt immediately
+        # without accepting or waiting on another generation's result.
+        msg.plan_id = str(request_id)
         pending = self.pending.get(request_id, {})
         request = pending.get('request', {})
         msg.plan_kind = str(request.get('plan_kind', ''))
@@ -929,6 +938,15 @@ class TesseractPlanBridge(Node):
             require_viewpoints=True,
             worker_reasons=worker_blockers,
         )
+        manipulation_blockers = list(multiview_blockers)
+        # Contact motion remains fail-closed until the installed planning
+        # model explicitly contains a qualified gripper TCP, open/closed
+        # geometry, attached-object handling, and allowed-contact policy.
+        if not bool(self.get_parameter(
+                'manipulation_model_qualified').value):
+            manipulation_blockers.append(
+                'gripper/contact collision model is not qualified')
+        manipulation_blockers = list(dict.fromkeys(manipulation_blockers))
         msg = TesseractReadiness()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'base_link'
@@ -936,8 +954,10 @@ class TesseractPlanBridge(Node):
         msg.worker_ready = not worker_blockers
         msg.acquisition_blockers = acquisition_blockers
         msg.multiview_blockers = multiview_blockers
+        msg.manipulation_blockers = manipulation_blockers
         msg.acquisition_ready = not acquisition_blockers
         msg.multiview_ready = not multiview_blockers
+        msg.manipulation_ready = not manipulation_blockers
         self.readiness_pub.publish(msg)
 
 

@@ -60,7 +60,7 @@ class SupervisedCubeWorkflowNode(Node):
             'plan_topic': '/piper/removal_plan',
             'target_model_topic': '/piper/target_model',
             'marker_topic': '/piper/supervised_workflow_markers',
-            'movable_whitelist': ['pen'],
+            'movable_whitelist': ['leaf', 'branch'],
             'min_views': 13, 'max_views': 13, 'min_quality_score': 0.40,
             'request_optional_cloud_refinement': False,
             'center_convergence_m': 0.005, 'target_motion_abort_m': 0.020,

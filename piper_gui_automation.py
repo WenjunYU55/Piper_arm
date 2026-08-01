@@ -230,10 +230,10 @@ def tracking_lock_rejection(
 
 
 def plan_matches_request(plan, request_id):
-    """Match the worker's 16-character plan ID to its full bridge request ID."""
+    """Require the worker plan to carry the complete bridge request ID."""
     plan_id = str(getattr(plan, 'plan_id', ''))
     request = str(request_id)
-    return bool(plan_id and request and request.startswith(plan_id))
+    return bool(plan_id and request and request == plan_id)
 
 
 def readiness_rejection(

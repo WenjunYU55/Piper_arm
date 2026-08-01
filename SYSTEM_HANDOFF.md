@@ -78,13 +78,18 @@ round trip passes in software; full external-stack live acceptance remains pendi
 Step 4 uses explicit generation-owned phases, fresh diagnostic service state, a 15-second workflow
 deadline, multiview readiness/blockers, and 12/185-second queue/result deadlines. Movable clutter
 stops at workflow `PLAN_READY` with a clear-workspace instruction; no removal approval is exposed.
+The one-button Automatic Scan path additionally invalidates every manual Step-2/4/5 generation and
+retry timer before submission, then requires `multiview_ready` to remain good for one second (within
+30 seconds) after `ACQUIRED`. This prevents cached manual callbacks or the readiness handoff from
+cancelling a newly locked mission.
 The isolated worker has a 150-second internal planning budget, checks it
 between individual OMPL attempts and collision samples, and reserves five
 seconds to emit a correlated result before the bridge's 180-second boundary.
-Normal completion uses the hash-bound return-home segment. A non-safety abort at a reached
-endpoint may reverse only already executed approved targets; any safety,
-telemetry, collision, obstacle, hardware, progress, emergency-stop, or
-operator-cancel blocker holds.
+Normal completion uses the hash-bound return-home segment. Cancellation and other non-safety
+aborts may reverse only already executed approved targets to the saved home, then require a
+verified one-second hold, disable, and owned-process shutdown. The home proof tolerates an isolated
+CAN feedback-set gap and has a 30-second bound. Safety, telemetry, collision, obstacle,
+hardware, progress, or emergency-stop blockers hold without starting return motion.
 focused Foxy rebuild, GUI/mobile tests, Tesseract tests, and seed-42 rootless qualification runs
 pass. On 2026-07-24
 the rough-coordinate route moved at 5 percent, obtained a post-settle measured lock, and handed off
@@ -370,6 +375,31 @@ ROS and communicate through atomic filesystem spools, so they cannot command the
 
 ## Current limitations and stopping point
 
+- A headless `/piper/run_target_scan` mission layer now owns bounded startup,
+  task/hash/deadline authorization, acquisition, correlated 13-view planning,
+  capture completion, current-pose hold, feedback-confirmed disable, child
+  shutdown, and durable result replay. A network gateway snapshots
+  `odom -> piper_base_link` and preserves the local loopback-only motion domain.
+- Bounded startup now uses generation-aware barriers rather than fixed sleeps:
+  two seconds of coherent current-driver joint feedback, healthy camera stamps
+  plus both CUDA model-ready markers, a new hand-eye transform, a new healthy
+  Tesseract heartbeat generation, typed acquisition readiness, and a repeated
+  joint-feedback stability proof immediately before enable. Failure names the
+  barrier and never starts the dependent section.
+- The GUI exposes that production action in a dedicated **Automatic Scan** tab.
+  One start button submits rough XYZ and displays phase/capture/shutdown
+  feedback; the older five-step path remains isolated in **Acquire & Scan** for
+  commissioning and exact manual approvals.
+- Target-centred leaf/branch qualification, contact-action contracts and
+  manipulation readiness are implemented, but the installed collision model is
+  intentionally `manipulation_ready=false` until gripper TCP/open/closed,
+  attached-object and allowed-contact qualification is completed. A cluttered
+  mission therefore returns `NEEDS_OPERATOR`; it must not claim automatic
+  physical removal yet.
+- Every new capture stores timestamped camera pose, calibration/task identity,
+  and a hashed manifest. `reconstruction/tsdf_reconstruct.py` is the isolated
+  masked TSDF baseline; Open3D is not installed into Foxy.
+
 - Tesseract 0.35.0.6 executes in the checked-in rootless Ubuntu 24.04/Bubblewrap route despite the
   host's incompatible Focal glibc. The 2026-07-20 smoke passed KDL/Bullet plugin loading, mode-0 FK
   comparison, finite timed output, and free-J6 planning. Collision qualification passed on
@@ -392,9 +422,11 @@ ROS and communicate through atomic filesystem spools, so they cannot command the
   handoff. The bounded no-lock sweep, explicit current-lock request/two-confirmation lifecycle, and
   GUI stop/compact-disable behavior all completed in the 2026-07-29 acceptance. Cold-restart and
   deliberate cancellation regressions remain.
-- The accumulated target model is a PointCloud2 cloud, not TSDF or mesh reconstruction.
-- Real automatic obstacle manipulation, reinforcement learning, dynamic-target following, and
-  unsupervised real-arm motion remain out of scope.
+- The online accumulated target model remains PointCloud2; TSDF/mesh is an
+  offline post-shutdown job.
+- Real automatic obstacle contact is pending the explicit manipulation-model
+  and staged physical qualification above. Reinforcement learning and dynamic
+  base motion during arm work remain out of scope.
 
 ## Safety invariants
 

@@ -81,6 +81,19 @@ def test_live_launch_is_feedback_only():
     assert "joint_ctrl_single" not in launch_text
 
 
+def test_live_launch_pins_driver_domain_and_udp_transport():
+    launch_text = (
+        DESCRIPTION_ROOT / "launch" / "display_live_robot.launch.py"
+    ).read_text()
+    assert 'default_value=os.environ.get("ROS_DOMAIN_ID", "42")' in launch_text
+    assert '"FASTRTPS_DEFAULT_PROFILES_FILE"' in launch_text
+    assert 'SetEnvironmentVariable("RMW_FASTRTPS_USE_QOS_FROM_XML", "0")' in launch_text
+    assert 'SetEnvironmentVariable("ROS_LOCALHOST_ONLY", "0")' in launch_text
+    assert (
+        DESCRIPTION_ROOT / "config" / "fastdds_gui_udp_only.xml"
+    ).is_file()
+
+
 def test_legacy_control_and_simulation_surfaces_are_absent():
     assert not (DESCRIPTION_ROOT / "launch" / "display_xacro.launch.py").exists()
     assert not (

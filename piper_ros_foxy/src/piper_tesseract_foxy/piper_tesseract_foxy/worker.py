@@ -61,6 +61,33 @@ def finite_six(value, label):
     return array
 
 
+def reverse_sdk_movej_points(points):
+    """Reverse one rest-to-rest SDK MoveJ path with increasing timestamps."""
+    if not isinstance(points, list) or len(points) < 2:
+        raise ContractError('SDK MoveJ path must contain at least two points')
+    times = [float(point['time_from_start_s']) for point in points]
+    if (
+            not all(math.isfinite(value) for value in times)
+            or times[0] < 0.0
+            or any(second <= first for first, second in zip(times[:-1], times[1:]))):
+        raise ContractError('SDK MoveJ path timestamps are invalid')
+    durations = [second - first for first, second in zip(times[:-1], times[1:])]
+    reversed_times = [0.0]
+    for duration in reversed(durations):
+        reversed_times.append(reversed_times[-1] + duration)
+    result = []
+    for when, point in zip(reversed_times, reversed(points)):
+        positions = finite_six(
+            point.get('positions_rad'), 'reversed SDK MoveJ position')
+        result.append({
+            'time_from_start_s': float(when),
+            'positions_rad': positions.tolist(),
+            'velocities_rad_s': [0.0] * 6,
+            'accelerations_rad_s2': [0.0] * 6,
+        })
+    return result
+
+
 def _quintic_segment(q0, v0, a0, q1, v1, a1, duration, ratio):
     """Evaluate the C2 quintic joining two timed joint states."""
     duration = float(duration)
@@ -736,6 +763,25 @@ class TesseractBackend:
             'no bounded monotonic bootstrap recovery reaches normal clearance%s'
             % (': ' + failures[0] if failures else ''))
 
+    def find_terminal_home_recovery(self, request, home):
+        """Qualify the folded home by reusing the exact outbound policy."""
+        policy = self.manifest.get('bootstrap_start_recovery', {})
+        qualified_tolerance = float(
+            policy.get('maximum_start_limit_violation_rad', -1.0))
+        recovery_request = {
+            'plan_kind': str(policy.get('plan_kind', 'ROUGH_ACQUISITION')),
+            'scene': {
+                'observation_mode': str(
+                    policy.get('observation_mode', 'bootstrap_static')),
+            },
+            'start_state': {'positions_rad': finite_six(
+                home, 'terminal home').tolist()},
+            'limits': dict(request['limits']),
+        }
+        recovery_request['limits']['bootstrap_start_limit_tolerance_rad'] = (
+            qualified_tolerance)
+        return self.find_bootstrap_recovery(recovery_request)
+
     def reset_scene(self):
         """Create a clean environment so request-local obstacles cannot leak."""
         # The nanobind Robot owns native Bullet/OMPL resources.  Drop the old
@@ -1059,7 +1105,9 @@ class TesseractBackend:
                     'scene': {'observation_mode': 'bootstrap_static'},
                     'limits': {
                         'bootstrap_start_limit_tolerance_rad':
-                            self.bootstrap_start_limit_tolerance_rad,
+                            float(self.manifest.get(
+                                'bootstrap_start_recovery', {}).get(
+                                    'maximum_start_limit_violation_rad', -1.0)),
                     },
                 }),
             )
@@ -1235,6 +1283,56 @@ class TesseractBackend:
         segments = []
         failures = {}
         pending = list(request['scene']['candidate_views'])
+        if request.get('plan_kind') == 'ROUGH_ACQUISITION':
+            selected_center_id = None
+            centered = [
+                candidate for candidate in pending
+                if candidate.get('required_first') is True
+            ]
+            # Direct backend qualification helpers predate the transport
+            # marker and already place the centered view first. Real worker
+            # requests pass validate_request(), which requires the marker.
+            if not centered and pending:
+                centered = pending[:1]
+            for candidate in centered:
+                TesseractBackend.ensure_planning_time(
+                    self, 'before centered rough-coordinate candidate')
+                try:
+                    accepted = self.plan_candidate(
+                        current, candidate, rolls, maximum_step,
+                        position_limits, joint_margin, bootstrap_recovery)
+                except (ContractError, RuntimeError, ValueError) as error:
+                    failures[int(candidate['id'])] = str(error)
+                    continue
+                roll, points, validation = accepted
+                selected.append({
+                    'id': int(candidate['id']),
+                    'camera_position_m': candidate['camera_position_m'],
+                    'look_direction': candidate['look_direction'],
+                    'roll_rad': roll,
+                })
+                segments.append({
+                    'from_viewpoint': -1,
+                    'to_viewpoint': int(candidate['id']),
+                    'points': points,
+                    **validation,
+                })
+                current = points[-1]['positions_rad']
+                bootstrap_recovery = None
+                failures.pop(int(candidate['id']), None)
+                selected_center_id = int(candidate['id'])
+                break
+            if not selected:
+                raise ContractError(
+                    'no centered rough-coordinate first view is reachable (%s)'
+                    % '; '.join(
+                        'view %s: %s' % item
+                        for item in sorted(failures.items())))
+            pending = [
+                candidate for candidate in pending
+                if (candidate.get('required_first') is not True
+                    and int(candidate['id']) != selected_center_id)
+            ]
         while pending and len(selected) < maximum_views:
             next_pending = []
             progress = False
@@ -1287,8 +1385,23 @@ class TesseractBackend:
             home = finite_six(
                 request['planning']['return_home_positions_rad'],
                 'return home positions')
-            points, validation = self.plan_segment_to_joint_goal(
-                current, home, maximum_step)
+            terminal_recovery = self.find_terminal_home_recovery(
+                request, home)
+            if terminal_recovery is None:
+                points, validation = self.plan_segment_to_joint_goal(
+                    current, home, maximum_step)
+            else:
+                # The folded home is a qualified bounded start corridor, not a
+                # normal-clearance OMPL goal.  Plan and validate home->current,
+                # then execute its exact rest-to-rest reverse current->home.
+                recovery_endpoint = finite_six(
+                    terminal_recovery[
+                        'bootstrap_recovery_end_positions_rad'],
+                    'terminal home recovery endpoint')
+                points, validation = self.plan_segment_to_joint_goal(
+                    recovery_endpoint, current, maximum_step,
+                    terminal_recovery)
+                points = reverse_sdk_movej_points(points)
             segments.append({
                 'from_viewpoint': int(selected[-1]['id']),
                 'to_viewpoint': -2,
@@ -1377,7 +1490,9 @@ class Worker:
                 'target_provenance': request['target_provenance'],
                 'request_id': request_id,
                 'request_sha256': request['request_sha256'],
-                'plan_id': request_id[:16],
+                # Keep the full request identity through worker, bridge, GUI,
+                # executor and mission. Prefix correlation admits stale plans.
+                'plan_id': request_id,
                 'status': 'success',
                 'backend': 'tesseract',
                 'backend_version': self.backend.version,

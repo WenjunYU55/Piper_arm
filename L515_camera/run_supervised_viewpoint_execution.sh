@@ -35,11 +35,20 @@ SPEED_PERCENT="${PIPER_VIEWPOINT_SPEED_PERCENT:-5.0}"
 MAX_VIEWS="${PIPER_VIEWPOINT_MAX_VIEWS:-13}"
 MIN_VIEWS="${PIPER_VIEWPOINT_MIN_VIEWS:-13}"
 AUTO_CAPTURE="${PIPER_VIEWPOINT_AUTO_CAPTURE:-1}"
+MISSION_POLICY="${PIPER_VIEWPOINT_MISSION_POLICY:-0}"
 case "$AUTO_CAPTURE" in
   0) ROS_AUTO_CAPTURE=false ;;
   1) ROS_AUTO_CAPTURE=true ;;
   *)
     echo "PIPER_VIEWPOINT_AUTO_CAPTURE must be 0 or 1." >&2
+    exit 2
+    ;;
+esac
+case "$MISSION_POLICY" in
+  0) ROS_MISSION_POLICY=false ;;
+  1) ROS_MISSION_POLICY=true ;;
+  *)
+    echo "PIPER_VIEWPOINT_MISSION_POLICY must be 0 or 1." >&2
     exit 2
     ;;
 esac
@@ -55,4 +64,5 @@ exec ros2 launch piper_mobile_manipulation supervised_viewpoint_execution.launch
   speed_percent:="$SPEED_PERCENT" \
   max_execution_viewpoints:="$MAX_VIEWS" \
   min_execution_viewpoints:="$MIN_VIEWS" \
-  auto_capture:="$ROS_AUTO_CAPTURE"
+  auto_capture:="$ROS_AUTO_CAPTURE" \
+  allow_mission_policy:="$ROS_MISSION_POLICY"

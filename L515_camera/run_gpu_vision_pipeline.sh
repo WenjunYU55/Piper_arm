@@ -63,11 +63,18 @@ stop_last_process() {
 }
 
 watchdog_graph_ready() {
-  local nodes topic_info
-  nodes="$(timeout 3 ros2 node list 2>/dev/null || true)"
-  topic_info="$(timeout 3 ros2 topic info /piper/camera_timestamp_health 2>/dev/null || true)"
-  printf '%s\n' "$nodes" | grep -Fxq '/camera_timestamp_watchdog' &&
-    printf '%s\n' "$topic_info" | grep -Fq 'Publisher count: 1'
+  local nodes topics
+  # Bypass a ROS 2 CLI daemon that may belong to an older DDS transport
+  # generation.  The mission separately requires fresh typed health samples;
+  # this probe only proves that the newly started watchdog reached the graph.
+  nodes="$(timeout 3 ros2 node list --no-daemon --spin-time 0.5 \
+    2>/dev/null || true)"
+  topics="$(timeout 3 ros2 topic list --no-daemon --spin-time 0.5 \
+    2>/dev/null || true)"
+  [ "$(printf '%s\n' "$nodes" |
+    grep -Fxc '/camera_timestamp_watchdog')" -eq 1 ] &&
+    printf '%s\n' "$topics" |
+    grep -Fxq '/piper/camera_timestamp_health'
 }
 
 start_required_watchdog() {

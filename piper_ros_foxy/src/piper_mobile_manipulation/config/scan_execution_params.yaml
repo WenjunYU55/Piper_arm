@@ -44,6 +44,15 @@
     # PiPER's reported velocity jitters while physically held. Position must
     # already be within joint_goal_tolerance_rad before this settle gate runs.
     joint_velocity_settled: 0.20
+    # Final home proof mirrors the GUI safe-disable transaction: the approved
+    # target must be met and successive fresh positions must remain still.
+    # This avoids false failures from PiPER's noisy instantaneous speed field.
+    home_motion_tolerance_rad: 0.005
+    # The driver rejects CAN joint sets whose six frame stamps are too skewed.
+    # One dropped set must not reset an otherwise stationary home proof.
+    home_joint_feedback_timeout_sec: 1.0
+    home_settle_duration_sec: 1.0
+    home_settle_timeout_sec: 30.0
     # Readback-only allowance for one encoder quantum at an inclusive URDF
     # boundary. Planned/commanded targets remain inside the exact limits.
     joint_feedback_limit_tolerance_rad: 0.001
@@ -85,9 +94,12 @@
     # Nearest one-joint collision-qualified low-drop home adjustment from GUI
     # feedback. J3 is 0.050 rad lower than the collision-rejected folded pose.
     # Exact approval covers this final return and all capture segments.
-    return_home_positions_rad: [0.0, -0.032, -0.026, -0.039, 0.346, 0.107]
+    return_home_positions_rad: [0.000366362, 0.0, 0.0, 0.0, 0.43869236, 0.0]
     floor_z_m: 0.0
     link_radius_m: 0.025
     self_clearance_m: 0.060
     approval_confirmation: "EXECUTE APPROVED SCAN"
+    # Manual commissioning keeps this false. The autonomous mission launch
+    # explicitly enables it and binds each approval to a task hash/deadline.
+    allow_mission_policy: false
     debug: true

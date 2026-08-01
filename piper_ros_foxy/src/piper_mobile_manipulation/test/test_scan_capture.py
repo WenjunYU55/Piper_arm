@@ -4,6 +4,7 @@ import numpy as np
 
 from piper_mobile_manipulation.scan_capture import (
     depth_millimetres,
+    rigid_transform_matrix,
     synchronized_bundle_rejection,
 )
 
@@ -41,3 +42,13 @@ def test_depth_png_is_uint16_millimetres_for_l515_encodings():
     converted = depth_millimetres(metres, '32FC1')
     assert converted.dtype == np.uint16
     assert converted.tolist() == [[0, 301, 0]]
+
+
+def test_rigid_camera_transform_metadata_matrix_is_exact_and_finite():
+    matrix = rigid_transform_matrix([1, 2, 3], [0, 0, 0, 1])
+    assert matrix.tolist() == [
+        [1.0, 0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0, 2.0],
+        [0.0, 0.0, 1.0, 3.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]

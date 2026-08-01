@@ -3,6 +3,7 @@
 
 import json
 import time
+import uuid
 from collections import OrderedDict
 
 import numpy as np
@@ -44,7 +45,9 @@ class ObstacleInstance3DNode(Node):
         }
         for name, value in defaults.items():
             self.declare_parameter(name, value)
-        self.declare_parameter('movable_whitelist', ['pen'])
+        self.declare_parameter('movable_whitelist', ['leaf', 'branch'])
+        self.observation_counts = {}
+        self.track_generation = uuid.uuid4().hex[:12]
         self.bridge = CvBridge()
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -216,6 +219,11 @@ class ObstacleInstance3DNode(Node):
             instance = ObstacleInstance3D()
             instance.header = ids_msg.header
             instance.object_id = object_id
+            instance.track_id = '%s-sam2-%d' % (
+                self.track_generation, object_id)
+            self.observation_counts[instance.track_id] = int(
+                self.observation_counts.get(instance.track_id, 0)) + 1
+            instance.observation_count = self.observation_counts[instance.track_id]
             instance.camera_frame = ids_msg.header.frame_id
             instance.base_frame = self.get_parameter('base_frame').value
             instance.transform_age_sec = -1.0
@@ -252,6 +260,14 @@ class ObstacleInstance3DNode(Node):
                     self.set_point(instance.base_centroid, base_centroid)
                     self.set_point(instance.base_bounds_min, np.min(base_corners, axis=0))
                     self.set_point(instance.base_bounds_max, np.max(base_corners, axis=0))
+                    instance.position_uncertainty_m = float(min(
+                        0.10,
+                        0.005 + 0.05 * transform_age
+                        + 0.02 * (1.0 - ratio)))
+                    self.set_footprint(
+                        instance.tabletop_footprint,
+                        np.min(base_corners, axis=0),
+                        np.max(base_corners, axis=0))
                     instance.transform_age_sec = float(transform_age)
                     instance.valid = True
                     instance.validity_reason = 'ok'
@@ -274,6 +290,17 @@ class ObstacleInstance3DNode(Node):
     @staticmethod
     def set_point(message, values):
         message.x, message.y, message.z = [float(value) for value in values]
+
+    @staticmethod
+    def set_footprint(message, lower, upper):
+        from geometry_msgs.msg import Point32
+        message.points = []
+        for x, y in (
+                (lower[0], lower[1]), (upper[0], lower[1]),
+                (upper[0], upper[1]), (lower[0], upper[1])):
+            point = Point32()
+            point.x, point.y, point.z = float(x), float(y), float(lower[2])
+            message.points.append(point)
 
 
 def main(args=None):

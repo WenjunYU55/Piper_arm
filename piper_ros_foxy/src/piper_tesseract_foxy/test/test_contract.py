@@ -50,6 +50,7 @@ def request_fixture(plan_kind='MULTIVIEW_SCAN'):
                 'id': 1,
                 'camera_position_m': [0.4, 0.0, 0.3],
                 'look_direction': [1.0, 0.0, 0.0],
+                'required_first': plan_kind == 'ROUGH_ACQUISITION',
             }],
             'obstacles': [],
         },
@@ -89,7 +90,7 @@ def request_fixture(plan_kind='MULTIVIEW_SCAN'):
             'timing_policy': 'sdk_movej_targets_v1',
             'joint_specific_costs': {},
             'return_home_positions_rad': (
-                [0.0, -0.032, -0.026, -0.039, 0.346, 0.107]
+                [0.0, 0.0, -0.026, -0.039, 0.346, 0.107]
                 if plan_kind == 'MULTIVIEW_SCAN' else []),
         },
     }
@@ -239,6 +240,15 @@ def test_acquisition_request_binds_kind_provenance_and_optional_sweep():
     assert validate_request(request) is request
     response = response_fixture(request)
     assert validate_response(response, request) is response
+
+
+def test_acquisition_request_requires_an_explicit_centered_first_candidate():
+    request = request_fixture('ROUGH_ACQUISITION')
+    request['scene']['candidate_views'][0]['required_first'] = False
+    request = attach_digest(request, 'request_sha256')
+
+    with pytest.raises(ContractError, match='required-first'):
+        validate_request(request)
 
 
 def test_only_rough_acquisition_may_bind_two_bounded_outside_start_joints():

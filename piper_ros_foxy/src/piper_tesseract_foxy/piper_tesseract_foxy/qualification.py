@@ -13,7 +13,10 @@ from piper_mobile_manipulation.target_acquisition import (
     build_acquisition_viewpoints,
 )
 from piper_tesseract_foxy.contract import ContractError, JOINT_NAMES
-from piper_tesseract_foxy.worker import TesseractBackend
+from piper_tesseract_foxy.worker import (
+    reverse_sdk_movej_points,
+    TesseractBackend,
+)
 
 
 FIXTURE_START = np.asarray([
@@ -24,6 +27,44 @@ FIXTURE_START = np.asarray([
     -0.215405288673854,
     0.04035456437181573,
 ])
+
+
+def folded_home_return_regression(backend):
+    """Prove the saved folded home is reachable by an exact qualified reverse."""
+    home = np.asarray([0.000366362, 0.0, 0.0, 0.0, 0.43869236, 0.0])
+    scan_pose = np.asarray([-0.468, 0.638, -0.345, -0.763, 0.700, -1.025])
+    request = {
+        'limits': {
+            'position_rad': backend.execution_position_limits,
+            'joint_margin_rad': 0.03,
+            'max_velocity_rad_s': backend.execution_velocity_limits,
+            'max_acceleration_rad_s2': backend.execution_acceleration_limits,
+            'bootstrap_start_limit_tolerance_rad': 0.0,
+        },
+    }
+    recovery = backend.find_terminal_home_recovery(request, home)
+    if recovery is None:
+        raise RuntimeError(
+            'saved folded home unexpectedly has no qualified recovery corridor')
+    recovery_endpoint = np.asarray(
+        recovery['bootstrap_recovery_end_positions_rad'], dtype=float)
+    outbound, validation = backend.plan_segment_to_joint_goal(
+        recovery_endpoint, scan_pose, 0.10, recovery)
+    returned = reverse_sdk_movej_points(outbound)
+    if not np.allclose(returned[0]['positions_rad'], scan_pose, atol=1e-6):
+        raise RuntimeError('terminal return does not start at the scan pose')
+    if not np.allclose(returned[-1]['positions_rad'], home, atol=1e-9):
+        raise RuntimeError('terminal return does not end at saved home')
+    return {
+        'trajectory_points': len(returned),
+        'home_positions_rad': home.tolist(),
+        'bootstrap_recovery_joint': int(
+            validation['bootstrap_recovery_joint']),
+        'bootstrap_recovery_delta_rad': float(
+            validation['bootstrap_recovery_delta_rad']),
+        'minimum_clearance_m': float(validation['minimum_clearance_m']),
+        'limiting_link_pair': validation['limiting_link_pair'],
+    }
 
 
 def matching_look_at_roll(transform):
@@ -437,6 +478,7 @@ def run(args, include_compact=True):
     ]
     backend.execution_velocity_limits = [3.0] * 6
     backend.execution_acceleration_limits = [5.0] * 6
+    backend.bootstrap_start_limit_tolerance_rad = 0.0
     target = FIXTURE_START.copy()
     target[5] += 0.35
     target_pose = np.asarray(backend.robot.fk(
@@ -478,6 +520,11 @@ def run(args, include_compact=True):
         stage('compact_start_acquisition')
         backend.reset_scene()
         compact_start = compact_start_acquisition_regression(backend)
+    # Keep this final: OMPL's deterministic RNG is process-global, so adding a
+    # new planner call before established fixtures changes their sample stream.
+    stage('folded_home_return')
+    backend.reset_scene()
+    folded_home_return = folded_home_return_regression(backend)
     stage('complete')
     result = {
         'status': 'PASS',
@@ -499,6 +546,7 @@ def run(args, include_compact=True):
         'collision_model_qualified_for_hardware': bool(
             backend.manifest.get('qualified_for_hardware', False)),
         'thin_obstacle_detour': detour,
+        'folded_home_return': folded_home_return,
         'zero_start_rough_acquisition': zero_start,
         'centerline_zero_start_rough_acquisition': centerline_zero_start,
         'dual_limit_start_rough_acquisition': dual_limit_start,
@@ -528,6 +576,38 @@ def run_compact(args):
     }
 
 
+def run_folded_home(args):
+    """Run only the saved-home terminal-recovery hardware-model contract."""
+    print(
+        'qualification stage: folded_home_return',
+        file=sys.stderr,
+        flush=True,
+    )
+    backend = TesseractBackend(args.urdf, args.srdf, args.manifest)
+    backend.reset_scene()
+    backend.execution_speed_percent = 5.0
+    backend.command_rate_hz = 100.0
+    backend.execution_position_limits = [
+        [-2.618, 2.168],
+        [-0.044796192, 3.14],
+        [-2.967, 0.0],
+        [-1.745, 1.745],
+        [-1.22, 1.22],
+        [-2.0944, 2.0944],
+    ]
+    backend.execution_velocity_limits = [3.0] * 6
+    backend.execution_acceleration_limits = [5.0] * 6
+    backend.bootstrap_start_limit_tolerance_rad = 0.0
+    return {
+        'status': 'PASS',
+        'backend_version': backend.version,
+        'collision_model_qualified_for_hardware': bool(
+            backend.manifest.get('qualified_for_hardware', False)),
+        'folded_home_return': folded_home_return_regression(backend),
+        'real_arm_motion': False,
+    }
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--urdf', required=True)
@@ -535,10 +615,13 @@ def main(argv=None):
     parser.add_argument('--manifest', required=True)
     parser.add_argument('--calibration', required=True)
     parser.add_argument(
-        '--suite', choices=('all', 'core', 'compact'), default='all')
+        '--suite', choices=('all', 'core', 'compact', 'folded_home'),
+        default='all')
     args = parser.parse_args(argv)
     if args.suite == 'compact':
         result = run_compact(args)
+    elif args.suite == 'folded_home':
+        result = run_folded_home(args)
     else:
         result = run(args, include_compact=args.suite == 'all')
     print(json.dumps(result, indent=2, sort_keys=True))

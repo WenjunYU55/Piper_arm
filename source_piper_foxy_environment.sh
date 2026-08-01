@@ -7,6 +7,15 @@ _PIPER_ENV_SCRIPT="$(readlink -f "${BASH_SOURCE[0]}")"
 _PIPER_ENV_ROOT="$(cd "$(dirname "$_PIPER_ENV_SCRIPT")" && pwd)"
 _PIPER_ENV_WORKSPACE="${PIPER_WORKSPACE:-$_PIPER_ENV_ROOT/piper_ros_foxy}"
 
+# Keep every process sourced through the canonical environment on the same
+# bounded local Fast DDS graph as the driver and GUI.  Callers may override the
+# domain or profile explicitly, but a fresh terminal must not silently fall
+# back to domain 0 or Foxy's unstable shared-memory transport.
+export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-${PIPER_ROS_DOMAIN_ID:-42}}"
+export FASTRTPS_DEFAULT_PROFILES_FILE="${FASTRTPS_DEFAULT_PROFILES_FILE:-${PIPER_FASTRTPS_PROFILE:-$_PIPER_ENV_ROOT/fastdds_gui_udp_only.xml}}"
+export RMW_FASTRTPS_USE_QOS_FROM_XML="${RMW_FASTRTPS_USE_QOS_FROM_XML:-0}"
+export ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-0}"
+
 case $- in
   *u*) _PIPER_ENV_RESTORE_NOUNSET=1 ;;
   *) _PIPER_ENV_RESTORE_NOUNSET=0 ;;
@@ -65,8 +74,10 @@ fi
 
 if ! python3 - <<'PY'
 import piper_mobile_manipulation.scan_capture  # noqa: F401
-from piper_mobile_manipulation.msg import TesseractPlan, TesseractReadiness
-from piper_mobile_manipulation.srv import PrepareAcquisition
+from piper_mobile_manipulation.action import RunTargetScan
+from piper_mobile_manipulation.msg import (
+    OccluderAction, TesseractPlan, TesseractReadiness)
+from piper_mobile_manipulation.srv import AuthorizeMission, PrepareAcquisition
 from piper_msgs.msg import PiperMotionLimits
 
 required_fields = (
@@ -88,8 +99,18 @@ if missing:
 readiness = TesseractReadiness()
 if not all(hasattr(readiness, name) for name in (
         'generation_id', 'worker_ready', 'acquisition_ready',
-        'multiview_ready', 'acquisition_blockers', 'multiview_blockers')):
+        'multiview_ready', 'manipulation_ready', 'acquisition_blockers',
+        'multiview_blockers', 'manipulation_blockers')):
     raise SystemExit('Stale TesseractReadiness message schema')
+mission_goal = RunTargetScan.Goal()
+if not all(hasattr(mission_goal, name) for name in (
+        'task_id', 'task_type', 'target_label', 'target_profile',
+        'rough_target', 'target_confidence', 'deadline_sec')):
+    raise SystemExit('Stale RunTargetScan action schema')
+if not hasattr(OccluderAction(), 'mission_sha256'):
+    raise SystemExit('Stale OccluderAction message schema')
+if not hasattr(AuthorizeMission.Request(), 'mission_sha256'):
+    raise SystemExit('Stale AuthorizeMission service schema')
 prepare_request = PrepareAcquisition.Request()
 if not all(hasattr(prepare_request, name) for name in (
         'session_id', 'rough_target')):

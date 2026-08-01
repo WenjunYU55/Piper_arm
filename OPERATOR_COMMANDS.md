@@ -6,6 +6,68 @@ Command reference for running the PiPER + L515 perception stack from:
 cd /home/prl/Piper_arm
 ```
 
+## Headless autonomous mission
+
+Same-computer deployment:
+
+```bash
+PIPER_MISSION_ENABLE_REAL_MOTION=1 \
+PIPER_MISSION_SPEEDS_QUALIFIED=1 \
+./run_target_scan_mission.sh
+```
+
+Do not set `PIPER_MISSION_SPEEDS_QUALIFIED=1` until the installed arm has
+passed the staged 30% free-motion and 10% contact qualification. With that gate
+false the mission may start proposal infrastructure but refuses enable and
+shuts the never-enabled stack down safely.
+
+Goals use `/piper/run_target_scan`, task type `SCAN_3D`, a unique 8–128
+character task ID, the initially qualified `green_cube` profile, confidence at
+least 0.60, a fresh `odom` or local `base_link` pose, and a 60–1200 second
+deadline. Only one task is active. An exact duplicate replays its durable
+result; changed reuse of a task ID is rejected.
+
+Two-computer deployment:
+
+```bash
+PIPER_MISSION_ENABLE_REAL_MOTION=1 \
+PIPER_MISSION_SPEEDS_QUALIFIED=1 \
+PIPER_MISSION_REQUIRE_GATEWAY_HEARTBEAT=1 \
+PIPER_MISSION_SPOOL_ROOT=/mnt/piper_target_scan_missions \
+./run_target_scan_mission.sh
+```
+
+```bash
+PIPER_TRACKED_ROBOT_ROS_DOMAIN_ID=42 \
+PIPER_GATEWAY_BASE_FRAME=piper_base_link \
+PIPER_MISSION_SPOOL_ROOT=/mnt/piper_target_scan_missions \
+./run_target_scan_gateway.sh
+```
+
+For two computers, `/mnt/piper_target_scan_missions` must be the same secured
+shared filesystem directory on both hosts, owned by the deployment account and
+unavailable to untrusted users. Atomic rename must be supported. A plain local
+`/tmp` path only supports same-computer deployment.
+
+The gateway writes a 2 Hz heartbeat. Five seconds without it triggers the
+hold/disable shutdown path. The tracked robot may power down only when the
+result says `safe_shutdown=true`; `NEEDS_OPERATOR` means a safe hold or disable
+could not be proved. The GUI's separate **Automatic Scan** tab uses the same
+action: enter rough XYZ and press **Start Complete Automated Scan** once. It
+does not automate the five commissioning buttons; the mission action owns the
+complete lifecycle directly.
+
+Automatic startup is strictly sequential. The listener waits up to 30 seconds
+for the driver service and up to 15 seconds for two continuous seconds of
+current-generation, coherent, settled joint feedback. It then waits up to 120
+seconds for healthy camera timestamps plus the GroundingDINO and SAM2 CUDA
+ready markers, 20 seconds for a newly stamped `base_link -> camera_link`
+transform, 45 seconds for a new healthy Tesseract worker generation, and 90
+seconds for typed `acquisition_ready`. Immediately before enable it again
+requires two settled seconds of fresh joint feedback within a 15-second
+window. A process exit, stale generation, malformed feedback, or timeout stops
+the sequence with that exact blocker; later sections are not started early.
+
 ## Current live acceptance (2026-07-29)
 
 The native GUI completed one exact 13-view `sdk_movej_targets_v1` scan at 5% from
@@ -27,13 +89,15 @@ operator-selected compact target `[-0.008, 0.0, -0.010, 0.017, 0.457, 0.035]`
 at 5%, received disable success, and the camera/perception, driver, TF,
 Tesseract, workflow, executor, and GUI processes were stopped.
 
-Current GitHub `main` is the reverted supervised dry-run workflow version:
+The local `main` baseline for this implementation is:
 
 ```text
-5d995cf Revert "Add base-frame perception recovery workflow"
+5ebd8e8 Stabilize supervised 13-view scan pipeline
 ```
 
-This means the newer base-frame recovery commit `fa32da6` is not active in GitHub `main`.
+The autonomous mission changes described above are working-tree changes until
+they are reviewed, committed, and pushed; do not infer remote GitHub state from
+this operator document.
 
 ## Safety rules
 
@@ -237,18 +301,23 @@ After measured lock and `SCAN_READY`, use **Prepare Scan from Current Lock**, in
 camera-space-diverse 13-view subset, then orders that subset as a nearest-neighbour route from the
 calibrated current camera position. This removes the former left/right endpoint pendulum while
 retaining both horizontal and vertical capture baselines. The exact plan also contains a
-collision-checked final return to the operator-recorded low-drop home pose
-with the nearest collision-qualified J3 adjustment:
-`[0.0, -0.032, -0.026, -0.039, 0.346, 0.107]` rad. The original feedback J3 of `+0.024` rad
-violates the conservative folded link1/link5 and link2/link5 model; lowering only J3 by 0.050 rad
-passed a command-free return from the new final capture pose with 4,764 dense samples. It returns
+collision-checked final return to the operator-recorded low-drop home pose:
+`[0.000366362, 0.0, 0.0, 0.0, 0.43869236, 0.0]` rad while powered. The first operator screenshot is authoritative; its disabled raw feedback was
+`[0.000366362, -0.02888726, 0.00624495, 0.0, 0.43869236, 0.0]`, with J2/J3 normalized to their representable powered limits. Shutdown must reproduce and verify the powered pose before disable. It returns
 and holds only after all 13 synchronized records have been saved; it does not capture at home or
 disable the arm. If return-only telemetry fails after the 13th record, the executor holds the
 current feedback pose and reports the capture session complete with a return warning instead of
 restarting Step 4/5. A non-safety abort at a reached viewpoint may retrace only the already
 executed, separately approved acquisition/scan targets to the original loaded pose. Any obstacle,
-collision, stale telemetry, hardware, joint-limit, command-progress, emergency-stop, or operator
-cancel condition holds instead. To disable safely, first select **Cancel / Hold**. The GUI
+collision, stale telemetry, hardware, joint-limit, command-progress, or emergency-stop condition
+holds instead. **Cancel and Home** first holds an in-flight command, then retraces only executed
+approved endpoints to the configured home, proves the final hold, disables, stops the owned
+processes, and reports that the task failed and should be retried. The GUI
+reuses the approval-bound bootstrap-static scene only when reversing the first rough-acquisition
+segment before obstacle geometry exists; every later return still requires its normal obstacle
+authority. A terminal `configured home reached` cancel is hold-only and cannot retrace away from
+home. The mission launch file itself applies the loopback UDP profile, including for direct
+`ros2 launch` invocation. The GUI
 **Disable** control then resends the fresh current feedback as the sole owner's joint target,
 requires target error at most 0.025 rad and sample motion at most 0.005 rad for one full second, and
 only then calls the feedback-confirmed disable service. If that proof fails within eight seconds,
@@ -1087,7 +1156,7 @@ The normal operator path is now the GUI **Acquire & Scan** tab:
    a re-entrant two-thread executor. Each call has an 8-second deadline and a fresh client endpoint;
    if the first call times out, the GUI retires that endpoint and retries only the exact request
    once. After a second timeout Step 2 becomes clickable again and preserves the same immutable
-   session/XYZ for the operator retry. Do not change the coordinates without **Cancel / Hold**.
+   session/XYZ for the operator retry. Do not change the coordinates without **Cancel and Home**.
    The correlated acquisition plan must arrive within 185 seconds. Late acknowledgements, old
    stack generations, and plans from another session cannot enable Step 3.
    Foxy can retain the executor publisher as `_UNKNOWN_` in the GUI-local graph cache even after
@@ -1120,11 +1189,22 @@ The normal operator path is now the GUI **Acquire & Scan** tab:
 8. Inspect the correlated plan and require exactly 13 collision-qualified views. Select
    **5. Confirm 13-View Scan** to authorize only that displayed plan ID and execution hash.
    There is no reusable 15-minute approval.
-9. Use **Cancel / Hold** for any concern. Then select GUI **Disable**; it explicitly sends the
+9. Use **Cancel and Home** for any concern. It returns over executed approved endpoints, proves
+   the final home hold, disables, and stops the managed stack. If fresh motion-safety evidence
+   blocks the return, it holds enabled and reports that operator attention is required. Manual
+   **Disable** remains available; it explicitly sends the
    exact fresh feedback pose, proves it settled for one second, and only then requests motor
    disable. Require `disable -> True`. **Stop Scan
    Stack** cancels and stops only GUI-owned worker/scan processes; the driver, camera, and perception
    remain running.
+
+The **Automatic Scan** tab isolates its one-button mission from all delayed callbacks and retry
+timers owned by the manual Acquire & Scan tab. After `ACQUIRED`, it waits for one continuous second
+of fresh `multiview_ready` evidence (up to 30 seconds) before queuing the single plan request. A
+temporary tracker reacquisition at an already approved viewpoint does not discard the scan: capture
+still requires a stationary arm and healthy synchronized camera clock. Normal completion or a
+non-safety abort returns over the hash-bound/already-executed route, allows up to 30 seconds for the
+saved-home position proof, holds for one second, disables, and then stops every mission-owned process.
 
 Manual ROS input remains available for integration testing. The coordinate must be a fresh finite
 `geometry_msgs/PointStamped` in `base_link`, submitted atomically with a unique session ID through
@@ -1213,8 +1293,11 @@ GUI SDK target returned to the compact pose smoothly in about two seconds.
   to enter 0.025 rad before capture or the next viewpoint; repeatedly publishing the same endpoint
   can restart PiPER's SDK interpolation and is forbidden;
 - a target exceeding 90 seconds, showing no 0.001 rad total-joint improvement for 20 seconds, or encountering a
-  changed/stale controller-limit hash aborts to current-position hold;
-- endpoint capture still requires final joint-position convergence and velocity settling;
+  stale, invalid, or malformed controller limits abort to current-position hold; a later
+  stable fresh valid hash is accepted for position-only SDK MoveJ without changing the
+  selected aggregate speed or approved geometric path;
+- endpoint capture requires final joint-position convergence plus a healthy synchronized camera
+  clock; post-approval tracker reacquisition is diagnostic and does not cancel the 13-view route;
 - the PiPER driver sends every `JointCtrl` target, caches unchanged `MotionCtrl_2` mode/speed, and
   never sends `GripperCtrl` for the six-position automation form.
 

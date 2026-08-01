@@ -1,0 +1,7 @@
+string task_id
+string mission_sha256
+builtin_interfaces/Time expires_at
+bool revoke
+---
+bool accepted
+string message

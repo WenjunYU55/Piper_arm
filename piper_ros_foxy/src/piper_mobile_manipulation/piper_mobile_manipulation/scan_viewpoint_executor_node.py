@@ -39,6 +39,7 @@ from piper_mobile_manipulation.scan_motion import (
     bootstrap_recovery_declaration_reasons,
     bootstrap_start_limit_recovery_reasons,
     CollisionBox,
+    energized_hold_target,
     feedback_joint_limit_reasons,
     interpolate_joint_path,
     PiperScanKinematics,
@@ -53,7 +54,7 @@ from piper_mobile_manipulation.scan_trajectory import (
     validate_sdk_movej_waypoint_path,
     validate_tesseract_point,
 )
-from piper_mobile_manipulation.srv import ApproveScanExecution
+from piper_mobile_manipulation.srv import ApproveScanExecution, AuthorizeMission
 
 
 ACTIVE_STATES = {
@@ -63,6 +64,77 @@ ACTIVE_STATES = {
     'WAITING_FOR_FRESH_FRAME', 'WAITING_FOR_GROUNDING_DINO',
     'WAITING_FOR_TRACKING_LOCK', 'WAITING_FOR_OBSTACLE_SCENE',
 }
+MAX_RGBD_TRANSFORM_RETRIES = 3
+
+
+def retryable_rgbd_capture_rejection(message):
+    """Classify the small TF publication lag seen immediately after settle."""
+    text = str(message).lower()
+    return (
+        'timestamped camera transform is unavailable' in text
+        and 'extrapolation into the future' in text
+    )
+
+
+def approved_return_home_obstacle_snapshot(
+        returning_home, collision_model_qualified, obstacles):
+    """Keep the approval-time scene for the exact planned home segment."""
+    return bool(
+        returning_home
+        and collision_model_qualified
+        and obstacles is not None
+    )
+
+
+def bootstrap_abort_retrace_uses_static_scene(
+        plan_kind, viewpoint_index, collision_model_qualified):
+    """Mirror the approval scene for the exact first acquisition retrace.
+
+    The first rough-acquisition segment is deliberately planned and validated
+    before perception obstacle geometry exists.  A benign operator cancel may
+    reverse only endpoints already executed from that approval; requiring a
+    newly-created obstacle array for the reverse would strand the arm at the
+    acquisition look even though the outward segment used the qualified static
+    robot scene.  This exception never applies to later acquisition looks or
+    multiview motion.
+    """
+    return bool(
+        collision_model_qualified
+        and uses_bootstrap_static_scene(plan_kind, viewpoint_index)
+    )
+
+
+def terminal_home_hold_required(state, reason):
+    """Recognize an abort that has already completed its bounded home retrace."""
+    return bool(
+        str(state) == 'ABORTED'
+        and 'configured home reached' in str(reason).lower()
+    )
+
+
+def home_position_sample_settled(
+        current, target, previous, target_tolerance, motion_tolerance):
+    """Prove a home sample from position, independent of noisy SDK speed."""
+    current_values = np.asarray(current, dtype=float)
+    target_values = np.asarray(target, dtype=float)
+    if (
+            current_values.shape != (6,)
+            or target_values.shape != (6,)
+            or not np.all(np.isfinite(current_values))
+            or not np.all(np.isfinite(target_values))):
+        return False
+    if float(np.max(np.abs(current_values - target_values))) > float(
+            target_tolerance):
+        return False
+    if previous is None:
+        return False
+    previous_values = np.asarray(previous, dtype=float)
+    if (
+            previous_values.shape != (6,)
+            or not np.all(np.isfinite(previous_values))):
+        return False
+    return float(np.max(np.abs(
+        current_values - previous_values))) <= float(motion_tolerance)
 
 
 def runtime_refresh_action(reasons, elapsed_sec, timeout_sec):
@@ -86,7 +158,6 @@ def abort_return_home_blocker(reason):
     """Reject automatic retrace when the abort implies unsafe arm motion."""
     text = str(reason).strip().lower()
     blockers = (
-        'operator cancelled',
         'emergency stop',
         'collision',
         'clearance',
@@ -106,6 +177,23 @@ def abort_return_home_blocker(reason):
     return next((item for item in blockers if item in text), '')
 
 
+def approved_retrace_validation_reasons(reasons):
+    """Keep changing-scene checks without re-rejecting an executed path.
+
+    Every target in the abort history is an endpoint that this executor has
+    already reached from an approval-bound, collision-qualified Tesseract
+    path.  Reversing those same SDK MoveJ segments cannot introduce a new
+    robot self-collision.  The generic validator can nevertheless report the
+    folded-home contact again because it does not have the proposal's bounded
+    recovery metadata.  Ignore only that static self-clearance duplicate;
+    obstacle, floor, limit and malformed-path failures remain blockers.
+    """
+    return [
+        str(reason) for reason in reasons
+        if 'self-collision clearance between link segments' not in str(reason)
+    ]
+
+
 def rgbd_capture_handoff_action(
         request_inflight, state_age_sec, propagation_sec):
     """Sequence the status authorization before the RGB-D service request."""
@@ -116,7 +204,9 @@ def rgbd_capture_handoff_action(
     return 'request_capture'
 
 
-def missing_obstacles_can_wait(plan_kind, viewpoint_index, state):
+def missing_obstacles_can_wait(
+        plan_kind, viewpoint_index, state,
+        bootstrap_abort_retrace=False):
     """
     Let stationary phases reach the bounded pre-motion refresh.
 
@@ -124,6 +214,8 @@ def missing_obstacles_can_wait(plan_kind, viewpoint_index, state):
     accepted capture. Missing geometry still blocks the next command, but it
     must not consume the exact approval while the arm is already stopped.
     """
+    if bool(bootstrap_abort_retrace):
+        return True
     if (
             plan_kind == ROUGH_ACQUISITION
             and (
@@ -221,6 +313,10 @@ class ScanViewpointExecutorNode(Node):
             'waypoint_timeout_sec': 90.0,
             'waypoint_progress_timeout_sec': 20.0,
             'joint_velocity_settled': 0.20,
+            'home_motion_tolerance_rad': 0.005,
+            'home_joint_feedback_timeout_sec': 1.0,
+            'home_settle_duration_sec': 1.0,
+            'home_settle_timeout_sec': 30.0,
             'joint_feedback_limit_tolerance_rad': 0.001,
             'motion_limits_timeout_sec': 3.0,
             'motion_limits_change_confirmation_sec': 7.0,
@@ -255,11 +351,12 @@ class ScanViewpointExecutorNode(Node):
             # Nearest one-joint collision-qualified low-drop adjustment from
             # GUI feedback. It is part of the exact trajectory/approval hash.
             'return_home_positions_rad': [
-                0.0, -0.032, -0.026, -0.039, 0.346, 0.107],
+                0.000366362, 0.0, 0.0, 0.0, 0.43869236, 0.0],
             'floor_z_m': 0.0,
             'link_radius_m': 0.025,
             'self_clearance_m': 0.060,
             'approval_confirmation': 'EXECUTE APPROVED SCAN',
+            'allow_mission_policy': False,
             'debug': True,
         }
         for name, value in defaults.items():
@@ -340,13 +437,18 @@ class ScanViewpointExecutorNode(Node):
         self.runtime_refresh_allow_missing_obstacles = False
         self.runtime_refresh_resume_state = ''
         self.settle_started = None
+        self.home_settle_previous_joints = None
+        self.home_settle_last_joint_update = -1e9
+        self.home_settle_last_sample_ok = False
         self.state_started = self.now()
         self.capture_future = None
         self.rgbd_capture_future = None
+        self.rgbd_capture_attempts = 0
         self.finish_scan_future = None
         self.return_home_warning = ''
         self.abort_return_in_progress = False
         self.abort_return_reason = ''
+        self.abort_return_bootstrap_static_scene = False
         self.retrace_joint_targets = []
         self.capture_accepted_before = 0
         self.acquisition_refresh_started = None
@@ -358,16 +460,25 @@ class ScanViewpointExecutorNode(Node):
         self.acquisition_detection_completed = None
         self.acquisition_waiting_for_worker = False
         self.acquisition_scene_snapshot_validated = False
+        self.mission_task_id = ''
+        self.mission_sha256 = ''
+        self.mission_expires_at_sec = 0.0
 
-        self.plan_pub = self.create_publisher(
-            ScanExecutionPlan, self.get_parameter('plan_topic').value, 10)
-        self.status_pub = self.create_publisher(
-            ScanExecutionStatus, self.get_parameter('status_topic').value, 10)
         history_qos = QoSProfile(
             depth=1,
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
+        # A proposal can be produced before the GUI or automatic mission has
+        # completed its service round-trip. Latch the exact hash-bound plan so
+        # that subscriber timing cannot turn a valid proposal into a timeout.
+        self.plan_pub = self.create_publisher(
+            ScanExecutionPlan,
+            self.get_parameter('plan_topic').value,
+            history_qos,
+        )
+        self.status_pub = self.create_publisher(
+            ScanExecutionStatus, self.get_parameter('status_topic').value, 10)
         self.scan_history_pub = self.create_publisher(
             String, self.get_parameter('scan_session_history_topic').value,
             history_qos)
@@ -415,6 +526,8 @@ class ScanViewpointExecutorNode(Node):
             String, self.get_parameter('workflow_status_topic').value,
             self.workflow_cb, 10)
         self.create_service(ApproveScanExecution, '~/approve', self.approve_cb)
+        self.create_service(
+            AuthorizeMission, '~/authorize_mission', self.authorize_mission_cb)
         self.create_service(Trigger, '~/cancel', self.cancel_cb)
         self.create_service(Trigger, '~/refresh_plan', self.refresh_cb)
         self.create_service(Trigger, '~/diagnostic_state', self.diagnostic_state_cb)
@@ -485,6 +598,7 @@ class ScanViewpointExecutorNode(Node):
                 'Tesseract proposal rejected: ' + msg.reason,
                 plan_kind=plan_kind,
                 source_request_id=source_request_id,
+                plan_id=str(msg.plan_id),
             )
             return
         reasons = []
@@ -615,9 +729,16 @@ class ScanViewpointExecutorNode(Node):
             declared_joints = []
             declared_deltas = []
             if recovery_end >= 0:
-                if plan_kind != ROUGH_ACQUISITION or segment_index != 0:
+                terminal_home_recovery = bool(
+                    plan_kind == MULTIVIEW_SCAN
+                    and returns_home
+                    and segment_index == len(msg.trajectories) - 1)
+                acquisition_recovery = bool(
+                    plan_kind == ROUGH_ACQUISITION and segment_index == 0)
+                if not acquisition_recovery and not terminal_home_recovery:
                     reasons.append(
-                        'bootstrap recovery is permitted only on rough acquisition segment 0')
+                        'bounded folded-home recovery is permitted only on '
+                        'rough acquisition segment 0 or the final return-home segment')
                 if recovery_end < 1 or recovery_end >= len(path):
                     reasons.append(
                         'segment %d bootstrap recovery endpoint is invalid'
@@ -683,8 +804,14 @@ class ScanViewpointExecutorNode(Node):
                     reasons.append(
                         'segment %d bootstrap recovery deltas are invalid'
                         % segment_index)
+                declared_path = (
+                    list(reversed(path[recovery_end:]))
+                    if terminal_home_recovery else path)
+                declared_endpoint = (
+                    len(declared_path) - 1
+                    if terminal_home_recovery else recovery_end)
                 for detail in bootstrap_recovery_declaration_reasons(
-                        path, recovery_end,
+                        declared_path, declared_endpoint,
                         declared_joints, declared_deltas):
                     reasons.append('segment %d %s' % (segment_index, detail))
             elif (
@@ -741,6 +868,7 @@ class ScanViewpointExecutorNode(Node):
                 'invalid Tesseract proposal: ' + '; '.join(reasons),
                 plan_kind=plan_kind,
                 source_request_id=source_request_id,
+                plan_id=str(msg.plan_id),
             )
             return
         self.plan_id = str(msg.plan_id)
@@ -966,6 +1094,14 @@ class ScanViewpointExecutorNode(Node):
 
     def approve_cb(self, request, response):
         expected = str(self.get_parameter('approval_confirmation').value)
+        mission_confirmation = 'MISSION_POLICY:' + self.mission_sha256
+        if str(request.confirmation) == mission_confirmation:
+            if not self.mission_authorization_valid():
+                response.accepted = False
+                response.message = (
+                    'autonomous execution is not bound to a live mission authorization')
+                return response
+            expected = mission_confirmation
         rejection = approval_rejection_reason(
             self.state,
             self.plan_id if self.plan_targets else '',
@@ -1047,6 +1183,7 @@ class ScanViewpointExecutorNode(Node):
             return response
         self.abort_return_in_progress = False
         self.abort_return_reason = ''
+        self.abort_return_bootstrap_static_scene = False
         start_joints = self.current_joints().copy()
         if (
                 acquisition
@@ -1078,21 +1215,101 @@ class ScanViewpointExecutorNode(Node):
         )
         return response
 
+    def authorize_mission_cb(self, request, response):
+        if request.revoke:
+            if (
+                    self.mission_task_id
+                    and str(request.task_id) not in ('', self.mission_task_id)):
+                response.accepted = False
+                response.message = 'mission task ID does not match the active authorization'
+                return response
+            self.mission_task_id = ''
+            self.mission_sha256 = ''
+            self.mission_expires_at_sec = 0.0
+            response.accepted = True
+            response.message = 'mission authorization revoked'
+            return response
+        if not self.param_bool('allow_mission_policy'):
+            response.accepted = False
+            response.message = 'MISSION_POLICY authorization is disabled'
+            return response
+        task_id = str(request.task_id).strip()
+        digest = str(request.mission_sha256).strip()
+        expires = float(request.expires_at.sec) + float(
+            request.expires_at.nanosec) * 1e-9
+        now = time.time()
+        if not task_id or len(digest) != 64 or any(
+                character not in '0123456789abcdef' for character in digest):
+            response.accepted = False
+            response.message = 'mission identity or SHA-256 is invalid'
+            return response
+        if expires <= now or expires - now > 1200.5:
+            response.accepted = False
+            response.message = 'mission authorization expiry is invalid'
+            return response
+        if self.state in ACTIVE_STATES:
+            response.accepted = False
+            response.message = 'cannot replace mission authorization while motion is active'
+            return response
+        self.mission_task_id = task_id
+        self.mission_sha256 = digest
+        self.mission_expires_at_sec = expires
+        response.accepted = True
+        response.message = 'mission policy authorization bound to task and deadline'
+        return response
+
+    def mission_authorization_valid(self):
+        return (
+            self.param_bool('allow_mission_policy')
+            and bool(self.mission_task_id)
+            and len(self.mission_sha256) == 64
+            and time.time() < self.mission_expires_at_sec
+        )
+
     def cancel_cb(self, _request, response):
         if self.state in ACTIVE_STATES:
             self.abort_motion('operator cancelled scan execution')
             response.success = True
-            response.message = 'motion cancelled; current joint hold requested'
+            response.message = (
+                'motion cancelled; approved-path return to configured home started'
+                if self.abort_return_in_progress else
+                'motion cancelled; current joint hold requested; request '
+                'cancel again after the hold settles to return home')
+            return response
+        if terminal_home_hold_required(self.state, self.reason):
+            held = self.publish_hold()
+            response.success = bool(held)
+            response.message = (
+                'proposal cancelled; configured home reached; current joint '
+                'hold requested'
+                if held else
+                'proposal cancelled; configured home reached but current '
+                'joint hold was unavailable')
+            return response
+        started, blocker = self.try_start_abort_return(
+            'operator cancelled scan execution')
+        if started:
+            response.success = True
+            response.message = (
+                'proposal cancelled; approved-path return to configured home '
+                'started'
+                if self.abort_return_in_progress else
+                'proposal cancelled; configured home reached; current joint '
+                'hold requested')
             return response
         held = self.publish_hold()
-        self.clear_plan()
-        self.set_state('IDLE', 'proposal cleared by operator')
+        self._terminal_abort(
+            'operator cancelled scan execution; automatic return home was '
+            'not started: ' + (blocker or 'no approved retrace is available'))
         response.success = True
         response.message = (
-            'proposal cleared; current joint hold requested'
+            'proposal cancelled; current joint hold requested; automatic '
+            'return home unavailable: ' + (
+                blocker or 'no approved retrace is available')
             if held else
-            'proposal cleared; no motion was active and current joint hold '
-            'was unavailable'
+            'proposal cancelled; automatic return home and current joint hold '
+            'were unavailable: ' + (
+                blocker or 'no approved retrace is available')
         )
         return response
 
@@ -1145,6 +1362,9 @@ class ScanViewpointExecutorNode(Node):
             'first_view_goal_rad': first_goal,
             'collision_model_qualified': self.plan_collision_model_qualified,
             'real_motion_enabled': self.real_motion_enabled(),
+            'mission_policy_enabled': self.param_bool('allow_mission_policy'),
+            'mission_task_id': self.mission_task_id,
+            'mission_authorization_valid': self.mission_authorization_valid(),
             'camera_clock_fresh': self.fresh('camera_clock'),
             'camera_clock_healthy': bool(
                 self.latest_camera_timestamp_health is not None
@@ -1159,24 +1379,34 @@ class ScanViewpointExecutorNode(Node):
         reasons = self.runtime_reasons(
             require_settled=False,
             require_workflow=False,
-            allow_untracked=self.is_acquisition(),
+            allow_untracked=(
+                self.is_acquisition()
+                or getattr(self, 'plan_kind', '') == MULTIVIEW_SCAN),
             allow_missing_obstacles=missing_obstacles_can_wait(
-                self.plan_kind, self.current_view, self.state),
+                self.plan_kind, self.current_view, self.state,
+                getattr(
+                    self, 'abort_return_bootstrap_static_scene', False)),
             allow_stale_obstacles=(
                 self.is_acquisition()
-                and self.acquisition_scene_snapshot_validated),
+                and self.acquisition_scene_snapshot_validated
+            ) or bool(getattr(
+                self, 'abort_return_bootstrap_static_scene', False
+            )) or approved_return_home_obstacle_snapshot(
+                self.returning_home(),
+                self.plan_collision_model_qualified,
+                self.latest_obstacles,
+            ),
             # PiPER's SDK MoveJ speed is fixed when a target is issued. Camera
             # motion can lower the tracking speed recommendation while that
             # exact target is in flight, so enforce the allowance at the
-            # pre-target runtime refresh rather than retroactively aborting
-            # the already-issued command. All other live safety gates remain
-            # active here, and the next target cannot start until another
-            # settled runtime refresh passes.
+            # approval gate rather than retroactively aborting an already
+            # issued command. All non-tracking live safety gates remain
+            # active, and the next target still requires a fresh refresh.
             enforce_tracking_speed_allowance=False,
             # Eye-in-hand confidence can dip while the camera itself is
-            # moving. Do not turn that expected transient into a mid-command
-            # hold; SETTLING waits for TRACKING/LOCKED again, and the next
-            # runtime refresh enforces it before another target is issued.
+            # moving, and the target is explicitly allowed to move during a
+            # scan.  Once the exact multiview proposal is approved, tracking
+            # is diagnostic rather than a motion/capture cancellation gate.
             enforce_target_status=False,
             enforce_tracking_motion_state=False,
         )
@@ -1246,7 +1476,9 @@ class ScanViewpointExecutorNode(Node):
         reasons = self.runtime_reasons(
             require_settled=True,
             require_workflow=self.runtime_refresh_require_workflow,
-            allow_untracked=self.is_acquisition(),
+            allow_untracked=(
+                self.is_acquisition()
+                or getattr(self, 'plan_kind', '') == MULTIVIEW_SCAN),
             allow_missing_obstacles=(
                 self.runtime_refresh_allow_missing_obstacles),
             allow_stale_obstacles=(
@@ -1303,7 +1535,7 @@ class ScanViewpointExecutorNode(Node):
                     'SETTLING',
                     'acquisition look reached; waiting for arm and camera to settle'
                     if self.is_acquisition()
-                    else 'viewpoint reached; waiting for camera and tracker to settle')
+                    else 'viewpoint reached; waiting for arm and camera to settle')
                 return
             self.publish_next_waypoint(now)
             return
@@ -1375,7 +1607,7 @@ class ScanViewpointExecutorNode(Node):
                 'SETTLING',
                 'acquisition look reached; waiting for arm and camera to settle'
                 if self.is_acquisition()
-                else 'viewpoint reached; waiting for camera and tracker to settle')
+                else 'viewpoint reached; waiting for arm and camera to settle')
             return
         self.publish_next_waypoint(now)
 
@@ -1410,11 +1642,11 @@ class ScanViewpointExecutorNode(Node):
             self.abort_motion(
                 'arm/camera did not settle before acquisition refresh'
                 if self.is_acquisition()
-                else 'camera/tracker did not settle before timeout')
+                else 'arm/camera did not settle before timeout')
             return
         settled = (
             self.joints_settled()
-            if self.is_acquisition() else self.settled_and_tracking())
+            if self.is_acquisition() else self.capture_pose_settled())
         if not settled:
             self.settle_started = None
             return
@@ -1438,6 +1670,7 @@ class ScanViewpointExecutorNode(Node):
             'CAPTURING_RGBD',
             'settled viewpoint reached; saving synchronized RGB-D record')
         self.rgbd_capture_future = None
+        self.rgbd_capture_attempts = 0
         self.finish_scan_future = None
 
     def request_acquisition_refresh(self):
@@ -1631,6 +1864,7 @@ class ScanViewpointExecutorNode(Node):
             # called exactly once because rgbd_capture_future is assigned
             # synchronously here.
             self.publish_status()
+            self.rgbd_capture_attempts += 1
             self.rgbd_capture_future = self.rgbd_capture_client.call_async(
                 Trigger.Request())
             return
@@ -1643,6 +1877,15 @@ class ScanViewpointExecutorNode(Node):
             return
         if result is None or not result.success:
             message = result.message if result is not None else 'empty service response'
+            if (
+                    retryable_rgbd_capture_rejection(message)
+                    and self.rgbd_capture_attempts < MAX_RGBD_TRANSFORM_RETRIES):
+                self.rgbd_capture_future = None
+                self.set_state(
+                    'CAPTURING_RGBD',
+                    'camera transform is still catching up with the settled '
+                    'frame; retrying the same viewpoint capture')
+                return
             self.abort_motion('RGB-D viewpoint capture was rejected: %s' % message)
             return
         # Count a view only after its synchronized files exist. The workflow's
@@ -1733,8 +1976,10 @@ class ScanViewpointExecutorNode(Node):
 
     def returning_home(self):
         return bool(
-            self.plan_returns_home
-            and self.current_view >= self.plan_capture_count)
+            getattr(self, 'abort_return_in_progress', False)
+            or (
+                self.plan_returns_home
+                and self.current_view >= self.plan_capture_count))
 
     def record_retrace_target(self, target):
         if target is None:
@@ -1752,6 +1997,9 @@ class ScanViewpointExecutorNode(Node):
         self.current_path_accelerations = []
         self.current_path_times = []
         self.settle_started = None
+        self.home_settle_previous_joints = None
+        self.home_settle_last_joint_update = -1e9
+        self.home_settle_last_sample_ok = False
         self.publish_hold()
         self.set_state(
             'SETTLING_HOME',
@@ -1764,19 +2012,19 @@ class ScanViewpointExecutorNode(Node):
 
     def return_home_settling_tick(self):
         if self.now() - self.state_started > float(
-                self.get_parameter('settle_timeout_sec').value):
+                self.get_parameter('home_settle_timeout_sec').value):
             ScanViewpointExecutorNode.handle_return_home_failure(
                 self,
                 'approved home position did not settle before timeout')
             return
-        if not self.joints_settled():
+        if not self.home_joints_settled():
             self.settle_started = None
             return
         if self.settle_started is None:
             self.settle_started = self.now()
             return
         if self.now() - self.settle_started < float(
-                self.get_parameter('settle_duration_sec').value):
+                self.get_parameter('home_settle_duration_sec').value):
             return
         self.complete_return_home()
 
@@ -1791,11 +2039,12 @@ class ScanViewpointExecutorNode(Node):
             reason = self.abort_return_reason
             self.abort_return_in_progress = False
             self.abort_return_reason = ''
+            self.abort_return_bootstrap_static_scene = False
             self.set_state(
                 'ABORTED',
                 reason
                 + '; arm safely retraced along already executed approved '
-                'targets to the scan start')
+                'targets; configured home reached')
             return
         self.finish_scan_future = self.finish_scan_client.call_async(
             Trigger.Request())
@@ -1817,6 +2066,7 @@ class ScanViewpointExecutorNode(Node):
             original = self.abort_return_reason
             self.abort_return_in_progress = False
             self.abort_return_reason = ''
+            self.abort_return_bootstrap_static_scene = False
             self._terminal_abort(
                 original + '; automatic return-home retrace stopped: ' + reason)
             return
@@ -1944,11 +2194,22 @@ class ScanViewpointExecutorNode(Node):
             if self.current_view < len(self.plan_bootstrap_recovery_end_points)
             else -1)
         if recovery_end >= 0:
-            if not self.is_acquisition() or self.current_view != 0:
-                return ['bootstrap recovery escaped its acquisition-only scope']
+            acquisition_recovery = bool(
+                self.is_acquisition() and self.current_view == 0)
+            terminal_home_recovery = bool(
+                self.plan_kind == MULTIVIEW_SCAN
+                and self.plan_returns_home
+                and self.current_view == self.plan_capture_count)
+            if not acquisition_recovery and not terminal_home_recovery:
+                return [
+                    'bounded folded-home recovery escaped its approved scope']
+            recovery_path = (
+                list(reversed(path[recovery_end:]))
+                if terminal_home_recovery
+                else path[:recovery_end + 1])
             reasons = validate_monotonic_self_clearance_escape(
                 self.kinematics,
-                self.validation_path(path[:recovery_end + 1]),
+                self.validation_path(recovery_path),
                 self.joint_limits,
                 obstacle_boxes=obstacle_boxes,
                 joint_margin_rad=0.0,
@@ -1962,8 +2223,10 @@ class ScanViewpointExecutorNode(Node):
                 maximum_start_limit_violation_rad=0.04,
             )
             if not reasons:
-                reasons = self.validate_path(
-                    path[recovery_end:], obstacle_boxes)
+                normal_path = (
+                    path[:recovery_end + 1]
+                    if terminal_home_recovery else path[recovery_end:])
+                reasons = self.validate_path(normal_path, obstacle_boxes)
         else:
             reasons = self.validate_path(path, obstacle_boxes)
         if reasons:
@@ -1986,6 +2249,7 @@ class ScanViewpointExecutorNode(Node):
         self.max_waypoint_error = 0.0
         self.capture_future = None
         self.rgbd_capture_future = None
+        self.rgbd_capture_attempts = 0
         return []
 
     def validate_path(self, path, obstacle_boxes):
@@ -2149,11 +2413,28 @@ class ScanViewpointExecutorNode(Node):
         return reasons
 
     def runtime_motion_limit_rejection(self, limits):
-        """Require a fresh exact plan when the controller-limit binding changes."""
-        del limits
-        return (
-            'controller motion limits changed after planning; request a fresh '
-            'SDK MoveJ target plan and approval')
+        """Accept a fresh valid limit generation for position-only SDK MoveJ.
+
+        The executor sends one joint-position target plus an aggregate speed
+        percentage. It never sends Tesseract velocities, accelerations, or
+        timing to the controller, so a changed valid hash does not change the
+        approved geometric path.
+        """
+        try:
+            velocities = np.asarray(limits.max_velocity_rad_s, dtype=float)
+            accelerations = np.asarray(
+                limits.max_acceleration_rad_s2, dtype=float)
+        except (AttributeError, TypeError, ValueError):
+            return 'fresh controller motion limits are malformed'
+        if (
+                velocities.shape != (6,)
+                or accelerations.shape != (6,)
+                or not np.all(np.isfinite(velocities))
+                or not np.all(np.isfinite(accelerations))
+                or np.any(velocities <= 0.0)
+                or np.any(accelerations <= 0.0)):
+            return 'fresh controller motion limits are malformed'
+        return ''
 
     def arm_status_reasons(self):
         status = self.latest_arm_status
@@ -2190,6 +2471,20 @@ class ScanViewpointExecutorNode(Node):
             return False
         return self.joints_settled()
 
+    def capture_pose_settled(self):
+        """Gate RGB-D on a stationary arm and healthy camera clock.
+
+        The scan target may move and SAM tracking may temporarily reacquire at
+        a viewpoint.  Neither changes the approved robot pose or whether a
+        synchronized RGB-D record can be saved, so they must not discard the
+        remaining 13-view plan.
+        """
+        return bool(
+            self.latest_camera_timestamp_health is not None
+            and self.latest_camera_timestamp_health.healthy
+            and self.joints_settled()
+        )
+
     def joints_settled(self):
         if self.latest_joint_state is None:
             return False
@@ -2208,6 +2503,41 @@ class ScanViewpointExecutorNode(Node):
         return all(math.isfinite(value) for value in values) and \
             max(abs(value) for value in values) <= float(
                 self.get_parameter('joint_velocity_settled').value)
+
+    def home_joints_settled(self):
+        """
+        Use successive positions for final home proof.
+
+        PiPER's SDK speed feedback can briefly spike while the measured joint
+        positions remain stationary. The final disable gate therefore matches
+        the GUI's independent safe-disable proof: fresh feedback must stay
+        within the approved home tolerance and successive samples must move by
+        no more than a small bounded delta.
+        """
+        feedback_timeout = float(self.get_parameter(
+            'home_joint_feedback_timeout_sec').value)
+        if (
+                self.latest_joint_state is None
+                or self.command_target is None
+                or not self.fresh('joints', feedback_timeout)):
+            self.home_settle_previous_joints = None
+            self.home_settle_last_sample_ok = False
+            return False
+        updated_at = float(self.updated.get('joints', -1e9))
+        if updated_at <= self.home_settle_last_joint_update:
+            return self.home_settle_last_sample_ok
+        current = np.asarray(self.current_joints(), dtype=float)
+        settled = home_position_sample_settled(
+            current,
+            self.command_target,
+            self.home_settle_previous_joints,
+            float(self.get_parameter('joint_goal_tolerance_rad').value),
+            float(self.get_parameter('home_motion_tolerance_rad').value),
+        )
+        self.home_settle_previous_joints = current
+        self.home_settle_last_joint_update = updated_at
+        self.home_settle_last_sample_ok = bool(settled)
+        return bool(settled)
 
     def workflow_ready(self):
         return isinstance(self.latest_workflow, dict) and \
@@ -2250,7 +2580,8 @@ class ScanViewpointExecutorNode(Node):
         if self.latest_joint_state is None or not self.real_motion_enabled():
             return False
         try:
-            self.publish_joint_command(self.current_joints())
+            self.publish_joint_command(
+                energized_hold_target(self.current_joints()))
         except ValueError:
             return False
         return True
@@ -2267,45 +2598,52 @@ class ScanViewpointExecutorNode(Node):
 
     def try_start_abort_return(self, reason):
         """Retrace only already executed, approved targets after benign aborts."""
-        if (
-                self.abort_return_in_progress
-                or self.plan_kind != MULTIVIEW_SCAN
-                or not self.plan_returns_home):
+        if self.abort_return_in_progress:
             return False, ''
         blocker = abort_return_home_blocker(reason)
         if blocker:
             return False, 'abort is safety-related (%s)' % blocker
-        if self.state not in {
-                'WAITING_FOR_RUNTIME_REFRESH', 'SETTLING',
-                'CAPTURING', 'CAPTURING_RGBD', 'WAIT_CAPTURE'}:
-            return False, 'arm is not stopped at an approved scan endpoint'
         if not self.retrace_joint_targets:
             return False, 'no executed approved target history is available'
         try:
             current = self.current_joints()
         except ValueError as error:
             return False, str(error)
-        if float(np.max(np.abs(
-                current - self.retrace_joint_targets[-1]))) > float(
-                    self.get_parameter('plan_start_tolerance_rad').value):
-            return False, (
-                'current feedback is not at the latest executed approved target')
+        use_bootstrap_scene = bootstrap_abort_retrace_uses_static_scene(
+            self.plan_kind,
+            self.current_view,
+            getattr(self, 'plan_collision_model_qualified', False),
+        )
         runtime = self.runtime_reasons(
             require_settled=True,
             require_workflow=False,
             allow_untracked=True,
-            allow_missing_obstacles=False,
+            allow_missing_obstacles=use_bootstrap_scene,
+            allow_stale_obstacles=use_bootstrap_scene,
         )
         if runtime:
             return False, 'fresh return-home safety gate failed: ' + '; '.join(runtime)
-        reverse_targets = [
-            item.copy() for item in reversed(self.retrace_joint_targets[:-1])]
+        tolerance = float(
+            self.get_parameter('plan_start_tolerance_rad').value)
+        at_latest_endpoint = float(np.max(np.abs(
+            current - self.retrace_joint_targets[-1]))) <= tolerance
+        # At a settled endpoint, omit that same endpoint.  After cancellation
+        # stopped an in-flight SDK MoveJ, first retrace to the preceding
+        # approved endpoint, then continue through the already executed
+        # approval-bound history to the original powered home pose.
+        history = (
+            self.retrace_joint_targets[:-1]
+            if at_latest_endpoint else self.retrace_joint_targets)
+        reverse_targets = [item.copy() for item in reversed(history)]
         if not reverse_targets:
+            self.publish_hold()
             self._terminal_abort(
-                str(reason) + '; arm was already at the approved scan start')
+                str(reason) + '; configured home reached (arm was already at home)')
             return True, ''
         path = [current.copy()] + reverse_targets
-        validation = self.validate_path(path, self.obstacle_boxes())
+        obstacle_boxes = [] if use_bootstrap_scene else self.obstacle_boxes()
+        validation = approved_retrace_validation_reasons(
+            self.validate_path(path, obstacle_boxes))
         if validation:
             return False, (
                 'approved-path retrace validation failed: '
@@ -2313,6 +2651,7 @@ class ScanViewpointExecutorNode(Node):
 
         self.abort_return_in_progress = True
         self.abort_return_reason = str(reason)
+        self.abort_return_bootstrap_static_scene = use_bootstrap_scene
         self.current_view = self.plan_capture_count
         self.current_path = reverse_targets
         self.current_path_velocities = [
@@ -2331,11 +2670,16 @@ class ScanViewpointExecutorNode(Node):
         self.waypoint_best_error = math.inf
         self.current_waypoint_error = 0.0
         self.publish_hold()
+        if use_bootstrap_scene:
+            # Keep every runtime tick bound to the same static scene that
+            # authorized the exact outward segment, including the interval
+            # after WAITING_FOR_RUNTIME_REFRESH transitions to MOVING.
+            self.acquisition_scene_snapshot_validated = True
         self.begin_runtime_refresh(
             'non-safety abort accepted; retracing already executed approved '
-            'targets to the scan start',
+            'targets to the configured home',
             require_workflow=False,
-            allow_missing_obstacles=False,
+            allow_missing_obstacles=use_bootstrap_scene,
         )
         return True, ''
 
@@ -2369,6 +2713,7 @@ class ScanViewpointExecutorNode(Node):
         self.acquisition_scene_snapshot_validated = False
         self.abort_return_in_progress = False
         self.abort_return_reason = ''
+        self.abort_return_bootstrap_static_scene = False
         if was_active:
             self.publish_hold()
         self.publish_status()
@@ -2376,13 +2721,21 @@ class ScanViewpointExecutorNode(Node):
 
     def invalidate_plan(
             self, reason, candidate_count=None, plan_kind=None,
-            source_request_id=None):
+            source_request_id=None, plan_id=None):
         if self.state in ACTIVE_STATES:
             return
         preserved_plan_kind = self.plan_kind
         preserved_source_request_id = self.plan_source_request_id
         preserved_candidate_count = self.plan_candidate_count
+        preserved_retrace = [
+            np.asarray(value, dtype=float).copy()
+            for value in self.retrace_joint_targets]
         self.clear_plan()
+        # A proposal rejection must not erase endpoints that were already
+        # executed under a separately approved acquisition plan. They are the
+        # only collision-qualified authority for a benign failure return.
+        self.retrace_joint_targets = preserved_retrace
+        self.plan_id = str(plan_id or '')
         self.plan_kind = (
             plan_kind
             if plan_kind in (MULTIVIEW_SCAN, ROUGH_ACQUISITION)
@@ -2424,6 +2777,7 @@ class ScanViewpointExecutorNode(Node):
         self.return_home_warning = ''
         self.abort_return_in_progress = False
         self.abort_return_reason = ''
+        self.abort_return_bootstrap_static_scene = False
         self.retrace_joint_targets = []
         self.plan_target_center = None
         self.plan_source_trajectory_sha256 = ''

@@ -6,19 +6,24 @@ import time
 from datetime import datetime
 
 import cv2
+import hashlib
 import numpy as np
 import rclpy
 from cv_bridge import CvBridge
 from message_filters import ApproximateTimeSynchronizer, Subscriber
+from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
+from rclpy.time import Time
 from sensor_msgs.msg import CameraInfo, Image, JointState
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
+from tf2_ros import Buffer, TransformException, TransformListener
 
 from piper_mobile_manipulation.msg import ScanExecutionStatus, Target3D
 from piper_mobile_manipulation.scan_capture import (
     depth_millimetres,
+    rigid_transform_matrix,
     synchronized_bundle_rejection,
 )
 
@@ -46,6 +51,14 @@ class ScanCaptureNode(Node):
         self.declare_parameter(
             'scan_execution_status_topic', '/piper/scan_execution_status')
         self.declare_parameter('joint_state_topic', '/joint_states_single')
+        self.declare_parameter('base_frame', 'base_link')
+        self.declare_parameter(
+            'camera_optical_frame', 'camera_color_optical_frame')
+        self.declare_parameter('require_camera_transform', True)
+        self.declare_parameter('camera_transform_timeout_sec', 0.25)
+        self.declare_parameter('task_id', '')
+        self.declare_parameter('target_profile', 'green_cube')
+        self.declare_parameter('calibration_sha256', '')
 
         self.declare_parameter('capture_mode', 'interval')
         self.declare_parameter('capture_interval_sec', 2.0)
@@ -69,6 +82,7 @@ class ScanCaptureNode(Node):
         self.latest_target = None
         self.latest_joint_state = None
         self.latest_execution_status = None
+        self.latest_camera_transform = None
         self.latest_scan_viewpoints = None
         self.latest_reachable_scan_viewpoints = None
         self.latest_scan_coverage = None
@@ -76,6 +90,7 @@ class ScanCaptureNode(Node):
         self.latest_occlusion_status = None
         self.last_capture_time = None
         self.frame_index = 0
+        self.manifest_sha256 = ''
         self.skip_counts = {}
         self.quality_counts = {'GOOD': 0, 'ACCEPTABLE': 0, 'POOR': 0, 'INVALID': 0}
         self.occlusion_counts = {
@@ -100,6 +115,10 @@ class ScanCaptureNode(Node):
                 'max_frames_per_scan': int(self.get_parameter('max_frames_per_scan').value),
                 'capture_mode': self.capture_mode(),
                 'capture_interval_sec': float(self.get_parameter('capture_interval_sec').value),
+                'task_id': str(self.get_parameter('task_id').value),
+                'target_profile': str(self.get_parameter('target_profile').value),
+                'calibration_sha256': str(
+                    self.get_parameter('calibration_sha256').value),
                 'topics': self.topic_metadata(),
             },
         )
@@ -110,6 +129,8 @@ class ScanCaptureNode(Node):
         self.summary_pub = self.create_publisher(
             String, self.get_parameter('scan_summary_topic').value, 10
         )
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
 
         self.color_sub = Subscriber(
             self, Image, self.get_parameter('color_image_topic').value,
@@ -283,6 +304,9 @@ class ScanCaptureNode(Node):
         )
         if bundle_reason:
             return False, bundle_reason
+        transform_reason = self.refresh_camera_transform()
+        if transform_reason and self.param_bool('require_camera_transform'):
+            return False, transform_reason
         if self.param_bool('require_mask') and self.latest_mask is None:
             return False, 'missing detection mask'
         if self.param_bool('require_valid_target'):
@@ -299,6 +323,22 @@ class ScanCaptureNode(Node):
             if str(status.state) not in ('CAPTURING', 'CAPTURING_RGBD'):
                 return False, 'executor is not at an accepted settled capture'
         return True, ''
+
+    def refresh_camera_transform(self):
+        if self.latest_color is None:
+            return 'camera transform cannot be correlated without RGB timestamp'
+        try:
+            self.latest_camera_transform = self.tf_buffer.lookup_transform(
+                str(self.get_parameter('base_frame').value),
+                str(self.get_parameter('camera_optical_frame').value),
+                Time.from_msg(self.latest_color.header.stamp),
+                timeout=Duration(seconds=float(self.get_parameter(
+                    'camera_transform_timeout_sec').value)),
+            )
+        except TransformException as exc:
+            self.latest_camera_transform = None
+            return 'timestamped camera transform is unavailable: %s' % exc
+        return ''
 
     def capture_frame(self, now):
         index = self.frame_index
@@ -377,6 +417,7 @@ class ScanCaptureNode(Node):
 
         self.frame_index += 1
         self.last_capture_time = now
+        self.write_dataset_manifest()
         self.publish_status('captured', 'saved frame %03d' % index, frame_index=index)
         self.publish_summary()
         if self.param_bool('debug'):
@@ -399,6 +440,12 @@ class ScanCaptureNode(Node):
             'rgb_topic_timestamp': self.header_stamp(self.latest_color),
             'depth_topic_timestamp': self.header_stamp(self.latest_depth),
             'camera_info': self.camera_info_metadata(self.latest_camera_info),
+            'camera_transform': self.camera_transform_metadata(
+                self.latest_camera_transform),
+            'task_id': str(self.get_parameter('task_id').value),
+            'target_profile': str(self.get_parameter('target_profile').value),
+            'calibration_sha256': str(
+                self.get_parameter('calibration_sha256').value),
             'target_3d': target,
             'target_valid': bool(self.latest_target.valid) if self.latest_target is not None else False,
             'planned_viewpoint_count': planned_count,
@@ -457,6 +504,8 @@ class ScanCaptureNode(Node):
             'frames_captured': int(self.frame_index),
             'captured_frame_count': int(self.frame_index),
             'max_frames_per_scan': int(self.get_parameter('max_frames_per_scan').value),
+            'manifest_sha256': self.manifest_sha256,
+            'manifest_path': os.path.join(self.scan_dir, 'manifest.json'),
             'dry_run': True,
             'real_arm_motion': False,
         }
@@ -472,6 +521,8 @@ class ScanCaptureNode(Node):
             'frames_captured': int(self.frame_index),
             'captured_frame_count': int(self.frame_index),
             'max_frames_per_scan': int(self.get_parameter('max_frames_per_scan').value),
+            'manifest_sha256': self.manifest_sha256,
+            'manifest_path': os.path.join(self.scan_dir, 'manifest.json'),
             'planned_viewpoint_count': self.planned_viewpoint_count(),
             'reachable_viewpoint_count': self.reachable_viewpoint_count(),
             'scan_coverage_target': self.scan_coverage_target(),
@@ -734,6 +785,28 @@ class ScanCaptureNode(Node):
         }
 
     @staticmethod
+    def camera_transform_metadata(msg):
+        if msg is None:
+            return {'available': False}
+        translation = msg.transform.translation
+        rotation = msg.transform.rotation
+        matrix = rigid_transform_matrix(
+            [translation.x, translation.y, translation.z],
+            [rotation.x, rotation.y, rotation.z, rotation.w],
+        )
+        return {
+            'available': True,
+            'header': ScanCaptureNode.header_metadata(msg.header),
+            'child_frame_id': str(msg.child_frame_id),
+            'translation_m': [
+                float(translation.x), float(translation.y), float(translation.z)],
+            'quaternion_xyzw': [
+                float(rotation.x), float(rotation.y),
+                float(rotation.z), float(rotation.w)],
+            'matrix_4x4': matrix.tolist(),
+        }
+
+    @staticmethod
     def joint_state_metadata(msg):
         if msg is None:
             return {'available': False}
@@ -798,6 +871,9 @@ class ScanCaptureNode(Node):
             'scan_execution_status': self.get_parameter(
                 'scan_execution_status_topic').value,
             'joint_state': self.get_parameter('joint_state_topic').value,
+            'camera_transform': '%s -> %s' % (
+                self.get_parameter('base_frame').value,
+                self.get_parameter('camera_optical_frame').value),
             'capture_service': '/scan_capture/capture_view',
         }
 
@@ -807,6 +883,46 @@ class ScanCaptureNode(Node):
         scan_dir = os.path.join(root, stamp)
         os.makedirs(scan_dir, exist_ok=True)
         return scan_dir
+
+    @staticmethod
+    def file_sha256(path):
+        digest = hashlib.sha256()
+        with open(path, 'rb') as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b''):
+                digest.update(block)
+        return digest.hexdigest()
+
+    def write_dataset_manifest(self):
+        files = []
+        for name in sorted(os.listdir(self.frames_dir)):
+            path = os.path.join(self.frames_dir, name)
+            if not os.path.isfile(path):
+                continue
+            files.append({
+                'path': os.path.relpath(path, self.scan_dir),
+                'bytes': int(os.path.getsize(path)),
+                'sha256': self.file_sha256(path),
+            })
+        payload = {
+            'schema_version': 1,
+            'task_id': str(self.get_parameter('task_id').value),
+            'target_profile': str(self.get_parameter('target_profile').value),
+            'calibration_sha256': str(
+                self.get_parameter('calibration_sha256').value),
+            'capture_count': int(self.frame_index),
+            'files': files,
+        }
+        encoded = json.dumps(
+            payload, sort_keys=True, separators=(',', ':'),
+            ensure_ascii=True).encode('utf-8')
+        self.manifest_sha256 = hashlib.sha256(encoded).hexdigest()
+        payload['manifest_sha256'] = self.manifest_sha256
+        path = os.path.join(self.scan_dir, 'manifest.json')
+        temporary = path + '.tmp'
+        with open(temporary, 'w', encoding='utf-8') as stream:
+            json.dump(payload, stream, indent=2, sort_keys=True)
+            stream.write('\n')
+        os.replace(temporary, path)
 
     @staticmethod
     def wall_time_string():

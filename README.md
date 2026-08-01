@@ -1,5 +1,42 @@
 # PiPER Arm, L515 Camera, and Offline Perception
 
+## Autonomous target-scan mission
+
+The production entry point is the typed ROS 2 action `/piper/run_target_scan`.
+It accepts one labelled rough target pose, runs bounded acquisition and a
+13-view scan, returns to the approved home pose, proves a settled current-pose
+hold, disables the motors, stops every PiPER-owned child, and only then reports
+a successful dataset result. The GUI now opens with a separate **Automatic
+Scan** tab: after entering rough XYZ, one button submits the whole mission
+through the same action. The five-step **Acquire & Scan** tab remains available
+only as the commissioning harness.
+
+The automatic mission advances by observed readiness, not startup sleeps. It
+requires a fresh, settled joint stream from the driver generation it started;
+healthy camera timestamps and ready GroundingDINO/SAM2 CUDA workers; a new
+hand-eye transform; a new healthy Tesseract worker generation; and finally
+typed acquisition readiness. Each barrier has a bounded timeout and reports
+the component that failed to become ready. The arm is not enabled until all of
+those barriers and a second pre-enable joint-stream stability check pass.
+
+The listener is command-free unless real motion is explicitly selected:
+
+```bash
+./run_target_scan_mission.sh
+```
+
+The 30% transit/10% contact speed profile has a separate deployment gate and
+must remain unqualified until its staged physical acceptance is recorded.
+
+For two-host deployment, the tracked-robot network sees only
+`run_target_scan_gateway.sh`. The gateway snapshots
+`odom -> piper_base_link` and uses a private hashed filesystem spool to reach
+the loopback-only motion domain. On two computers, both launchers must receive
+the same secured shared path through `PIPER_MISSION_SPOOL_ROOT`; their default
+local `/tmp` path is only for one computer. Automatic leaf/branch contact remains
+fail-closed until the installed gripper/contact collision model passes physical
+qualification; a hand/person is always a terminal blocker.
+
 For the current whole-system architecture, validated behavior, limitations, safety boundaries, and
 recommended continuation point, see [`SYSTEM_HANDOFF.md`](SYSTEM_HANDOFF.md).
 

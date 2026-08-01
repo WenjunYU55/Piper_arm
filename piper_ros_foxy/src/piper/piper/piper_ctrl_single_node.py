@@ -13,6 +13,7 @@ import math
 import hashlib
 import json
 import os
+import can
 from piper_sdk import C_PiperInterface
 from piper_msgs.msg import PiperMotionLimits, PiperStatusMsg, PosCmd
 from piper_msgs.srv import Enable
@@ -37,6 +38,127 @@ MOTION_LIMIT_JOINT_NAMES = [
 ]
 MAX_PROTOCOL_JOINT_SPEED_RAD_S = 3.0
 MAX_PROTOCOL_JOINT_ACCELERATION_RAD_S2 = 5.0
+JOINT_FEEDBACK_CAN_IDS = (0x2A5, 0x2A6, 0x2A7)
+JOINT_FEEDBACK_CAN_INDEX = {
+    0x2A5: (0, 1),
+    0x2A6: (2, 3),
+    0x2A7: (4, 5),
+}
+JOINT_FEEDBACK_RAW_TO_RAD = 0.017444 / 1000.0
+JOINT_FEEDBACK_CAN_MAX_AGE_SEC = 0.1
+JOINT_FEEDBACK_CAN_MAX_SKEW_SEC = 0.03
+JOINT_FEEDBACK_WARNING_GAP_SEC = 0.25
+CONTROLLER_COMMAND_BOUNDS = {
+    'joint2': (0.0, math.pi),
+    'joint3': (-2.967, 0.0),
+}
+
+
+def controller_command_position(joint_name, value):
+    """Clamp gravity-droop axes to the controller's powered range."""
+    result = float(value)
+    bounds = CONTROLLER_COMMAND_BOUNDS.get(str(joint_name))
+    if bounds is None:
+        return result
+    return min(float(bounds[1]), max(float(bounds[0]), result))
+def decode_joint_feedback_pair(arbitration_id, data):
+    """Decode one PiPER joint-pair CAN frame into joint indices and radians."""
+    can_id = int(arbitration_id)
+    if can_id not in JOINT_FEEDBACK_CAN_INDEX:
+        raise ValueError('unsupported joint-feedback CAN id 0x%03X' % can_id)
+    payload = bytes(data)
+    if len(payload) != 8:
+        raise ValueError(
+            'joint-feedback CAN frame 0x%03X has %d bytes, expected 8'
+            % (can_id, len(payload)))
+    raw_first = int.from_bytes(payload[0:4], byteorder='big', signed=True)
+    raw_second = int.from_bytes(payload[4:8], byteorder='big', signed=True)
+    return (
+        JOINT_FEEDBACK_CAN_INDEX[can_id],
+        (
+            raw_first * JOINT_FEEDBACK_RAW_TO_RAD,
+            raw_second * JOINT_FEEDBACK_RAW_TO_RAD,
+        ),
+    )
+
+
+def coherent_joint_feedback(pairs, last_sequences, now, max_age=None,
+                            max_skew=None):
+    """Return six joints only after every pair advanced in one fresh cycle.
+
+    ``pairs`` maps each PiPER feedback CAN ID to ``(sequence, stamp, values)``.
+    The sequence gate prevents a fast pair from being combined repeatedly with
+    an older pair, while the skew gate prevents frames from separate cycles
+    from appearing as one six-joint sample.
+    """
+    age_limit = (
+        JOINT_FEEDBACK_CAN_MAX_AGE_SEC if max_age is None else float(max_age))
+    skew_limit = (
+        JOINT_FEEDBACK_CAN_MAX_SKEW_SEC if max_skew is None else float(max_skew))
+    missing = [can_id for can_id in JOINT_FEEDBACK_CAN_IDS if can_id not in pairs]
+    if missing:
+        return None, None, (
+            'missing joint-feedback CAN frames: '
+            + ', '.join('0x%03X' % can_id for can_id in missing))
+    records = [pairs[can_id] for can_id in JOINT_FEEDBACK_CAN_IDS]
+    try:
+        sequences = tuple(int(record[0]) for record in records)
+        stamps = tuple(float(record[1]) for record in records)
+        values = tuple(tuple(float(value) for value in record[2])
+                       for record in records)
+    except (TypeError, ValueError, IndexError):
+        return None, None, 'joint-feedback CAN records are invalid'
+    if not all(
+            len(pair) == 2 and all(math.isfinite(value) for value in pair)
+            for pair in values):
+        return None, None, 'joint-feedback CAN pairs are not finite pairs'
+    if not all(math.isfinite(stamp) for stamp in stamps):
+        return None, None, 'joint-feedback CAN timestamps are invalid'
+    stale = [
+        can_id for can_id, stamp in zip(JOINT_FEEDBACK_CAN_IDS, stamps)
+        if float(now) - stamp > age_limit or stamp > float(now) + skew_limit
+    ]
+    if stale:
+        return None, None, (
+            'stale joint-feedback CAN frames: '
+            + ', '.join('0x%03X' % can_id for can_id in stale))
+    if max(stamps) - min(stamps) > skew_limit:
+        return None, None, (
+            'joint-feedback CAN frame skew %.6f > %.6f sec'
+            % (max(stamps) - min(stamps), skew_limit))
+    if last_sequences is not None:
+        try:
+            previous = tuple(int(value) for value in last_sequences)
+        except (TypeError, ValueError):
+            return None, None, 'last joint-feedback CAN sequences are invalid'
+        if len(previous) != 3:
+            return None, None, 'last joint-feedback CAN sequences are invalid'
+        waiting = [
+            can_id for can_id, sequence, old in zip(
+                JOINT_FEEDBACK_CAN_IDS, sequences, previous)
+            if sequence <= old
+        ]
+        if waiting:
+            return None, None, (
+                'waiting for a complete new joint-feedback CAN cycle: '
+                + ', '.join('0x%03X' % can_id for can_id in waiting))
+    positions = [0.0] * 6
+    for can_id, pair in zip(JOINT_FEEDBACK_CAN_IDS, values):
+        first, second = JOINT_FEEDBACK_CAN_INDEX[can_id]
+        positions[first], positions[second] = pair
+    return positions, sequences, ''
+
+
+def joint_feedback_warning_due(
+        reason, now, last_valid_at, last_warning_at,
+        gap_sec=JOINT_FEEDBACK_WARNING_GAP_SEC, repeat_sec=1.0):
+    """Warn only when rejected CAN cycles cause a sustained feedback gap."""
+    if not reason or str(reason).startswith('waiting for a complete new'):
+        return False
+    return (
+        float(now) - float(last_valid_at) >= float(gap_sec)
+        and float(now) - float(last_warning_at) >= float(repeat_sec)
+    )
 
 
 def motion_limits_sha256(velocities, accelerations):
@@ -184,6 +306,15 @@ class PiperRosNode(Node):
         self.joint_states.position = [0.0] * 8
         self.joint_states.velocity = [0.0] * 8
         self.joint_states.effort = [0.0] * 8
+        self._raw_joint_lock = threading.Lock()
+        self._raw_joint_pairs = {}
+        self._raw_joint_sequence = 0
+        self._raw_joint_last_emitted_sequences = None
+        self._raw_joint_last_valid_at = time.monotonic()
+        self._raw_joint_warning_at = 0.0
+        self._raw_joint_stop = threading.Event()
+        self._raw_joint_bus = None
+        self._raw_joint_thread = None
         # Enable flag
         self.__enable_flag = False
         self._command_cache_lock = threading.Lock()
@@ -192,6 +323,7 @@ class PiperRosNode(Node):
         # Create piper class and open CAN interface
         self.piper = C_PiperInterface(can_name=self.can_port)
         self.piper.ConnectPort()
+        self.start_raw_joint_feedback_receiver()
 
         # Start subscription thread
         self.create_subscription(
@@ -231,6 +363,94 @@ class PiperRosNode(Node):
 
     def GetEnableFlag(self):
         return self.__enable_flag
+
+    def start_raw_joint_feedback_receiver(self):
+        """Start a storage-only CAN reader for coherent joint-pair cycles."""
+        filters = [
+            {'can_id': can_id, 'can_mask': 0x7FF, 'extended': False}
+            for can_id in JOINT_FEEDBACK_CAN_IDS
+        ]
+        try:
+            self._raw_joint_bus = can.interface.Bus(
+                interface='socketcan',
+                channel=self.can_port,
+                can_filters=filters,
+                receive_own_messages=False,
+            )
+        except (can.CanError, OSError) as exc:
+            raise RuntimeError(
+                'could not open passive joint-feedback CAN receiver on %s: %s'
+                % (self.can_port, exc)) from exc
+        self._raw_joint_thread = threading.Thread(
+            target=self._raw_joint_feedback_loop,
+            name='piper-coherent-joint-feedback',
+            daemon=True,
+        )
+        self._raw_joint_thread.start()
+        self.get_logger().info(
+            'Passive coherent joint-feedback receiver is active on %s'
+            % self.can_port)
+
+    def _raw_joint_feedback_loop(self):
+        """Store raw pair frames; ROS publication remains executor-owned."""
+        while not self._raw_joint_stop.is_set():
+            try:
+                message = self._raw_joint_bus.recv(timeout=0.1)
+            except (can.CanError, OSError) as exc:
+                now = time.monotonic()
+                if now - self._raw_joint_warning_at >= 1.0:
+                    self.get_logger().error(
+                        'Passive joint-feedback CAN receive failed: %s' % exc)
+                    self._raw_joint_warning_at = now
+                continue
+            if message is None:
+                continue
+            if int(message.arbitration_id) not in JOINT_FEEDBACK_CAN_INDEX:
+                # Kernel filters normally prevent this. A frame already queued
+                # while filters are installed is harmless and not a fault.
+                continue
+            try:
+                _, values = decode_joint_feedback_pair(
+                    message.arbitration_id, message.data)
+            except (TypeError, ValueError) as exc:
+                now = time.monotonic()
+                if now - self._raw_joint_warning_at >= 1.0:
+                    self.get_logger().warn(
+                        'Ignored invalid joint-feedback CAN frame: %s' % exc)
+                    self._raw_joint_warning_at = now
+                continue
+            with self._raw_joint_lock:
+                self._raw_joint_sequence += 1
+                self._raw_joint_pairs[int(message.arbitration_id)] = (
+                    self._raw_joint_sequence,
+                    time.monotonic(),
+                    values,
+                )
+
+    def coherent_raw_joint_positions(self):
+        """Consume one fresh complete raw joint-feedback cycle."""
+        now = time.monotonic()
+        with self._raw_joint_lock:
+            positions, sequences, reason = coherent_joint_feedback(
+                dict(self._raw_joint_pairs),
+                self._raw_joint_last_emitted_sequences,
+                now,
+            )
+            if not reason:
+                self._raw_joint_last_emitted_sequences = sequences
+                self._raw_joint_last_valid_at = now
+        return positions, reason
+
+    def stop_raw_joint_feedback_receiver(self):
+        """Stop and close the passive reader without affecting arm commands."""
+        self._raw_joint_stop.set()
+        if self._raw_joint_thread is not None:
+            self._raw_joint_thread.join(timeout=1.0)
+        if self._raw_joint_bus is not None:
+            try:
+                self._raw_joint_bus.shutdown()
+            except (can.CanError, OSError):
+                pass
 
     def reset_command_cache(self):
         with self._command_cache_lock:
@@ -386,26 +606,38 @@ class PiperRosNode(Node):
         self.arm_status_pub.publish(arm_status)
 
     def PublishArmJointAndGripper(self):
-        # Assign timestamp
+        positions, raw_reason = self.coherent_raw_joint_positions()
+        if raw_reason:
+            now = time.monotonic()
+            # A 200 Hz timer normally waits several ticks for the next complete
+            # CAN cycle. Keep that expected condition quiet, but report actual
+            # missing, stale, or skewed feedback once per second.
+            if joint_feedback_warning_due(
+                    raw_reason,
+                    now,
+                    self._raw_joint_last_valid_at,
+                    self._raw_joint_warning_at):
+                self.get_logger().warn(
+                    'Joint feedback unavailable for at least %.2f sec: %s'
+                    % (JOINT_FEEDBACK_WARNING_GAP_SEC, raw_reason))
+                self._raw_joint_warning_at = now
+            return
+        # Assign a ROS timestamp only to a complete newly assembled cycle.
         self.joint_states.header.stamp = self.get_clock().now().to_msg()
-        # Here, you can set the joint positions to any value you want
-        # The raw data obtained is in degrees multiplied by 1000. To convert to radians, divide by 1000, multiply by π/180, and limit to 5 decimal places
-        joint_0: float = (self.piper.GetArmJointMsgs().joint_state.joint_1 / 1000) * 0.017444
-        joint_1: float = (self.piper.GetArmJointMsgs().joint_state.joint_2 / 1000) * 0.017444
-        joint_2: float = (self.piper.GetArmJointMsgs().joint_state.joint_3 / 1000) * 0.017444
-        joint_3: float = (self.piper.GetArmJointMsgs().joint_state.joint_4 / 1000) * 0.017444
-        joint_4: float = (self.piper.GetArmJointMsgs().joint_state.joint_5 / 1000) * 0.017444
-        joint_5: float = (self.piper.GetArmJointMsgs().joint_state.joint_6 / 1000) * 0.017444
-        joint_6: float = self.piper.GetArmGripperMsgs().gripper_state.grippers_angle / 1000000
-        vel_0: float = self.piper.GetArmHighSpdInfoMsgs().motor_1.motor_speed / 1000
-        vel_1: float = self.piper.GetArmHighSpdInfoMsgs().motor_2.motor_speed / 1000
-        vel_2: float = self.piper.GetArmHighSpdInfoMsgs().motor_3.motor_speed / 1000
-        vel_3: float = self.piper.GetArmHighSpdInfoMsgs().motor_4.motor_speed / 1000
-        vel_4: float = self.piper.GetArmHighSpdInfoMsgs().motor_5.motor_speed / 1000
-        vel_5: float = self.piper.GetArmHighSpdInfoMsgs().motor_6.motor_speed / 1000
-        effort_6: float = self.piper.GetArmGripperMsgs().gripper_state.grippers_effort / 1000
+        speed_feedback = self.piper.GetArmHighSpdInfoMsgs()
+        gripper_feedback = self.piper.GetArmGripperMsgs().gripper_state
+        joint_0, joint_1, joint_2, joint_3, joint_4, joint_5 = positions
+        joint_6: float = gripper_feedback.grippers_angle / 1000000
+        vel_0: float = speed_feedback.motor_1.motor_speed / 1000
+        vel_1: float = speed_feedback.motor_2.motor_speed / 1000
+        vel_2: float = speed_feedback.motor_3.motor_speed / 1000
+        vel_3: float = speed_feedback.motor_4.motor_speed / 1000
+        vel_4: float = speed_feedback.motor_5.motor_speed / 1000
+        vel_5: float = speed_feedback.motor_6.motor_speed / 1000
+        effort_6: float = gripper_feedback.grippers_effort / 1000
+        velocities = [vel_0, vel_1, vel_2, vel_3, vel_4, vel_5]
         self.joint_states.position = [joint_0, joint_1, joint_2, joint_3, joint_4, joint_5, joint_6, -joint_6]
-        self.joint_states.velocity = [vel_0, vel_1, vel_2, vel_3, vel_4, vel_5, 0.0, 0.0]
+        self.joint_states.velocity = velocities + [0.0, 0.0]
         self.joint_states.effort = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, effort_6, effort_6]
         self.joint_pub.publish(self.joint_states)
 
@@ -526,12 +758,15 @@ class PiperRosNode(Node):
             return
 
         arm_joint_0 = self.enforce_joint_bound('joint1', self.get_joint_value(joint_data, 'joint1', 0))
-        arm_joint_1 = self.enforce_joint_bound('joint2', self.get_joint_value(joint_data, 'joint2', 1))
-        arm_joint_2 = self.enforce_joint_bound('joint3', self.get_joint_value(joint_data, 'joint3', 2))
+        requested_joint_2 = self.enforce_joint_bound(
+            'joint2', self.get_joint_value(joint_data, 'joint2', 1))
+        requested_joint_3 = self.enforce_joint_bound(
+            'joint3', self.get_joint_value(joint_data, 'joint3', 2))
+        arm_joint_1 = controller_command_position('joint2', requested_joint_2)
+        arm_joint_2 = controller_command_position('joint3', requested_joint_3)
         arm_joint_3 = self.enforce_joint_bound('joint4', self.get_joint_value(joint_data, 'joint4', 3))
         arm_joint_4 = self.enforce_joint_bound('joint5', self.get_joint_value(joint_data, 'joint5', 4))
         arm_joint_5 = self.enforce_joint_bound('joint6', self.get_joint_value(joint_data, 'joint6', 5))
-
         self.get_logger().debug(
             "arm joints: %.6f %.6f %.6f %.6f %.6f %.6f"
             % (
@@ -639,5 +874,6 @@ def main(args=None):
         pass
     finally:
         executor.shutdown()
+        piper_single_node.stop_raw_joint_feedback_receiver()
         piper_single_node.destroy_node()
         rclpy.shutdown()

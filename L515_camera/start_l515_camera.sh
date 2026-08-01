@@ -71,11 +71,22 @@ for _ in $(seq 1 40); do
     wait "$launch_pid"
     exit $?
   fi
-  if ros2 param set /camera/camera depth_module.visual_preset "$preset" >/dev/null 2>&1 &&
-     ros2 param set /camera/camera depth_module.global_time_enabled true >/dev/null 2>&1 &&
-     ros2 param set /camera/camera rgb_camera.global_time_enabled true >/dev/null 2>&1 &&
-     ros2 param get /camera/camera depth_module.global_time_enabled 2>/dev/null | grep -q 'Boolean value is: True' &&
-     ros2 param get /camera/camera rgb_camera.global_time_enabled 2>/dev/null | grep -q 'Boolean value is: True'; then
+  # The long-lived Foxy CLI daemon may have been created before the mission's
+  # loopback-only Fast DDS profile was selected.  Such a daemon cannot see the
+  # camera even though every current-run participant can.  Use bounded direct
+  # discovery for this safety-critical startup transaction.
+  if ros2 param set --no-daemon --spin-time 0.5 \
+       /camera/camera depth_module.visual_preset "$preset" >/dev/null 2>&1 &&
+     ros2 param set --no-daemon --spin-time 0.5 \
+       /camera/camera depth_module.global_time_enabled true >/dev/null 2>&1 &&
+     ros2 param set --no-daemon --spin-time 0.5 \
+       /camera/camera rgb_camera.global_time_enabled true >/dev/null 2>&1 &&
+     ros2 param get --no-daemon --spin-time 0.5 \
+       /camera/camera depth_module.global_time_enabled 2>/dev/null |
+       grep -q 'Boolean value is: True' &&
+     ros2 param get --no-daemon --spin-time 0.5 \
+       /camera/camera rgb_camera.global_time_enabled 2>/dev/null |
+       grep -q 'Boolean value is: True'; then
     configured=true
     break
   fi
@@ -88,6 +99,9 @@ if [[ "$configured" != true ]]; then
   exit 1
 fi
 
-echo "Applied L515 visual preset $(ros2 param get /camera/camera depth_module.visual_preset | sed 's/^Integer value is: //')."
+echo "Applied L515 visual preset $(
+  ros2 param get --no-daemon --spin-time 0.5 \
+    /camera/camera depth_module.visual_preset |
+    sed 's/^Integer value is: //')."
 echo "Enabled host-corrected global timestamps for L515 depth and RGB streams."
 wait "$launch_pid"

@@ -146,7 +146,7 @@ def test_near_base_hint_does_not_push_center_view_behind_robot():
     assert all(np.allclose(position, current_camera) for position in positions)
 
 
-def test_acquisition_checks_the_settled_current_camera_before_the_cone():
+def test_acquisition_faces_hint_before_cone_even_if_current_view_differs():
     target = np.asarray([0.25, 0.0, 0.0])
     current_camera = np.asarray([0.12, -0.04, 0.27])
     current_look = np.asarray([0.0, -0.8, -0.6])
@@ -157,16 +157,16 @@ def test_acquisition_checks_the_settled_current_camera_before_the_cone():
         current_camera_look_direction=current_look)
 
     assert len(viewpoints) <= 20
-    assert viewpoints[0]['acquisition_look'] == 'current_view'
-    assert viewpoints[0]['acquisition_search_stage'] == 'current_camera'
+    assert viewpoints[0]['acquisition_look'] == 'center'
+    assert viewpoints[0]['acquisition_search_stage'] == 'orientation_cone'
     assert np.allclose(
         vector(viewpoints[0]['desired_camera_position']), current_camera)
     assert np.allclose(
         vector(viewpoints[0]['desired_look_at_direction']),
-        current_look / np.linalg.norm(current_look))
-    assert not viewpoints[0]['keep_object_centered']
-    assert 'center' in [
-        item['acquisition_look'] for item in viewpoints[1:]]
+        (target - current_camera) / np.linalg.norm(target - current_camera))
+    assert viewpoints[0]['keep_object_centered']
+    assert all(item['acquisition_look'] != 'current_view'
+               for item in viewpoints)
 
 
 def test_centerline_hint_adds_distinct_compact_fallback_candidates():
@@ -178,20 +178,24 @@ def test_centerline_hint_adds_distinct_compact_fallback_candidates():
         fallback_standoff_m=0.30)
 
     assert len(viewpoints) == 20
-    assert [item['acquisition_look'] for item in viewpoints[:9]] == [
-        'center', 'left', 'right', 'up', 'down',
+    assert [item['acquisition_look'] for item in viewpoints[:10]] == [
+        'center', 'compact_center', 'left', 'right', 'up', 'down',
         'left_up', 'right_up', 'left_down', 'right_down']
+    assert viewpoints[0]['acquisition_search_stage'] == 'orientation_cone'
+    assert viewpoints[1]['acquisition_search_stage'] == 'compact_fallback'
     assert all(item['acquisition_search_stage'] == 'orientation_cone'
-               for item in viewpoints[:9])
+               for item in viewpoints[2:10])
     assert all(item['acquisition_search_stage'] == 'compact_fallback'
-               for item in viewpoints[9:])
+               for item in viewpoints[10:])
+    assert np.isclose(viewpoints[1]['camera_object_distance_m'], 0.30)
     assert all(np.isclose(item['camera_object_distance_m'], 0.30)
-               for item in viewpoints[9:])
+               for item in viewpoints[10:])
     positions = [
         tuple(np.round(vector(item['desired_camera_position']), 9))
         for item in viewpoints]
-    assert len(set(positions[:9])) == 1
-    assert len(set(positions[9:])) == len(positions[9:])
+    assert len(set(positions[0:1] + positions[2:10])) == 1
+    assert len(set(positions[1:2] + positions[10:])) == len(
+        positions[1:2] + positions[10:])
 
 
 def test_compact_fallback_deduplicates_primary_poses_at_same_radius():
@@ -342,6 +346,35 @@ def test_rejected_nonqueued_acquisition_call_rearms_handoff_retry():
     assert not bridge.acquisition_request_sent
     assert bridge.pending_acquisition_message is not None
     assert messages
+
+
+def test_handoff_timeout_stops_stale_republish_and_service_retry(monkeypatch):
+    messages = []
+    node = SimpleNamespace(
+        pending_acquisition_message=object(),
+        acquisition_request_sent=False,
+        acquisition_handoff_started_at=10.0,
+        last_acquisition_publish_at=10.0,
+        acquisition_handoff_timeout_reported=False,
+        pending_acquisition_payload_ready=True,
+        get_parameter=lambda name: SimpleNamespace(
+            value={'handoff_timeout_sec': 30.0,
+                   'handoff_retry_sec': 0.5}[name]),
+        publisher=SimpleNamespace(publish=lambda _message: None),
+        submit_ready_requests=lambda: None,
+        get_logger=lambda: SimpleNamespace(error=messages.append),
+    )
+    monkeypatch.setattr(
+        'piper_mobile_manipulation.scan_target_acquisition_node.time.monotonic',
+        lambda: 40.1)
+
+    ScanTargetAcquisitionNode.handoff_tick(node)
+
+    assert node.pending_acquisition_message is None
+    assert not node.pending_acquisition_payload_ready
+    assert not node.acquisition_request_sent
+    assert node.acquisition_handoff_timeout_reported
+    assert messages and 'timed out' in messages[0]
 
 
 def test_accepted_acquisition_call_stops_candidate_republish():

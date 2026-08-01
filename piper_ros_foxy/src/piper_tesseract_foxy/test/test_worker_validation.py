@@ -6,10 +6,28 @@ import piper_tesseract_foxy.worker as worker_module
 from piper_tesseract_foxy.contract import ContractError
 from piper_tesseract_foxy.worker import (
     quiesce_bootstrap_recovery_prefix,
+    reverse_sdk_movej_points,
     sdk_movej_waypoint_trajectory,
     subdivide_joint_segment,
     TesseractBackend,
 )
+
+
+def test_reverse_sdk_movej_points_preserves_reverse_order_and_durations():
+    points = [
+        {
+            'time_from_start_s': when,
+            'positions_rad': [position] * 6,
+            'velocities_rad_s': [0.0] * 6,
+            'accelerations_rad_s2': [0.0] * 6,
+        }
+        for when, position in ((0.0, 0.0), (1.0, 0.2), (3.0, 0.5))
+    ]
+    reversed_points = reverse_sdk_movej_points(points)
+    assert [item['positions_rad'][0] for item in reversed_points] == [0.5, 0.2, 0.0]
+    assert [item['time_from_start_s'] for item in reversed_points] == [0.0, 2.0, 3.0]
+    assert all(item['velocities_rad_s'] == [0.0] * 6 for item in reversed_points)
+    assert all(item['accelerations_rad_s2'] == [0.0] * 6 for item in reversed_points)
 
 
 def test_subdivide_joint_segment_bounds_total_joint_change():
@@ -208,6 +226,7 @@ def test_acquisition_worker_accepts_one_of_five_planned_looks():
                     'id': index,
                     'camera_position_m': [0.4, 0.0, 0.3],
                     'look_direction': [1.0, 0.0, 0.0],
+                    'required_first': index == 0,
                 }
                 for index in range(5)
             ],
@@ -344,6 +363,7 @@ def test_worker_retries_candidates_after_a_success_changes_start_state():
                     'id': index,
                     'camera_position_m': [0.4, 0.0, 0.3],
                     'look_direction': [1.0, 0.0, 0.0],
+                    'required_first': index == 1,
                 }
                 for index in range(3)
             ],
@@ -370,8 +390,7 @@ def test_worker_retries_candidates_after_a_success_changes_start_state():
 
     assert [item['id'] for item in selected] == [1, 0]
     assert [item['to_viewpoint'] for item in segments] == [1, 0]
-    assert calls[:3] == [
-        (0, [0.0] * 6),
+    assert calls[:2] == [
         (1, [0.0] * 6),
         (0, [1.0] * 6),
     ]
@@ -382,12 +401,13 @@ def test_multiview_worker_appends_collision_validated_return_home_segment():
         {'positions_rad': [0.0] * 6},
         {'positions_rad': [0.1] * 6},
     ]
-    home = [0.0, -0.032, -0.026, -0.039, 0.346, 0.107]
+    home = [0.0, 0.0, -0.026, -0.039, 0.346, 0.107]
     return_calls = []
     backend = SimpleNamespace(
         reset_scene=lambda: None,
         add_obstacles=lambda _obstacles: None,
         find_bootstrap_recovery=lambda _request: None,
+        find_terminal_home_recovery=lambda _request, _home: None,
         plan_candidate=lambda *_args: (
             0.0,
             capture_points,
@@ -445,6 +465,89 @@ def test_multiview_worker_appends_collision_validated_return_home_segment():
     assert segments[-1]['to_viewpoint'] == -2
     assert segments[-1]['points'][-1]['positions_rad'] == home
     assert return_calls == [([0.1] * 6, home, 0.10)]
+
+
+def test_multiview_worker_reverses_qualified_folded_home_recovery():
+    capture_points = [
+        {'positions_rad': [0.0] * 6},
+        {'positions_rad': [0.4] * 6},
+    ]
+    home = [0.0, 0.0, 0.0, 0.0, 0.43869236, 0.0]
+    entry = [0.0, 0.04, -0.04, 0.0, 0.43869236, 0.0]
+    recovery = {
+        'positions': [home, entry],
+        'bootstrap_recovery_end_positions_rad': entry,
+    }
+    calls = []
+    backend = SimpleNamespace(
+        reset_scene=lambda: None,
+        add_obstacles=lambda _obstacles: None,
+        find_bootstrap_recovery=lambda _request: None,
+        find_terminal_home_recovery=lambda _request, _home: recovery,
+        plan_candidate=lambda *_args: (
+            0.0,
+            capture_points,
+            {'minimum_clearance_m': 0.1, 'limiting_link_pair': 'none/none'},
+        ),
+    )
+
+    def plan_return(start, goal, maximum_step, supplied_recovery):
+        calls.append((list(start), list(goal), maximum_step, supplied_recovery))
+        return [
+            {
+                'time_from_start_s': when,
+                'positions_rad': list(position),
+                'velocities_rad_s': [0.0] * 6,
+                'accelerations_rad_s2': [0.0] * 6,
+            }
+            for when, position in (
+                (0.0, home), (1.0, entry), (4.0, [0.4] * 6))
+        ], {
+            'minimum_clearance_m': 0.01,
+            'limiting_link_pair': 'link2/link5',
+            'bootstrap_recovery_used': True,
+            'bootstrap_recovery_end_point': 1,
+        }
+
+    backend.plan_segment_to_joint_goal = plan_return
+    request = {
+        'plan_kind': 'MULTIVIEW_SCAN',
+        'scene': {
+            'obstacles': [],
+            'candidate_views': [{
+                'id': 4,
+                'camera_position_m': [0.4, 0.0, 0.3],
+                'look_direction': [1.0, 0.0, 0.0],
+            }],
+        },
+        'planning': {
+            'min_viewpoints': 1,
+            'max_viewpoints': 1,
+            'max_execution_joint_step_rad': 0.10,
+            'roll_samples_rad': [0.0],
+            'effective_speed_percent': 5.0,
+            'command_rate_hz': 100.0,
+            'return_home_positions_rad': home,
+        },
+        'limits': {
+            'position_rad': [[-1.0, 1.0] for _ in range(6)],
+            'joint_margin_rad': 0.03,
+            'max_velocity_rad_s': [3.0] * 6,
+            'max_acceleration_rad_s2': [5.0] * 6,
+        },
+        'start_state': {'positions_rad': [0.0] * 6},
+    }
+
+    _selected, segments = TesseractBackend.plan(backend, request)
+
+    assert calls == [(entry, [0.4] * 6, 0.10, recovery)]
+    assert [
+        point['positions_rad'] for point in segments[-1]['points']
+    ] == [[0.4] * 6, entry, home]
+    assert [
+        point['time_from_start_s'] for point in segments[-1]['points']
+    ] == [0.0, 3.0, 4.0]
+    assert segments[-1]['is_return_home'] is True
 
 
 class FakeRecoveryBackend:

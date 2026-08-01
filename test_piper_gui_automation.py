@@ -115,6 +115,25 @@ def test_step45_auto_recovery_prepares_only_and_requires_new_confirmation():
     assert '"No active 13-view plan: " + str(message)' in source
 
 
+def test_automatic_scan_is_a_separate_one_start_button_tab():
+    source = (
+        Path(__file__).resolve().parent / 'piper_gui_native.py'
+    ).read_text(encoding='utf-8')
+    assert 'notebook.add(automatic, text="Automatic Scan")' in source
+    assert 'text="Start Complete Automated Scan"' in source
+    assert 'command=self.start_automated_scan' in source
+    assert 'text="Acquire & Scan"' in source
+    assert 'Production mission API simulator' not in source
+    assert 'physical obstacle removal is NOT enabled yet' in source
+    assert "self._advance_automation_generation()" in source
+    assert "self.automation_session = AutomationSession()" in source
+    assert "if self.mission_in_progress:" in source.split(
+        'def handle_scan_plan', 1)[1].split('def ', 1)[0]
+    scan_status = source.split('elif name == "scan_status":', 1)[1].split(
+        'elif name == ', 1)[0]
+    assert 'if self.mission_in_progress:' in scan_status
+
+
 def plan(
         kind, plan_id='plan', views=None, qualified=True, valid=True,
         target=(0.45, 0.0, 0.2), source_request_id=''):
@@ -538,7 +557,11 @@ def test_disable_requires_an_acknowledged_settled_current_feedback_hold():
         'def cancel_cb(self, _request, response):', 1)[1].split(
             'def refresh_cb(self, _request, response):', 1)[0]
     assert 'held = self.publish_hold()' in inactive_cancel
-    assert "'proposal cleared; current joint hold requested'" in inactive_cancel
+    assert 'self.try_start_abort_return(' in inactive_cancel
+    assert 'approved-path return to configured home' in inactive_cancel
+    assert 'current joint hold requested' in inactive_cancel
+
+    assert 'text="Cancel and Home"' in source
 
 
 def test_explicit_current_lock_adoption_recovers_terminal_acquisition():
@@ -559,8 +582,14 @@ def test_explicit_current_lock_adoption_recovers_terminal_acquisition():
         plan(MULTIVIEW_SCAN, plan_id='scan', views=13)) == ''
 
 
-def test_plan_request_correlation_uses_worker_plan_id_prefix():
+def test_plan_request_correlation_requires_full_worker_request_id():
     assert plan_matches_request(
+        plan(
+            MULTIVIEW_SCAN,
+            plan_id='0123456789abcdef0123456789abcdef'),
+        '0123456789abcdef0123456789abcdef',
+    )
+    assert not plan_matches_request(
         plan(MULTIVIEW_SCAN, plan_id='0123456789abcdef'),
         '0123456789abcdef0123456789abcdef',
     )

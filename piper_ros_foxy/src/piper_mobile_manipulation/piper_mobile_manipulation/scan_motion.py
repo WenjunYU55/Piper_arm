@@ -8,10 +8,9 @@ import numpy as np
 import yaml
 
 
-# Conservative planning-model limits. J2 includes the existing validated
-# controller-coordinate lower bound measured at the enabled compact pose and
-# used by the production Xacro; saved valid bounds are still intersected with
-# these and cannot expand any other joint.
+# Conservative planning-model limits. The small negative J2 range admits a
+# measured disabled start for collision-checked bootstrap recovery; powered
+# command targets use the stricter controller limits below.
 URDF_JOINT_LIMITS = np.asarray([
     [-2.6180, 2.1680],
     [-0.044796192, 3.1400],
@@ -20,6 +19,9 @@ URDF_JOINT_LIMITS = np.asarray([
     [-1.2200, 1.2200],
     [-2.0944, 2.0944],
 ], dtype=float)
+
+CONTROLLER_COMMAND_LIMITS = URDF_JOINT_LIMITS.copy()
+CONTROLLER_COMMAND_LIMITS[1, 0] = 0.0
 
 # Feedback at an encoder boundary can quantize just outside the planning
 # model's inclusive limit. This cap is deliberately much smaller than the
@@ -96,6 +98,16 @@ def finite_joints(joints):
     if values.shape != (6,) or not np.all(np.isfinite(values)):
         raise ValueError('expected six finite joint positions')
     return values
+
+
+def energized_hold_target(joints):
+    """Return the nearest pose representable while motor power is enabled."""
+    values = finite_joints(joints)
+    return np.clip(
+        values,
+        CONTROLLER_COMMAND_LIMITS[:, 0],
+        CONTROLLER_COMMAND_LIMITS[:, 1],
+    )
 
 
 def orbit_camera_view(center, angle_deg, radius_m, camera_pitch_deg):

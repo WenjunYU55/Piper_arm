@@ -1,3 +1,5 @@
+import json
+import math
 import os
 
 from ament_index_python.packages import get_package_share_directory
@@ -18,6 +20,20 @@ from launch_ros.parameter_descriptions import ParameterValue
 def cfg(name):
     return os.path.join(
         get_package_share_directory('piper_mobile_manipulation'), 'config', name)
+
+
+def home_override():
+    raw = os.environ.get('PIPER_RETURN_HOME_POSITIONS_RAD', '').strip()
+    if not raw:
+        return {}
+    try:
+        values = [float(value) for value in json.loads(raw)]
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise RuntimeError('invalid PIPER_RETURN_HOME_POSITIONS_RAD: %s' % exc)
+    if len(values) != 6 or not all(math.isfinite(value) for value in values):
+        raise RuntimeError(
+            'PIPER_RETURN_HOME_POSITIONS_RAD must contain six finite values')
+    return {'return_home_positions_rad': values}
 
 
 def generate_launch_description():
@@ -47,11 +63,17 @@ def generate_launch_description():
         default_value='true',
         description='Capture after settling; disable only for supervised motion commissioning.',
     )
+    mission_policy = DeclareLaunchArgument(
+        'allow_mission_policy',
+        default_value='false',
+        description='Allow task/hash/deadline-bound autonomous approvals.',
+    )
     scan_params = cfg('scan_planning_params.yaml')
     quality_params = cfg('scan_quality_params.yaml')
     capture_params = cfg('scan_capture_params.yaml')
     workflow_params = cfg('supervised_cube_workflow_params.yaml')
     execution_params = cfg('scan_execution_params.yaml')
+    selected_home = home_override()
     bridge = Node(
         package='piper_tesseract_foxy',
         executable='tesseract_plan_bridge',
@@ -84,6 +106,7 @@ def generate_launch_description():
                 'max_execution_viewpoints': ParameterValue(
                     LaunchConfiguration('max_execution_viewpoints'),
                     value_type=int),
+                **selected_home,
             },
         ],
     )
@@ -124,12 +147,15 @@ def generate_launch_description():
                 LaunchConfiguration('min_execution_viewpoints'), value_type=int),
             'auto_capture': ParameterValue(
                 LaunchConfiguration('auto_capture'), value_type=bool),
+            'allow_mission_policy': ParameterValue(
+                LaunchConfiguration('allow_mission_policy'), value_type=bool),
             'hand_eye_calibration_path': os.path.join(
                 root,
                 'L515_camera/calibration/hand_eye/session_20260701_local/'
                 'calibration_result.yaml',
             ),
             'joint_bounds_path': os.path.join(root, 'piper_joint_bounds.json'),
+            **selected_home,
         }],
     )
     planner = Node(
@@ -178,6 +204,7 @@ def generate_launch_description():
         max_views,
         min_views,
         auto_capture,
+        mission_policy,
         *shutdown_handlers,
         TimerAction(period=2.5, actions=[bridge]),
         # Foxy/Fast DDS can expose endpoints without delivering callbacks when

@@ -14,7 +14,8 @@ import uuid
 
 import numpy as np
 import rclpy
-from geometry_msgs.msg import PointStamped
+from geometry_msgs.msg import PointStamped, PoseWithCovarianceStamped
+from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
@@ -56,12 +57,15 @@ from piper_mobile_manipulation.msg import (
     TesseractReadiness,
     TrackingHealth,
 )
+from piper_mobile_manipulation.action import RunTargetScan
+from piper_mobile_manipulation.home_pose import load_home_pose, save_home_pose
 from piper_mobile_manipulation.srv import (
     ApproveScanExecution,
     PrepareAcquisition,
     RequestTesseractPlan,
 )
 from piper_mobile_manipulation.scan_motion import (
+    energized_hold_target,
     PiperScanKinematics,
     URDF_JOINT_LIMITS,
     interpolate_joint_path,
@@ -83,6 +87,7 @@ DEFAULT_JOINTS = [
 
 BOUNDS_PATH = os.path.join(os.path.dirname(__file__), "piper_joint_bounds.json")
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+HOME_POSE_PATH = os.path.join(PROJECT_ROOT, "piper_home_pose.json")
 AUTOMATION_CRITICAL_NODES = {
     "/tesseract_plan_bridge",
     "/viewpoint_reachability_filter",
@@ -92,6 +97,7 @@ AUTOMATION_CRITICAL_NODES = {
     "/scan_target_acquisition",
     "/scan_capture",
 }
+DISABLED_HOME_DROOP_TOLERANCE_RAD = 0.05
 
 
 def clamp(value: float, low: float, high: float) -> float:
@@ -231,6 +237,11 @@ class PiperGuiRos(Node):
         self.scan_cancel_client = self.create_client(
             Trigger, "/scan_viewpoint_executor/cancel",
             callback_group=self.service_callback_group)
+        self.mission_action_client = ActionClient(
+            self, RunTargetScan, '/piper/run_target_scan',
+            callback_group=self.service_callback_group)
+        self.mission_goal_handle = None
+        self.mission_task_id = ''
 
     def feedback_callback(self, msg: JointState) -> None:
         self.latest_feedback = msg
@@ -745,6 +756,122 @@ class PiperGuiRos(Node):
         except Exception as exc:
             self.events.put((event_name, (False, str(exc))))
 
+    def submit_simulated_mission(self, coordinates, label='green cube') -> None:
+        thread = threading.Thread(
+            target=self._submit_simulated_mission,
+            args=(tuple(coordinates), str(label)), daemon=True)
+        thread.start()
+
+    def _submit_simulated_mission(self, coordinates, label):
+        task_id = 'gui-sim-' + uuid.uuid4().hex
+        self.mission_task_id = task_id
+        if not self.mission_action_client.wait_for_server(timeout_sec=5.0):
+            if self.mission_task_id == task_id:
+                self.events.put((
+                    'mission_state',
+                    ('IDLE', 'autonomous mission action server is unavailable; '
+                     'start run_target_scan_mission.sh first')))
+            return
+        goal = RunTargetScan.Goal()
+        goal.task_id = task_id
+        goal.task_type = 'SCAN_3D'
+        goal.target_label = label.strip() or 'green cube'
+        goal.target_profile = 'green_cube'
+        goal.target_confidence = 1.0
+        goal.deadline_sec = 1200.0
+        goal.rough_target = PoseWithCovarianceStamped()
+        goal.rough_target.header.stamp = self.get_clock().now().to_msg()
+        goal.rough_target.header.frame_id = 'base_link'
+        goal.rough_target.pose.pose.position.x = float(coordinates[0])
+        goal.rough_target.pose.pose.position.y = float(coordinates[1])
+        goal.rough_target.pose.pose.position.z = float(coordinates[2])
+        goal.rough_target.pose.pose.orientation.w = 1.0
+        covariance = [0.0] * 36
+        covariance[0] = covariance[7] = covariance[14] = 0.01
+        goal.rough_target.pose.covariance = covariance
+        future = self.mission_action_client.send_goal_async(
+            goal, feedback_callback=lambda message, bound=task_id:
+            self._mission_feedback(bound, message.feedback))
+        future.add_done_callback(
+            lambda completed, bound=task_id:
+            self._mission_goal_response(completed, bound))
+
+    def _mission_feedback(self, task_id, feedback):
+        if self.mission_task_id == task_id:
+            self.events.put(('mission_feedback', feedback))
+
+    def _mission_goal_response(self, future, task_id):
+        if self.mission_task_id != task_id:
+            return
+        try:
+            handle = future.result()
+        except Exception as exc:
+            self.events.put((
+                'mission_state',
+                ('IDLE', 'mission goal failed: %s' % exc)))
+            return
+        if handle is None or not handle.accepted:
+            self.events.put((
+                'mission_state', ('IDLE', 'mission goal was rejected')))
+            return
+        self.mission_goal_handle = handle
+        self.events.put((
+            'mission_state',
+            ('ACTIVE', 'mission accepted; automatic startup is beginning')))
+        handle.get_result_async().add_done_callback(
+            lambda completed, bound=task_id:
+            self._mission_result(completed, bound))
+
+    def _mission_result(self, future, task_id):
+        if self.mission_task_id != task_id:
+            return
+        try:
+            wrapped = future.result()
+            result = wrapped.result
+            outcomes = {
+                RunTargetScan.Goal.OUTCOME_SUCCEEDED: 'SUCCEEDED',
+                RunTargetScan.Goal.OUTCOME_FAILED: 'FAILED',
+                RunTargetScan.Goal.OUTCOME_CANCELLED: 'CANCELLED',
+                RunTargetScan.Goal.OUTCOME_BUSY: 'BUSY',
+                RunTargetScan.Goal.OUTCOME_UNSUPPORTED_TARGET_PROFILE:
+                    'UNSUPPORTED_TARGET_PROFILE',
+                RunTargetScan.Goal.OUTCOME_NEEDS_OPERATOR: 'NEEDS_OPERATOR',
+            }
+            message = '%s: %s; safe shutdown=%s; captures=%d; dataset=%s' % (
+                outcomes.get(result.outcome, 'UNKNOWN'), result.reason,
+                'proved' if result.safe_shutdown else 'not proved',
+                result.capture_count,
+                result.dataset_path or 'unavailable')
+        except Exception as exc:
+            message = 'mission result failed: %s' % exc
+        if self.mission_task_id != task_id:
+            return
+        self.mission_goal_handle = None
+        self.mission_task_id = ''
+        self.events.put(('mission_state', ('IDLE', message)))
+
+    def destroy_node(self):
+        client = getattr(self, 'mission_action_client', None)
+        if client is not None:
+            try:
+                client.destroy()
+            except Exception:
+                pass
+            self.mission_action_client = None
+        return super().destroy_node()
+
+    def cancel_simulated_mission(self):
+        handle = self.mission_goal_handle
+        if handle is None:
+            self.events.put((
+                'mission_state', ('IDLE', 'no GUI mission is active')))
+            return
+        handle.cancel_goal_async()
+        self.events.put((
+            'mission_state',
+            ('CANCELLING', 'mission cancellation requested; holding current '
+             'position, returning to configured home, disabling, and stopping')))
+
     def call_enable_async(self, enabled: bool) -> None:
         thread = threading.Thread(target=self._call_enable, args=(enabled,), daemon=True)
         thread.start()
@@ -846,6 +973,12 @@ class PiperGuiApp:
         self.automation_tracking_var = tk.StringVar(value="Tracking unavailable")
         self.automation_workflow_var = tk.StringVar(value="Workflow unavailable")
         self.automation_capture_var = tk.StringVar(value="RGB-D capture unavailable")
+        self.mission_label_var = tk.StringVar(value="green cube")
+        self.mission_status_var = tk.StringVar(value="Autonomous mission idle")
+        self.home_status_var = tk.StringVar(
+            value="Home: validated compact default")
+        self.mission_in_progress = False
+        self.load_selected_home()
         self.latest_scan_plan = None
         self.latest_scan_status = None
         self.latest_workflow_status = {}
@@ -886,6 +1019,9 @@ class PiperGuiApp:
         self.safe_disable_previous_feedback = None
         self.safe_disable_settled_since = None
         self.safe_disable_deadline = 0.0
+        self.cancel_home_shutdown_pending = False
+        self.cancel_home_shutdown_report_pending = False
+        self.cancel_home_retry_count = 0
         self.pending_scan_cancel_status = ""
         self.step45_auto_recovery_attempts = 0
         self.step45_auto_recovery_pending = False
@@ -926,6 +1062,10 @@ class PiperGuiApp:
         notebook = ttk.Notebook(body)
         body.add(notebook, weight=4)
 
+        automatic = ttk.Frame(notebook, padding=14)
+        notebook.add(automatic, text="Automatic Scan")
+        self._build_automatic_scan(automatic)
+
         manual = ttk.Frame(notebook, padding=14)
         notebook.add(manual, text="Manual")
         self._build_manual(manual)
@@ -941,6 +1081,108 @@ class PiperGuiApp:
         side = ttk.Frame(body, padding=14)
         body.add(side, weight=1)
         self._build_status(side)
+
+    def _build_automatic_scan(self, parent: ttk.Frame) -> None:
+        parent.columnconfigure(0, weight=1)
+        ttk.Label(
+            parent,
+            text="Complete automatic target scan",
+            font=("TkDefaultFont", 16, "bold"),
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            parent,
+            text=(
+                "This tab mirrors the final tracked-robot workflow. Enter the "
+                "rough green-cube coordinate, then press one button. The mission "
+                "owns driver/camera/perception startup, arm enable, rough search, "
+                "target lock, 13-view Tesseract planning, synchronized capture, "
+                "return home, current-position hold, disable, and shutdown."
+            ),
+            wraplength=820,
+            justify="left",
+        ).grid(row=1, column=0, sticky="ew", pady=(8, 16))
+
+        target = ttk.LabelFrame(
+            parent, text="Rough green-cube target in base_link", padding=12)
+        target.grid(row=2, column=0, sticky="ew")
+        for column, (axis, variable) in enumerate(
+                zip(("X (m)", "Y (m)", "Z (m)"), self.rough_coordinate_vars)):
+            ttk.Label(target, text=axis).grid(
+                row=0, column=column * 2,
+                padx=(0 if column == 0 else 18, 5))
+            ttk.Entry(target, textvariable=variable, width=14).grid(
+                row=0, column=column * 2 + 1)
+        ttk.Label(
+            target,
+            text="Target profile: green cube (minimum confidence 60%)",
+            foreground="#52606d",
+        ).grid(row=1, column=0, columnspan=6, sticky="w", pady=(10, 0))
+        ttk.Button(
+            target,
+            text="Use Current Feedback as Home",
+            command=self.use_current_feedback_as_home,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        ttk.Label(
+            target,
+            textvariable=self.home_status_var,
+            foreground="#52606d",
+            wraplength=570,
+            justify="left",
+        ).grid(row=2, column=2, columnspan=4, sticky="w", padx=(10, 0),
+               pady=(10, 0))
+
+        controls = ttk.Frame(parent)
+        controls.grid(row=3, column=0, sticky="w", pady=(18, 10))
+        self.mission_start_button = ttk.Button(
+            controls,
+            text="Start Complete Automated Scan",
+            command=self.start_automated_scan,
+        )
+        self.mission_start_button.grid(row=0, column=0, padx=(0, 8))
+        self.mission_cancel_button = ttk.Button(
+            controls,
+            text="Cancel and Home",
+            command=self.ros_node.cancel_simulated_mission,
+            state="disabled",
+        )
+        self.mission_cancel_button.grid(row=0, column=1)
+
+        status = ttk.LabelFrame(parent, text="Mission status", padding=12)
+        status.grid(row=4, column=0, sticky="ew", pady=(6, 0))
+        status.columnconfigure(0, weight=1)
+        ttk.Label(
+            status,
+            textvariable=self.mission_status_var,
+            wraplength=790,
+            justify="left",
+        ).grid(row=0, column=0, sticky="ew")
+
+        ttk.Label(
+            parent,
+            text=(
+                "Obstacle handling: perception and benefit assessment are active, "
+                "but physical obstacle removal is NOT enabled yet. A hand is always "
+                "a terminal blocker. A beneficial leaf/branch occlusion currently "
+                "returns NEEDS_OPERATOR until the gripper, attached-object and "
+                "contact-collision model are physically qualified."
+            ),
+            foreground="#8a3b12",
+            wraplength=820,
+            justify="left",
+        ).grid(row=5, column=0, sticky="ew", pady=(18, 0))
+
+        ttk.Label(
+            parent,
+            text=(
+                "The command-free mission listener must already be running via "
+                "run_target_scan_mission.sh, as it will be in the final system. "
+                "Real motion and the 30%/10% speed profile remain controlled by "
+                "that listener's deployment gates."
+            ),
+            foreground="#52606d",
+            wraplength=820,
+            justify="left",
+        ).grid(row=6, column=0, sticky="ew", pady=(12, 0))
 
     def _build_manual(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
@@ -1162,7 +1404,7 @@ class PiperGuiApp:
         )
         self.confirm_scan_button.grid(row=1, column=2, padx=6, pady=(8, 0))
         ttk.Button(
-            actions, text="Cancel / Hold", command=self.cancel_automation
+            actions, text="Cancel and Home", command=self.cancel_automation
         ).grid(row=0, column=3, padx=6)
         ttk.Button(
             actions, text="Stop Scan Stack", command=self.stop_automation_stack
@@ -1198,6 +1440,116 @@ class PiperGuiApp:
             wraplength=820,
             justify="left",
         ).grid(row=5, column=0, sticky="ew", pady=(12, 0))
+
+    def start_automated_scan(self):
+        if self.mission_in_progress:
+            self.mission_status_var.set(
+                'an automatic mission is already starting or active')
+            return
+        try:
+            coordinates = validate_rough_coordinates(
+                [variable.get() for variable in self.rough_coordinate_vars])
+        except ValueError as exc:
+            self.mission_status_var.set(str(exc))
+            return
+        # The automatic mission owns its scan stack and executor.  Invalidate
+        # every delayed Step-2/4/5 callback before submitting it so a retry
+        # timer or cached terminal message from the manual tab cannot cancel
+        # a newly acquired target or mutate the mission state machine.
+        self._advance_automation_generation()
+        self.automation_session.finish('automatic mission started')
+        self.automation_session = AutomationSession()
+        self.cancel_home_shutdown_pending = False
+        self.cancel_home_shutdown_report_pending = False
+        self.cancel_home_retry_count = 0
+        self.mission_in_progress = True
+        self.ros_node.disable_manual_command_publisher()
+        self.set_manual_motion_enabled(False)
+        self.mission_start_button.configure(state="disabled")
+        self.mission_cancel_button.configure(state="disabled")
+        self.mission_status_var.set(
+            'submitting complete task through /piper/run_target_scan')
+        self.ros_node.submit_simulated_mission(
+            coordinates, self.mission_label_var.get())
+
+    def load_selected_home(self):
+        try:
+            payload = load_home_pose(HOME_POSE_PATH)
+        except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            self.home_status_var.set('Home file invalid: %s' % exc)
+            os.environ.pop('PIPER_RETURN_HOME_POSITIONS_RAD', None)
+            return
+        if payload is None:
+            os.environ.pop('PIPER_RETURN_HOME_POSITIONS_RAD', None)
+            return
+        positions = payload['positions_rad']
+        os.environ['PIPER_RETURN_HOME_POSITIONS_RAD'] = json.dumps(positions)
+        self.home_status_var.set(
+            'Home J1-J6: ' + ', '.join('%.6f' % value for value in positions))
+
+    def use_current_feedback_as_home(self):
+        if self.mission_in_progress:
+            self.home_status_var.set(
+                'Home cannot change while an automatic mission is active')
+            return
+        feedback_age = (
+            math.inf if self.ros_node.latest_feedback_monotonic is None
+            else time.monotonic() - self.ros_node.latest_feedback_monotonic)
+        if (
+                self.feedback_positions is None
+                or len(self.feedback_positions) < 6
+                or feedback_age > 1.0):
+            self.home_status_var.set(
+                'Fresh six-joint feedback is required to set home')
+            return
+        observed_positions = np.asarray(
+            self.feedback_positions[:6], dtype=float)
+        if not np.all(np.isfinite(observed_positions)):
+            self.home_status_var.set('Current feedback is not finite')
+            return
+        observed_limits = URDF_JOINT_LIMITS.copy()
+        # Only the two gravity-loaded axes may cross their powered zero while
+        # disabled. Keep this allowance small and validate every other joint
+        # against the unchanged planning limits.
+        observed_limits[1, 0] = min(
+            observed_limits[1, 0],
+            -DISABLED_HOME_DROOP_TOLERANCE_RAD,
+        )
+        observed_limits[2, 1] = max(
+            observed_limits[2, 1],
+            DISABLED_HOME_DROOP_TOLERANCE_RAD,
+        )
+        if np.any(observed_positions < observed_limits[:, 0]) or np.any(
+                observed_positions > observed_limits[:, 1]):
+            self.home_status_var.set(
+                'Current feedback is outside the planning limits and bounded '
+                'disabled J2/J3 droop allowance')
+            return
+        # A disabled PiPER can droop slightly below powered J2 zero and above
+        # powered J3 zero. Persist the nearest controller-representable pose,
+        # otherwise an automatic return would request angles the SDK clamps
+        # away and the final home proof could never succeed.
+        positions = energized_hold_target(observed_positions)
+        if np.any(positions < URDF_JOINT_LIMITS[:, 0]) or np.any(
+                positions > URDF_JOINT_LIMITS[:, 1]):
+            self.home_status_var.set(
+                'Powered home target is outside the planning joint limits')
+            return
+        try:
+            save_home_pose(
+                HOME_POSE_PATH,
+                positions.tolist(),
+                observed_positions=observed_positions.tolist(),
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            self.home_status_var.set('Could not save home: %s' % exc)
+            return
+        self.load_selected_home()
+        self.home_status_var.set(
+            self.home_status_var.get()
+            + '; saved from current feedback '
+            + ', '.join('%.3f' % value for value in observed_positions)
+            + ' (disabled J2/J3 droop normalized for powered return)')
 
     def _build_status(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
@@ -1795,7 +2147,7 @@ class PiperGuiApp:
             if tuple(coordinates) != tuple(self.pending_rough_coordinates):
                 self.automation_status_var.set(
                     "Step 2 retry is bound to the original coordinates %s; "
-                    "use Cancel / Hold before starting a changed target."
+                    "use Cancel and Home before starting a changed target."
                     % (self.pending_rough_coordinates,))
                 return
         else:
@@ -2026,7 +2378,21 @@ class PiperGuiApp:
         self.confirm_acquisition_button.configure(state="disabled")
         self.prepare_scan_button.configure(state="disabled")
         self.confirm_scan_button.configure(state="disabled")
-        self.automation_status_var.set("Cancellation requested; waiting for current-position hold.")
+        self.cancel_home_shutdown_pending = True
+        self.cancel_home_shutdown_report_pending = False
+        self.cancel_home_retry_count = 0
+        self.automation_status_var.set(
+            "Cancellation requested; holding current position, returning "
+            "along the approved path to configured home, then disabling and "
+            "stopping the scan stack.")
+        self.ros_node.cancel_scan()
+
+    def _retry_cancel_home_after_hold(self) -> None:
+        if not self.cancel_home_shutdown_pending:
+            return
+        self.automation_status_var.set(
+            "Current-position hold settled; retrying the bounded approved-path "
+            "return to configured home (%d/3)." % self.cancel_home_retry_count)
         self.ros_node.cancel_scan()
 
     def stop_automation_stack(self) -> None:
@@ -2052,6 +2418,9 @@ class PiperGuiApp:
         self.prepare_acquisition_button.configure(state="disabled")
         publishers = self.ros_node.command_publisher_names()
         if publishers:
+            if self.cancel_home_shutdown_report_pending:
+                self.cancel_home_shutdown_pending = False
+                self.cancel_home_shutdown_report_pending = False
             self.automation_status_var.set(
                 "Managed stack stopped, but command publishers remain; manual controls stay locked: "
                 + ", ".join(publishers))
@@ -2059,8 +2428,15 @@ class PiperGuiApp:
         self.ros_node.enable_manual_command_publisher()
         self.set_manual_motion_enabled(True)
         self.automation_speed_spinbox.configure(state="normal")
-        self.automation_status_var.set(
-            "Managed scan stack stopped; manual GUI command ownership restored.")
+        if self.cancel_home_shutdown_report_pending:
+            self.cancel_home_shutdown_pending = False
+            self.cancel_home_shutdown_report_pending = False
+            self.automation_status_var.set(
+                "Task failed: cancelled; arm returned to configured home, "
+                "disabled, and scan stack stopped. Please retry.")
+        else:
+            self.automation_status_var.set(
+                "Managed scan stack stopped; manual GUI command ownership restored.")
 
     def _terminate_automation_processes(self) -> None:
         for name in ("scan_stack", "tesseract_worker"):
@@ -2090,6 +2466,11 @@ class PiperGuiApp:
         self.automation_processes.clear()
 
     def handle_scan_plan(self, plan) -> None:
+        if self.mission_in_progress:
+            # The command-free mission listener performs its own full request
+            # correlation.  This callback belongs only to the manual
+            # Acquire & Scan tab and must never clean up a mission proposal.
+            return
         if (
                 plan.plan_kind == ROUGH_ACQUISITION
                 and self.acquisition_phase
@@ -2145,8 +2526,8 @@ class PiperGuiApp:
             rejection = plan_rejection(
                 plan,
                 ROUGH_ACQUISITION,
-                expected_source_request_id=
-                    self.pending_acquisition_session_id,
+                expected_source_request_id=(
+                    self.pending_acquisition_session_id),
             )
             if rejection:
                 self._acquisition_fail(
@@ -2347,7 +2728,7 @@ class PiperGuiApp:
         self.safe_disable_in_progress = True
         self.safe_disable_waiting_for_hold = False
         self.safe_disable_service_inflight = False
-        self.safe_disable_target = np.asarray(joints, dtype=float)
+        self.safe_disable_target = energized_hold_target(joints)
         self.safe_disable_previous_feedback = None
         self.safe_disable_settled_since = None
         self.safe_disable_deadline = time.monotonic() + 8.0
@@ -2631,6 +3012,12 @@ class PiperGuiApp:
                                 "motors may remain enabled"
                             )
                         )
+                        if success and self.cancel_home_shutdown_pending:
+                            self.cancel_home_shutdown_report_pending = True
+                            self.automation_status_var.set(
+                                "Configured home and final hold proved; arm "
+                                "disabled. Stopping the managed scan stack.")
+                            self.stop_automation_stack()
                     # Any failed acknowledgement leaves the hardware state
                     # unconfirmed.  Planning must fail closed until the
                     # operator retries the GUI Enable action successfully.
@@ -2658,6 +3045,35 @@ class PiperGuiApp:
                     self.update_automation_buttons()
                 elif name == "command_blocked":
                     self.command_text.set(str(payload))
+                elif name == "mission_feedback":
+                    self.mission_status_var.set(
+                        '%s: %s (%d/%d captures)' % (
+                            payload.phase, payload.reason,
+                            payload.accepted_captures,
+                            payload.required_captures))
+                elif name == "mission_state":
+                    state, message = payload
+                    self.mission_status_var.set(str(message))
+                    self.mission_in_progress = state != 'IDLE'
+                    if state == 'IDLE':
+                        publishers = self.ros_node.command_publisher_names()
+                        if not publishers:
+                            self.ros_node.enable_manual_command_publisher()
+                            self.set_manual_motion_enabled(True)
+                        else:
+                            self.mission_status_var.set(
+                                str(message)
+                                + '; manual controls remain locked while '
+                                'command publishers exist: '
+                                + ', '.join(publishers))
+                    self.mission_start_button.configure(
+                        state=(
+                            "disabled" if self.mission_in_progress
+                            else "normal"))
+                    self.mission_cancel_button.configure(
+                        state=(
+                            "normal" if state == 'ACTIVE'
+                            else "disabled"))
                 elif name == "automation_start":
                     generation, success, message = payload
                     if int(generation) != self.automation_generation:
@@ -2815,9 +3231,46 @@ class PiperGuiApp:
                     self.handle_scan_plan(payload)
                 elif name == "scan_status":
                     self.latest_scan_status = payload
+                    if self.mission_in_progress:
+                        # Automatic Scan consumes action feedback/result from
+                        # the mission node.  Ignore manual-tab retry, cancel
+                        # and session-memory transitions while it is active.
+                        continue
                     self.automation_status_var.set(
                         "%s %s: %s" % (
                             payload.execution_mode, payload.state, payload.reason))
+                    if (
+                            self.cancel_home_shutdown_pending
+                            and payload.state == "ABORTED"):
+                        cancellation_reason = str(payload.reason)
+                        lowered_reason = cancellation_reason.lower()
+                        if "configured home reached" in lowered_reason:
+                            self.automation_status_var.set(
+                                "Configured home reached; proving the final "
+                                "hold before motor disable.")
+                            self.request_safe_disable()
+                        elif (
+                                self.cancel_home_retry_count < 3
+                                and (
+                                    "current joint hold" in lowered_reason
+                                    or "fresh return-home safety gate failed"
+                                    in lowered_reason)):
+                            self.cancel_home_retry_count += 1
+                            self.automation_status_var.set(
+                                "Cancellation stopped at a current-position "
+                                "hold; waiting for it to settle before the "
+                                "approved-path home retry.")
+                            self.root.after(
+                                1500, self._retry_cancel_home_after_hold)
+                        else:
+                            self.cancel_home_shutdown_pending = False
+                            self.automation_status_var.set(
+                                "Task failed: cancellation held the arm, but "
+                                "automatic home/disable was blocked: %s. The "
+                                "arm remains enabled; operator attention is "
+                                "required." % cancellation_reason)
+                        self.update_automation_buttons()
+                        continue
                     if retryable_multiview_terminal(
                             payload.execution_mode,
                             payload.state,

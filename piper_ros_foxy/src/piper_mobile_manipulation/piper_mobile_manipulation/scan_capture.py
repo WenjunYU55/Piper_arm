@@ -44,3 +44,25 @@ def depth_millimetres(depth, encoding):
         millimetres = values.astype(np.float64) * 1000.0
     millimetres[~np.isfinite(millimetres)] = 0.0
     return np.clip(np.rint(millimetres), 0, 65535).astype(np.uint16)
+
+
+def rigid_transform_matrix(translation, quaternion_xyzw):
+    """Return a finite 4x4 transform matrix for reconstruction metadata."""
+    t = np.asarray(translation, dtype=float)
+    q = np.asarray(quaternion_xyzw, dtype=float)
+    if t.shape != (3,) or q.shape != (4,) or not np.all(np.isfinite(t)) \
+            or not np.all(np.isfinite(q)):
+        raise ValueError('camera transform must be finite XYZ and XYZW')
+    norm = float(np.linalg.norm(q))
+    if norm <= 1e-9:
+        raise ValueError('camera transform quaternion is zero')
+    x, y, z, w = q / norm
+    return np.asarray([
+        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w),
+         2 * (x * z + y * w), t[0]],
+        [2 * (x * y + z * w), 1 - 2 * (x * x + z * z),
+         2 * (y * z - x * w), t[1]],
+        [2 * (x * z - y * w), 2 * (y * z + x * w),
+         1 - 2 * (x * x + y * y), t[2]],
+        [0.0, 0.0, 0.0, 1.0],
+    ], dtype=float)
