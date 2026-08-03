@@ -1,0 +1,2 @@
+# Start the narrowly scoped PiPER CAN setup when the configured adapter appears.
+ACTION=="add", SUBSYSTEM=="net", KERNEL=="@CAN_INTERFACE@", TAG+="systemd", ENV{SYSTEMD_WANTS}+="piper-can@%k.service"

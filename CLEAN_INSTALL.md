@@ -175,20 +175,29 @@ Connect the USB-CAN adapter and arm, then identify its interface:
 ip -brief link
 ```
 
-For the default `can0` interface and PiPER's 1 Mbps bitrate:
+Install the narrowly scoped boot/hot-plug service for the default `can0`
+interface and PiPER's 1 Mbps bitrate:
 
 ```bash
-sudo ip link set can0 down
-sudo ip link set can0 type can bitrate 1000000
-sudo ip link set can0 up
+./install_piper_can_service.sh
 ip -details link show can0
+systemctl status --no-pager piper-can@can0.service
 ```
 
+The installer requests `sudo` once while provisioning the host. Normal GUI,
+coordinator, and `start_piper.sh` runs do not request a password. The service
+is enabled at boot and the udev rule starts it again when the USB-CAN adapter
+is hot-plugged. It configures SocketCAN only; it does not start the ROS driver
+or enable any arm motor.
+
 The result must contain `UP`, `can state ERROR-ACTIVE`, and `bitrate 1000000`. Use
+`PIPER_CAN_PORT=can1 ./install_piper_can_service.sh` during provisioning and
 `PIPER_CAN_PORT=can1` with runtime scripts if the adapter appears as `can1`.
 
-CAN configuration is not persistent across reboot. `start_piper.sh` checks and configures the selected
-interface, requesting `sudo` when necessary.
+`start_piper.sh` reuses an interface that is already UP at the exact bitrate.
+Headless startup fails with a provisioning instruction instead of waiting for
+an impossible password prompt. An interactive direct run retains the legacy
+setup fallback for development hosts only.
 
 ## 8. Install the scan perception environment
 

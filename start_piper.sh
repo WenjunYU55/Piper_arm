@@ -131,33 +131,45 @@ fi
 
 echo "CAN interface $CAN_PORT found."
 
-# 8. Reset CAN before activation
-echo "Resetting CAN interface..."
-sudo ip link set "$CAN_PORT" down || true
+can_is_ready() {
+    ip link show "$CAN_PORT" | head -n 1 | grep -q 'state UP' \
+        && ip -details link show "$CAN_PORT" \
+            | grep -q "bitrate $CAN_BITRATE"
+}
 
-# 9. Activate CAN
-echo "Activating CAN interface..."
-if [ -n "$CAN_USB_ADDRESS" ]; then
-    bash can_activate.sh "$CAN_PORT" "$CAN_BITRATE" "$CAN_USB_ADDRESS"
+# 8. Reuse boot-provisioned CAN. Autonomous/headless startup must never wait
+# for an interactive sudo password. A direct terminal run retains the legacy
+# one-time activation fallback for development hosts.
+if can_is_ready; then
+    echo "CAN interface is already UP at $CAN_BITRATE bit/s."
 else
-    bash can_activate.sh "$CAN_PORT" "$CAN_BITRATE"
+    if [ ! -t 0 ]; then
+        echo "ERROR: CAN interface $CAN_PORT is not provisioned for headless startup."
+        echo "Run once from an operator terminal:"
+        echo "  cd $SCRIPT_DIR"
+        echo "  PIPER_CAN_PORT=$CAN_PORT ./install_piper_can_service.sh"
+        exit 1
+    fi
+    echo "CAN is not ready; starting the interactive development-host setup."
+    if [ -n "$CAN_USB_ADDRESS" ]; then
+        bash can_activate.sh "$CAN_PORT" "$CAN_BITRATE" "$CAN_USB_ADDRESS"
+    else
+        bash can_activate.sh "$CAN_PORT" "$CAN_BITRATE"
+    fi
 fi
 
-# 10. Confirm CAN is UP
-if ! ip link show "$CAN_PORT" | grep -q "UP"; then
-    echo "ERROR: CAN interface did not come UP."
+# 9. Confirm CAN is UP at the exact PiPER bitrate.
+if ! can_is_ready; then
+    echo "ERROR: CAN interface did not become UP at $CAN_BITRATE bit/s."
     echo ""
-    echo "Try manually:"
-    echo "  sudo ip link set $CAN_PORT down"
-    echo "  sudo ip link set $CAN_PORT type can bitrate $CAN_BITRATE"
-    echo "  sudo ip link set $CAN_PORT up"
-    echo "  ip -details link show $CAN_PORT"
+    echo "Provision it once with:"
+    echo "  PIPER_CAN_PORT=$CAN_PORT ./install_piper_can_service.sh"
     exit 1
 fi
 
 echo "CAN interface is UP."
 
-# 11. Launch PiPER driver
+# 10. Launch PiPER driver
 echo "Launching PiPER driver."
 echo "ROS_DOMAIN_ID is $ROS_DOMAIN_ID."
 echo "Using UDP-only Fast DDS transport: $FASTRTPS_DEFAULT_PROFILES_FILE"

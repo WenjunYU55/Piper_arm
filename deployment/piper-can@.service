@@ -1,0 +1,17 @@
+[Unit]
+Description=Configure PiPER SocketCAN interface %I at 1 Mbps
+Documentation=https://github.com/WenjunYU55/Piper_arm
+BindsTo=sys-subsystem-net-devices-%i.device
+After=sys-subsystem-net-devices-%i.device
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/ip link set dev %I down
+ExecStart=/usr/sbin/ip link set dev %I type can bitrate 1000000 restart-ms 100
+ExecStart=/usr/sbin/ip link set dev %I up
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
