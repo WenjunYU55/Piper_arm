@@ -8,6 +8,78 @@ cd /home/prl/Piper_arm
 
 ## Headless autonomous mission
 
+### Mission coordinator node
+
+`target_scan_mission` is the coordinator for the complete automated scan. The
+supported entry point is `run_target_scan_mission.sh`; it launches
+`/target_scan_mission`, owns the driver/camera/perception/planning child
+processes, and serves the `/piper/run_target_scan` action used by the GUI and
+tracked-robot gateway.
+
+Start the coordinator in proposal-only mode (no real arm enable or motion):
+
+```bash
+./run_target_scan_mission.sh
+```
+
+Start the coordinator for the qualified real-arm workflow:
+
+```bash
+PIPER_MISSION_ENABLE_REAL_MOTION=1 \
+PIPER_MISSION_SPEEDS_QUALIFIED=1 \
+./run_target_scan_mission.sh
+```
+
+For a supervised 5% commissioning run, override both speed classes explicitly:
+
+```bash
+PIPER_MISSION_ENABLE_REAL_MOTION=1 \
+PIPER_MISSION_SPEEDS_QUALIFIED=1 \
+PIPER_MISSION_FREE_MOTION_SPEED_PERCENT=5 \
+PIPER_MISSION_CONTACT_SPEED_PERCENT=5 \
+./run_target_scan_mission.sh
+```
+
+The direct ROS launch equivalent for proposal-only operation is:
+
+```bash
+source ./source_piper_foxy_environment.sh
+export ROS_DOMAIN_ID=42
+export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/fastdds_gui_udp_only.xml"
+export RMW_FASTRTPS_USE_QOS_FROM_XML=0
+export ROS_LOCALHOST_ONLY=0
+
+ros2 launch piper_mobile_manipulation target_scan_mission.launch.py \
+  project_root:="$PWD" \
+  manage_processes:=true \
+  enable_real_arm_motion:=false \
+  motion_speed_profile_qualified:=false \
+  require_gateway_heartbeat:=false \
+  mission_spool_root:=/tmp/piper_target_scan_missions
+```
+
+Verify the coordinator and its action server from another terminal using the
+same environment:
+
+```bash
+source ./source_piper_foxy_environment.sh
+export ROS_DOMAIN_ID=42
+export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/fastdds_gui_udp_only.xml"
+export RMW_FASTRTPS_USE_QOS_FROM_XML=0
+export ROS_LOCALHOST_ONLY=0
+
+ros2 node list --no-daemon | rg '^/target_scan_mission$'
+ros2 action list -t | rg '^/piper/run_target_scan'
+```
+
+For proposal-only or never-enabled operation, stop the coordinator with
+`Ctrl+C` in its launch terminal. During real-arm operation, do not stop that
+terminal until the mission reports a terminal result with
+`safe_shutdown=true`: the coordinator owns the driver process. If home or
+disable cannot be proved and the result is `NEEDS_OPERATOR`, leave the
+coordinator, driver, and GUI running so the enabled hold and feedback remain
+available for operator recovery.
+
 Same-computer deployment:
 
 ```bash
@@ -89,15 +161,11 @@ operator-selected compact target `[-0.008, 0.0, -0.010, 0.017, 0.457, 0.035]`
 at 5%, received disable success, and the camera/perception, driver, TF,
 Tesseract, workflow, executor, and GUI processes were stopped.
 
-The local `main` baseline for this implementation is:
+The pushed `main` baseline for this implementation is:
 
 ```text
-5ebd8e8 Stabilize supervised 13-view scan pipeline
+d738a78 Complete automated 13-view target scan workflow
 ```
-
-The autonomous mission changes described above are working-tree changes until
-they are reviewed, committed, and pushed; do not infer remote GitHub state from
-this operator document.
 
 ## Safety rules
 
