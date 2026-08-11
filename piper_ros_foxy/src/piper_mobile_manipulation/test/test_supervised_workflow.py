@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 from piper_mobile_manipulation.supervised_workflow import (
@@ -6,6 +7,7 @@ from piper_mobile_manipulation.supervised_workflow import (
     cloud_model,
     corroborated_target_motion_rejection,
     heavy_refinement_status_action,
+    semantic_scene_correlation_rejection,
     occlusion_capture_rejection,
     should_cache_capture_cloud,
     tracking_allows_target_motion_check,
@@ -18,6 +20,117 @@ from piper_mobile_manipulation.supervised_cube_workflow_node import (
 
 def p(x, y, z):
     return SimpleNamespace(x=x, y=y, z=z)
+
+
+def stamped_scene(sec, nanosec):
+    return SimpleNamespace(header=SimpleNamespace(
+        stamp=SimpleNamespace(sec=sec, nanosec=nanosec)))
+
+
+def test_occlusion_probe_requires_exact_request_and_image_stamp():
+    status = {
+        'state': 'published',
+        'request_id': 'probe-1',
+        'image_stamp': {'sec': 12, 'nanosec': 34},
+    }
+
+    assert semantic_scene_correlation_rejection(
+        'probe-1', status, stamped_scene(12, 34)) == ''
+    assert 'not request-correlated' in semantic_scene_correlation_rejection(
+        'probe-2', status, stamped_scene(12, 34))
+    assert 'does not match' in semantic_scene_correlation_rejection(
+        'probe-1', status, stamped_scene(12, 35))
+
+
+def test_occlusion_probe_never_treats_target_missing_result_as_clear():
+    status = {
+        'state': 'worker_result_rejected',
+        'request_id': 'probe-1',
+        'worker_status': 'target_mask_missing',
+        'image_stamp': {'sec': 12, 'nanosec': 34},
+    }
+
+    assert 'not a published target result' in semantic_scene_correlation_rejection(
+        'probe-1', status, stamped_scene(12, 34))
+
+
+def test_workflow_rejects_correlated_target_missing_occlusion_probe():
+    aborted = []
+    workflow = SimpleNamespace(
+        state='INITIALIZING',
+        occlusion_probe_request_id='probe-1',
+        occlusion_probe_status=None,
+        occlusion_probe_waiting_retry=False,
+        occlusion_probe_attempt=1,
+        parse=lambda msg: json.loads(msg.data),
+        abort=lambda reason: aborted.append(reason),
+        publish_status=lambda _reason: None,
+        mark=lambda _key: None,
+    )
+    message = SimpleNamespace(data=json.dumps({
+        'state': 'worker_result_rejected',
+        'request_id': 'probe-1',
+        'worker_status': 'target_mask_missing',
+    }))
+
+    SupervisedCubeWorkflowNode.heavy_refresh_status_cb(workflow, message)
+
+    assert aborted == [
+        'dedicated occlusion probe could not re-detect the locked target']
+
+
+def test_workflow_accepts_only_correlated_published_occlusion_probe():
+    marked = []
+    workflow = SimpleNamespace(
+        state='INITIALIZING',
+        occlusion_probe_request_id='probe-1',
+        occlusion_probe_status=None,
+        occlusion_probe_waiting_retry=False,
+        occlusion_probe_attempt=1,
+        parse=lambda msg: json.loads(msg.data),
+        abort=lambda _reason: None,
+        publish_status=lambda _reason: None,
+        mark=lambda key: marked.append(key),
+        obstacles=None,
+        cache_correlated_probe_scene=lambda _scene: None,
+    )
+    old = SimpleNamespace(data=json.dumps({
+        'state': 'published', 'request_id': 'acquisition-old',
+        'image_stamp': {'sec': 12, 'nanosec': 33},
+    }))
+    current = SimpleNamespace(data=json.dumps({
+        'state': 'published', 'request_id': 'probe-1',
+        'image_stamp': {'sec': 12, 'nanosec': 34},
+    }))
+
+    SupervisedCubeWorkflowNode.heavy_refresh_status_cb(workflow, old)
+    assert workflow.occlusion_probe_status is None
+    SupervisedCubeWorkflowNode.heavy_refresh_status_cb(workflow, current)
+
+    assert workflow.occlusion_probe_status['request_id'] == 'probe-1'
+    assert marked == ['occlusion_probe']
+
+
+def test_correlated_probe_scene_is_cached_against_live_overwrite():
+    marked = []
+    workflow = SimpleNamespace(
+        occlusion_probe_request_id='probe-1',
+        occlusion_probe_status={
+            'state': 'published',
+            'request_id': 'probe-1',
+            'image_stamp': {'sec': 12, 'nanosec': 34},
+        },
+        occlusion_probe_scene=None,
+        mark=lambda key: marked.append(key),
+    )
+    exact = stamped_scene(12, 34)
+    newer_live = stamped_scene(12, 35)
+
+    SupervisedCubeWorkflowNode.cache_correlated_probe_scene(workflow, exact)
+    SupervisedCubeWorkflowNode.cache_correlated_probe_scene(workflow, newer_live)
+
+    assert workflow.occlusion_probe_scene is exact
+    assert marked == ['occlusion_probe_scene']
 
 
 def test_moving_target_mode_keeps_pre_scan_lock_strict_but_allows_scan_motion():
@@ -46,6 +159,8 @@ def config():
         workspace_x_min=0.10, workspace_x_max=0.70,
         workspace_y_min=-0.40, workspace_y_max=0.40,
         workspace_z_min=0.02, workspace_z_max=0.60,
+        enforce_static_workspace=False,
+        require_observed_drop_support=False,
     )
 
 
@@ -77,11 +192,32 @@ def test_obstacle_inside_target_clearance_is_rejected():
     assert not plan['valid']
 
 
-def test_obstacle_outside_workspace_is_rejected():
+def test_dynamic_planning_does_not_reject_a_static_workspace_box():
     item = obstacle(center=(0.755, 0.16, 0.26))
     plan = choose_removal_plan(item, (0.55, 0.0, 0.05), [item], config())
-    assert not plan['valid']
-    assert plan['reason'] == 'obstacle center is outside configured workspace'
+    assert plan['valid']
+
+
+def test_pick_requires_and_records_observed_flat_drop_support():
+    item = obstacle(center=(0.40, 0.0, 0.05))
+    values = config()
+    values.update({
+        'require_observed_drop_support': True,
+        'drop_support_radius_m': 0.04,
+        'drop_support_min_points': 8,
+        'drop_support_max_stddev_m': 0.004,
+    })
+    support = [
+        (0.52 + x * 0.01, 0.20 + y * 0.01, 0.02)
+        for x in range(-6, 7) for y in range(-6, 7)
+    ]
+
+    plan = choose_removal_plan(
+        item, (0.30, 0.0, 0.05), [item], values, support)
+
+    assert plan['valid']
+    assert plan['action'] == 'pick_and_place'
+    assert plan['drop_support_verified']
 
 
 def test_cloud_model_rejects_outlier_for_center():

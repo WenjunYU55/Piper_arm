@@ -66,6 +66,14 @@ case "$preset" in
 esac
 
 configured=false
+camera_param() {
+  # Foxy's direct-discovery parameter CLI can ignore --spin-time while the
+  # target node is still starting and grow without bound while deserializing
+  # the graph.  Keep every transaction OS-bounded; the outer loop retries once
+  # /camera/camera has opened the device and declared its live sensor options.
+  timeout --signal=TERM --kill-after=1s 2s \
+    ros2 param "$@"
+}
 for _ in $(seq 1 40); do
   if ! kill -0 "$launch_pid" 2>/dev/null; then
     wait "$launch_pid"
@@ -75,16 +83,16 @@ for _ in $(seq 1 40); do
   # loopback-only Fast DDS profile was selected.  Such a daemon cannot see the
   # camera even though every current-run participant can.  Use bounded direct
   # discovery for this safety-critical startup transaction.
-  if ros2 param set --no-daemon --spin-time 0.5 \
+  if camera_param set --no-daemon --spin-time 0.5 \
        /camera/camera depth_module.visual_preset "$preset" >/dev/null 2>&1 &&
-     ros2 param set --no-daemon --spin-time 0.5 \
+     camera_param set --no-daemon --spin-time 0.5 \
        /camera/camera depth_module.global_time_enabled true >/dev/null 2>&1 &&
-     ros2 param set --no-daemon --spin-time 0.5 \
+     camera_param set --no-daemon --spin-time 0.5 \
        /camera/camera rgb_camera.global_time_enabled true >/dev/null 2>&1 &&
-     ros2 param get --no-daemon --spin-time 0.5 \
+     camera_param get --no-daemon --spin-time 0.5 \
        /camera/camera depth_module.global_time_enabled 2>/dev/null |
        grep -q 'Boolean value is: True' &&
-     ros2 param get --no-daemon --spin-time 0.5 \
+     camera_param get --no-daemon --spin-time 0.5 \
        /camera/camera rgb_camera.global_time_enabled 2>/dev/null |
        grep -q 'Boolean value is: True'; then
     configured=true
@@ -100,7 +108,7 @@ if [[ "$configured" != true ]]; then
 fi
 
 echo "Applied L515 visual preset $(
-  ros2 param get --no-daemon --spin-time 0.5 \
+  camera_param get --no-daemon --spin-time 0.5 \
     /camera/camera depth_module.visual_preset |
     sed 's/^Integer value is: //')."
 echo "Enabled host-corrected global timestamps for L515 depth and RGB streams."

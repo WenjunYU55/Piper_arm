@@ -1,4 +1,5 @@
 from pathlib import Path
+import math
 import xml.etree.ElementTree as ET
 
 import pytest
@@ -11,7 +12,7 @@ def test_builder_loads_production_robot_model_and_adds_camera_frame(tmp_path):
     root = Path(__file__).resolve().parents[4]
     xacro = root / 'piper_ros_foxy/src/piper_description/urdf/piper_description.xacro'
     calibration = (
-        root / 'L515_camera/calibration/hand_eye/session_20260701_local/'
+        root / 'L515_camera/calibration/hand_eye/session_20260808_straight_mount/'
         'calibration_result.yaml')
     manifest = tmp_path / 'manifest.yaml'
     manifest.write_text(yaml.safe_dump({
@@ -30,6 +31,10 @@ def test_builder_loads_production_robot_model_and_adds_camera_frame(tmp_path):
         joint.get('name'): joint for joint in tree.getroot().findall('joint')
     }
     assert joints['joint2'].find('limit').get('lower') == '-0.044796192'
+    assert math.isclose(
+        float(joints['joint6'].find('limit').get('lower')), -math.pi)
+    assert math.isclose(
+        float(joints['joint6'].find('limit').get('upper')), math.pi)
     output_text = output.read_text(encoding='utf-8')
     assert '<transmission' not in output_text
     assert '<gazebo' not in output_text
@@ -50,7 +55,7 @@ def test_builder_adds_validated_attached_envelope(tmp_path):
     output = tmp_path / 'piper.urdf'
     build_planning_urdf(
         root / 'piper_ros_foxy/src/piper_description/urdf/piper_description.xacro',
-        root / 'L515_camera/calibration/hand_eye/session_20260701_local/'
+        root / 'L515_camera/calibration/hand_eye/session_20260808_straight_mount/'
         'calibration_result.yaml',
         manifest,
         output,
@@ -77,7 +82,7 @@ def test_builder_rejects_nonpositive_envelope_size(tmp_path, size):
     with pytest.raises(ValueError, match='size_m must be positive'):
         build_planning_urdf(
             root / 'piper_ros_foxy/src/piper_description/urdf/piper_description.xacro',
-            root / 'L515_camera/calibration/hand_eye/session_20260701_local/'
+            root / 'L515_camera/calibration/hand_eye/session_20260808_straight_mount/'
             'calibration_result.yaml',
             manifest,
             tmp_path / 'piper.urdf',

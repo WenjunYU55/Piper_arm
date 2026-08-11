@@ -21,6 +21,8 @@ def canonical_label(label):
     words = set(normalized.replace('(', ' ').replace(')', ' ').split())
     if 'pen' in words or 'marker' in words:
         return 'pen'
+    if 'stick' in words:
+        return 'stick'
     return normalized
 
 
@@ -93,6 +95,45 @@ def project_instance(mask, depth_m, camera_matrix, config):
     bounds_min = np.percentile(points, low, axis=0)
     bounds_max = np.percentile(points, high, axis=0)
     return centroid, bounds_min, bounds_max, ratio, count
+
+
+def target_occlusion_evidence(target_mask, obstacle_mask, depth_m,
+                              minimum_depth_delta_m=0.010):
+    """Measure whether an obstacle occupies the target's image support.
+
+    Instance masks cannot overlap by construction, so use the visible target
+    bounding rectangle as the conservative support that the hidden surface
+    would occupy.  Contact is still authorized only after this measurement is
+    repeated in a second request-correlated observation.
+    """
+    target = np.asarray(target_mask, dtype=bool)
+    obstacle = np.asarray(obstacle_mask, dtype=bool)
+    depth = np.asarray(depth_m, dtype=np.float64)
+    if target.shape != obstacle.shape or target.shape != depth.shape:
+        raise ValueError('occlusion_evidence_shape_mismatch')
+    target_pixels = np.argwhere(target)
+    if not len(target_pixels):
+        raise ValueError('target_mask_empty')
+    obstacle_count = int(np.count_nonzero(obstacle))
+    if not obstacle_count:
+        return 0.0, 0.0
+    top, left = np.min(target_pixels, axis=0)
+    bottom, right = np.max(target_pixels, axis=0)
+    support = np.zeros(target.shape, dtype=bool)
+    support[top:bottom + 1, left:right + 1] = True
+    overlap = obstacle & support
+    overlap_count = int(np.count_nonzero(overlap))
+    support_count = int(np.count_nonzero(support))
+    overlap_ratio = overlap_count / float(max(1, support_count))
+    valid_target = target & np.isfinite(depth) & (depth > 0.0)
+    valid_overlap = overlap & np.isfinite(depth) & (depth > 0.0)
+    if not np.any(valid_target) or not np.any(valid_overlap):
+        return float(overlap_ratio), 0.0
+    target_depth = float(np.median(depth[valid_target]))
+    closer = depth[valid_overlap] < (
+        target_depth - float(minimum_depth_delta_m))
+    closer_ratio = int(np.count_nonzero(closer)) / float(max(1, support_count))
+    return float(overlap_ratio), float(closer_ratio)
 
 
 def transform_points(points, translation, quaternion):

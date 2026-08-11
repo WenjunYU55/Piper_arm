@@ -32,6 +32,49 @@ def synchronized_bundle_rejection(
     return ''
 
 
+def capture_diagnostic_rejection(
+        quality, quality_age_sec, occlusion, occlusion_age_sec,
+        maximum_age_sec=1.0, minimum_quality_score=0.65):
+    """Require one fresh GOOD/CLEAR visual observation before persistence."""
+    if not isinstance(quality, dict):
+        return 'QUALITY_REJECTED: scan quality is missing'
+    try:
+        quality_age = float(quality_age_sec)
+    except (TypeError, ValueError):
+        quality_age = math.inf
+    if (
+            not math.isfinite(quality_age) or quality_age < 0.0
+            or quality_age > float(maximum_age_sec)):
+        return 'QUALITY_REJECTED: scan quality is stale'
+    label = str(quality.get('quality_label', quality.get('status', ''))).upper()
+    try:
+        score = float(quality.get('quality_score', quality.get('score', 0.0)))
+    except (TypeError, ValueError):
+        score = math.nan
+    if quality.get('target_valid') is not True:
+        return 'QUALITY_REJECTED: target is not valid in the settled frame'
+    if (
+            label != 'GOOD' or not math.isfinite(score)
+            or score < float(minimum_quality_score)):
+        return (
+            'QUALITY_REJECTED: quality %s %.3f is below GOOD %.3f'
+            % (label or 'MISSING', score, float(minimum_quality_score)))
+    if not isinstance(occlusion, dict):
+        return 'OCCLUSION_REJECTED: occlusion evidence is missing'
+    try:
+        occlusion_age = float(occlusion_age_sec)
+    except (TypeError, ValueError):
+        occlusion_age = math.inf
+    if (
+            not math.isfinite(occlusion_age) or occlusion_age < 0.0
+            or occlusion_age > float(maximum_age_sec)):
+        return 'OCCLUSION_REJECTED: occlusion evidence is stale'
+    state = str(occlusion.get('occlusion_state', 'UNKNOWN')).upper()
+    if state != 'CLEAR':
+        return 'OCCLUSION_REJECTED: settled target view is %s' % state
+    return ''
+
+
 def depth_millimetres(depth, encoding):
     """Return a lossless uint16 depth image in millimetres for normal L515 encodings."""
     values = np.asarray(depth)

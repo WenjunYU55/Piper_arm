@@ -4,7 +4,7 @@
 
 The production entry point is the typed ROS 2 action `/piper/run_target_scan`.
 It accepts one labelled rough target pose, runs bounded acquisition and a
-13-view scan, returns to the approved home pose, proves a settled current-pose
+adaptive 8-to-24-view feature-driven scan, returns to the approved home pose, proves a settled current-pose
 hold, disables the motors, stops every PiPER-owned child, and only then reports
 a successful dataset result. The GUI now opens with a separate **Automatic
 Scan** tab: after entering rough XYZ, one button submits the whole mission
@@ -39,6 +39,9 @@ qualification; a hand/person is always a terminal blocker.
 
 For the current whole-system architecture, validated behavior, limitations, safety boundaries, and
 recommended continuation point, see [`SYSTEM_HANDOFF.md`](SYSTEM_HANDOFF.md).
+
+For the durable product goal, milestone status, definition of done, and required next work, see
+[`docs/ai/70-roadmap.yaml`](docs/ai/70-roadmap.yaml).
 
 For a fresh machine, runtime commands, generated-asset policy, and CPU/GPU/Jetson selection, see
 [`CLEAN_INSTALL.md`](CLEAN_INSTALL.md).
@@ -103,6 +106,8 @@ Real-arm convenience launchers are included as explicit `.sh` / `.py` tools only
 - `calibrate_bounds.sh` / `piper_calibrate_bounds.py` records measured joint limits into `piper_joint_bounds.json`.
 - `calibrate_joint6_zero.sh` / `piper_joint6_zero.py` diagnoses joint-six feedback and, only with
   `--calibrate` plus two typed confirmations, writes the physically aligned J6 position as controller zero.
+  The software J6 range is `[-pi,+pi]`; a neutral error must be corrected with this controller procedure,
+  not with a camera TF, URDF-origin, or one-sided command offset.
 - `L515_camera/run_supervised_viewpoint_execution.sh` starts a separate proposal-first scan executor.
   It has no joint-command publisher by default; real motion requires launch opt-in, an exact fresh-plan
   approval, healthy tracking/obstacles/workflow, and a separately enabled arm. See `OPERATOR_COMMANDS.md`.
@@ -127,11 +132,17 @@ correlated 13-view request, which requires a separate exact confirmation. There 
 
 Automation speed is now selected in the GUI from 1 through 100 percent, default 5, for both rough
 acquisition and the later scan. The executor clamps only to the PiPER SDK's 1-100 percent range.
-It now creates a hash-bound, collision-validated all-six-joint SDK MoveJ target path and issues one
-arm-only target per viewpoint. A folded acquisition start may use one separately proven bootstrap
-target first. Dense collision samples are validation-only and are never sent to the arm. PiPER
+It creates hash-bound, collision-validated all-six-joint SDK MoveJ target paths for acquisition and
+scan motion and issues one arm-only target per viewpoint. A folded acquisition start may use one
+separately proven bootstrap target first. Dedicated zero-capture RETURN_HOME stages are intentionally
+different: the operator-confirmed supported fold is sent as one direct configured joint target with
+robot self-collision validation explicitly exempted. The exact CAD-derived installed holder/L515
+envelope must still retain at least 5 mm support-plane/external clearance at the measured start and
+every dense path sample. Hard/controller limits, exact start/goal hashes, fresh feedback, per-motor
+health, convergence, final hold and disable remain mandatory. Dense validation samples are validation-only and
+are never sent to the arm. PiPER
 MoveJ uses aggregate speed rather than Tesseract qdot/qddot, and automation cannot command the
-gripper. The packages build, 258 focused tests and both rootless collision qualifications pass.
+gripper. The packages build, 324 focused tests and both rootless command-free qualifications pass.
 The target-only adapter completed the 13-view physical acceptance at 5 percent; higher-speed
 dynamics remain unqualified. At every
 accepted settled scan viewpoint, the supervised stack additionally records synchronized RGB, raw

@@ -120,6 +120,11 @@ def test_automatic_scan_is_a_separate_one_start_button_tab():
         Path(__file__).resolve().parent / 'piper_gui_native.py'
     ).read_text(encoding='utf-8')
     assert 'notebook.add(automatic, text="Automatic Scan")' in source
+    automatic = source.split('def _build_automatic_scan', 1)[1].split(
+        'def _build_manual', 1)[0]
+    assert 'textvariable=self.mission_label_var' in automatic
+    assert 'open-vocabulary profile' in automatic
+    assert 'rough green-cube coordinate' not in automatic
     assert 'text="Start Complete Automated Scan"' in source
     assert 'command=self.start_automated_scan' in source
     assert 'text="Acquire & Scan"' in source
@@ -469,6 +474,13 @@ def test_gui_phase_and_timeout_contracts_are_explicit():
     assert MULTIVIEW_PLAN_TIMEOUT_SEC == 185.0
 
 
+def test_gui_joint6_fallback_uses_full_turn_limit():
+    source = (
+        Path(__file__).resolve().parent / 'piper_gui_native.py'
+    ).read_text(encoding='utf-8')
+    assert '("joint6", -math.pi, math.pi, "rad")' in source
+
+
 def test_step2_timeout_uses_fresh_clients_and_preserves_exact_retry():
     source = (
         Path(__file__).resolve().parent / 'piper_gui_native.py'
@@ -557,8 +569,10 @@ def test_disable_requires_an_acknowledged_settled_current_feedback_hold():
         'def cancel_cb(self, _request, response):', 1)[1].split(
             'def refresh_cb(self, _request, response):', 1)[0]
     assert 'held = self.publish_hold()' in inactive_cancel
-    assert 'self.try_start_abort_return(' in inactive_cancel
-    assert 'approved-path return to configured home' in inactive_cancel
+    assert 'dedicated current-state return-home replanning' in inactive_cancel
+    assert 'self.try_start_abort_return(' not in inactive_cancel
+    assert 'approved-path retrace to plan start started' not in inactive_cancel
+    assert 'current joint hold requested before' in inactive_cancel
     assert 'current joint hold requested' in inactive_cancel
 
     assert 'text="Cancel and Home"' in source

@@ -17,7 +17,7 @@ URDF_JOINT_LIMITS = np.asarray([
     [-2.9670, 0.0000],
     [-1.7450, 1.7450],
     [-1.2200, 1.2200],
-    [-2.0944, 2.0944],
+    [-math.pi, math.pi],
 ], dtype=float)
 
 CONTROLLER_COMMAND_LIMITS = URDF_JOINT_LIMITS.copy()
@@ -26,7 +26,37 @@ CONTROLLER_COMMAND_LIMITS[1, 0] = 0.0
 # Feedback at an encoder boundary can quantize just outside the planning
 # model's inclusive limit. This cap is deliberately much smaller than the
 # controller and plan-start tolerances and never expands a planned target.
-MAX_FEEDBACK_LIMIT_TOLERANCE_RAD = 0.002
+MAX_FEEDBACK_LIMIT_TOLERANCE_RAD = 0.005
+MAX_CONFIGURED_HOME_FEEDBACK_LIMIT_TOLERANCE_RAD = 0.3
+
+
+def motor_driver_states(status):
+    """Return the six authoritative FOC enable flags from arm status."""
+    return tuple(bool(getattr(
+        status, 'motor_%d_driver_enabled' % index, False))
+        for index in range(1, 7))
+
+
+def motor_control_reasons(status, require_all_enabled):
+    """Reject invalid, faulted, partial, or unexpectedly disabled power."""
+    if status is None:
+        return ['motor feedback is missing']
+    if not bool(getattr(status, 'motor_feedback_valid', False)):
+        return ['low-speed motor feedback is invalid']
+    states = motor_driver_states(status)
+    faults = tuple(str(value) for value in getattr(
+        status, 'motor_faults', ()) if str(value))
+    watchdog = str(getattr(status, 'motor_watchdog_reason', '')).strip()
+    reasons = []
+    if any(states) and not all(states):
+        reasons.append('partial motor enable flags=%s' % (states,))
+    if faults:
+        reasons.append('motor faults=%s' % ','.join(faults))
+    if watchdog:
+        reasons.append('motor watchdog=%s' % watchdog)
+    if bool(require_all_enabled) and not all(states):
+        reasons.append('all six motor drivers are not enabled')
+    return reasons
 
 
 @dataclass(frozen=True)
@@ -130,6 +160,58 @@ def orbit_camera_view(center, angle_deg, radius_m, camera_pitch_deg):
     return camera, look
 
 
+def camera_target_path_reasons(
+        kinematics, path, target_center, maximum_boresight_deg=20.0,
+        minimum_target_distance_m=0.22):
+    """Reject a scan path that loses or passes too close to its locked target.
+
+    The calibrated color optical frame looks along positive Z.  Checking the
+    densely interpolated SDK path prevents a collision-free joint shortcut
+    from rotating the eye-in-hand camera away between two valid endpoints.
+    """
+    try:
+        target = np.asarray(target_center, dtype=float)
+        maximum = float(maximum_boresight_deg)
+        minimum = float(minimum_target_distance_m)
+    except (TypeError, ValueError):
+        return ['scan target visibility inputs are not numeric']
+    if (
+            target.shape != (3,) or not np.all(np.isfinite(target))
+            or not math.isfinite(maximum) or maximum <= 0.0 or maximum >= 90.0
+            or not math.isfinite(minimum) or minimum <= 0.0):
+        return ['scan target visibility inputs are invalid']
+    if not path:
+        return ['scan target visibility path is empty']
+    for index, joints in enumerate(path):
+        try:
+            transform = np.asarray(
+                kinematics.camera_transform(joints), dtype=float)
+        except (TypeError, ValueError) as exc:
+            return ['scan target visibility FK failed at sample %d: %s'
+                    % (index, exc)]
+        if transform.shape != (4, 4) or not np.all(np.isfinite(transform)):
+            return ['scan target visibility FK is invalid at sample %d' % index]
+        camera = transform[:3, 3]
+        forward = transform[:3, 2]
+        ray = target - camera
+        distance_m = float(np.linalg.norm(ray))
+        forward_norm = float(np.linalg.norm(forward))
+        if distance_m < minimum:
+            return [
+                'scan camera approaches target to %.3fm at sample %d; '
+                'minimum is %.3fm' % (distance_m, index, minimum)]
+        if forward_norm <= 1e-9:
+            return ['scan camera optical axis is invalid at sample %d' % index]
+        cosine = float(np.dot(forward / forward_norm, ray / distance_m))
+        angle_deg = math.degrees(math.acos(float(np.clip(cosine, -1.0, 1.0))))
+        if angle_deg > maximum + 1e-6:
+            return [
+                'scan target leaves the %.1f-degree camera boresight cone '
+                'at sample %d (%.1f degrees)'
+                % (maximum, index, angle_deg)]
+    return []
+
+
 def load_accepted_hand_eye(path):
     with open(path, 'r', encoding='utf-8') as stream:
         data = yaml.safe_load(stream)
@@ -139,6 +221,28 @@ def load_accepted_hand_eye(path):
     if matrix.shape != (4, 4) or not np.all(np.isfinite(matrix)):
         raise ValueError('camera_to_link6 matrix must be finite and 4x4')
     return matrix
+
+
+def powered_motion_calibration_rejection(path):
+    """Fail closed while a mechanically registered TF awaits live validation."""
+    with open(path, 'r', encoding='utf-8') as stream:
+        data = yaml.safe_load(stream)
+    if not isinstance(data, dict) or data.get('status') != 'accepted':
+        return 'hand-eye calibration is not accepted'
+    registration = data.get('mechanical_registration')
+    if registration is None:
+        return ''
+    if not isinstance(registration, dict):
+        return 'hand-eye mechanical_registration is malformed'
+    validation = registration.get('physical_revalidation')
+    if not isinstance(validation, dict):
+        return 'hand-eye mechanical registration has no physical revalidation record'
+    status = str(validation.get('status', '')).strip().lower()
+    if status != 'passed':
+        return (
+            'hand-eye mechanical registration is blocked from powered motion: '
+            'physical revalidation status is %s' % (status or 'missing'))
+    return ''
 
 
 def load_conservative_joint_limits(path):
@@ -208,6 +312,38 @@ def feedback_joint_limit_reasons(joints, limits, tolerance_rad=0.0):
             reasons.append(
                 'current joint%d feedback %.6f is outside configured limits '
                 '[%.6f, %.6f] with %.6f rad encoder tolerance'
+                % (index + 1, value, low, high, tolerance))
+    return reasons
+
+
+def configured_home_feedback_limit_reasons(
+        joints, limits, tolerance_rad=0.0):
+    """Validate only a dedicated direct-home measured start/return path.
+
+    A disabled arm can mechanically relax beyond an inclusive coordinate
+    endpoint.  This operator-qualified allowance is deliberately separate
+    from ordinary acquisition/scan feedback and never widens a command goal.
+    """
+    values = finite_joints(joints)
+    bounds = np.asarray(limits, dtype=float)
+    tolerance = float(tolerance_rad)
+    if (
+            not math.isfinite(tolerance)
+            or tolerance < 0.0
+            or tolerance >
+            MAX_CONFIGURED_HOME_FEEDBACK_LIMIT_TOLERANCE_RAD):
+        raise ValueError(
+            'configured home feedback limit tolerance must be within '
+            '[0.0, %.4f] rad'
+            % MAX_CONFIGURED_HOME_FEEDBACK_LIMIT_TOLERANCE_RAD)
+    reasons = []
+    for index, value in enumerate(values):
+        low = float(bounds[index, 0])
+        high = float(bounds[index, 1])
+        if value < low - tolerance or value > high + tolerance:
+            reasons.append(
+                'current joint%d feedback %.6f is outside configured limits '
+                '[%.6f, %.6f] with %.6f rad direct-home tolerance'
                 % (index + 1, value, low, high, tolerance))
     return reasons
 
@@ -311,6 +447,110 @@ def collision_segments(kinematics, joints):
         for index in range(len(points) - 1)
         if float(np.linalg.norm(points[index + 1] - points[index])) > 1e-7
     ]
+
+
+def attached_box_world_corners(
+        kinematics, joints, origin_link6_m, size_m):
+    """Return the eight corners of one link6-fixed conservative box."""
+    origin = np.asarray(origin_link6_m, dtype=float)
+    size = np.asarray(size_m, dtype=float)
+    if (
+            origin.shape != (3,) or size.shape != (3,)
+            or not np.all(np.isfinite(origin))
+            or not np.all(np.isfinite(size))
+            or np.any(size <= 0.0)):
+        raise ValueError('attached box origin/size must be finite 3-vectors')
+    link6 = np.asarray(
+        kinematics.chain_transforms(joints)[-1], dtype=float)
+    local = np.asarray([
+        [
+            origin[0] + x * size[0] * 0.5,
+            origin[1] + y * size[1] * 0.5,
+            origin[2] + z * size[2] * 0.5,
+            1.0,
+        ]
+        for x in (-1.0, 1.0)
+        for y in (-1.0, 1.0)
+        for z in (-1.0, 1.0)
+    ], dtype=float)
+    return (link6 @ local.T).T[:, :3]
+
+
+def attached_box_external_clearance_reasons(
+        kinematics,
+        joints,
+        origin_link6_m,
+        size_m,
+        obstacle_boxes=(),
+        floor_z_m=0.0,
+        clearance_m=0.005,
+        label='attached tool'):
+    """Check floor/world clearance without applying robot self-collision.
+
+    The detailed physical camera holder is rigidly attached to link6 but is
+    intentionally absent from the compact Foxy link-segment proxy.  Its
+    conservative CAD-derived box still has to remain outside the support plane
+    and observed external boxes, including on the special folded-home path
+    whose known internal self-contact is handled separately.
+    """
+    clearance = float(clearance_m)
+    floor = float(floor_z_m)
+    if (
+            not math.isfinite(clearance) or clearance < 0.0
+            or not math.isfinite(floor)):
+        return ['attached-tool external-clearance inputs are invalid']
+    try:
+        corners = attached_box_world_corners(
+            kinematics, joints, origin_link6_m, size_m)
+    except (IndexError, TypeError, ValueError) as error:
+        return ['%s envelope FK failed: %s' % (str(label), error)]
+    minimum_z = float(np.min(corners[:, 2]))
+    if minimum_z < floor + clearance:
+        return [
+            '%s envelope floor clearance %.6fm is below %.6fm'
+            % (str(label), minimum_z - floor, clearance)
+        ]
+    minimum = np.min(corners, axis=0) - clearance
+    maximum = np.max(corners, axis=0) + clearance
+    for box in obstacle_boxes:
+        box_minimum = np.asarray(box.minimum, dtype=float)
+        box_maximum = np.asarray(box.maximum, dtype=float)
+        if np.all(maximum >= box_minimum) and np.all(
+                box_maximum >= minimum):
+            return [
+                '%s envelope intersects obstacle %s clearance'
+                % (str(label), box.label)
+            ]
+    return []
+
+
+def validate_attached_box_external_clearance_path(
+        kinematics,
+        path,
+        origin_link6_m,
+        size_m,
+        obstacle_boxes=(),
+        floor_z_m=0.0,
+        clearance_m=0.005,
+        label='attached tool'):
+    """Densely validate one link6-fixed envelope along a joint path."""
+    for index, joints in enumerate(path):
+        reasons = attached_box_external_clearance_reasons(
+            kinematics,
+            joints,
+            origin_link6_m,
+            size_m,
+            obstacle_boxes=obstacle_boxes,
+            floor_z_m=floor_z_m,
+            clearance_m=clearance_m,
+            label=label,
+        )
+        if reasons:
+            return [
+                'trajectory step %d: %s' % (index, reason)
+                for reason in reasons
+            ]
+    return []
 
 
 def minimum_self_segment_clearance(kinematics, joints):

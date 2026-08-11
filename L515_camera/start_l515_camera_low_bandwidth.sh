@@ -62,16 +62,23 @@ case "$preset" in
 esac
 
 configured=false
+camera_param() {
+  # Foxy's direct-discovery parameter CLI can ignore its ROS spin bound while
+  # the target node is still starting.  An OS timeout prevents a missing or
+  # late camera from turning parameter discovery into an unbounded process.
+  timeout --signal=TERM --kill-after=1s 2s \
+    ros2 param "$@"
+}
 for _ in $(seq 1 40); do
   if ! kill -0 "$launch_pid" 2>/dev/null; then
     wait "$launch_pid"
     exit $?
   fi
-  if ros2 param set /camera/camera depth_module.visual_preset "$preset" >/dev/null 2>&1 &&
-     ros2 param set /camera/camera depth_module.global_time_enabled true >/dev/null 2>&1 &&
-     ros2 param set /camera/camera rgb_camera.global_time_enabled true >/dev/null 2>&1 &&
-     ros2 param get /camera/camera depth_module.global_time_enabled 2>/dev/null | grep -q 'Boolean value is: True' &&
-     ros2 param get /camera/camera rgb_camera.global_time_enabled 2>/dev/null | grep -q 'Boolean value is: True'; then
+  if camera_param set --no-daemon --spin-time 0.5 /camera/camera depth_module.visual_preset "$preset" >/dev/null 2>&1 &&
+     camera_param set --no-daemon --spin-time 0.5 /camera/camera depth_module.global_time_enabled true >/dev/null 2>&1 &&
+     camera_param set --no-daemon --spin-time 0.5 /camera/camera rgb_camera.global_time_enabled true >/dev/null 2>&1 &&
+     camera_param get --no-daemon --spin-time 0.5 /camera/camera depth_module.global_time_enabled 2>/dev/null | grep -q 'Boolean value is: True' &&
+     camera_param get --no-daemon --spin-time 0.5 /camera/camera rgb_camera.global_time_enabled 2>/dev/null | grep -q 'Boolean value is: True'; then
     configured=true
     break
   fi
@@ -84,6 +91,6 @@ if [[ "$configured" != true ]]; then
   exit 1
 fi
 
-echo "Applied L515 visual preset $(ros2 param get /camera/camera depth_module.visual_preset | sed 's/^Integer value is: //')."
+echo "Applied L515 visual preset $(camera_param get --no-daemon --spin-time 0.5 /camera/camera depth_module.visual_preset | sed 's/^Integer value is: //')."
 echo "Enabled host-corrected global timestamps for L515 depth and RGB streams."
 wait "$launch_pid"

@@ -332,8 +332,8 @@
     <axis
       xyz="0 0 1" />
     <limit
-      lower="-2.0944"
-      upper="2.0944"
+      lower="-3.141592653589793"
+      upper="3.141592653589793"
       effort="100"
       velocity="3" />
   </joint>
@@ -376,23 +376,103 @@
           filename="package://piper_description/meshes/gripper_base.STL" />
       </geometry>
     </collision>
-  </link> 
+  </link>
   <joint
     name="joint6_to_gripper_base"
     type="fixed">
+    <!-- The physical gripper was installed 180 degrees around the wrist flange.
+         Keep joint6/controller coordinates unchanged and encode that permanent
+         mechanical offset on the fixed gripper subtree. -->
     <origin
       xyz="0 0 0"
-      rpy="0 0 0" />
+      rpy="0 0 3.141592653589793" />
     <parent
       link="link6" />
     <child
       link="gripper_base" />
   </joint>
+  <!-- The supplied camera-holder STL is authored in millimetres.  The nominal
+       datum is the close 12 mm arm-anchor pair on the small lug mating face;
+       visual/origin retains the user's locked -4 mm Z placement trim.  The
+       40 mm screw pair through the lower raw circular cradle belongs to the
+       L515; after the installed-model rotations that cradle is the upper camera
+       ring.  The 87.763214 mm lateral tab pair is not the L515 screw datum.  The
+       raw STL correction is followed by the required 180-degree X and then
+       180-degree Z rotation.
+       Keep this link visual-only:
+       planning continues to use the separately qualified conservative L515
+       mount/camera/cable envelopes. -->
+  <link
+    name="camera_holder">
+    <visual>
+      <origin
+        xyz="0.1765 -0.0565314679146 0.0612789535522"
+        rpy="-1.5707963267948966 0 1.5707963267948966" />
+      <geometry>
+        <mesh
+          filename="package://piper_description/meshes/camera_holder.STL"
+          scale="0.001 0.001 0.001" />
+      </geometry>
+      <material
+        name="camera_holder_black">
+        <color
+          rgba="0.025 0.025 0.025 1" />
+      </material>
+    </visual>
+  </link>
+  <joint
+    name="gripper_base_to_camera_holder"
+    type="fixed">
+    <origin
+      xyz="-0.036 0 0.044"
+      rpy="0 0 0" />
+    <parent
+      link="gripper_base" />
+    <child
+      link="camera_holder" />
+  </joint>
+  <!-- Visualization-only L515 CAD body.  Its two 40 mm-spaced rear screw axes
+       align transversely with the matching holder axes at raw Z=56.5/96.5 mm.
+       The operator-confirmed physical rendering retains a +2.5 mm axial
+       seating trim relative to the holder-hole midpoint.  The holder remains
+       fixed: only this child transform places the supplied millimetre camera
+       mesh in the installed upper ring.
+       This link deliberately does not replace the separately calibrated
+       camera_link / optical TF chain or the qualified collision envelopes. -->
+  <link
+    name="l515_visual">
+    <visual>
+      <origin
+        xyz="-0.030503129 -0.030503409 -0.029628554"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://piper_description/meshes/Intel_RealSense_L515_CAD_external.STL"
+          scale="0.001 0.001 0.001" />
+      </geometry>
+      <material
+        name="l515_silver">
+        <color
+          rgba="0.55 0.58 0.62 1" />
+      </material>
+    </visual>
+  </link>
+  <joint
+    name="camera_holder_to_l515_visual"
+    type="fixed">
+    <origin
+      xyz="0.1 0 0"
+      rpy="-3.141592653589793  3.141592653589793 1.5707963267948966" />
+    <parent
+      link="camera_holder" />
+    <child
+      link="l515_visual" />
+  </joint>
   <link
     name="link7">
     <inertial>
       <origin
-        xyz="0.00065123185041968 -0.0491929869131989 0.00972258769184025"
+        xyz="0 -0.0491929869131989 0.00972258769184025"
         rpy="0 0 0" />
       <mass
         value="0.025" />

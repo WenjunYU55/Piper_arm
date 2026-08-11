@@ -41,8 +41,10 @@ from piper_tesseract_foxy.contract import (
     attach_digest,
     ContractError,
     JOINT_NAMES,
+    MAX_CONFIGURED_HOME_START_LIMIT_TOLERANCE_RAD,
     PLAN_KINDS,
     SCHEMA_VERSION,
+    TIMING_POLICY,
     sha256_file,
     Spool,
     validate_response,
@@ -64,6 +66,216 @@ def obstacle_scene_rejection_reason(scene):
     if not instances or invalid:
         return 'obstacle scene is blocked: %s' % scene.blocking_reason
     return None
+
+
+def local_view_frontier_candidates(
+        candidates, start_camera_position, target_center,
+        maximum_angular_step_deg, minimum_angular_step_deg=0.0):
+    """Keep only views reached by one compact target-centred direction step."""
+    start = np.asarray(start_camera_position, dtype=float)
+    center = np.asarray(target_center, dtype=float)
+    maximum = float(maximum_angular_step_deg)
+    minimum = max(0.0, float(minimum_angular_step_deg))
+    if (
+            start.shape != (3,) or center.shape != (3,)
+            or not np.all(np.isfinite(start))
+            or not np.all(np.isfinite(center))
+            or not math.isfinite(maximum) or maximum <= 0.0
+            or not math.isfinite(minimum) or minimum >= maximum):
+        raise ValueError('local view frontier inputs are invalid')
+    reference = start - center
+    reference_norm = float(np.linalg.norm(reference))
+    if reference_norm <= 1e-6:
+        raise ValueError('current camera position coincides with target center')
+    reference /= reference_norm
+    accepted = []
+    for item in candidates:
+        position = np.asarray(item.get('camera_position_m'), dtype=float)
+        if position.shape != (3,) or not np.all(np.isfinite(position)):
+            continue
+        direction = position - center
+        norm = float(np.linalg.norm(direction))
+        if norm <= 1e-6:
+            continue
+        direction /= norm
+        angle = math.degrees(math.acos(float(np.clip(
+            np.dot(reference, direction), -1.0, 1.0))))
+        if minimum - 1e-6 <= angle <= maximum + 1e-6:
+            candidate = dict(item)
+            candidate['_frontier_angle_deg'] = angle
+            accepted.append(candidate)
+    return sorted(
+        accepted,
+        key=lambda item: (
+            -float(item.get('coverage_score', 0.0)),
+            float(item['_frontier_angle_deg']),
+            float(np.linalg.norm(
+                np.asarray(item['camera_position_m'], dtype=float) - start)),
+            int(item['id']),
+        ),
+    )
+
+
+def bounded_current_look_direction(
+        nominal_look_direction, current_look_direction,
+        maximum_offset_deg):
+    """
+    Keep a new view's aim close to the achieved safe wrist orientation.
+
+    Camera position owns surface coverage. Requiring every nearby position to
+    use an exact target-centred orientation can nevertheless force a compact
+    arm into wrist/link self-collision. This spherical interpolation preserves
+    the measured current optical direction whenever it already lies inside the
+    permitted target cone, otherwise it moves only far enough toward the target
+    to meet the configured bound.
+    """
+    nominal = np.asarray(nominal_look_direction, dtype=float)
+    current = np.asarray(current_look_direction, dtype=float)
+    maximum = float(maximum_offset_deg)
+    nominal_norm = float(np.linalg.norm(nominal))
+    current_norm = float(np.linalg.norm(current))
+    if (
+            nominal.shape != (3,) or current.shape != (3,)
+            or not np.all(np.isfinite(nominal))
+            or not np.all(np.isfinite(current))
+            or min(nominal_norm, current_norm) <= 1e-9
+            or not math.isfinite(maximum)
+            or maximum < 0.0 or maximum >= 90.0):
+        raise ValueError('closed-loop aim-relaxation inputs are invalid')
+    nominal /= nominal_norm
+    current /= current_norm
+    angle = math.acos(float(np.clip(np.dot(nominal, current), -1.0, 1.0)))
+    maximum_rad = math.radians(maximum)
+    if angle <= maximum_rad + 1e-12:
+        return current.tolist()
+    # An antiparallel current look cannot occur while the target is inside the
+    # executor's live visibility cone. Retain exact target aim if malformed
+    # upstream state somehow reaches this pure helper.
+    sine = math.sin(angle)
+    if abs(sine) <= 1e-9 or maximum_rad <= 0.0:
+        return nominal.tolist()
+    fraction = maximum_rad / angle
+    relaxed = (
+        math.sin((1.0 - fraction) * angle) / sine * nominal
+        + math.sin(fraction * angle) / sine * current)
+    relaxed /= np.linalg.norm(relaxed)
+    return relaxed.tolist()
+
+
+def relax_closed_loop_candidate_aims(
+        candidates, current_look_direction, maximum_offset_deg):
+    """Return exact request candidates with bounded current-look-biased aim."""
+    relaxed = []
+    for item in candidates:
+        candidate = dict(item)
+        candidate['look_direction'] = bounded_current_look_direction(
+            candidate.get('look_direction'), current_look_direction,
+            maximum_offset_deg)
+        relaxed.append(candidate)
+    return relaxed
+
+
+def balanced_closed_loop_candidates(
+        candidates, start_camera_position, candidate_limit,
+        compact_first=False, meaningful_progress=0.03):
+    """
+    Interleave ambitious coverage views with nearby IK fallbacks.
+
+    Session history deliberately scores distant directions highest.  Taking a
+    prefix of that ordering can remove every pose near the current, already
+    proven reachable configuration before the worker gets a chance to solve
+    IK.  The first observation still alternates compact and ambitious options.
+    Once achieved history identifies a missing feature axis, the worker sees
+    a block of materially advancing candidates before compact non-regressing
+    fallbacks.  This retains IK escape candidates without letting comfortable
+    radius/elevation variants consume the bounded feature-capture budget.
+    """
+    start = np.asarray(start_camera_position, dtype=float)
+    if start.shape != (3,) or not np.all(np.isfinite(start)):
+        raise ValueError('closed-loop camera start is invalid')
+    limit = max(1, int(candidate_limit))
+    if not candidates:
+        return []
+    coverage_order = sorted(
+        (dict(item) for item in candidates),
+        key=lambda item: (
+            -float(item.get('coverage_score', 0.0)),
+            -float(item.get('_frontier_angle_deg', 0.0)),
+            float(np.linalg.norm(
+                np.asarray(item['camera_position_m'], dtype=float) - start)),
+            int(item['id']),
+        ),
+    )
+    leader_position = np.asarray(
+        coverage_order[0]['camera_position_m'], dtype=float)
+    # Planner history provides an objective-specific margin against achieved
+    # coverage.  This admits elevation/radius changes that can escape a hard
+    # IK branch while excluding genuine regression toward an already covered
+    # face.  Legacy/manual candidates without the margin remain unfiltered.
+    progress_candidates = [
+        item for item in coverage_order
+        if 'coverage_progress_score' not in item
+        or float(item['coverage_progress_score']) >= -1e-9
+    ]
+    coverage_order = progress_candidates
+    fallback_order = sorted(
+        (dict(item) for item in progress_candidates),
+        key=lambda item: (
+            float(np.linalg.norm(
+                np.asarray(item['camera_position_m'], dtype=float) - start)),
+            float(np.linalg.norm(
+                np.asarray(item['camera_position_m'], dtype=float)
+                - leader_position)),
+            float(item.get('_frontier_angle_deg', 0.0)),
+            -float(item.get('coverage_score', 0.0)),
+            int(item['id']),
+        ),
+    )
+    has_progress_contract = any(
+        'coverage_progress_score' in item for item in coverage_order)
+    def progress_threshold(item):
+        objective = str(item.get('coverage_objective', ''))
+        if objective in ('positive_y_face', 'negative_y_face'):
+            # scan_session_memory includes 0.02 lateral noise tolerance in the
+            # score, so 0.05 proves at least 0.03 normalized side advance.
+            return 0.05
+        if objective in ('azimuth_span', 'elevation_span'):
+            return 2.0
+        return float(meaningful_progress)
+
+    materially_advancing = [
+        item for item in coverage_order
+        if float(item.get('coverage_progress_score', 0.0))
+        >= progress_threshold(item)
+    ]
+    selected = []
+    selected_ids = set()
+    target_count = min(limit, len(progress_candidates))
+    for coverage, fallback in zip(coverage_order, fallback_order):
+        pair = (
+            (fallback, coverage) if bool(compact_first)
+            else (coverage, fallback))
+        for item in pair:
+            item_id = int(item['id'])
+            if item_id in selected_ids:
+                continue
+            selected.append(item)
+            selected_ids.add(item_id)
+            if len(selected) >= target_count:
+                break
+        if len(selected) >= target_count:
+            break
+    if has_progress_contract and materially_advancing and not compact_first:
+        # Preserve the proven balanced shortlist membership: changing it can
+        # discard the only reachable radius/elevation IK escape.  Reorder that
+        # same bounded set so every materially feature-advancing member is
+        # attempted before near-zero-progress fallbacks.
+        advancing_ids = {int(item['id']) for item in materially_advancing}
+        return (
+            [item for item in selected if int(item['id']) in advancing_ids]
+            + [item for item in selected if int(item['id']) not in advancing_ids]
+        )
+    return selected
 
 
 def select_diverse_smooth_view_path(
@@ -91,7 +303,19 @@ def select_diverse_smooth_view_path(
             start = candidate
 
     selected = []
-    if start is None:
+    if count == 1 and any(
+            'coverage_score' in item for item in remaining):
+        first_index = min(
+            range(len(remaining)),
+            key=lambda index: (
+                -float(remaining[index].get('coverage_score', 0.0)),
+                float(np.linalg.norm(
+                    np.asarray(
+                        remaining[index]['camera_position_m'], dtype=float)
+                    - start)) if start is not None else 0.0,
+                int(remaining[index]['id']),
+            ))
+    elif start is None:
         first_index = min(
             range(len(remaining)),
             key=lambda index: int(remaining[index]['id']))
@@ -144,8 +368,22 @@ def select_diverse_smooth_view_path(
         ordered.append(chosen)
         previous = np.asarray(chosen['camera_position_m'], dtype=float)
 
-    # Preserve all unselected candidates as stable worker fallbacks.
-    return ordered + sorted(remaining, key=lambda item: int(item['id']))
+    # Preserve unselected candidates as worker fallbacks. For a one-view
+    # closed-loop request keep coverage priority first and use camera travel
+    # only as the tie-break; later observations will score the next request.
+    if count == 1 and any('coverage_score' in item for item in remaining):
+        remaining = sorted(
+            remaining,
+            key=lambda item: (
+                -float(item.get('coverage_score', 0.0)),
+                float(np.linalg.norm(
+                    np.asarray(item['camera_position_m'], dtype=float) - start))
+                if start is not None else 0.0,
+                int(item['id']),
+            ))
+    else:
+        remaining = sorted(remaining, key=lambda item: int(item['id']))
+    return ordered + remaining
 
 
 def maximize_successive_view_distance(candidates):
@@ -187,7 +425,7 @@ class TesseractPlanBridge(Node):
             'max_execution_viewpoints': 13,
             'joint_limit_margin_rad': 0.03,
             'trajectory_joint_step_rad': 0.025,
-            'trajectory_command_rate_hz': 100.0,
+            'trajectory_command_rate_hz': 20.0,
             'speed_percent': 5.0,
             'roll_samples_rad': [-2.094395102, -1.047197551, 0.0,
                                  1.047197551, 2.094395102, 3.141592654],
@@ -195,6 +433,18 @@ class TesseractPlanBridge(Node):
             'return_home_positions_rad': [
                 0.000366362, 0.0, 0.0, 0.0, 0.43869236, 0.0,
             ],
+            'closed_loop_one_view': False,
+            # From an achieved pose between fixed 15-degree grid samples, the
+            # next grid neighbor can be only about seven degrees away in 3D
+            # target-direction space at normal elevation. Six degrees admits
+            # that visually distinct neighbor while the
+            # independent pose/look duplicate gate still rejects repeats.
+            'closed_loop_min_view_step_deg': 6.0,
+            'closed_loop_max_view_step_deg': 30.0,
+            'closed_loop_candidate_limit': 36,
+            # Preserve a comfortable achieved wrist aim when the target stays
+            # within this strict subset of the executor's 20-degree cone.
+            'closed_loop_max_aim_offset_deg': 12.0,
             'manipulation_model_qualified': False,
             'debug': True,
         }
@@ -298,6 +548,12 @@ class TesseractPlanBridge(Node):
         self.request_acquisition_service = self.create_service(
             RequestTesseractPlan, '~/request_acquisition_plan',
             self.request_acquisition_plan_cb)
+        self.request_return_home_service = self.create_service(
+            RequestTesseractPlan, '~/request_return_home_plan',
+            self.request_return_home_plan_cb)
+        self.request_startup_home_service = self.create_service(
+            RequestTesseractPlan, '~/request_startup_home_plan',
+            self.request_startup_home_plan_cb)
         self.poll_timer = self.create_timer(0.20, self.poll)
         self.publish_status()
         self.publish_readiness()
@@ -402,18 +658,24 @@ class TesseractPlanBridge(Node):
 
     def snapshot_reasons(
             self, plan_kind='MULTIVIEW_SCAN', require_viewpoints=True,
-            worker_reasons=None):
+            worker_reasons=None, startup_home=False):
         if plan_kind not in PLAN_KINDS:
             return ['unsupported plan kind']
+        if startup_home and plan_kind != 'RETURN_HOME':
+            return ['startup home is RETURN_HOME-only']
         reasons = (
             self.worker_health_reasons()
             if worker_reasons is None else list(worker_reasons))
-        required = ['joints', 'camera_clock']
+        # Dedicated RETURN_HOME plans are direct configured joint targets and
+        # intentionally do not consume perception or collision-scene state.
+        required = ['joints']
+        if plan_kind != 'RETURN_HOME':
+            required.append('camera_clock')
         if plan_kind == 'MULTIVIEW_SCAN':
             required.extend(['tracking', 'obstacles'])
             if require_viewpoints:
                 required.append('scan')
-        elif require_viewpoints:
+        elif plan_kind != 'RETURN_HOME' and require_viewpoints:
             required.append('acquisition_scan')
         for key in required:
             if not self.fresh(key):
@@ -449,7 +711,11 @@ class TesseractPlanBridge(Node):
             elif float(health.measurement_age_sec) > float(
                     self.get_parameter('max_tracking_measurement_age_sec').value):
                 reasons.append('tracking measurement is stale')
-        if self.latest_camera_health is None or not self.latest_camera_health.healthy:
+        if (
+                plan_kind != 'RETURN_HOME'
+                and (
+                    self.latest_camera_health is None
+                    or not self.latest_camera_health.healthy)):
             reasons.append('camera timestamp health is not healthy')
         if plan_kind == 'MULTIVIEW_SCAN':
             obstacle_reason = obstacle_scene_rejection_reason(self.latest_obstacles)
@@ -458,7 +724,7 @@ class TesseractPlanBridge(Node):
         scan = (
             self.latest_scan if plan_kind == 'MULTIVIEW_SCAN'
             else self.latest_acquisition_scan)
-        if require_viewpoints and (
+        if plan_kind != 'RETURN_HOME' and require_viewpoints and (
                 scan is None or scan.get('dry_run') is not True):
             reasons.append('reachable viewpoint source is not explicit dry-run data')
         if plan_kind == 'MULTIVIEW_SCAN' and require_viewpoints:
@@ -492,13 +758,22 @@ class TesseractPlanBridge(Node):
         return self.request_kind_cb(
             'ROUGH_ACQUISITION', request, response)
 
-    def request_kind_cb(self, plan_kind, request, response):
+    def request_return_home_plan_cb(self, request, response):
+        return self.request_kind_cb('RETURN_HOME', request, response)
+
+    def request_startup_home_plan_cb(self, request, response):
+        return self.request_kind_cb(
+            'RETURN_HOME', request, response, startup_home=True)
+
+    def request_kind_cb(
+            self, plan_kind, request, response, startup_home=False):
         if self.pending and not request.force_refresh:
             response.accepted = False
             response.request_id = next(iter(self.pending))
             response.message = 'a Tesseract request is already pending'
             return response
-        reasons = self.snapshot_reasons(plan_kind)
+        reasons = self.snapshot_reasons(
+            plan_kind, startup_home=startup_home)
         if reasons:
             response.accepted = False
             response.request_id = ''
@@ -506,7 +781,13 @@ class TesseractPlanBridge(Node):
             self.set_status('SNAPSHOT_BLOCKED', response.message)
             return response
         try:
-            payload = self.build_request(plan_kind)
+            home_stage = str(getattr(request, 'home_stage', '')).strip()
+            joint_goal = [
+                float(value) for value in
+                getattr(request, 'joint_goal_positions_rad', [])]
+            payload = self.build_request(
+                plan_kind, startup_home=startup_home,
+                home_stage=home_stage, joint_goal=joint_goal)
             self.spool.write('requests', payload['request_id'], payload)
         except (ContractError, KeyError, OSError, TypeError, ValueError) as error:
             response.accepted = False
@@ -524,19 +805,45 @@ class TesseractPlanBridge(Node):
         self.set_status('PLANNING', response.message, payload['request_id'])
         return response
 
-    def build_request(self, plan_kind='MULTIVIEW_SCAN'):
+    def build_request(
+            self, plan_kind='MULTIVIEW_SCAN', startup_home=False,
+            home_stage='', joint_goal=None):
         if plan_kind not in PLAN_KINDS:
             raise ContractError('unsupported plan kind')
+        if startup_home and plan_kind != 'RETURN_HOME':
+            raise ContractError('startup home is RETURN_HOME-only')
+        joint_goal = list(joint_goal or [])
+        if plan_kind != 'RETURN_HOME' and (home_stage or joint_goal):
+            raise ContractError('home-stage overrides are RETURN_HOME-only')
+        if plan_kind == 'RETURN_HOME':
+            home_stage = str(home_stage or 'CONFIGURED_HOME').strip().upper()
+            if home_stage not in (
+                    'CONFIGURED_HOME', 'STARTUP_WRIST', 'ROUGH_HOME',
+                    'STORAGE_WRIST'):
+                raise ContractError('unsupported home stage: %s' % home_stage)
+            if joint_goal and len(joint_goal) != 6:
+                raise ContractError(
+                    'staged home joint goal must contain six positions')
+            if home_stage != 'CONFIGURED_HOME' and len(joint_goal) != 6:
+                raise ContractError(
+                    '%s requires an explicit six-joint goal' % home_stage)
+            if any(not math.isfinite(value) for value in joint_goal):
+                raise ContractError('staged home joint goal is non-finite')
+        else:
+            home_stage = ''
         now_ns = time.time_ns()
         ttl_ns = int(float(self.get_parameter('request_ttl_sec').value) * 1e9)
         joints = [float(value) for value in self.latest_joints.position[:6]]
         scan = (
             self.latest_scan if plan_kind == 'MULTIVIEW_SCAN'
             else self.latest_acquisition_scan)
-        center = self.vector(scan.get('target_object_center'), 'target center')
+        center = (
+            [0.0, 0.0, 0.0]
+            if plan_kind == 'RETURN_HOME'
+            else self.vector(scan.get('target_object_center'), 'target center'))
         provenance = self.target_provenance(scan, plan_kind)
         candidates = []
-        for item in scan.get('viewpoints', []):
+        for item in ([] if plan_kind == 'RETURN_HOME' else scan.get('viewpoints', [])):
             if not isinstance(item, dict) or item.get('reachable') is not True \
                     or item.get('safe') is not True:
                 continue
@@ -548,8 +855,13 @@ class TesseractPlanBridge(Node):
                     item.get('desired_look_at_direction'), 'look direction'),
                 'required_first': bool(
                     plan_kind == 'ROUGH_ACQUISITION'
-                    and item.get('acquisition_look')
-                    in ('center', 'compact_center')),
+                    and item.get('keep_object_centered') is True),
+                'coverage_score': float(
+                    item.get('expected_new_coverage_score', 0.0)),
+                'coverage_objective': str(
+                    item.get('coverage_objective', '')),
+                'coverage_progress_score': float(
+                    item.get('coverage_progress_score', 0.0)),
             })
         configured_maximum = max(
             1, int(self.get_parameter('max_execution_viewpoints').value))
@@ -569,9 +881,15 @@ class TesseractPlanBridge(Node):
             if int(scan.get('remaining_viewpoints', -1)) != remaining_views:
                 raise ContractError('scan session remaining count is inconsistent')
         maximum = (
-            remaining_views if plan_kind == 'MULTIVIEW_SCAN'
-            else min(5, configured_maximum, len(candidates)))
-        minimum = maximum if plan_kind == 'MULTIVIEW_SCAN' else 1
+            (1 if bool(self.get_parameter('closed_loop_one_view').value)
+             else remaining_views) if plan_kind == 'MULTIVIEW_SCAN'
+            else (
+                0 if plan_kind == 'RETURN_HOME'
+                else min(1, configured_maximum, len(candidates))))
+        minimum = maximum if plan_kind in ('MULTIVIEW_SCAN', 'RETURN_HOME') else 1
+        closed_loop_one_view = bool(
+            plan_kind == 'MULTIVIEW_SCAN'
+            and self.get_parameter('closed_loop_one_view').value)
         tracking_scale = (
             float(self.latest_tracking.recommended_speed_scale)
             if self.latest_tracking is not None else 1.0)
@@ -580,21 +898,67 @@ class TesseractPlanBridge(Node):
             plan_kind,
             tracking_scale,
         )
-        candidates = candidates[:max(maximum * 4, maximum)]
         if plan_kind == 'MULTIVIEW_SCAN':
-            current_camera = self.kinematics.camera_transform(joints)[:3, 3]
-            candidates = select_diverse_smooth_view_path(
-                candidates, maximum, current_camera)
-        required_candidates = maximum if plan_kind == 'MULTIVIEW_SCAN' else minimum
+            current_camera_transform = self.kinematics.camera_transform(joints)
+            current_camera = current_camera_transform[:3, 3]
+            current_look = current_camera_transform[:3, 2]
+            if closed_loop_one_view:
+                candidates = local_view_frontier_candidates(
+                    candidates,
+                    current_camera,
+                    center,
+                    self.get_parameter(
+                        'closed_loop_max_view_step_deg').value,
+                    self.get_parameter(
+                        'closed_loop_min_view_step_deg').value,
+                )
+                if not candidates:
+                    raise ContractError(
+                        'no meaningfully distinct safe scan candidate lies '
+                        'within the %.1f-%.1f-degree closed-loop view frontier'
+                        % (
+                            float(self.get_parameter(
+                                'closed_loop_min_view_step_deg').value),
+                            float(self.get_parameter(
+                                'closed_loop_max_view_step_deg').value)))
+            candidate_limit = (
+                max(
+                    20,
+                    int(self.get_parameter(
+                        'closed_loop_candidate_limit').value))
+                if closed_loop_one_view
+                else max(20, maximum * 4, maximum))
+            if closed_loop_one_view:
+                candidates = balanced_closed_loop_candidates(
+                    candidates, current_camera, candidate_limit,
+                    compact_first=(accepted_views == 0))
+                candidates = relax_closed_loop_candidate_aims(
+                    candidates,
+                    current_look,
+                    self.get_parameter(
+                        'closed_loop_max_aim_offset_deg').value,
+                )
+            else:
+                candidates = candidates[:candidate_limit]
+                candidates = select_diverse_smooth_view_path(
+                    candidates, maximum, current_camera)
+        else:
+            candidates = candidates[:max(20, maximum * 4, maximum)]
+        required_candidates = (
+            0 if plan_kind == 'RETURN_HOME'
+            else (maximum if plan_kind == 'MULTIVIEW_SCAN' else minimum))
         if len(candidates) < required_candidates:
             raise ContractError('only %d safe candidates; need at least %d' % (
                 len(candidates), required_candidates))
         observation_mode = (
-            'perception_snapshot'
-            if plan_kind == 'MULTIVIEW_SCAN'
-            else 'bootstrap_static')
+            'bootstrap_static'
+            if plan_kind == 'ROUGH_ACQUISITION'
+            else 'perception_snapshot')
         obstacles = []
-        if observation_mode == 'perception_snapshot':
+        if (
+                plan_kind != 'RETURN_HOME'
+                and observation_mode == 'perception_snapshot'
+                and not startup_home):
             for item in self.latest_obstacles.instances:
                 if not item.valid:
                     raise ContractError('invalid obstacle geometry is present')
@@ -613,8 +977,14 @@ class TesseractPlanBridge(Node):
         identity = {
             'created_at_ns': now_ns,
             'joint_positions': [round(value, 9) for value in joints],
-            'scan_stamp': scan.get('header', {}).get('stamp', {}),
+            'scan_stamp': (
+                scan.get('header', {}).get('stamp', {})
+                if isinstance(scan, dict) else {}),
             'plan_kind': plan_kind,
+            'startup_home': bool(startup_home),
+            'home_stage': home_stage,
+            'joint_goal_positions_rad': [
+                round(value, 9) for value in joint_goal],
             'target_provenance': provenance,
             'boot_id': self.boot_id,
         }
@@ -645,6 +1015,7 @@ class TesseractPlanBridge(Node):
                 'target_center_m': center,
                 'target_provenance': provenance,
                 'observation_mode': observation_mode,
+                'startup_home_static': bool(startup_home),
                 'candidate_views': candidates,
                 'obstacles': obstacles,
             },
@@ -674,6 +1045,13 @@ class TesseractPlanBridge(Node):
                 'position_rad': self.joint_limits.tolist(),
                 'bootstrap_start_limit_tolerance_rad': (
                     0.04 if plan_kind == 'ROUGH_ACQUISITION' else 0.0),
+                # A disabled arm can relax slightly beyond an inclusive
+                # controller-coordinate boundary at the configured storage
+                # fold.  Only a dedicated direct RETURN_HOME request may
+                # carry that measured start back inside the exact limits.
+                'configured_home_start_limit_tolerance_rad': (
+                    MAX_CONFIGURED_HOME_START_LIMIT_TOLERANCE_RAD
+                    if plan_kind == 'RETURN_HOME' else 0.0),
                 'joint_margin_rad': float(
                     self.get_parameter('joint_limit_margin_rad').value),
                 'max_velocity_rad_s': [
@@ -695,24 +1073,48 @@ class TesseractPlanBridge(Node):
                     'roll_samples_rad').value],
                 'min_viewpoints': minimum,
                 'max_viewpoints': maximum,
+                # Automatic one-view transactions always hold for a fresh
+                # measured-coverage decision and later use a separate direct
+                # configured-home request. Do not reject an otherwise safe
+                # capture because an unused embedded contingency home cannot
+                # represent the intentional storage-fold collision bypass.
+                'include_return_home': bool(
+                    plan_kind == 'RETURN_HOME'
+                    or (plan_kind == 'MULTIVIEW_SCAN'
+                        and not closed_loop_one_view)),
                 'max_execution_joint_step_rad': float(
                     self.get_parameter('trajectory_joint_step_rad').value),
                 'effective_speed_percent': execution_speed,
                 'command_rate_hz': float(
                     self.get_parameter('trajectory_command_rate_hz').value),
-                'timing_policy': 'sdk_movej_targets_v1',
+                'timing_policy': TIMING_POLICY,
                 'joint_specific_costs': {},
                 'return_home_positions_rad': (
-                    [float(value) for value in self.get_parameter(
-                        'return_home_positions_rad').value]
-                    if plan_kind == 'MULTIVIEW_SCAN' else []
+                    (
+                        [float(value) for value in joint_goal]
+                        if joint_goal else
+                        [float(value) for value in self.get_parameter(
+                            'return_home_positions_rad').value]
+                    )
+                    if plan_kind in ('MULTIVIEW_SCAN', 'RETURN_HOME') else []
                 ),
+                'home_stage': home_stage,
             },
         }
         return attach_digest(payload, 'request_sha256')
 
     @staticmethod
     def target_provenance(scan, plan_kind):
+        if plan_kind == 'RETURN_HOME':
+            now_ns = time.time_ns()
+            return {
+                'source': 'configured_home',
+                'frame_id': 'base_link',
+                'stamp': {
+                    'sec': int(now_ns // 1_000_000_000),
+                    'nanosec': int(now_ns % 1_000_000_000),
+                },
+            }
         header = scan.get('header', {}) if isinstance(scan, dict) else {}
         stamp = header.get('stamp', {})
         if plan_kind == 'MULTIVIEW_SCAN':
@@ -861,6 +1263,16 @@ class TesseractPlanBridge(Node):
                 float(segment['bootstrap_recovery_delta_rad'])
                 if recovery_used else 0.0)
             evidence = {
+                'startup_home_static': bool(
+                    segment.get('startup_home_static', False)),
+                'configured_home_direct_joint_move': bool(
+                    segment.get('configured_home_direct_joint_move', False)),
+                'configured_home_goal_positions_rad': segment.get(
+                    'configured_home_goal_positions_rad', []),
+                'collision_validation_bypassed': bool(
+                    segment.get('collision_validation_bypassed', False)),
+                'home_stage': str(segment.get('home_stage', '')),
+                'validation': str(segment.get('validation', '')),
                 'used': recovery_used,
                 'minimum_clearance_m': (
                     float(segment['bootstrap_recovery_minimum_clearance_m'])
@@ -880,6 +1292,24 @@ class TesseractPlanBridge(Node):
                 'delta_rad': (
                     segment.get('bootstrap_recovery_deltas_rad', [])
                     if recovery_used else []),
+                'powered_start': {
+                    'used': bool(segment.get(
+                        'powered_start_recovery_used', False)),
+                    'end_point': int(segment.get(
+                        'powered_start_recovery_end_point', -1)),
+                    'joint_numbers': segment.get(
+                        'powered_start_recovery_joints', []),
+                    'delta_rad': segment.get(
+                        'powered_start_recovery_deltas_rad', []),
+                    'minimum_clearance_m': segment.get(
+                        'powered_start_recovery_minimum_clearance_m'),
+                    'limiting_link_pair': segment.get(
+                        'powered_start_recovery_limiting_link_pair', ''),
+                    'validation_samples': int(segment.get(
+                        'powered_start_recovery_samples', 0)),
+                    'start_contacts': segment.get(
+                        'powered_start_contacts', []),
+                },
             }
             msg.bootstrap_recovery_evidence_json.append(
                 json.dumps(evidence, sort_keys=True, separators=(',', ':')))

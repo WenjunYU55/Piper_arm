@@ -15,7 +15,7 @@ COPY piper_ros_foxy/src/piper_tesseract_foxy /src/piper_tesseract_foxy
 RUN /opt/tesseract/bin/pip install --no-cache-dir --no-deps /src/piper_tesseract_foxy
 
 COPY piper_ros_foxy/src/piper_description /models/share/piper_description
-COPY L515_camera/calibration/hand_eye/session_20260701_local/calibration_result.yaml \
+COPY L515_camera/calibration/hand_eye/session_20260808_straight_mount/calibration_result.yaml \
      /models/calibration_result.yaml
 COPY piper_ros_foxy/src/piper_tesseract_foxy/model/piper.srdf /models/piper.srdf
 COPY piper_ros_foxy/src/piper_tesseract_foxy/model/collision_model.yaml \

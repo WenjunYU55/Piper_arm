@@ -36,11 +36,20 @@ MAX_VIEWS="${PIPER_VIEWPOINT_MAX_VIEWS:-13}"
 MIN_VIEWS="${PIPER_VIEWPOINT_MIN_VIEWS:-13}"
 AUTO_CAPTURE="${PIPER_VIEWPOINT_AUTO_CAPTURE:-1}"
 MISSION_POLICY="${PIPER_VIEWPOINT_MISSION_POLICY:-0}"
+CLOSED_LOOP_ONE_VIEW="${PIPER_VIEWPOINT_CLOSED_LOOP_ONE_VIEW:-0}"
 case "$AUTO_CAPTURE" in
   0) ROS_AUTO_CAPTURE=false ;;
   1) ROS_AUTO_CAPTURE=true ;;
   *)
     echo "PIPER_VIEWPOINT_AUTO_CAPTURE must be 0 or 1." >&2
+    exit 2
+    ;;
+esac
+case "$CLOSED_LOOP_ONE_VIEW" in
+  0) ROS_CLOSED_LOOP_ONE_VIEW=false ;;
+  1) ROS_CLOSED_LOOP_ONE_VIEW=true ;;
+  *)
+    echo "PIPER_VIEWPOINT_CLOSED_LOOP_ONE_VIEW must be 0 or 1." >&2
     exit 2
     ;;
 esac
@@ -65,4 +74,5 @@ exec ros2 launch piper_mobile_manipulation supervised_viewpoint_execution.launch
   max_execution_viewpoints:="$MAX_VIEWS" \
   min_execution_viewpoints:="$MIN_VIEWS" \
   auto_capture:="$ROS_AUTO_CAPTURE" \
-  allow_mission_policy:="$ROS_MISSION_POLICY"
+  allow_mission_policy:="$ROS_MISSION_POLICY" \
+  closed_loop_one_view:="$ROS_CLOSED_LOOP_ONE_VIEW"

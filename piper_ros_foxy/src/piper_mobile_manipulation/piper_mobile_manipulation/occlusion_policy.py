@@ -5,7 +5,7 @@ import math
 
 
 HAND_LABELS = frozenset(('hand', 'finger', 'person', 'human'))
-MOVABLE_LABELS = frozenset(('leaf', 'branch'))
+MOVABLE_LABELS = frozenset(('pen', 'stick'))
 
 
 @dataclass(frozen=True)
@@ -26,7 +26,14 @@ class OccluderEvidence:
 
 
 def canonical_label(label):
-    return ' '.join(str(label or '').strip().lower().replace('_', ' ').split())
+    normalized = ' '.join(
+        str(label or '').strip().lower().replace('_', ' ').split())
+    words = set(normalized.split())
+    if words.intersection(('pen', 'marker')):
+        return 'pen'
+    if 'stick' in words:
+        return 'stick'
+    return normalized
 
 
 def evidence_rejection(evidence):
@@ -35,7 +42,7 @@ def evidence_rejection(evidence):
     if label in HAND_LABELS:
         return 'hand or person is a terminal workspace blocker'
     if label not in MOVABLE_LABELS:
-        return 'object is not in the qualified movable leaf/branch profile'
+        return 'object is not in the qualified rigid pen/stick profile'
     if not evidence.valid:
         return 'occluder geometry is invalid'
     if not evidence.track_id:

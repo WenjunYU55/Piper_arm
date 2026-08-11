@@ -12,13 +12,14 @@ import time
 
 SCHEMA_VERSION = 5
 JOINT_NAMES = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
-TIMING_POLICY = 'sdk_movej_targets_v1'
-COMMAND_RATE_HZ = 100.0
+TIMING_POLICY = 'tesseract_stream_v1'
+COMMAND_RATE_HZ = 20.0
 MAX_PROTOCOL_VELOCITY_RAD_S = 3.0
 MAX_PROTOCOL_ACCELERATION_RAD_S2 = 5.0
 MAX_BOOTSTRAP_START_LIMIT_TOLERANCE_RAD = 0.04
-PLAN_KINDS = ('MULTIVIEW_SCAN', 'ROUGH_ACQUISITION')
-PROVENANCE_SOURCES = ('tracked_target', 'rough_coordinate')
+MAX_CONFIGURED_HOME_START_LIMIT_TOLERANCE_RAD = 0.3
+PLAN_KINDS = ('MULTIVIEW_SCAN', 'ROUGH_ACQUISITION', 'RETURN_HOME')
+PROVENANCE_SOURCES = ('tracked_target', 'rough_coordinate', 'configured_home')
 SCENE_OBSERVATION_MODES = ('perception_snapshot', 'bootstrap_static')
 SAFE_ID = re.compile(r'^[a-f0-9]{16,64}$')
 SOURCE_REQUEST_ID = re.compile(r'^[A-Za-z0-9_.:-]{8,128}$')
@@ -145,8 +146,11 @@ def validate_plan_identity(payload):
     if not isinstance(provenance, dict):
         raise ContractError('target_provenance must be an object')
     source = provenance.get('source')
-    expected_source = (
-        'tracked_target' if plan_kind == 'MULTIVIEW_SCAN' else 'rough_coordinate')
+    expected_source = {
+        'MULTIVIEW_SCAN': 'tracked_target',
+        'ROUGH_ACQUISITION': 'rough_coordinate',
+        'RETURN_HOME': 'configured_home',
+    }[plan_kind]
     if source != expected_source or source not in PROVENANCE_SOURCES:
         raise ContractError(
             'target_provenance.source does not match plan_kind')
@@ -159,7 +163,7 @@ def validate_plan_identity(payload):
                 'rough-coordinate source_request_id is missing or invalid')
     elif source_request_id not in ('', None):
         raise ContractError(
-            'tracked-target provenance must not carry source_request_id')
+            'non-acquisition provenance must not carry source_request_id')
     frame_id = provenance.get('frame_id')
     if frame_id != 'base_link':
         raise ContractError('target_provenance.frame_id must be base_link')
@@ -205,18 +209,28 @@ def validate_request(payload, now_ns=None):
         raise ContractError(
             'scene.target_provenance must match target_provenance')
     observation_mode = scene.get('observation_mode')
+    startup_home_static = scene.get('startup_home_static', False)
+    if not isinstance(startup_home_static, bool):
+        raise ContractError('scene.startup_home_static must be boolean')
+    if startup_home_static and plan_kind != 'RETURN_HOME':
+        raise ContractError(
+            'scene.startup_home_static is RETURN_HOME-only')
     expected_observation_mode = (
-        'perception_snapshot'
-        if plan_kind == 'MULTIVIEW_SCAN'
-        else 'bootstrap_static')
+        'bootstrap_static'
+        if plan_kind == 'ROUGH_ACQUISITION'
+        else 'perception_snapshot')
     if (
             observation_mode != expected_observation_mode
             or observation_mode not in SCENE_OBSERVATION_MODES):
         raise ContractError(
             'scene.observation_mode does not match plan_kind')
     candidates = scene.get('candidate_views')
-    if not isinstance(candidates, list) or not candidates:
+    if not isinstance(candidates, list):
+        raise ContractError('scene candidate views must be a list')
+    if plan_kind != 'RETURN_HOME' and not candidates:
         raise ContractError('scene requires at least one candidate view')
+    if plan_kind == 'RETURN_HOME' and candidates:
+        raise ContractError('RETURN_HOME must not contain capture viewpoints')
     if len(candidates) > MAX_CANDIDATE_VIEWS:
         raise ContractError('scene has too many candidate views')
     for index, candidate in enumerate(candidates):
@@ -245,6 +259,9 @@ def validate_request(payload, now_ns=None):
     if observation_mode == 'bootstrap_static' and obstacles:
         raise ContractError(
             'bootstrap_static scene must not contain perception obstacles')
+    if startup_home_static and obstacles:
+        raise ContractError(
+            'startup-home static scene must not contain perception obstacles')
     for index, obstacle in enumerate(obstacles):
         if not isinstance(obstacle, dict) or obstacle.get('type') != 'box':
             raise ContractError('obstacle %d is not a supported box' % index)
@@ -258,6 +275,9 @@ def validate_request(payload, now_ns=None):
         raise ContractError('limits.position_rad must contain six ranges')
     start_limit_tolerance = float(
         limit_record.get('bootstrap_start_limit_tolerance_rad', 0.0))
+    configured_home_start_tolerance = float(
+        limit_record.get(
+            'configured_home_start_limit_tolerance_rad', 0.0))
     if (
             not math.isfinite(start_limit_tolerance)
             or start_limit_tolerance < 0.0
@@ -267,6 +287,18 @@ def validate_request(payload, now_ns=None):
     if plan_kind != 'ROUGH_ACQUISITION' and start_limit_tolerance != 0.0:
         raise ContractError(
             'bootstrap start limit tolerance is acquisition-only')
+    if (
+            not math.isfinite(configured_home_start_tolerance)
+            or configured_home_start_tolerance < 0.0
+            or configured_home_start_tolerance >
+            MAX_CONFIGURED_HOME_START_LIMIT_TOLERANCE_RAD):
+        raise ContractError(
+            'configured home start limit tolerance is invalid')
+    if (
+            plan_kind != 'RETURN_HOME'
+            and configured_home_start_tolerance != 0.0):
+        raise ContractError(
+            'configured home start limit tolerance is RETURN_HOME-only')
     outside_limits = []
     for index, bounds in enumerate(limits):
         low, high = finite_vector(bounds, 2, 'joint%d limits' % (index + 1))
@@ -274,13 +306,17 @@ def validate_request(payload, now_ns=None):
             raise ContractError('joint%d limits are empty' % (index + 1))
         if positions[index] < low or positions[index] > high:
             distance = max(low - positions[index], positions[index] - high)
-            if (
-                    plan_kind != 'ROUGH_ACQUISITION'
-                    or distance > start_limit_tolerance):
+            acquisition_recovery = bool(
+                plan_kind == 'ROUGH_ACQUISITION'
+                and distance <= start_limit_tolerance)
+            configured_home_recovery = bool(
+                plan_kind == 'RETURN_HOME'
+                and distance <= configured_home_start_tolerance)
+            if not (acquisition_recovery or configured_home_recovery):
                 raise ContractError(
                     'start_state joint%d is outside limits' % (index + 1))
             outside_limits.append(index)
-    if len(outside_limits) > 2:
+    if plan_kind == 'ROUGH_ACQUISITION' and len(outside_limits) > 2:
         raise ContractError(
             'bootstrap start may have at most two joints outside limits')
     validate_motion_limits(limit_record)
@@ -307,7 +343,7 @@ def validate_request(payload, now_ns=None):
     if (
             not math.isfinite(command_rate)
             or abs(command_rate - COMMAND_RATE_HZ) > 1e-9):
-        raise ContractError('planning.command_rate_hz must be 100 Hz')
+        raise ContractError('planning.command_rate_hz must be 20 Hz')
     speed = float(planning.get('effective_speed_percent', 0.0))
     if not math.isfinite(speed) or speed < 1.0 or speed > 100.0:
         raise ContractError(
@@ -326,11 +362,21 @@ def validate_request(payload, now_ns=None):
     finite_vector(rolls, len(rolls), 'planning.roll_samples_rad')
     minimum_views = int(planning.get('min_viewpoints', 0))
     maximum_views = int(planning.get('max_viewpoints', 0))
-    if minimum_views < 1 or minimum_views > MAX_CAPTURE_VIEWPOINTS:
+    include_return_home = planning.get(
+        'include_return_home',
+        plan_kind in ('MULTIVIEW_SCAN', 'RETURN_HOME'))
+    if not isinstance(include_return_home, bool):
+        raise ContractError('planning.include_return_home must be boolean')
+    if plan_kind == 'RETURN_HOME':
+        if minimum_views != 0 or maximum_views != 0:
+            raise ContractError('RETURN_HOME requires zero capture viewpoints')
+        if not include_return_home:
+            raise ContractError('RETURN_HOME must include its direct home segment')
+    elif minimum_views < 1 or minimum_views > MAX_CAPTURE_VIEWPOINTS:
         raise ContractError('planning.min_viewpoints is invalid')
-    if maximum_views < minimum_views \
+    if plan_kind != 'RETURN_HOME' and (maximum_views < minimum_views \
             or maximum_views > MAX_CAPTURE_VIEWPOINTS \
-            or maximum_views > len(candidates):
+            or maximum_views > len(candidates)):
         raise ContractError('planning.max_viewpoints is invalid')
     if plan_kind == 'MULTIVIEW_SCAN' and minimum_views != maximum_views:
         raise ContractError(
@@ -339,8 +385,20 @@ def validate_request(payload, now_ns=None):
             minimum_views != 1 or maximum_views > 5):
         raise ContractError(
             'ROUGH_ACQUISITION requires min_viewpoints=1 and max_viewpoints<=5')
+    if plan_kind == 'ROUGH_ACQUISITION' and include_return_home:
+        raise ContractError('ROUGH_ACQUISITION must not include a home segment')
+    if (
+            plan_kind == 'MULTIVIEW_SCAN'
+            and not include_return_home
+            and (minimum_views != 1 or maximum_views != 1)):
+        raise ContractError(
+            'home-free MULTIVIEW_SCAN must be one closed-loop viewpoint')
     home = planning.get('return_home_positions_rad', [])
-    if plan_kind == 'MULTIVIEW_SCAN':
+    home_stage = str(
+        planning.get('home_stage', '')
+        or ('CONFIGURED_HOME' if plan_kind == 'RETURN_HOME' else '')
+    ).strip().upper()
+    if plan_kind in ('MULTIVIEW_SCAN', 'RETURN_HOME'):
         home = finite_vector(
             home, 6, 'planning.return_home_positions_rad')
         for index, value in enumerate(home):
@@ -348,8 +406,18 @@ def validate_request(payload, now_ns=None):
             if value < float(low) or value > float(high):
                 raise ContractError(
                     'return home joint%d is outside limits' % (index + 1))
+        if plan_kind == 'RETURN_HOME':
+            if home_stage not in (
+                    'CONFIGURED_HOME', 'STARTUP_WRIST', 'ROUGH_HOME',
+                    'STORAGE_WRIST'):
+                raise ContractError('planning.home_stage is unsupported')
+        elif home_stage:
+            raise ContractError(
+                'planning.home_stage is RETURN_HOME-only')
     elif home not in ([], None):
         raise ContractError('return home is multiview-only')
+    elif home_stage:
+        raise ContractError('planning.home_stage is RETURN_HOME-only')
     step = float(planning.get('max_execution_joint_step_rad', 0.0))
     if not math.isfinite(step) or step <= 0.0 or step > 0.1:
         raise ContractError('planning.max_execution_joint_step_rad is invalid')
@@ -399,8 +467,12 @@ def validate_response(payload, request=None):
         raise ContractError('response joint order must be joint1 through joint6')
     finite_vector(payload.get('target_center_m'), 3, 'response.target_center_m')
     selected = payload.get('selected_viewpoints')
-    if not isinstance(selected, list) or not selected:
+    if not isinstance(selected, list):
+        raise ContractError('successful response selected viewpoints are invalid')
+    if plan_kind != 'RETURN_HOME' and not selected:
         raise ContractError('successful response has no selected viewpoints')
+    if plan_kind == 'RETURN_HOME' and selected:
+        raise ContractError('RETURN_HOME response contains capture viewpoints')
     selected_ids = []
     for index, viewpoint in enumerate(selected):
         if not isinstance(viewpoint, dict):
@@ -429,9 +501,10 @@ def validate_response(payload, request=None):
         raise ContractError('successful response has too many trajectory segments')
     expected_segments = len(selected)
     if (
-            plan_kind == 'MULTIVIEW_SCAN'
-            and request is not None
-            and request['planning'].get('return_home_positions_rad')):
+            request is not None
+            and request['planning'].get(
+                'include_return_home',
+                bool(request['planning'].get('return_home_positions_rad')))):
         expected_segments += 1
     if len(segments) != expected_segments:
         raise ContractError(
@@ -439,23 +512,110 @@ def validate_response(payload, request=None):
             'the capture-plus-home contract')
     for segment_index, segment in enumerate(segments):
         points = segment.get('points') if isinstance(segment, dict) else None
-        if not isinstance(points, list) or len(points) not in (2, 3):
+        if not isinstance(points, list) or len(points) < 2:
             raise ContractError(
-                'segment %d must bind a start and one SDK MoveJ target, '
-                'with one optional bootstrap target' % segment_index)
+                'segment %d must contain a scheduled Tesseract path'
+                % segment_index)
         if len(points) > MAX_POINTS_PER_SEGMENT:
             raise ContractError('segment %d has too many points' % segment_index)
         recovery_used = bool(segment.get('bootstrap_recovery_used', False))
-        if recovery_used:
-            if (
-                    len(points) != 3
-                    or int(segment.get('bootstrap_recovery_end_point', -1)) != 1):
+        powered_start_recovery = bool(
+            segment.get('powered_start_recovery_used', False))
+        direct_home = bool(
+            segment.get('configured_home_direct_joint_move', False))
+        collision_bypassed = bool(
+            segment.get('collision_validation_bypassed', False))
+        segment_home_stage = str(segment.get('home_stage', '')).strip().upper()
+        if direct_home:
+            expected_home_stage = str(
+                request['planning'].get('home_stage', '')
+                or 'CONFIGURED_HOME').strip().upper() if request is not None else ''
+            declared_home_goal = finite_vector(
+                segment.get('configured_home_goal_positions_rad'), 6,
+                'configured home direct declared goal')
+            if not (
+                    plan_kind == 'RETURN_HOME'
+                    and segment_index == 0
+                    and len(segments) == 1
+                    and segment.get('is_return_home') is True
+                    and len(points) == 2
+                    and collision_bypassed
+                    and segment.get('validation') ==
+                    'configured_home_collision_validation_bypassed'
+                    and segment_home_stage == expected_home_stage):
                 raise ContractError(
-                    'segment %d bootstrap recovery must be exactly one '
-                    'intermediate SDK MoveJ target' % segment_index)
-        elif len(points) != 2:
+                    'segment %d configured-home collision bypass scope is invalid'
+                    % segment_index)
+            planned_home_goal = finite_vector(
+                points[-1].get('positions_rad'), 6,
+                'configured home direct endpoint')
+            if any(
+                    abs(float(actual) - float(expected)) > 1e-9
+                    for actual, expected in zip(
+                        planned_home_goal, declared_home_goal)):
+                raise ContractError(
+                    'segment %d configured-home declared goal does not match '
+                    'the endpoint' % segment_index)
+        elif collision_bypassed or segment_home_stage:
             raise ContractError(
-                'segment %d has an undeclared intermediate SDK MoveJ target'
+                'segment %d has undeclared configured-home bypass metadata'
+                % segment_index)
+        startup_home_static = segment.get('startup_home_static', False)
+        if not isinstance(startup_home_static, bool):
+            raise ContractError(
+                'segment %d startup_home_static must be boolean'
+                % segment_index)
+        expected_startup_home_static = bool(
+            request is not None
+            and request['scene'].get('startup_home_static', False))
+        if startup_home_static != expected_startup_home_static:
+            raise ContractError(
+                'segment %d startup-home static binding mismatches the request'
+                % segment_index)
+        if startup_home_static and not (
+                plan_kind == 'RETURN_HOME'
+                and segment_index == 0
+                and len(segments) == 1
+                and segment.get('is_return_home') is True):
+            raise ContractError(
+                'segment %d startup-home static scope is invalid'
+                % segment_index)
+        if direct_home and (recovery_used or powered_start_recovery):
+            raise ContractError(
+                'segment %d configured-home direct move cannot use recovery targets'
+                % segment_index)
+        if recovery_used:
+            recovery_end = int(segment.get(
+                'bootstrap_recovery_end_point', -1))
+            powered_end = int(segment.get(
+                'powered_start_recovery_end_point', -1))
+            ordinary_recovery = bool(
+                1 <= recovery_end < len(points) - 1
+                and not powered_start_recovery)
+            dual_home_recovery = bool(
+                plan_kind == 'RETURN_HOME'
+                and segment.get('is_return_home') is True
+                and 1 <= powered_end < recovery_end < len(points) - 1
+                and powered_start_recovery
+            )
+            if not ordinary_recovery and not dual_home_recovery:
+                raise ContractError(
+                    'segment %d recovery target declaration is invalid'
+                    % segment_index)
+        elif powered_start_recovery:
+            powered_only_home_recovery = bool(
+                plan_kind == 'RETURN_HOME'
+                and segment.get('is_return_home') is True
+                and startup_home_static
+                and 1 <= int(segment.get(
+                    'powered_start_recovery_end_point', -1)) < len(points) - 1)
+            if not powered_only_home_recovery:
+                raise ContractError(
+                    'segment %d powered-start-only recovery declaration '
+                    'is invalid' % segment_index)
+        elif direct_home and len(points) != 2:
+            raise ContractError(
+                'segment %d direct configured home must have two points'
                 % segment_index)
         previous_time = -1.0
         for point_index, point in enumerate(points):
@@ -476,8 +636,14 @@ def validate_response(payload, request=None):
                     any(abs(value) > 1e-12 for value in velocities)
                     or any(abs(value) > 1e-12 for value in accelerations)):
                 raise ContractError(
-                    '%s derivatives must be zero for SDK MoveJ targets'
+                    '%s derivatives must be zero transport placeholders'
                     % prefix)
+            if point_index:
+                period = 1.0 / COMMAND_RATE_HZ
+                if when - float(points[point_index - 1].get(
+                        'time_from_start_s', 0.0)) < period - 1e-6:
+                    raise ContractError(
+                        '%s exceeds the scheduled command rate' % prefix)
             if request is not None:
                 position_limits = request['limits']['position_rad']
                 velocity_limits = request['limits']['max_velocity_rad_s']
@@ -495,6 +661,25 @@ def validate_response(payload, request=None):
                             request['plan_kind'] == 'ROUGH_ACQUISITION'
                             and recovery_used
                             and segment_index == 0
+                            and point_index <= int(segment.get(
+                                'bootstrap_recovery_end_point', -1))
+                            and (
+                                point_index != 0
+                                or abs(
+                                    positions[joint_index]
+                                    - float(exact_start[joint_index])) <= 1e-9)
+                            and max(
+                                float(low) - positions[joint_index],
+                                positions[joint_index] - float(high))
+                            <= start_tolerance + 1e-9)
+                        configured_home_start_tolerance = float(
+                            request['limits'].get(
+                                'configured_home_start_limit_tolerance_rad',
+                                0.0))
+                        allowed_configured_home_start = (
+                            request['plan_kind'] == 'RETURN_HOME'
+                            and direct_home
+                            and segment_index == 0
                             and point_index == 0
                             and abs(
                                 positions[joint_index]
@@ -502,8 +687,10 @@ def validate_response(payload, request=None):
                             and max(
                                 float(low) - positions[joint_index],
                                 positions[joint_index] - float(high))
-                            <= start_tolerance + 1e-9)
-                        if not allowed_recovery_start:
+                            <= configured_home_start_tolerance + 1e-9)
+                        if not (
+                                allowed_recovery_start
+                                or allowed_configured_home_start):
                             raise ContractError(
                                 '%s exceeds a position limit' % prefix)
                     if abs(velocities[joint_index]) > (
@@ -514,6 +701,30 @@ def validate_response(payload, request=None):
                             float(acceleration_limits[joint_index]) + 1e-9):
                         raise ContractError(
                             '%s exceeds an acceleration limit' % prefix)
+                if point_index and not direct_home:
+                    maximum_step = float(request['planning'][
+                        'max_execution_joint_step_rad'])
+                    previous_positions = finite_vector(
+                        points[point_index - 1].get('positions_rad'), 6,
+                        prefix + ' previous positions')
+                    if any(
+                            abs(current - previous) > maximum_step + 1e-9
+                            for current, previous in zip(
+                                positions, previous_positions)):
+                        raise ContractError(
+                            '%s exceeds the scheduled joint-step ceiling'
+                            % prefix)
+        if direct_home and request is not None:
+            planned_start = finite_vector(
+                points[0].get('positions_rad'), 6,
+                'configured home direct start')
+            requested_start = request['start_state']['positions_rad']
+            if any(
+                    abs(float(actual) - float(expected)) > 1e-9
+                    for actual, expected in zip(
+                        planned_start, requested_start)):
+                raise ContractError(
+                    'configured-home direct start does not match the request')
     if expected_segments == len(selected) + 1:
         return_segment = segments[-1]
         if return_segment.get('is_return_home') is not True:

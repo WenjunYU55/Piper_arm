@@ -1,6 +1,6 @@
 /**:
   ros__parameters:
-    movable_whitelist: ["leaf", "branch"]
+    movable_whitelist: ["pen", "marker", "stick"]
     min_views: 13
     max_views: 13
     min_quality_score: 0.40
@@ -15,6 +15,9 @@
     # unchanged 20 mm physical-motion abort threshold is evaluated.
     target_surface_measurement_uncertainty_m: 0.015
     obstacle_displacement_m: 0.050
+    # SCAN_READY requires a new request-correlated GroundingDINO/SAM result
+    # and a 3D obstacle scene carrying that exact image stamp.
+    occlusion_probe_timeout_sec: 70.0
     target_clearance_m: 0.040
     drop_target_clearance_m: 0.120
     drop_obstacle_clearance_m: 0.080
@@ -23,6 +26,13 @@
     approach_height_m: 0.100
     pre_push_offset_m: 0.080
     push_distance_m: 0.060
+    # Bench missions have no hard-coded rectangular environment boundary.
+    # Actual reach remains owned by current-state IK/collision planning.
+    enforce_static_workspace: false
+    require_observed_drop_support: true
+    drop_support_radius_m: 0.055
+    drop_support_min_points: 16
+    drop_support_max_stddev_m: 0.008
     workspace_x_min: 0.10
     workspace_x_max: 0.70
     workspace_y_min: -0.40

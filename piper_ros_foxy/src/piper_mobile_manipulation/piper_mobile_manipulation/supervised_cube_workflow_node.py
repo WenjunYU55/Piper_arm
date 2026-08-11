@@ -22,14 +22,17 @@ from piper_mobile_manipulation.msg import (
     TrackedTarget,
     TrackingHealth,
 )
+from piper_mobile_manipulation.occlusion_policy import (
+    OccluderEvidence, evidence_rejection,
+)
 from piper_mobile_manipulation.scan_execution_modes import (
     measured_target_lock_rejection,
 )
 from piper_mobile_manipulation.supervised_workflow import (
     capture_cloud_ready, choose_removal_plan, cloud_model,
     corroborated_target_motion_rejection, distance, point,
-    occlusion_capture_rejection,
-    should_cache_capture_cloud, tracking_allows_target_motion_check,
+    semantic_scene_correlation_rejection, should_cache_capture_cloud,
+    tracking_allows_target_motion_check,
 )
 
 
@@ -54,13 +57,16 @@ class SupervisedCubeWorkflowNode(Node):
             'scan_quality_topic': '/piper/scan_quality',
             'occlusion_status_topic': '/piper/occlusion_status',
             'cloud_topic': '/piper/target_cloud',
+            'scene_cloud_topic': '/piper/scene_cloud',
             'cloud_status_topic': '/piper/target_cloud_status',
             'cloud_request_topic': '/piper/target_cloud_request',
             'status_topic': '/piper/supervised_workflow_status',
             'plan_topic': '/piper/removal_plan',
             'target_model_topic': '/piper/target_model',
             'marker_topic': '/piper/supervised_workflow_markers',
-            'movable_whitelist': ['leaf', 'branch'],
+            'heavy_refresh_request_topic': '/piper/heavy_refresh_request',
+            'heavy_refresh_status_topic': '/piper/heavy_refresh_status',
+            'movable_whitelist': ['pen', 'marker', 'stick'],
             'min_views': 13, 'max_views': 13, 'min_quality_score': 0.40,
             'request_optional_cloud_refinement': False,
             'center_convergence_m': 0.005, 'target_motion_abort_m': 0.020,
@@ -75,6 +81,15 @@ class SupervisedCubeWorkflowNode(Node):
             'workspace_x_min': 0.10, 'workspace_x_max': 0.70,
             'workspace_y_min': -0.40, 'workspace_y_max': 0.40,
             'workspace_z_min': 0.02, 'workspace_z_max': 0.60,
+            'enforce_static_workspace': False,
+            'require_observed_drop_support': True,
+            'drop_support_radius_m': 0.055,
+            'drop_support_min_points': 16,
+            'drop_support_max_stddev_m': 0.008,
+            'occlusion_probe_timeout_sec': 70.0,
+            'max_contact_actions': 6,
+            'first_push_distance_m': 0.010,
+            'later_push_distance_m': 0.030,
         }
         for name, value in defaults.items():
             self.declare_parameter(name, value)
@@ -93,6 +108,7 @@ class SupervisedCubeWorkflowNode(Node):
         self.quality = None
         self.occlusion = None
         self.cloud_points = []
+        self.scene_points = []
         self.cloud_frame = ''
         self.cloud_status = None
         self.pending_cloud_msg = None
@@ -104,6 +120,15 @@ class SupervisedCubeWorkflowNode(Node):
         self.updated = {}
         self.last_idle_lock_status = None
         self.last_reason = ''
+        self.occlusion_probe_request_id = ''
+        self.occlusion_probe_status = None
+        self.occlusion_probe_scene = None
+        self.occlusion_probe_started = None
+        self.occlusion_probe_attempt = 0
+        self.occlusion_probe_waiting_retry = False
+        self.contact_actions = 0
+        self.push_attempts_by_track = {}
+        self.post_action_verification = False
 
         self.status_pub = self.create_publisher(String, defaults['status_topic'], 10)
         self.plan_pub = self.create_publisher(String, defaults['plan_topic'], 10)
@@ -111,6 +136,8 @@ class SupervisedCubeWorkflowNode(Node):
         self.marker_pub = self.create_publisher(MarkerArray, defaults['marker_topic'], 10)
         self.target_tf = TransformBroadcaster(self)
         self.cloud_request_pub = self.create_publisher(String, defaults['cloud_request_topic'], 10)
+        self.heavy_refresh_pub = self.create_publisher(
+            String, defaults['heavy_refresh_request_topic'], 10)
         # Retain explicit references for Foxy: otherwise endpoints can disappear
         # after discovery when the Python wrapper is garbage-collected.
         self._input_subscriptions = [
@@ -137,7 +164,13 @@ class SupervisedCubeWorkflowNode(Node):
                 PointCloud2, defaults['cloud_topic'], self.cloud_cb,
                 qos_profile_sensor_data),
             self.create_subscription(
+                PointCloud2, defaults['scene_cloud_topic'],
+                self.scene_cloud_cb, qos_profile_sensor_data),
+            self.create_subscription(
                 String, defaults['cloud_status_topic'], self.cloud_status_cb, 10),
+            self.create_subscription(
+                String, defaults['heavy_refresh_status_topic'],
+                self.heavy_refresh_status_cb, 10),
         ]
         self.create_service(Trigger, '~/start', self.start_cb)
         self.create_service(Trigger, '~/approve_plan', self.approve_cb)
@@ -162,6 +195,74 @@ class SupervisedCubeWorkflowNode(Node):
     def obstacle_cb(self, msg):
         self.obstacles = msg
         self.mark('obstacles')
+        self.cache_correlated_probe_scene(msg)
+
+    def cache_correlated_probe_scene(self, scene):
+        if scene is None or self.occlusion_probe_status is None:
+            return
+        if not semantic_scene_correlation_rejection(
+                self.occlusion_probe_request_id,
+                self.occlusion_probe_status,
+                scene):
+            self.occlusion_probe_scene = scene
+            self.mark('occlusion_probe_scene')
+
+    def heavy_refresh_status_cb(self, msg):
+        payload = self.parse(msg)
+        state = str(payload.get('state', '')).lower()
+        if (
+                self.state != 'INITIALIZING'
+                or not self.occlusion_probe_request_id):
+            return
+        if state == 'idle' and self.occlusion_probe_status is None:
+            if (
+                    self.occlusion_probe_waiting_retry
+                    and self.occlusion_probe_attempt < 2):
+                self.publish_occlusion_probe()
+            return
+        if str(payload.get('request_id', '')) != self.occlusion_probe_request_id:
+            return
+        if state == 'request_ignored_busy':
+            self.occlusion_probe_waiting_retry = True
+            self.publish_status(
+                'semantic worker is busy; waiting for one bounded '
+                'occlusion-probe retry')
+            return
+        if state in ('request_rejected', 'request_failed'):
+            self.abort(
+                'dedicated occlusion probe failed: '
+                + str(payload.get('error', state)))
+            return
+        if state == 'worker_result_rejected':
+            self.abort(
+                'dedicated occlusion probe could not re-detect the locked target')
+            return
+        if state == 'published':
+            self.occlusion_probe_status = payload
+            self.mark('occlusion_probe')
+            self.cache_correlated_probe_scene(self.obstacles)
+            self.publish_status(
+                'dedicated semantic occlusion result ready; waiting for its '
+                'exact-stamp 3D obstacle scene')
+
+    def publish_occlusion_probe(self):
+        self.occlusion_probe_attempt += 1
+        self.occlusion_probe_waiting_retry = False
+        stamp = self.get_clock().now().to_msg()
+        self.occlusion_probe_request_id = '%s-occlusion-%d' % (
+            self.session_id, self.occlusion_probe_attempt)
+        request = String()
+        request.data = json.dumps({
+            'request_id': self.occlusion_probe_request_id,
+            'reason': 'workflow_occlusion_probe',
+            'min_image_stamp': {
+                'sec': int(stamp.sec),
+                'nanosec': int(stamp.nanosec),
+            },
+        }, sort_keys=True)
+        self.heavy_refresh_pub.publish(request)
+        self.publish_status(
+            'requesting a fresh settled semantic occlusion assessment')
 
     def landmark_cb(self, msg):
         self.target_landmark = point(msg.point)
@@ -251,6 +352,12 @@ class SupervisedCubeWorkflowNode(Node):
         self.mark('cloud')
         self.process_pending_cloud()
 
+    def scene_cloud_cb(self, msg):
+        if msg.header.frame_id != 'base_link':
+            return
+        self.scene_points = self.read_xyz(msg)
+        self.mark('scene_cloud')
+
     def process_pending_cloud(self):
         if not capture_cloud_ready(
                 self.accepted_views,
@@ -275,8 +382,18 @@ class SupervisedCubeWorkflowNode(Node):
         self.target_center = None
         self.plan = None
         self.initial_landmark = None
+        self.obstacles = None
+        self.updated.pop('obstacles', None)
         self.state = 'INITIALIZING'
-        self.publish_status('waiting for locked landmark and fresh obstacle geometry')
+        self.occlusion_probe_status = None
+        self.occlusion_probe_scene = None
+        self.occlusion_probe_started = self.now()
+        self.occlusion_probe_attempt = 0
+        self.occlusion_probe_waiting_retry = False
+        self.contact_actions = 0
+        self.push_attempts_by_track = {}
+        self.post_action_verification = False
+        self.publish_occlusion_probe()
         return self.reply(response, True, 'workflow started')
 
     def approve_cb(self, _request, response):
@@ -289,8 +406,22 @@ class SupervisedCubeWorkflowNode(Node):
     def confirm_action_cb(self, _request, response):
         if self.state != 'WAIT_OPERATOR_ACTION':
             return self.reply(response, False, 'not waiting for operator action')
-        self.state = 'VERIFY_ACTION'
-        self.publish_status('waiting for fresh post-action perception')
+        self.contact_actions += 1
+        if self.plan.get('action') == 'push':
+            track_id = str(self.plan.get('track_id', ''))
+            self.push_attempts_by_track[track_id] = int(
+                self.push_attempts_by_track.get(track_id, 0)) + 1
+        self.state = 'INITIALIZING'
+        self.post_action_verification = True
+        self.occlusion_probe_status = None
+        self.occlusion_probe_scene = None
+        self.occlusion_probe_started = self.now()
+        self.occlusion_probe_attempt = 0
+        self.obstacles = None
+        self.updated.pop('obstacles', None)
+        self.publish_occlusion_probe()
+        self.publish_status(
+            'action recorded; requesting fresh post-action semantic RGB-D')
         return self.reply(response, True, 'post-action verification started')
 
     def capture_view_cb(self, _request, response):
@@ -360,6 +491,9 @@ class SupervisedCubeWorkflowNode(Node):
             'occlusion_state': (
                 str(self.occlusion.get('occlusion_state', 'UNKNOWN'))
                 if isinstance(self.occlusion, dict) else 'UNKNOWN'),
+            'occlusion_probe_request_id': self.occlusion_probe_request_id,
+            'occlusion_probe_complete': self.occlusion_probe_status is not None,
+            'occlusion_probe_scene_complete': self.occlusion_probe_scene is not None,
             'accepted_views': self.accepted_views,
             'session_id': self.session_id,
             'modeled_views': self.modeled_views,
@@ -394,10 +528,48 @@ class SupervisedCubeWorkflowNode(Node):
             self.last_idle_lock_status = None
         if self.state == 'INITIALIZING':
             if (
+                    self.occlusion_probe_started is not None
+                    and self.now() - self.occlusion_probe_started > float(
+                        self.get_parameter('occlusion_probe_timeout_sec').value)):
+                self.abort('dedicated semantic occlusion assessment timed out')
+                return
+            scene_rejection = semantic_scene_correlation_rejection(
+                self.occlusion_probe_request_id,
+                self.occlusion_probe_status,
+                self.occlusion_probe_scene,
+            )
+            if (
                     not lock_rejection
                     and self.landmark
-                    and self.fresh('obstacles')):
+                    and self.occlusion_probe_scene is not None
+                    and not scene_rejection):
+                movable_probe = [
+                    item for item in self.occlusion_probe_scene.instances
+                    if item.valid
+                    and int(item.classification)
+                    == item.CLASSIFICATION_MOVABLE]
+                if (
+                        movable_probe
+                        and any(int(item.observation_count) < 2
+                                for item in movable_probe)
+                        and self.occlusion_probe_attempt < 2):
+                    self.occlusion_probe_status = None
+                    self.occlusion_probe_scene = None
+                    self.obstacles = None
+                    self.updated.pop('obstacles', None)
+                    self.publish_occlusion_probe()
+                    self.publish_status(
+                        'candidate rigid occluder seen once; requesting the '
+                        'mandatory second settled observation')
+                    return
+                self.obstacles = self.occlusion_probe_scene
+                self.mark('obstacles')
                 self.initial_landmark = self.landmark
+                if self.post_action_verification:
+                    self.post_action_verification = False
+                    self.publish_status(
+                        'fresh post-action scene received; reassessing '
+                        'remaining target occlusion')
                 self.assess_scene()
         elif (
                 self.state == 'VERIFY_ACTION'
@@ -427,22 +599,75 @@ class SupervisedCubeWorkflowNode(Node):
         unsafe = [item for item in self.obstacles.instances
                   if not item.valid or int(item.classification) != item.CLASSIFICATION_MOVABLE]
         if unsafe:
-            self.abort('scene contains unsafe, blocked, or invalid obstacle geometry')
+            self.abort(
+                'occlusion scene contains unsafe, blocked, or invalid '
+                'obstacle geometry')
             return
         if not movable:
             self.state = 'SCAN_READY'
             self.publish_status('scene is clear; ready for first scan view')
             return
-        selected = min(
-            movable,
-            key=lambda item: distance(point(item.base_centroid), self.landmark))
+        harmful = []
+        unqualified = []
+        for item in movable:
+            evidence = self.occluder_evidence(item)
+            rejection = evidence_rejection(evidence)
+            if not rejection:
+                harmful.append((item, evidence))
+            elif (
+                    'below 5 percent' not in rejection
+                    and 'benefit is below' not in rejection):
+                unqualified.append('%s: %s' % (
+                    item.semantic_label, rejection))
+        if unqualified:
+            self.abort(
+                'candidate occluder cannot be safely qualified: '
+                + '; '.join(unqualified))
+            return
+        if not harmful:
+            self.state = 'SCAN_READY'
+            self.publish_status(
+                'rigid objects are visible but do not measurably obstruct '
+                'target capture; ready to scan')
+            return
+        if self.contact_actions >= int(
+                self.get_parameter('max_contact_actions').value):
+            self.abort('bounded six-action occlusion-removal budget exhausted')
+            return
+        selected, evidence = max(
+            harmful,
+            key=lambda pair: (
+                float(pair[1].predicted_surface_gain),
+                float(pair[1].target_overlap_ratio),
+                -distance(point(pair[0].base_centroid), self.landmark)))
         config = {name: self.get_parameter(name).value for name in (
             'movable_whitelist', 'target_clearance_m', 'drop_target_clearance_m',
             'drop_obstacle_clearance_m', 'drop_search_radius_m', 'max_grasp_width_m',
             'approach_height_m', 'pre_push_offset_m', 'push_distance_m',
             'workspace_x_min', 'workspace_x_max', 'workspace_y_min', 'workspace_y_max',
-            'workspace_z_min', 'workspace_z_max')}
-        self.plan = choose_removal_plan(selected, self.landmark, self.obstacles.instances, config)
+            'workspace_z_min', 'workspace_z_max', 'enforce_static_workspace',
+            'require_observed_drop_support', 'drop_support_radius_m',
+            'drop_support_min_points', 'drop_support_max_stddev_m')}
+        push_attempt = int(self.push_attempts_by_track.get(
+            str(evidence.track_id), 0))
+        config['push_distance_m'] = float(self.get_parameter(
+            'first_push_distance_m' if push_attempt == 0
+            else 'later_push_distance_m').value)
+        self.plan = choose_removal_plan(
+            selected, self.landmark, self.obstacles.instances, config,
+            self.scene_points if self.fresh('scene_cloud') else [])
+        self.plan.update({
+            'track_id': evidence.track_id,
+            'observation_count': int(evidence.observation_count),
+            'target_overlap_ratio': float(evidence.target_overlap_ratio),
+            'closer_depth_ratio': float(evidence.closer_depth_ratio),
+            'predicted_surface_gain': float(evidence.predicted_surface_gain),
+            'predicted_unlocked_viewpoints': int(
+                evidence.predicted_unlocked_viewpoints),
+            'contact_action_index': int(self.contact_actions + 1),
+            'contact_action_limit': int(
+                self.get_parameter('max_contact_actions').value),
+        })
         self.obstacles_at_plan = {int(item.object_id): point(item.base_centroid)
                                   for item in self.obstacles.instances if item.valid}
         self.publish_json(self.plan_pub, self.plan)
@@ -452,6 +677,32 @@ class SupervisedCubeWorkflowNode(Node):
             return
         self.state = 'PLAN_READY'
         self.publish_status('removal plan ready for operator review')
+
+    @staticmethod
+    def occluder_evidence(instance):
+        size = tuple(
+            max(0.0, upper - lower)
+            for lower, upper in zip(
+                point(instance.base_bounds_min),
+                point(instance.base_bounds_max)))
+        overlap = float(instance.target_overlap_ratio)
+        closer = float(instance.closer_depth_occlusion_ratio)
+        gain = min(1.0, max(overlap, closer))
+        return OccluderEvidence(
+            track_id=str(instance.track_id),
+            object_id=int(instance.object_id),
+            label=str(instance.semantic_label),
+            observation_count=int(instance.observation_count),
+            confirmed_in_probe=bool(instance.confirmed_in_probe_view),
+            target_overlap_ratio=overlap,
+            closer_depth_ratio=closer,
+            predicted_surface_gain=gain,
+            predicted_unlocked_viewpoints=(2 if gain >= 0.10 else 1),
+            confidence=float(instance.confidence),
+            valid=bool(instance.valid),
+            uncertainty_m=float(instance.position_uncertainty_m),
+            size_xyz_m=size,
+        )
 
     def verify_action(self):
         object_id = int(self.plan['object_id'])

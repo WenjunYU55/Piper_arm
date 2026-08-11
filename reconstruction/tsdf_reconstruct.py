@@ -9,6 +9,10 @@ from pathlib import Path
 import numpy as np
 
 
+MINIMUM_CAPTURE_VIEWS = 8
+MAXIMUM_CAPTURE_VIEWS = 24
+
+
 def camera_extrinsic_from_metadata(metadata):
     """Convert stored T_base_camera into Open3D's T_camera_base extrinsic."""
     transform = metadata.get('camera_transform', {})
@@ -41,26 +45,122 @@ def load_metadata(path):
     return value
 
 
+def validate_capture_set(manifest, metadata_paths):
+    """Validate one bounded feature-driven capture set before integration."""
+    count = int(manifest.get('capture_count', 0))
+    if not MINIMUM_CAPTURE_VIEWS <= count <= MAXIMUM_CAPTURE_VIEWS:
+        raise ValueError(
+            'TSDF reconstruction requires %d-%d captured views'
+            % (MINIMUM_CAPTURE_VIEWS, MAXIMUM_CAPTURE_VIEWS))
+    paths = list(metadata_paths)
+    if len(paths) != count:
+        raise ValueError(
+            'manifest capture_count %d does not match %d frame metadata files'
+            % (count, len(paths)))
+    return paths
+
+
+def validate_manifest_integrity(scan, manifest):
+    """Verify the canonical manifest digest and every immutable artifact."""
+    if not isinstance(manifest, dict):
+        raise ValueError('manifest is not an object')
+    expected = str(manifest.get('manifest_sha256', ''))
+    unsigned = dict(manifest)
+    unsigned.pop('manifest_sha256', None)
+    encoded = json.dumps(
+        unsigned, sort_keys=True, separators=(',', ':'),
+        ensure_ascii=True).encode('utf-8')
+    actual = hashlib.sha256(encoded).hexdigest()
+    if expected != actual:
+        raise ValueError('manifest SHA-256 does not match its canonical payload')
+    root = Path(scan).resolve()
+    files = manifest.get('files')
+    if not isinstance(files, list) or not files:
+        raise ValueError('manifest contains no immutable artifacts')
+    for index, record in enumerate(files):
+        if not isinstance(record, dict):
+            raise ValueError('manifest file %d is invalid' % index)
+        candidate = (root / str(record.get('path', ''))).resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError as exc:
+            raise ValueError('manifest file escapes the dataset root') from exc
+        if not candidate.is_file():
+            raise ValueError('manifest artifact is missing: %s' % candidate)
+        if int(record.get('bytes', -1)) != candidate.stat().st_size:
+            raise ValueError('manifest artifact size changed: %s' % candidate)
+        if str(record.get('sha256', '')) != sha256_file(candidate):
+            raise ValueError('manifest artifact hash changed: %s' % candidate)
+    return expected
+
+
+def rotation_angle_rad(matrix):
+    rotation = np.asarray(matrix, dtype=float)[:3, :3]
+    cosine = float(np.clip((np.trace(rotation) - 1.0) * 0.5, -1.0, 1.0))
+    return float(np.arccos(cosine))
+
+
+def correction_rejection(
+        transformation, fitness, inlier_rmse,
+        maximum_translation_m=0.020,
+        maximum_rotation_deg=5.0,
+        minimum_fitness=0.15,
+        maximum_rmse_m=0.010):
+    transform = np.asarray(transformation, dtype=float)
+    if transform.shape != (4, 4) or not np.all(np.isfinite(transform)):
+        return 'registration correction is invalid'
+    translation = float(np.linalg.norm(transform[:3, 3]))
+    angle_deg = float(np.degrees(rotation_angle_rad(transform)))
+    if not np.isfinite(fitness) or float(fitness) < float(minimum_fitness):
+        return 'registration overlap is too weak'
+    if not np.isfinite(inlier_rmse) or float(inlier_rmse) > float(maximum_rmse_m):
+        return 'registration residual is too large'
+    if translation > float(maximum_translation_m):
+        return 'registration translation correction exceeds %.0fmm' % (
+            1000.0 * float(maximum_translation_m))
+    if angle_deg > float(maximum_rotation_deg):
+        return 'registration rotation correction exceeds %.1fdeg' % float(
+            maximum_rotation_deg)
+    return ''
+
+
+def masked_camera_cloud(o3d, depth_mm, mask, intrinsic):
+    values = np.asarray(depth_mm, dtype=np.uint16).copy()
+    values[np.asarray(mask) <= 0] = 0
+    image = o3d.geometry.Image(values)
+    cloud = o3d.geometry.PointCloud.create_from_depth_image(
+        image, intrinsic, depth_scale=1000.0, depth_trunc=1.5,
+        stride=1, project_valid_depth_only=True)
+    cloud = cloud.voxel_down_sample(0.003)
+    if len(cloud.points) >= 20:
+        cloud.estimate_normals(
+            o3d.geometry.KDTreeSearchParamHybrid(radius=0.015, max_nn=30))
+    return cloud
+
+
 def reconstruct(scan_dir, output_path, voxel_length=0.003,
                 sdf_trunc=0.015, depth_trunc=1.5):
+    scan = Path(scan_dir).resolve()
+    with open(scan / 'manifest.json', 'r', encoding='utf-8') as stream:
+        manifest = json.load(stream)
+    manifest_sha256 = validate_manifest_integrity(scan, manifest)
+    metadata_paths = validate_capture_set(
+        manifest, sorted((scan / 'frames').glob('view_*_metadata.yaml')))
     try:
         import cv2
         import open3d as o3d
     except ImportError as exc:
         raise RuntimeError(
             'install reconstruction/requirements.txt in an isolated environment') from exc
-    scan = Path(scan_dir).resolve()
-    with open(scan / 'manifest.json', 'r', encoding='utf-8') as stream:
-        manifest = json.load(stream)
-    if int(manifest.get('capture_count', 0)) != 13:
-        raise ValueError('TSDF prototype requires exactly 13 captured views')
     volume = o3d.pipelines.integration.ScalableTSDFVolume(
         voxel_length=float(voxel_length),
         sdf_trunc=float(sdf_trunc),
         color_type=o3d.pipelines.integration.TSDFVolumeColorType.RGB8,
     )
     integrated = 0
-    for metadata_path in sorted((scan / 'frames').glob('view_*_metadata.yaml')):
+    registration = []
+    accumulated = None
+    for metadata_path in metadata_paths:
         metadata = load_metadata(metadata_path)
         info = metadata.get('camera_info', {})
         k = info.get('k', [])
@@ -79,22 +179,68 @@ def reconstruct(scan_dir, output_path, voxel_length=0.003,
         intrinsic = o3d.camera.PinholeCameraIntrinsic(
             int(info['width']), int(info['height']),
             float(k[0]), float(k[4]), float(k[2]), float(k[5]))
+        nominal_base_camera = np.linalg.inv(
+            camera_extrinsic_from_metadata(metadata))
+        cloud_camera = masked_camera_cloud(o3d, depth, mask, intrinsic)
+        if len(cloud_camera.points) < 20:
+            raise ValueError('%s has too few masked depth points' % metadata_path.name)
+        cloud_base = cloud_camera.transform(nominal_base_camera.copy())
+        correction = np.eye(4)
+        accepted_correction = False
+        rejection = 'first frame anchors the target model'
+        fitness = 1.0
+        inlier_rmse = 0.0
+        if accumulated is not None and len(accumulated.points) >= 20:
+            result = o3d.pipelines.registration.registration_generalized_icp(
+                cloud_base, accumulated, 0.015, np.eye(4),
+                o3d.pipelines.registration.TransformationEstimationForGeneralizedICP(),
+                o3d.pipelines.registration.ICPConvergenceCriteria(
+                    relative_fitness=1e-6, relative_rmse=1e-6,
+                    max_iteration=40))
+            fitness = float(result.fitness)
+            inlier_rmse = float(result.inlier_rmse)
+            rejection = correction_rejection(
+                result.transformation, fitness, inlier_rmse)
+            if not rejection:
+                correction = np.asarray(result.transformation, dtype=float)
+                cloud_base.transform(correction)
+                accepted_correction = True
+        refined_base_camera = correction @ nominal_base_camera
+        registration.append({
+            'frame': metadata_path.name,
+            'fitness': fitness,
+            'inlier_rmse_m': inlier_rmse,
+            'correction_accepted': accepted_correction,
+            'correction_rejection': rejection,
+            'translation_correction_m': float(
+                np.linalg.norm(correction[:3, 3])),
+            'rotation_correction_deg': float(
+                np.degrees(rotation_angle_rad(correction))),
+        })
+        accumulated = (
+            cloud_base if accumulated is None else
+            (accumulated + cloud_base).voxel_down_sample(0.003))
         rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
             o3d.geometry.Image(rgb), o3d.geometry.Image(depth),
             depth_scale=1000.0, depth_trunc=float(depth_trunc),
             convert_rgb_to_intensity=False)
         volume.integrate(
-            rgbd, intrinsic, camera_extrinsic_from_metadata(metadata))
+            rgbd, intrinsic, np.linalg.inv(refined_base_camera))
         integrated += 1
     mesh = volume.extract_triangle_mesh()
     mesh.compute_vertex_normals()
+    if len(mesh.vertices) < 100 or len(mesh.triangles) < 100:
+        raise ValueError(
+            'reconstruction produced an unusably small mesh '
+            '(%d vertices, %d triangles)'
+            % (len(mesh.vertices), len(mesh.triangles)))
     output = Path(output_path).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     if not o3d.io.write_triangle_mesh(str(output), mesh):
         raise OSError('Open3D failed to save %s' % output)
     report = {
         'scan_dir': str(scan),
-        'input_manifest_sha256': sha256_file(scan / 'manifest.json'),
+        'input_manifest_sha256': manifest_sha256,
         'integrated_views': integrated,
         'vertex_count': len(mesh.vertices),
         'triangle_count': len(mesh.triangles),
@@ -102,6 +248,9 @@ def reconstruct(scan_dir, output_path, voxel_length=0.003,
         'mesh_sha256': sha256_file(output),
         'voxel_length_m': float(voxel_length),
         'sdf_trunc_m': float(sdf_trunc),
+        'registration': registration,
+        'accepted_registration_corrections': sum(
+            bool(item['correction_accepted']) for item in registration),
     }
     with open(output.with_suffix(output.suffix + '.quality.json'),
               'w', encoding='utf-8') as stream:

@@ -4,7 +4,7 @@ import pytest
 from piper_mobile_manipulation.obstacle_geometry import (
     BLOCKED, MOVABLE, UNSAFE, aabb_corners, canonical_label,
     effective_classification, normalize_label, obstacle_records,
-    project_instance, transform_points,
+    project_instance, target_occlusion_evidence, transform_points,
 )
 
 
@@ -70,3 +70,17 @@ def test_transform_and_aabb_corner_rotation():
     transformed = transform_points(corners, (1., 2., 3.), (0., 0., 0., 1.))
     np.testing.assert_allclose(np.min(transformed, axis=0), [1., 2., 3.])
     np.testing.assert_allclose(np.max(transformed, axis=0), [2., 4., 6.])
+
+
+def test_target_occlusion_evidence_requires_overlap_and_closer_depth():
+    target = np.zeros((10, 10), dtype=np.uint8)
+    target[2:8, 2:8] = 1
+    obstacle = np.zeros_like(target)
+    obstacle[3:7, 2:4] = 1
+    depth = np.full(target.shape, 0.50, dtype=np.float64)
+    depth[obstacle > 0] = 0.40
+
+    overlap, closer = target_occlusion_evidence(target, obstacle, depth)
+
+    assert overlap > 0.05
+    assert closer > 0.05

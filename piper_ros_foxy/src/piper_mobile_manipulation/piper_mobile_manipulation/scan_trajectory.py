@@ -1,11 +1,11 @@
-"""Fail-closed validation for exact PiPER SDK MoveJ target paths."""
+"""Fail-closed validation for scheduled PiPER/Tesseract joint paths."""
 
 import math
 
 import numpy as np
 
 
-TIMING_POLICY_VERSION = 'sdk_movej_targets_v1'
+TIMING_POLICY_VERSION = 'tesseract_stream_v1'
 JOINT_NAMES = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
 
 
@@ -34,7 +34,7 @@ def validate_tesseract_point(
     return vectors[0], vectors[1], vectors[2], when
 
 
-def validate_sdk_movej_waypoint_path(
+def validate_timed_tesseract_path(
         positions,
         velocities,
         accelerations,
@@ -42,23 +42,20 @@ def validate_sdk_movej_waypoint_path(
         command_rate_hz,
         maximum_step_rad=0.025,
 ):
-    """Validate the exact position-only target path without altering it.
+    """Validate an exact, time-followed position path without altering it.
 
-    PiPER's SDK MoveJ command accepts a joint-position target and one aggregate
-    speed percentage.  It does not accept the per-joint velocity or
-    acceleration vectors carried by JointTrajectoryPoint. The path therefore
-    contains the bound plan start, one final SDK target, and at most one
-    acquisition-only bootstrap target. Derivatives are exactly zero;
-    timestamps preserve target order but are not an execution schedule.
+    The PiPER boundary still consumes position targets plus one aggregate
+    speed percentage, so qdot/qddot remain zero transport placeholders.  In
+    this policy the timestamps are an execution schedule and every adjacent
+    position is a Tesseract-path sample.  Direct configured-home transactions
+    remain a separately scoped two-point exception in the caller.
     """
     q = np.asarray(positions, dtype=float)
     qd = np.asarray(velocities, dtype=float)
     qdd = np.asarray(accelerations, dtype=float)
     t = np.asarray(times, dtype=float)
-    if q.ndim != 2 or q.shape[0] not in (2, 3) or q.shape[1] != 6:
-        raise ValueError(
-            'trajectory must contain start/final targets and at most one '
-            'bootstrap target')
+    if q.ndim != 2 or q.shape[0] < 2 or q.shape[1] != 6:
+        raise ValueError('trajectory must contain at least two six-joint points')
     if qd.shape != q.shape or qdd.shape != q.shape:
         raise ValueError(
             'trajectory derivatives must match the position matrix')
@@ -83,8 +80,16 @@ def validate_sdk_movej_waypoint_path(
     if np.any(np.diff(t) < period - 1e-6):
         raise ValueError(
             'trajectory asks for commands faster than the declared rate')
+    if np.any(np.abs(np.diff(q, axis=0)) > maximum_step + 1e-9):
+        raise ValueError(
+            'trajectory contains a joint step larger than maximum_step_rad')
     if np.any(np.abs(qd) > 1e-12) or np.any(np.abs(qdd) > 1e-12):
         raise ValueError(
             'SDK MoveJ target derivatives must be zero because the '
             'controller interface accepts positions and aggregate speed only')
     return q.copy(), qd.copy(), qdd.copy(), t.copy()
+
+
+# Kept as a source-compatible import for downstream packages while the policy
+# string prevents an old endpoint-only proposal from entering this executor.
+validate_sdk_movej_waypoint_path = validate_timed_tesseract_path

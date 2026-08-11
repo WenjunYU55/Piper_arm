@@ -1,6 +1,8 @@
 import copy
+import math
 import time
 
+import numpy as np
 import pytest
 
 from piper_tesseract_foxy.contract import (
@@ -20,9 +22,11 @@ from piper_tesseract_foxy.worker import Worker
 def request_fixture(plan_kind='MULTIVIEW_SCAN'):
     now = time.time_ns()
     provenance = {
-        'source': (
-            'tracked_target' if plan_kind == 'MULTIVIEW_SCAN'
-            else 'rough_coordinate'),
+        'source': {
+            'MULTIVIEW_SCAN': 'tracked_target',
+            'ROUGH_ACQUISITION': 'rough_coordinate',
+            'RETURN_HOME': 'configured_home',
+        }[plan_kind],
         'frame_id': 'base_link',
         'stamp': {'sec': 123, 'nanosec': 456},
     }
@@ -43,15 +47,15 @@ def request_fixture(plan_kind='MULTIVIEW_SCAN'):
             'target_center_m': [0.5, 0.0, 0.2],
             'target_provenance': provenance,
             'observation_mode': (
-                'perception_snapshot'
-                if plan_kind == 'MULTIVIEW_SCAN'
-                else 'bootstrap_static'),
-            'candidate_views': [{
+                'bootstrap_static'
+                if plan_kind == 'ROUGH_ACQUISITION'
+                else 'perception_snapshot'),
+            'candidate_views': ([] if plan_kind == 'RETURN_HOME' else [{
                 'id': 1,
                 'camera_position_m': [0.4, 0.0, 0.3],
                 'look_direction': [1.0, 0.0, 0.0],
                 'required_first': plan_kind == 'ROUGH_ACQUISITION',
-            }],
+            }]),
             'obstacles': [],
         },
         'model': {
@@ -82,49 +86,52 @@ def request_fixture(plan_kind='MULTIVIEW_SCAN'):
             'pipeline': 'OMPL_ISP',
             'deterministic_seed': 42,
             'roll_samples_rad': [0.0],
-            'min_viewpoints': 1,
-            'max_viewpoints': 1,
+            'min_viewpoints': 0 if plan_kind == 'RETURN_HOME' else 1,
+            'max_viewpoints': 0 if plan_kind == 'RETURN_HOME' else 1,
             'max_execution_joint_step_rad': 0.10,
             'effective_speed_percent': 100.0,
-            'command_rate_hz': 100.0,
-            'timing_policy': 'sdk_movej_targets_v1',
+            'command_rate_hz': 20.0,
+            'timing_policy': 'tesseract_stream_v1',
             'joint_specific_costs': {},
             'return_home_positions_rad': (
                 [0.0, 0.0, -0.026, -0.039, 0.346, 0.107]
-                if plan_kind == 'MULTIVIEW_SCAN' else []),
+                if plan_kind in ('MULTIVIEW_SCAN', 'RETURN_HOME') else []),
         },
     }
     return attach_digest(value, 'request_sha256')
 
 
+def scheduled_path(knots, maximum_step=0.10):
+    positions = [list(knots[0])]
+    for goal in knots[1:]:
+        start = np.asarray(positions[-1], dtype=float)
+        goal = np.asarray(goal, dtype=float)
+        steps = max(1, int(math.ceil(
+            float(np.max(np.abs(goal - start))) / maximum_step)))
+        positions.extend([
+            (start + (goal - start) * (index / float(steps))).tolist()
+            for index in range(1, steps + 1)
+        ])
+    return [{
+        'time_from_start_s': round(index * 0.05, 9),
+        'positions_rad': position,
+        'velocities_rad_s': [0.0] * 6,
+        'accelerations_rad_s2': [0.0] * 6,
+    } for index, position in enumerate(positions)]
+
+
 def response_fixture(request):
-    points = [
-        {
-            'time_from_start_s': 0.0,
-            'positions_rad': [0.0] * 6,
-            'velocities_rad_s': [0.0] * 6,
-            'accelerations_rad_s2': [0.0] * 6,
-        },
-        {
-            'time_from_start_s': 1.0,
-            'positions_rad': [0.01] * 6,
-            'velocities_rad_s': [0.0] * 6,
-            'accelerations_rad_s2': [0.0] * 6,
-        },
-    ]
-    segments = [{'points': points}]
-    if request['plan_kind'] == 'MULTIVIEW_SCAN':
-        home_points = [
-            copy.deepcopy(points[-1]),
-            {
-                'time_from_start_s': 1.0,
-                'positions_rad':
-                    request['planning']['return_home_positions_rad'],
-                'velocities_rad_s': [0.0] * 6,
-                'accelerations_rad_s2': [0.0] * 6,
-            },
-        ]
-        home_points[0]['time_from_start_s'] = 0.0
+    points = scheduled_path([[0.0] * 6, [0.01] * 6])
+    segments = [] if request['plan_kind'] == 'RETURN_HOME' else [{'points': points}]
+    if (
+            request['plan_kind'] in ('MULTIVIEW_SCAN', 'RETURN_HOME')
+            and request['planning'].get('include_return_home', True)):
+        home_points = scheduled_path([
+            (points[0]['positions_rad']
+             if request['plan_kind'] == 'RETURN_HOME'
+             else points[-1]['positions_rad']),
+            request['planning']['return_home_positions_rad'],
+        ])
         segments.append({
             'is_return_home': True,
             'points': home_points,
@@ -153,19 +160,49 @@ def response_fixture(request):
         'deterministic_seed': request['planning']['deterministic_seed'],
         'joint_names': list(JOINT_NAMES),
         'target_center_m': request['scene']['target_center_m'],
-        'selected_viewpoints': [{
+        'selected_viewpoints': ([] if request['plan_kind'] == 'RETURN_HOME' else [{
             'id': request['scene']['candidate_views'][0]['id'],
             'camera_position_m': request['scene']['candidate_views'][0][
                 'camera_position_m'],
             'look_direction': request['scene']['candidate_views'][0][
                 'look_direction'],
             'roll_rad': 0.0,
-        }],
+        }]),
         'segments': segments,
         'trajectory_binding': binding,
         'trajectory_sha256': trajectory_digest(segments, binding),
     }
     return attach_digest(value, 'response_sha256')
+
+
+def test_closed_loop_one_view_response_omits_unused_embedded_home():
+    request = request_fixture('MULTIVIEW_SCAN')
+    request['planning']['include_return_home'] = False
+    request = attach_digest(request, 'request_sha256')
+    assert validate_request(request) is request
+
+    response = response_fixture(request)
+    assert len(response['segments']) == 1
+    assert response['segments'][0].get('is_return_home') is not True
+    assert validate_response(response, request) is response
+
+    batch = copy.deepcopy(request)
+    second = copy.deepcopy(batch['scene']['candidate_views'][0])
+    second['id'] = 2
+    batch['scene']['candidate_views'].append(second)
+    batch['planning']['max_viewpoints'] = 2
+    batch['planning']['min_viewpoints'] = 2
+    batch = attach_digest(batch, 'request_sha256')
+    with pytest.raises(ContractError, match='one closed-loop viewpoint'):
+        validate_request(batch)
+
+
+def rehash_response(response):
+    response = copy.deepcopy(response)
+    response['trajectory_sha256'] = trajectory_digest(
+        response['segments'], response['trajectory_binding'])
+    response.pop('response_sha256', None)
+    return attach_digest(response, 'response_sha256')
 
 
 def test_request_and_response_hashes_are_fail_closed():
@@ -198,6 +235,16 @@ def test_multiview_response_requires_exact_declared_return_home_endpoint():
     with pytest.raises(ContractError, match='not declared return home'):
         validate_response(response, request)
 
+
+def test_return_home_is_a_zero_capture_hash_bound_transaction():
+    request = request_fixture('RETURN_HOME')
+    assert validate_request(request) is request
+    response = response_fixture(request)
+    assert response['selected_viewpoints'] == []
+    assert len(response['segments']) == 1
+    assert response['segments'][0]['is_return_home'] is True
+    assert validate_response(response, request) is response
+
     response = response_fixture(request)
     response['segments'][-1]['points'][-1]['positions_rad'][5] += 0.01
     response['trajectory_sha256'] = trajectory_digest(
@@ -205,6 +252,176 @@ def test_multiview_response_requires_exact_declared_return_home_endpoint():
     response = attach_digest(response, 'response_sha256')
     with pytest.raises(ContractError, match='does not match the request'):
         validate_response(response, request)
+
+
+def test_configured_home_collision_bypass_is_exactly_stage_bound():
+    request = request_fixture('RETURN_HOME')
+    request['planning']['home_stage'] = 'ROUGH_HOME'
+    request.pop('request_sha256')
+    request = attach_digest(request, 'request_sha256')
+    response = response_fixture(request)
+    response['segments'][0]['points'] = [
+        response['segments'][0]['points'][0],
+        response['segments'][0]['points'][-1],
+    ]
+    response['segments'][0]['points'][-1]['time_from_start_s'] = 0.05
+    response['segments'][0].update({
+        'configured_home_direct_joint_move': True,
+        'configured_home_goal_positions_rad':
+            request['planning']['return_home_positions_rad'],
+        'collision_validation_bypassed': True,
+        'validation': 'configured_home_collision_validation_bypassed',
+        'home_stage': 'ROUGH_HOME',
+    })
+    response = rehash_response(response)
+
+    assert validate_response(response, request) is response
+
+    wrong_stage = copy.deepcopy(response)
+    wrong_stage['segments'][0]['home_stage'] = 'STORAGE_WRIST'
+    wrong_stage = rehash_response(wrong_stage)
+    with pytest.raises(ContractError, match='bypass scope'):
+        validate_response(wrong_stage, request)
+
+    leaked = request_fixture('MULTIVIEW_SCAN')
+    leaked_response = response_fixture(leaked)
+    leaked_response['segments'][0].update({
+        'configured_home_direct_joint_move': True,
+        'configured_home_goal_positions_rad':
+            leaked_response['segments'][0]['points'][-1]['positions_rad'],
+        'collision_validation_bypassed': True,
+        'validation': 'configured_home_collision_validation_bypassed',
+        'home_stage': 'ROUGH_HOME',
+    })
+    leaked_response = rehash_response(leaked_response)
+    with pytest.raises(ContractError, match='bypass scope'):
+        validate_response(leaked_response, leaked)
+
+    mismatched_goal = copy.deepcopy(response)
+    mismatched_goal['segments'][0][
+        'configured_home_goal_positions_rad'][5] += 0.01
+    mismatched_goal = rehash_response(mismatched_goal)
+    with pytest.raises(ContractError, match='declared goal does not match'):
+        validate_response(mismatched_goal, request)
+
+
+def test_return_home_accepts_only_declared_dual_recovery_targets():
+    request = request_fixture('RETURN_HOME')
+    response = response_fixture(request)
+    segment = response['segments'][0]
+    start = copy.deepcopy(segment['points'][0])
+    home = copy.deepcopy(segment['points'][-1])
+    powered_position = copy.deepcopy(start['positions_rad'])
+    powered_position[2] = -0.06
+    home_entry_position = copy.deepcopy(home['positions_rad'])
+    home_entry_position[2] -= 0.03
+    segment['points'] = scheduled_path([
+        start['positions_rad'], powered_position,
+        home_entry_position, home['positions_rad']])
+    powered_end = next(
+        index for index, point in enumerate(segment['points'])
+        if point['positions_rad'] == powered_position)
+    recovery_end = next(
+        index for index, point in enumerate(segment['points'])
+        if point['positions_rad'] == home_entry_position)
+    segment.update({
+        'bootstrap_recovery_used': True,
+        'bootstrap_recovery_end_point': recovery_end,
+        'powered_start_recovery_used': True,
+        'powered_start_recovery_end_point': powered_end,
+    })
+    response['trajectory_sha256'] = trajectory_digest(
+        response['segments'], response['trajectory_binding'])
+    response = attach_digest(response, 'response_sha256')
+    assert validate_response(response, request) is response
+
+    invalid = copy.deepcopy(response)
+    invalid['segments'][0]['powered_start_recovery_end_point'] = recovery_end
+    invalid['trajectory_sha256'] = trajectory_digest(
+        invalid['segments'], invalid['trajectory_binding'])
+    invalid = attach_digest(invalid, 'response_sha256')
+    with pytest.raises(ContractError, match='declaration is invalid'):
+        validate_response(invalid, request)
+
+
+def test_startup_home_accepts_powered_start_only_recovery_to_clear_home():
+    request = request_fixture('RETURN_HOME')
+    request['scene']['startup_home_static'] = True
+    request = attach_digest(request, 'request_sha256')
+    response = response_fixture(request)
+    segment = response['segments'][0]
+    start = copy.deepcopy(segment['points'][0])
+    recovery_position = copy.deepcopy(start['positions_rad'])
+    recovery_position[2] = -0.06
+    home = copy.deepcopy(segment['points'][-1])
+    segment['points'] = scheduled_path([
+        start['positions_rad'], recovery_position, home['positions_rad']])
+    recovery_end = next(
+        index for index, point in enumerate(segment['points'])
+        if point['positions_rad'] == recovery_position)
+    segment['startup_home_static'] = True
+    segment.update({
+        'powered_start_recovery_used': True,
+        'powered_start_recovery_end_point': recovery_end,
+    })
+    response['trajectory_sha256'] = trajectory_digest(
+        response['segments'], response['trajectory_binding'])
+    response = attach_digest(response, 'response_sha256')
+    assert validate_response(response, request) is response
+
+    invalid = copy.deepcopy(response)
+    invalid['segments'][0]['powered_start_recovery_end_point'] = len(
+        invalid['segments'][0]['points']) - 1
+    invalid['trajectory_sha256'] = trajectory_digest(
+        invalid['segments'], invalid['trajectory_binding'])
+    invalid = attach_digest(invalid, 'response_sha256')
+    with pytest.raises(ContractError, match='declaration is invalid'):
+        validate_response(invalid, request)
+
+
+def test_startup_home_static_scene_is_empty_and_return_home_only():
+    request = request_fixture('RETURN_HOME')
+    request['scene']['startup_home_static'] = True
+    request = attach_digest(request, 'request_sha256')
+    assert validate_request(request) is request
+
+    invalid = request_fixture('MULTIVIEW_SCAN')
+    invalid['scene']['startup_home_static'] = True
+    invalid = attach_digest(invalid, 'request_sha256')
+    with pytest.raises(ContractError, match='RETURN_HOME-only'):
+        validate_request(invalid)
+
+    invalid = request_fixture('RETURN_HOME')
+    invalid['scene']['startup_home_static'] = True
+    invalid['scene']['obstacles'] = [{
+        'id': 'unexpected',
+        'type': 'box',
+        'minimum_m': [0.0, 0.0, 0.0],
+        'maximum_m': [0.1, 0.1, 0.1],
+    }]
+    invalid = attach_digest(invalid, 'request_sha256')
+    with pytest.raises(ContractError, match='must not contain'):
+        validate_request(invalid)
+
+
+def test_startup_home_static_is_bound_through_the_response_segment():
+    request = request_fixture('RETURN_HOME')
+    request['scene']['startup_home_static'] = True
+    request = attach_digest(request, 'request_sha256')
+    response = response_fixture(request)
+    response['segments'][0]['startup_home_static'] = True
+    response['trajectory_sha256'] = trajectory_digest(
+        response['segments'], response['trajectory_binding'])
+    response = attach_digest(response, 'response_sha256')
+    assert validate_response(response, request) is response
+
+    invalid = copy.deepcopy(response)
+    invalid['segments'][0]['startup_home_static'] = False
+    invalid['trajectory_sha256'] = trajectory_digest(
+        invalid['segments'], invalid['trajectory_binding'])
+    invalid = attach_digest(invalid, 'response_sha256')
+    with pytest.raises(ContractError, match='mismatches the request'):
+        validate_response(invalid, request)
 
 
 def test_request_rejects_the_removed_trajopt_pipeline_label():
@@ -283,6 +500,46 @@ def test_only_rough_acquisition_may_bind_two_bounded_outside_start_joints():
     multiview = attach_digest(multiview, 'request_sha256')
     with pytest.raises(ContractError, match='acquisition-only'):
         validate_request(multiview)
+
+
+def test_direct_return_home_may_recover_a_bounded_post_disable_start():
+    request = request_fixture('RETURN_HOME')
+    request['limits']['configured_home_start_limit_tolerance_rad'] = 0.3
+    request['start_state']['positions_rad'][5] = -1.03168
+    request = attach_digest(request, 'request_sha256')
+    assert validate_request(request) is request
+
+    response = response_fixture(request)
+    response['segments'][0]['points'][0]['positions_rad'][5] = -1.03168
+    response['segments'][0]['points'] = [
+        response['segments'][0]['points'][0],
+        response['segments'][0]['points'][-1],
+    ]
+    response['segments'][0]['points'][-1]['time_from_start_s'] = 0.05
+    response['segments'][0].update({
+        'configured_home_direct_joint_move': True,
+        'configured_home_goal_positions_rad':
+            request['planning']['return_home_positions_rad'],
+        'collision_validation_bypassed': True,
+        'validation': 'configured_home_collision_validation_bypassed',
+        'home_stage': 'CONFIGURED_HOME',
+    })
+    response['segments'][0]['points'][-1]['positions_rad'] = list(
+        request['planning']['return_home_positions_rad'])
+    response = rehash_response(response)
+    assert validate_response(response, request) is response
+
+    too_far = copy.deepcopy(request)
+    too_far['start_state']['positions_rad'][5] = -1.300001
+    too_far = attach_digest(too_far, 'request_sha256')
+    with pytest.raises(ContractError, match='joint6 is outside limits'):
+        validate_request(too_far)
+
+    scan = request_fixture('MULTIVIEW_SCAN')
+    scan['limits']['configured_home_start_limit_tolerance_rad'] = 0.3
+    scan = attach_digest(scan, 'request_sha256')
+    with pytest.raises(ContractError, match='RETURN_HOME-only'):
+        validate_request(scan)
 
 
 def test_multiview_contract_accepts_exactly_thirteen_views_and_rejects_more():

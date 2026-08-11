@@ -27,6 +27,18 @@ def angular_separation_deg(first, second):
     return math.degrees(math.acos(max(-1.0, min(1.0, cosine))))
 
 
+def history_vector3(entry, actual_field, desired_field, label):
+    """Prefer achieved geometry, with legacy desired geometry as fallback."""
+    if not isinstance(entry, dict):
+        raise ValueError('%s is missing' % label)
+    for field in (actual_field, desired_field):
+        try:
+            return vector3(entry.get(field), label)
+        except (TypeError, ValueError):
+            continue
+    raise ValueError('%s is missing' % label)
+
+
 def viewpoint_is_duplicate(
         viewpoint, entries, position_tolerance_m=0.012,
         look_tolerance_deg=2.0):
@@ -36,10 +48,12 @@ def viewpoint_is_duplicate(
         viewpoint.get('desired_look_at_direction'), 'look direction')
     for entry in entries:
         try:
-            previous_camera = vector3(
-                entry.get('desired_camera_position'), 'history camera position')
-            previous_look = vector3(
-                entry.get('desired_look_at_direction'), 'history look direction')
+            previous_camera = history_vector3(
+                entry, 'actual_camera_position', 'desired_camera_position',
+                'history camera position')
+            previous_look = history_vector3(
+                entry, 'actual_look_at_direction',
+                'desired_look_at_direction', 'history look direction')
         except (TypeError, ValueError):
             continue
         if (
@@ -62,10 +76,12 @@ def diversity_distance(viewpoint, references):
     scores = []
     for reference in references:
         try:
-            previous_camera = vector3(
-                reference.get('desired_camera_position'), 'reference camera')
-            previous_look = vector3(
-                reference.get('desired_look_at_direction'), 'reference look')
+            previous_camera = history_vector3(
+                reference, 'actual_camera_position',
+                'desired_camera_position', 'reference camera')
+            previous_look = history_vector3(
+                reference, 'actual_look_at_direction',
+                'desired_look_at_direction', 'reference look')
         except (TypeError, ValueError):
             continue
         # One degree contributes one centimetre to the diversity score.
@@ -75,9 +91,253 @@ def diversity_distance(viewpoint, references):
     return min(scores) if scores else math.inf
 
 
+def camera_offset_geometry(entries, target_center):
+    """Return achieved target-to-camera offsets and spherical coordinates."""
+    center = vector3(target_center, 'coverage target center')
+    geometry = []
+    for entry in entries if isinstance(entries, list) else []:
+        try:
+            camera = history_vector3(
+                entry, 'actual_camera_position', 'desired_camera_position',
+                'achieved camera position')
+        except (TypeError, ValueError):
+            continue
+        offset = camera - center
+        distance = float(np.linalg.norm(offset))
+        if distance <= 1e-6 or not np.all(np.isfinite(offset)):
+            continue
+        horizontal = float(np.linalg.norm(offset[:2]))
+        azimuth = math.degrees(math.atan2(offset[1], offset[0]))
+        if azimuth < 0.0:
+            azimuth += 360.0
+        geometry.append({
+            'offset': offset,
+            'distance': distance,
+            'lateral_fraction': float(offset[1] / distance),
+            'azimuth_deg': azimuth,
+            'elevation_deg': math.degrees(
+                math.atan2(offset[2], horizontal)),
+        })
+    return geometry
+
+
+def feature_coverage_priority(
+        viewpoint, accepted_entries, target_center,
+        minimum_views_per_y_side=2, minimum_azimuth_span_deg=120.0,
+        minimum_elevation_span_deg=25.0):
+    """
+    Score the next view against the most important unmet feature axis.
+
+    A generic farthest-point score can reverse an orbit before it reaches a
+    missing cube face.  This staged score keeps walking toward one missing
+    lateral face until it has two achieved observations, then crosses to the
+    other face, extends azimuth, extends elevation, and only then maximizes
+    ordinary pose diversity.  The stages are recomputed after every accepted
+    achieved pose, so no desired pose is treated as accomplished.
+    """
+    center = vector3(target_center, 'coverage target center')
+    camera = vector3(
+        viewpoint.get('desired_camera_position'), 'camera position')
+    offset = camera - center
+    distance = float(np.linalg.norm(offset))
+    if distance <= 1e-6 or not np.all(np.isfinite(offset)):
+        raise ValueError('candidate camera position coincides with target center')
+    horizontal = float(np.linalg.norm(offset[:2]))
+    lateral_fraction = float(offset[1] / distance)
+    azimuth = math.degrees(math.atan2(offset[1], offset[0]))
+    if azimuth < 0.0:
+        azimuth += 360.0
+    elevation = math.degrees(math.atan2(offset[2], horizontal))
+
+    achieved = camera_offset_geometry(accepted_entries, target_center)
+    positive_y = sum(
+        item['lateral_fraction'] >= 0.35 for item in achieved)
+    negative_y = sum(
+        item['lateral_fraction'] <= -0.35 for item in achieved)
+    azimuths = [item['azimuth_deg'] for item in achieved]
+    elevations = [item['elevation_deg'] for item in achieved]
+    azimuth_span = (
+        max(azimuths) - min(azimuths) if len(azimuths) >= 2 else 0.0)
+    elevation_span = (
+        max(elevations) - min(elevations)
+        if len(elevations) >= 2 else 0.0)
+
+    # Finish the side the achieved camera is already approaching, then cross
+    # the front hemisphere once to the opposite side. Hard-coding -Y first
+    # made a physical +Y-side acquisition cross the workspace twice.
+    both_sides_missing = (
+        negative_y < int(minimum_views_per_y_side)
+        and positive_y < int(minimum_views_per_y_side))
+    approaching_positive = bool(
+        achieved and achieved[-1]['lateral_fraction'] >= 0.0)
+    if (
+            positive_y < int(minimum_views_per_y_side)
+            and both_sides_missing and approaching_positive):
+        objective = 'positive_y_face'
+        primary = lateral_fraction
+    elif negative_y < int(minimum_views_per_y_side):
+        objective = 'negative_y_face'
+        primary = -lateral_fraction
+    elif positive_y < int(minimum_views_per_y_side):
+        objective = 'positive_y_face'
+        primary = lateral_fraction
+    elif azimuth_span < float(minimum_azimuth_span_deg):
+        objective = 'azimuth_span'
+        projected = azimuths + [azimuth]
+        primary = (max(projected) - min(projected)) / 180.0
+    elif elevation_span < float(minimum_elevation_span_deg):
+        objective = 'elevation_span'
+        projected = elevations + [elevation]
+        primary = (max(projected) - min(projected)) / 90.0
+    else:
+        objective = 'residual_pose_diversity'
+        value = diversity_distance(viewpoint, accepted_entries)
+        primary = 1.0 if math.isinf(value) else float(value)
+
+    # Marginal elevation and ordinary baseline separate otherwise equivalent
+    # face directions without overpowering the active hard-coverage goal.
+    projected_elevations = elevations + [elevation]
+    elevation_gain = (
+        (max(projected_elevations) - min(projected_elevations)
+         - elevation_span) if elevations else 0.0)
+    diversity = diversity_distance(viewpoint, accepted_entries)
+    if math.isinf(diversity) or objective != 'residual_pose_diversity':
+        diversity = 0.0
+    score = (
+        1000.0 * float(primary)
+        + 2.0 * max(0.0, float(elevation_gain))
+        + min(10.0, max(0.0, float(diversity))))
+    return score, objective
+
+
+def feature_coverage_progress(
+        viewpoint, accepted_entries, target_center, objective,
+        lateral_tolerance=0.02):
+    """Measure non-regression against achieved history for one objective.
+
+    Positive values advance the active feature floor.  Zero permits a useful
+    radius/elevation configuration change without surrendering already
+    achieved coverage.  A small lateral tolerance absorbs measured target/FK
+    noise, while a genuine orbit reversal remains negative.
+    """
+    center = vector3(target_center, 'coverage target center')
+    camera = vector3(
+        viewpoint.get('desired_camera_position'), 'camera position')
+    offset = camera - center
+    distance = float(np.linalg.norm(offset))
+    if distance <= 1e-6 or not np.all(np.isfinite(offset)):
+        raise ValueError('candidate camera position coincides with target center')
+    horizontal = float(np.linalg.norm(offset[:2]))
+    candidate_lateral = float(offset[1] / distance)
+    candidate_azimuth = math.degrees(math.atan2(offset[1], offset[0]))
+    if candidate_azimuth < 0.0:
+        candidate_azimuth += 360.0
+    candidate_elevation = math.degrees(
+        math.atan2(offset[2], horizontal))
+    achieved = camera_offset_geometry(accepted_entries, target_center)
+    if not achieved:
+        return 0.0
+    if objective == 'negative_y_face':
+        current = achieved[-1]['lateral_fraction']
+        return current - candidate_lateral + float(lateral_tolerance)
+    if objective == 'positive_y_face':
+        current = achieved[-1]['lateral_fraction']
+        return candidate_lateral - current + float(lateral_tolerance)
+    if objective == 'azimuth_span':
+        values = [item['azimuth_deg'] for item in achieved]
+        previous = max(values) - min(values) if len(values) >= 2 else 0.0
+        projected = values + [candidate_azimuth]
+        return max(projected) - min(projected) - previous
+    if objective == 'elevation_span':
+        values = [item['elevation_deg'] for item in achieved]
+        previous = max(values) - min(values) if len(values) >= 2 else 0.0
+        projected = values + [candidate_elevation]
+        return max(projected) - min(projected) - previous
+    return max(0.0, float(diversity_distance(
+        viewpoint, accepted_entries)))
+
+
+def achieved_feature_coverage(
+        entries, target_center, minimum_views=9,
+        minimum_views_per_y_side=2, minimum_azimuth_span_deg=120.0,
+        minimum_elevation_span_deg=25.0, surface_coverage=None):
+    """
+    Measure achieved face/axis diversity from persisted camera poses.
+
+    The base-link X direction defines the front hemisphere and Y separates
+    the two lateral cube faces.  This is an execution-result gate, not a
+    reachability claim: only accepted achieved FK positions contribute.
+    """
+    try:
+        geometry = camera_offset_geometry(entries, target_center)
+    except (TypeError, ValueError):
+        geometry = []
+    azimuths = []
+    elevations = []
+    positive_y = 0
+    negative_y = 0
+    for item in geometry:
+        lateral_fraction = item['lateral_fraction']
+        if lateral_fraction >= 0.35:
+            positive_y += 1
+        if lateral_fraction <= -0.35:
+            negative_y += 1
+        azimuths.append(item['azimuth_deg'])
+        elevations.append(item['elevation_deg'])
+    azimuth_span = (
+        max(azimuths) - min(azimuths) if len(azimuths) >= 2 else 0.0)
+    elevation_span = (
+        max(elevations) - min(elevations) if len(elevations) >= 2 else 0.0)
+    geometric_sufficient = bool(
+        len(geometry) >= int(minimum_views)
+        and positive_y >= int(minimum_views_per_y_side)
+        and negative_y >= int(minimum_views_per_y_side)
+        and azimuth_span >= float(minimum_azimuth_span_deg)
+        and elevation_span >= float(minimum_elevation_span_deg))
+    surface_required = isinstance(surface_coverage, dict)
+    surface_sufficient = bool(
+        surface_coverage.get('sufficient')) if surface_required else True
+    sufficient = bool(geometric_sufficient and surface_sufficient)
+    blockers = []
+    if len(geometry) < int(minimum_views):
+        blockers.append(
+            'only %d/%d accepted achieved views' % (
+                len(geometry), int(minimum_views)))
+    if positive_y < int(minimum_views_per_y_side):
+        blockers.append(
+            '+Y side has %d/%d views' % (
+                positive_y, int(minimum_views_per_y_side)))
+    if negative_y < int(minimum_views_per_y_side):
+        blockers.append(
+            '-Y side has %d/%d views' % (
+                negative_y, int(minimum_views_per_y_side)))
+    if azimuth_span < float(minimum_azimuth_span_deg):
+        blockers.append(
+            'azimuth span %.1f/%.1f deg' % (
+                azimuth_span, float(minimum_azimuth_span_deg)))
+    if elevation_span < float(minimum_elevation_span_deg):
+        blockers.append(
+            'elevation span %.1f/%.1f deg' % (
+                elevation_span, float(minimum_elevation_span_deg)))
+    if surface_required and not surface_sufficient:
+        blockers.append(str(surface_coverage.get(
+            'reason', 'measured surface coverage is insufficient')))
+    return {
+        'sufficient': sufficient,
+        'geometric_sufficient': geometric_sufficient,
+        'accepted_achieved_views': len(geometry),
+        'positive_y_side_views': positive_y,
+        'negative_y_side_views': negative_y,
+        'azimuth_span_deg': float(azimuth_span),
+        'elevation_span_deg': float(elevation_span),
+        'surface_coverage': dict(surface_coverage or {}),
+        'blockers': blockers,
+    }
+
+
 def filter_and_order_viewpoints(
         viewpoints, entries, position_tolerance_m=0.012,
-        look_tolerance_deg=2.0):
+        look_tolerance_deg=2.0, accepted_entries=None, target_center=None):
     """
     Remove viewpoints already captured in this session.
 
@@ -88,11 +348,36 @@ def filter_and_order_viewpoints(
     here and again in the bridge made the live arm alternate between the two
     ends of one orbit sector.
     """
-    return [
+    remaining = [
         item for item in viewpoints
         if not viewpoint_is_duplicate(
             item, entries, position_tolerance_m, look_tolerance_deg)
     ]
+    if target_center is None:
+        accepted_entries = entries if accepted_entries is None else accepted_entries
+    elif accepted_entries is None:
+        accepted_entries = entries
+    if not entries and target_center is None:
+        return remaining
+    scored = []
+    for item in remaining:
+        candidate = dict(item)
+        if target_center is not None:
+            value, objective = feature_coverage_priority(
+                item, accepted_entries, target_center)
+            candidate['coverage_objective'] = objective
+            candidate['coverage_progress_score'] = feature_coverage_progress(
+                item, accepted_entries, target_center, objective)
+        else:
+            value = float(diversity_distance(item, entries))
+        candidate['expected_new_coverage_score'] = value
+        scored.append(candidate)
+    return sorted(
+        scored,
+        key=lambda item: (
+            -float(item['expected_new_coverage_score']),
+            int(item.get('index', 0))),
+    )
 
 
 def validate_history_payload(payload, maximum_views):
@@ -111,14 +396,49 @@ def validate_history_payload(payload, maximum_views):
         raise ValueError('scan history maximum does not match configuration')
     if accepted != len(entries):
         raise ValueError('scan history count does not match its entries')
+    rejected_entries = payload.get('rejected_entries', [])
+    if not isinstance(rejected_entries, list):
+        raise ValueError('rejected scan history entries are not a list')
     if accepted < 0 or accepted > maximum:
         raise ValueError('scan history count is outside the session bounds')
+    coverage_target_center = payload.get('coverage_target_center')
+    if coverage_target_center is not None:
+        normalized_center = vector3(
+            coverage_target_center, 'coverage target center')
+        coverage_target_center = dict(zip(
+            ('x', 'y', 'z'), (float(value) for value in normalized_center)))
     for entry in entries:
         vector3(entry.get('desired_camera_position'), 'history camera position')
         vector3(entry.get('desired_look_at_direction'), 'history look direction')
+    for entry in rejected_entries:
+        vector3(entry.get('desired_camera_position'), 'rejected camera position')
+        vector3(entry.get('desired_look_at_direction'), 'rejected look direction')
     return {
         'session_id': session_id,
         'accepted_views': accepted,
         'max_views': maximum,
-        'entries': list(entries),
+        # Both accepted and quality-rejected poses are excluded from a replan;
+        # only accepted entries contribute to the session completion count.
+        'entries': list(entries) + list(rejected_entries),
+        'accepted_entries': list(entries),
+        'rejected_entries': list(rejected_entries),
+        # This measured center is frozen once per scan session.  Live target
+        # measurements still place each new candidate, but achieved coverage
+        # must be compared in one immutable frame so tracker noise cannot make
+        # an already-covered cube face appear missing again.
+        'coverage_target_center': coverage_target_center,
     }
+
+
+def history_coverage_target_center(history, live_target_center):
+    """Prefer the session's frozen measured coverage frame over live tracking."""
+    candidate = (
+        history.get('coverage_target_center')
+        if isinstance(history, dict) else None)
+    if candidate is None:
+        candidate = live_target_center
+    try:
+        center = vector3(candidate, 'coverage target center')
+    except (TypeError, ValueError):
+        return None
+    return dict(zip(('x', 'y', 'z'), (float(value) for value in center)))

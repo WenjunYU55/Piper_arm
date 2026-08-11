@@ -4,6 +4,7 @@ import importlib.util
 import xml.etree.ElementTree as ET
 
 import numpy as np
+import yaml
 
 
 DESCRIPTION_ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +23,21 @@ def _rotation_y(angle):
 def _rotation_z(angle):
     c, s = math.cos(angle), math.sin(angle)
     return np.asarray([[c, -s, 0], [s, c, 0], [0, 0, 1]], dtype=float)
+
+
+def _quaternion_rotation(quaternion_xyzw):
+    x, y, z, w = np.asarray(quaternion_xyzw, dtype=float)
+    norm = math.sqrt(x * x + y * y + z * z + w * w)
+    assert norm > 0.0
+    x, y, z, w = x / norm, y / norm, z / norm, w / norm
+    return np.asarray(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ],
+        dtype=float,
+    )
 
 
 def _origin_transform(origin):
@@ -92,6 +108,266 @@ def test_live_launch_pins_driver_domain_and_udp_transport():
     assert (
         DESCRIPTION_ROOT / "config" / "fastdds_gui_udp_only.xml"
     ).is_file()
+
+
+def test_camera_holder_mesh_is_fixed_visual_only_and_scaled_from_mm():
+    root = ET.parse(DESCRIPTION_ROOT / "urdf" / "piper_description.xacro").getroot()
+    links = {link.attrib["name"]: link for link in root.findall("link")}
+    joints = {joint.attrib["name"]: joint for joint in root.findall("joint")}
+
+    holder = links["camera_holder"]
+    visual_origin = holder.find("visual/origin")
+    mesh = holder.find("visual/geometry/mesh")
+    assert mesh.attrib["filename"] == (
+        "package://piper_description/meshes/camera_holder.STL"
+    )
+    assert mesh.attrib["scale"] == "0.001 0.001 0.001"
+    assert holder.find("collision") is None
+    assert (DESCRIPTION_ROOT / "meshes" / "camera_holder.STL").is_file()
+
+    mount = joints["gripper_base_to_camera_holder"]
+    assert mount.attrib["type"] == "fixed"
+    assert mount.find("parent").attrib["link"] == "gripper_base"
+    assert mount.find("child").attrib["link"] == "camera_holder"
+    assert np.allclose(
+        [float(value) for value in mount.find("origin").attrib["xyz"].split()],
+        [-0.036, 0.0, 0.044],
+        atol=1e-12,
+    )
+    assert np.allclose(
+        [float(value) for value in mount.find("origin").attrib["rpy"].split()],
+        [0.0, 0.0, 0.0],
+        atol=1e-12,
+    )
+
+    holder_from_mesh = _origin_transform(visual_origin)
+    assert np.allclose(
+        holder_from_mesh[:3, 3],
+        [0.1765, -0.0565314679146, 0.0612789535522],
+        atol=1e-12,
+    )
+    assert np.allclose(
+        [float(value) for value in visual_origin.attrib["rpy"].split()],
+        [-math.pi / 2.0, 0.0, math.pi / 2.0],
+        atol=1e-12,
+    )
+
+    # Preserve the user's locked holder placement: its nominal close-hole datum
+    # carries the intentional -4 mm visual Z trim.
+    arm_anchor_midpoint_on_mating_face_m = np.asarray(
+        [0.0565314679146, 0.0652789535522, 0.1765, 1.0]
+    )
+    assert np.allclose(
+        holder_from_mesh @ arm_anchor_midpoint_on_mating_face_m,
+        [0.0, 0.0, -0.004, 1.0],
+        atol=1e-12,
+    )
+
+    # The close lug holes remain the arm anchors and keep their exact 12 mm
+    # spacing; the locked visual trim places their rendered centres at z=40 mm.
+    close_arm_anchors_m = np.asarray(
+        [
+            [0.0505314679146, 0.0652789535522, 0.1765, 1.0],
+            [0.0625314679146, 0.0652789535522, 0.1765, 1.0],
+        ]
+    )
+    anchors_in_holder = (holder_from_mesh @ close_arm_anchors_m.T).T
+    assert np.allclose(
+        anchors_in_holder[:, :3],
+        [[0.0, -0.006, -0.004], [0.0, 0.006, -0.004]],
+        atol=1e-12,
+    )
+
+    gripper_from_holder = _origin_transform(mount.find("origin"))
+    anchors_in_gripper = (gripper_from_holder @ anchors_in_holder.T).T
+    assert np.allclose(
+        anchors_in_gripper[:, :3],
+        [[-0.036, -0.006, 0.040], [-0.036, 0.006, 0.040]],
+        atol=1e-12,
+    )
+
+    # The L515 uses the 40 mm pair through the lower raw circular cradle.  The
+    # installed rotations place that cradle above the gripper without moving
+    # the holder itself.
+    l515_fastener_axes_m = np.asarray(
+        [
+            [0.0565314679146, 0.0911539535522, 0.0565, 1.0],
+            [0.0565314679146, 0.0911539535522, 0.0965, 1.0],
+        ]
+    )
+    camera_fasteners_in_holder = (holder_from_mesh @ l515_fastener_axes_m.T).T
+    assert np.allclose(
+        camera_fasteners_in_holder[:, :3],
+        [[0.12, 0.0, -0.029875], [0.08, 0.0, -0.029875]],
+        atol=1e-12,
+    )
+
+
+def test_reversed_physical_gripper_and_l515_visual_mount_are_explicit():
+    root = ET.parse(DESCRIPTION_ROOT / "urdf" / "piper_description.xacro").getroot()
+    links = {link.attrib["name"]: link for link in root.findall("link")}
+    joints = {joint.attrib["name"]: joint for joint in root.findall("joint")}
+
+    gripper_mount = joints["joint6_to_gripper_base"]
+    assert gripper_mount.attrib["type"] == "fixed"
+    assert gripper_mount.find("parent").attrib["link"] == "link6"
+    assert gripper_mount.find("child").attrib["link"] == "gripper_base"
+    assert np.allclose(
+        [float(value) for value in gripper_mount.find("origin").attrib["rpy"].split()],
+        [0.0, 0.0, math.pi],
+        atol=1e-12,
+    )
+
+    camera = links["l515_visual"]
+    camera_visual = camera.find("visual")
+    camera_mesh = camera_visual.find("geometry/mesh")
+    assert camera_mesh.attrib["filename"] == (
+        "package://piper_description/meshes/Intel_RealSense_L515_CAD_external.STL"
+    )
+    assert camera_mesh.attrib["scale"] == "0.001 0.001 0.001"
+    assert camera.find("collision") is None
+    assert camera.find("inertial") is None
+    assert (DESCRIPTION_ROOT / "meshes" / "Intel_RealSense_L515_CAD_external.STL").is_file()
+    assert camera_visual.find("material").attrib["name"] == "l515_silver"
+    assert np.allclose(
+        [
+            float(value)
+            for value in camera_visual.find("material/color").attrib["rgba"].split()
+        ],
+        [0.55, 0.58, 0.62, 1.0],
+        atol=1e-12,
+    )
+    assert np.allclose(
+        [
+            float(value)
+            for value in camera_visual.find("origin").attrib["xyz"].split()
+        ],
+        [-0.030503129, -0.030503409, -0.029628554],
+        atol=1e-12,
+    )
+
+    camera_mount = joints["camera_holder_to_l515_visual"]
+    assert camera_mount.attrib["type"] == "fixed"
+    assert camera_mount.find("parent").attrib["link"] == "camera_holder"
+    assert camera_mount.find("child").attrib["link"] == "l515_visual"
+    holder_from_camera = _origin_transform(camera_mount.find("origin"))
+    assert np.allclose(
+        holder_from_camera[:3, 3],
+        [0.1, 0.0, 0.0],
+        atol=1e-12,
+    )
+    assert np.allclose(
+        holder_from_camera[:3, :3],
+        np.asarray([[0.0, 1.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]),
+        atol=1e-12,
+    )
+
+    # The L515 rear screw axes retain their 40 mm spacing and transverse match.
+    # The operator-confirmed physical rendering keeps the camera axes 2.5 mm
+    # forward of the holder-hole midpoint as its installed axial seating trim.
+    camera_from_mesh = _origin_transform(camera_visual.find("origin"))
+    l515_fastener_axes_in_mesh_m = np.asarray(
+        [
+            [0.030503129, 0.010503409, 0.002253556, 1.0],
+            [0.030503129, 0.050503409, 0.002253556, 1.0],
+        ]
+    )
+    fasteners_in_holder = (
+        holder_from_camera
+        @ camera_from_mesh
+        @ l515_fastener_axes_in_mesh_m.T
+    ).T
+    assert np.allclose(
+        fasteners_in_holder[:, :3],
+        [[0.08, 0.0, -0.027374998], [0.12, 0.0, -0.027374998]],
+        atol=1e-9,
+    )
+    assert math.isclose(
+        np.linalg.norm(fasteners_in_holder[1, :3] - fasteners_in_holder[0, :3]),
+        0.04,
+        abs_tol=1e-12,
+    )
+
+
+def test_deployed_camera_optical_frame_matches_l515_depth_datum_and_factory_extrinsic():
+    root = ET.parse(DESCRIPTION_ROOT / "urdf" / "piper_description.xacro").getroot()
+    joints = {joint.attrib["name"]: joint for joint in root.findall("joint")}
+
+    link6_from_l515 = (
+        _origin_transform(joints["joint6_to_gripper_base"].find("origin"))
+        @ _origin_transform(joints["gripper_base_to_camera_holder"].find("origin"))
+        @ _origin_transform(joints["camera_holder_to_l515_visual"].find("origin"))
+    )
+    workspace_root = DESCRIPTION_ROOT.parents[2]
+    calibration_path = (
+        workspace_root
+        / "L515_camera/calibration/hand_eye/session_20260808_straight_mount"
+        / "calibration_result.yaml"
+    )
+    with calibration_path.open(encoding="utf-8") as stream:
+        calibration = yaml.safe_load(stream)
+    registration = calibration["mechanical_registration"]
+
+    assert registration["datasheet_revision"] == "003"
+    assert registration["device_serial"] == "f1120648"
+    assert math.isclose(registration["depth_offset_from_front_glass_m"], 0.0045)
+    expected_depth_z = (
+        registration["mesh_outer_front_cover_glass_z_mm"]
+        - registration["mesh_visual_origin_z_mm"]
+    ) / 1000.0 - registration["depth_offset_from_front_glass_m"]
+    assert math.isclose(
+        registration["l515_visual_to_camera_depth_optical_translation_m"][2],
+        expected_depth_z,
+        abs_tol=1e-12,
+    )
+
+    l515_from_depth_optical = np.eye(4)
+    l515_from_depth_optical[:3, :3] = _quaternion_rotation(
+        registration["l515_visual_to_camera_depth_optical_quaternion_xyzw"]
+    )
+    l515_from_depth_optical[:3, 3] = (
+        registration["l515_visual_to_camera_depth_optical_translation_m"]
+    )
+    factory = registration["factory_color_to_depth_extrinsic"]
+    depth_from_colour_optical = np.eye(4)
+    depth_from_colour_optical[:3, :3] = _quaternion_rotation(
+        factory["quaternion_xyzw"]
+    )
+    depth_from_colour_optical[:3, 3] = factory["translation_m"]
+    l515_from_colour_optical = (
+        l515_from_depth_optical @ depth_from_colour_optical
+    )
+    assert np.allclose(
+        l515_from_colour_optical[:3, 3],
+        registration["l515_visual_to_camera_color_optical_translation_m"],
+        atol=1e-12,
+    )
+    assert np.allclose(
+        l515_from_colour_optical[:3, :3],
+        _quaternion_rotation(
+            registration["l515_visual_to_camera_color_optical_quaternion_xyzw"]
+        ),
+        atol=1e-12,
+    )
+    expected = link6_from_l515 @ l515_from_colour_optical
+
+    deployed = np.asarray(calibration["camera_to_link6"]["matrix"], dtype=float)
+    deployed_translation = np.asarray(
+        calibration["camera_to_link6"]["translation_m"], dtype=float
+    )
+    deployed_quaternion = np.asarray(
+        calibration["camera_to_link6"]["quaternion_xyzw"], dtype=float
+    )
+
+    assert registration["urdf_visual_link"] == "l515_visual"
+    assert registration["physical_revalidation"]["status"] == "passed"
+    assert np.allclose(deployed, expected, atol=1e-9)
+    assert np.allclose(deployed_translation, deployed[:3, 3], atol=1e-12)
+    assert np.allclose(
+        _quaternion_rotation(deployed_quaternion),
+        deployed[:3, :3],
+        atol=1e-12,
+    )
 
 
 def test_legacy_control_and_simulation_surfaces_are_absent():

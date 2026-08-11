@@ -75,14 +75,17 @@ def test_acquisition_builds_distinct_bounded_orientation_cone():
         target, current_camera,
         standoff_m=0.45, camera_pitch_deg=-10.0, sweep_angle_deg=15.0)
 
-    assert [item['acquisition_look'] for item in viewpoints] == [
-        'center', 'left', 'right', 'up', 'down',
-        'left_up', 'right_up', 'left_down', 'right_down']
+    assert len(viewpoints) == 5
+    assert viewpoints[0]['acquisition_look'] == 'center'
+    assert all(
+        item['acquisition_transaction_index'] == 0 for item in viewpoints)
     positions = [vector(item['desired_camera_position']) for item in viewpoints]
     effective_standoff = np.linalg.norm(current_camera - target)
     assert effective_standoff < 0.45
     assert np.allclose(positions[0], current_camera)
-    assert all(np.allclose(position, current_camera) for position in positions)
+    assert all(np.isclose(
+        np.linalg.norm(position - target), effective_standoff)
+        for position in positions)
     assert all(np.isclose(
         item['camera_object_distance_m'], effective_standoff)
         for item in viewpoints)
@@ -95,40 +98,29 @@ def test_acquisition_builds_distinct_bounded_orientation_cone():
     expected_center = (target - current_camera) / np.linalg.norm(
         target - current_camera)
     assert np.allclose(looks[0], expected_center)
-    center_azimuth = math.degrees(math.atan2(looks[0][1], looks[0][0]))
-    left_azimuth = math.degrees(math.atan2(looks[1][1], looks[1][0]))
-    right_azimuth = math.degrees(math.atan2(looks[2][1], looks[2][0]))
-    assert np.isclose(
-        circular_difference_degrees(left_azimuth, center_azimuth), 15.0)
-    assert np.isclose(
-        circular_difference_degrees(right_azimuth, center_azimuth), 15.0)
-    assert np.isclose(angle_degrees(looks[0], looks[3]), 15.0)
-    assert np.isclose(angle_degrees(looks[0], looks[4]), 15.0)
-    assert looks[3][2] > looks[0][2]
-    assert looks[4][2] < looks[0][2]
+    assert all(14.0 <= angle_degrees(looks[0], look) <= 15.01
+               for look in looks[1:])
     assert viewpoints[0]['keep_object_centered']
-    assert not any(item['keep_object_centered'] for item in viewpoints[1:])
+    assert all(item['keep_object_centered'] for item in viewpoints[1:])
 
 
-def test_default_cone_covers_deliberately_wrong_lateral_cube_hint():
+def test_five_transactions_cover_compact_angular_neighborhoods():
     rough = np.asarray([0.25, 0.0, 0.0])
-    actual = np.asarray([0.25, -0.25, 0.0])
     current_camera = np.asarray([0.17354935, 0.03613366, 0.28642369])
-    viewpoints = build_acquisition_viewpoints(rough, current_camera)
-    actual_direction = actual - current_camera
-    actual_direction /= np.linalg.norm(actual_direction)
-
-    look_errors = [
-        angle_degrees(
-            vector(item['desired_look_at_direction']), actual_direction)
-        for item in viewpoints
+    viewpoints = [
+        item
+        for look_index in range(5)
+        for item in build_acquisition_viewpoints(
+            rough, current_camera, sweep_angle_deg=15.0,
+            look_index=look_index)
     ]
-
-    assert min(look_errors) < 5.0
-    best = viewpoints[int(np.argmin(look_errors))]
-    assert best['acquisition_look'] == 'right_up'
-    assert np.isclose(best['acquisition_yaw_offset_deg'], -45.0)
-    assert np.isclose(best['acquisition_pitch_offset_deg'], 30.0)
+    primary = [viewpoints[index * 5] for index in range(5)]
+    assert [item['acquisition_transaction_index'] for item in primary] == list(range(5))
+    center = vector(primary[0]['desired_look_at_direction'])
+    assert all(
+        9.9 <= angle_degrees(
+            center, vector(item['desired_look_at_direction'])) <= 15.1
+        for item in primary[1:])
 
 
 def test_near_base_hint_does_not_push_center_view_behind_robot():
@@ -143,7 +135,12 @@ def test_near_base_hint_does_not_push_center_view_behind_robot():
     assert np.allclose(positions[0], current_camera)
     assert base_reaches[0] >= 0.20
     assert sum(reach >= 0.20 for reach in base_reaches) >= 4
-    assert all(np.allclose(position, current_camera) for position in positions)
+    initial_radial = current_camera - target
+    assert all(np.dot(position - target, initial_radial) > 0.0
+               for position in positions)
+    assert all(np.linalg.norm(position - target)
+               <= np.linalg.norm(initial_radial) + 1e-6
+               for position in positions)
 
 
 def test_acquisition_faces_hint_before_cone_even_if_current_view_differs():
@@ -177,25 +174,15 @@ def test_centerline_hint_adds_distinct_compact_fallback_candidates():
         standoff_m=0.45, camera_pitch_deg=-10.0, sweep_angle_deg=15.0,
         fallback_standoff_m=0.30)
 
-    assert len(viewpoints) == 20
-    assert [item['acquisition_look'] for item in viewpoints[:10]] == [
-        'center', 'compact_center', 'left', 'right', 'up', 'down',
-        'left_up', 'right_up', 'left_down', 'right_down']
+    assert len(viewpoints) == 5
+    assert viewpoints[0]['acquisition_look'] == 'center'
     assert viewpoints[0]['acquisition_search_stage'] == 'orientation_cone'
-    assert viewpoints[1]['acquisition_search_stage'] == 'compact_fallback'
-    assert all(item['acquisition_search_stage'] == 'orientation_cone'
-               for item in viewpoints[2:10])
-    assert all(item['acquisition_search_stage'] == 'compact_fallback'
-               for item in viewpoints[10:])
-    assert np.isclose(viewpoints[1]['camera_object_distance_m'], 0.30)
-    assert all(np.isclose(item['camera_object_distance_m'], 0.30)
-               for item in viewpoints[10:])
+    assert any(item['acquisition_search_stage'] == 'compact_fallback'
+               for item in viewpoints[1:])
     positions = [
         tuple(np.round(vector(item['desired_camera_position']), 9))
         for item in viewpoints]
-    assert len(set(positions[0:1] + positions[2:10])) == 1
-    assert len(set(positions[1:2] + positions[10:])) == len(
-        positions[1:2] + positions[10:])
+    assert len(set(positions)) == len(positions)
 
 
 def test_compact_fallback_deduplicates_primary_poses_at_same_radius():
@@ -214,7 +201,7 @@ def test_compact_fallback_deduplicates_primary_poses_at_same_radius():
         for item in viewpoints
     }
     assert len(pose_keys) == len(viewpoints)
-    assert 5 < len(viewpoints) <= 20
+    assert len(viewpoints) == 5
 
 
 def test_compact_fallback_standoff_is_bounded_by_primary_maximum():

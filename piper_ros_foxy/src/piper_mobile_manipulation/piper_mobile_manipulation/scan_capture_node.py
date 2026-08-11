@@ -22,6 +22,7 @@ from tf2_ros import Buffer, TransformException, TransformListener
 
 from piper_mobile_manipulation.msg import ScanExecutionStatus, Target3D
 from piper_mobile_manipulation.scan_capture import (
+    capture_diagnostic_rejection,
     depth_millimetres,
     rigid_transform_matrix,
     synchronized_bundle_rejection,
@@ -57,7 +58,10 @@ class ScanCaptureNode(Node):
         self.declare_parameter('require_camera_transform', True)
         self.declare_parameter('camera_transform_timeout_sec', 0.25)
         self.declare_parameter('task_id', '')
+        self.declare_parameter('mission_sha256', '')
+        self.declare_parameter('target_label', 'green cube')
         self.declare_parameter('target_profile', 'green_cube')
+        self.declare_parameter('target_prompt', 'green cube .')
         self.declare_parameter('calibration_sha256', '')
 
         self.declare_parameter('capture_mode', 'interval')
@@ -68,6 +72,10 @@ class ScanCaptureNode(Node):
         self.declare_parameter('require_valid_target', True)
         self.declare_parameter('require_mask', True)
         self.declare_parameter('require_depth', True)
+        self.declare_parameter('require_good_quality_for_service', True)
+        self.declare_parameter('require_clear_occlusion_for_service', True)
+        self.declare_parameter('diagnostic_timeout_sec', 1.0)
+        self.declare_parameter('minimum_accepted_quality_score', 0.65)
         self.declare_parameter('dataset_root', '/home/prl/Piper_arm/datasets/active_scan')
         self.declare_parameter('dry_run', True)
         self.declare_parameter('enable_real_arm_motion', False)
@@ -87,7 +95,9 @@ class ScanCaptureNode(Node):
         self.latest_reachable_scan_viewpoints = None
         self.latest_scan_coverage = None
         self.latest_scan_quality = None
+        self.latest_scan_quality_at = None
         self.latest_occlusion_status = None
+        self.latest_occlusion_status_at = None
         self.last_capture_time = None
         self.frame_index = 0
         self.manifest_sha256 = ''
@@ -112,11 +122,19 @@ class ScanCaptureNode(Node):
                 'scan_dir': self.scan_dir,
                 'dry_run': self.param_bool('dry_run'),
                 'real_arm_motion': False,
+                'capture_node_dry_run': self.param_bool('dry_run'),
+                'capture_node_real_arm_motion': False,
                 'max_frames_per_scan': int(self.get_parameter('max_frames_per_scan').value),
                 'capture_mode': self.capture_mode(),
                 'capture_interval_sec': float(self.get_parameter('capture_interval_sec').value),
                 'task_id': str(self.get_parameter('task_id').value),
+                'mission_sha256': str(
+                    self.get_parameter('mission_sha256').value),
+                'target_label': str(
+                    self.get_parameter('target_label').value),
                 'target_profile': str(self.get_parameter('target_profile').value),
+                'target_prompt': str(
+                    self.get_parameter('target_prompt').value),
                 'calibration_sha256': str(
                     self.get_parameter('calibration_sha256').value),
                 'topics': self.topic_metadata(),
@@ -243,9 +261,11 @@ class ScanCaptureNode(Node):
 
     def scan_quality_cb(self, msg):
         self.latest_scan_quality = self.parse_json_msg(msg)
+        self.latest_scan_quality_at = time.monotonic()
 
     def occlusion_status_cb(self, msg):
         self.latest_occlusion_status = self.parse_json_msg(msg)
+        self.latest_occlusion_status_at = time.monotonic()
 
     def timer_cb(self):
         if self.frame_index >= int(self.get_parameter('max_frames_per_scan').value):
@@ -322,6 +342,36 @@ class ScanCaptureNode(Node):
                 return False, 'scan execution is not MULTIVIEW_SCAN'
             if str(status.state) not in ('CAPTURING', 'CAPTURING_RGBD'):
                 return False, 'executor is not at an accepted settled capture'
+            if (
+                    self.param_bool('require_good_quality_for_service')
+                    or self.param_bool('require_clear_occlusion_for_service')):
+                now = time.monotonic()
+                quality = (
+                    self.latest_scan_quality
+                    if self.param_bool('require_good_quality_for_service')
+                    else {'quality_label': 'GOOD', 'quality_score': 1.0,
+                          'target_valid': True})
+                occlusion = (
+                    self.latest_occlusion_status
+                    if self.param_bool('require_clear_occlusion_for_service')
+                    else {'occlusion_state': 'CLEAR'})
+                reason = capture_diagnostic_rejection(
+                    quality,
+                    (0.0 if not self.param_bool(
+                        'require_good_quality_for_service') else
+                     None if self.latest_scan_quality_at is None else
+                     now - self.latest_scan_quality_at),
+                    occlusion,
+                    (0.0 if not self.param_bool(
+                        'require_clear_occlusion_for_service') else
+                     None if self.latest_occlusion_status_at is None else
+                     now - self.latest_occlusion_status_at),
+                    float(self.get_parameter('diagnostic_timeout_sec').value),
+                    float(self.get_parameter(
+                        'minimum_accepted_quality_score').value),
+                )
+                if reason:
+                    return False, reason
         return True, ''
 
     def refresh_camera_transform(self):
@@ -433,6 +483,8 @@ class ScanCaptureNode(Node):
         coverage_target = self.scan_coverage_target()
         quality = self.scan_quality_metadata()
         occlusion = self.occlusion_metadata()
+        execution = self.execution_status_metadata(
+            self.latest_execution_status)
         return {
             'frame_index': int(index),
             'capture_timestamp': self.ros_time_to_dict(now.to_msg()),
@@ -443,7 +495,11 @@ class ScanCaptureNode(Node):
             'camera_transform': self.camera_transform_metadata(
                 self.latest_camera_transform),
             'task_id': str(self.get_parameter('task_id').value),
+            'mission_sha256': str(
+                self.get_parameter('mission_sha256').value),
+            'target_label': str(self.get_parameter('target_label').value),
             'target_profile': str(self.get_parameter('target_profile').value),
+            'target_prompt': str(self.get_parameter('target_prompt').value),
             'calibration_sha256': str(
                 self.get_parameter('calibration_sha256').value),
             'target_3d': target,
@@ -480,8 +536,16 @@ class ScanCaptureNode(Node):
                 'reference_session_id'],
             'occlusion_reason': occlusion['occlusion_reason'],
             'current_capture_mode': self.capture_mode(),
-            'dry_run': True,
-            'real_arm_motion': False,
+            # These top-level fields describe the execution that produced the
+            # frame.  The capture node itself remains command-free/dry-run;
+            # retain that separate authority explicitly instead of labelling
+            # physical records as simulations.
+            'dry_run': bool(execution.get(
+                'dry_run', self.param_bool('dry_run'))),
+            'real_arm_motion': bool(execution.get(
+                'real_arm_motion', False)),
+            'capture_node_dry_run': self.param_bool('dry_run'),
+            'capture_node_real_arm_motion': False,
             'rgb_file_path': rgb_path,
             'depth_file_path': depth_path,
             'depth_png_file_path': depth_png_path,
@@ -491,8 +555,7 @@ class ScanCaptureNode(Node):
             'mask_file_path': mask_path,
             'metadata_file_path': metadata_path,
             'joint_state': self.joint_state_metadata(self.latest_joint_state),
-            'scan_execution': self.execution_status_metadata(
-                self.latest_execution_status),
+            'scan_execution': execution,
         }
 
     def publish_status(self, state, reason, frame_index=None):
@@ -828,6 +891,9 @@ class ScanCaptureNode(Node):
             'plan_id': str(msg.plan_id),
             'execution_mode': str(msg.execution_mode),
             'state': str(msg.state),
+            'dry_run': bool(msg.dry_run),
+            'real_arm_motion': bool(msg.real_arm_motion),
+            'approval_required': bool(msg.approval_required),
             'current_view': int(msg.current_view),
             'total_views': int(msg.total_views),
             'commanded_speed_percent': float(msg.commanded_speed_percent),
@@ -906,7 +972,11 @@ class ScanCaptureNode(Node):
         payload = {
             'schema_version': 1,
             'task_id': str(self.get_parameter('task_id').value),
+            'mission_sha256': str(
+                self.get_parameter('mission_sha256').value),
+            'target_label': str(self.get_parameter('target_label').value),
             'target_profile': str(self.get_parameter('target_profile').value),
+            'target_prompt': str(self.get_parameter('target_prompt').value),
             'calibration_sha256': str(
                 self.get_parameter('calibration_sha256').value),
             'capture_count': int(self.frame_index),

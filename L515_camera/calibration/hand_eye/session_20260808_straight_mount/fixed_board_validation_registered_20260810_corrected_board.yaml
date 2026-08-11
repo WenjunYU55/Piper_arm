@@ -1,0 +1,92 @@
+status: passed
+validation:
+  board:
+    squares_x: 5
+    squares_y: 5
+    square_length_m: 0.017
+    marker_length_m: 0.012
+    dictionary: DICT_4X4_50
+  frames_per_pose: 10
+  minimum_poses: 5
+  stationary_duration_sec: 0.75
+  stationary_position_tolerance_rad: 0.001
+  base_frame: base_link
+  camera_frame: camera_color_optical_frame
+limits:
+  translation_mm: 15.0
+  rotation_deg: 1.5
+reference_position_m:
+- 0.39868188453993014
+- 0.020992867789277937
+- 0.014927876875676468
+measurements:
+- index: 1
+  position_m:
+  - 0.4019344477373846
+  - 0.020992867789277937
+  - 0.012527033359136588
+  quaternion_xyzw:
+  - -0.012871659973814476
+  - 0.016165284616667445
+  - 0.7310658705389004
+  - -0.6819939126385078
+  translation_error_mm: 4.042674479147055
+  rotation_error_deg: 0.29539977449727484
+  reprojection_rms_px: 0.1428680408575064
+  passed: true
+- index: 2
+  position_m:
+  - 0.3968117326449322
+  - 0.023421282749943782
+  - 0.017099987099477965
+  quaternion_xyzw:
+  - -0.013655408558630722
+  - 0.024466866843408937
+  - 0.734880702089089
+  - -0.6776173373970088
+  translation_error_mm: 3.756691384169468
+  rotation_error_deg: 1.253806857369892
+  reprojection_rms_px: 0.19453487884297502
+  passed: true
+- index: 3
+  position_m:
+  - 0.4083846871264674
+  - 0.02656506670490346
+  - 0.019829681253436843
+  quaternion_xyzw:
+  - -0.017255020494984907
+  - 0.0059187535825280255
+  - 0.7277899835948408
+  - -0.6855574172910454
+  translation_error_mm: 12.215623805047512
+  rotation_error_deg: 1.2347303682794828
+  reprojection_rms_px: 0.1490644927706711
+  passed: true
+- index: 4
+  position_m:
+  - 0.3917799119338675
+  - 0.01797708210159536
+  - 0.010966718852628149
+  quaternion_xyzw:
+  - -0.019961510874115098
+  - 0.008968528684770162
+  - 0.7328398549074135
+  - -0.6800491531030196
+  translation_error_mm: 8.510168156530753
+  rotation_error_deg: 0.9129138944955463
+  reprojection_rms_px: 0.09174117241450477
+  passed: true
+- index: 5
+  position_m:
+  - 0.39868188453993014
+  - 0.020853068762785754
+  - 0.014927876875676468
+  quaternion_xyzw:
+  - -0.011305225221532286
+  - 0.018959209051664372
+  - 0.7309081891680149
+  - -0.6821187281419261
+  translation_error_mm: 0.13979902649218293
+  rotation_error_deg: 0.6380815126212026
+  reprojection_rms_px: 0.08827396204027878
+  passed: true

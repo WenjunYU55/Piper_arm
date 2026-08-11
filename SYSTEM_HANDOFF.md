@@ -1,10 +1,23 @@
 # PiPER eye-in-hand system handoff
 
-Status updated through 2026-07-29 from the checked-out source, architecture records, test results,
-operator confirmations, the historical five-view acceptance, and the successful exact 13-view
-physical acceptance session. Runtime processes are
+Status updated through 2026-08-11 from the checked-out source, architecture records, test results,
+operator confirmations, historical scan acceptance, and the joint-5 terminal-home contact incident.
+Runtime processes are
 transient; use `OPERATOR_COMMANDS.md` to inspect them rather than relying on this handoff as a process
 manifest.
+
+Current hardware evidence: the earlier `scan_20260811_124232` terminal-home
+table contact and separate powered J5 dropout remain mandatory incident history,
+but their software containment and holder-clearance repair are deployed. The
+latest operator-run task `gui-sim-a130d7ad58a54815ab36341ed324be82`
+completed STARTUP_WRIST, 24 accepted captures, direct ROUGH_HOME and
+STORAGE_WRIST, stable hold, all-six disable and exact child cleanup with
+`safe_shutdown=true`. It failed scan quality at 113.5/120 degrees azimuth and
+without measured-surface convergence. The resident coordinator is configured
+for 50-percent free motion, while driver/camera/perception/planning children are
+off between missions. Before another powered run, repeat read-only CAN and
+all-six-motor preflight and keep the emergency stop ready; 100-percent dynamics
+remain unqualified.
 
 ## Executive state
 
@@ -149,18 +162,27 @@ camera/process shutdown.
 On 2026-07-29 a live 5-percent `timed_movej_v2` acquisition reached measured `SCAN_READY`, but its
 7,281 tiny targets exposed the hardware-interface mismatch: PiPER SDK MoveJ consumes six joint
 positions plus one aggregate speed percentage and does not consume Tesseract qdot/qddot. The
-replacement `sdk_movej_targets_v1` keeps the fresh typed/hash-bound controller limits and selected
-speed in schema v5, uses OMPL/ISP to establish all-six-joint goals, writes exact-zero derivative
-placeholders, and adaptively collision-validates the actual direct SDK-interpolated segment.
-Foxy sends one six-position arm-only target per viewpoint; only a folded-start rough acquisition
-may use one separately proven bootstrap target first. Dense 0.025 rad validation samples are never
-published. Each endpoint is published once; feedback must enter 0.025 rad. A 90-second absolute
-target deadline or 20-second total-joint no-progress interval aborts to hold. The driver caches
+later endpoint-only adapter completed the July 29 physical run but discarded OMPL detours. On
+2026-08-11 it was superseded by `tesseract_stream_v1`: OMPL/ISP path geometry is
+speed-scaled, resampled and hash-bound at 20 Hz with at most 0.025 rad per joint sample. Foxy sends
+intermediate arm-only positions without feedback pauses, uses a 0.30 rad following guard, and waits
+for 0.025 rad convergence only at the final point. It aborts rather than bursting overdue samples or
+shortcutting planned corners. qdot/qddot remain exact-zero transport placeholders. Direct configured
+home remains the exact two-point stage-bound exception. The driver caches
 unchanged `MotionCtrl_2` mode/speed and never emits `GripperCtrl` for the
-six-position automation form. The packages build, the focused software suite passes 184 tests,
-and both rootless collision qualifications pass with real motion false. The 2026-07-24 5-percent
-run remains historical acceptance for the former executor; the new target adapter received its
-supervised 13-view physical acceptance on 2026-07-29.
+six-position automation form. Two builds, 175 focused tests, 430 complete package tests and both
+rootless suites pass with real motion false, including a 175-point blocked-midpoint detour. The
+July physical runs remain historical evidence for former executors. The current stream was then
+exercised physically at 50 percent by task `gui-sim-a130d7ad58a54815ab36341ed324be82`:
+acquisition and 24 scan views completed without a logged scheduled-stream overrun, terminal direct
+home took about 1.085 and 2.336 seconds, ordinary Tesseract segments normally took 1.559 to 4.909
+seconds and one collision-free detour took 8.811 seconds, and safe shutdown passed. The mission
+failed only its measured coverage gates at 113.5 degrees azimuth and without three-view surface
+convergence. This rejects host sample servicing as the primary observed speed bottleneck, but does
+not qualify 100-percent dynamics. The fixed 0.025-rad step at 20 Hz also imposes an approximately
+0.5-rad/s commanded-joint-slope ceiling before the PiPER aggregate speed is applied. Persisted
+per-segment timing/following telemetry, a deliberate cancel-to-hold test, and staged
+1/5/10/50/100-percent characterization remain required before changing the executor contract.
 A live 2026-07-27 run at 100 percent hit the sustained following-error hold before acquisition could
 publish `ACQUIRED`, although perception later reported a valid settled measured lock. The workflow
 therefore remained `IDLE` and the old GUI kept Step 4 disabled. Explicit current-lock adoption now
@@ -240,7 +262,7 @@ The normal data path is:
    has no arm-command publisher.
 11. The separate viewpoint executor accepts only command-free Tesseract proposals. Only an explicitly
     motion-enabled restart creates `/joint_ctrl_single`; approval additionally requires the exact
-    schema-v5 sdk_movej_targets_v1 trajectory/controller-limit hash and a qualified collision model.
+    schema-v5 tesseract_stream_v1 trajectory/controller-limit hash and a qualified collision model.
 
 Foxy ROS nodes and Python 3.10+ CUDA workers are deliberately separated. GPU workers do not import
 ROS and communicate through atomic filesystem spools, so they cannot command the arm.
@@ -414,7 +436,7 @@ ROS and communicate through atomic filesystem spools, so they cannot command the
   and Foxy proposal acceptance have all been live. Exact J2 can still start slightly below the
   planning-model lower limit after a restart and must be normalized or reconciled without clipping.
   Supervised 5-percent physical execution first completed five views using the former
-  stop-per-sample executor. On 2026-07-29 the position-only `sdk_movej_targets_v1` path then
+  stop-per-sample executor. On 2026-07-29 the former endpoint-only path then
   completed exact 13-view plan `7474484cfd3ddb50` through the GUI with 13 accepted full-resolution
   clouds and synchronized captures. Deliberate cancellation-to-hold acceptance still remains; J6
   and the qualified collision manifest are not blockers.
@@ -436,6 +458,8 @@ ROS and communicate through atomic filesystem spools, so they cannot command the
   verifies the executor is the sole publisher.
 - Proposal-only execution must have no joint-command publisher.
 - The executor never enables motors; the operator enables them separately.
+- Enable/disable success requires all six per-motor FOC flags. A failed partial enable rolls back to
+  six disabled flags, and any powered motor fault or persistent partial enable disables all axes.
 - Real motion requires opt-in, a fresh exact plan approval, fresh arm/tracking/timestamp/obstacle
   state, fresh matching controller motion limits, a clear scene, and a `SCAN_READY` workflow.
 - Default speed is 5%; the GUI and executor accept the PiPER SDK range from 1% through 100%.
@@ -444,6 +468,8 @@ ROS and communicate through atomic filesystem spools, so they cannot command the
   condition, capture failure, or cancellation must stop progression and request a current-position
   hold.
 - The physical emergency stop/power procedure is authoritative.
+- Direct home exempts only the intentional folded robot self-collision. It never exempts the full
+  installed holder/L515 from the 5 mm support-plane/external-clearance requirement.
 
 ## Recommended continuation
 
@@ -453,8 +479,9 @@ ROS and communicate through atomic filesystem spools, so they cannot command the
    SBOM, lifecycle, malformed-spool, and crash-recovery soak without weakening the qualified scope.
 3. Retain proposal-only regressions for fresh, stale, wrong-frame, unreachable, occluded, and
    collision-blocked rough hints.
-4. Repeat the accepted measured-lock acquisition and 13-view scan from a cold start, then complete the deliberate
-   cancellation-to-hold and bounded no-lock failure sweeps.
+4. First inspect J5, the holder/L515, cable and table contact. Only after proper fault disposition and
+   explicit reauthorization, repeat the accepted measured-lock acquisition and adaptive scan from a
+   cold start, then complete the deliberate cancellation-to-hold and bounded no-lock failure sweeps.
 5. Exercise the implemented frozen-scene canonical filesystem spool and verify exact model,
    calibration, limit, request, response, and trajectory hashes.
 6. Keep execution in the existing guarded Foxy command boundary and retain exact approval, expiry,

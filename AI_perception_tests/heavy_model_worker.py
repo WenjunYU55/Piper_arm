@@ -17,6 +17,7 @@ import yaml
 
 
 InferenceFunction = Callable[[Path, Path, str], dict]
+PreloadFunction = Callable[[str], None]
 
 
 def atomic_yaml(path: Path, payload: dict) -> None:
@@ -35,11 +36,21 @@ def default_inference(capture_dir: Path, output_dir: Path, device: str) -> dict:
     return run_heavy_refresh(capture_dir, output_dir, device=device)
 
 
+def default_preload(device: str) -> None:
+    # This is deliberately performed before the readiness marker is printed.
+    # Mission startup therefore cannot move the arm while the first request
+    # would still be initializing GroundingDINO or discovering missing assets.
+    from temporal_heavy_refresh import preload_heavy_models
+
+    preload_heavy_models(device=device)
+
+
 def prepare_capture_metadata(
     capture_dir: Path,
     depth: np.ndarray | None,
     tracked_mask: np.ndarray,
     tracking_confidence: float,
+    mission_context: dict | None = None,
 ) -> None:
     mask = tracked_mask > 0
     ys, xs = np.nonzero(mask)
@@ -75,6 +86,11 @@ def prepare_capture_metadata(
         capture_dir / "metadata.yaml",
         {"source": "live_heavy_refresh_worker", "dry_run": True, "real_arm_motion": False},
     )
+    atomic_yaml(capture_dir / "mission_context.yaml", mission_context or {
+        "target_label": "green cube",
+        "target_profile": "green_cube",
+        "target_prompt": "green cube .",
+    })
 
 
 class HeavyModelWorker:
@@ -83,10 +99,19 @@ class HeavyModelWorker:
         spool_dir: Path,
         device: str = "cpu",
         inference: InferenceFunction = default_inference,
+        preload: PreloadFunction = default_preload,
+        mission_context: dict | None = None,
     ) -> None:
         self.spool_dir = Path(spool_dir)
         self.device = device
         self.inference = inference
+        self.preload = preload
+        self.initialized = False
+        self.mission_context = dict(mission_context or {
+            "target_label": "green cube",
+            "target_profile": "green_cube",
+            "target_prompt": "green cube .",
+        })
         self.requests = self.spool_dir / "requests"
         self.processing = self.spool_dir / "processing"
         self.responses = self.spool_dir / "responses"
@@ -102,6 +127,12 @@ class HeavyModelWorker:
             self.model_outputs,
         ):
             directory.mkdir(parents=True, exist_ok=True)
+
+    def initialize(self) -> None:
+        if self.initialized:
+            return
+        self.preload(self.device)
+        self.initialized = True
 
     def recover_interrupted_jobs(self) -> None:
         for job in sorted(self.processing.iterdir()):
@@ -163,6 +194,7 @@ class HeavyModelWorker:
                 depth,
                 tracked,
                 float(request.get("tracking_confidence", 0.0)),
+                self.mission_context,
             )
             result = self.inference(capture_dir, self.model_outputs / job.name, self.device)
             mask_path = Path(str(result.get("target_mask_png", "")))
@@ -249,6 +281,7 @@ class HeavyModelWorker:
                     "frame_id": request.get("frame_id", ""),
                     "dry_run": True,
                     "real_arm_motion": False,
+                    "mission_context": dict(self.mission_context),
                     "tracked_objects": tracked_objects,
                     "obstacle_count": len(obstacle_records),
                     "obstacle_labels": [
@@ -299,13 +332,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="cpu", choices=("cpu", "cuda"))
     parser.add_argument("--poll-interval", type=float, default=0.25)
     parser.add_argument("--once", action="store_true")
+    parser.add_argument("--task-id", default="")
+    parser.add_argument("--mission-sha256", default="")
+    parser.add_argument("--target-label", default="green cube")
+    parser.add_argument("--target-profile", default="green_cube")
+    parser.add_argument("--target-prompt", default="green cube .")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    worker = HeavyModelWorker(args.spool_dir, device=args.device)
+    worker = HeavyModelWorker(
+        args.spool_dir, device=args.device,
+        mission_context={
+            "task_id": args.task_id,
+            "mission_sha256": args.mission_sha256,
+            "target_label": args.target_label,
+            "target_profile": args.target_profile,
+            "target_prompt": args.target_prompt,
+        })
     worker.recover_interrupted_jobs()
+    worker.initialize()
     if args.once:
         worker.process_one()
         return

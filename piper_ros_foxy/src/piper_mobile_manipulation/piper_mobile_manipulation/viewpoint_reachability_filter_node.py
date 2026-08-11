@@ -10,6 +10,8 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
+from piper_mobile_manipulation.scan_motion import motor_control_reasons
+
 
 ROUGH_ACQUISITION = 'ROUGH_ACQUISITION'
 
@@ -44,6 +46,11 @@ class ViewpointReachabilityFilterNode(Node):
         self.declare_parameter('min_camera_object_distance_m', 0.25)
         self.declare_parameter('max_camera_object_distance_m', 0.80)
         self.declare_parameter('max_height_change_m', 0.40)
+        # Static radial/height boxes are not an authority for the deployed
+        # arm. Tesseract IK, joint limits, exact collision validation and the
+        # executor's runtime revalidation own physical reachability. Keep the
+        # legacy values only for explicit compatibility/debug opt-in.
+        self.declare_parameter('enforce_static_reach_bounds', False)
         self.declare_parameter('arm_status_timeout_sec', 1.0)
         self.declare_parameter('dry_run', False)
         self.declare_parameter('debug', True)
@@ -176,7 +183,10 @@ class ViewpointReachabilityFilterNode(Node):
         output['dry_run'] = True
         output['filter'] = {
             'node': 'viewpoint_reachability_filter_node',
-            'mode': 'conservative_workspace_check',
+            'mode': (
+                'legacy_static_reach_check'
+                if self.param_bool('enforce_static_reach_bounds')
+                else 'dynamic_kinematics_deferred_to_tesseract'),
             'input_viewpoints': len(viewpoints),
             'output_viewpoints': len(filtered),
             'reachable_viewpoints': reachable_count,
@@ -218,13 +228,18 @@ class ViewpointReachabilityFilterNode(Node):
             reasons.append('missing target object center')
             return reasons
 
-        reach = self.vector_norm(camera_position)
-        min_reach = float(self.get_parameter('min_reach_m').value)
-        max_reach = float(self.get_parameter('max_reach_m').value)
-        if reach < min_reach:
-            reasons.append('camera target position too close %.3fm < %.3fm' % (reach, min_reach))
-        if reach > max_reach:
-            reasons.append('camera target position too far %.3fm > %.3fm' % (reach, max_reach))
+        if self.param_bool('enforce_static_reach_bounds'):
+            reach = self.vector_norm(camera_position)
+            min_reach = float(self.get_parameter('min_reach_m').value)
+            max_reach = float(self.get_parameter('max_reach_m').value)
+            if reach < min_reach:
+                reasons.append(
+                    'camera target position too close %.3fm < %.3fm'
+                    % (reach, min_reach))
+            if reach > max_reach:
+                reasons.append(
+                    'camera target position too far %.3fm > %.3fm'
+                    % (reach, max_reach))
 
         camera_object_distance = viewpoint.get('camera_object_distance_m')
         if not self.is_finite_number(camera_object_distance):
@@ -242,13 +257,15 @@ class ViewpointReachabilityFilterNode(Node):
                 % (camera_object_distance, max_dist)
             )
 
-        height_change = abs(float(camera_position['z']) - float(target_center['z']))
-        max_height_change = float(self.get_parameter('max_height_change_m').value)
-        if height_change > max_height_change:
-            reasons.append(
-                'height change too large %.3fm > %.3fm'
-                % (height_change, max_height_change)
-            )
+        if self.param_bool('enforce_static_reach_bounds'):
+            height_change = abs(
+                float(camera_position['z']) - float(target_center['z']))
+            max_height_change = float(
+                self.get_parameter('max_height_change_m').value)
+            if height_change > max_height_change:
+                reasons.append(
+                    'height change too large %.3fm > %.3fm'
+                    % (height_change, max_height_change))
 
         return reasons
 
@@ -301,6 +318,11 @@ class ViewpointReachabilityFilterNode(Node):
                 self.arm_status.communication_status_joint_5,
                 self.arm_status.communication_status_joint_6)):
             reasons.append('arm reports a joint communication fault')
+        # Fully disabled is the required preflight state. Partial enable,
+        # low-speed feedback loss, or an active FOC fault is never valid
+        # planning authority.
+        reasons.extend(motor_control_reasons(
+            self.arm_status, require_all_enabled=False))
         return reasons
 
     def arm_status_summary(self):

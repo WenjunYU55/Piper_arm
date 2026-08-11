@@ -31,7 +31,27 @@ from piper_tesseract_foxy.contract import (
 )
 
 WORKER_PLANNING_BUDGET_SEC = 150.0
+AUTOMATIC_ONE_VIEW_PLANNING_BUDGET_SEC = 45.0
+AUTOMATIC_ONE_VIEW_SEGMENT_BUDGET_SEC = 3.0
 WORKER_RESPONSE_RESERVE_SEC = 5.0
+SCAN_TARGET_MAX_BORESIGHT_DEG = 20.0
+SCAN_TARGET_MIN_DISTANCE_M = 0.22
+
+
+def planning_budgets_for_request(request):
+    """Return total and per-OMPL budgets for one immutable request."""
+    planning = request.get('planning', {})
+    automatic_one_view = bool(
+        request.get('plan_kind') == 'MULTIVIEW_SCAN'
+        and int(planning.get('min_viewpoints', 0)) == 1
+        and int(planning.get('max_viewpoints', 0)) == 1
+        and not bool(planning.get('include_return_home', True)))
+    if automatic_one_view:
+        return (
+            AUTOMATIC_ONE_VIEW_PLANNING_BUDGET_SEC,
+            AUTOMATIC_ONE_VIEW_SEGMENT_BUDGET_SEC,
+        )
+    return WORKER_PLANNING_BUDGET_SEC, 5.0
 
 
 class BackendUnavailable(RuntimeError):
@@ -59,6 +79,82 @@ def finite_six(value, label):
     if array.shape != (6,) or not np.all(np.isfinite(array)):
         raise ContractError('%s must contain six finite values' % label)
     return array
+
+
+def attached_box_floor_clearance_rejection(
+        link_transform, origin_m, size_m, floor_z_m, clearance_m, label):
+    """Return a deterministic support-plane rejection for one rigid box."""
+    transform = np.asarray(link_transform, dtype=float)
+    origin = np.asarray(origin_m, dtype=float)
+    size = np.asarray(size_m, dtype=float)
+    floor = float(floor_z_m)
+    clearance = float(clearance_m)
+    if (
+            transform.shape != (4, 4) or not np.all(np.isfinite(transform))
+            or origin.shape != (3,) or not np.all(np.isfinite(origin))
+            or size.shape != (3,) or not np.all(np.isfinite(size))
+            or np.any(size <= 0.0)
+            or not math.isfinite(floor)
+            or not math.isfinite(clearance) or clearance < 0.0):
+        return '%s external-floor policy is invalid' % str(label)
+    corners = np.asarray([
+        [
+            origin[0] + x * size[0] * 0.5,
+            origin[1] + y * size[1] * 0.5,
+            origin[2] + z * size[2] * 0.5,
+            1.0,
+        ]
+        for x in (-1.0, 1.0)
+        for y in (-1.0, 1.0)
+        for z in (-1.0, 1.0)
+    ], dtype=float)
+    minimum_z = float(np.min((transform @ corners.T).T[:, 2]))
+    if minimum_z < floor + clearance:
+        return (
+            '%s floor clearance %.6fm is below %.6fm'
+            % (str(label), minimum_z - floor, clearance)
+        )
+    return ''
+
+
+def camera_transform_path_rejection(
+        transforms, target_center,
+        maximum_boresight_deg=SCAN_TARGET_MAX_BORESIGHT_DEG,
+        minimum_target_distance_m=SCAN_TARGET_MIN_DISTANCE_M):
+    """Return why calibrated camera FK cannot preserve target visibility."""
+    target = np.asarray(target_center, dtype=float)
+    maximum = float(maximum_boresight_deg)
+    minimum = float(minimum_target_distance_m)
+    if (
+            target.shape != (3,) or not np.all(np.isfinite(target))
+            or not math.isfinite(maximum) or maximum <= 0.0 or maximum >= 90.0
+            or not math.isfinite(minimum) or minimum <= 0.0):
+        return 'scan target visibility inputs are invalid'
+    if not transforms:
+        return 'scan target visibility path is empty'
+    for index, value in enumerate(transforms):
+        transform = np.asarray(value, dtype=float)
+        if transform.shape != (4, 4) or not np.all(np.isfinite(transform)):
+            return 'scan camera FK is invalid at sample %d' % index
+        camera = transform[:3, 3]
+        forward = transform[:3, 2]
+        ray = target - camera
+        distance_m = float(np.linalg.norm(ray))
+        forward_norm = float(np.linalg.norm(forward))
+        if distance_m < minimum:
+            return (
+                'scan camera approaches target to %.3fm at sample %d; '
+                'minimum is %.3fm' % (distance_m, index, minimum))
+        if forward_norm <= 1e-9:
+            return 'scan camera optical axis is invalid at sample %d' % index
+        angle_deg = math.degrees(math.acos(float(np.clip(
+            np.dot(forward / forward_norm, ray / distance_m), -1.0, 1.0))))
+        if angle_deg > maximum + 1e-6:
+            return (
+                'scan target leaves the %.1f-degree camera boresight cone '
+                'at sample %d (%.1f degrees)'
+                % (maximum, index, angle_deg))
+    return ''
 
 
 def reverse_sdk_movej_points(points):
@@ -201,16 +297,13 @@ def sdk_movej_waypoint_trajectory(
         mandatory_waypoints=(),
         bootstrap_start_limit_tolerance_rad=0.0,
 ):
-    """
-    Create the exact position targets sent as feedback-gated SDK MoveJ goals.
+    """Resample the exact OMPL/ISP path onto a bounded execution schedule.
 
-    OMPL/ISP establishes a feasible goal, but the PiPER SDK exposes only a
-    position target plus one aggregate speed percentage. The real controller
-    interpolates directly to that target, so bind only the measured start and
-    final goal. A folded-start acquisition may bind one separately proven
-    bootstrap target. The caller collision-validates these exact straight
-    joint-space segments. Derivatives are zero because the SDK cannot consume
-    per-joint qdot/qddot commands.
+    The controller accepts position targets rather than Tesseract's per-joint
+    derivatives.  We therefore preserve the planned joint-space geometry,
+    slow its ISP clock by the selected aggregate speed, and emit zero
+    derivative placeholders at a modest fixed rate. Mandatory recovery knots
+    are assigned exact scheduled indices so their evidence remains meaningful.
     """
     if len(points) < 2:
         raise ContractError('trajectory has fewer than two points')
@@ -248,24 +341,15 @@ def sdk_movej_waypoint_trajectory(
             or np.any(acceleration_bounds <= 0.0)):
         raise ContractError('controller motion limits must be positive')
 
-    # The limits are still hash-bound and must be valid even though the SDK
-    # itself owns velocity/acceleration shaping for MoveJ.
-    if np.any(velocity_bounds <= 0.0) or np.any(acceleration_bounds <= 0.0):
-        raise ContractError('controller motion limits must be positive')
-
-    output_positions = [positions[0].copy()]
+    mandatory_indices = []
     for waypoint in mandatory_waypoints:
-        value = finite_six(waypoint, 'mandatory SDK MoveJ waypoint')
-        if float(np.max(np.abs(value - output_positions[-1]))) > 1e-9:
-            output_positions.append(value.copy())
-    endpoint = positions[-1]
-    if float(np.max(np.abs(endpoint - output_positions[-1]))) > 1e-9:
-        output_positions.append(endpoint.copy())
-    if len(output_positions) < 2:
-        raise ContractError('SDK MoveJ target path has no joint motion')
-    if len(output_positions) > 3:
-        raise ContractError(
-            'SDK MoveJ target path has more than one bootstrap target')
+        value = finite_six(waypoint, 'mandatory Tesseract waypoint')
+        matches = np.where(np.max(np.abs(positions - value), axis=1) <= 1e-7)[0]
+        if matches.size == 0:
+            raise ContractError('mandatory waypoint is absent from ISP path')
+        mandatory_indices.append(int(matches[0]))
+    if mandatory_indices != sorted(set(mandatory_indices)):
+        raise ContractError('mandatory waypoints are not ordered uniquely')
 
     start_tolerance = float(bootstrap_start_limit_tolerance_rad)
     if (
@@ -274,22 +358,87 @@ def sdk_movej_waypoint_trajectory(
             or start_tolerance > 0.04):
         raise ContractError(
             'SDK MoveJ bootstrap start limit tolerance is invalid')
-    for index, position in enumerate(output_positions):
-        tolerance = start_tolerance if index == 0 else 0.0
+    recovery_limit_end = mandatory_indices[0] if mandatory_indices else 0
+    for index, position in enumerate(positions):
+        tolerance = (
+            start_tolerance if index <= recovery_limit_end else 0.0)
         position_excess = max(
             float(np.max(position_bounds[:, 0] - position)),
             float(np.max(position - position_bounds[:, 1])),
         )
         if position_excess > tolerance + 1e-9:
             raise ContractError(
-                'SDK MoveJ target path exceeds a position limit')
+                'Tesseract stream path exceeds a position limit')
 
     period = 1.0 / rate
+    source_times = times - times[0]
+    source_duration = float(source_times[-1])
+    if source_duration <= 0.0:
+        raise ContractError('Tesseract stream has no positive duration')
+    requested_duration = source_duration * (100.0 / speed)
+    steps = max(
+        len(mandatory_indices) + 1,
+        int(math.ceil(requested_duration * rate - 1e-12)),
+    )
+
+    # Use an integer-rate schedule. Increasing the step count lengthens the
+    # execution and guarantees the configured per-command joint-step ceiling
+    # without ever asking the publisher to exceed its declared rate.
+    def sample_path(step_count):
+        output_times = np.arange(step_count + 1, dtype=float) * period
+        mapped_times = np.linspace(0.0, source_duration, step_count + 1)
+        scheduled_positions = np.column_stack([
+            np.interp(mapped_times, source_times, positions[:, joint])
+            for joint in range(6)
+        ])
+        return output_times, mapped_times, scheduled_positions
+
+    output_times, mapped_times, output_positions = sample_path(steps)
+    while float(np.max(np.abs(np.diff(output_positions, axis=0)))) > (
+            maximum_step + 1e-9):
+        ratio = float(np.max(np.abs(np.diff(
+            output_positions, axis=0)))) / maximum_step
+        steps = max(steps + 1, int(math.ceil(steps * ratio)))
+        if steps + 1 > 60000:
+            raise ContractError('scheduled Tesseract path exceeds point limit')
+        output_times, mapped_times, output_positions = sample_path(steps)
+
+    # Warp the source-time mapping piecewise so every declared recovery knot
+    # lands exactly on a command tick while retaining path order.
+    if mandatory_indices:
+        source_knots = [0.0] + [
+            float(source_times[index]) for index in mandatory_indices
+        ] + [source_duration]
+        schedule_knots = [0]
+        for source_time in source_knots[1:-1]:
+            ideal = int(round((source_time / source_duration) * steps))
+            schedule_knots.append(max(schedule_knots[-1] + 1, ideal))
+        schedule_knots.append(steps)
+        for index in range(len(schedule_knots) - 2, 0, -1):
+            schedule_knots[index] = min(
+                schedule_knots[index], schedule_knots[index + 1] - 1)
+        if any(
+                second <= first for first, second in zip(
+                    schedule_knots[:-1], schedule_knots[1:])):
+            raise ContractError('trajectory is too short to schedule recovery knots')
+        mapped_times = np.interp(
+            np.arange(steps + 1, dtype=float), schedule_knots, source_knots)
+        output_positions = np.column_stack([
+            np.interp(mapped_times, source_times, positions[:, joint])
+            for joint in range(6)
+        ])
+        for schedule_index, source_index in zip(
+                schedule_knots[1:-1], mandatory_indices):
+            output_positions[schedule_index] = positions[source_index]
+        if float(np.max(np.abs(np.diff(output_positions, axis=0)))) > (
+                maximum_step + 1e-9):
+            raise ContractError(
+                'recovery-knot scheduling exceeds the joint-step ceiling')
+
     emitted = []
-    for index, position in enumerate(output_positions):
+    for when, position in zip(output_times, output_positions):
         emitted.append({
-            # This is an ordinal transport stamp, not a controller schedule.
-            'time_from_start_s': round(index * period * 1e9) / 1e9,
+            'time_from_start_s': round(float(when) * 1e9) / 1e9,
             'positions_rad': position.tolist(),
             'velocities_rad_s': [0.0] * 6,
             'accelerations_rad_s2': [0.0] * 6,
@@ -397,6 +546,53 @@ class TesseractBackend:
             overrides[links] = margin
         return default, report, maximum_l1, overrides
 
+    def external_floor_clearance_policy(self):
+        """Load the CAD-derived attached-tool support-plane contract."""
+        policy = self.manifest.get('external_floor_clearance')
+        if policy is None:
+            return None
+        if not isinstance(policy, dict) or not bool(policy.get('enabled', False)):
+            raise ContractError('external_floor_clearance is missing or disabled')
+        try:
+            floor = float(policy['floor_z_m'])
+            clearance = float(policy['clearance_m'])
+            origin = np.asarray(policy['origin_link6_m'], dtype=float)
+            size = np.asarray(policy['size_m'], dtype=float)
+            label = str(policy.get('label', 'attached tool')).strip()
+        except (KeyError, TypeError, ValueError) as error:
+            raise ContractError(
+                'external_floor_clearance is malformed: %s' % error)
+        rejection = attached_box_floor_clearance_rejection(
+            np.eye(4), origin, size, floor_z_m=-1e6,
+            clearance_m=clearance, label=label)
+        if rejection or not math.isfinite(floor) or not label:
+            raise ContractError(
+                rejection or 'external_floor_clearance is invalid')
+        return {
+            'floor_z_m': floor,
+            'clearance_m': clearance,
+            'origin_link6_m': origin,
+            'size_m': size,
+            'label': label,
+        }
+
+    def external_floor_clearance_rejection(self, joints, stage):
+        policy = self.external_floor_clearance_policy()
+        if policy is None:
+            return ''
+        transform = np.asarray(self.robot.fk(
+            'manipulator', finite_six(joints, stage),
+            tip_link='link6').matrix, dtype=float)
+        rejection = attached_box_floor_clearance_rejection(
+            transform,
+            policy['origin_link6_m'],
+            policy['size_m'],
+            policy['floor_z_m'],
+            policy['clearance_m'],
+            policy['label'],
+        )
+        return ('%s: %s' % (stage, rejection)) if rejection else ''
+
     def configure_contact_manager(self, manager, report_distance):
         manager.setActiveCollisionObjects(self.robot.env.getActiveLinkNames())
         manager.setDefaultCollisionMargin(float(report_distance))
@@ -488,14 +684,22 @@ class TesseractBackend:
                 }
         return violations
 
-    def bootstrap_recovery_policy(self, request):
-        policy = self.manifest.get('bootstrap_start_recovery', {})
+    def bootstrap_recovery_policy(
+            self, request, policy_name='bootstrap_start_recovery'):
+        policy = self.manifest.get(str(policy_name), {})
         if not bool(policy.get('enabled', False)):
             return None
         if request.get('plan_kind') != str(policy.get('plan_kind', '')):
             return None
         if request.get('scene', {}).get('observation_mode') != str(
                 policy.get('observation_mode', '')):
+            return None
+        required_scene_flag = str(
+            policy.get('required_scene_flag', '')).strip()
+        if (
+                required_scene_flag
+                and request.get('scene', {}).get(
+                    required_scene_flag) is not True):
             return None
         step = float(policy.get('search_step_rad', -1.0))
         maximum = float(policy.get('maximum_single_joint_delta_rad', -1.0))
@@ -520,6 +724,9 @@ class TesseractBackend:
         allowed_start_limit_joints = [
             int(value) for value in
             policy.get('allowed_start_limit_joints', [])]
+        allowed_recovery_joints = [
+            int(value) for value in
+            policy.get('allowed_recovery_joints', range(1, 7))]
         maximum_recovery_joints = int(
             policy.get('maximum_recovery_joints', 1))
         if (
@@ -529,6 +736,12 @@ class TesseractBackend:
                     for value in allowed_start_limit_joints)
                 or len(set(allowed_start_limit_joints))
                 != len(allowed_start_limit_joints)
+                or not allowed_recovery_joints
+                or any(
+                    value < 1 or value > 6
+                    for value in allowed_recovery_joints)
+                or len(set(allowed_recovery_joints))
+                != len(allowed_recovery_joints)
                 or maximum_recovery_joints < 1
                 or maximum_recovery_joints > 2):
             raise ContractError(
@@ -551,6 +764,7 @@ class TesseractBackend:
             'maximum_start_limit_violation_rad':
                 maximum_start_limit_violation,
             'allowed_start_limit_joints': allowed_start_limit_joints,
+            'allowed_recovery_joints': allowed_recovery_joints,
             'maximum_recovery_joints': maximum_recovery_joints,
             'monotonic_tolerance_m': tolerance,
             'allowed_contacts': allowed,
@@ -618,8 +832,12 @@ class TesseractBackend:
             'bootstrap_recovery_samples': int(sample_count),
         }
 
-    def find_bootstrap_recovery(self, request):
-        policy = self.bootstrap_recovery_policy(request)
+    def find_bootstrap_recovery(
+            self, request, policy_name='bootstrap_start_recovery'):
+        policy = (
+            self.bootstrap_recovery_policy(request)
+            if policy_name == 'bootstrap_start_recovery'
+            else self.bootstrap_recovery_policy(request, policy_name))
         if policy is None:
             return None
         start = finite_six(
@@ -713,7 +931,9 @@ class TesseractBackend:
                 return evidence
         for step_index in range(1, maximum_steps + 1):
             magnitude = step_index * policy['step_rad']
-            joint_indices = limit_violations or list(range(6))
+            joint_indices = limit_violations or [
+                value - 1 for value in
+                policy.get('allowed_recovery_joints', range(1, 7))]
             for joint_index in joint_indices:
                 if limit_violations:
                     signs = (
@@ -780,7 +1000,8 @@ class TesseractBackend:
         }
         recovery_request['limits']['bootstrap_start_limit_tolerance_rad'] = (
             qualified_tolerance)
-        return self.find_bootstrap_recovery(recovery_request)
+        return self.find_bootstrap_recovery(
+            recovery_request, 'bootstrap_start_recovery')
 
     def reset_scene(self):
         """Create a clean environment so request-local obstacles cannot leak."""
@@ -801,11 +1022,15 @@ class TesseractBackend:
             float(deadline) - time.monotonic()
             - WORKER_RESPONSE_RESERVE_SEC)
         if remaining <= 0.0:
+            planning_budget = float(getattr(
+                self, 'planning_budget_sec', WORKER_PLANNING_BUDGET_SEC))
             raise ContractError(
                 'Tesseract planning exceeded the internal %.0f-second '
                 'budget before the bridge 180-second timeout (%s)'
-                % (WORKER_PLANNING_BUDGET_SEC, context))
-        return min(5.0, remaining)
+                % (planning_budget, context))
+        segment_cap = float(getattr(
+            self, 'segment_planning_budget_sec', 5.0))
+        return min(segment_cap, remaining)
 
     def ensure_planning_time(self, context):
         TesseractBackend.remaining_planning_time(self, context)
@@ -859,6 +1084,124 @@ class TesseractBackend:
         _add_trajopt_to_profiles(profiles, STANDARD_PROFILE_NAMES)
         return profiles
 
+    def configured_home_direct_policy(self, request):
+        """Return the explicitly configured collision-bypass home stage.
+
+        The operator-selected resting fold intentionally nests the camera and
+        cable beside the base.  That makes it impossible to represent with the
+        conservative attached envelopes used for normal motion.  Keep this
+        exception request-local and auditable: only a dedicated RETURN_HOME
+        request whose stage is listed by the collision manifest may use one
+        direct SDK joint target.  No acquisition, scan, manipulation, or
+        implicit multiview return can enter this path.
+        """
+        policy = self.manifest.get('configured_home_direct_joint_move', {})
+        if not bool(policy.get('enabled', False)):
+            return None
+        expected_kind = str(policy.get('plan_kind', '')).strip().upper()
+        if expected_kind != 'RETURN_HOME':
+            raise ContractError(
+                'configured_home_direct_joint_move plan_kind must be RETURN_HOME')
+        if str(request.get('plan_kind', '')).strip().upper() != expected_kind:
+            return None
+        allowed = tuple(
+            str(value).strip().upper()
+            for value in policy.get('allowed_home_stages', []))
+        if not allowed or len(set(allowed)) != len(allowed):
+            raise ContractError(
+                'configured_home_direct_joint_move stages are missing or invalid')
+        supported = {
+            'CONFIGURED_HOME', 'STARTUP_WRIST', 'ROUGH_HOME', 'STORAGE_WRIST'}
+        if any(value not in supported for value in allowed):
+            raise ContractError(
+                'configured_home_direct_joint_move contains an unsupported stage')
+        stage = str(
+            request.get('planning', {}).get('home_stage', '')
+            or 'CONFIGURED_HOME').strip().upper()
+        if stage not in allowed:
+            raise ContractError(
+                'configured home direct joint move is not authorized for %s'
+                % stage)
+        return stage
+
+    def plan_configured_home_direct(self, request, start, goal):
+        """Create one limit-checked SDK target without collision evaluation."""
+        stage = self.configured_home_direct_policy(request)
+        if stage is None:
+            raise ContractError('configured home direct joint move is disabled')
+        start = finite_six(start, 'configured home direct start')
+        goal = finite_six(goal, 'configured home direct goal')
+        bounds = np.asarray(self.execution_position_limits, dtype=float)
+        if bounds.shape != (6, 2) or not np.all(np.isfinite(bounds)):
+            raise ContractError('configured home joint limits are invalid')
+        policy = self.manifest.get('configured_home_direct_joint_move', {})
+        maximum_start_violation = float(
+            policy.get('maximum_start_limit_violation_rad', -1.0))
+        requested_start_tolerance = float(request.get('limits', {}).get(
+            'configured_home_start_limit_tolerance_rad', 0.0))
+        allowed_start_joints = [
+            int(value) for value in policy.get(
+                'allowed_start_limit_joints', [])]
+        if (
+                not math.isfinite(maximum_start_violation)
+                or maximum_start_violation < 0.0
+                or maximum_start_violation > 0.3
+                or abs(
+                    requested_start_tolerance
+                    - maximum_start_violation) > 1e-12
+                or allowed_start_joints != [1, 2, 3, 4, 5, 6]):
+            raise ContractError(
+                'configured home direct start-limit policy is invalid')
+        for index, position in enumerate(start):
+            low, high = bounds[index]
+            violation = max(low - position, position - high, 0.0)
+            if (
+                    violation > maximum_start_violation + 1e-12
+                    or (violation > 0.0
+                        and index + 1 not in allowed_start_joints)):
+                raise ContractError(
+                    'configured home direct start exceeds a position limit')
+        if np.any(goal < bounds[:, 0]) or np.any(goal > bounds[:, 1]):
+            raise ContractError(
+                'configured home direct goal exceeds a position limit')
+        if self.external_floor_clearance_policy() is None:
+            raise ContractError(
+                'configured home direct requires external-floor clearance policy')
+        maximum_l1 = float(self.manifest.get(
+            'validation_max_joint_l1_step_rad', -1.0))
+        if not math.isfinite(maximum_l1) or maximum_l1 <= 0.0:
+            raise ContractError(
+                'configured home external-floor validation step is invalid')
+        floor_samples = subdivide_joint_segment(start, goal, maximum_l1)
+        for index, sample in enumerate(floor_samples):
+            rejection = self.external_floor_clearance_rejection(
+                sample, 'configured home external-floor sample %d' % index)
+            if rejection:
+                raise ContractError(rejection)
+        rate = float(self.command_rate_hz)
+        if not math.isfinite(rate) or rate <= 0.0:
+            raise ContractError('configured home command rate is invalid')
+        points = []
+        for index, position in enumerate((start, goal)):
+            points.append({
+                'time_from_start_s': round(index * (1.0 / rate) * 1e9) / 1e9,
+                'positions_rad': position.tolist(),
+                'velocities_rad_s': [0.0] * 6,
+                'accelerations_rad_s2': [0.0] * 6,
+            })
+        return points, {
+            'minimum_clearance_m': -1.0,
+            'limiting_link_pair': 'not_evaluated/configured_home_direct',
+            'validation': 'configured_home_collision_validation_bypassed',
+            'collision_validation_bypassed': True,
+            'configured_home_direct_joint_move': True,
+            'configured_home_goal_positions_rad': goal.tolist(),
+            'home_stage': stage,
+            'validation_samples': 0,
+            'external_floor_validation': 'cad_holder_aabb_dense_discrete',
+            'external_floor_validation_samples': len(floor_samples),
+        }
+
     def add_obstacles(self, obstacles):
         for index, obstacle in enumerate(obstacles):
             minimum = np.asarray(obstacle['minimum_m'], dtype=float)
@@ -889,6 +1232,12 @@ class TesseractBackend:
             self.api['ContactRequest'](self.api['ContactTestType_ALL']),
         )
         return contacts.size() != 0
+
+    def state_meets_required_clearance(self, joints):
+        """Pre-screen an IK goal against the final dense clearance policy."""
+        _default, report, _maximum_l1, _overrides = self.collision_policy()
+        minimums = self.contact_minimums(joints, report)
+        return not bool(self.clearance_violations(minimums))
 
     def ik_joint_goals(self, start, candidate, roll, position_limits=None,
                        joint_margin=0.0):
@@ -937,7 +1286,15 @@ class TesseractBackend:
             if any(float(np.max(np.abs(solution - existing))) < 1e-5
                    for existing in goals):
                 continue
-            if self.state_in_collision(solution):
+            if self.external_floor_clearance_rejection(
+                    solution, 'IK solution external-floor validation'):
+                continue
+            # OMPL applies the qualified positive clearance margin, not merely
+            # zero-penetration collision. Rejecting a below-margin IK endpoint
+            # here avoids spending a full solve on a goal that OMPL must reject
+            # while preserving the same (slightly stricter, motion-bounded)
+            # clearance rule used by final dense path validation.
+            if not self.state_meets_required_clearance(solution):
                 continue
             actual = np.asarray(self.robot.fk(
                 'manipulator', solution,
@@ -973,7 +1330,8 @@ class TesseractBackend:
             min(len(goals), 4), failures[0] if failures else 'unknown failure'))
 
     def plan_candidate(self, start, candidate, rolls, maximum_step,
-                       position_limits, joint_margin, bootstrap_recovery=None):
+                       position_limits, joint_margin, bootstrap_recovery=None,
+                       visibility_target=None):
         """Rank IK across every roll, then bound expensive planner attempts."""
         start_array = finite_six(start, 'candidate start')
         ranked = []
@@ -997,6 +1355,26 @@ class TesseractBackend:
             try:
                 points, validation = self.plan_segment_to_joint_goal(
                     start_array, goal, maximum_step, bootstrap_recovery)
+                if visibility_target is not None:
+                    positions = []
+                    for point_index, point in enumerate(points):
+                        current = finite_six(
+                            point['positions_rad'], 'visibility path position')
+                        if point_index == 0:
+                            positions.append(current)
+                        else:
+                            positions.extend(subdivide_joint_segment(
+                                positions[-1], current, maximum_step)[1:])
+                    transforms = [
+                        np.asarray(self.robot.fk(
+                            'manipulator', joints,
+                            tip_link='camera_optical_frame').matrix)
+                        for joints in positions
+                    ]
+                    rejection = camera_transform_path_rejection(
+                        transforms, visibility_target)
+                    if rejection:
+                        raise ContractError(rejection)
                 return roll, points, validation
             except (ContractError, RuntimeError, ValueError) as error:
                 failures.append('roll %.3f: %s' % (roll, error))
@@ -1004,7 +1382,8 @@ class TesseractBackend:
             min(len(ranked), 4), failures[0] if failures else 'unknown failure'))
 
     def plan_segment_to_joint_goal(
-            self, start, goal, maximum_step, bootstrap_recovery=None):
+            self, start, goal, maximum_step, bootstrap_recovery=None,
+            bootstrap_policy_name='bootstrap_start_recovery'):
         planning_time = self.remaining_planning_time(
             'before an OMPL segment solve')
         program = self.api['MotionProgram'](
@@ -1095,45 +1474,160 @@ class TesseractBackend:
             if validation_boundary is None or validation_boundary < 1:
                 raise ContractError(
                     'validation path lost bootstrap recovery endpoint')
+            recovery_scene = {'observation_mode': (
+                'perception_snapshot'
+                if bootstrap_policy_name == 'powered_start_home_recovery'
+                else 'bootstrap_static')}
+            if bootstrap_policy_name == 'powered_start_home_recovery':
+                recovery_scene['startup_home_static'] = True
+            recovery_policy = self.bootstrap_recovery_policy({
+                'plan_kind': (
+                    'RETURN_HOME'
+                    if bootstrap_policy_name ==
+                    'powered_start_home_recovery'
+                    else 'ROUGH_ACQUISITION'),
+                'scene': recovery_scene,
+                'limits': {
+                    'bootstrap_start_limit_tolerance_rad':
+                        float(self.manifest.get(
+                            bootstrap_policy_name, {}).get(
+                                'maximum_start_limit_violation_rad', -1.0)),
+                },
+            }, bootstrap_policy_name)
+            if recovery_policy is None:
+                raise ContractError(
+                    '%s policy did not bind during validation'
+                    % bootstrap_policy_name)
             recovery_validation = self.validate_bootstrap_recovery_path(
                 [
                     item['positions_rad']
                     for item in validation_points[:validation_boundary + 1]
                 ],
-                self.bootstrap_recovery_policy({
-                    'plan_kind': 'ROUGH_ACQUISITION',
-                    'scene': {'observation_mode': 'bootstrap_static'},
-                    'limits': {
-                        'bootstrap_start_limit_tolerance_rad':
-                            float(self.manifest.get(
-                                'bootstrap_start_recovery', {}).get(
-                                    'maximum_start_limit_violation_rad', -1.0)),
-                    },
-                }),
+                recovery_policy,
             )
             self.ensure_planning_time(
                 'before adaptive collision validation')
             validation = self.final_validate(
                 validation_points[validation_boundary:])
-            validation.update({
-                key: value for key, value in recovery_validation.items()
-                if key != 'positions'
-            })
-            validation.update({
-                'bootstrap_recovery_end_point': int(boundary),
-                'bootstrap_recovery_joint': int(
-                    bootstrap_recovery['bootstrap_recovery_joint']),
-                'bootstrap_recovery_delta_rad': float(
-                    bootstrap_recovery['bootstrap_recovery_delta_rad']),
-                'bootstrap_recovery_joints': [
-                    int(value) for value in
-                    bootstrap_recovery['bootstrap_recovery_joints']],
-                'bootstrap_recovery_deltas_rad': [
-                    float(value) for value in
-                    bootstrap_recovery['bootstrap_recovery_deltas_rad']],
-                'bootstrap_start_contacts':
-                    bootstrap_recovery['bootstrap_start_contacts'],
-            })
+            if bootstrap_policy_name == 'powered_start_home_recovery':
+                validation.update({
+                    'powered_start_recovery_used': True,
+                    'powered_start_recovery_end_point': int(boundary),
+                    'powered_start_recovery_joint': int(
+                        bootstrap_recovery['bootstrap_recovery_joint']),
+                    'powered_start_recovery_delta_rad': float(
+                        bootstrap_recovery['bootstrap_recovery_delta_rad']),
+                    'powered_start_recovery_joints': [
+                        int(value) for value in
+                        bootstrap_recovery['bootstrap_recovery_joints']],
+                    'powered_start_recovery_deltas_rad': [
+                        float(value) for value in
+                        bootstrap_recovery['bootstrap_recovery_deltas_rad']],
+                    'powered_start_recovery_minimum_clearance_m': float(
+                        recovery_validation[
+                            'bootstrap_recovery_minimum_clearance_m']),
+                    'powered_start_recovery_limiting_link_pair': str(
+                        recovery_validation[
+                            'bootstrap_recovery_limiting_link_pair']),
+                    'powered_start_recovery_samples': int(
+                        recovery_validation['bootstrap_recovery_samples']),
+                    'powered_start_contacts':
+                        bootstrap_recovery['bootstrap_start_contacts'],
+                })
+            else:
+                validation.update({
+                    key: value for key, value in recovery_validation.items()
+                    if key != 'positions'
+                })
+                validation.update({
+                    'bootstrap_recovery_end_point': int(boundary),
+                    'bootstrap_recovery_joint': int(
+                        bootstrap_recovery['bootstrap_recovery_joint']),
+                    'bootstrap_recovery_delta_rad': float(
+                        bootstrap_recovery['bootstrap_recovery_delta_rad']),
+                    'bootstrap_recovery_joints': [
+                        int(value) for value in
+                        bootstrap_recovery['bootstrap_recovery_joints']],
+                    'bootstrap_recovery_deltas_rad': [
+                        float(value) for value in
+                        bootstrap_recovery['bootstrap_recovery_deltas_rad']],
+                    'bootstrap_start_contacts':
+                        bootstrap_recovery['bootstrap_start_contacts'],
+                })
+        return points, validation
+
+    def plan_dual_recovery_return_home(
+            self, start_recovery, terminal_recovery, maximum_step):
+        """Bind powered-start and folded-home corridors in one transaction."""
+        start = finite_six(
+            start_recovery['positions'][0], 'powered home recovery start')
+        start_entry = finite_six(
+            start_recovery['bootstrap_recovery_end_positions_rad'],
+            'powered home recovery endpoint')
+        home = finite_six(
+            terminal_recovery['positions'][0], 'configured folded home')
+        home_entry = finite_six(
+            terminal_recovery['bootstrap_recovery_end_positions_rad'],
+            'folded home recovery endpoint')
+        middle_points, validation = self.plan_segment_to_joint_goal(
+            start_entry, home_entry, maximum_step)
+        if len(middle_points) != 2:
+            raise ContractError(
+                'powered-start home middle corridor has unexpected SDK targets')
+        period = 1.0 / float(self.command_rate_hz)
+        positions = [start, start_entry, home_entry, home]
+        points = [{
+            'time_from_start_s': round(index * period * 1e9) / 1e9,
+            'positions_rad': position.tolist(),
+            'velocities_rad_s': [0.0] * 6,
+            'accelerations_rad_s2': [0.0] * 6,
+        } for index, position in enumerate(positions)]
+        validation.update({
+            'bootstrap_recovery_used': True,
+            'bootstrap_recovery_end_point': 2,
+            'bootstrap_recovery_joint': int(
+                terminal_recovery['bootstrap_recovery_joint']),
+            'bootstrap_recovery_delta_rad': float(
+                terminal_recovery['bootstrap_recovery_delta_rad']),
+            'bootstrap_recovery_joints': [
+                int(value) for value in
+                terminal_recovery['bootstrap_recovery_joints']],
+            'bootstrap_recovery_deltas_rad': [
+                float(value) for value in
+                terminal_recovery['bootstrap_recovery_deltas_rad']],
+            'bootstrap_recovery_minimum_clearance_m': float(
+                terminal_recovery[
+                    'bootstrap_recovery_minimum_clearance_m']),
+            'bootstrap_recovery_limiting_link_pair': str(
+                terminal_recovery[
+                    'bootstrap_recovery_limiting_link_pair']),
+            'bootstrap_recovery_samples': int(
+                terminal_recovery['bootstrap_recovery_samples']),
+            'bootstrap_start_contacts':
+                terminal_recovery['bootstrap_start_contacts'],
+            'powered_start_recovery_used': True,
+            'powered_start_recovery_end_point': 1,
+            'powered_start_recovery_joint': int(
+                start_recovery['bootstrap_recovery_joint']),
+            'powered_start_recovery_delta_rad': float(
+                start_recovery['bootstrap_recovery_delta_rad']),
+            'powered_start_recovery_joints': [
+                int(value) for value in
+                start_recovery['bootstrap_recovery_joints']],
+            'powered_start_recovery_deltas_rad': [
+                float(value) for value in
+                start_recovery['bootstrap_recovery_deltas_rad']],
+            'powered_start_recovery_minimum_clearance_m': float(
+                start_recovery[
+                    'bootstrap_recovery_minimum_clearance_m']),
+            'powered_start_recovery_limiting_link_pair': str(
+                start_recovery[
+                    'bootstrap_recovery_limiting_link_pair']),
+            'powered_start_recovery_samples': int(
+                start_recovery['bootstrap_recovery_samples']),
+            'powered_start_contacts':
+                start_recovery['bootstrap_start_contacts'],
+        })
         return points, validation
 
     def time_parameterize_positions(self, positions):
@@ -1225,6 +1719,12 @@ class TesseractBackend:
             for local_index, sample in enumerate(samples):
                 self.ensure_planning_time(
                     'during adaptive collision validation')
+                external_rejection = self.external_floor_clearance_rejection(
+                    sample,
+                    'adaptive point %d.%d external-floor validation'
+                    % (point_index, local_index))
+                if external_rejection:
+                    raise ContractError(external_rejection)
                 self.robot.env.setState(JOINT_NAMES, sample)
                 state = self.robot.env.getState()
                 discrete.setCollisionObjectsTransform(state.link_transforms)
@@ -1249,10 +1749,15 @@ class TesseractBackend:
             'maximum_joint_l1_step_rad': maximum_l1,
             'default_relative_motion_bound_m': (
                 default_radius * maximum_l1),
+            'external_floor_validation': 'cad_holder_aabb_dense_discrete',
+            'external_floor_validation_samples': sample_count,
         }
 
     def plan(self, request):
-        planning_deadline = time.monotonic() + WORKER_PLANNING_BUDGET_SEC
+        planning_budget, segment_budget = planning_budgets_for_request(request)
+        self.planning_budget_sec = planning_budget
+        self.segment_planning_budget_sec = segment_budget
+        planning_deadline = time.monotonic() + planning_budget
         self.planning_deadline_monotonic = planning_deadline
         self.reset_scene()
         self.add_obstacles(request['scene'].get('obstacles', []))
@@ -1275,7 +1780,32 @@ class TesseractBackend:
         joint_margin = float(request['limits'].get('joint_margin_rad', 0.0))
         rolls = [float(value) for value in request['planning']['roll_samples_rad']]
         current = request['start_state']['positions_rad']
-        bootstrap_recovery = self.find_bootstrap_recovery(request)
+        if request.get('plan_kind') == 'RETURN_HOME' and (
+                self.configured_home_direct_policy(request) is not None):
+            TesseractBackend.ensure_planning_time(
+                self, 'before configured direct return-home target')
+            home = finite_six(
+                request['planning']['return_home_positions_rad'],
+                'return home positions')
+            points, validation = self.plan_configured_home_direct(
+                request, current, home)
+            return [], [{
+                'from_viewpoint': -1,
+                'to_viewpoint': -2,
+                'is_return_home': True,
+                'startup_home_static': bool(
+                    request['scene'].get('startup_home_static', False)),
+                'points': points,
+                **validation,
+            }]
+        powered_start_recovery = (
+            self.find_bootstrap_recovery(
+                request, 'powered_start_home_recovery')
+            if request.get('plan_kind') == 'RETURN_HOME' else None)
+        bootstrap_recovery = (
+            powered_start_recovery
+            if request.get('plan_kind') == 'RETURN_HOME'
+            else self.find_bootstrap_recovery(request))
         if bootstrap_recovery is not None:
             current = bootstrap_recovery[
                 'bootstrap_recovery_end_positions_rad']
@@ -1283,6 +1813,45 @@ class TesseractBackend:
         segments = []
         failures = {}
         pending = list(request['scene']['candidate_views'])
+        visibility_target = (
+            request['scene'].get('target_center_m')
+            if request.get('plan_kind') == 'MULTIVIEW_SCAN' else None)
+        if request.get('plan_kind') == 'RETURN_HOME':
+            TesseractBackend.ensure_planning_time(
+                self, 'before dedicated return-home qualification')
+            home = finite_six(
+                request['planning']['return_home_positions_rad'],
+                'return home positions')
+            terminal_recovery = self.find_terminal_home_recovery(
+                request, home)
+            if (
+                    powered_start_recovery is not None
+                    and terminal_recovery is not None):
+                points, validation = self.plan_dual_recovery_return_home(
+                    powered_start_recovery, terminal_recovery, maximum_step)
+            elif terminal_recovery is None:
+                points, validation = self.plan_segment_to_joint_goal(
+                    current, home, maximum_step, powered_start_recovery,
+                    'powered_start_home_recovery')
+            else:
+                recovery_endpoint = finite_six(
+                    terminal_recovery[
+                        'bootstrap_recovery_end_positions_rad'],
+                    'terminal home recovery endpoint')
+                points, validation = self.plan_segment_to_joint_goal(
+                    recovery_endpoint, current, maximum_step,
+                    terminal_recovery)
+                points = reverse_sdk_movej_points(points)
+            segments.append({
+                'from_viewpoint': -1,
+                'to_viewpoint': -2,
+                'is_return_home': True,
+                'startup_home_static': bool(
+                    request['scene'].get('startup_home_static', False)),
+                'points': points,
+                **validation,
+            })
+            return selected, segments
         if request.get('plan_kind') == 'ROUGH_ACQUISITION':
             selected_center_id = None
             centered = [
@@ -1328,10 +1897,12 @@ class TesseractBackend:
                     % '; '.join(
                         'view %s: %s' % item
                         for item in sorted(failures.items())))
+            # ``required_first`` makes a centered candidate eligible for the
+            # mandatory first look; it does not make every other centered
+            # compact pose unusable later in the bounded search.
             pending = [
                 candidate for candidate in pending
-                if (candidate.get('required_first') is not True
-                    and int(candidate['id']) != selected_center_id)
+                if int(candidate['id']) != selected_center_id
             ]
         while pending and len(selected) < maximum_views:
             next_pending = []
@@ -1340,9 +1911,15 @@ class TesseractBackend:
                 TesseractBackend.ensure_planning_time(
                     self, 'before starting a viewpoint candidate')
                 try:
-                    accepted = self.plan_candidate(
-                        current, candidate, rolls, maximum_step,
-                        position_limits, joint_margin, bootstrap_recovery)
+                    if visibility_target is None:
+                        accepted = self.plan_candidate(
+                            current, candidate, rolls, maximum_step,
+                            position_limits, joint_margin, bootstrap_recovery)
+                    else:
+                        accepted = self.plan_candidate(
+                            current, candidate, rolls, maximum_step,
+                            position_limits, joint_margin, bootstrap_recovery,
+                            visibility_target)
                 except (ContractError, RuntimeError, ValueError) as error:
                     failures[int(candidate['id'])] = str(error)
                     next_pending.append(candidate)
@@ -1379,7 +1956,10 @@ class TesseractBackend:
                         'view %s: %s' % item
                         for item in sorted(failures.items()))
                     if failures else 'no candidates'))
-        if request.get('plan_kind') == 'MULTIVIEW_SCAN':
+        if (
+                request.get('plan_kind') == 'MULTIVIEW_SCAN'
+                and bool(request.get('planning', {}).get(
+                    'include_return_home', True))):
             TesseractBackend.ensure_planning_time(
                 self, 'before return-home qualification')
             home = finite_six(

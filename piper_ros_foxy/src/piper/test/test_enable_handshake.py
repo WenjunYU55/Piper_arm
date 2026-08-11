@@ -1,4 +1,5 @@
 from pathlib import Path
+import math
 import threading
 from types import SimpleNamespace
 
@@ -6,10 +7,17 @@ import pytest
 
 from piper.piper_ctrl_single_node import (
     controller_motion_limits,
+    DEFAULT_JOINT_BOUNDS,
+    motor_driver_faults,
     motion_limits_sha256,
     PiperRosNode,
+    motor_driver_enable_states,
     request_piper_enable_state,
 )
+
+
+def test_joint6_fallback_bound_is_one_full_turn():
+    assert DEFAULT_JOINT_BOUNDS['joint6'] == (-math.pi, math.pi)
 
 
 class FakeClock:
@@ -29,14 +37,36 @@ class FakePiper:
         self.disable_results = iter(disable_results)
         self.enable_calls = 0
         self.disable_calls = 0
+        self.states = [False] * 6
+        self.faults = [set() for _ in range(6)]
 
     def EnablePiper(self):
         self.enable_calls += 1
-        return next(self.enable_results, False)
+        result = next(self.enable_results, False)
+        self.states = [bool(result)] * 6
+        return result
 
     def DisablePiper(self):
         self.disable_calls += 1
-        return next(self.disable_results, True)
+        result = next(self.disable_results, True)
+        self.states = [bool(result)] * 6
+        return result
+
+    def GetArmLowSpdInfoMsgs(self):
+        return SimpleNamespace(**{
+            'motor_%d' % index: SimpleNamespace(
+                foc_status=SimpleNamespace(
+                    driver_enable_status=self.states[index - 1],
+                    **{
+                        field: field in self.faults[index - 1]
+                        for field in (
+                            'voltage_too_low', 'motor_overheating',
+                            'driver_overcurrent', 'driver_overheating',
+                            'collision_status', 'driver_error_status',
+                            'stall_status')
+                    }))
+            for index in range(1, 7)
+        })
 
 
 class FakeCommandPiper:
@@ -116,6 +146,171 @@ def test_disable_retries_until_feedback_confirms_no_enabled_motor():
     assert piper.disable_calls == 3
     assert piper.enable_calls == 0
     assert clock.now == 0.02
+
+
+def test_partial_enable_feedback_never_counts_as_enabled():
+    piper = FakePiper()
+    piper.states = [True, True, True, True, False, True]
+
+    assert motor_driver_enable_states(piper) == (
+        True, True, True, True, False, True)
+
+
+def test_motor_faults_identify_the_joint_and_fault_field():
+    piper = FakePiper()
+    piper.faults[4].update(('collision_status', 'stall_status'))
+
+    assert motor_driver_faults(piper) == (
+        'joint5:collision_status', 'joint5:stall_status')
+
+
+def test_motor_watchdog_disables_every_axis_on_joint5_collision_fault():
+    class WatchdogPiper(FakePiper):
+        def __init__(self):
+            super().__init__()
+            self.disable_arm_calls = []
+
+        def DisableArm(self, motor):
+            self.disable_arm_calls.append(motor)
+            self.states = [False] * 6
+
+    piper = WatchdogPiper()
+    piper.states = [True] * 6
+    piper.faults[4].add('collision_status')
+    errors = []
+    node = SimpleNamespace(
+        piper=piper,
+        _PiperRosNode__enable_flag=True,
+        _motor_watchdog_reason='',
+        _motor_watchdog_disable_at=0.0,
+        reset_command_cache=lambda: None,
+        get_logger=lambda: SimpleNamespace(error=errors.append),
+    )
+
+    PiperRosNode.fail_closed_motor_watchdog(node)
+
+    assert piper.disable_arm_calls == [7]
+    assert node._PiperRosNode__enable_flag is False
+    assert node._latest_motor_states == (True, True, True, True, True, True)
+    assert node._latest_motor_faults == ('joint5:collision_status',)
+    assert errors and 'joint5:collision_status' in errors[0]
+
+
+def test_motor_watchdog_allows_bounded_fault_free_enable_transition():
+    class WatchdogPiper(FakePiper):
+        def __init__(self):
+            super().__init__()
+            self.disable_arm_calls = []
+
+        def DisableArm(self, motor):
+            self.disable_arm_calls.append(motor)
+
+    piper = WatchdogPiper()
+    piper.states = [True, True, True, False, False, False]
+    node = SimpleNamespace(
+        piper=piper,
+        _PiperRosNode__enable_flag=False,
+        _enable_transition_active=True,
+        _motor_watchdog_reason='',
+        _motor_watchdog_disable_at=0.0,
+        reset_command_cache=lambda: None,
+        get_logger=lambda: SimpleNamespace(error=lambda _message: None),
+    )
+
+    PiperRosNode.fail_closed_motor_watchdog(node)
+
+    assert piper.disable_arm_calls == []
+    assert piper.states == [True, True, True, False, False, False]
+
+
+def test_motor_watchdog_retries_latched_all_axis_disable():
+    class WatchdogPiper(FakePiper):
+        def __init__(self):
+            super().__init__()
+            self.disable_arm_calls = []
+
+        def DisableArm(self, motor):
+            self.disable_arm_calls.append(motor)
+
+    piper = WatchdogPiper()
+    piper.states = [True] * 6
+    node = SimpleNamespace(
+        piper=piper,
+        _PiperRosNode__enable_flag=True,
+        _disable_required=True,
+        _enable_transition_active=False,
+        _motor_watchdog_reason='',
+        _motor_watchdog_disable_at=0.0,
+        reset_command_cache=lambda: None,
+        get_logger=lambda: SimpleNamespace(error=lambda _message: None),
+    )
+
+    PiperRosNode.fail_closed_motor_watchdog(node)
+
+    assert piper.disable_arm_calls == [7]
+    assert node._disable_required is True
+    assert node._PiperRosNode__enable_flag is False
+
+
+def test_failed_partial_enable_service_rolls_every_axis_back_to_disabled():
+    class FaultedEnablePiper(FakePiper):
+        def EnablePiper(self):
+            self.enable_calls += 1
+            self.states = [True, True, True, True, False, True]
+            self.faults[4].add('collision_status')
+            return False
+
+        def DisablePiper(self):
+            self.disable_calls += 1
+            self.states = [False] * 6
+            return False
+
+    messages = []
+    piper = FaultedEnablePiper()
+    node = SimpleNamespace(
+        piper=piper,
+        enable_timeout=0.1,
+        gripper_exist=False,
+        _PiperRosNode__enable_flag=False,
+        _disable_required=False,
+        _enable_transition_active=False,
+        _enable_transition_lock=threading.Lock(),
+        reset_command_cache=lambda: None,
+        get_logger=lambda: SimpleNamespace(
+            info=messages.append,
+            error=messages.append,
+            fatal=messages.append,
+        ),
+    )
+    request = SimpleNamespace(enable_request=True)
+    response = SimpleNamespace(enable_response=None)
+
+    PiperRosNode.handle_enable_service(node, request, response)
+
+    assert response.enable_response is False
+    assert piper.states == [False] * 6
+    assert piper.disable_calls >= 1
+    assert any('rolled back' in message for message in messages)
+
+
+def test_disable_requires_every_motor_feedback_flag_to_clear():
+    class PartialDisablePiper(FakePiper):
+        def DisablePiper(self):
+            self.disable_calls += 1
+            if self.disable_calls == 1:
+                self.states = [False, False, False, False, True, False]
+                return False
+            self.states = [False] * 6
+            return False
+
+    clock = FakeClock()
+    piper = PartialDisablePiper()
+    piper.states = [True] * 6
+
+    assert request_piper_enable_state(
+        piper, False, 1.0, clock.monotonic, clock.sleep)
+    assert piper.disable_calls == 2
+    assert clock.now == 0.01
 
 
 def test_enable_times_out_without_positive_feedback():

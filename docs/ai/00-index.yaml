@@ -2,8 +2,561 @@ schema_version: 1
 document: ai_context_index
 project:
   name: Piper_arm
-  purpose: Eye-in-hand RGB-D perception, tracking, dry-run scan planning, and operator-approved low-speed scan execution research for an AgileX PiPER arm with Intel RealSense L515.
+  purpose: Bounded closest-first multi-target eye-in-hand RGB-D rough-target acquisition, open-vocabulary tracking, occlusion assessment, adaptive feature-gated 8-to-24-view capture, and guarded sequential low-speed scan execution for an AgileX PiPER arm with Intel RealSense L515.
   runtime: Ubuntu 20.04; ROS 2 Foxy; ROS nodes on Python 3.8; isolated Grounded-SAM-2 workers on Python 3.10+.
+  powered_j5_dropout_incident_2026_08_11: >-
+    GUI task gui-sim-be1e6cd0d5e1419e9b4397261a530fd7 persisted 12
+    GOOD/CLEAR captures in scan_20260811_144903, but remained one-sided
+    (+Y 3, -Y 0; 61.48-degree azimuth; 22.60-degree elevation) and exhausted
+    the former 150-second one-view worker budget. This did not cause the motor
+    failure: at 1786456440.439, about 93 seconds before planning timed out, the
+    low-speed J5 driver-enable flag independently became false while the other
+    five axes remained enabled. The driver's existing 200 Hz fail-closed
+    watchdog then disabled the remaining axes. Old coordinator code later
+    attempted direct home despite the already-disabled arm, made no progress,
+    and returned CONTROL_UNTRUSTWORTHY. The operator manually homed the arm and
+    no further arm command was issued. PiperStatusMsg now exposes feedback
+    validity, every motor enable flag, parsed per-motor faults and the watchdog
+    reason. The mission and executor continuously require fresh all-six-enabled
+    proof during powered motion. A partial state or any motor fault immediately
+    revokes motion authority; terminal cleanup sends no hold, home, storage or
+    disable command, waits read-only for the driver's all-six-disabled proof,
+    stops owned processes and returns NEEDS_OPERATOR with safe_shutdown=false
+    because configured home was not autonomously proved. Automatic one-view
+    MULTIVIEW_SCAN requests now use a 45-second internal budget and three-second
+    OMPL attempts; manual/batch requests retain 150/5 seconds. Four affected
+    packages build, 218 focused tests pass, 452 broad functional tests pass
+    with one skip, and both command-free rootless qualifications pass. The
+    physical cause of the spontaneous J5 dropout remains unresolved and must
+    be inspected before another supervised mission. After the operator's
+    manual home, stale mission-owned scan, planning, perception, camera,
+    hand-eye and driver groups were stopped without any ROS arm command. A
+    direct piper_init=false read-only CAN sample then proved six false motor
+    flags, no per-motor faults, arm err_code zero and live feedback. The stale
+    pre-fix coordinator was then stopped while no mission was active and
+    replaced by the rebuilt coordinator. /target_scan_mission and RViz are
+    resident; driver, camera, perception, planning and command-publisher
+    children remain absent and no camera device has an owner.
+  startup_j6_direction_incident_2026_08_11: >-
+    The authorized GUI mission gui-sim-ef30b4cc466f488ba1331d08b6432d34
+    passed disabled preflight and a separate no-command enable/disable smoke
+    produced 583 consecutive all-six-enabled, fault-free typed samples. During
+    STARTUP_WRIST, the saved -3.139536232-rad storage branch commanded
+    increasing J6 toward zero. After about +0.091 rad, J6 reported
+    collision_status and driver_error_status. The continuous motor guard
+    immediately revoked authority; no hold/home/storage/disable command was
+    issued afterward, the driver watchdog proved all six axes disabled, every
+    mission child stopped, and the result was NEEDS_OPERATOR with zero captures
+    and safe_shutdown=false. Five later piper_init=false samples showed all six
+    disabled, no faults, err_code zero and J6 -3.105395 rad. The operator later
+    corrected the direction interpretation: increasing controller J6 from the
+    negative storage branch toward zero is the intended startup motion, and
+    terminal storage is its decreasing inverse. Schema-v3 therefore binds
+    startup_wrist_direction=increasing, storage_wrist_direction=decreasing,
+    and negative storage J6 -3.139536232 rad. The mission validates the
+    measured signed J6 branch before enable and refuses a positive non-ready
+    start. Schema-v2 profiles remain diagnostic-only. The earlier positive-
+    branch/decreasing repair was based on the mistaken direction report and is
+    superseded. The prior J6 collision/driver-error containment evidence
+    remains valid, but it no longer proves that increasing direction was
+    wrong. The rebuilt GUI and
+    coordinator then ran task gui-sim-a19ebc603a124a12b37e73ee8527a8c9
+    against the current negative branch under the now-superseded gate. It
+    reached preflight, issued no enable request or motion command, rejected the
+    branch with CONTROL_UNTRUSTWORTHY,
+    stopped all children and reported safe_shutdown=true because the arm
+    remained disabled. A final direct read showed six false flags, no faults
+    and J6 -3.126426 rad. A later direct SDK diagnostic plus five raw 0x2A7 CAN
+    frames independently reported J6 -2.860630 rad (-163.902 degrees), all
+    motors disabled and no faults; RViz had zero live /joint_states_single
+    publishers and was not feedback authority. The corrected negative-storage
+    profile hash is c52e0110a0e6929018492e6adcaf097505596b3a84a17f00a6c2f6074f773398.
+    Two affected packages build, 145 focused tests and 428 complete
+    mobile/Tesseract tests pass, and both command-free rootless suites prove
+    startup delta +3.139536232 plus storage delta -3.139536232. Coordinator
+    and RViz remain resident and idle.
+  joint5_contact_incident_2026_08_11: >-
+    During terminal homing after GUI scan task
+    gui-sim-d30410e05b9c405cb48e969fa818c173, the installed camera-holder/L515
+    assembly contacted the table/floor and joint 5 disabled with
+    motor_overheating, driver_overcurrent, collision_status,
+    driver_error_status and stall_status feedback. The ten persisted
+    GOOD/CLEAR views in scan_20260811_124232 and their viewpoint planning are
+    retained as valid scan evidence; this is a homing/execution safety incident,
+    not a viewpoint-diversity defect. All six motors were subsequently proved
+    disabled and every hardware/mission process was stopped except RViz. No
+    fault clear, re-enable, home motion or other physical test is authorized
+    until the mechanism/table contact and J5 are inspected and the operator
+    explicitly reauthorizes motion. Exact CAD-derived link6 envelope center
+    [-0.029750002,0,0.0375] m and size
+    [0.1395,0.10572671,0.053] m now receive a mandatory 0.005 m support-plane
+    and external-obstacle clearance check in both worker and executor, including
+    direct home. The dedicated-home marker still exempts the intentionally
+    folded robot from robot self-collision evaluation; it never exempts the
+    attached camera assembly from external clearance. Driver enable/disable now
+    proves all six FOC flags, rolls a failed partial enable back to all-disabled,
+    and a 200 Hz watchdog disables every axis on persistent partial enable or
+    any per-motor FOC fault. Software-only focused and rootless qualification
+    regressions pass; physical acceptance is blocked by inspection. A fresh
+    read-only five-sample CAN inspection on 2026-08-11 found can0 ERROR-ACTIVE,
+    all six driver-enable flags false and arm err_code zero, but J5 still
+    latched motor_overheating, driver_overcurrent, collision_status,
+    driver_error_status and stall_status. This does not pass the powered-test
+    gate and no enable or motion was attempted.
+  joint6_limit_update_2026_08_10: >-
+    The operator corrected the controller-coordinate J6 range to exactly
+    [-pi,+pi]. Driver and GUI fallbacks, scan kinematics, production
+    Xacro/generated URDF/CSV, Tesseract qualification fixtures and regressions
+    now use that same range. The old measured J6 JSON record remains invalid,
+    so it cannot override the new fallback. The observed approximately 0.04 rad
+    neutral discrepancy was attributed to the controller's persistent J6 zero
+    write, not TF or a software command offset. At 18:18 local time the operator
+    completed the guarded physical-neutral write; a subsequent independent
+    three-second read-only diagnostic reported J6 exactly 0.00000 rad in every
+    sample, disabled, with no faults. One hundred fifty-seven focused tests,
+    check_urdf, four affected package builds, and both command-free rootless
+    Tesseract qualifications pass. The full-turn endpoints and new neutral still
+    require supervised low-speed physical qualification before powered mission use.
+  staged_home_profile_validation_2026_08_10: >-
+    The operator recorded schema-v2 rough/ready [0,0,0,0,0.399345492,0]
+    and storage J6 -3.139536232 rad. Hash, schema and hard limits pass. Dense
+    diagnostics show the conservative L515/cable envelopes overlap the base and
+    link envelopes during the intentional mechanically supported storage fold.
+    The operator confirmed this resting contact corridor is intentional and
+    directed that configured homing must reach the recorded joints without
+    collision planning. Dedicated zero-capture RETURN_HOME requests now emit
+    exactly the measured start plus one direct configured target for
+    CONFIGURED_HOME, STARTUP_WRIST, ROUGH_HOME or STORAGE_WRIST and carry an
+    explicit hash-bound collision_validation_bypassed marker (robot
+    self-collision only) and the exact
+    configured_home_goal_positions_rad through worker, response, bridge and
+    executor. They do not require camera or obstacle-scene
+    health. Joint limits, controller-limit hash, fresh feedback/start matching,
+    aggregate speed, endpoint convergence, stable hold, feedback disable and
+    owned-child cleanup remain mandatory. CAD-derived camera-holder/L515
+    support-plane and external-obstacle clearance is never bypassed. The
+    exception cannot enter
+    acquisition, scan, manipulation or an implicit multiview return. The exact
+    persisted profile now passes both command-free rootless suites. A first
+    supervised run physically proved storage-to-ready J6 motion at five percent,
+    then exposed and stopped on two validation defects before rough-home motion.
+    The operator disabled the arm and paused physical testing; complete staged
+    acceptance remains due after explicit reauthorization. After authorization
+    resumed, GUI mission gui-sim-db30606e55a54e0a9711d9758a175342 proved
+    STARTUP_WRIST, ROUGH_HOME, a controllable-failure direct ROUGH_HOME,
+    STORAGE_WRIST, stable hold, six disabled flags and exact owned-child cleanup.
+  automatic_one_view_contract_2026_08_10: >-
+    GUI task gui-sim-c0bec4ab3ddd4550b666bb0d6889f3c2 proved relaxed disabled
+    storage startup, STARTUP_WRIST, ROUGH_HOME, a look-two measured cube lock,
+    correlated CLEAR evidence and complete direct terminal home/disable/cleanup.
+    Its first automatic scan failed before capture because the worker planned an
+    unused collision-checked contingency home through the intentional storage
+    fold. Schema-v5 now hash-binds include_return_home: automatic min=max=1
+    MULTIVIEW_SCAN requests require false and contain exactly one capture
+    segment, while manual batch retains true and its contingency home. Dedicated
+    RETURN_HOME remains a separate exact two-point robot-self-collision-exempt,
+    externally-clearance-checked transaction.
+    The correction passes 194 focused and 441 full tests, both affected builds
+    and both command-free rootless qualifications; physical retry is pending.
+    It then exposed an acquisition runtime-refresh state bug: a transient
+    motion-limit hold discarded first-look bootstrap_static authority and waited
+    for obstacle data that intentionally does not exist before observation. The
+    recovery state now preserves the interrupted plan's exact scene authority.
+    The following authorized retry, gui-sim-345df21ee3d14d959b15a006f38a758c,
+    acquired the measured cube, passed the correlated clear occlusion probe and
+    persisted three GOOD/CLEAR RGB-D/mask captures before the fourth moving
+    multiview segment held on stale obstacle telemetry. SAM2 target masks and
+    RGB-D projection remained live; only the target-only obstacle heartbeat
+    stopped. The live obstacle projector previously performed a blocking
+    exact-time TF lookup even when the SAM2 ID image contained no obstacle IDs.
+    Target-only frames now publish their explicit empty clear scene before TF;
+    actual obstacle IDs retain full timestamped TF/depth projection. The
+    focused 142-test suite, full 390-test ROS/Tesseract suite, package rebuild
+    and both command-free rootless qualifications pass. Another physical retry
+    showed that this producer optimization was correct but not the complete
+    cause: gui-sim-1d2081729e6d42e18e2fa5eb73da80a9 lost the target mask under
+    motion blur, SAM2 deliberately entered WAITING_FOR_SEED and stopped all
+    instance-ID output. The executor then held safely and completed direct
+    rough/storage home, disable and cleanup. Because SAM2 is not a dynamic
+    safety scanner, a fresh valid collision-qualified obstacle scene is now
+    frozen only for the one exact approved MULTIVIEW_SCAN MOVING segment. A
+    newly received blocked/invalid scene still stops immediately, and every
+    next target still requires a fresh scene after settling. Focused 144-test
+    and full 392-test suites, rebuild and both rootless qualifications pass; a
+    new physical retry remains required.
+  physical_capture_clock_recovery_2026_08_10: >-
+    GUI mission gui-sim-2f877e11e30549c3a3ee26f918726864 reached the first
+    scan endpoint and entered CAPTURING_RGBD. A transient L515 global-time
+    remap then reported a camera stamp 0.554 seconds in the future against the
+    0.500-second limit. This now commands a current-pose hold and permits up to
+    30 seconds for the watchdog-owned full vision restart; capture and resume
+    still require fresh healthy clock authority. During the old terminal
+    recovery, powered J3 feedback briefly read +0.002460 rad at its inclusive
+    zero boundary, beyond the former 0.002-rad readback allowance. Direct
+    DisablePiper required 13 attempts and proved six false flags/no faults;
+    exact task children were stopped. The feedback-only allowance is now
+    hard-capped at 0.005 rad, still far below the operator-permitted 0.3-rad
+    proof tolerance and the 0.025-rad plan-start window. Planned and commanded
+    targets remain inside exact limits. Focused 145-test and full 392-test
+    suites, rebuild and both rootless qualifications pass.
+    A later disabled preflight measured J6 -3.173270 rad after the configured
+    -3.139536232-rad storage target relaxed under power-off, 0.031677 rad past
+    -pi with all six enable flags false and no faults. The operator's earlier
+    0.3-rad proving allowance is now isolated to the exact first measured point
+    of a hash-bound direct RETURN_HOME stage. Ordinary feedback remains capped
+    at 0.005 rad and every planned/commanded goal remains strictly in-limit.
+    The contract, worker, response validator and executor enforce that scope;
+    191 focused and 438 complete tests, both package builds and both command-free
+    rootless qualifications pass. A supervised physical retry remains required.
+  camera_tf_datasheet_registration_2026_08_10: >-
+    The operator confirmed that the current camera-holder and L515 rendering in
+    RViz matches the physical assembly and is therefore the mechanical source of
+    truth. The deployed session_20260808_straight_mount calibration_result.yaml
+    retains the raw PARK solution under mechanical_registration but now deploys
+    a datasheet- and device-factory-registered link6-to-camera_color_optical_frame
+    transform. Intel Rev 003 defines the depth origin 4.5 mm behind the front
+    cover glass and its X-Y origin at the IR transmitter. Device f1120648 reports
+    colour-to-depth translation [0.0002000813,-0.0141312284,0.0042248368] m and
+    a 1.322466-degree relative rotation. The earlier registration incorrectly
+    combined the RGB X-Y centre with the recessed depth Z plane. The corrected
+    l515_visual depth origin is [0,0,-0.008224997] m with straight housing-normal
+    axes; composing the factory extrinsic places colour optical at
+    [-0.0002000813,0.0141312284,-0.0040001602] m. This maps to link6 translation
+    [-0.0781312284,-0.0002000813,0.0399998398] m and preserves the legitimate
+    factory RGB/depth axis skew. On 2026-08-10 the operator measured the physical
+    ChArUco board as 17 mm squares and 12 mm markers; every preserved August 8
+    sample and board-derived report instead records 18 mm and 13 mm. Those PARK,
+    held-out and fixed-board metric results are wrong-scale provenance only, not
+    validation evidence and not a deployable rollback. The active mechanical
+    registration does not depend on board scale. A new read-only TF overlay and
+    corrected-scale five-pose stationary-board validation passed on 2026-08-10;
+    mean/worst drift was 5.73/12.22 mm and 0.87/1.25 degrees against 15 mm and
+    1.5 degree limits. The fixed board is the stationary metric target, so its
+    five distinct stable base_link recoveries satisfy the remaining target
+    repeatability check and physical_revalidation is passed. Semantic cube
+    tracking repeatability remains an acquisition acceptance test.
+    Offline validation passes: all architecture/calibration YAML parses, ten
+    robot-description tests, four calibration-bound model-builder tests, ninety-nine
+    scan-motion tests, check_urdf, all three affected ROS package builds, and both
+    rootless core/compact Tesseract qualifications with real_arm_motion=false.
+  camera_holder_model_update_2026_08_09: >-
+    The physical gripper's permanent wrong-way-round installation is represented by
+    a 180-degree Z rotation on the fixed link6-to-gripper_base joint; joint6 and its
+    controller coordinates remain unchanged. The supplied millimetre camera-holder
+    mesh remains a visual-only fixed gripper branch. Its nominal datum is the close
+    12 mm arm-anchor pair, while the user-locked visual placement retains a -4 mm
+    holder-frame Z trim and must not be moved. The holder's ordered 180-degree X then
+    180-degree Z mesh correction is unchanged. The converted millimetre L515 STL is a
+    second visual-only fixed branch. Its two 40 mm-spaced rear screw axes align
+    transversely with the matching holder axes while retaining the operator-confirmed
+    +2.5 mm axial seating trim; its child origin is camera_holder [0.1, 0, 0] m.
+    The centred 61 mm camera body nests in the installed upper ring and uses a contrasting
+    silver RViz material so it remains visible inside the black holder. Neither detailed mesh
+    owns planning collision authority. The confirmed CAD housing placement plus
+    the Intel depth datum and device factory extrinsic constrain the mechanically
+    registered optical TF while RealSense still owns its internal
+    camera_link-to-optical edges. The qualified conservative L515 housing/mount/cable
+    envelopes remain unchanged. Ten
+    robot-description tests, four model-builder tests, twenty-three acquisition
+    tests, all three affected package builds, check_urdf, and both rootless
+    core/compact qualifications pass with
+    collision_model_qualified_for_hardware=true and real_arm_motion=false.
+  hand_eye_calibration_update_2026_08_08: >-
+    After the L515 was remounted straight, a new eye-in-hand solve used 12 fitting
+    poses and three held-out poses with the board fixed near x=0.39 m in base_link.
+    The saved samples model 18 mm squares and 13 mm markers, but the operator's
+    2026-08-10 physical measurement is 17 mm and 12 mm. Consequently the PARK
+    solution and all fitting, held-out and live five-pose metric results are
+    retained only as wrong-scale provenance and must not be restored or deployed.
+    The datasheet/factory-registered deployment in the same session file is
+    independent of board scale. Its corrected-scale five-pose stationary-board
+    validation passed on 2026-08-10 with 12.22 mm and 1.25 degree worst drift.
+    Capture and validation now share exact 0.017 m/0.012 m defaults and persist
+    those dimensions in new records.
+    session_20260701_local remains rollback history,
+    and the previously rejected analytical J6 compensation remains prohibited. The
+    calibration-bound Tesseract model-builder tests passed 11/11 with the URDF mode-0
+    regression, and both rootless core and compact suites requalified hardware collision
+    planning with real_arm_motion=false.
+  implementation_update_2026_08_04: >-
+    The mission now binds an arbitrary sanitized target label/prompt through the action, gateway,
+    GPU worker spool, heavy refresh, scan metadata, and durable result. Green cube retains its
+    calibrated colour/aspect validation; other labels use the generic open-vocabulary profile with
+    confidence and mask-support checks. Rough acquisition tries the centered look first, then the
+    15-degree cardinal cone, and retains diagonal/compact candidates as reserves. Service-mode
+    capture accepts only fresh GOOD quality at least 0.65 plus fresh CLEAR occlusion. A rejected
+    pose is recorded but does not increment the accepted count; the autonomous mission holds and
+    requests a replacement toward thirteen desired records, with at most eight replacements. It may
+    finish below thirteen only after a correlated post-capture proof that no remaining distinct
+    candidate has finite bounded collision-free IK. Fixed rectangular/radial/height workspace gates
+    are disabled in the active path: Tesseract IK, joint limits, collision validation, current-state
+    matching and executor runtime gates remain authoritative. Leaf/branch dry-run planning supports
+    pick/place or outward push and pick placement requires a flat, dense, edge-supported, visibly
+    clear patch from the accumulated base_link scene cloud. Real branch contact remains blocked by
+    manipulation_model_qualified=false until gripper/TCP/contact/attached-object and pick/push
+    hardware qualification is completed. The configured hash-verified home file is mandatory.
+    The 2026-08-04 hardware preflight found the L515 disconnected, so no new physical mission or
+    three-run end-to-end acceptance is claimed. Two real GUI-submitted failure-path missions were
+    nevertheless completed: camera startup timed out as retryable SENSOR_UNAVAILABLE with zero
+    captures and safe shutdown, and a second mission cancelled during that startup wait returned
+    retryable CANCELLED in about eight seconds. Driver/vision children exited while the coordinator
+    and RViz remained available; the arm was never enabled. This test exposed and fixed startup
+    waits that did not previously observe action cancellation. The GUI now renders an editable
+    target-label field, and its current-feedback home control no longer crashes on stale feedback
+    because its math dependency is imported. The affected ROS packages rebuilt successfully;
+    343 ROS/GUI/driver/Tesseract tests passed with one intentional skip, all 28 isolated GPU-worker
+    tests passed, installation verification passed, and both core/compact rootless Tesseract
+    qualifications returned PASS with real_arm_motion=false.
+  live_recovery_update_2026_08_04: >-
+    After the L515 was replugged, a GUI-submitted mission at rough target [0.4,0,0]
+    acquired the green cube on its first settled look. The frame visibly contained
+    red-stick occlusion, but the acquisition semantic result reported zero obstacles;
+    the workflow reused that result and entered SCAN_READY. The first one-view scan
+    then selected a large coverage-first move whose collision-free joint interpolation
+    turned the camera off the target. Stale obstacle telemetry caused a safe hold before
+    capture. The distinct RETURN_HOME recovery was repaired at the bridge, obstacle,
+    speed-policy, runtime-refresh and tracking-gate boundaries, then physically reached
+    the configured pose with maximum measured error 0.022172 rad and feedback-confirmed
+    all six motors disabled. At that stage scan planning limited each automatic next direction to a
+    20-degree target-centred frontier; the later distinctive-feature revision widened only
+    the planning frontier to 45 degrees. The executor still densely rejects any scan path
+    leaving the 20-degree optical cone or approaching within 0.22 m of the measured
+    target. Workflow SCAN_READY now requires a new dedicated heavy request plus an exact
+    request-ID/image-stamp-matched 3D obstacle scene; acquisition evidence cannot serve
+    as the occlusion probe. Physical testing is paused until the operator explicitly
+    authorizes it again.
+  live_e2e_update_2026_08_04: >-
+    After authorization resumed, four GUI-submitted [0.4,0,0] runs exercised the
+    powered startup and failure teardown. Two startup defects were found and fixed:
+    normal energized holds no longer call the terminal cancel service, and the
+    zero-view startup RETURN_HOME transaction no longer requires acquisition or
+    obstacle telemetry. Its startup_home_static authority is request/hash/evidence
+    bound through worker, bridge and executor, and is accepted at both approval and
+    runtime gates. The final physical run normalized to configured home, locked the
+    green cube on acquisition look 1, ran a fresh correlated occlusion probe, then
+    rejected one unsafe unknown-depth foreground occluder. It automatically returned
+    home, proved hold, feedback-disabled all six motors, stopped driver/camera/GPU/
+    hand-eye/Tesseract/scan children, and left coordinator, GUI and RViz ready.
+    The real overlay shows multiple red sticks substantially covering the cube;
+    contact removal remains intentionally unavailable until the gripper/contact model
+    is qualified. A successful 13-capture clear-scene run is still outstanding.
+  live_recovery_update_2026_08_06: >-
+    A clear-scene GUI retry found two concurrently running target-scan coordinators.
+    Both accepted the same action goal and started duplicate disabled driver and vision
+    generations; their startup then crossed the enable boundary before the duplicate was
+    stopped. Exact process-group cleanup, the documented motion-output 0xFC zero-offset
+    role, one single 5-percent saved-home MoveJ, a 0.00145-rad home proof, and the
+    feedback-confirmed disable handshake recovered the arm; direct CAN then reported six
+    false enable flags and normal CAN-control status. The supported mission launcher now
+    owns a lifetime OS singleton lock. Coordinator SIGINT is converted to mission cancel,
+    and launch grants the bounded home/hold/disable/child-cleanup path 180 seconds before
+    TERM escalation. The next single-owner run found a separate startup-home
+    runtime defect: measured J3 was +0.001169 rad, only 0.000169 rad beyond the
+    former feedback tolerance, and the mission ignored the executor's ABORTED
+    state while waiting for success. Controlled recovery again reached home and
+    disabled. The feedback-only tolerance was first raised to 0.002 rad and is
+    now hard-capped at 0.005 rad after later powered feedback reached +0.002460
+    rad at the same inclusive boundary; planned/commanded joints remain
+    strictly in bounds. Home planning and
+    execution loops now poll cancellation/critical children, bind status before
+    approval, and fail immediately on every non-success ABORTED state. No
+    clear-scene 13-capture success is claimed yet. The subsequent run passed
+    startup home, locked the cube on look one, and obtained a correlated CLEAR
+    occlusion result, but the unchanged 63-view candidate snapshot aged past
+    the bridge's one-second freshness gate before scan readiness stabilized.
+    The planner now republishes deterministic candidates every 0.5 seconds from
+    fresh tracked-target observations while retaining the 0.01 m threshold for
+    meaningful geometry replanning. The first physical retry then accepted two
+    GOOD/CLEAR views. At view three, TF retries consumed the short retry budget
+    before fresh occlusion evidence arrived; stale evidence was misclassified
+    as a bad view, and a transient unsettled-tracking approval rejection sent
+    the mission into safe shutdown. Capture liveness gaps now retry up to ten
+    times without moving, only fresh visual failures enter nonterminal
+    VIEW_REJECTED replacement planning, and exact plan approval waits up to
+    five seconds for transient tracking/camera gates. A later retry accepted
+    one capture, then correctly rejected a plan after the measured target
+    shifted 0.015 m during planning; the coordinator had incorrectly ended the
+    mission instead of honoring the explicit refresh request. Target-drift
+    rejection now loops to a fresh measured plan at most eight times without
+    motion. Per operator direction, terminal recovery now stops at the current
+    measured pose and requests one fresh direct configured-home joint target
+    rather than retracing prior scan endpoints. The next real GUI run accepted
+    seven GOOD/CLEAR captures in scan_20260806_171702, then the
+    one-view planner proved that none of the remaining distinct candidates had
+    finite bounded collision-free IK. The loaded coordinator incorrectly
+    treated the word collision in that no-new-view result as an active motion
+    fault and stayed enabled in hold. A separately correlated zero-capture
+    RETURN_HOME request 85d8a63f9864e35585dbaf0f918d9ec2 planned from the
+    measured held state, reached configured home, settled, and feedback-disabled;
+    direct CAN then reported six false enable flags, CAN_CTRL, NORMAL and err_code
+    zero. Automatic mission completion now accepts either the desired thirteen
+    records or a strict post-capture proof that no meaningfully different
+    collision-free view remains. Proposal rejection itself no longer suppresses
+    the independently planned current-state home route. A repeat GUI run
+    scan_20260806_172931 proved that cleanup path and reported SUCCEEDED with
+    seven hash-valid GOOD/CLEAR records, configured home, six disabled flags,
+    NORMAL CAN and no owned child. Operator review then correctly rejected that
+    scan as insufficiently distinctive: achieved azimuth spanned only 36.7
+    degrees, elevation 18.4 degrees, and all seven cameras remained on the +Y
+    side of the cube. The old 120-175-degree candidate sector and 20-degree
+    frontier had stranded planning at one edge. Current software uses a
+    90-270-degree target-facing hemisphere, 7.5-degree azimuth samples, seven
+    elevation samples from -15 through -75 degrees, six 0.30-through-0.45 m
+    distance samples, a 6-to-30-degree one-replan frontier and up to 36 worker
+    alternatives. The zero-history transaction tries compact progress first;
+    later transactions interleave maximum-coverage directions with compact IK
+    fallbacks toward the same active feature goal.
+    Success below thirteen additionally
+    requires at least nine achieved views, two on each Y side, 120 degrees of
+    azimuth and 25 degrees of elevation. This diversity revision is unit-tested
+    but still needs a complete physical GUI run. The first rebuilt retry then
+    exposed a separate startup race: one transient unsettled-joint approval
+    sample terminated startup home, and cleanup incorrectly requested the
+    normal obstacle-scene home before perception had established a scene. The
+    unchanged exact plan now retries that named transient gate, and any
+    pre-acquisition startup failure reuses only the scoped startup-home-static
+    transaction. Guarded recovery reached configured home, held, feedback-disabled,
+    removed all children, and direct CAN proved six false flags and NORMAL state.
+    The next rebuilt GUI run scan_20260806_181406 accepted thirteen hash-valid
+    GOOD/CLEAR records and safely homed/disabled, but correctly failed the achieved
+    feature gate: two +Y views, zero -Y views, 58.1 degrees azimuth and 6.2 degrees
+    elevation. Generic farthest-point ranking had walked toward -Y, reversed before
+    reaching it, then spent the remaining records on front/top poses. The session
+    planner now scores only achieved accepted FK against staged missing-feature
+    objectives: finish the Y side already approached by achieved FK, then the
+    opposite Y side, then 120-degree azimuth,
+    25-degree elevation, then residual pose diversity. Duplicate checks prefer
+    achieved position/look, and worker fallbacks must progress toward the same
+    objective. The minimum meaningful 3D target-ray step remains six degrees;
+    the 7.5-degree azimuth grid supplies compact continuity poses without allowing
+    near-duplicate captures, and the independent pose/look gate still rejects repeats.
+    A subsequent physical retry scan_20260806_184330 accepted five GOOD/CLEAR
+    records and began extending into -Y, but late shortlist entries could still
+    reverse away from the active face and a transient invalid-obstacle sample
+    aborted execution. The scene was fresh/CLEAR immediately afterward; a newly
+    qualified current-state RETURN_HOME reached configured home within 0.024265
+    rad, settled, disabled all six motors, and exact child cleanup succeeded.
+    The first strict-leader retry scan_20260806_190007 then reached about 168
+    and 199 degrees with two GOOD/CLEAR captures, but all strictly leader-closer
+    candidates failed link2/link5-qualified IK. That proved a useful elevation
+    or radius configuration change near the same azimuth must remain available.
+    Shortlists now use an achieved-history objective margin: −Y/+Y exposure may
+    not regress beyond a 0.02 normalized measurement tolerance, while azimuth
+    and elevation span may not shrink. This preserves feature direction without
+    demanding Euclidean motion toward one ideal pose. The exact transient
+    invalid-geometry abort may now enter the same direct configured-home
+    transaction. Persistent bad geometry and collision still block normal
+    motion; only emergency-stop, invalid feedback, controller/command authority
+    and endpoint-progress faults block dedicated home.
+  live_settle_recovery_update_2026_08_06: >-
+    The position-window revision exposed one proposal-approval regression: before
+    execution publishes its first endpoint, command_target is intentionally absent,
+    so treating that absence as unsettled rejected both startup home and its static
+    recovery without motion. The failed run was held at its exact measured pose with
+    zero drift over a 1.5-second window, feedback-disabled, and its exact child groups
+    were stopped while coordinator and RViz remained live. Proposal approval now
+    anchors the current measured pose when no endpoint exists; after an endpoint is
+    issued the same gate remains strictly target bounded. A focused regression passes
+    and the package rebuilt. The next GUI retry must first take a fresh collision-
+    qualified direct path to configured home and then prove the achieved Y-side,
+    azimuth and elevation diversity floors physically.
+  live_runtime_hold_update_2026_08_06: >-
+    The fixed GUI retry passed startup home, first-look measured acquisition and a
+    fresh CLEAR probe, then accepted five GOOD/CLEAR records while expanding both
+    azimuth and elevation and completing two achieved +Y-side observations. During
+    the first compact crossing step, an empty SAM2 mask made obstacle telemetry
+    stale. The executor correctly held the intermediate measured pose, but its
+    recovery settle check remained bound to the interrupted endpoint, making the
+    hold mathematically unable to settle. The mission used a separate fresh
+    current-state RETURN_HOME, reached configured home, feedback-disabled, stopped
+    every child and preserved coordinator/RViz. Runtime recovery now retains the
+    interrupted endpoint for resumption while separately proving the current-pose
+    hold; fresh obstacle authority is still mandatory before reissuing the target.
+    Regression tests cover both retained resume authority and current-hold settling.
+  live_coverage_frame_update_2026_08_06: >-
+    The next GUI retry accepted four GOOD/CLEAR views but every shortlisted
+    follow-up again targeted the already-covered +Y sector and all eighteen
+    exact poses failed bounded collision-free IK. The mission correctly rejected
+    4/9 views, zero -Y views, 32.9 degrees of azimuth and 19.7 degrees of
+    elevation, then reached configured home, feedback-disabled and stopped all
+    owned children with safe_shutdown=true. Audit showed coverage was recomputed
+    around each newly tracked cube center, so centimetre-scale measurement shifts
+    could reopen an already-satisfied side. The executor now freezes the first
+    measured multiview target center per session in transient-local history.
+    Candidate placement/look-at still use fresh measured tracking, while planner
+    ranking and terminal achieved-feature gates use that immutable measured
+    coverage frame. Its first physical retry proved the frozen classification but
+    accepted only two views: one met the +Y threshold and all 36 coarse exact
+    follow-ups failed IK, after which direct home/disable/cleanup again proved
+    safe_shutdown=true. The generator now samples a flexible camera region: seven
+    elevations from -15 through -75 degrees in ten-degree steps and six distances
+    from 0.30 through 0.45 m in 0.03 m steps. With 25 azimuth samples this yields
+    1050 exact poses before
+    the unchanged bounded 36-candidate shortlist. Offline replay includes compact
+    -35/-45/-55-degree options only 0.06-0.12 m from the proven pose. Every worker
+    member remains exact-hash, IK, collision, boresight and standoff checked.
+  live_between_view_reacquisition_update_2026_08_06: >-
+    The dense-region compact-first GUI run scan_20260806_205355 accepted four
+    GOOD/CLEAR records. Achieved camera rays made meaningful roughly 6-to-20-degree
+    increments, completed the first strict +Y-side requirement, and produced a
+    valid fifth one-view proposal toward missing coverage. Approval happened during
+    a cross-topic transition where fresh valid stable TrackedTarget observations
+    were already arriving but the executor still held a preceding
+    target_status=LOW_CONFIDENCE sample. The coordinator treated that no-motion
+    transient as terminal, then safely reached configured home, disabled all six
+    motors and removed every owned child with safe_shutdown=true. MULTIVIEW_SCAN
+    approval now holds without capture for up to 30 seconds while the existing
+    SAM2/GroundingDINO recovery restores a measured lock. The unchanged exact plan
+    is fully revalidated; target drift still requests a fresh measured plan and
+    collision, path, scene, control and hash failures remain immediate fail-closed
+    errors. All 356 mobile-manipulation/Tesseract tests pass before rebuild and the
+    next GUI physical continuation.
+  live_feature_budget_update_2026_08_06: >-
+    The next GUI mission scan_20260806_210547 exercised bounded visual
+    reacquisition twice and continued to thirteen hash-valid GOOD/CLEAR captures.
+    It safely reached configured home, feedback-disabled all six motors, stopped
+    every mission child, and correctly returned INSUFFICIENT_CAPTURE_QUALITY:
+    achieved FK had two +Y views, zero -Y views, 46.5 degrees of azimuth and
+    18.9 degrees of elevation. This proves a fixed thirteen-view ceiling spends
+    its records before compact J2/J3 IK stepping stones can finish the missing
+    side and spans. Automatic mode now treats thirteen as the minimum and
+    continues one measured-state-replanned capture at a time only while achieved
+    feature floors remain missing, with a hard maximum of twenty-four. It succeeds
+    at any count from 13 through 24 only after two views on each Y side, 120 degrees
+    azimuth and 25 degrees elevation are proved; strict no-safe-view completion
+    requires the same minimum and floors. Missing floors at 24 are a retryable
+    quality failure. The bridge preserves the bounded shortlist's balanced
+    coverage-leader/nearest-current membership, then attempts materially
+    side/span-progressing members before compact nonregressing fallbacks. The TSDF
+    consumer accepts the same range and
+    requires manifest count to match frame metadata. The first rebuilt GUI retry
+    passed startup home, look-one lock and a fresh CLEAR probe, but scan planning
+    remained blocked before motion because the executor/bridge maximum was 24 while
+    scan_viewpoint_planner still used its default session maximum 13. Shutdown again
+    proved home, disable and exact cleanup with zero captures. The supervised launch
+    now propagates max_execution_viewpoints to planner session_max_views as well as
+    workflow, executor, bridge and capture. The next physical mission persisted five
+    GOOD/CLEAR views, completed elevation and two +Y observations, but all 36
+    quota-selected follow-ups failed bounded collision-free IK with zero -Y views
+    and only 42.5 degrees of azimuth. It safely homed, disabled and cleaned up. Offline
+    replay showed the quota had discarded six compact members about 0.09-0.11 m from
+    the achieved camera. The bridge now stable-partitions the original balanced
+    membership instead: feature-progress members are attempted first without deleting
+    the locally reachable radius/elevation escape configurations. Its physical retry
+    stored two GOOD/CLEAR views at approximately 180.6 and 195.6 degrees, then all 36
+    follow-ups failed link2/link5-bounded IK; home, disable and cleanup again passed.
+    The remaining continuity gap was the 15-degree traversal grid: from measured 195.6
+    degrees no exact pose existed before 210. The current dome uses twenty-five
+    7.5-degree azimuth samples and 1050 total azimuth/elevation/range alternatives, so
+    202.5 degrees is an eligible roughly 6.9-degree successor without lowering the
+    six-degree capture floor or any collision/visibility gate. Its first physical
+    retry was stopped before plan spooling by a transient SAM2 empty-mask tracking
+    state; the bridge correctly refused the unsettled snapshot, but the coordinator
+    incorrectly ended the mission. Zero-capture home, disable and cleanup passed.
+    Command-free planning snapshot refusal now retries only named unsettled,
+    prediction-only, or stale tracking for at most 30 seconds so perception can
+    reacquire; all safety, scene, camera, controller, hash and worker failures remain
+    immediate. Tests, rebuild and physical confirmation remain pending.
   current_reality: >-
     The worktree contains uncommitted tracking-recovery, GPU-pipeline, supervised executor, and
     Tesseract-adapter changes; inspect git status before editing and preserve them. On 2026-07-30
@@ -12,8 +565,9 @@ project:
     records before an oversized low-confidence cardboard/cable scene blocked the remainder. Those
     records are preserved. The live obstacle prompt is now bounded to pen and hand/finger, the
     worker has a 150-second internal budget below the 180/185-second bridge/GUI deadlines, GUI
-    Disable enforces a settled current-feedback hold, and eligible non-safety aborts may retrace
-    only already executed approved targets. Camera/perception/scan processes are stopped and the
+    Disable enforces a settled current-feedback hold. Automatic failure/cancel recovery stops at
+    the measured current pose and requests a new collision-bypassed direct configured-home
+    transaction; it does not replay the scan path. Camera/perception/scan processes are stopped and the
     arm is disabled pending explicit authorization for another physical run. On 2026-07-20
     the pinned Tesseract 0.35.0.6 binding ran successfully in the rootless Ubuntu 24.04/Bubblewrap
     worker, matched the mode-0 FK oracle to 2.78e-16, and produced a 137-point smooth timed proposal with
@@ -50,8 +604,12 @@ project:
     GUI accepts XYZ in base_link, manages one isolated Tesseract worker and one motion-enabled Foxy
     scan stack, removes its own manual command publisher, and refuses automation unless the executor
     is the sole /joint_ctrl_single publisher. One atomic typed PrepareAcquisition request binds a
-    unique session ID to a fresh PointStamped and creates five distinct bounded orbit poses
-    (center/left/right/up/down), each with camera optical +Z aimed at the hint. Exact duplicate
+    unique session ID plus look_index to a fresh PointStamped. Automatic missions submit at most
+    five separate one-look transactions: the current camera pose is tried first, later transactions
+    use distinct 15-degree cardinal neighborhoods, and each transaction offers at most five exact
+    fixed-position/compact-radius IK alternatives. Tesseract selects exactly one execution look,
+    perception settles and measures, and only an absent result permits the next transaction from
+    fresh measured joints/camera TF. Exact duplicate
     retries are idempotent, changed data cannot reuse the ID, and source_request_id is preserved
     through Tesseract and GUI acceptance. The 0.45 m setting is a maximum radius: when the live camera is already closer, the
     center look preserves its position/radius and the neighboring looks sweep around that live
@@ -67,6 +625,12 @@ project:
     semantic scene before any later look: zero detected obstacles produces an explicit timestamped
     clear scene, while obstacle-only results reserve object ID 1 for the target and let SAM2
     propagate IDs 2+ for depth projection. Missing, stale, or invalid geometry aborts and holds.
+    Automatic missions also enable one-view multiview transactions: candidates sample 0.30-0.45
+    m in 0.03 m steps and -15 through -75 degrees in 10-degree steps; each accepted capture records achieved FK camera position/look direction,
+    and the next request ranks unused poses by the active achieved feature deficit. Automatic mode
+    requires at least thirteen and may continue to twenty-four, stopping at the first count whose
+    Y-side/azimuth/elevation floors pass; strict post-capture exhaustion never waives those floors.
+    Manual Acquire & Scan retains its separately confirmed exact batch mode.
     ACQUIRED starts the existing supervised workflow and waits for SCAN_READY, but it does not
     request or approve the normal 13-view plan. The operator must explicitly select Prepare Scan
     from Current Lock; if a previous acquisition ended after the camera nevertheless obtained a
@@ -93,7 +657,7 @@ project:
     landmark TF callback starvation, a 0.25-second tracking-measurement gate shorter than live SAM2
     inference time, a stale command-free workflow/bridge process, incompatible reliable-versus-
     best-effort target-cloud QoS, and capture-cloud/status ordering. The current repeatable orbit emits
-    exactly 13 candidates over the qualified 120–175 degree sector, and held PiPER velocity
+    candidates over the target-facing 90–270 degree hemisphere and Tesseract selects one closed-loop view at a time toward feature completion between 13 and 24, and held PiPER velocity
     telemetry is accepted up to 0.20 rad/s only after joint position has already converged within
     0.025 rad. This is successful supervised guarded five-view acceptance, not functional-safety
     certification or permission to remove exact approval, collision, tracking, or hold gates.
@@ -101,9 +665,9 @@ project:
     for acquisition and the later scan. The historical physical acceptance remains at 5 percent;
     higher selections are implemented and unit-tested but not yet physically characterized.
     Collision-model qualification covers path geometry, not high-speed dynamics. The supervised
-    stack now launches scan_capture in service mode. After each
-    workflow-accepted settled viewpoint, the executor requires one fresh synchronized RGB, raw depth,
-    16-bit millimetre depth PNG, mask, intrinsics/joint/plan metadata record before advancing. The
+    stack now launches scan_capture in service mode. At each settled viewpoint the executor requires
+    fresh GOOD/CLEAR evidence and one fresh synchronized RGB, raw depth, 16-bit millimetre depth PNG,
+    mask, intrinsics/joint/plan metadata record before workflow acceptance and advancing. The
     On 2026-07-29 exact plan 7474484cfd3ddb50 completed all 13 views at 5 percent.
     Dataset scan_20260729_150616 live-audited 13 correlated synchronized records, all GOOD/CLEAR,
     after correlated heavy-frame pinning and bounded stationary obstacle-refresh waiting were added.
@@ -164,20 +728,28 @@ project:
     MULTIVIEW_SCAN request and the separate exact scan confirmation. A 2026-07-29 live 5-percent
     acquisition showed that timed_movej_v2 sent 7281 tiny targets even though PiPER MoveJ consumes
     only joint positions and one aggregate speed; its qdot/qddot fields were not controller inputs.
-    sdk_movej_targets_v1 now binds the same fresh controller-limit hash and selected 1-100 percent
-    speed, uses OMPL/ISP to establish all-six-joint goals, sets derivative placeholders to exact
-    zero, and collision-validates the actual direct SDK-interpolated target segment. Foxy sends one
-    six-position arm-only target per viewpoint; only folded-start acquisition may add one proven
-    bootstrap target. Dense 0.025 rad validation samples are never commands. Each endpoint is
-    published once; a 90-second target deadline or 20-second total-joint no-progress interval
-    aborts to hold.
+    That endpoint-only adapter later completed a 13-view physical run, but could not preserve an OMPL
+    detour. On 2026-08-11 it was superseded by tesseract_stream_v1. The worker now
+    retains the full collision-qualified OMPL/ISP path, slows the ISP clock by selected aggregate
+    speed, resamples at 20 Hz with at most 0.025 rad per joint sample, pins recovery knots, and hashes
+    every timestamped position. Foxy publishes intermediate arm-only targets without waiting at each
+    one, guards measured following error at 0.30 rad, and feedback-gates only the final endpoint.
+    Overdue multi-sample schedules abort rather than burst or shortcut. Configured home remains the
+    exact two-point direct exception. qdot/qddot stay exact-zero transport placeholders.
     The driver caches unchanged MotionCtrl_2 mode/speed, never emits GripperCtrl for six-position
-    automation commands, and continues sending every JointCtrl target. The measured-lock handoff
+    automation commands, and continues sending every JointCtrl target. A later 50-percent mission
+    physically executed acquisition and 24 accepted scan views on this stream without a logged
+    scheduled-stream overrun, then completed direct staged home and safe shutdown. It failed the
+    independent feature-completion gates at 113.5 degrees azimuth and without measured convergence.
+    The measured-lock handoff
     now uses the authoritative TrackedTarget/TrackingHealth/LOCKED tuple in both acquisition and
-    workflow Step 4; target_landmark remains diagnostic. This timing path has not
-    yet repeated physical acceptance; its focused software suite passes 184 tests and both rootless
-    collision qualifications pass with real_arm_motion=false. The
+    workflow Step 4; target_landmark remains diagnostic. The current stream therefore has one
+    physical execution result but still lacks deliberate cancel and staged multi-speed acceptance;
+    175 focused and 430 complete mobile/Tesseract tests pass,
+    both affected packages build, and both rootless collision qualifications pass with
+    real_arm_motion=false, including a 175-point detour around a blocked midpoint. The
     2026-07-24 5-percent run remains historical evidence for the former stop-per-sample executor.
+    No current evidence qualifies 100-percent following dynamics.
     A live 2026-07-27 100-percent ROUGH_ACQUISITION run then triggered the unchanged sustained
     following-error hold before ACQUIRED even though perception subsequently reported a valid
     settled measured lock; the workflow stayed IDLE and Step 4 remained disabled. The GUI now lets
@@ -211,8 +783,48 @@ project:
     packages rebuilt, 58 focused stability tests and a 143-test wider suite passed, both rootless
     qualifications returned PASS, and a 12-second isolated proposal-only launch kept all critical
     nodes alive until intentional shutdown. This repair issued no approval or physical arm motion;
-    repeated live restart and sdk_movej_targets_v1 hardware acceptance remain pending.
+    repeated live restart and tesseract_stream_v1 hardware acceptance remain pending.
+live_bounded_scan_aim_update_2026_08_06: >-
+  GUI mission scan_20260806_220358 physically proved the 7.5-degree grid and
+  command-free plan-snapshot recovery by persisting seven hash-valid GOOD/CLEAR
+  records, but it still terminated below the distinctive-feature floors: two
+  +Y views, zero -Y views, 46.0 degrees azimuth and 10.7 degrees elevation.
+  All 36 next exact target-centred wrist poses lacked finite bounded
+  collision-free IK, predominantly at link2/link5. The mission then reached
+  configured home directly from current feedback, feedback-disabled all six
+  motors, stopped every owned child and reported safe_shutdown=true while the
+  coordinator, GUI and RViz remained live. Replay from the exact final measured
+  joints, camera FK and cube position showed the camera positions themselves
+  are usable: preserving the achieved optical direction inside a 12-degree
+  target cone made the previously rejected compact 195/202.5/210-degree
+  candidates pass production OMPL, dense collision clearance, target
+  visibility and trajectory conversion. Automatic closed-loop requests now
+  keep each coverage-ranked camera position but spherically bias its exact
+  request-bound look direction toward the measured current optical axis by at
+  most 12 degrees. The executor's independent dense 20-degree boresight and
+  0.22 m standoff gates, worker IK/collision/path checks, 36-candidate bound,
+  achieved-FK coverage accounting and the then-current 13-24 feature-completion
+  policy remained unchanged. Seventy focused tests and 440 broad functional regressions pass
+  with one intentional skip; both affected ROS packages rebuilt successfully.
+  Full physical feature-diversity validation remains pending.
+live_obstacle_tf_runtime_recovery_update_2026_08_06: >-
+  GUI mission scan_20260806_223343 passed startup, measured lock, a dedicated
+  CLEAR probe and two GOOD/CLEAR captures, then one exact-stamp obstacle TF
+  lookup miss produced an invalid instance while view three was moving. The
+  executor treated that one transport sample as permanent geometry and aborted.
+  Its terminal text was prefixed with ABORTED, so the coordinator's intended
+  fresh-scene current-state-home exception did not match and left the arm enabled
+  in hold with every child alive. The obstacle node now requires three seconds
+  of continuous TF failure before recreating its listener, a transform/stale-data
+  invalidity is held as bounded missing/stale telemetry rather than a physical
+  obstacle, and terminal classification recognizes the complete wrapped reason.
+  Persistent or semantic/unqualified geometry remains fail-closed. A GUI recovery
+  validated the direct current-to-home path, reached home within 0.000384 rad,
+  proved a current hold, received disable true, and stopped the exact stranded
+  children while preserving coordinator and RViz. Full rebuilt E2E confirmation
+  and distinctive-feature coverage remain pending.
 repo_shape:
+  CAD: Physical reference photos remain in CAD/. The originally supplied cameraHolder STL and Intel RealSense L515 STEP were converted/copied into owned piper_description runtime STLs; those original CAD source files are not present in the current CAD directory.
   piper_ros_foxy: ROS workspace containing piper, piper_description, piper_msgs, piper_mobile_manipulation, and the command-free piper_tesseract_foxy adapter.
   motion_planning: Isolated Tesseract 0.35 worker container plus rootless Bubblewrap userspace and qualification scripts; CPU-only and ROS/CAN/GPU/network isolated at runtime.
   L515_camera: Camera build/start scripts, hand-eye calibration, launch wrappers, viewers, and dataset capture tools.
@@ -222,6 +834,8 @@ entrypoints:
   canonical_foxy_environment: source_piper_foxy_environment.sh
   gui_scan_dds_profile: fastdds_gui_udp_only.xml
   system_handoff: SYSTEM_HANDOFF.md
+  mission_roadmap: docs/ai/70-roadmap.yaml
+  consolidated_problem_log: docs/ai/80-problem-log.yaml
   arm_driver: start_piper.sh
   manual_arm_ui: start_gui.sh; manual joints, RViz STL digital-twin mirroring, and Acquire & Scan session controls
   hand_eye_tf: L515_camera/run_hand_eye_tf.sh
@@ -236,12 +850,16 @@ entrypoints:
 source_of_truth:
   supported_foxy_overlay: source_piper_foxy_environment.sh; generated /home/prl/Piper_arm/install must not exist or be sourced
   current_repository_handoff: SYSTEM_HANDOFF.md
+  mission_goal_milestones_and_definition_of_done: docs/ai/70-roadmap.yaml
+  problem_and_incident_status: docs/ai/80-problem-log.yaml
   ros_interfaces: piper_ros_foxy/src/piper_mobile_manipulation/msg
   node_behavior: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation
   runtime_composition: [L515_camera/run_gpu_vision_pipeline.sh, L515_camera/run_supervised_viewpoint_execution.sh, piper_ros_foxy/src/piper_mobile_manipulation/launch]
   parameters: piper_ros_foxy/src/piper_mobile_manipulation/config
   robot_model: piper_ros_foxy/src/piper_description/urdf/piper_description.xacro
-  hand_eye_transform: L515_camera/calibration/hand_eye/session_20260701_local/calibration_result.yaml
+  camera_holder_runtime_mesh: piper_ros_foxy/src/piper_description/meshes/camera_holder.STL
+  l515_visual_runtime_mesh: piper_ros_foxy/src/piper_description/meshes/Intel_RealSense_L515_CAD_external.STL
+  hand_eye_transform: L515_camera/calibration/hand_eye/session_20260808_straight_mount/calibration_result.yaml
   measured_joint_bounds: piper_joint_bounds.json
   operator_procedure: OPERATOR_COMMANDS.md
 read_order:
@@ -249,10 +867,12 @@ read_order:
   - docs/ai/05-admin.yaml
   - docs/ai/10-system-map.yaml
   - docs/ai/30-contracts.yaml
+  - docs/ai/70-roadmap.yaml
   - docs/ai/20-modules.yaml
   - docs/ai/40-flows.yaml
   - docs/ai/50-guardrails.yaml
   - docs/ai/60-debt.yaml
+  - docs/ai/80-problem-log.yaml
 hot_paths:
   tracking: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_tracker_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/sam2_live_bridge_node.py, piper_ros_foxy/src/piper_mobile_manipulation/config/tracking_params.yaml]
   gpu_refresh: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/heavy_refresh_bridge_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/heavy_refresh_contract.py, AI_perception_tests/heavy_model_worker.py, AI_perception_tests/sam2_live_worker.py]
@@ -262,10 +882,104 @@ hot_paths:
   supervised_dry_run: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/supervised_cube_workflow_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/supervised_workflow.py]
   supervised_scan_motion: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_trajectory.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_target_acquisition_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_motion.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture_node.py, piper_ros_foxy/src/piper_mobile_manipulation/config/scan_execution_params.yaml, piper_ros_foxy/src/piper_mobile_manipulation/config/scan_capture_params.yaml]
   tesseract_planning_boundary: [piper_ros_foxy/src/piper_tesseract_foxy, motion_planning/tesseract]
+  mission_process_ownership: [run_target_scan_mission.sh, piper_ros_foxy/src/piper_mobile_manipulation/launch/target_scan_mission.launch.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_scan_mission_node.py]
 update_rules:
   - Update 10-system-map and 40-flows when launch composition, process order, TF ownership, or state ownership changes.
   - Update 30-contracts when topics, services, custom messages, JSON String payloads, spool manifests, parameters, or persisted files change.
   - Update 20-modules and 50-guardrails when ownership or safety boundaries change.
   - Update 30-contracts, 40-flows, and operator procedures when scan proposal, approval, cancellation, capture, or command gating changes.
+  - Update 70-roadmap whenever the mission goal, milestone status, acceptance evidence, blockers, next execution order, or definition of done changes.
+  - Update 80-problem-log whenever a material incident, defect, misleading diagnosis, resolution, physical result, or required retest changes.
   - Update project-structure.txt when top-level or ROS package layout changes.
   - Describe checked-out source, including intentional uncommitted work; never infer behavior solely from generated build/install trees.
+implementation_update_2026_08_10:
+  staged_home: A schema-v3 home profile binds rough-home/mission-ready J6, negative storage J6 and increasing startup plus decreasing storage directions. The measured signed branch is checked before enable. Startup proves direct J6-only ready then direct rough home; every controllable terminal path proves a fresh direct rough-home target then direct J6-only storage before hold, disable and owned-child cleanup. Collision validation is explicitly bypassed only on these dedicated zero-capture RETURN_HOME stages because the operator-confirmed resting fold intentionally violates conservative self-envelope geometry. ROS JointState array sequences are accepted as six-joint inputs. Each direct stage transports its exact hash-bound configured_home_goal_positions_rad; STARTUP_WRIST and STORAGE_WRIST are checked against their own goal. Schema-v1/v2 profiles remain readable for diagnostics but cannot start an autonomous mission when require_staged_home_profile is true.
+  occlusion: Heavy refresh now archives synchronized color, aligned depth and camera intrinsics. Exact response masks are projected with the capture-time TF; pen/marker/stick contact proposals require two associated settled observations, at least five-percent target support and closer-depth occlusion, predicted surface benefit and bounded uncertainty. Contact motion remains blocked by manipulation_model_qualified=false.
+  scanning: Automatic completion combines achieved-FK side/span floors with measured base_link target-surface voxels from persisted RGB-D masks. Eight accepted views seed the model but do not force completion; twenty-four is the safety maximum, and three consecutive novel-surface fractions at or below 0.02 establish convergence.
+  reconstruction: Successful safe shutdown allocates a durable mesh job. Only a task/job/manifest-correlated tracked-robot-homed report queues isolated TSDF reconstruction; status and final PLY/hash/quality are durable and queryable.
+  validation: [162 defect-focused home/contract/worker/executor tests passed, 387 full mobile-manipulation/Tesseract tests passed, 282 focused ROS/GUI/driver/Tesseract tests passed, piper_mobile_manipulation and piper_tesseract_foxy rebuilt, both exact-profile rootless suites PASS with real_arm_motion false]
+adaptive_nbv_and_geometry_crash_update_2026_08_10: >-
+  The current controller is a bounded object-centric receding-horizon NBV loop,
+  not a fixed orbit: it accepts one achieved RGB-D observation, refreshes the
+  measured target/scene/history, selects another collision-qualified candidate,
+  and repeats. Automatic capture count is now adaptive from an eight-view model
+  seed to a hard safety maximum of twenty-four. Success additionally requires
+  both Y-side floors, 120-degree azimuth, 25-degree elevation, and three
+  consecutive measured masked-surface gains at or below 0.02. NextBestSense is
+  retained as a later FisherRF/online-3DGS experiment, BundleSDF as a later rigid
+  registration/reconstruction option, and the motion-uncertainty NBV paper's
+  object-centric voxel/reachability/replan structure is the immediate design
+  match; its GP motion predictor is unnecessary while the cube is stationary.
+  GUI task gui-sim-cbb777414fc446298157bcc5a54b35e5 physically persisted eleven
+  GOOD/CLEAR observations before obstacle_instance_3d_node crashed because its
+  archived-mask path used cv2 without importing it. The import is repaired, a
+  real archived-mask projection regression covers the path, and every critical
+  gpu_geometry child now terminates its parent launch on exit so readiness fails
+  promptly rather than degrading later as stale obstacle telemetry. The run's
+  terminal direct rough/storage home, feedback disable and exact child cleanup
+  succeeded; the updated adaptive scan still requires a rebuilt physical retry.
+nbv_frame_contract_update_2026_08_11: >-
+  Physical GUI task gui-sim-0d67e6fce8404547b93b68c11d900d1a
+  acquired the cube, proved CLEAR occlusion evidence, persisted ten GOOD/CLEAR
+  RGB-D/mask observations, exercised both same-pose evidence catch-up and a
+  fresh visual-quality rejection/replacement, then safely completed direct
+  ROUGH_HOME, STORAGE_WRIST, hold, six-axis disable and owned-child cleanup.
+  The run did not satisfy feature coverage: it achieved three +Y floor views,
+  zero -Y floor views, 59.7 degrees azimuth and 22.2 degrees elevation. The
+  cause was a coordinate-frame fallback: during a short tracker gap the
+  viewpoint planner accepted raw camera_color_optical_frame /piper/target_3d
+  values as though they were base_link. The executor correctly rejected the
+  resulting target-centre drift before motion. Multiview planning now accepts
+  target centres only when header.frame_id exactly matches planning_frame_id
+  (base_link); raw optical measurements must pass through target_tracker first.
+  Failure classification also recognizes scan-candidate/view-frontier failures
+  as NO_REACHABLE_PLAN and no longer mistakes the "can" inside "scan" for a
+  CAN-control fault. The package rebuild, 327-test mobile suite, 92-test
+  Tesseract suite and both command-free rootless qualifications pass; each
+  rootless result explicitly reports real_arm_motion=false.
+capture_rejection_equivalence_update_2026_08_11: >-
+  The rebuilt frame-contract retry was exercised through the GUI as task
+  gui-sim-79f9f909f91148dda1f74b4292a4b5b5. It physically proved the raw
+  camera_color_optical_frame fallback is rejected while 1050 base_link
+  TrackedTarget candidates continue, then persisted three GOOD/CLEAR views.
+  A fourth view correctly produced VIEW_REJECTED and a different collision-
+  qualified replacement. At that replacement the lower capture layer returned
+  target_3d invalid after one evidence catch-up retry; old executor code treated
+  this semantically equivalent fresh visual rejection as mission ABORTED. The
+  mission nevertheless proved direct ROUGH_HOME, STORAGE_WRIST, hold, all six
+  disabled and exact owned-child cleanup with safe_shutdown=true and no contact.
+  Missing target/mask is now a bounded same-pose readiness retry, while fresh
+  Target3D valid=false records/excludes the pose and emits VIEW_REJECTED for a
+  different NBV. I/O, malformed TF, service and safety failures remain aborts.
+  The rebuild, 114 focused scan-motion tests, full 327 mobile tests and 92
+  Tesseract tests pass; both command-free rootless qualifications also pass
+  with real_arm_motion=false. The next physical GUI retry is authorized only
+  after the normal read-only CAN/all-six-motor gate.
+paused_retry_repair_2026_08_10: >-
+  GUI task gui-sim-f8ebc6a06e554d80be66f29756337945 persisted five
+  GOOD/CLEAR views in scan_20260810_230940 before an archived heavy-mask read
+  raced the bridge's atomic responses-to-consumed directory move. The masks and
+  depth were all 480x640; this was not a perception-shape failure. Response-mask
+  reads now validate the path and retry both immutable roots. Dedicated home now
+  treats a transient fresh-motion-limit gap as the existing bounded hold/recovery
+  even while homing; nontransient faults still abort. The 143 focused tests, 518
+  broad software tests, eleven isolated AI tests and package rebuild pass.
+  Physical authorization is paused and every hardware-capable child is off.
+latest_50_percent_scan_and_problem_ledger_update_2026_08_11: >-
+  GUI task gui-sim-a130d7ad58a54815ab36341ed324be82 exercised the
+  current tesseract_stream_v1 path at a configured 50 percent, persisted 24
+  accepted captures in scan_20260811_190342, completed STARTUP_WRIST and the
+  terminal ROUGH_HOME/STORAGE_WRIST sequence, and returned safe_shutdown=true
+  with every mission-owned child stopped. It correctly failed quality rather
+  than claiming completion: achieved coverage was +Y 9, -Y 3, 113.5148-degree
+  azimuth and 37.4625-degree elevation, while measured novel-surface gain had
+  not converged. Runtime logs contain no scheduled-stream overrun. At the same
+  selected percentage, direct home took about 1.085/2.336 seconds while normal
+  Tesseract moves commonly took 1.559-4.909 seconds and one detour took 8.811
+  seconds. This is a policy/interface difference, not current evidence of host
+  failure: the streamed path retains OMPL geometry, scales ISP time and may be
+  lengthened by the fixed 0.025-rad-at-20-Hz ceiling (approximately 0.5 rad/s),
+  then PiPER also receives the aggregate MoveJ percentage; configured home is
+  one direct endpoint. Formal higher-speed qualification and a controller-side
+  trajectory alternative remain open. docs/ai/80-problem-log.yaml now indexes
+  the full durable problem history and routes every entry to detailed evidence.

@@ -2,14 +2,20 @@ schema_version: 1
 document: maintenance_routing
 where_to_start:
   whole_system_handoff: SYSTEM_HANDOFF.md
+  consolidated_problem_history: docs/ai/80-problem-log.yaml
   run_the_system: OPERATOR_COMMANDS.md
   clean_install: CLEAN_INSTALL.md
   camera_or_usb: L515_camera/README.md
   gpu_model_quality: AI_perception_tests/README.md
   ros_perception_code: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation
   arm_driver_or_commands: piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py
+  joint5_contact_incident: [OPERATOR_COMMANDS.md, piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_motion.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py, piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/worker.py, piper_ros_foxy/src/piper_tesseract_foxy/model/collision_model.yaml]
   robot_geometry: piper_ros_foxy/src/piper_description/urdf
+  camera_holder_geometry: [piper_ros_foxy/src/piper_description/meshes/camera_holder.STL, piper_ros_foxy/src/piper_description/urdf/piper_description.xacro]
+  l515_visual_geometry: [piper_ros_foxy/src/piper_description/meshes/Intel_RealSense_L515_CAD_external.STL, piper_ros_foxy/src/piper_description/urdf/piper_description.xacro, docs/ai/60-debt.yaml]
   live_robot_tf_visualization: piper_ros_foxy/src/piper_description/launch/display_live_robot.launch.py
+  deployed_hand_eye_calibration: L515_camera/calibration/hand_eye/session_20260808_straight_mount/calibration_result.yaml
+  hand_eye_validation_record: L515_camera/calibration/hand_eye/session_20260808_straight_mount/fixed_board_validation_registered_20260810_corrected_board.yaml
   current_supervised_state: SUPERVISED_WORKFLOW_HANDOFF.md
   automatic_scan_motion: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py
   timed_scan_command_adapter: [piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/worker.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_trajectory.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py]
@@ -19,11 +25,18 @@ where_to_start:
   manual_3d_joint_preview: [piper_gui_native.py, piper_ros_foxy/src/piper_description/launch/joint_preview.launch.py, piper_ros_foxy/src/piper_description/scripts/piper_joint_preview_node.py, piper_ros_foxy/src/piper_description/rviz/joint_preview.rviz]
   removed_legacy_robot_surfaces: [piper/start_single_piper_rviz.launch.py, piper_description/display_xacro.launch.py, joint_state_publisher_gui dependency, Gazebo/transmission stubs, girpper_exist alias, rviz_ctrl_flag]
 symptom_routing:
+  motor_fault_or_partial_enable:
+    inspect: [all six motor low-speed FOC driver_enable_status flags, per-motor voltage/temperature/current/collision/driver/stall flags, /arm_status, can0 error state, exact process ownership]
+    note: Stop command owners, use the physical emergency stop as required, and issue the explicit all-axis DisableArm(7) path. A high-level arm err_code of zero does not clear a per-motor FOC fault. Never reset, re-enable or command home after contact until the mechanism and affected joint are inspected. The driver must roll failed partial enable back to six false flags; any motor fault while another axis is powered triggers all-axis disable.
+  camera_holder_near_support_plane:
+    inspect: [scan_execution_params.yaml camera_holder_envelope_*, scan_motion.py attached-box external clearance, collision_model.yaml external_floor_clearance, worker.py dense direct-home validation]
+    note: Direct configured home bypasses only intentional folded robot self-collision. The full CAD-derived installed holder/L515 link6 envelope must retain at least 0.005 m floor/external clearance at the measured start and every dense path sample. A start already below that margin is NEEDS_OPERATOR, never an automatic home authorization.
   no_ros_topics:
     inspect: [ROS_DOMAIN_ID, ROS_LOCALHOST_ONLY, source_piper_foxy_environment.sh, L515_camera/source_l515_environment.sh, ros2 pkg prefix piper_mobile_manipulation, ros2 pkg prefix piper_tesseract_foxy]
     note: If CAN counters and piper_ctrl_single_node remain active but /joint_states_single and /arm_status deliver no samples to an exact-QoS probe, verify the installed driver contains the monotonic wall-clock feedback loop and restart the disabled-arm driver. Do not bypass downstream freshness gates.
   camera_missing_or_slow:
     inspect: [L515_camera/check_l515_ros.sh, L515_camera/diagnose_l515_usb.sh, L515_camera/start_l515_camera.sh, L515_camera/start_l515_camera_low_bandwidth.sh]
+    note: The normal and low-bandwidth launchers externally bound each direct Foxy parameter CLI transaction to two seconds. If the camera node is late or absent, preserve that bound and let the startup loop retry/fail closed; an unbounded pre-node direct-discovery command can consume system memory.
   camera_clock_stale_or_nonmonotonic:
     inspect: [/piper/camera_timestamp_health, /joint_states_single position stability, camera_timestamp_watchdog_node.py, camera_timestamp_watchdog_params.yaml, /tmp/piper_vision_recovery/request.yaml, L515_camera/run_gpu_vision_pipeline.sh]
   gpu_pipeline_ctrl_c_leaves_workers:
@@ -51,20 +64,32 @@ symptom_routing:
   heavy_refresh_storm:
     inspect: [sam2_live_bridge_node.py, target_landmark_node.py, heavy_refresh_bridge_node.py, /piper/heavy_refresh_status, PIPER_MAX_REACQUISITION_ATTEMPTS, PIPER_ABSENT_RETRY_SEC]
   stale_or_wrong_tf:
-    inspect: [piper_ros_foxy/src/piper_description/urdf/piper_description.xacro, piper_ros_foxy/src/piper_description/launch/display_live_robot.launch.py, L515_camera/run_hand_eye_tf.sh, L515_camera/publish_hand_eye_tf.py, calibration_result.yaml, fixed_board_validation.yaml, /joint_states_single, joint6 reference adjustment metadata]
+    inspect: [piper_ros_foxy/src/piper_description/urdf/piper_description.xacro, piper_ros_foxy/src/piper_description/launch/display_live_robot.launch.py, /home/prl/Downloads/Intel_RealSense_LiDAR_L515_Datasheet_Rev003.pdf, rs-enumerate-devices -c, L515_camera/run_hand_eye_tf.sh, L515_camera/publish_hand_eye_tf.py, L515_camera/calibration/hand_eye/session_20260808_straight_mount/calibration_result.yaml, L515_camera/calibration/hand_eye/session_20260808_straight_mount/fixed_board_validation_registered_20260810_corrected_board.yaml, /joint_states_single, joint6 reference adjustment metadata]
+    note: The operator measured the physical 5x5 ChArUco board on 2026-08-10 as 17 mm squares and 12 mm markers. All saved August 8 fitting/held-out samples and the three earlier fixed-board reports encode the former 18 mm/13 mm model, so their PARK transform and translation/rotation metrics are wrong-scale provenance only and must not be restored or deployed. Reprojection error does not validate metric scale. The active transform instead uses the scale-independent operator-confirmed CAD housing placement, Intel Rev 003's 4.5 mm depth offset, and device f1120648's factory colour-to-depth extrinsic. l515_visual depth optical is [0,0,-0.008224997] m with straight housing-normal axes; colour optical is [-0.0002000813,0.0141312284,-0.0040001602] m with the legitimate 1.322466-degree factory skew. The superseded [0,0.014,-0.008694998] m anchor incorrectly mixed RGB X-Y with depth Z. The 2026-08-10 read-only live overlay reproduced every deployed transform exactly. Capture and fixed-board validation now share and persist exact 0.017 m/0.012 m dimensions and use the same 0.75-second/0.001-rad position-stability gate. The corrected-scale five-pose report passed all poses with mean/worst translation 5.73/12.22 mm and rotation 0.87/1.25 degrees against 15 mm and 1.5 degrees. Because the board is itself the stationary metric target and its base_link pose passed at five distinct stable arm poses, deployment physical_revalidation is passed. Semantic cube tracking repeatability remains an acquisition acceptance test. The 2026-07-01 result is rollback history only; never restore the rejected analytical J6 compensation.
   arm_will_not_move:
     inspect: [check_piper_can.sh, can0 state and error counters, passive candump, arm power and CAN wiring/termination, PiPER motion-output/slave role 0xFC with zero offsets, start_piper.sh, /joint_states_single, /arm_status ctrl_mode, /enable_srv, /joint_ctrl_single]
   unsafe_or_clipped_joint_command:
     inspect: [piper_joint_bounds.json, piper_gui_native.py, piper_ctrl_single_node.py]
   j6_planning_or_execution:
     inspect: [piper_joint_bounds.json, calibration_result.yaml, scan_motion.py, scan_viewpoint_executor_node.py, piper_tesseract_foxy, docs/ai/30-contracts.yaml, docs/ai/60-debt.yaml]
-    note: J6 was operator-confirmed fully safe on 2026-07-17. The legacy fixed-J6 executor and IK helper were removed on 2026-07-24. Tesseract is mandatory and uses all six joints equally with normal limits and collision checks and no J6-specific cost.
+    note: J6 was operator-confirmed fully safe on 2026-07-17. On 2026-08-10 the operator corrected its controller-coordinate range to [-pi,+pi]; every software fallback/model/qualification fixture now agrees, but the expanded range has only command-free qualification. The approximately 0.04 rad persistent controller-zero error was corrected at physical neutral at 18:18, then an independent three-second diagnostic reported exactly 0.00000 rad throughout, disabled, with no faults. Never reproduce that correction in TF or asymmetric command/feedback offsets. The legacy fixed-J6 executor and IK helper were removed on 2026-07-24. Tesseract is mandatory and uses all six joints equally with normal limits and collision checks and no J6-specific cost.
   tesseract_worker_unavailable:
     inspect: [bubblewrap, micromamba, motion_planning/tesseract/setup_rootless_worker.sh, motion_planning/tesseract/qualify_rootless_worker.sh, motion_planning/tesseract/run_worker.sh, /piper/tesseract_plan_status, spool_root]
     note: Direct 0.35 wheels do not target Focal glibc. The verified workstation route is the pinned rootless Ubuntu 24.04 userspace; Podman remains an optional packaging route. In the Bubblewrap route run_worker.sh must remain the direct parent while --die-with-parent is active, including when the GUI's short-lived startup thread returns. Never install the old 0.4 wheel as production fallback.
   tesseract_plan_rejected_for_motion:
-    inspect: [piper_tesseract_foxy/model/collision_model.yaml, piper_description/meshes/planning_30mm/collision_mesh_manifest.json, piper_tesseract_foxy/collision_meshes.py, /piper/tesseract_plan, /piper/scan_execution_status, trajectory_sha256]
-    note: qualified_for_hardware became true on 2026-07-23 for supervised guarded execution after the augmented camera/mount/local-cable model and bounded exact-path Bullet validation passed. On 2026-07-24 the worker was corrected to apply request-bound OMPL seed 42 before constructing planners, and the detour qualification returned identical PASS output twice. Approval still fails closed for false/mismatched qualification, seed mismatch, or any stale/hash/health error.
+    inspect: [piper_tesseract_foxy/model/collision_model.yaml, piper_description/meshes/planning_30mm/collision_mesh_manifest.json, piper_tesseract_foxy/collision_meshes.py, piper_tesseract_foxy/bridge_node.py closed_loop_max_aim_offset_deg, /piper/tesseract_plan, /piper/scan_execution_status, trajectory_sha256]
+    note: >-
+      qualified_for_hardware became true on 2026-07-23 for supervised guarded
+      execution after the augmented camera/mount/local-cable model and bounded
+      exact-path Bullet validation passed. On 2026-07-24 the worker was corrected
+      to apply request-bound OMPL seed 42 before constructing planners, and the
+      detour qualification returned identical PASS output twice. For automatic
+      close-range views, distinguish an unusable exact target-centred wrist pose
+      from an unusable camera position: the bridge may preserve the measured
+      optical direction only inside the configured 12-degree target cone before
+      the exact request is hashed. Tesseract and the executor must still validate
+      that exact relaxed pose/path. Approval still fails closed for false or
+      mismatched qualification, seed mismatch, or any stale/hash/health error.
   tesseract_snapshot_or_reachability_stale:
     inspect: [/arm_status, /joint_states_single, /piper/reachable_scan_viewpoints, /piper/tesseract_readiness, /piper/tesseract_plan_status, worker_health.json, viewpoint_reachability_filter_node.py, piper_tesseract_foxy/bridge_node.py, supervised_viewpoint_execution.launch.py, ROS_DOMAIN_ID, ROS_LOCALHOST_ONLY]
     note: The proposal wrapper sources only Foxy plus the PiPER overlay and starts participants in a validated staggered order. Scan bridge and reachability subscriptions are created once and retained; missing/stale callbacks block planning without runtime endpoint recreation. Inspect readiness blockers and the worker heartbeat before graph surgery. The driver uses an executor-owned 200 Hz timer. Verify actual samples with an application-level subscriber because Foxy CLI echo/hz can be misleading.
@@ -76,29 +101,53 @@ symptom_routing:
     note: The validated plan handoff is reliable transient-local depth 1. Keep publisher and subscriber QoS aligned; expiry, hashes, camera health, and collision qualification are still revalidated after delivery.
   obstacle_tf_or_scene_blocked:
     inspect: [/piper/obstacle_instances_3d, obstacle_instance_3d_node.py, obstacle_instance_3d_params.yaml, base_link to camera_color_optical_frame TF, SAM2 result metadata]
-    note: The obstacle node may recreate a stalled read-only TF listener on a bounded interval and stays fail-closed until a fresh transform arrives. Valid unsafe objects are forwarded by the Tesseract bridge as collision boxes; invalid geometry remains a planning blocker.
+    note: The obstacle node recreates its read-only TF listener only after three continuous seconds without a successful exact-stamp transform; an isolated lookup miss must not clear its buffer. Transform-unavailable, stale-transform and stale-source invalid instances are bounded missing/stale telemetry holds before motion, while semantic/unqualified or otherwise invalid geometry remains an immediate planning blocker. Valid unsafe objects are forwarded by the Tesseract bridge as collision boxes.
+  gpu_geometry_child_exits_or_obstacles_become_stale:
+    inspect: [gpu_geometry.launch.py, obstacle_instance_3d_node.py, vision parent process status, test_gpu_geometry_launch.py, test_tracking_recovery.py archived-mask projection]
+    note: Every gpu_geometry child is critical and must emit launch Shutdown on exit. The 2026-08-10 eleven-view run found a missing cv2 import in the archived heavy-mask path; that import and a real mask-file regression are now mandatory. If any geometry child exits, diagnose its first exception and restart the exact owned vision generation; do not keep a partial launch alive or increase stale-topic timeouts.
   tesseract_start_state_outside_limits:
     inspect: [/joint_states_single, /piper/tesseract_plan_status, piper_description.xacro, piper_joint_bounds.json, piper_tesseract_foxy/contract.py]
     note: Historical requests correctly failed against the then-stale 0.0 rad J2 lower limit. On 2026-07-30 the production model was aligned to the exact enabled compact-pose feedback -0.044796192 rad after the previous -0.040522412 rad record caused OMPL to clamp the live start. Continue to reject any state outside the current bound and never clip or fake a snapshot.
   gui_3d_preview_missing_or_wrong:
     inspect: [piper_gui_native.py, joint_preview.launch.py, piper_joint_preview_node.py, joint_preview.rviz, piper_description.xacro, /piper_gui/preview_set, /piper_gui/preview_joint_states, /piper_gui_joint_editor/update]
+  camera_holder_missing_or_misaligned:
+    inspect: [piper_ros_foxy/src/piper_description/meshes/camera_holder.STL, piper_ros_foxy/src/piper_description/meshes/Intel_RealSense_L515_CAD_external.STL, piper_ros_foxy/src/piper_description/urdf/piper_description.xacro, piper_ros_foxy/src/piper_description/launch/display_live_robot.launch.py, L515_camera/calibration/hand_eye/session_20260808_straight_mount/calibration_result.yaml]
+    note: The physical gripper reversal is the fixed link6-to-gripper_base yaw of pi; do not add pi to joint6 feedback or commands. The holder STL is millimetre-authored and retains scale 0.001. Its visual origin [0.1765,-0.0565314679146,0.0612789535522] and ordered X-then-Z orientation are user-locked and must not move; the nominal close 12 mm arm datum therefore retains an intentional -4 mm holder-frame Z trim. The L515 datum is the 40 mm screw pair through the raw lower circular cradle, which becomes the installed upper ring after the fixed rotations; the 87.763214 mm lateral tab pair is not the camera datum. l515_visual is fixed at [0.1,0,0] m with rpy [-pi,pi,pi/2], mesh offset [-0.030503129,-0.030503409,-0.029628554] m and an operator-confirmed +2.5 mm axial seating trim. It uses scale 0.001 and a contrasting silver material and has no collision authority. The CAD housing placement, datasheet depth datum, and serial-bound factory extrinsic constrain the deployed optical transform; changes still require the complete TF/calibration validation group.
   no_scan_execution_proposal:
     inspect: [/piper/reachable_scan_viewpoints, /piper/tesseract_plan_status, /piper/tesseract_plan, /piper/scan_execution_plan, scan_execution_params.yaml, piper_tesseract_foxy, scan_motion.py, scan_viewpoint_executor_node.py]
   rough_acquisition_will_not_plan:
     inspect: [/scan_target_acquisition/prepare, /piper/tesseract_readiness, worker_health.json, /piper/acquisition_viewpoints, /piper/reachable_acquisition_viewpoints, /tesseract_plan_bridge/request_acquisition_plan, /piper/tesseract_plan_status, /scan_viewpoint_executor/diagnostic_state, piper_tesseract_foxy/model/collision_model.yaml, motion_planning/tesseract/diagnose_request_ik.py]
     note: PrepareAcquisition must contain one valid unique session ID plus finite fresh base_link PointStamped data. An exact duplicate is idempotent; changed data under the same ID is rejected. Check fresh worker heartbeat/readiness and verify the same source_request_id through candidate, TesseractPlan, and ScanExecutionPlan. The 2026-07-25 compact-start fix may prepend one bounded monotonic hash-bound recovery only to the first bootstrap_static ROUGH_ACQUISITION segment. Do not disable pairs or extend it to MULTIVIEW_SCAN.
   rough_acquisition_did_not_find_target:
-    inspect: [/piper/scan_execution_status, /piper/heavy_refresh_request, /piper/heavy_refresh_status, /piper/tracked_target, /piper/tracking_health, /piper/target_status, heavy_refresh_contract.py]
-    note: Each settled pose waits up to 10 seconds for a post-settle image/idle worker, 60 seconds for its exact GroundingDINO request, and 10 seconds for a fresh measured LOCKED target within 0.30 m of the hint. target_mask_missing advances; correlation, worker, clock, scene, or health failures abort and hold.
+    inspect: [/piper/scan_execution_status, /piper/heavy_refresh_request, /piper/heavy_refresh_status, /piper/tracked_target, /piper/tracking_health, /piper/target_status, heavy_refresh_contract.py, AI_perception_tests/heavy_model_worker.py, AI_perception_tests/temporal_heavy_refresh.py, L515_camera/run_heavy_model_worker.sh, /tmp/piper_heavy_refresh]
+    note: Each settled pose waits up to 10 seconds for a post-settle image/idle worker, 60 seconds for its exact GroundingDINO request, and 10 seconds for a fresh measured LOCKED target within 0.30 m of the hint. The current-run Heavy-model worker ready marker must appear only after local-cache-only GroundingDINO preload; Hugging Face network retries indicate a broken launch contract. target_mask_missing advances; correlation, worker, clock, scene, or health failures abort and hold.
   acquired_but_13_view_plan_not_available:
     inspect: [/piper/scan_execution_status, /piper/supervised_workflow_status, /supervised_cube_workflow/diagnostic_state, /piper/tracked_target, /piper/tracking_health, /piper/target_status, /tesseract_plan_bridge/request_plan, piper_gui_native.py, piper_gui_automation.py]
     note: ACQUIRED starts the workflow but deliberately does not request the scan. If acquisition ended but the camera subsequently has fresh settled measured TrackingHealth, Step 4 remains available even when the GUI-owned worker/scan stack is stopped. The explicit action starts that stack, waits for the workflow's authoritative measured-lock assessment, adopts the lock as a new scan phase, starts/restarts workflow assessment, and waits for SCAN_READY without relabeling the acquisition or reusing its approval. The GUI then issues one fresh normal-plan request, correlates its returned plan ID, and enables the separate 13-view confirmation only after exactly 13 qualified views arrive. Stale ros2-daemon node entries do not count as live processes.
   scan_motion_is_jerky:
     inspect: [/piper/motion_limits, TesseractPlan timing_policy/execution_speed_percent/command_rate_hz/motion_limits_sha256, scan_trajectory.py, worker.py, scan_viewpoint_executor_node.py, scan_execution_params.yaml, piper_ctrl_single_node.py, /piper/scan_execution_status, /joint_states_single]
-    note: sdk_movej_targets_v1 binds fresh controller limits and selected aggregate SDK speed, collision-validates the direct SDK-interpolated segment in the isolated worker, and sends one six-position arm-only MoveJ target per viewpoint. Only folded-start rough acquisition may add one proven bootstrap target. Dense validation samples are never commands. A target exceeding 90 seconds or making no measurable total-joint progress for 20 seconds aborts to hold. PiPER MoveJ does not consume per-joint qdot/qddot; those response placeholders must remain exact zero. The target-only 13-view route completed supervised acceptance at 5 percent; higher speeds remain unqualified.
+    note: >-
+      tesseract_stream_v1 binds fresh controller limits and selected aggregate
+      SDK speed, preserves the collision-qualified OMPL/ISP joint path, and
+      schedules arm-only position samples at 20 Hz. Intermediate samples do not
+      wait for convergence; feedback supplies a 0.30 rad following guard and
+      final endpoint/settle proof. Any multi-sample schedule overrun aborts to
+      hold rather than bursting or shortcutting a planned corner. Dedicated
+      zero-capture RETURN_HOME remains the explicit exact two-point direct
+      exception with its existing stage-bound collision-bypass evidence and
+      feedback-gated endpoint. PiPER MoveJ does not consume per-joint qdot/qddot,
+      so those response fields remain exact-zero placeholders. Software tests,
+      both affected builds and both command-free rootless suites pass; the new
+      stream still requires supervised 5-percent physical acceptance.
+  arm_reaches_pose_but_never_settles:
+    inspect: [/joint_states_single, /piper/scan_execution_status, scan_viewpoint_executor_node.py, target_scan_mission_node.py, scan_execution_params.yaml]
+    note: Use an application-level subscriber to compare measured position deltas with SDK velocity. PiPER instantaneous velocity can spike while positions remain stationary and is diagnostic only. Normal endpoint proof requires target error at most 0.025 rad plus a continuous 0.005 rad position-anchor window; configured home uses 0.030 rad plus the same 0.005 rad stability. Do not raise timeouts or weaken target/position bounds to mask missing or moving feedback.
   gui_acquire_and_scan_will_not_start:
     inspect: [source_piper_foxy_environment.sh, piper_gui_native.py, piper_gui_automation.py, /piper/tesseract_readiness, worker_health.json, /scan_target_acquisition/prepare, /joint_ctrl_single, /piper/scan_execution_plan, /piper/scan_execution_status, Tesseract worker lock under XDG_RUNTIME_DIR]
     note: Start driver/camera/perception separately. The GUI shows startup blockers and keeps Step 2 disabled until worker and scan parents, critical nodes/services, fresh worker heartbeat/acquisition readiness, and exact executor ownership are all present. source_piper_foxy_environment.sh must resolve both packages under piper_ros_foxy/install and verify scan_capture, PrepareAcquisition, TesseractReadiness, source_request_id, and schema-v5 fields. Any critical child exit shuts down the scan parent and disables automation. The acquisition and 13-view scan use two separate exact confirmations; neither creates a reusable 15-minute authorization window.
+  acquisition_failure_does_not_reach_configured_home:
+    inspect: [target_scan_mission_node.py, scan_viewpoint_executor_node.py, scan_execution_params.yaml, configured home pose source, /piper/scan_execution_status, /joint_states_single]
+    note: A reverse of ROUGH_ACQUISITION proves only plan start and is no longer used by automatic recovery. The current path uses /scan_viewpoint_executor/hold for nonterminal startup/final holds, uses /cancel to stop active motion at measured feedback, requests /tesseract_plan_bridge/request_return_home_plan from that settled state plus fresh obstacles, approves the zero-capture RETURN_HOME hash, and verifies configured joints before disable. The 2026-08-04 red-stick occlusion failure physically proved automatic configured-home return, hold, feedback disable, owned-child cleanup, and coordinator/RViz survival.
   gui_step2_process_exits_or_returns_zero_viewpoints:
     inspect: [source_piper_foxy_environment.sh, ros2 pkg prefix piper_mobile_manipulation, ros2 pkg prefix piper_tesseract_foxy, piper_mobile_manipulation.scan_capture, TesseractPlan bootstrap_recovery_* fields, scan_capture_node, tesseract_plan_bridge]
     note: The 2026-07-25 cause was a stale generated /home/prl/Piper_arm/install overlay ahead of the canonical workspace. Remove only verified generated root build/install/log outputs, rebuild piper_description, piper_mobile_manipulation, and piper_tesseract_foxy in piper_ros_foxy, then start through the canonical helper. Do not modify limits, collision margins, or J6 to mask an interface mismatch.
@@ -109,6 +158,8 @@ symptom_routing:
   ros_type_support_error:
     action: Clean only build/install artifacts for piper_mobile_manipulation, rebuild it, and source a fresh overlay; see OPERATOR_COMMANDS.md.
 navigation:
+  mission_goal_and_milestones: docs/ai/70-roadmap.yaml
+  problems_and_incidents: docs/ai/80-problem-log.yaml
   architecture: docs/ai/10-system-map.yaml
   ownership: docs/ai/20-modules.yaml
   interfaces: docs/ai/30-contracts.yaml
@@ -125,3 +176,139 @@ maintenance_commands:
   ai_worker_tests: "AI_perception_tests/groundingdino_test/envs/grounded_sam2_py310/bin/python AI_perception_tests/test_heavy_model_worker.py && AI_perception_tests/groundingdino_test/envs/grounded_sam2_py310/bin/python AI_perception_tests/test_sam2_live_worker.py"
 generated_or_external:
   do_not_edit: [piper_ros_foxy/build, piper_ros_foxy/install, piper_ros_foxy/log, L515_camera/realsense_ws/install, AI_perception_tests/groundingdino_test/envs, downloaded checkpoints]
+post_live_scan_routing_2026_08_04:
+  target_leaves_frame_during_scan_move:
+    inspect: [tesseract_plan_bridge closed_loop_min_view_step_deg, closed_loop_max_view_step_deg and closed_loop_max_aim_offset_deg, scan_session_memory.py feature_coverage_priority, scan_motion.py camera_target_path_reasons, scan_viewpoint_executor_node.py prepare_current_view, achieved /piper/scan_session_history, calibrated camera FK]
+    rule: Coverage ranking is subordinate to the 6-to-30-degree local target-centred position frontier. The 7.5-degree azimuth grid provides a compact continuity successor when achieved FK falls between samples, while the six-degree floor and separate pose/look duplicate gate reject near-repeats. The first transaction tries the closest non-regressing candidate before its ambitious leader, then later transactions restore coverage-first interleaving. The achieved-pose scorer finishes whichever missing Y side the latest accepted FK is already approaching, crosses once to finish the opposite side, then completes azimuth-span and elevation-span goals. Each candidate carries an objective-specific margin against the latest accepted pose for side traversal and accepted history for span goals. For a side goal, normalized lateral exposure may regress by at most 0.02 for measurement tolerance; for span goals, achieved span may not shrink. This permits radius/elevation configuration changes near the same side while excluding genuine orbit reversal. Before request hashing, the bridge may keep the achieved optical direction or spherically move toward it only while the resulting exact look remains within 12 degrees of the target-centred nominal. The dense SDK interpolation must independently retain positive-optical-Z boresight within 20 degrees and at least 0.22 m target distance before any command. Neither frontier nor aim relaxation widens that safety limit.
+  target_status_dips_between_scan_views:
+    inspect: [/piper/tracked_target, /piper/target_status, /piper/tracking_health, /piper/heavy_refresh_status, /piper/scan_execution_status, target_scan_mission_node.py request_multiview_plan and approve_plan]
+    rule: Before spooling a plan, a snapshot rejected only because tracking is unsettled, prediction-only or stale remains command-free and may retry fresh snapshots for up to 30 seconds. After a proposal exists, LOW_CONFIDENCE, LOST, or SEARCHING may use the same bounded automatic visual-reacquisition window while approval repeats every live gate. Changed target center triggers a fresh-plan rejection. Never classify collision, path visibility, scene, control, hash, camera, controller, or worker failures as visual reacquisition.
+  workflow_reports_clear_from_acquisition_frame:
+    inspect: [/piper/heavy_refresh_request, /piper/heavy_refresh_status, /piper/obstacle_instances_3d, supervised_cube_workflow_node.py occlusion_probe_request_id]
+    rule: SCAN_READY requires a new workflow_occlusion_probe state=published result and exact matching obstacle-scene image stamp. Acquisition request IDs and target_mask_missing results are not workflow-clear authority.
+  return_home_recovery_regression:
+    evidence: Exact RETURN_HOME reached configured pose within 0.022172 rad and all six feedback enable flags became false on 2026-08-04.
+    inspect_if_regressed: [RETURN_HOME bridge snapshot, configured speed policy, approved obstacle snapshot reuse, RETURN_HOME allow_untracked runtime gates, configured joint feedback proof, enable service feedback]
+  transient_invalid_scene_shutdown:
+    inspect: [target_scan_mission_node.py planning_rejection_allows_current_state_home, normal RETURN_HOME bridge snapshot, executor runtime scene validation]
+    rule: Any controllable failure, including collision/perception-scene rejection, first stops and holds, then may request one direct configured RETURN_HOME target. Camera, tracking and obstacle-scene state are deliberately not home prerequisites. Its exact first measured point may use only the 0.3-rad post-disable relaxation band; emergency-stop, nonfinite feedback, feedback beyond that band, an out-of-limit goal, controller/arm faults, unavailable command publication, waypoint failure and no-progress remain blockers because endpoint/disable proof would be untrustworthy.
+  first_acquisition_runtime_refresh_waits_for_obstacles:
+    inspect: [scan_viewpoint_executor_node.py begin_runtime_recovery and waiting_for_runtime_refresh_tick, scan_execution_modes.py uses_bootstrap_static_scene, /piper/scan_execution_status, driver motion-limit publication]
+    rule: ROUGH_ACQUISITION look zero is approved against bootstrap_static and intentionally has no perception obstacle stream. If a transient fresh-telemetry gap commands a current-position hold, preserve that exact missing-obstacle authority through WAITING_FOR_RUNTIME_REFRESH and the resumed state. Do not generalize it to later acquisition looks or moving MULTIVIEW_SCAN segments.
+  target_only_scan_obstacle_stream_expires:
+    inspect: [sam2_live_bridge_node.py object_ids publication, obstacle_instance_3d_node.py process, /piper/sam2_object_ids, /piper/obstacle_instances_3d, /piper/scan_execution_status]
+    rule: A live SAM2 ID frame containing only target ID 1 is a complete empty-obstacle observation and must publish a timestamped clear ObstacleInstance3DArray immediately. It must not wait for base-frame TF because no geometry requires projection. Frames containing any obstacle ID 2+ still require exact-time TF, aligned depth, metadata and fail-closed classification; never use the target-only fast path for missing/malformed ID images or detected obstacles.
+  sam2_waiting_for_seed_during_exact_scan_motion:
+    inspect: [/piper/tracking_health, /piper/sam2_tracking_status, /piper/obstacle_instances_3d, /piper/scan_execution_status, scan_viewpoint_executor_node.py approved_multiview_motion_obstacle_snapshot]
+    rule: The live eye-in-hand tracker may stop instance-ID output after motion-blur target loss. One exact collision-qualified MULTIVIEW_SCAN segment may finish using the fresh valid obstacle snapshot checked immediately before its command. This authority exists only in MOVING with a present qualified snapshot; any new blocked/invalid scene still stops, and a next command cannot start until fresh settled scene authority returns. Do not generalize this to a missing approval scene, another plan, acquisition look, or contact motion.
+  camera_clock_fault_at_settled_capture:
+    inspect: [/piper/camera_timestamp_health, /tmp/piper_vision_recovery/request.yaml, run_gpu_vision_pipeline.sh, scan_viewpoint_executor_node.py runtime_gate_action, runtime_recovery_timeout_sec]
+    rule: CLOCK_OFFSET, NON_MONOTONIC, NO_FRAMES and STARTING are never capture authority. They command a current-feedback hold and may wait up to 30 seconds for the watchdog-authorized full vision restart and 15 consecutive healthy frames. Resume only the unchanged phase after every runtime gate recovers; timeout still aborts to direct home.
+maintenance_routing_2026_08_04:
+  arbitrary_target_not_found:
+    inspect: [RunTargetScan target_label/target_profile, mission_core.py target_prompt, mission_context.yaml, heavy_model_worker.py, temporal_heavy_refresh.py, run_groundingdino_on_capture.py, /piper/heavy_refresh_status]
+    note: Blank profile selects strict green_cube only for the exact normalized green cube label; every other label selects generic_open_vocab. Confirm the sanitized prompt and mission SHA agree across the action, worker capture and scan metadata. Do not relax green-cube appearance validation to fix a generic-label routing fault.
+  startup_home_rejected_or_waits_for_obstacles:
+    inspect: [/scan_viewpoint_executor/hold, /tesseract_plan_bridge/request_startup_home_plan, scene.startup_home_static, TesseractPlan.bootstrap_recovery_evidence_json, scan_viewpoint_executor_node.py]
+    note: Startup normalization is a zero-capture direct configured-home transaction. It must not require acquisition_scan, camera health or target-obstacle freshness. The direct-home and collision-bypass authority must remain request/hash/stage/evidence bound and scoped to exactly one RETURN_HOME segment; the same perception-independent rule applies to failure/cancel home.
+  one_button_cancel_is_slow_during_startup:
+    inspect: [piper_gui_native.py, target_scan_mission_node.py, driver service wait, stable joint wait, vision boot wait, hand-eye boot wait, worker boot wait, durable mission result]
+    note: Every bounded startup loop must call the mission guard so action cancellation, deadline expiry, gateway loss and managed-child exit are observed while the dependency is still unavailable. The 2026-08-04 GUI cancellation during missing-camera startup completed in about eight seconds with CANCELLED, safe_shutdown=true and no managed child left behind.
+  settled_view_not_saved:
+    inspect: [/piper/scan_quality, /piper/occlusion_status, /piper/scan_capture_status, /piper/scan_execution_status, /piper/scan_session_history, scan_capture_node.py, scan_capture.py]
+    note: Service capture requires GOOD score at least 0.65, target_valid exactly true and CLEAR occlusion. Rejection saves no frame, appends rejected_entries, holds at measured current pose, and in automatic closed-loop mode requests one coverage-ranked replacement. Missing target_3d or mask may retry only at the same held pose under the ten-attempt readiness bound. A present fresh target_3d valid=false is equivalent to ScanQuality target_valid=false and must become VIEW_REJECTED rather than ABORTED. Malformed/nonfinite diagnostics, I/O, TF, service and safety faults fail closed.
+  replacement_plan_has_wrong_count_or_reuses_pose:
+    inspect: [/piper/scan_session_history, scan_session_memory.py, scan_viewpoint_executor_node.py, target_scan_mission_node.py, scan_viewpoint_planner_node.py, /piper/tesseract_plan_status]
+    note: accepted_views counts only persisted records; accepted/rejected entries both exclude duplicates. Automatic mission requests contain exactly one view and rank by new coverage from achieved FK pose/look; manual batch requests still contain every remaining view. The mission permits at most eight visual replacements. Automatic mode uses eight views only as a model-seed floor and may continue to 24 until achieved side/span floors and three-view measured surface convergence pass. A correlated zero-view result may complete only at eight or more after every feature and convergence floor is already proved and every remaining distinct candidate explicitly lacks finite bounded collision-free IK; all other planning failures remain failures and still enter fresh current-state home cleanup.
+  automatic_feature_budget_exhausted:
+    inspect: [target_scan_mission_node.py, mission_core.py, scan_session_memory.py, bridge_node.py, /piper/scan_session_history, /piper/scan_capture_status]
+    note: At 8-23 captures the coordinator stops only when achieved history in the frozen measured coverage frame proves two views per Y side, 120-degree azimuth, 25-degree elevation and three consecutive measured novel-surface gains at or below 0.02. Otherwise it requests one more view. At 24, missing floors are INSUFFICIENT_CAPTURE_QUALITY. For later feature goals, construct the bounded 36-candidate membership by interleaving coverage leaders with nearest-current compact alternatives, then stable-partition that same membership so candidates with at least 0.03 normalized side advance after tolerance or 2 degrees of span gain are attempted before near-zero-progress nonregressing fallbacks. Never replace the compact members merely to fill a progress quota. Manual batch mode remains separately confirmed exact-13.
+  nbv_target_center_jumps_to_camera_coordinates:
+    inspect: [scan_viewpoint_planner_node.py target_frame_rejection_reason, scan_planning_params.yaml planning_frame_id, /piper/tracked_target, /piper/target_3d, /piper/scan_viewpoints, target_tracker_node.py]
+    note: /piper/target_3d is normally camera_color_optical_frame while multiview candidates are base_link. The planner must accept a centre only when header.frame_id exactly equals planning_frame_id=base_link. During a tracker gap it waits for transformed measured tracking and must not use the raw optical point as a coordinate fallback. Reproduce with alternating base_link tracked-target and camera-optical raw-target callbacks and verify every emitted scan header/centre remains base_link.
+  terminal_feature_summary_lags_persisted_capture:
+    inspect: [surface_coverage.py persisted_achieved_history, scan manifest capture_count, frame metadata camera_transform/target_3d, /piper/scan_session_history, target_scan_mission_node.py current_scan_feature_coverage]
+    note: Immutable accepted-frame metadata is the fallback authority when its validated manifest count is newer than transient scan history. Derive achieved camera position and optical-Z from each capture-time base-to-camera transform and transform the first target observation into base_link. Never discard a durable accepted frame merely because the final transient-local callback arrived late.
+  multiview_readiness_reports_session_maximum_mismatch:
+    inspect: [supervised_viewpoint_execution.launch.py, scan_viewpoint_planner_node.py session_max_views, bridge_node.py max_execution_viewpoints, scan_viewpoint_executor_node.py max_execution_viewpoints, /piper/scan_viewpoints, /piper/scan_session_history]
+    note: One LaunchConfiguration(max_execution_viewpoints) must feed planner session_max_views, bridge/executor max_execution_viewpoints, workflow max_views and capture max_frames_per_scan. A default-13 planner paired with a max-24 bridge correctly blocks before scan motion. Do not suppress the readiness blocker or accept a mismatched history.
+  static_workspace_rejection:
+    inspect: [viewpoint_reachability_filter_node.py, scan_planning_params.yaml, supervised_workflow.py, supervised_cube_workflow_params.yaml, /piper/reachable_scan_viewpoints]
+    note: enforce_static_reach_bounds and enforce_static_workspace default false. The filter must not reject finite poses for base radius, height change or a rectangular box. Tesseract IK/joint/collision planning and executor runtime checks still reject physically infeasible targets; never bypass those authorities.
+  removal_plan_missing_drop_support:
+    inspect: [/piper/scene_cloud, target_cloud_node.py, supervised_cube_workflow_node.py, supervised_workflow.py, supervised_cube_workflow_params.yaml, base_link camera TF]
+    note: Pick/place requires a fresh base_link coarse scene cloud with a dense flat four-sided support patch, no overhead footprint occupancy and target/obstacle clearance. A push may be proposed when grasp/placement is unavailable. Both remain command-free while manipulation_model_qualified=false.
+  autonomous_contact_unavailable:
+    inspect: [/piper/tesseract_readiness, manipulation_blockers, tesseract_bridge_params.yaml, /piper/removal_plan, target_scan_mission_node.py]
+    note: This is an intentional safety boundary, not a readiness string to suppress. Complete gripper TCP/open/closed, attached-object, allowed-contact, pick/push/place collision and supervised low-speed hardware qualification before adding a separately owned executor or setting manipulation_model_qualified=true.
+  physical_e2e_preflight:
+    inspect: [lsusb, /dev/video*, /piper/camera_timestamp_health, base_link to camera_color_optical_frame TF, worker ready markers, can0, /joint_states_single, /arm_status]
+    note: The L515 initially failed enumeration, then passed USB 3.2/librealsense preflight after an unplug/replug. Configured-home return is now physically proved, including the 2026-08-06 duplicate-generation recovery and measured-state recovery after the seven-view planning dead end. Before every retry require one coordinator lock holder, one action server, no mission child, CAN ERROR-ACTIVE, six false motor flags, camera timestamp, TF, CUDA readiness and measured lock. Final acceptance still requires three consecutive GUI-submitted safe successes; each must have 8-24 GOOD/CLEAR records plus two views per Y side, 120-degree azimuth, 25-degree elevation, three-view measured convergence, safe_shutdown and exact cleanup.
+maintenance_routing_2026_08_06:
+  powered_single_motor_dropout:
+    inspect: [/arm_status motor_feedback_valid, /arm_status motor_1_driver_enabled through motor_6_driver_enabled, /arm_status motor_faults, /arm_status motor_watchdog_reason, piper_ctrl_single_node.py feedback timer, target_scan_mission_node.py guard_motor_control, mission durable result]
+    rule: A powered partial-enable state or any per-motor fault revokes command authority immediately. Never attempt automatic hold, rough home, storage or service disable after that revocation. Let the driver watchdog disable all axes, require fresh typed six-false feedback before process cleanup, report NEEDS_OPERATOR with safe_shutdown=false, and preserve the first motor/watchdog reason. Aggregate err_code zero is not proof of motor health. Inspect the affected joint and hardware before another powered mission.
+  duplicate_goal_acceptance_or_process_generation:
+    inspect: [run_target_scan_mission.sh, /tmp/piper_target_scan_mission.lock, /piper/run_target_scan action-server count, target_scan_mission.launch.py, target_scan_mission_node.py, mission child process groups]
+    rule: The supported launcher must hold the nonblocking OS lock for its full exec lifetime and exit 73 before ROS startup when already held. Never proceed when the action endpoint reports more than one server.
+  coordinator_terminal_interrupt:
+    inspect: [target_scan_mission_node.py request_process_shutdown, mission guard, target_scan_mission.launch.py sigterm_timeout, durable result, configured-home feedback, motor flags, owned process groups]
+    rule: SIGINT means bounded mission cancellation, not immediate node destruction. Keep the executor spinning through home, hold, feedback disable and child cleanup; launch permits 180 seconds before SIGTERM. A second/emergency stop remains the physical emergency procedure, not process killing.
+  controller_reports_teaching_mode:
+    inspect: [/arm_status ctrl_mode, PiPER motion-output/slave role 0xFC with zero offsets, /enable_srv, /joint_ctrl_single, passive CAN 0x150/0x151/0x155-0x157]
+    rule: Do not infer motor-disable state from a newly connected SDK object's zero-initialized low-speed cache. Allow fresh low-speed feedback before reading flags. Configure the documented 0xFC role only while all motors are proved disabled.
+  startup_home_runtime_limit_abort:
+    inspect: [scan_execution_params.yaml joint_feedback_limit_tolerance_rad and configured_home_feedback_limit_tolerance_rad, scan_motion.py feedback validators, Tesseract contract/worker configured-home start policy, scan_viewpoint_executor_node.py runtime_reasons, target_scan_mission_node.py prove_return_home_for_shutdown, /piper/scan_execution_status]
+    rule: Ordinary feedback-only boundary tolerance is hard-capped at 0.005 rad after powered J3 was observed at +0.002460 rad. A separate operator-qualified 0.3-rad allowance applies only to the exact first measured point of a dedicated hash-bound direct RETURN_HOME stage, covering disabled storage relaxation such as J6 -3.173270 rad. It cannot enter acquisition, multiview, manipulation, a goal point or a normal feedback check; all Tesseract targets and driver commands remain inside exact limits. Capture execution_started before approval, handle every ABORTED result immediately, poll the action guard during startup-home waits, and treat driver/scan_stack/tesseract_worker exits by their real managed names.
+  startup_home_transient_settle_or_missing_scene:
+    inspect: [target_scan_mission_node.py retryable_plan_approval_rejection, shutdown_uses_startup_home, MissionSession.startup_home_completed, /tesseract_plan_bridge/request_startup_home_plan, /tesseract_plan_bridge/request_return_home_plan]
+    rule: A named unsettled-joint approval sample is transient for the unchanged exact plan/hash and may retry only within the existing five-second approval window. Every controllable failure uses a perception-independent direct home target; startup_home_static is retained only as provenance and is not separate collision/scene authority.
+  proposal_stationary_pose:
+    inspect: [scan_viewpoint_executor_node.py joints_settled, command_target, settle_position_anchor, /scan_viewpoint_executor/approve]
+    rule: PROPOSAL_READY intentionally has no active command_target. Its joint-settle gate must anchor fresh measured current joints and prove the 0.005-rad stationary window there. After the first endpoint is published, settling must instead remain bound to that endpoint within the 0.025-rad goal tolerance; never require a nonexistent endpoint to approve a plan and never let current-pose anchoring excuse stopping short during execution.
+  runtime_refresh_holds_but_never_settles:
+    inspect: [scan_viewpoint_executor_node.py begin_runtime_recovery, waiting_for_runtime_refresh_tick, joints_settled, runtime_refresh_resume_state, command_target]
+    rule: An in-flight freshness gap publishes a current-feedback hold but retains the interrupted command_target for exact resumption. Reset settle evidence and prove stationarity against the current hold during recovery; do not demand convergence to the interrupted endpoint while holding. Reissue that retained endpoint only after all fresh runtime gates, including obstacle geometry, recover within the bounded timeout.
+  scan_keeps_revisiting_one_y_side:
+    inspect: [/piper/scan_session_history coverage_target_center, scan_viewpoint_executor_node.py scan_coverage_target_center, scan_session_memory.py history_coverage_target_center, scan_viewpoint_planner_node.py target_cb, piper_tesseract_foxy/bridge_node.py bounded_current_look_direction, target_scan_mission_node.py current_scan_feature_coverage, scan_planning_params.yaml camera_pitch_offsets_deg]
+    rule: >-
+      Freeze the first valid measured MULTIVIEW_SCAN target center once per
+      session and publish it with every history update. Use fresh measured
+      tracking to place each new candidate, but score all achieved/candidate
+      face exposure and final feature floors in the frozen measured frame.
+      Never replace the coverage frame during closed-loop replans. A new
+      workflow session or finalized session resets it. Seven -15:-10:-75-degree
+      elevations and six 0.30:0.03:0.45 m distances are deterministic samples
+      of a flexible camera region. After bounded shortlist selection, each
+      exact request look may preserve the achieved safe optical direction by
+      no more than 12 degrees from its target-centred nominal. This changes
+      neither camera-position coverage nor collision authority: the exact
+      relaxed pose remains hash-bound, Tesseract-qualified and executor
+      visibility-checked, and the worker shortlist remains bounded at 36.
+  multiview_scan_data_stale_while_target_is_stable:
+    inspect: [scan_viewpoint_planner_node.py viewpoint_refresh_required, scan_planning_params.yaml target_plan_refresh_period_sec, /piper/scan_viewpoints, /piper/reachable_scan_viewpoints, viewpoint_reachability_filter_node.py, piper_tesseract_foxy/bridge_node.py data_timeout_sec, /piper/tesseract_readiness]
+    rule: A stable measured cube must not suppress liveness publication. Rebuild and republish deterministic candidates from a fresh valid TrackedTarget at 0.5-second intervals, below the bridge's 1.0-second freshness limit. Do not make stale data authoritative by widening the bridge timeout independently.
+  capture_rejection_causes_home_instead_of_replacement:
+    inspect: [scan_capture.py capture_diagnostic_rejection, scan_viewpoint_executor_node.py retryable_rgbd_capture_rejection, visual_capture_rejection, VIEW_REJECTED, target_scan_mission_node.py retryable_plan_approval_rejection, /piper/scan_execution_status, /piper/scan_capture_status]
+    rule: Missing/stale quality or occlusion is a bounded liveness retry while holding, not evidence that the pose is visually bad. Only fresh quality/occlusion failures exclude a pose and publish nonterminal VIEW_REJECTED. Retry the unchanged exact approval only for named transient tracking/camera gates; every collision, hash, plan, control, or other rejection remains terminal.
+  target_moved_after_planning:
+    inspect: [target_scan_mission_node.py target_drift_requires_replan, scan_viewpoint_executor_node.py target_drift_before_approval_rejection, max_target_drift_before_approval_m, /piper/tracked_target, /piper/scan_execution_plan]
+    rule: Preserve the 0.015 m approval drift gate. Its explicit no-motion refresh rejection requests one new plan from the fresh measured target, bounded to eight consecutive refreshes. Do not approve stale target geometry or widen the threshold merely to finish a mission.
+  terminal_home_replays_scan_path:
+    inspect: [scan_viewpoint_executor_node.py cancel_cb, target_scan_mission_node.py prove_return_home_for_shutdown, /tesseract_plan_bridge/request_return_home_plan, configured home pose, /piper/scan_execution_status]
+    rule: Automatic cancel/failure first stops at a measured current-position hold, then requests a fresh zero-capture RETURN_HOME target from that exact state. It must not call approved-path retrace. The returned two-point segment must declare the exact home stage and configured_home_collision_validation_bypassed; joint/feedback/control/hold/disable gates remain mandatory.
+  staged_home_profile_or_mesh_job_issue:
+    inspect: [piper_home_pose.json, home_pose.py, piper_gui_native.py, target_scan_mission_node.py, target_scan_gateway_node.py, reconstruction_jobs.py, reconstruction/tsdf_reconstruct.py, mission spool mesh_jobs and base_home queues]
+    rule: Record Rough / Ready Home first. For this installation, the operator-confirmed STARTUP_WRIST direction is increasing controller J6 from negative storage to ready zero; terminal storage is the decreasing inverse. Schema-v3 requires startup_wrist_direction=increasing, storage_wrist_direction=decreasing and storage J6 below ready by more than the ready tolerance. A positive non-ready measured branch blocks before enable. Schema-v2 profiles are diagnostic-only. Do not bypass staged_home_configured, hard-limit validation or exact persisted-profile rootless qualification. ROS JointState.position is a generic six-value sequence and must not be restricted to list/tuple. Each direct stage transports configured_home_goal_positions_rad equal to its endpoint. For a missing mesh, verify the mission result is SUCCEEDED with safe_shutdown=true, mesh_job_id and immutable manifest hash; reconstruction never starts merely because arm shutdown completed.
+  heavy_occlusion_geometry_issue:
+    inspect: [heavy_refresh_bridge_node.py synchronized RGB-D callback and request manifest, obstacle_instance_3d_node.py heavy_job_paths and target_occlusion_evidence, supervised_cube_workflow_node.py two-observation loop, manipulation readiness]
+    rule: Never pair a heavy result with latest live depth. Require archived depth_encoding/camera_matrix, exact masks, capture-time TF, stable track association and two observations. Only pen/marker/stick are first-stage movable labels. Unknown/human/unprojectable geometry blocks, and manipulation_model_qualified=false remains expected until physical contact-model qualification.
+  archived_mask_shape_failure_after_valid_heavy_result:
+    inspect: [heavy_refresh_bridge_node.py response publication and consume move, obstacle_instance_3d_node.py heavy_response_mask, heavy spool responses and consumed directories, archived RGB-D dimensions]
+    rule: The bridge may move responses/job to consumed/job immediately after publishing status. Validate the relative mask path and retry both roots at read time; never retain one pre-move path or label this rename race as a mask/depth shape mismatch.
+  dedicated_home_stops_on_transient_motion_limits:
+    inspect: [scan_viewpoint_executor_node.py execution_tick, runtime_gate_action, WAITING_FOR_RUNTIME_REFRESH, /piper/motion_limits]
+    rule: A missing or stale motion-limit sample during direct home commands current-position hold and enters bounded refresh before resuming the unchanged endpoint. Emergency stop, invalid limits, controller faults and command failures remain terminal.
+  multiple_targets_run_in_arrival_order_or_overlap:
+    inspect: [target_scan_gateway_node.py admitted_tasks, target_scan_mission_node.py poll_mission_queue, mission spool goals/status/results/heartbeat, max_pending_missions, mission_queue_coalesce_sec]
+    rule: The gateway must snapshot every target at admission and accept at most eight outstanding actions. The local owner waits one second for near-simultaneous arrivals, selects nearest base-frame distance with arrival ties, and permits one active process generation only. Never reorder an already executing mission, reuse its transient capture/coverage state, or start a successor before its safe terminal result. A queued cancel ends only that queued task without touching the active arm mission.

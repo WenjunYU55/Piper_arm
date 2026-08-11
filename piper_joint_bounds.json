@@ -58,7 +58,7 @@
     "joint6": {
       "index": 5,
       "invalid_reason": "controller zero recalibrated; record new J6 bounds",
-      "invalidated_at_unix": 1784045114.9243376,
+      "invalidated_at_unix": 1786382301.3618157,
       "label": "rotating_gripper",
       "max": 5.435916724,
       "min": -3.1741102400000005,

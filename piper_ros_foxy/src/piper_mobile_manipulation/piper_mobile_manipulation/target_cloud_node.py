@@ -62,6 +62,7 @@ class TargetCloudNode(Node):
         self.declare_parameter('heavy_request_topic', '/piper/heavy_refresh_request')
         self.declare_parameter('heavy_status_topic', '/piper/heavy_refresh_status')
         self.declare_parameter('cloud_topic', '/piper/target_cloud')
+        self.declare_parameter('scene_cloud_topic', '/piper/scene_cloud')
         self.declare_parameter('status_topic', '/piper/target_cloud_status')
         self.declare_parameter('request_topic', '/piper/target_cloud_request')
         self.declare_parameter('target_frame', 'camera_color_optical_frame')
@@ -84,6 +85,10 @@ class TargetCloudNode(Node):
         self.declare_parameter('pixel_stride', 2)
         self.declare_parameter('voxel_size_m', 0.004)
         self.declare_parameter('max_voxels', 250000)
+        self.declare_parameter('scene_pixel_stride', 12)
+        self.declare_parameter('scene_voxel_size_m', 0.015)
+        self.declare_parameter('scene_max_voxels', 120000)
+        self.declare_parameter('scene_accumulate_period_sec', 0.50)
         self.declare_parameter('publish_period_sec', 0.25)
         self.declare_parameter('refined_capture_retry_sec', 0.50)
         self.declare_parameter('refined_capture_timeout_sec', 12.0)
@@ -93,6 +98,10 @@ class TargetCloudNode(Node):
         self.latest_mask = None
         self.latest_mask_stamp = None
         self.voxels = {}
+        self.scene_voxels = {}
+        self.scene_cloud_frame = ''
+        self.scene_header = None
+        self.last_scene_accumulated = 0.0
         self.cloud_frame = ''
         self.last_header = None
         self.frame_cache = deque(maxlen=max(10, int(self.get_parameter('frame_cache_size').value)))
@@ -112,6 +121,9 @@ class TargetCloudNode(Node):
         self.cloud_pub = self.create_publisher(
             PointCloud2, self.get_parameter('cloud_topic').value, qos_profile_sensor_data
         )
+        self.scene_cloud_pub = self.create_publisher(
+            PointCloud2, self.get_parameter('scene_cloud_topic').value,
+            qos_profile_sensor_data)
         self.status_pub = self.create_publisher(String, self.get_parameter('status_topic').value, 10)
         self.heavy_request_pub = self.create_publisher(
             String, self.get_parameter('heavy_request_topic').value, 10
@@ -156,6 +168,11 @@ class TargetCloudNode(Node):
             self.stamp_seconds(depth_msg.header.stamp), color_msg, depth_msg, camera_info
         )
         self.frame_cache.append(frame)
+        now = time.monotonic()
+        if now - self.last_scene_accumulated >= float(
+                self.get_parameter('scene_accumulate_period_sec').value):
+            self.accumulate_scene_frame(color_msg, depth_msg, camera_info)
+            self.last_scene_accumulated = now
         if (
                 self.awaiting_refined_capture
                 and self.refined_capture_image_stamp is not None):
@@ -292,7 +309,55 @@ class TargetCloudNode(Node):
             if len(self.voxels) >= limit:
                 break
 
+    def accumulate_scene_frame(self, color_msg, depth_msg, camera_info):
+        """Accumulate a coarse base-frame support/obstacle cloud."""
+        try:
+            color = np.asarray(
+                self.bridge.imgmsg_to_cv2(color_msg, desired_encoding='bgr8'))
+            depth = np.asarray(
+                self.bridge.imgmsg_to_cv2(depth_msg, desired_encoding='passthrough'))
+        except Exception as exc:
+            self.publish_status('scene_conversion_error', error=str(exc))
+            return
+        depth_m = depth.astype(np.float32)
+        if depth_msg.encoding in ('16UC1', 'mono16') or np.issubdtype(
+                depth.dtype, np.integer):
+            depth_m *= 0.001
+        stride = max(1, int(self.get_parameter('scene_pixel_stride').value))
+        rows, cols = np.indices(depth.shape[:2])
+        selected = (
+            np.isfinite(depth_m)
+            & (depth_m >= float(self.get_parameter('depth_min_m').value))
+            & (depth_m <= float(self.get_parameter('depth_max_m').value))
+            & ((rows % stride) == 0)
+            & ((cols % stride) == 0))
+        v, u = np.nonzero(selected)
+        if not u.size:
+            return
+        z = depth_m[v, u]
+        fx, fy = float(camera_info.k[0]), float(camera_info.k[4])
+        cx, cy = float(camera_info.k[2]), float(camera_info.k[5])
+        points = np.column_stack((
+            (u - cx) * z / fx, (v - cy) * z / fy, z)).astype(np.float32)
+        colors = color[v, u][:, ::-1].astype(np.uint8)
+        points, frame = self.transform_points(
+            points, depth_msg.header.frame_id, depth_msg.header.stamp)
+        if points is None or frame != 'base_link':
+            return
+        voxel_size = max(
+            1e-4, float(self.get_parameter('scene_voxel_size_m').value))
+        limit = max(1, int(self.get_parameter('scene_max_voxels').value))
+        for point_value, color_value in zip(points, colors):
+            key = tuple(np.floor(point_value / voxel_size).astype(np.int64))
+            self.scene_voxels[key] = (
+                point_value.copy(), color_value.copy())
+            if len(self.scene_voxels) >= limit:
+                break
+        self.scene_cloud_frame = frame
+        self.scene_header = depth_msg.header
+
     def publish_cloud(self):
+        self.publish_scene_cloud()
         if not self.voxels or self.last_header is None:
             return
         entries = list(self.voxels.values())
@@ -317,6 +382,37 @@ class TargetCloudNode(Node):
             struct.pack_into('<fffI', data, index * msg.point_step, float(point[0]), float(point[1]), float(point[2]), rgb)
         msg.data = bytes(data)
         self.cloud_pub.publish(msg)
+
+    def publish_scene_cloud(self):
+        if not self.scene_voxels or self.scene_header is None:
+            return
+        entries = list(self.scene_voxels.values())
+        msg = PointCloud2()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = self.scene_cloud_frame
+        msg.height = 1
+        msg.width = len(entries)
+        msg.is_bigendian = False
+        msg.is_dense = True
+        msg.point_step = 16
+        msg.row_step = msg.point_step * msg.width
+        msg.fields = [
+            PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
+            PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
+            PointField(name='z', offset=8, datatype=PointField.FLOAT32, count=1),
+            PointField(name='rgb', offset=12, datatype=PointField.UINT32, count=1),
+        ]
+        data = bytearray(msg.row_step)
+        for index, (point_value, color_value) in enumerate(entries):
+            rgb = ((int(color_value[0]) << 16)
+                   | (int(color_value[1]) << 8)
+                   | int(color_value[2]))
+            struct.pack_into(
+                '<fffI', data, index * msg.point_step,
+                float(point_value[0]), float(point_value[1]),
+                float(point_value[2]), rgb)
+        msg.data = bytes(data)
+        self.scene_cloud_pub.publish(msg)
 
     def request_cb(self, msg):
         command = msg.data.strip().lower()

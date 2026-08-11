@@ -28,7 +28,7 @@ DEFAULT_TEXT_THRESHOLD = 0.25
 DEFAULT_LOCAL_BOX_THRESHOLD = 0.30
 DEFAULT_TARGET_PROMPT = "green cube ."
 DEFAULT_OBSTACLE_PROMPT = (
-    "leaf . branch . | "
+    "pen . marker . stick . | "
     "hand . finger ."
 )
 LOCAL_CROP_MIN_SIZE_PX = 256
@@ -53,14 +53,18 @@ UNSAFE_TERMS = (
     "finger",
 )
 CANDIDATE_SAFE_TERMS = (
-    "leaf",
-    "branch",
+    "pen",
+    "marker",
+    "stick",
 )
 LOCAL_GROUP_RELATIVE_CONFIDENCE = 0.75
 
 
 class GroundingDinoUnavailable(RuntimeError):
     pass
+
+
+_GROUNDING_MODEL_CACHE: dict[tuple[str, str, str], Any] = {}
 
 
 def add_repo_to_path(repo_dir: Path) -> None:
@@ -124,6 +128,44 @@ def require_groundingdino(repo_dir: Path):
     return annotate, load_image, load_model, predict
 
 
+def cached_groundingdino_model(
+    load_model: Any,
+    config_path: Path,
+    checkpoint_path: Path,
+    device: str,
+) -> Any:
+    """Load one immutable GroundingDINO model per worker/device generation."""
+    key = (
+        str(config_path.expanduser().resolve()),
+        str(checkpoint_path.expanduser().resolve()),
+        str(device),
+    )
+    model = _GROUNDING_MODEL_CACHE.get(key)
+    if model is None:
+        model = load_model(key[0], key[1], device=device)
+        _GROUNDING_MODEL_CACHE[key] = model
+    return model
+
+
+def preload_groundingdino_model(
+    repo_dir: Path = DEFAULT_REPO_DIR,
+    config_path: Path = DEFAULT_CONFIG_PATH,
+    checkpoint_path: Path = DEFAULT_CHECKPOINT_PATH,
+    device: str = "cuda",
+) -> Any:
+    """Prove the local GroundingDINO runtime is usable before advertising ready."""
+    config_path = config_path.expanduser().resolve()
+    checkpoint_path = checkpoint_path.expanduser().resolve()
+    if not config_path.is_file():
+        raise FileNotFoundError("GroundingDINO config not found: %s" % config_path)
+    if not checkpoint_path.is_file():
+        raise FileNotFoundError("GroundingDINO checkpoint not found: %s" % checkpoint_path)
+    _annotate, _load_image, load_model, _predict = require_groundingdino(
+        repo_dir.expanduser().resolve())
+    return cached_groundingdino_model(
+        load_model, config_path, checkpoint_path, device)
+
+
 def validate_inputs(capture_dir: Path, config_path: Path, checkpoint_path: Path) -> Path:
     rgb_path = capture_dir / "rgb.png"
     if not capture_dir.is_dir():
@@ -172,6 +214,7 @@ def detection_records(
     detection_source: str = "full_frame",
     crop_origin: tuple[int, int] = (0, 0),
     full_size: tuple[int, int] | None = None,
+    target_terms: tuple[str, ...] = TARGET_TERMS,
 ) -> list[dict[str, Any]]:
     boxes_list = tensor_to_list(boxes)
     logits_list = tensor_to_list(logits)
@@ -204,7 +247,7 @@ def detection_records(
                 "box_area_px": float(area_px),
                 "detection_source": detection_source,
                 "is_target_local_candidate": detection_source == "target_crop",
-                "is_target_candidate": label_matches(label, TARGET_TERMS),
+                "is_target_candidate": label_matches(label, target_terms),
                 "is_unsafe_candidate": label_matches(label, UNSAFE_TERMS),
                 "is_candidate_safe_class": label_matches(label, CANDIDATE_SAFE_TERMS),
             }
@@ -259,17 +302,28 @@ def box_support_mask(shape: tuple[int, int], box: list[float]) -> np.ndarray:
 def target_mask_appearance_validation(
     image_bgr: np.ndarray,
     mask: np.ndarray,
+    target_profile: str = "green_cube",
 ) -> dict[str, Any]:
     """Validate that a proposed target mask contains enough observed green."""
     green_fraction = green_pixel_fraction(image_bgr, mask)
-    accepted = green_fraction >= MIN_TARGET_GREEN_FRACTION
+    support_pixels = int(np.count_nonzero(mask)) if mask is not None else 0
+    strict_green = str(target_profile) == "green_cube"
+    accepted = (
+        green_fraction >= MIN_TARGET_GREEN_FRACTION
+        if strict_green else support_pixels >= MIN_TRACKED_MASK_FALLBACK_AREA_PX)
     return {
         "accepted": bool(accepted),
+        "target_profile": str(target_profile),
+        "support_pixels": support_pixels,
         "green_fraction": float(green_fraction),
-        "minimum_green_fraction": float(MIN_TARGET_GREEN_FRACTION),
+        "minimum_green_fraction": (
+            float(MIN_TARGET_GREEN_FRACTION) if strict_green else 0.0),
         "rejection_reasons": [] if accepted else [
-            "green fraction %.3f is below %.3f"
-            % (green_fraction, MIN_TARGET_GREEN_FRACTION)
+            ("green fraction %.3f is below %.3f"
+             % (green_fraction, MIN_TARGET_GREEN_FRACTION))
+            if strict_green else
+            "target mask support %dpx is below %dpx"
+            % (support_pixels, MIN_TRACKED_MASK_FALLBACK_AREA_PX)
         ],
     }
 
@@ -277,12 +331,14 @@ def target_mask_appearance_validation(
 def target_detection_validation(
     detection: dict[str, Any],
     image_bgr: np.ndarray,
+    target_profile: str = "green_cube",
 ) -> dict[str, Any]:
     """Validate semantic confidence, observed colour, and box proportions."""
     confidence = float(detection.get("confidence", 0.0))
     box = detection.get("box_xyxy_pixels", [])
     mask = box_support_mask(image_bgr.shape[:2], box)
-    appearance = target_mask_appearance_validation(image_bgr, mask)
+    appearance = target_mask_appearance_validation(
+        image_bgr, mask, target_profile=target_profile)
     aspect_ratio = 0.0
     if len(box) == 4:
         width = max(0.0, float(box[2]) - float(box[0]))
@@ -295,7 +351,7 @@ def target_detection_validation(
             % (confidence, MIN_TARGET_SEMANTIC_CONFIDENCE)
         )
     reasons.extend(appearance["rejection_reasons"])
-    if not (
+    if str(target_profile) == "green_cube" and not (
         MIN_TARGET_BOX_ASPECT_RATIO
         <= aspect_ratio
         <= MAX_TARGET_BOX_ASPECT_RATIO
@@ -313,7 +369,7 @@ def target_detection_validation(
         "semantic_confidence": confidence,
         "minimum_semantic_confidence": MIN_TARGET_SEMANTIC_CONFIDENCE,
         "green_fraction": appearance["green_fraction"],
-        "minimum_green_fraction": MIN_TARGET_GREEN_FRACTION,
+        "minimum_green_fraction": appearance["minimum_green_fraction"],
         "box_aspect_ratio": aspect_ratio,
         "minimum_box_aspect_ratio": MIN_TARGET_BOX_ASPECT_RATIO,
         "maximum_box_aspect_ratio": MAX_TARGET_BOX_ASPECT_RATIO,
@@ -324,6 +380,7 @@ def target_detection_validation(
 def validate_target_detections(
     detections: list[dict[str, Any]],
     image_bgr: np.ndarray,
+    target_profile: str = "green_cube",
 ) -> list[dict[str, Any]]:
     """Mark semantic target candidates valid only after appearance checks."""
     rejected = []
@@ -332,7 +389,8 @@ def validate_target_detections(
         detection["is_semantic_target_candidate"] = semantic_candidate
         if not semantic_candidate:
             continue
-        validation = target_detection_validation(detection, image_bgr)
+        validation = target_detection_validation(
+            detection, image_bgr, target_profile=target_profile)
         detection["target_validation"] = validation
         detection["is_target_candidate"] = bool(validation["accepted"])
         if not validation["accepted"]:
@@ -376,7 +434,10 @@ def read_yaml(path: Path) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def tracked_mask_target_fallback(capture_dir: Path) -> dict[str, Any] | None:
+def tracked_mask_target_fallback(
+    capture_dir: Path,
+    target_profile: str = "green_cube",
+) -> dict[str, Any] | None:
     mask = cv2.imread(str(capture_dir / "detection_mask.png"), cv2.IMREAD_GRAYSCALE)
     image = cv2.imread(str(capture_dir / "rgb.png"), cv2.IMREAD_COLOR)
     target = read_yaml(capture_dir / "target_3d.yaml")
@@ -400,7 +461,8 @@ def tracked_mask_target_fallback(capture_dir: Path) -> dict[str, Any] | None:
     if component <= 0 or int(stats[component, cv2.CC_STAT_AREA]) < MIN_TRACKED_MASK_FALLBACK_AREA_PX:
         return None
     component_mask = (labels == component).astype(np.uint8) * 255
-    appearance = target_mask_appearance_validation(image, component_mask)
+    appearance = target_mask_appearance_validation(
+        image, component_mask, target_profile=target_profile)
     if not appearance["accepted"]:
         return None
     x = int(stats[component, cv2.CC_STAT_LEFT])
@@ -508,6 +570,8 @@ def run_on_capture(
     device: str,
     obstacle_prompt: str = DEFAULT_OBSTACLE_PROMPT,
     local_box_threshold: float = DEFAULT_LOCAL_BOX_THRESHOLD,
+    target_label: str = "green cube",
+    target_profile: str = "green_cube",
 ) -> dict[str, Any]:
     capture_dir = capture_dir.expanduser().resolve()
     config_path = config_path.expanduser().resolve()
@@ -519,7 +583,8 @@ def run_on_capture(
     output_dir = output_root.expanduser().resolve() / capture_dir.name / "groundingdino"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    model = load_model(str(config_path), str(checkpoint_path), device=device)
+    model = cached_groundingdino_model(
+        load_model, config_path, checkpoint_path, device)
     image_source, image = load_image(str(rgb_path))
     boxes, logits, phrases = predict(
         model=model,
@@ -530,13 +595,19 @@ def run_on_capture(
         device=device,
     )
     height, width = image_source.shape[:2]
-    full_frame_detections = detection_records(boxes, logits, phrases, width, height)
+    normalized_target = " ".join(
+        str(target_label).lower().replace("_", " ").split())
+    target_terms = (normalized_target,) if normalized_target else TARGET_TERMS
+    full_frame_detections = detection_records(
+        boxes, logits, phrases, width, height, target_terms=target_terms)
     rejected_target_candidates = validate_target_detections(
         full_frame_detections,
         image_source,
+        target_profile=target_profile,
     )
     model_target = best_detection(full_frame_detections, "is_target_candidate")
-    target = model_target or tracked_mask_target_fallback(capture_dir)
+    target = model_target or tracked_mask_target_fallback(
+        capture_dir, target_profile=target_profile)
     local_detections: list[dict[str, Any]] = []
     local_prompt_results: list[dict[str, Any]] = []
     crop_path = output_dir / "target_crop.png"
@@ -593,8 +664,12 @@ def run_on_capture(
     summary["target_source"] = "groundingdino" if model_target is not None else ("tracked_target_mask" if target is not None else "none")
     summary["rejected_target_candidates"] = rejected_target_candidates
     summary["target_validation_policy"] = {
+        "target_label": str(target_label),
+        "target_profile": str(target_profile),
         "minimum_semantic_confidence": MIN_TARGET_SEMANTIC_CONFIDENCE,
-        "minimum_green_fraction": MIN_TARGET_GREEN_FRACTION,
+        "minimum_green_fraction": (
+            MIN_TARGET_GREEN_FRACTION
+            if str(target_profile) == "green_cube" else 0.0),
         "box_aspect_ratio": [
             MIN_TARGET_BOX_ASPECT_RATIO,
             MAX_TARGET_BOX_ASPECT_RATIO,

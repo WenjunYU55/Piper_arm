@@ -21,7 +21,7 @@ def generate_launch_description():
                     'spool_root': os.path.join(runtime_root, 'piper_tesseract_plans'),
                     'hand_eye_calibration_path': os.path.join(
                         root,
-                        'L515_camera/calibration/hand_eye/session_20260701_local/'
+                        'L515_camera/calibration/hand_eye/session_20260808_straight_mount/'
                         'calibration_result.yaml',
                     ),
                     'joint_bounds_path': os.path.join(root, 'piper_joint_bounds.json'),

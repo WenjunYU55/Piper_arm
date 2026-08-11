@@ -1,0 +1,421 @@
+schema_version: 1
+document: consolidated_problem_and_incident_log
+last_reviewed: '2026-08-11'
+purpose: >-
+  Durable, concise index of the material hardware, software, integration and
+  operational problems encountered while building the PiPER target-scanning
+  system. This ledger records the current disposition and routes maintainers
+  to detailed evidence; it does not replace contracts, guardrails, runtime
+  mission results or the technical-debt descriptions.
+authority:
+  architecture_and_history: docs/ai/00-index.yaml
+  symptom_routing: docs/ai/05-admin.yaml
+  runtime_contracts: docs/ai/30-contracts.yaml
+  flow_and_smoke_evidence: docs/ai/40-flows.yaml
+  safety_invariants: docs/ai/50-guardrails.yaml
+  detailed_open_work: docs/ai/60-debt.yaml
+  delivery_milestones: docs/ai/70-roadmap.yaml
+  operator_procedure: OPERATOR_COMMANDS.md
+  physical_evidence:
+    durable_dataset_manifest: datasets/active_scan/<scan_id>/manifest.yaml
+    ephemeral_runtime_result: /tmp/piper_target_scan_missions/results/<task_id>.json
+status_definitions:
+  resolved: Root cause corrected and relevant regression evidence exists.
+  contained: Fail-closed handling exists, but the initiating physical or external cause remains open.
+  physical_validation_pending: Software is implemented and command-free tests pass, but required physical acceptance is incomplete.
+  open: Root cause or production solution remains incomplete.
+  superseded: Historical attempt retained as evidence and forbidden as a rollback target.
+recording_rule: >-
+  Add or update an entry whenever a material bug, incident, unsafe behavior,
+  integration failure or misleading diagnosis is found. Preserve the first
+  observed symptom, root cause when known, corrective action, current status,
+  evidence location and required retest. Never erase an incident because a
+  later fix passed.
+
+current_snapshot_2026_08_11:
+  release_validation:
+    ai_yaml_documents_parsed: 10
+    command_free_ros_gui_calibration_reconstruction_tests_passed: 508
+    isolated_perception_worker_tests_passed: 30
+    ros_packages_built: [piper_msgs, piper, piper_description, piper_mobile_manipulation, piper_tesseract_foxy]
+    rootless_tesseract_core: PASS
+    rootless_tesseract_compact: PASS
+    real_arm_motion: false
+  latest_mission:
+    task_id: gui-sim-a130d7ad58a54815ab36341ed324be82
+    configured_free_motion_speed_percent: 50
+    accepted_captures: 24
+    result: FAILED
+    failure_code: INSUFFICIENT_CAPTURE_QUALITY
+    safe_shutdown: true
+    startup_wrist_completed: true
+    storage_wrist_proved: true
+    achieved_coverage:
+      positive_y_side_views: 9
+      negative_y_side_views: 3
+      azimuth_span_deg: 113.51481943407279
+      elevation_span_deg: 37.46248988062635
+      measured_surface_converged: false
+    blockers:
+      - azimuth span remained below the 120-degree requirement
+      - three-view measured novel-surface gain did not converge
+    durable_dataset: datasets/active_scan/scan_20260811_190342
+    runtime_result: /tmp/piper_target_scan_missions/results/gui-sim-a130d7ad58a54815ab36341ed324be82.json
+  motion_timing_observation:
+    status: open
+    evidence: >-
+      At the same configured 50 percent, direct configured-home moves took
+      about 1.085 and 2.336 seconds. Tesseract scan segments normally took
+      1.559 to 4.909 seconds and one detour took 8.811 seconds. No scheduled
+      stream-overrun or missed-sample abort occurred.
+    diagnosis: >-
+      The host is not presently failing to service the 20 Hz stream. Normal
+      Tesseract paths retain longer collision-free geometry, scale ISP time by
+      100/effective_speed_percent and may be lengthened by the fixed 0.025-rad
+      adjacent-command ceiling. At 20 Hz that ceiling alone caps the commanded
+      per-joint slope at approximately 0.5 rad/s. PiPER also receives the same
+      aggregate MoveJ percentage, while dedicated home sends one endpoint and
+      lets the controller interpolate it directly. Point count is primarily a
+      consequence of planned duration, although repeated position-only
+      JointCtrl retargeting remains an interface limitation.
+
+problem_groups:
+  hardware_and_motion_safety:
+    - id: j5_table_contact_terminal_home_2026_08_11
+      status: resolved
+      symptom: The installed camera-holder/L515 assembly contacted the table during terminal home and J5 faulted.
+      root_cause: The former centreline proxy accepted a pose with only 0.001245441 m holder clearance.
+      correction: Full CAD-derived holder/L515 link6 envelope now requires 0.005 m external support-plane clearance along every path, including direct home.
+      evidence: [docs/ai/50-guardrails.yaml, docs/ai/60-debt.yaml, OPERATOR_COMMANDS.md]
+    - id: powered_j5_enable_dropout_2026_08_11
+      status: contained
+      symptom: J5 independently became disabled while the other five motors remained powered.
+      root_cause: Physical joint, wiring, drive or controller cause is unresolved.
+      correction: Continuous typed per-motor guard revokes command authority and the driver disables all axes; automatic home is forbidden after control loss.
+      evidence: [docs/ai/00-index.yaml, docs/ai/50-guardrails.yaml, docs/ai/60-debt.yaml]
+    - id: partial_enable_was_treated_as_enabled
+      status: resolved
+      symptom: Aggregate arm status could appear normal while only five axes were enabled.
+      root_cause: Enable/disable success previously did not prove all six low-speed FOC enable flags.
+      correction: Enable, rollback, runtime authority and disable now require fresh all-six flag proof and expose per-motor faults.
+      evidence: [piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py, docs/ai/30-contracts.yaml]
+    - id: startup_j6_collision_2026_08_11
+      status: contained
+      symptom: STARTUP_WRIST increased negative-branch J6 toward zero and J6 asserted collision and driver-error feedback after about 0.091 rad.
+      root_cause: Physical wrist/cable cause remains unresolved; the increasing direction was later confirmed to be the intended direction.
+      correction: The motor guard issued no later arm command, all axes disabled, and schema-v3 binds negative storage, increasing startup and decreasing terminal storage.
+      evidence: [docs/ai/00-index.yaml, docs/ai/60-debt.yaml]
+    - id: startup_j6_direction_misdiagnosis
+      status: superseded
+      symptom: A temporary repair changed startup to the positive/decreasing branch after the collision.
+      root_cause: Clockwise direction was interpreted incorrectly relative to controller coordinates.
+      correction: Positive/decreasing startup is forbidden; current schema-v3 uses the operator-confirmed increasing negative-to-zero direction.
+      evidence: [docs/ai/00-index.yaml, docs/ai/50-guardrails.yaml]
+    - id: j6_controller_zero_offset
+      status: resolved
+      symptom: Physical neutral persistently read approximately 0.04 rad away from zero.
+      root_cause: A prior controller-persistent zero write, not TF or a software command offset.
+      correction: Operator completed the guarded physical-neutral write; independent disabled feedback held 0.00000 rad and no software compensation was added.
+      evidence: [docs/ai/00-index.yaml, docs/ai/60-debt.yaml]
+    - id: j6_software_range_mismatch
+      status: physical_validation_pending
+      symptom: Software sources disagreed with the operator-confirmed J6 range.
+      root_cause: Legacy SDK/model bounds remained narrower than the actual controller-coordinate range.
+      correction: Driver, GUI, URDF, Tesseract and fixtures now use [-pi,+pi]; conservative powered endpoint qualification remains due.
+      evidence: [piper_joint_bounds.json, docs/ai/30-contracts.yaml, docs/ai/60-debt.yaml]
+    - id: home_retraced_previous_motion
+      status: resolved
+      symptom: Failure/cancel recovery reversed previously executed targets instead of moving from current feedback directly to configured home.
+      root_cause: Legacy approved-path retrace was being used as home authority.
+      correction: Automatic cleanup now holds, obtains fresh measured state and requests dedicated direct ROUGH_HOME then STORAGE_WRIST transactions.
+      evidence: [docs/ai/30-contracts.yaml, docs/ai/50-guardrails.yaml]
+    - id: home_disabled_before_position_proof
+      status: resolved
+      symptom: Some failure paths could proceed toward disable without proving configured home and stable hold.
+      root_cause: Terminal result handling and action-status races were incomplete.
+      correction: Home-stage action result, feedback convergence, stable hold, six-axis disable and exact child cleanup are mandatory and correlated.
+      evidence: [docs/ai/40-flows.yaml, docs/ai/50-guardrails.yaml]
+    - id: configured_storage_self_collision_false_block
+      status: resolved
+      symptom: Conservative robot collision geometry rejected the intentionally supported stored fold.
+      root_cause: The physical storage contact corridor cannot be represented by ordinary self-collision envelopes.
+      correction: Only hash-bound zero-capture home stages bypass robot self-collision; limits, feedback and full holder external-clearance checks remain mandatory.
+      evidence: [docs/ai/30-contracts.yaml, docs/ai/50-guardrails.yaml]
+    - id: manual_gui_unsynchronised_joint_targets
+      status: open
+      symptom: Editing one manual joint could command other joints toward stale zero-valued sliders.
+      root_cause: The manual GUI publishes all target joints before requiring feedback synchronization.
+      correction: Driver bounds limit damage, but GUI first-feedback initialization and unsynchronized-send refusal remain debt.
+      evidence: [docs/ai/60-debt.yaml]
+
+  planning_collision_and_execution:
+    - id: static_qualified_workspace_rejected_targets
+      status: resolved
+      symptom: Finite target coordinates were rejected by static radius, height or box workspace assumptions.
+      root_cause: Software policy imposed a qualified workspace despite the project requirement for no artificial workspace boundary.
+      correction: Static reach/workspace gates default false; finite targets proceed to actual IK, limit and collision authorities.
+      evidence: [docs/ai/05-admin.yaml, docs/ai/30-contracts.yaml]
+    - id: legacy_fixed_j6_and_exact_spherical_pose
+      status: resolved
+      symptom: Close-target plans overconstrained the wrist, reduced reachable diversity and could create self-colliding orientations.
+      root_cause: Legacy IK fixed J6 and demanded rigid target-centred camera poses.
+      correction: Tesseract plans all six joints; automatic views may preserve measured optical direction within a hash-bound 12-degree cone.
+      evidence: [docs/ai/30-contracts.yaml, docs/ai/50-guardrails.yaml]
+    - id: focal_host_tesseract_binary_incompatibility
+      status: resolved
+      symptom: Available Tesseract Python wheels did not run against Ubuntu 20.04 glibc.
+      root_cause: Wheel/runtime ABI mismatch.
+      correction: Pinned rootless Ubuntu 24.04 Bubblewrap worker with no CAN, camera or GPU device access.
+      evidence: [docs/ai/05-admin.yaml, docs/ai/60-debt.yaml]
+    - id: tesseract_seed_not_applied
+      status: resolved
+      symptom: Marginal OMPL detours changed despite a deterministic seed in the request.
+      root_cause: Seed 42 was serialized but applied after planner construction.
+      correction: Worker applies the request-bound seed before creating planners and qualification repeats identical results.
+      evidence: [docs/ai/00-index.yaml, docs/ai/60-debt.yaml]
+    - id: complete_link_convex_hulls_false_collision
+      status: resolved
+      symptom: Valid compact starts were blocked by coarse link1/link2/link5 hull overlap.
+      root_cause: Whole-link convex hulls poorly represented the articulated geometry.
+      correction: Deterministic reviewed 30 mm collision pieces and a bounded acquisition-only monotonic recovery replaced the coarse hulls.
+      evidence: [docs/ai/60-debt.yaml, piper_ros_foxy/src/piper_tesseract_foxy/model/collision_model.yaml]
+    - id: timed_movej_target_churn
+      status: superseded
+      symptom: Timed MoveJ execution emitted 7281 targets, moved slowly/choppily and repeatedly touched gripper validation.
+      root_cause: PiPER consumes positions plus one aggregate speed and ignores transported Tesseract qdot/qddot.
+      correction: tesseract_stream_v1 sends arm-only position targets at a bounded schedule and never transports gripper commands.
+      evidence: [docs/ai/60-debt.yaml]
+    - id: endpoint_only_execution_discarded_detours
+      status: superseded
+      symptom: Sending only the final IK endpoint was smooth but could omit collision-qualified OMPL detours.
+      root_cause: Planner geometry and controller execution were disconnected.
+      correction: Full OMPL/ISP path geometry is serialized, hash-bound, Bullet-revalidated and streamed.
+      evidence: [docs/ai/30-contracts.yaml, docs/ai/60-debt.yaml]
+    - id: tesseract_stream_vs_direct_home_speed_mismatch
+      status: open
+      symptom: Tesseract motion is observably slower than activation/home at the same selected percentage.
+      root_cause: Streamed paths retain detours, scale ISP duration and enforce 0.025 rad at 20 Hz (about 0.5 rad/s), then also apply the aggregate PiPER MoveJ speed; home sends one direct endpoint.
+      correction: No production change yet. Evaluate native offline trajectory execution or velocity-derived online scheduling without discarding collision path geometry.
+      evidence: [docs/ai/30-contracts.yaml, docs/ai/60-debt.yaml, current_snapshot_2026_08_11]
+    - id: tesseract_stream_host_overrun_hypothesis
+      status: resolved
+      symptom: Slow motion was suspected to come from excessive point processing or a host unable to service the stream.
+      root_cause: Latest 50-percent evidence showed no missed 20 Hz sample or stream-overrun abort.
+      correction: Treat point density as planned-duration evidence; retain explicit dropped-sample and maximum-command-interval diagnostics.
+      evidence: [/run/user/1000/piper_target_scan_logs/scan_stack.log, current_snapshot_2026_08_11]
+    - id: embedded_contingency_home_in_one_view_plan
+      status: resolved
+      symptom: A valid automatic scan view failed because the worker planned an unused return through the intentional storage fold.
+      root_cause: One-view automatic requests incorrectly included a contingency home segment.
+      correction: Automatic MULTIVIEW_SCAN requires exactly one capture segment and include_return_home=false; home is a separate current-state transaction.
+      evidence: [docs/ai/00-index.yaml, docs/ai/30-contracts.yaml]
+    - id: raw_camera_target_used_as_base_target
+      status: resolved
+      symptom: During a tracker gap, NBV centre jumped to raw camera-optical coordinates.
+      root_cause: Planner accepted /piper/target_3d without an exact base_link frame check.
+      correction: Only measured target data exactly in planning_frame_id=base_link can update the scan centre.
+      evidence: [docs/ai/05-admin.yaml, docs/ai/50-guardrails.yaml]
+    - id: one_sided_fixed_view_scans
+      status: physical_validation_pending
+      symptom: Seven-, ten- and twelve-view runs overrepresented the front/top or +Y side and did not cover distinctive side features.
+      root_cause: Fixed-count and earlier shortlist policies did not measure achieved FK side/span or surface novelty.
+      correction: Closed-loop NBV records achieved pose, requires both Y sides, 120-degree azimuth, 25-degree elevation and measured-surface convergence across 8-24 accepted captures.
+      evidence: [docs/ai/40-flows.yaml, docs/ai/60-debt.yaml]
+    - id: latest_24_view_feature_exhaustion
+      status: open
+      symptom: The 50-percent run accepted 24 GOOD/CLEAR views but ended at 113.5-degree azimuth without measured convergence.
+      root_cause: Candidate selection and/or measured coverage scoring failed to close the remaining azimuth and novelty gap before the hard maximum.
+      correction: Inspect persisted achieved poses and masks before changing thresholds; preserve collision, quality and 24-view safety bound.
+      evidence: [current_snapshot_2026_08_11, docs/ai/60-debt.yaml]
+    - id: continuous_1050_candidate_refresh_during_motion
+      status: open
+      symptom: Planner regenerates and filters 1050 candidates repeatedly while an approved segment is already moving.
+      root_cause: Candidate-liveness refresh is not suspended by executor motion state.
+      correction: Preserve stale-data fail-closed behavior but avoid expensive recomputation during an immutable active transaction; measure before changing scheduling.
+      evidence: [/run/user/1000/piper_target_scan_logs/scan_stack.log]
+
+  perception_camera_and_tf:
+    - id: l515_usb_enumeration_failure
+      status: resolved
+      symptom: Camera nodes started without a usable L515 until the device was unplugged and replugged.
+      root_cause: USB/device enumeration state.
+      correction: Bounded USB/librealsense preflight, startup retries and explicit camera ownership diagnostics.
+      evidence: [docs/ai/05-admin.yaml, L515_camera/README.md]
+    - id: camera_pipeline_remained_on_after_shutdown
+      status: resolved
+      symptom: L515 red light remained on after stopping the visible wrapper.
+      root_cause: Re-parented camera/perception process groups retained device ownership.
+      correction: Atomic process-group manifest and dedicated orphan-safe stop pipeline remove exact owned groups.
+      evidence: [docs/ai/05-admin.yaml, docs/ai/60-debt.yaml]
+    - id: camera_timestamp_drift_and_future_stamp
+      status: resolved
+      symptom: Camera time drifted against host time and one capture arrived 0.554 seconds in the future.
+      root_cause: L515 global-time configuration and transient remap behavior.
+      correction: Startup sets/verifies global time after device open; typed watchdog holds and permits bounded stationary full-pipeline recovery.
+      evidence: [docs/ai/00-index.yaml, docs/ai/50-guardrails.yaml]
+    - id: pre_node_ros_parameter_discovery_unbounded
+      status: resolved
+      symptom: Camera startup could consume excessive memory while direct ROS parameter commands waited before the node existed.
+      root_cause: Unbounded Foxy direct-discovery calls.
+      correction: Every pre-node parameter transaction has a two-second external bound and the startup loop retries/fails closed.
+      evidence: [docs/ai/05-admin.yaml, L515_camera/start_l515_camera.sh]
+    - id: model_worker_network_retry
+      status: resolved
+      symptom: GroundingDINO worker readiness could stall on Hugging Face network retries.
+      root_cause: Runtime launch did not prove local-cache-only model preload before publishing ready.
+      correction: Worker ready marker is emitted only after local model preload succeeds.
+      evidence: [docs/ai/05-admin.yaml, L515_camera/run_heavy_model_worker.sh]
+    - id: sam2_mask_loss_staled_obstacle_scene
+      status: resolved
+      symptom: Motion blur caused SAM2 WAITING_FOR_SEED and stopped instance-ID output, making obstacles stale mid-segment.
+      root_cause: Tracker output was incorrectly treated as a continuous dynamic safety scanner.
+      correction: One exact approved segment may finish on its freshly validated scene snapshot; any new invalid/blocked scene stops and every next move requires fresh geometry.
+      evidence: [docs/ai/00-index.yaml, docs/ai/50-guardrails.yaml]
+    - id: target_only_obstacle_projection_waited_for_tf
+      status: resolved
+      symptom: Explicitly clear target-only frames blocked on an unnecessary exact-time TF lookup and stopped obstacle heartbeats.
+      root_cause: Obstacle projector transformed depth even when no obstacle IDs existed.
+      correction: Target-only frames publish an explicit empty valid scene before TF; real obstacles retain exact projection.
+      evidence: [docs/ai/00-index.yaml]
+    - id: archived_mask_projection_missing_cv2
+      status: resolved
+      symptom: GPU geometry child crashed while projecting an archived heavy mask.
+      root_cause: Missing cv2 import in the archived-mask path.
+      correction: Import restored, real mask-file regression added and every gpu_geometry child is launch-critical.
+      evidence: [docs/ai/05-admin.yaml, piper_ros_foxy/src/piper_mobile_manipulation/test/test_gpu_geometry_launch.py]
+    - id: target_tracker_tf_starvation
+      status: resolved
+      symptom: Target tracker and landmark callbacks starved while waiting for timestamped transforms.
+      root_cause: Blocking TF waits under single-thread executors.
+      correction: Nodes retain concurrent executor capacity and bounded transform recovery.
+      evidence: [docs/ai/60-debt.yaml]
+    - id: charuco_board_scale_wrong
+      status: resolved
+      symptom: Preserved hand-eye samples encoded 18 mm squares and 13 mm markers while the physical board is 17 mm/12 mm.
+      root_cause: Incorrect board dimensions supplied during acquisition.
+      correction: Old PARK/validation results are wrong-scale provenance only; corrected-scale fixed-board validation and mechanical registration are authoritative.
+      evidence: [docs/ai/00-index.yaml, L515_camera/calibration/hand_eye/session_20260808_straight_mount/calibration_result.yaml]
+    - id: camera_visual_and_optical_origins_appeared_misaligned
+      status: resolved
+      symptom: RViz showed camera model and calibrated optical nodes at apparently different positions/angles.
+      root_cause: CAD housing origin, recessed depth origin and factory RGB-to-depth extrinsic represent different physical datums; an earlier composition also mixed RGB X/Y with depth Z.
+      correction: Operator-confirmed CAD placement, Intel 4.5 mm datum and serial-bound factory extrinsic now define the deployed chain.
+      evidence: [docs/ai/00-index.yaml, docs/ai/05-admin.yaml]
+
+  middleware_process_and_build:
+    - id: duplicate_coordinator_and_command_ownership
+      status: resolved
+      symptom: Multiple coordinators could accept the same action and start duplicate command owners.
+      root_cause: No process-lifetime singleton admission lock.
+      correction: run_target_scan_mission.sh holds a nonblocking lock for its exec lifetime and duplicate launch exits 73.
+      evidence: [run_target_scan_mission.sh, docs/ai/50-guardrails.yaml]
+    - id: fastdds_shared_memory_graph_oom
+      status: resolved
+      symptom: Two Foxy GUI participants grew to approximately 125 GiB and were OOM-killed.
+      root_cause: Corrupt ParticipantEntitiesInfo deserialization through stale Fast DDS shared-memory state.
+      correction: GUI, coordinator and RViz use a loopback-only UDP profile with ROS_LOCALHOST_ONLY=0 and native endpoint QoS.
+      evidence: [docs/ai/05-admin.yaml, fastdds_gui_udp_only.xml]
+    - id: prepare_acquisition_service_payload_dropped
+      status: resolved
+      symptom: Service discovery succeeded but PrepareAcquisition timed out.
+      root_cause: XML endpoint QoS selected a fixed 55-byte history and rejected the larger response sample.
+      correction: Keep transport XML but set RMW_FASTRTPS_USE_QOS_FROM_XML=0; GUI owns fresh bounded service clients on a re-entrant executor.
+      evidence: [docs/ai/60-debt.yaml, test_gui_transport_profile.py]
+    - id: stale_root_install_shadowed_workspace
+      status: resolved
+      symptom: Launches imported obsolete interfaces and omitted new scan nodes despite successful source edits.
+      root_cause: Repository-root build/install/log shadowed piper_ros_foxy/install.
+      correction: Root generated trees are absent/ignored; launch preflight verifies exact package prefixes and schemas.
+      evidence: [docs/ai/05-admin.yaml, docs/ai/60-debt.yaml]
+    - id: driver_feedback_delivery_stall
+      status: contained
+      symptom: CAN counters and ROS endpoints remained active while joint/status samples stopped reaching applications.
+      root_cause: Original unmanaged feedback publisher and later long-running delivery instability.
+      correction: Executor-owned 200 Hz timer plus downstream freshness gates; sustained soak/watchdog remains open debt.
+      evidence: [docs/ai/60-debt.yaml, piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py]
+    - id: gpu_children_survived_or_failed_silently
+      status: resolved
+      symptom: Wrapper exit left workers alive, or one geometry child died while the partial launch continued.
+      root_cause: Incomplete process-group ownership and noncritical launch children.
+      correction: Exact process manifests, orphan-safe stop and critical-child launch Shutdown behavior.
+      evidence: [docs/ai/05-admin.yaml, piper_ros_foxy/src/piper_mobile_manipulation/launch/gpu_geometry.launch.py]
+    - id: ros_json_contract_drift
+      status: open
+      symptom: String/JSON topics can drift silently and are awkward to inspect reliably with Foxy CLI tools.
+      root_cause: Several evolving runtime payloads lack typed ROS messages.
+      correction: Migrate stable contracts incrementally without changing motion authority.
+      evidence: [docs/ai/60-debt.yaml]
+    - id: launch_defaults_and_hardcoded_paths
+      status: open
+      symptom: Shell wrappers, overlays and /home/prl/Piper_arm defaults duplicate deployment configuration.
+      root_cause: Incremental integration across camera, Foxy, isolated GPU and rootless Tesseract environments.
+      correction: Continue centralizing launch arguments and PIPER_ARM_ROOT/package-share resolution.
+      evidence: [docs/ai/60-debt.yaml]
+    - id: ros2_foxy_python38_eol
+      status: open
+      symptom: End-of-life ROS/Python forces mixed runtimes and complicates supported dependencies.
+      root_cause: Hardware stack remains based on Ubuntu 20.04 and ROS 2 Foxy.
+      correction: Preserve isolated workers now; plan a versioned migration after physical acceptance evidence is stable.
+      evidence: [docs/ai/60-debt.yaml]
+
+  mission_capture_and_reconstruction:
+    - id: fixed_seven_or_thirteen_capture_limit
+      status: resolved
+      symptom: Missions stopped after a fixed count even when important sides or features were missing.
+      root_cause: Completion used desired viewpoints/count rather than measured achieved coverage.
+      correction: Eight views seed the model; missions continue to at most 24 until side/span and measured convergence floors pass.
+      evidence: [docs/ai/30-contracts.yaml, docs/ai/50-guardrails.yaml]
+    - id: accepted_capture_missing_rgbd_record
+      status: resolved
+      symptom: A workflow acceptance could advance without a synchronized persisted RGB-D/mask record.
+      root_cause: Capture service and workflow evidence were not transactionally ordered.
+      correction: Executor enters CAPTURING_RGBD and requires a successful fresh synchronized write before WAIT_CAPTURE.
+      evidence: [docs/ai/05-admin.yaml, docs/ai/30-contracts.yaml]
+    - id: target_cloud_qos_and_callback_order
+      status: resolved
+      symptom: Accepted captures sometimes did not update modeled target surface.
+      root_cause: Sensor best-effort QoS mismatch and cloud/status callback ordering.
+      correction: Matching QoS plus capture-cloud caching while WAIT_CAPTURE; process after correlated acceptance regardless of arrival order.
+      evidence: [docs/ai/05-admin.yaml]
+    - id: invalid_capture_terminated_whole_scan
+      status: resolved
+      symptom: A visually poor but safely reached viewpoint aborted instead of requesting a different view.
+      root_cause: Fresh visual rejection was conflated with safety/I/O failure.
+      correction: Fresh target/quality/occlusion failure becomes nonterminal VIEW_REJECTED; automatic mode replans a distinct replacement.
+      evidence: [docs/ai/05-admin.yaml, docs/ai/50-guardrails.yaml]
+    - id: multi_target_requests_not_queued
+      status: resolved
+      symptom: Multiple tracked-robot missions could conflict or arrive in an unsafe execution order.
+      root_cause: Coordinator originally modeled one immediate target only.
+      correction: Gateway snapshots up to eight targets, coalesces near-simultaneous arrivals and executes closest-first without preempting the active mission.
+      evidence: [OPERATOR_COMMANDS.md, docs/ai/60-debt.yaml]
+    - id: point_cloud_only_reconstruction
+      status: resolved
+      symptom: The system accumulated target clouds but did not create the required durable mesh after the tracked robot returned home.
+      root_cause: No isolated reconstruction job or tracked-base-home correlation existed.
+      correction: Immutable accepted records, measured surface checks, durable mesh jobs and tracked-home service are implemented; physical mesh quality remains pending.
+      evidence: [docs/ai/30-contracts.yaml, docs/ai/60-debt.yaml, reconstruction/tsdf_reconstruct.py]
+    - id: reconstruction_before_safe_shutdown
+      status: resolved
+      symptom: Reconstruction could conceptually start before proving the arm mission and mobile base were safely homed.
+      root_cause: No explicit terminal correlation contract.
+      correction: Mesh work requires SUCCEEDED, safe_shutdown, manifest integrity and exact tracked-base-home report.
+      evidence: [docs/ai/30-contracts.yaml, docs/ai/50-guardrails.yaml]
+    - id: autonomous_occlusion_contact_unqualified
+      status: open
+      symptom: Push and pick/place planning exists, but executing it would rely on unqualified gripper/contact geometry.
+      root_cause: Gripper TCP, open/closed fingers, attached object, allowed contact, support placement and physical low-speed actions are not fully qualified.
+      correction: manipulation_model_qualified remains false and no autonomous contact executor is authorized.
+      evidence: [docs/ai/05-admin.yaml, docs/ai/50-guardrails.yaml, docs/ai/60-debt.yaml]
+
+required_update_links:
+  architecture_navigation:
+    - docs/ai/00-index.yaml read_order
+    - docs/ai/05-admin.yaml where_to_start
+    - docs/ai/20-modules.yaml documentation ownership
+    - docs/ai/project-structure.txt
+  when_code_changes:
+    - Update the relevant problem status/correction/evidence in this file.
+    - Update detailed debt or remove obsolete next_cut language in docs/ai/60-debt.yaml.
+    - Update contracts, flows and guardrails when behavior or required retests change.
+    - Preserve superseded incidents and rollback warnings.

@@ -34,11 +34,14 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/TesseractPlanStatus.msg"
   "msg/TesseractReadiness.msg"
   "msg/OccluderAction.msg"
+  "msg/MeshJobStatus.msg"
   "srv/AuthorizeMission.srv"
   "srv/GetTargetScanResult.srv"
   "srv/ApproveScanExecution.srv"
   "srv/PrepareAcquisition.srv"
   "srv/RequestTesseractPlan.srv"
+  "srv/ReportTrackedRobotHomed.srv"
+  "srv/GetMeshJobResult.srv"
   DEPENDENCIES action_msgs builtin_interfaces geometry_msgs std_msgs trajectory_msgs
 )
 
@@ -110,6 +113,8 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_home_pose test/test_home_pose.py)
   ament_add_pytest_test(test_startup_gates test/test_startup_gates.py)
   ament_add_pytest_test(test_occlusion_policy test/test_occlusion_policy.py)
+  ament_add_pytest_test(
+    test_reconstruction_jobs test/test_reconstruction_jobs.py)
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)

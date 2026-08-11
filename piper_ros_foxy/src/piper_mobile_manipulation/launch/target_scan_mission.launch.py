@@ -13,6 +13,9 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'motion_speed_profile_qualified', default_value='false'),
         DeclareLaunchArgument('require_gateway_heartbeat', default_value='false'),
+        DeclareLaunchArgument('max_pending_missions', default_value='8'),
+        DeclareLaunchArgument(
+            'mission_queue_coalesce_sec', default_value='1.0'),
         DeclareLaunchArgument(
             'mission_spool_root',
             default_value='/tmp/piper_target_scan_missions'),
@@ -38,6 +41,11 @@ def generate_launch_description():
             executable='target_scan_mission_node.py',
             name='target_scan_mission',
             output='screen',
+            # A coordinator SIGINT is a mission cancellation request.  Leave
+            # enough time for its approved home/hold/disable/child-stop path
+            # before launch escalates to SIGTERM.
+            sigterm_timeout='180',
+            sigkill_timeout='10',
             parameters=[{
                 'project_root': LaunchConfiguration('project_root'),
                 'manage_processes': ParameterValue(
@@ -50,13 +58,22 @@ def generate_launch_description():
                 'require_gateway_heartbeat': ParameterValue(
                     LaunchConfiguration('require_gateway_heartbeat'), value_type=bool),
                 'mission_spool_root': LaunchConfiguration('mission_spool_root'),
+                'max_pending_missions': ParameterValue(
+                    LaunchConfiguration('max_pending_missions'), value_type=int),
+                'mission_queue_coalesce_sec': ParameterValue(
+                    LaunchConfiguration('mission_queue_coalesce_sec'),
+                    value_type=float),
                 'free_motion_speed_percent': ParameterValue(
                     LaunchConfiguration('free_motion_speed_percent'),
                     value_type=float),
                 'contact_speed_percent': ParameterValue(
                     LaunchConfiguration('contact_speed_percent'),
                     value_type=float),
-                'required_captures': 13,
+                # Automatic NBV uses this only as a model-seed floor. The
+                # terminal count is selected by measured feature/surface
+                # convergence and remains bounded by maximum_captures.
+                'required_captures': 8,
+                'maximum_captures': 24,
             }],
         ),
     ])

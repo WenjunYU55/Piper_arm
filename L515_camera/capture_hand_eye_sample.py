@@ -2,6 +2,7 @@
 """Capture one validated Boston Dynamics ChArUco hand-eye sample."""
 
 import argparse
+from collections import deque
 import sys
 import time
 from datetime import datetime
@@ -17,6 +18,12 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CameraInfo, Image, JointState
 
+from validate_fixed_board import joint_positions_are_stable
+
+
+DEFAULT_SQUARE_LENGTH_M = 0.017
+DEFAULT_MARKER_LENGTH_M = 0.012
+
 
 def stamp_seconds(stamp):
     return float(stamp.sec) + float(stamp.nanosec) * 1e-9
@@ -27,7 +34,9 @@ def stamp_dict(stamp):
 
 
 class HandEyeCapture(Node):
-    def __init__(self, output_root, timeout, squares_x, squares_y, square_length_m, marker_length_m, dictionary_name):
+    def __init__(self, output_root, timeout, squares_x, squares_y, square_length_m,
+                 marker_length_m, dictionary_name, stationary_duration_sec,
+                 stationary_position_tolerance_rad):
         super().__init__("hand_eye_sample_capture")
         self.output_root = output_root
         self.timeout = timeout
@@ -45,6 +54,9 @@ class HandEyeCapture(Node):
         self.error = None
         self.last_rejection = None
         self.last_checked_image_stamp = None
+        self.joint_history = deque()
+        self.stationary_duration_sec = stationary_duration_sec
+        self.stationary_position_tolerance_rad = stationary_position_tolerance_rad
         self.squares_x = squares_x
         self.squares_y = squares_y
         self.square_length_m = square_length_m
@@ -72,7 +84,14 @@ class HandEyeCapture(Node):
 
     def joints_cb(self, msg):
         self.joints = msg
-        self.joints_received = time.monotonic()
+        now = time.monotonic()
+        self.joints_received = now
+        positions = np.asarray(msg.position[:6], dtype=float)
+        if positions.size == 6 and np.all(np.isfinite(positions)):
+            self.joint_history.append((now, positions.copy()))
+            cutoff = now - max(2.0 * self.stationary_duration_sec, 1.0)
+            while self.joint_history and self.joint_history[0][0] < cutoff:
+                self.joint_history.popleft()
 
     def end_pose_cb(self, msg):
         self.end_pose = msg
@@ -120,9 +139,16 @@ class HandEyeCapture(Node):
                 "target rejected: expected %d ChArUco corners, detected %d"
                 % (self.expected_corner_count, count)
             )
-        arm_velocity = np.asarray(self.joints.velocity[:6], dtype=float)
-        if arm_velocity.size == 6 and np.max(np.abs(arm_velocity)) > 0.25:
-            raise RuntimeError("target rejected: arm was moving during capture")
+        if not joint_positions_are_stable(
+                self.joint_history,
+                time.monotonic(),
+                self.stationary_duration_sec,
+                self.stationary_position_tolerance_rad):
+            raise RuntimeError(
+                "target rejected: joint positions did not remain within %.6f rad for %.2f seconds"
+                % (self.stationary_position_tolerance_rad,
+                   self.stationary_duration_sec)
+            )
 
         folder = self.output_root / ("capture_" + datetime.now().strftime("%Y%m%d_%H%M%S_%f"))
         folder.mkdir(parents=True, exist_ok=False)
@@ -194,9 +220,11 @@ def main():
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--squares-x", type=int, default=5)
     parser.add_argument("--squares-y", type=int, default=5)
-    parser.add_argument("--square-length-m", type=float, default=0.018)
-    parser.add_argument("--marker-length-m", type=float, default=0.013)
+    parser.add_argument("--square-length-m", type=float, default=DEFAULT_SQUARE_LENGTH_M)
+    parser.add_argument("--marker-length-m", type=float, default=DEFAULT_MARKER_LENGTH_M)
     parser.add_argument("--dictionary", default="DICT_4X4_50")
+    parser.add_argument("--stationary-duration-sec", type=float, default=0.75)
+    parser.add_argument("--stationary-position-tolerance-rad", type=float, default=0.001)
     args = parser.parse_args()
     if args.squares_x < 2 or args.squares_y < 2:
         parser.error("board must contain at least 2x2 squares")
@@ -204,6 +232,10 @@ def main():
         parser.error("square and marker lengths must be positive")
     if args.marker_length_m >= args.square_length_m:
         parser.error("marker length must be smaller than square length")
+    if args.stationary_duration_sec <= 0.0:
+        parser.error("stationary duration must be positive")
+    if args.stationary_position_tolerance_rad <= 0.0:
+        parser.error("stationary position tolerance must be positive")
     if not hasattr(cv2.aruco, args.dictionary):
         parser.error("unknown ArUco dictionary: %s" % args.dictionary)
     rclpy.init()
@@ -215,6 +247,8 @@ def main():
         args.square_length_m,
         args.marker_length_m,
         args.dictionary,
+        args.stationary_duration_sec,
+        args.stationary_position_tolerance_rad,
     )
     while rclpy.ok() and node.saved is None and node.error is None:
         rclpy.spin_once(node, timeout_sec=0.1)

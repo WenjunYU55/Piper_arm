@@ -1,28 +1,39 @@
 /**:
   ros__parameters:
-    # Workstation acceptance sector selected from the 2026-07-21 live
-    # Tesseract IK/collision sweep around the tracked cube.
-    # The original 120-210 degree sector produced nine qualified poses, while
-    # its final four positions had no bounded IK solution at the live
-    # workstation. Keep all thirteen captures inside the robust 120-175
-    # degree sector rather than weakening any Tesseract gate.
-    desired_scan_angle_deg: 55
-    viewpoint_center_angle_deg: 147.5
-    # Seven azimuths across the qualified sector, at three camera elevations,
-    # form a 21-candidate dome. Tesseract chooses exactly 13 collision-valid
-    # views from this larger set.
-    viewpoint_step_deg: 9.166666666666666
+    # Cover the target-facing hemisphere from both Y sides. Reachability is
+    # not pre-qualified by this generator: Tesseract IK/joint/collision checks
+    # and the executor's dense target-visibility check remain authoritative.
+    desired_scan_angle_deg: 180
+    viewpoint_center_angle_deg: 180
+    # Thirteen azimuths from +Y side through the base-facing front to -Y side.
+    # A 15-degree grid left no continuous IK step after achieved FK landed at
+    # 195.6 degrees: the next exact 210-degree look self-collided.  Half-step
+    # sampling provides an approximately 6-8-degree measured-state successor
+    # without lowering the meaningful-capture threshold.
+    viewpoint_step_deg: 7.5
     scan_radius_m: 0.30
+    # Closed-loop requests sample one exact Tesseract-qualified pose from this
+    # bounded distance region instead of demanding a single fixed radius.
+    scan_radius_offsets_m: [0.0, 0.03, 0.06, 0.09, 0.12, 0.15]
     min_scan_radius_m: 0.30
     max_scan_radius_m: 0.80
-    camera_pitch_deg: -55
-    camera_pitch_offsets_deg: [0.0, 10.0, -10.0]
+    # Deterministic samples of a flexible vertical camera region. Ten-degree
+    # pitch spacing gives Tesseract intermediate J2/J3 configurations instead
+    # of forcing one of a few exact wrist-down elevations near a close target.
+    camera_pitch_deg: -50
+    camera_pitch_offsets_deg: [35.0, 25.0, 15.0, 5.0, -5.0, -15.0, -25.0]
     keep_object_centered: true
-    max_viewpoints: 21
+    max_viewpoints: 25
     session_max_views: 13
     scan_session_history_topic: "/piper/scan_session_history"
+    # Multiview candidates are generated only from coordinates already in this
+    # frame. Raw camera-optical /piper/target_3d observations must first pass
+    # through the base-frame tracker; they are never a coordinate fallback.
+    planning_frame_id: "base_link"
     # A retried scan excludes only a camera pose that is close in both
-    # translation and viewing direction to an already accepted capture.
+    # translation and viewing direction to an achieved accepted capture.
+    # The next view persistently targets missing -Y/+Y face observations,
+    # azimuth span, then elevation span before residual pose diversity.
     duplicate_position_tolerance_m: 0.012
     duplicate_look_tolerance_deg: 2.0
 
@@ -31,6 +42,10 @@
     min_camera_object_distance_m: 0.25
     max_camera_object_distance_m: 0.80
     max_height_change_m: 0.40
+    # There is no fixed "qualified workspace" gate. The values above remain
+    # available only for explicit legacy diagnostics; Tesseract owns physical
+    # IK, joint-limit, and collision reachability.
+    enforce_static_reach_bounds: false
     arm_status_timeout_sec: 1.0
 
     min_good_scan_quality: 0.65
@@ -51,6 +66,14 @@
     tracked_target_topic: "/piper/tracked_target"
     # Stationary-cube plans freeze the latest qualified measured position.
     use_predicted_target_for_scan: false
+    # Tracker measurements arrive near camera rate. Rebuild candidates only
+    # after a material target shift or an accepted-view history change.
+    target_replan_translation_m: 0.01
+    target_replan_min_period_sec: 0.50
+    # Bridge freshness is 1.0 s. Re-emit the deterministic candidate snapshot
+    # from each still-valid tracked-target observation before it can expire,
+    # even when target displacement is below the meaningful-replan threshold.
+    target_plan_refresh_period_sec: 0.50
 
     # A typed /scan_target_acquisition/prepare call atomically binds the session
     # ID and rough base_link coordinate. The guarded executor still requires
@@ -64,13 +87,13 @@
     standoff_m: 0.45
     # Extra compact candidates cover centreline hints whose five
     # minimum-translation look-at orientations have no bounded IK.
-    fallback_standoff_m: 0.30
+    fallback_standoff_m: 0.28
     # Retained for configuration compatibility; live camera-to-hint pitch owns
     # the centered minimum-translation acquisition look.
     acquisition_camera_pitch_deg: -10.0
-    # Cover the full 0.30 m accepted rough-hint error from a compact camera
-    # pose. Diagonal yaw/pitch candidates keep lateral errors inside view.
-    sweep_angle_deg: 45.0
+    # Search left/right/up/down by 15 degrees after the centered look.
+    # Diagonals and compact-radius poses remain bounded reserve candidates.
+    sweep_angle_deg: 15.0
     # Continue refreshing the same correlated proposal through a transient
     # post-start camera-health flap, then stop cleanly instead of retrying a
     # stale payload forever.

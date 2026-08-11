@@ -6,7 +6,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/rootless_common.sh"
 PYTHONPATH="$ROOT/piper_ros_foxy/src/piper_tesseract_foxy" \
   python3 -m piper_tesseract_foxy.model_builder \
   --xacro "$ROOT/piper_ros_foxy/src/piper_description/urdf/piper_description.xacro" \
-  --calibration "$ROOT/L515_camera/calibration/hand_eye/session_20260701_local/calibration_result.yaml" \
+  --calibration "$ROOT/L515_camera/calibration/hand_eye/session_20260808_straight_mount/calibration_result.yaml" \
   --manifest "$ROOT/piper_ros_foxy/src/piper_tesseract_foxy/model/collision_model.yaml" \
   --output "$RUNTIME/piper_planning.urdf"
 

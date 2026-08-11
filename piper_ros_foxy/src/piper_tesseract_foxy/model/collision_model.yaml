@@ -1,14 +1,15 @@
 schema_version: 1
 model: piper_l515_planning
 qualified_for_hardware: true
-qualification_date: '2026-07-25'
+qualification_date: '2026-08-10'
 hardware_qualification_scope: >-
-  Supervised collision-aware PiPER execution through the sole guarded Foxy executor, with exact
-  trajectory-hash approval, incremental feedback convergence, normal joint limits, runtime health
-  gates, and all six joints freely planned. This qualification covers model/path collision
-  validity, not execution dynamics at every SDK speed. Physical acceptance remains at 5 percent;
-  the executor exposes the SDK's 1-100 percent setting, and higher speeds require separate dynamic
-  characterization.
+  Collision-aware PiPER acquisition, scan and manipulation proposals through
+  the sole guarded Foxy executor, with exact trajectory-hash approval,
+  incremental feedback convergence, normal joint limits, runtime health gates,
+  and all six joints freely planned. Dedicated zero-capture RETURN_HOME is
+  explicitly outside collision qualification and uses the separately declared
+  configured_home_direct_joint_move policy. Physical acceptance remains at 5
+  percent; higher speeds require separate dynamic characterization.
 qualification_reason: >-
   The generated model contains conservative L515 housing, mount, connector, and local strain-relief
   envelopes. Link1, link2, and link5 use hash-verified overlapping 30 mm longitudinal pieces so
@@ -19,8 +20,11 @@ qualification_reason: >-
   regression proves a 0.05 rad J3-only prefix, and the live-boundary regression proves one
   combined J2/J3 target can monotonically recover two deviations of at most 0.04 rad before
   normal clearance and global planning resume. Each prefix is trajectory-hash bound and receives
-  an independent Foxy proxy check; no collision pair is globally disabled. The nonlocal cable
-  run remains an explicit physical routing and operator-clearance control.
+  an independent Foxy proxy check; no collision pair is globally disabled. On
+  2026-08-10 the exact saved profile passed core/compact regression using its
+  explicit two-point, stage-bound home self-collision exemption plus mandatory
+  dense camera-holder support-plane clearance. The nonlocal cable run
+  remains an explicit physical routing and operator-clearance control.
 robot_collision_source: >-
   Detailed PiPER STL meshes; link1, link2, and link5 are deterministically divided into
   overlapping 30 mm longitudinal pieces before Tesseract convexifies each piece.
@@ -33,6 +37,41 @@ collision_mesh_decomposition:
     Every source triangle is copied to every longitudinal slab intersected by its local-axis
     extent. Tesseract convexifies the individual overlapping pieces; source surface triangles
     are never discarded.
+configured_home_direct_joint_move:
+  enabled: true
+  plan_kind: RETURN_HOME
+  maximum_start_limit_violation_rad: 0.3
+  allowed_start_limit_joints: [1, 2, 3, 4, 5, 6]
+  allowed_home_stages:
+    [CONFIGURED_HOME, STARTUP_WRIST, ROUGH_HOME, STORAGE_WRIST]
+  collision_validation: intentionally_bypassed
+  reason: >-
+    The operator-selected rough/storage configuration is a mechanically
+    supported resting fold. The conservative L515 camera, mount and local
+    cable envelopes intentionally overlap base/link envelopes through its J6
+    fold, so ordinary self-collision planning cannot represent that motion.
+    A dedicated RETURN_HOME transaction therefore emits exactly one direct,
+    limit-checked SDK MoveJ target and deliberately bypasses the ordinary
+    robot self-collision evaluation only. The CAD-derived complete holder/L515
+    envelope retains a dense 5 mm support-plane clearance check. Request/trajectory hashes, exact current
+    state within the operator-qualified 0.3 rad post-disable relaxation band,
+    exact joint limits for the configured endpoint, low-speed execution, feedback
+    convergence, hold, disable and child cleanup remain mandatory. This policy
+    never applies to acquisition, scan, manipulation, or an implicit return
+    appended to another plan.
+external_floor_clearance:
+  enabled: true
+  floor_z_m: 0.0
+  clearance_m: 0.005
+  label: camera holder/L515
+  origin_link6_m: [-0.029750002, 0.0, 0.0375]
+  size_m: [0.1395, 0.10572671, 0.053]
+  containment_basis: >-
+    Axis-aligned link6-frame bounds computed from every triangle of the locked
+    millimetre camera_holder.STL after its exact URDF visual and fixed-joint
+    transforms. The resulting box also contains the installed L515 CAD body.
+    It is used only against the base-frame support plane, so the intentionally
+    close folded wrist remains governed by its separate self-collision policy.
 bootstrap_start_recovery:
   enabled: true
   plan_kind: ROUGH_ACQUISITION
@@ -60,6 +99,39 @@ bootstrap_start_recovery:
     - links: [link2, link5]
       maximum_penetration_m: 0.008
       reason: bounded folded-start convex-piece overlap; recovery must monotonically leave it
+powered_start_home_recovery:
+  enabled: true
+  plan_kind: RETURN_HOME
+  observation_mode: perception_snapshot
+  required_scene_flag: startup_home_static
+  search_step_rad: 0.01
+  maximum_single_joint_delta_rad: 0.10
+  maximum_recovery_joints: 1
+  maximum_start_limit_violation_rad: 0.0
+  allowed_start_limit_joints: [2, 3]
+  allowed_recovery_joints: [3]
+  monotonic_tolerance_m: 0.0002
+  allowed_start_contacts:
+    - links: [gripper_base, link1]
+      maximum_penetration_m: 0.0001
+      reason: >-
+        Powered folded-start proximity may be below the global motion-bound margin;
+        actual penetration remains rejected and J3 recovery must monotonically increase clearance.
+    - links: [gripper_base, link2]
+      maximum_penetration_m: 0.0001
+      reason: >-
+        Powered folded-start proximity may be below the global motion-bound margin;
+        actual penetration remains rejected and J3 recovery must monotonically increase clearance.
+    - links: [link1, link5]
+      maximum_penetration_m: 0.010
+      reason: >-
+        Bounded powered-start model overlap observed after gravity settling; a J3-only recovery
+        of at most 0.10 rad must monotonically leave it before normal home planning resumes.
+    - links: [link2, link5]
+      maximum_penetration_m: 0.010
+      reason: >-
+        Bounded powered-start convex-piece overlap observed after gravity settling; a J3-only
+        recovery of at most 0.10 rad must monotonically leave it before normal home planning resumes.
 proposal_collision_margin_m: 0.005
 hardware_clearance_margin_m: 0.005
 clearance_report_distance_m: 0.050
@@ -113,9 +185,11 @@ attached_envelopes:
 unresolved_geometry:
   - further collision-mesh simplification may reduce planning cost but is not required by this qualification
   - cable run beyond the local wrist envelope remains a physical routing and operator-clearance control
-allowed_collision_policy: mechanically adjacent or rigidly fixed design-contact pairs only
+allowed_collision_policy: normal motion permits only mechanically adjacent or rigidly fixed design-contact pairs; dedicated RETURN_HOME bypasses robot self-collision evaluation but retains dense CAD-holder support-plane clearance as declared above
 final_validation: >-
-  Adaptive dense discrete Bullet on the exact post-ISP path. Each interval has at most 0.001 rad
+  Normal motion uses adaptive dense discrete Bullet on the exact post-ISP path. Each interval has at most 0.001 rad
   total joint change and must retain its pair clearance plus a conservative relative-link motion
   bound. The 0.35.0.6 nanobind continuous-manager path is disabled after a repeatable qualification
-  segfault; no response claims BulletCast or FCL validation.
+  segfault; no response claims BulletCast or FCL validation. Dedicated RETURN_HOME reports
+  configured_home_collision_validation_bypassed for robot self-collision,
+  plus nonzero CAD-holder external-floor validation samples.

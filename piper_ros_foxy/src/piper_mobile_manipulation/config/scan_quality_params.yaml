@@ -16,8 +16,8 @@
     min_good_scan_quality: 0.65
     min_acceptable_scan_quality: 0.40
     max_depth_stddev_good_m: 0.03
-    min_valid_depth_ratio: 0.0
-    min_mask_area_px: 40
+    min_valid_depth_ratio: 0.40
+    min_mask_area_px: 100
     edge_margin_px: 40
     min_valid_depth_m: 0.15
     max_valid_depth_m: 1.20

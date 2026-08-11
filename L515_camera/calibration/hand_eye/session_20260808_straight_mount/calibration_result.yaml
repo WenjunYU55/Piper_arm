@@ -1,0 +1,266 @@
+status: accepted
+model: eye_in_hand
+method: OpenCV CALIB_HAND_EYE_PARK with datasheet- and factory-extrinsic mechanical registration
+deployment_basis: >-
+  The 2026-08-08 hand-eye solve remains the measured source solution. On
+  2026-08-09 the operator confirmed that the installed camera-holder and L515
+  rendering matches the physical assembly. On 2026-08-10 the supplied Intel
+  L515 Rev 003 datasheet and the factory calibration from device f1120648
+  exposed that the earlier CAD registration mixed the RGB X-Y centre with the
+  4.5 mm-recessed depth Z plane. The deployed transform now places the depth
+  origin 4.5 mm behind the outer front-cover glass, keeps the depth axis normal
+  to the straight-mounted housing, and composes the device's measured
+  colour-to-depth extrinsic. The RGB origin is therefore 14.131 mm above and
+  4.225 mm forward of the depth origin with the factory 1.322 degree relative
+  rotation; it is not forced onto the depth plane or made artificially parallel.
+validation_scope: >-
+  fitting_residuals, held_out_validation, target_to_base, and
+  fixed_board_validation.yaml describe the source hand-eye solution before the
+  mechanical registration. The registered deployment transform was revalidated
+  with the corrected 0.017 m/0.012 m stationary board on 2026-08-10 before
+  powered mission motion; the named report below is the deployment authority.
+sample_count:
+  fitting: 12
+  held_out_validation: 3
+fk:
+  model: piper_sdk_modified_dh_mode_0
+  units: metres and radians
+  note: Mode 0 matches the live controller /end_pose; mode 1 applies optional 2-degree
+    J2/J3 offsets.
+camera_to_link6:
+  translation_m:
+  - -0.07813122843950987
+  - -0.00020008129649795418
+  - 0.03999983982632446
+  quaternion_xyzw:
+  - 0.009887436078438084
+  - -0.0059508568105047475
+  - -0.7071211961600986
+  - 0.7069981894263427
+  matrix:
+  - - -0.00011159751133569562
+    - 0.9997491333477074
+    - -0.022397721234607863
+    - -0.07813122843950987
+  - - -0.9999844882130107
+    - -0.00023629490218783235
+    - -0.005564844839005679
+    - -0.00020008129649795418
+  - - -0.005568741272358752
+    - 0.022396752783092028
+    - 0.9997336518220313
+    - 0.03999983982632446
+  - - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+mechanical_registration:
+  urdf_visual_link: l515_visual
+  urdf_path: piper_ros_foxy/src/piper_description/urdf/piper_description.xacro
+  mesh_path: piper_ros_foxy/src/piper_description/meshes/Intel_RealSense_L515_CAD_external.STL
+  datasheet_path: /home/prl/Downloads/Intel_RealSense_LiDAR_L515_Datasheet_Rev003.pdf
+  datasheet_revision: '003'
+  device_serial: f1120648
+  firmware_version: 01.05.08.01
+  mesh_outer_front_cover_glass_z_mm: 25.903557
+  mesh_visual_origin_z_mm: 29.628554
+  depth_offset_from_front_glass_m: 0.0045
+  l515_visual_to_camera_depth_optical_translation_m:
+  - 0.0
+  - 0.0
+  - -0.008224997
+  l515_visual_to_camera_depth_optical_quaternion_xyzw:
+  - 0.0
+  - 0.0
+  - 1.0
+  - 0.0
+  factory_color_to_depth_extrinsic:
+    translation_m:
+    - 0.00020008129649795592
+    - -0.014131228439509869
+    - 0.004224836826324463
+    quaternion_xyzw:
+    - 0.011199364304190152
+    - 0.002783581895034039
+    - -8.69788955702817e-05
+    - 0.9999334069555269
+    rotation_angle_deg: 1.322465865409006
+  l515_visual_to_camera_color_optical_translation_m:
+  - -0.00020008129649795418
+  - 0.014131228439509869
+  - -0.004000160173675537
+  l515_visual_to_camera_color_optical_quaternion_xyzw:
+  - -0.0027835818950340385
+  - 0.011199364304190152
+  - 0.9999334069555269
+  - 8.697889557034292e-05
+  superseded_mixed_rgb_xy_depth_z_reference:
+    translation_m:
+    - 0.0
+    - 0.014
+    - -0.008694998
+    quaternion_xyzw:
+    - 0.0
+    - 0.0
+    - 1.0
+    - 0.0
+    reason: RGB X-Y was incorrectly combined with the 4.5 mm-recessed depth Z plane
+  source_hand_eye_camera_to_link6:
+    translation_m:
+    - -0.07822366188759988
+    - 0.0034365305571851736
+    - 0.01856034748378061
+    quaternion_xyzw:
+    - -0.0026070781339325596
+    - 0.010089742277632603
+    - 0.7204796194506963
+    - -0.6933978066020647
+    matrix:
+    - - -0.038385369886092265
+      - 0.9991053661642694
+      - -0.017749103652611925
+      - -0.07822366188759988
+    - - -0.9992105851501215
+      - -0.03819535780041671
+      - 0.010923422833668515
+      - 0.0034365305571851736
+    - - 0.010235717005356158
+      - 0.01815439187250853
+      - 0.999782800488749
+      - 0.01856034748378061
+    - - 0.0
+      - 0.0
+      - 0.0
+      - 1.0
+  physical_revalidation:
+    status: passed
+    passed_on: '2026-08-10'
+    authority_report: fixed_board_validation_registered_20260810_corrected_board.yaml
+    report_status: passed
+    report_board_square_length_m: 0.017
+    report_board_marker_length_m: 0.012
+    report_pose_count: 5
+    report_mean_translation_error_mm: 5.73
+    report_worst_translation_error_mm: 12.22
+    report_mean_rotation_error_deg: 0.87
+    report_worst_rotation_error_deg: 1.25
+    limits:
+      translation_mm: 15.0
+      rotation_deg: 1.5
+    interpretation: >-
+      The fixed ChArUco board is the stationary metric target. Its base_link
+      pose was independently recovered at five distinct stable arm poses, so
+      this one report supplies both fixed-board repeatability and stationary
+      target base-frame repeatability. Open-vocabulary cube tracking remains a
+      separate acquisition acceptance test and is not calibration authority.
+    required_checks:
+    - live camera TF lookup with the read-only robot model
+    - stationary fixed-board repeatability from at least five distinct arm poses
+    - stationary target base-frame repeatability
+    completed_checks:
+    - live camera TF overlay reproduced the deployed transform exactly
+    - corrected-scale fixed-board report passed all five distinct stable poses
+    - fixed-board base_link centroid supplied stationary target repeatability
+target_to_base:
+  translation_m:
+  - 0.3933766089170703
+  - 0.02829966574371201
+  - 0.014164948336424213
+  quaternion_xyzw:
+  - -0.009168889004888256
+  - 0.01618190877849013
+  - 0.712912448553841
+  - -0.7010063608838852
+  matrix:
+  - - -0.01701202694949644
+    - 0.9992155821281418
+    - -0.03576047219191528
+    - 0.3933766089170703
+  - - -0.9998090626300505
+    - -0.016656455657233504
+    - 0.010217669389766612
+    - 0.02829966574371201
+  - - 0.009614011747942169
+    - 0.03592746744842655
+    - 0.9993081546054015
+    - 0.014164948336424213
+  - - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+fitting_residuals:
+  translation_rms_mm: 9.074403434373881
+  translation_max_mm: 13.562094858857181
+  rotation_rms_deg: 1.0765174441095053
+  rotation_max_deg: 2.3275993628341234
+  per_sample:
+  - name: capture_20260808_230214_296814
+    translation_error_mm: 13.562094858857181
+    rotation_error_deg: 0.5840714772870575
+    reprojection_rms_px: 0.0764920079373808
+  - name: capture_20260808_230304_376651
+    translation_error_mm: 6.131279706341887
+    rotation_error_deg: 0.7370139261270818
+    reprojection_rms_px: 0.08553884385139936
+  - name: capture_20260808_230423_879609
+    translation_error_mm: 9.336574661537735
+    rotation_error_deg: 0.9139768476871697
+    reprojection_rms_px: 0.08276139069518558
+  - name: capture_20260808_230525_731942
+    translation_error_mm: 9.266637335990383
+    rotation_error_deg: 0.27706588936407694
+    reprojection_rms_px: 0.18898601121374525
+  - name: capture_20260808_230732_741769
+    translation_error_mm: 10.008417481549976
+    rotation_error_deg: 1.2696290751704369
+    reprojection_rms_px: 0.09957410979139465
+  - name: capture_20260808_230849_779669
+    translation_error_mm: 8.802580331919163
+    rotation_error_deg: 1.080279793700541
+    reprojection_rms_px: 0.12417137656435838
+  - name: capture_20260808_230929_177997
+    translation_error_mm: 8.827589005999661
+    rotation_error_deg: 1.0722653804165043
+    reprojection_rms_px: 0.09299782906146266
+  - name: capture_20260808_231025_298653
+    translation_error_mm: 4.460622717019592
+    rotation_error_deg: 0.5897791997030638
+    reprojection_rms_px: 0.10513339045979624
+  - name: capture_20260808_231134_379440
+    translation_error_mm: 6.421652008557029
+    rotation_error_deg: 0.8398550720314528
+    reprojection_rms_px: 0.12772219597582052
+  - name: capture_20260808_231213_641103
+    translation_error_mm: 9.331197175990251
+    rotation_error_deg: 0.9158110993433968
+    reprojection_rms_px: 0.09078687380561476
+  - name: capture_20260808_231413_606104
+    translation_error_mm: 6.295940593690071
+    rotation_error_deg: 0.9337500786723523
+    reprojection_rms_px: 0.15490879367020766
+  - name: capture_20260808_231450_575285
+    translation_error_mm: 12.25346170146332
+    rotation_error_deg: 2.3275993628341234
+    reprojection_rms_px: 0.08616643779930418
+held_out_validation:
+  accepted: true
+  acceptance_limits:
+    translation_mm_per_sample: 15.0
+    rotation_deg_per_sample: 1.5
+  translation_rms_mm: 8.871851931622468
+  translation_max_mm: 13.118868942058642
+  rotation_rms_deg: 0.6628354967794441
+  rotation_max_deg: 0.7761608082967368
+  per_sample:
+  - name: capture_20260808_231556_397132
+    translation_error_mm: 13.118868942058642
+    rotation_error_deg: 0.7761608082967368
+    reprojection_rms_px: 0.12434018239078434
+  - name: capture_20260808_231634_827716
+    translation_error_mm: 7.854768601095083
+    rotation_error_deg: 0.41908407799364694
+    reprojection_rms_px: 0.10165791364207544
+  - name: capture_20260808_231715_909425
+    translation_error_mm: 1.5255025382607277
+    rotation_error_deg: 0.7348439443915479
+    reprojection_rms_px: 0.1404421466439537

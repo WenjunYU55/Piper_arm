@@ -14,6 +14,20 @@ from heavy_model_worker import HeavyModelWorker
 
 
 class HeavyModelWorkerTest(unittest.TestCase):
+    def test_readiness_initialization_preloads_exact_device_once(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            calls = []
+            worker = HeavyModelWorker(
+                Path(temporary),
+                device="cuda",
+                preload=lambda device: calls.append(device),
+            )
+            self.assertFalse(worker.initialized)
+            worker.initialize()
+            worker.initialize()
+            self.assertTrue(worker.initialized)
+            self.assertEqual(calls, ["cuda"])
+
     def test_incomplete_temporary_job_is_ignored(self):
         with tempfile.TemporaryDirectory() as temporary:
             spool = Path(temporary)
@@ -66,7 +80,15 @@ class HeavyModelWorkerTest(unittest.TestCase):
                     ],
                 }
 
-            worker = HeavyModelWorker(spool, inference=fake_inference)
+            worker = HeavyModelWorker(
+                spool, inference=fake_inference,
+                mission_context={
+                    'task_id': 'scan-task-1234',
+                    'mission_sha256': 'a' * 64,
+                    'target_label': 'red sphere',
+                    'target_profile': 'generic_open_vocab',
+                    'target_prompt': 'red sphere .',
+                })
             self.assertTrue(worker.process_one())
             response = spool / "responses" / "job_1"
             self.assertTrue((response / "READY").is_file())
@@ -86,6 +108,14 @@ class HeavyModelWorkerTest(unittest.TestCase):
             self.assertEqual(result["request_id"], 7)
             self.assertEqual(result["status"], "ok")
             self.assertFalse(result["real_arm_motion"])
+            self.assertEqual(
+                result['mission_context']['target_label'], 'red sphere')
+            capture_context = (
+                spool / 'model_outputs' / 'job_1' / 'capture'
+                / 'mission_context.yaml')
+            with capture_context.open('r', encoding='utf-8') as stream:
+                context = yaml.safe_load(stream)
+            self.assertEqual(context['target_profile'], 'generic_open_vocab')
 
     def test_failure_produces_a_consumable_status_response(self):
         with tempfile.TemporaryDirectory() as temporary:

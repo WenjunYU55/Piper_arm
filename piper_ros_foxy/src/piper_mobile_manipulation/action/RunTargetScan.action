@@ -4,6 +4,7 @@ uint8 OUTCOME_CANCELLED=2
 uint8 OUTCOME_BUSY=3
 uint8 OUTCOME_UNSUPPORTED_TARGET_PROFILE=4
 uint8 OUTCOME_NEEDS_OPERATOR=5
+uint8 OUTCOME_REPOSITION_REQUIRED=6
 string task_id
 string task_type
 string target_label
@@ -14,6 +15,8 @@ float32 deadline_sec
 ---
 uint8 outcome
 string reason
+string failure_code
+bool retryable
 bool safe_shutdown
 string dataset_path
 string manifest_sha256

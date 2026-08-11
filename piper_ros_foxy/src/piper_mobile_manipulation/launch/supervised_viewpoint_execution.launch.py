@@ -68,6 +68,11 @@ def generate_launch_description():
         default_value='false',
         description='Allow task/hash/deadline-bound autonomous approvals.',
     )
+    closed_loop_one_view = DeclareLaunchArgument(
+        'closed_loop_one_view',
+        default_value='false',
+        description='Plan one observation/capture before measured-state replanning.',
+    )
     scan_params = cfg('scan_planning_params.yaml')
     quality_params = cfg('scan_quality_params.yaml')
     capture_params = cfg('scan_capture_params.yaml')
@@ -89,7 +94,7 @@ def generate_launch_description():
                     'piper_tesseract_plans'),
                 'hand_eye_calibration_path': os.path.join(
                     root,
-                    'L515_camera/calibration/hand_eye/session_20260701_local/'
+                    'L515_camera/calibration/hand_eye/session_20260808_straight_mount/'
                     'calibration_result.yaml'),
                 'joint_bounds_path': os.path.join(root, 'piper_joint_bounds.json'),
                 'robot_xacro_path': os.path.join(
@@ -106,6 +111,9 @@ def generate_launch_description():
                 'max_execution_viewpoints': ParameterValue(
                     LaunchConfiguration('max_execution_viewpoints'),
                     value_type=int),
+                'closed_loop_one_view': ParameterValue(
+                    LaunchConfiguration('closed_loop_one_view'),
+                    value_type=bool),
                 **selected_home,
             },
         ],
@@ -149,9 +157,11 @@ def generate_launch_description():
                 LaunchConfiguration('auto_capture'), value_type=bool),
             'allow_mission_policy': ParameterValue(
                 LaunchConfiguration('allow_mission_policy'), value_type=bool),
+            'closed_loop_one_view': ParameterValue(
+                LaunchConfiguration('closed_loop_one_view'), value_type=bool),
             'hand_eye_calibration_path': os.path.join(
                 root,
-                'L515_camera/calibration/hand_eye/session_20260701_local/'
+                'L515_camera/calibration/hand_eye/session_20260808_straight_mount/'
                 'calibration_result.yaml',
             ),
             'joint_bounds_path': os.path.join(root, 'piper_joint_bounds.json'),
@@ -163,7 +173,11 @@ def generate_launch_description():
         executable='scan_viewpoint_planner_node.py',
         name='scan_viewpoint_planner',
         output='screen',
-        parameters=[scan_params],
+        parameters=[scan_params, {
+            'session_max_views': ParameterValue(
+                LaunchConfiguration('max_execution_viewpoints'),
+                value_type=int),
+        }],
     )
     acquisition = Node(
         package='piper_mobile_manipulation',
@@ -182,6 +196,15 @@ def generate_launch_description():
             capture_params,
             {
                 'capture_mode': 'service',
+                'task_id': os.environ.get('PIPER_MISSION_TASK_ID', ''),
+                'mission_sha256': os.environ.get(
+                    'PIPER_MISSION_SHA256', ''),
+                'target_label': os.environ.get(
+                    'PIPER_TARGET_LABEL', 'green cube'),
+                'target_profile': os.environ.get(
+                    'PIPER_TARGET_PROFILE', 'green_cube'),
+                'target_prompt': os.environ.get(
+                    'PIPER_TARGET_PROMPT', 'green cube .'),
                 'max_frames_per_scan': ParameterValue(
                     LaunchConfiguration('max_execution_viewpoints'),
                     value_type=int),
@@ -205,6 +228,7 @@ def generate_launch_description():
         min_views,
         auto_capture,
         mission_policy,
+        closed_loop_one_view,
         *shutdown_handlers,
         TimerAction(period=2.5, actions=[bridge]),
         # Foxy/Fast DDS can expose endpoints without delivering callbacks when

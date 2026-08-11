@@ -21,7 +21,7 @@ export RMW_FASTRTPS_USE_QOS_FROM_XML=0
 export ROS_LOCALHOST_ONLY=0
 
 exec python3 "$SCRIPT_DIR/publish_hand_eye_tf.py" \
-  --calibration "${PIPER_HAND_EYE_CALIBRATION:-$SCRIPT_DIR/calibration/hand_eye/session_20260701_local/calibration_result.yaml}" \
+  --calibration "${PIPER_HAND_EYE_CALIBRATION:-$SCRIPT_DIR/calibration/hand_eye/session_20260808_straight_mount/calibration_result.yaml}" \
   --joint-topic "${PIPER_HAND_EYE_JOINT_TOPIC:-/joint_states_single}" \
   --base-frame "${PIPER_HAND_EYE_BASE_FRAME:-base_link}" \
   --camera-frame "${PIPER_HAND_EYE_CAMERA_FRAME:-camera_link}" \

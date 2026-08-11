@@ -35,8 +35,8 @@ case and the exact dual-limit live start. A rebuilt live GUI Step 2 reached
 `PROPOSAL_READY` with five views, a hardware-qualified collision model, and
 zero command samples. The arm remained disabled and Step 3 was not confirmed.
 
-Status updated 2026-07-29. The native GUI completed the current
-`sdk_movej_targets_v1` route end to end at 5 percent: rough-coordinate
+Status updated 2026-07-29. The native GUI completed the former endpoint-only
+route end to end at 5 percent: rough-coordinate
 acquisition, authoritative measured-lock handoff, one exact 13-view Tesseract
 proposal/approval, 13 physical viewpoints, 13 full-resolution model updates,
 and 13 synchronized RGB/depth/mask/metadata records. The accepted dataset is
@@ -203,17 +203,17 @@ No pair is globally disabled and J6 remains free.
 
 The ROS/Foxy-to-Tesseract boundary, rough-coordinate acquisition, measured-lock handoff, 13-view
 execution, and 13 capture/model handoffs were live-accepted at 5 percent on 2026-07-29 using the
-current one-SDK-target-per-view executor. Do not fake or clip future start snapshots, weaken limits, or
+former one-SDK-target-per-view executor. Do not fake or clip future start snapshots, weaken limits, or
 bypass either exact approval. On 2026-07-27 the GUI handoff was split into explicit acquisition and
 scan phases. A 2026-07-29 live 5-percent acquisition then showed that the timed stream sent 7,281
 targets even though PiPER MoveJ consumes only positions plus aggregate speed. Schema v5 now binds
-fresh driver-published controller limits, selected speed, and `sdk_movej_targets_v1`; the isolated
-worker collision-validates one direct SDK MoveJ target per viewpoint, with at most one separately
-proven folded-start bootstrap target. Dense validation samples are never published, and Foxy waits
-for measured feedback on each arm-only target. The authoritative Step 4
+fresh driver-published controller limits, selected speed, and `tesseract_stream_v1`; the isolated
+worker now preserves and validates the full OMPL/ISP path as a 20 Hz position schedule. Foxy does
+not pause at intermediate points, uses a 0.30 rad following guard, and waits at the final endpoint.
+The authoritative Step 4
 lock is now the same TrackedTarget/TrackingHealth/LOCKED tuple used by acquisition, with
-target_landmark retained only as diagnostics. The target-only adapter has now completed its
-supervised 5-percent 13-view physical acceptance. Higher-speed dynamics remain unqualified. The
+target_landmark retained only as diagnostics. The earlier endpoint-only adapter completed the
+supervised 5-percent 13-view run; physical acceptance of the current stream is pending. The
 first live 100-percent acquisition attempt hit the sustained following-error hold before ACQUIRED,
 although a fresh settled measured lock appeared afterward. Step 4 now explicitly adopts that
   current lock into a new workflow/scan phase. If the GUI-owned worker/scan stack is stopped, the

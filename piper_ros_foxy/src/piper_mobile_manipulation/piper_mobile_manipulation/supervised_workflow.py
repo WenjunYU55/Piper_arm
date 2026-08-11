@@ -2,6 +2,8 @@
 
 import math
 
+import numpy as np
+
 
 def point(value):
     return (float(value.x), float(value.y), float(value.z))
@@ -44,6 +46,32 @@ def heavy_refinement_status_action(payload, request_id):
             'request_rejected', 'request_failed', 'worker_result_rejected'):
         return 'fail'
     return 'wait'
+
+
+def semantic_scene_correlation_rejection(
+        request_id, heavy_status, obstacle_scene):
+    """Require one completed semantic result and exact-stamp 3D scene."""
+    if not request_id:
+        return 'occlusion probe request identity is missing'
+    if not isinstance(heavy_status, dict):
+        return 'dedicated occlusion semantic result is missing'
+    if str(heavy_status.get('request_id', '')) != str(request_id):
+        return 'dedicated occlusion semantic result is not request-correlated'
+    state = str(heavy_status.get('state', '')).lower()
+    if state != 'published':
+        return 'dedicated occlusion semantic result is not a published target result'
+    try:
+        stamp = heavy_status['image_stamp']
+        result_stamp = (
+            int(stamp['sec']) * 1_000_000_000 + int(stamp['nanosec']))
+        scene_stamp = (
+            int(obstacle_scene.header.stamp.sec) * 1_000_000_000
+            + int(obstacle_scene.header.stamp.nanosec))
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return 'dedicated occlusion scene timestamp is invalid'
+    if result_stamp <= 0 or scene_stamp != result_stamp:
+        return 'dedicated occlusion 3D scene does not match the semantic image stamp'
+    return ''
 
 
 def corroborated_target_motion_rejection(
@@ -96,10 +124,15 @@ def corroborated_target_motion_rejection(
 
 def canonical_label(label):
     words = set(str(label or '').lower().replace('_', ' ').split())
-    return 'pen' if words.intersection({'pen', 'marker'}) else ' '.join(sorted(words))
+    if words.intersection({'pen', 'marker'}):
+        return 'pen'
+    if 'stick' in words:
+        return 'stick'
+    return ' '.join(sorted(words))
 
 
-def choose_removal_plan(instance, target, obstacles, config):
+def choose_removal_plan(
+        instance, target, obstacles, config, support_points=None):
     """Return a conservative dry-run pick/push plan or a rejection."""
     result = {
         'valid': False, 'dry_run': True, 'execute': False,
@@ -125,7 +158,8 @@ def choose_removal_plan(instance, target, obstacles, config):
         return result
 
     graspable = max(size[0], size[1]) <= config['max_grasp_width_m']
-    drop = find_drop_zone(target, center, obstacles, config)
+    drop = find_drop_zone(
+        target, center, obstacles, config, support_points, size)
     if graspable and drop is not None:
         result.update({
             'valid': True, 'action': 'pick_and_place', 'reason': 'graspable with clear drop zone',
@@ -133,8 +167,12 @@ def choose_removal_plan(instance, target, obstacles, config):
             'approach': [center[0], center[1], upper[2] + config['approach_height_m']],
             'retreat': [drop[0], drop[1], drop[2] + config['approach_height_m']],
             'risk_score': min(1.0, config['target_clearance_m'] / max(target_clearance, 1e-6)),
-            'drop_support_verified': False,
-            'drop_zone_note': 'dry-run candidate; dense support-surface verification unavailable',
+            'drop_support_verified': bool(
+                config.get('require_observed_drop_support', False)),
+            'drop_zone_note': (
+                'dense observed support patch verified'
+                if config.get('require_observed_drop_support', False)
+                else 'legacy geometric drop candidate'),
         })
         return result
 
@@ -162,8 +200,14 @@ def choose_removal_plan(instance, target, obstacles, config):
     return result
 
 
-def find_drop_zone(target, source, obstacles, config):
+def find_drop_zone(
+        target, source, obstacles, config, support_points=None,
+        object_size=(0.0, 0.0, 0.0)):
     """Search observed tabletop-height candidates outside target/obstacle clearances."""
+    if config.get('require_observed_drop_support', False):
+        return observed_support_drop_zone(
+            target, source, obstacles, config,
+            support_points or [], object_size)
     radius = config['drop_search_radius_m']
     for ring in (1.0, 1.35):
         for degrees in range(0, 360, 30):
@@ -176,7 +220,71 @@ def find_drop_zone(target, source, obstacles, config):
     return None
 
 
+def observed_support_drop_zone(
+        target, source, obstacles, config, support_points, object_size):
+    """Choose a flat, locally supported and visibly clear placement patch."""
+    points = np.asarray(support_points, dtype=float)
+    if points.ndim != 2 or points.shape[1:] != (3,):
+        return None
+    points = points[np.all(np.isfinite(points), axis=1)]
+    if len(points) < int(config.get('drop_support_min_points', 16)):
+        return None
+    radius = max(
+        float(config.get('drop_support_radius_m', 0.055)),
+        0.5 * max(float(object_size[0]), float(object_size[1])) + 0.020)
+    flatness = float(config.get('drop_support_max_stddev_m', 0.008))
+    resolution = max(0.015, radius * 0.5)
+    cells = {}
+    for point_value in points:
+        key = (
+            int(math.floor(point_value[0] / resolution)),
+            int(math.floor(point_value[1] / resolution)),
+        )
+        cells.setdefault(key, []).append(point_value)
+    candidates = []
+    for values in cells.values():
+        patch_center = np.median(np.asarray(values), axis=0)
+        lateral = np.linalg.norm(points[:, :2] - patch_center[:2], axis=1)
+        local = points[lateral <= radius]
+        if len(local) < int(config.get('drop_support_min_points', 16)):
+            continue
+        surface_z = float(np.median(local[:, 2]))
+        support = local[np.abs(local[:, 2] - surface_z) <= flatness * 2.0]
+        if (
+                len(support) < int(config.get('drop_support_min_points', 16))
+                or float(np.std(support[:, 2])) > flatness):
+            continue
+        relative = support[:, :2] - patch_center[:2]
+        quadrants = {
+            (int(delta[0] >= 0.0), int(delta[1] >= 0.0))
+            for delta in relative
+            if float(np.linalg.norm(delta)) >= radius * 0.45
+        }
+        if len(quadrants) < 4:
+            continue
+        footprint = lateral <= radius * 0.75
+        overhead = points[
+            footprint
+            & (points[:, 2] > surface_z + 0.020)]
+        if len(overhead):
+            continue
+        candidate = (
+            float(patch_center[0]), float(patch_center[1]),
+            surface_z + 0.5 * float(object_size[2]))
+        if not clearance_ok(candidate, target, obstacles, None, config):
+            continue
+        candidates.append(candidate)
+    if not candidates:
+        return None
+    return max(
+        candidates,
+        key=lambda candidate: (
+            distance(candidate, target), -distance(candidate, source)))
+
+
 def in_workspace(p, config):
+    if not bool(config.get('enforce_static_workspace', False)):
+        return True
     return (config['workspace_x_min'] <= p[0] <= config['workspace_x_max'] and
             config['workspace_y_min'] <= p[1] <= config['workspace_y_max'] and
             config['workspace_z_min'] <= p[2] <= config['workspace_z_max'])

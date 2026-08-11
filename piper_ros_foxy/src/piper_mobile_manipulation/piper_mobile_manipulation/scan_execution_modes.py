@@ -9,7 +9,8 @@ from piper_mobile_manipulation.heavy_refresh_contract import stamp_dict_to_ns
 
 MULTIVIEW_SCAN = 'MULTIVIEW_SCAN'
 ROUGH_ACQUISITION = 'ROUGH_ACQUISITION'
-VALID_PLAN_KINDS = (MULTIVIEW_SCAN, ROUGH_ACQUISITION)
+RETURN_HOME = 'RETURN_HOME'
+VALID_PLAN_KINDS = (MULTIVIEW_SCAN, ROUGH_ACQUISITION, RETURN_HOME)
 
 
 def uses_bootstrap_static_scene(plan_kind, viewpoint_index):
@@ -19,11 +20,14 @@ def uses_bootstrap_static_scene(plan_kind, viewpoint_index):
 
 def plan_count_rejection(
         plan_kind, count, minimum_scan_views, maximum_acquisition_views,
-        session_accepted_views=0, session_maximum_views=None):
+        session_accepted_views=0, session_maximum_views=None,
+        closed_loop_one_view=False):
     """Return a fail-closed reason for an invalid Tesseract plan shape."""
     if plan_kind not in VALID_PLAN_KINDS:
         return 'unsupported plan_kind=%s' % plan_kind
     if count < 1:
+        if plan_kind == RETURN_HOME and count == 0:
+            return ''
         return 'Tesseract proposal has no viewpoints'
     if plan_kind == MULTIVIEW_SCAN:
         maximum = (
@@ -32,8 +36,12 @@ def plan_count_rejection(
         accepted = int(session_accepted_views)
         if accepted < 0 or accepted >= maximum:
             return 'scan session accepted-view count is invalid'
-        if count != maximum - accepted:
+        expected = 1 if closed_loop_one_view else maximum - accepted
+        if count != expected:
             return (
+                'Tesseract proposal must contain exactly one closed-loop '
+                'session viewpoint'
+                if closed_loop_one_view else
                 'Tesseract proposal does not contain every remaining '
                 'session viewpoint')
     if (
@@ -66,9 +74,12 @@ def planned_speed_rejection(
     if not math.isfinite(planned) or planned < 1.0 or planned > configured + 1e-6:
         return 'Tesseract execution speed is outside the configured limit'
     del tracking_scale
-    if plan_kind == ROUGH_ACQUISITION:
+    if plan_kind in (ROUGH_ACQUISITION, RETURN_HOME):
         if abs(planned - configured) > 1e-4:
-            return 'Tesseract acquisition speed does not match the selected speed'
+            return (
+                'Tesseract %s speed does not match the selected speed'
+                % ('acquisition' if plan_kind == ROUGH_ACQUISITION
+                   else 'return-home'))
     elif plan_kind == MULTIVIEW_SCAN:
         # The configured SDK percentage is the complete motion-speed contract.
         # Tracking cannot raise this bound and must not invalidate it.

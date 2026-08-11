@@ -2,6 +2,7 @@
 """Measure fixed ChArUco board repeatability in base_link without commanding motion."""
 
 import argparse
+from collections import deque
 import math
 import sys
 import threading
@@ -18,6 +19,10 @@ from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import CameraInfo, Image, JointState
 from tf2_ros import Buffer, TransformException, TransformListener
 import yaml
+
+
+DEFAULT_SQUARE_LENGTH_M = 0.017
+DEFAULT_MARKER_LENGTH_M = 0.012
 
 
 def transform(rotation=None, translation=None):
@@ -49,6 +54,21 @@ def rotation_error_deg(first, second):
     return math.degrees(Rotation.from_matrix(delta).magnitude())
 
 
+def joint_positions_are_stable(
+        history, now, duration_sec, position_tolerance_rad):
+    """Require a complete recent window whose per-joint span is bounded."""
+    if not history or duration_sec <= 0.0 or position_tolerance_rad <= 0.0:
+        return False
+    cutoff = now - duration_sec
+    window = [positions for stamp, positions in history if stamp >= cutoff]
+    if len(window) < 2 or history[0][0] > cutoff:
+        return False
+    positions = np.asarray(window, dtype=float)
+    if positions.ndim != 2 or positions.shape[1] != 6 or not np.all(np.isfinite(positions)):
+        return False
+    return bool(np.max(np.ptp(positions, axis=0)) <= position_tolerance_rad)
+
+
 class FixedBoardValidator(Node):
     def __init__(self, args):
         super().__init__("fixed_board_validator")
@@ -57,8 +77,10 @@ class FixedBoardValidator(Node):
         self.camera_info = None
         self.joints = None
         self.joints_received = 0.0
+        self.joint_history = deque()
         self.latest = None
         self.latest_stamp = None
+        self.latest_rejection_reason = "waiting for camera and joint feedback"
         self.lock = threading.Lock()
         dictionary_id = getattr(cv2.aruco, args.dictionary)
         self.dictionary = cv2.aruco.getPredefinedDictionary(dictionary_id)
@@ -82,16 +104,43 @@ class FixedBoardValidator(Node):
 
     def joints_cb(self, message):
         self.joints = message
-        self.joints_received = time.monotonic()
+        now = time.monotonic()
+        self.joints_received = now
+        positions = np.asarray(message.position[:6], dtype=float)
+        if positions.size == 6 and np.all(np.isfinite(positions)):
+            self.joint_history.append((now, positions.copy()))
+            cutoff = now - max(2.0 * self.args.stationary_duration_sec, 1.0)
+            while self.joint_history and self.joint_history[0][0] < cutoff:
+                self.joint_history.popleft()
 
     def arm_is_still(self):
-        if self.joints is None or time.monotonic() - self.joints_received > 0.5:
+        now = time.monotonic()
+        if self.joints is None or now - self.joints_received > 0.5:
             return False
-        velocities = np.asarray(self.joints.velocity[:6], dtype=float)
-        return velocities.size != 6 or np.max(np.abs(velocities)) <= self.args.max_joint_velocity
+        # PiPER's instantaneous velocity field spikes at rest and can also
+        # briefly read low while a disabled joint is sagging.  Actual position
+        # span over a continuous window is the validation authority.
+        return joint_positions_are_stable(
+            self.joint_history,
+            now,
+            self.args.stationary_duration_sec,
+            self.args.stationary_position_tolerance_rad,
+        )
+
+    def reject_frame(self, reason):
+        with self.lock:
+            self.latest_rejection_reason = reason
 
     def image_cb(self, message):
-        if self.camera_info is None or not self.arm_is_still():
+        if self.camera_info is None:
+            self.reject_frame("waiting for camera calibration")
+            return
+        if not self.arm_is_still():
+            self.reject_frame(
+                "joint positions have not remained within %.6f rad for %.2f seconds"
+                % (self.args.stationary_position_tolerance_rad,
+                   self.args.stationary_duration_sec)
+            )
             return
         stamp = (message.header.stamp.sec, message.header.stamp.nanosec)
         if stamp == self.latest_stamp:
@@ -102,11 +151,19 @@ class FixedBoardValidator(Node):
             marker_corners, marker_ids, _ = cv2.aruco.detectMarkers(gray, self.dictionary)
             ids = [] if marker_ids is None else sorted(marker_ids.flatten().astype(int).tolist())
             if ids != self.expected_markers:
+                self.reject_frame(
+                    "full board not visible: detected %d/%d markers"
+                    % (len(ids), len(self.expected_markers))
+                )
                 return
             count, corners, corner_ids = cv2.aruco.interpolateCornersCharuco(
                 marker_corners, marker_ids, gray, self.board
             )
             if count != self.expected_corners:
+                self.reject_frame(
+                    "full board not visible: detected %d/%d ChArUco corners"
+                    % (count, self.expected_corners)
+                )
                 return
             camera = self.camera_info
             object_points = np.asarray(self.board.chessboardCorners, dtype=np.float64)[
@@ -120,6 +177,7 @@ class FixedBoardValidator(Node):
                 flags=cv2.SOLVEPNP_ITERATIVE,
             )
             if not ok:
+                self.reject_frame("board pose solve failed")
                 return
             rotation, _ = cv2.Rodrigues(rvec)
             base_from_camera = transform_message(
@@ -136,13 +194,17 @@ class FixedBoardValidator(Node):
             with self.lock:
                 self.latest = (stamp, base_from_board, rms)
                 self.latest_stamp = stamp
-        except (TransformException, ValueError, cv2.error):
+                self.latest_rejection_reason = ""
+        except (TransformException, ValueError, cv2.error) as error:
+            self.reject_frame("camera TF/board pose unavailable: %s" % error)
             return
 
     def collect(self):
         deadline = time.monotonic() + self.args.timeout
         frames = []
         seen = set()
+        with self.lock:
+            self.latest = None
         while len(frames) < self.args.frames_per_pose and time.monotonic() < deadline:
             with self.lock:
                 latest = self.latest
@@ -151,14 +213,18 @@ class FixedBoardValidator(Node):
                 frames.append(latest)
             time.sleep(0.02)
         if len(frames) < self.args.frames_per_pose:
+            with self.lock:
+                reason = self.latest_rejection_reason
             raise RuntimeError(
-                "only %d/%d valid stationary frames; check board visibility and TF"
-                % (len(frames), self.args.frames_per_pose)
+                "only %d/%d valid stationary frames; %s"
+                % (len(frames), self.args.frames_per_pose,
+                   reason or "check board visibility and TF")
             )
         return mean_transform([item[1] for item in frames]), float(np.mean([item[2] for item in frames]))
 
 
-def result_dict(poses, reprojection, translation_limit_mm, rotation_limit_deg):
+def result_dict(poses, reprojection, translation_limit_mm, rotation_limit_deg,
+                validation_metadata):
     reference = mean_transform(poses)
     measurements = []
     for index, (pose, reprojection_rms) in enumerate(zip(poses, reprojection), 1):
@@ -175,6 +241,7 @@ def result_dict(poses, reprojection, translation_limit_mm, rotation_limit_deg):
         })
     return {
         "status": "passed" if measurements and all(item["passed"] for item in measurements) else "failed",
+        "validation": validation_metadata,
         "limits": {"translation_mm": translation_limit_mm, "rotation_deg": rotation_limit_deg},
         "reference_position_m": reference[:3, 3].astype(float).tolist(),
         "measurements": measurements,
@@ -190,12 +257,16 @@ def main():
     parser.add_argument("--camera-frame", default="camera_color_optical_frame")
     parser.add_argument("--squares-x", type=int, default=5)
     parser.add_argument("--squares-y", type=int, default=5)
-    parser.add_argument("--square-length-m", type=float, default=0.018)
-    parser.add_argument("--marker-length-m", type=float, default=0.013)
+    parser.add_argument("--square-length-m", type=float, default=DEFAULT_SQUARE_LENGTH_M)
+    parser.add_argument("--marker-length-m", type=float, default=DEFAULT_MARKER_LENGTH_M)
     parser.add_argument("--dictionary", default="DICT_4X4_50")
     parser.add_argument("--frames-per-pose", type=int, default=10)
+    parser.add_argument("--minimum-poses", type=int, default=5)
     parser.add_argument("--timeout", type=float, default=10.0)
-    parser.add_argument("--max-joint-velocity", type=float, default=0.03)
+    parser.add_argument("--max-joint-velocity", type=float, default=0.03,
+                        help="deprecated compatibility option; position stability is authoritative")
+    parser.add_argument("--stationary-duration-sec", type=float, default=0.75)
+    parser.add_argument("--stationary-position-tolerance-rad", type=float, default=0.001)
     parser.add_argument("--translation-limit-mm", type=float, default=15.0)
     parser.add_argument("--rotation-limit-deg", type=float, default=1.5)
     parser.add_argument("--output", type=Path)
@@ -204,6 +275,12 @@ def main():
         parser.error("unknown ArUco dictionary: %s" % args.dictionary)
     if args.frames_per_pose < 1:
         parser.error("--frames-per-pose must be positive")
+    if args.minimum_poses < 3:
+        parser.error("--minimum-poses must be at least three")
+    if args.stationary_duration_sec <= 0.0:
+        parser.error("--stationary-duration-sec must be positive")
+    if args.stationary_position_tolerance_rad <= 0.0:
+        parser.error("--stationary-position-tolerance-rad must be positive")
 
     rclpy.init()
     node = FixedBoardValidator(args)
@@ -211,7 +288,7 @@ def main():
     thread.start()
     poses, reprojection = [], []
     print("Keep the board fixed. Stop the arm, then press Enter to measure each pose.")
-    print("Enter q when at least three different arm poses have been measured.")
+    print("Enter q when at least %d different arm poses have been measured." % args.minimum_poses)
     try:
         while True:
             command = input("measure [Enter], finish [q]: ").strip().lower()
@@ -234,10 +311,33 @@ def main():
         rclpy.shutdown()
         thread.join(timeout=2.0)
 
-    if len(poses) < 3:
-        print("validation requires at least three measured arm poses", file=sys.stderr)
+    if len(poses) < args.minimum_poses:
+        print(
+            "validation requires at least %d measured arm poses" % args.minimum_poses,
+            file=sys.stderr,
+        )
         return 1
-    result = result_dict(poses, reprojection, args.translation_limit_mm, args.rotation_limit_deg)
+    result = result_dict(
+        poses,
+        reprojection,
+        args.translation_limit_mm,
+        args.rotation_limit_deg,
+        {
+            "board": {
+                "squares_x": args.squares_x,
+                "squares_y": args.squares_y,
+                "square_length_m": args.square_length_m,
+                "marker_length_m": args.marker_length_m,
+                "dictionary": args.dictionary,
+            },
+            "frames_per_pose": args.frames_per_pose,
+            "minimum_poses": args.minimum_poses,
+            "stationary_duration_sec": args.stationary_duration_sec,
+            "stationary_position_tolerance_rad": args.stationary_position_tolerance_rad,
+            "base_frame": args.base_frame,
+            "camera_frame": args.camera_frame,
+        },
+    )
     for item in result["measurements"]:
         print(
             "pose %d: drift %.2f mm, %.2f deg, %s"

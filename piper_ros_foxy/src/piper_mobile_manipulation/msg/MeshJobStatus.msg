@@ -1,0 +1,10 @@
+std_msgs/Header header
+string task_id
+string mesh_job_id
+string state
+string reason
+string dataset_path
+string manifest_sha256
+string mesh_path
+string mesh_sha256
+string quality_report_json

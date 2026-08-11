@@ -24,14 +24,43 @@
     # direct SDK-interpolated target segments; it does not emit intermediate
     # hardware commands from this value.
     trajectory_joint_step_rad: 0.025
-    trajectory_command_rate_hz: 100.0
+    trajectory_command_rate_hz: 20.0
     speed_percent: 5.0
     roll_samples_rad: [-2.094395102, -1.047197551, 0.0, 1.047197551, 2.094395102, 3.141592654]
     deterministic_seed: 42
     # Nearest one-joint collision-qualified adjustment of the operator's
     # feedback pose; J3 is 0.050 rad lower than the folded original.
-    return_home_positions_rad: [0.000366362, 0.0, 0.0, 0.0, 0.43869236, 0.0]
+    # Launchers override this from the hash-verified repository home file.
+    # Keep the packaged fallback aligned so a proposal can never qualify a
+    # different terminal pose.
+    return_home_positions_rad: [-0.010187296, 0.0, -0.01692068, 0.068485144, 0.441280868, 0.012594568]
     # Must remain false until gripper TCP/open/closed/attached-object/contact
     # collision qualification has been completed on the installed hardware.
     manipulation_model_qualified: false
+    # Automatic scanning may advance only one compact target-centred viewing
+    # direction before measuring and replanning from achieved FK.
+    # A 20-degree frontier stranded one-view replanning at the edge of an
+    # already-captured sector. Do not spend a capture on less than eight
+    # degrees of target-to-camera direction change; the 15-degree candidate
+    # grid still supplies compact reachable steps.
+    # At normal elevation, measured FK may land between fixed 15-degree grid
+    # samples; the next grid pose can then be about seven target-ray degrees
+    # away. Keep that visually distinct neighbor eligible.
+    closed_loop_min_view_step_deg: 6.0
+    # Forty-five degrees is still one compact
+    # observation/replan step, while allowing movement between face/axis
+    # directions. Dense optical-cone, standoff and collision checks remain.
+    # Close targets advance one measured view at a time; a 30-degree frontier
+    # keeps SAM tracking inside a compact replan while still crossing the
+    # target-facing hemisphere over multiple accepted captures.
+    closed_loop_max_view_step_deg: 30.0
+    # The bounded shortlist alternates highest-new-coverage candidates with
+    # compact fallbacks that advance toward that same missing-feature goal,
+    # so diversity cannot prune every reachable stepping stone or reverse it.
+    closed_loop_candidate_limit: 36
+    # Camera position supplies feature coverage. Preserve the achieved safe
+    # optical direction by up to 12 degrees instead of forcing every close
+    # candidate to an exact target-centred wrist pose. The executor still
+    # independently enforces its denser 20-degree target visibility cone.
+    closed_loop_max_aim_offset_deg: 12.0
     debug: true

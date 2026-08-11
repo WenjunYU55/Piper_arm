@@ -1,0 +1,267 @@
+schema_version: 1
+document: mission_goal_and_delivery_roadmap
+last_reviewed: '2026-08-11'
+authority:
+  purpose: >-
+    This is the durable source of truth for the product goal, milestone order,
+    completion gates, current status and the work the engineering agent must do.
+    Architecture remains authoritative in 10-system-map.yaml, interfaces in
+    30-contracts.yaml, runtime evidence in 40-flows.yaml, safety in
+    50-guardrails.yaml and detailed unresolved work in 60-debt.yaml.
+  status_vocabulary:
+    complete: Implemented and accepted with the evidence required by this roadmap.
+    software_complete_physical_pending: Implemented and offline-tested, but the current configuration has not passed its required supervised physical acceptance.
+    partial: Some production path exists, but required functionality or evidence is missing.
+    blocked: Work must not advance until the named safety or external dependency is satisfied.
+    pending: Not yet implemented or not yet exercised as an integrated milestone.
+
+mission_goal: >-
+  Build a dependable eye-in-hand PiPER subsystem for a tracked robot. The
+  tracked robot supplies a task identifier, open-vocabulary target text and a
+  rough target pose in its odometry frame. The always-resident coordinator
+  transforms and accepts that job, starts only the mission-owned arm,
+  perception and planning stack, safely normalizes the arm, visually acquires
+  the target near the rough coordinate, assesses and when qualified removes
+  harmful occlusions, captures diverse target-only RGB-D observations, safely
+  homes and disables the arm on every terminal path, stops only the children it
+  started, and returns a durable success/failure result to the tracked robot.
+  After the tracked robot reports that its base is home, the system reconstructs
+  and exposes a validated target mesh from the accepted observations.
+
+system_behavior_required:
+  input:
+    - One or more independently identified tasks, each with task_id, target label/prompt, confidence and rough pose with frame and timestamp; admit a bounded queue and scan the closest pending target first.
+    - The current GUI may emulate the tracked robot, but must use the same mission action contract.
+  startup:
+    - Coordinator and RViz remain resident between jobs.
+    - Exactly one coordinator owns a mission; duplicate owners or goals fail closed.
+    - Start driver, camera, TF, GPU perception, tracking, planning, capture and execution children with bounded health gates.
+    - Enable only after feedback and dependency preflight succeeds.
+    - Move J6 directly from storage to ready, then move directly to the configured rough home before task motion.
+    - Never overlap or pre-empt physical missions; finish validated capture state, home, disable, child cleanup and durable result before dispatching the closest remaining queued target.
+  acquisition:
+    - Transform the rough pose into piper_base_link when the mobile-base TF is available.
+    - Begin from the measured camera/arm pose and request the smallest practical camera-facing move.
+    - Observe and replan one look at a time: centered first, then approximately 15-degree up, down, left and right looks.
+    - Stop immediately on a fresh measured target lock and fail safely after at most five distinct looks.
+    - No fixed rectangular, radial or height workspace may reject a pose; finite joints, IK, collision, visibility, sensor range and runtime state remain authoritative.
+  occlusion_handling:
+    - Run a dedicated settled heavy RGB-D observation after target lock; acquisition evidence cannot declare the scene clear.
+    - Decide whether foreground geometry materially harms target capture quality.
+    - If clear, proceed without touching the scene.
+    - If harmful and qualified, choose the least invasive safe push or pick/place action using exact observed geometry and an observed supported placement region.
+    - Reobserve after every physical action and repeat only within the bounded action budget until clear.
+    - Unknown objects, people, missing geometry or unqualified manipulation return NEEDS_OPERATOR; they never authorize contact.
+  scanning:
+    - Use the measured target, never the rough hint, after lock.
+    - Plan one reachable collision-free next view at a time from measured achieved FK and measured masked RGB-D surface coverage.
+    - Prefer views that expose missing target faces and distinctive features, including both Y sides, while retaining compact IK alternatives for close targets.
+    - Persist synchronized RGB, raw/aligned depth, mask, intrinsics, capture-time TF, joints, target pose, plan identity and quality evidence for every accepted capture.
+    - Require GOOD and CLEAR evidence; reject stale or bad views without counting them and replan from the measured held pose.
+    - Treat eight accepted captures only as a measured-model seed; continue adaptively through at most twenty-four until side/span floors and three consecutive measured novel-surface gains at or below 0.02 pass, or fail safely when no meaningful safe view remains.
+  terminal_behavior:
+    - Success, controllable failure and manual Cancel/Home first stop and hold the measured current pose.
+    - Request a fresh direct ROUGH_HOME target and then a direct J6-only STORAGE_WRIST target.
+    - Dedicated home stages never retrace an old path and intentionally bypass only robot self-collision plus camera/tracking/obstacle freshness; the CAD-derived installed holder/L515 envelope must retain at least 0.005 m support-plane/external clearance, and hard limits, fresh trusted feedback/control, motor health, convergence, stable hold and disable proof remain mandatory.
+    - Stop all mission-owned nodes after disable while keeping coordinator and RViz ready.
+    - Return outcome, stable failure code, retryable flag, safe_shutdown, capture result and mesh job identity to the tracked robot or GUI emulator.
+  reconstruction:
+    - A successful arm mission creates a durable WAITING_FOR_BASE_HOME mesh job; it does not reconstruct immediately.
+    - Accept only an exact task/job/manifest-correlated tracked-robot-homed report.
+    - Run target-only registration and reconstruction in isolation, reject corrupt/inconsistent inputs, and publish durable mesh status plus the validated output hash/path.
+
+definition_of_done:
+  functional:
+    - The same production mission path works from the GUI emulator and the tracked-robot gateway.
+    - Close and farther reachable targets can be acquired from rough hints with error up to 0.10 m without a fixed software workspace box.
+    - Clear scenes produce feature-diverse, measured-converged RGB-D datasets and a usable mesh.
+    - Qualified rigid occlusions can be cleared by both push and pick/place, with heavy reobservation after each action.
+    - Every success, failure and cancellation reaches the configured two-stage storage posture, holds, disables all six motors and removes all mission-owned children unless control feedback is untrustworthy.
+    - The tracked robot receives a durable success/failure/retry result and can trigger reconstruction only after reporting base home.
+  acceptance:
+    - All affected offline tests, ROS builds, YAML checks and rootless Tesseract qualifications pass.
+    - All flow-specific mandatory smoke checks in 40-flows.yaml and 50-guardrails.yaml pass on the current hardware/configuration.
+    - Three consecutive supervised five-percent end-to-end missions pass without manual software intervention, with 8-24 GOOD/CLEAR records, required feature/three-view surface convergence, safe shutdown and exact child cleanup.
+    - Separate supervised cases pass for no-lock, bad capture replacement, cancel during motion, controllable component failure, clear scene, push occlusion, pick/place occlusion, tracked-base-home correlation and mesh reconstruction.
+    - Mounted deployment additionally proves odom-to-piper_base_link transformation, stationary/brake authority and chassis collision integration.
+  claim_rule: >-
+    Do not call the whole system complete because unit tests pass or because one
+    historical physical run succeeded. Completion requires current-version
+    evidence for every acceptance item above. Record failures as evidence,
+    repair their real cause, rerun affected offline checks, and repeat the
+    supervised case until it passes without weakening a safety or quality gate.
+
+current_baseline_2026_08_11:
+  working_or_implemented:
+    - Typed RunTargetScan action and gateway result with retryability, safe-shutdown, dataset and mesh-job fields.
+    - Always-resident singleton coordinator with bounded child ownership and GUI mission emulation.
+    - Open-vocabulary prompt propagation, centered-first five-look acquisition and measured tracking lock.
+    - Synchronized heavy RGB-D occlusion evidence and two-observation rigid-object proposal policy.
+    - One-view-at-a-time adaptive 8-to-24 feature-driven planning with achieved-FK diversity and three-view measured surface convergence.
+    - GOOD/CLEAR synchronized RGB-D/mask capture persistence and rejected-view replacement.
+    - Direct two-stage configured homing on terminal paths with robot self-collision exemption but mandatory CAD-holder external clearance, feedback-confirmed disable and owned-child cleanup.
+    - Durable delayed reconstruction job and exact tracked-base-home correlation interfaces.
+    - Bounded eight-admission multi-target queue with immediate gateway TF snapshot, one-second closest-first batching, stable arrival ties, exactly one active physical mission, queued cancellation and per-mission cache/process isolation.
+  proven_offline:
+    - The 2026-08-11 containment passes 29 driver package tests with one intentional skip, 319 mobile-manipulation tests, 92 Tesseract tests, affected package builds, and both command-free rootless qualifications. Core rejects the exact incident pose at 0.001245 m against the 0.005 m holder margin and validates the normal folded home across 3541 external-floor samples; compact also returns PASS.
+    - 162 defect-focused home/contract/worker/executor tests, 387 full mobile-manipulation/Tesseract tests and 282 focused ROS/GUI/driver/Tesseract tests pass.
+    - piper_mobile_manipulation and piper_tesseract_foxy build successfully.
+    - Exact saved-profile core and compact rootless qualifications pass with real_arm_motion=false.
+    - The target-only empty-scene plus exact-moving-segment snapshot fixes pass 144 focused tests and the complete 392-test ROS/Tesseract suite; piper_mobile_manipulation rebuilds and both rootless qualifications pass.
+    - Camera-clock hold/recovery and the ordinary 0.005-rad feedback-only boundary cap pass offline validation. A disabled preflight then measured J6 0.031677 rad beyond -pi after storage relaxation; the separate operator-qualified 0.3-rad allowance is now exact-first-point direct-RETURN_HOME-only. Automatic one-view plans now omit their unused embedded contingency home while manual batch retains it. The combined current tree passes 194 focused and 441 complete tests, rebuild and both rootless qualifications.
+  current_physical_state:
+    - GUI task gui-sim-a130d7ad58a54815ab36341ed324be82 physically exercised the current tesseract_stream_v1 implementation at 50 percent through acquisition and 24 GOOD/CLEAR captures. It achieved nine +Y and three -Y views, 113.51-degree azimuth and 37.46-degree elevation, then correctly failed INSUFFICIENT_CAPTURE_QUALITY because azimuth remained below 120 degrees and measured surface did not converge. No scheduled-stream overrun was logged; direct staged home, storage proof, six-axis disable and exact child cleanup completed with safe_shutdown=true. This is current stream and adaptive-NBV execution evidence, not 100-percent qualification or feature-completion acceptance.
+    - The next GUI task gui-sim-79f9f909f91148dda1f74b4292a4b5b5 physically proved the base_link-only frame repair, persisted three GOOD/CLEAR captures, rejected one fresh invalid view and planned a distinct replacement. The replacement reached and settled, but lower-level target_3d invalid was misclassified as ABORTED instead of VIEW_REJECTED. Safe shutdown again proved rough home, storage J6, hold, all six disabled and exact child cleanup without contact. The equivalence repair passes 114 focused, 327 full mobile and 92 Tesseract tests plus both command-free rootless qualifications; physical retry remains.
+    - Current idle state after software validation is arm disabled with coordinator and every mission-owned driver/camera/perception/planning child stopped; GUI and RViz remain display/input processes. Every new physical run requires explicit operator authorization and the read-only gate. The latest authorized mission used 50 percent; 100 percent remains unqualified.
+    - On 2026-08-11 GUI task gui-sim-0d67e6fce8404547b93b68c11d900d1a completed acquisition and CLEAR occlusion assessment, persisted ten GOOD/CLEAR observations, exercised same-pose evidence retry plus fresh-quality rejection/replacement, and completed external-floor-guarded ROUGH_HOME, STORAGE_WRIST, hold, six disabled axes and exact child cleanup without contact. It failed feature completion at +Y 3, -Y 0, 59.7-degree azimuth and 22.2-degree elevation because raw camera-frame /piper/target_3d briefly replaced the base_link NBV centre after tracking paused. The frame contract and misleading CONTROL_UNTRUSTWORTHY classification are repaired; the package rebuild, 327 mobile tests, 92 Tesseract tests and both command-free rootless qualifications pass. A new physical GUI validation is next.
+    - On 2026-08-11 GUI task gui-sim-d30410e05b9c405cb48e969fa818c173 persisted ten GOOD/CLEAR diverse views in scan_20260811_124232. The planner is accepted. During terminal direct home, the camera-holder/L515 contacted the table/floor and J5 disabled with multiple per-motor FOC faults. Exact geometry showed only 0.001245441 m holder clearance at the start versus the required 0.005 m.
+    - Immediately after that incident all six motor flags were false and hardware/mission processes were stopped. Mechanical inspection, fault-clear read-only feedback and operator reauthorization have since completed; the newer ten-capture mission above is the first contact-free post-incident full shutdown proof.
+    - The latest five-percent mission acquired the measured cube, passed the exact CLEAR workflow probe and persisted three GOOD/CLEAR captures before the fourth moving view held on a target-only obstacle-heartbeat gap.
+    - Automatic recovery again proved direct ROUGH_HOME, STORAGE_WRIST, final hold, six disabled flags and exact owned-child cleanup; coordinator/GUI/RViz remain resident.
+    - A later zero-capture retry proved motion-blur target loss and SAM2 WAITING_FOR_SEED were the remaining heartbeat cause; its recovery again completed direct rough/storage home, disable and cleanup.
+    - Exact-scene lifetime is bounded to one already-approved moving segment and requalified offline. Authorization is per physical run after read-only preflight; documentation must not infer continuing permission from a prior mission.
+    - GUI task gui-sim-c0bec4ab3ddd4550b666bb0d6889f3c2 physically proved relaxed disabled storage startup, STARTUP_WRIST, ROUGH_HOME, a look-two measured cube lock near [0.410,-0.026,0.004], exact CLEAR evidence, direct terminal rough/storage home, six disabled flags and exact child cleanup. Before capture, its automatic worker unnecessarily planned an unused embedded contingency home and rejected that storage corridor against the conservative cable envelope. Automatic one-view requests now omit that segment without weakening capture collision, visibility or joint checks; another physical retry is required.
+    - GUI task gui-sim-cbb777414fc446298157bcc5a54b35e5 then persisted eleven GOOD/CLEAR observations and physically crossed from positive to negative camera Y before obstacle_instance_3d_node crashed on a missing cv2 import. The mission again proved terminal rough/storage home, six disabled flags and exact child cleanup. The import, archived-mask regression and critical gpu_geometry child-exit supervision are repaired; a rebuilt adaptive retry remains required.
+    - GUI task gui-sim-f8ebc6a06e554d80be66f29756337945 persisted five GOOD/CLEAR views before the archived mask reader raced the responses-to-consumed rename. Rough home completed, but old code aborted STORAGE_WRIST on a transient motion-limit freshness gap near J6 -1.139 rad, so safe_shutdown was false. Explicit recovery disabled the arm and stopped every hardware/mission child without further motion. Both fixes pass 143 focused, 518 broad and 11 isolated AI tests plus rebuild; coordinator, driver, camera, perception, planner and executor remain off.
+  not_yet_accepted:
+    - Three consecutive contact-free repetitions of current direct STARTUP_WRIST, ROUGH_HOME and STORAGE_WRIST behavior at an explicitly authorized speed; one current 50-percent full mission has passed.
+    - Current 7.5-degree flexible-region/current-look NBV strategy reaching both Y sides and measured convergence in a full physical mission.
+    - Current exact heavy occlusion evidence in a complete physical mission.
+    - Any autonomous push or pick/place execution; manipulation_model_qualified remains false.
+    - A physical tracked-base-home-triggered mesh job and inspected reconstructed PLY.
+    - Mounted tracked-robot odometry transform, chassis collision model and stationary/brake authority.
+    - Three consecutive current-version end-to-end successes.
+
+milestones:
+  - id: M0
+    name: Durable architecture and mission contract
+    status: complete
+    outcome: Goal, ownership, interfaces, flows, guardrails, debt and roadmap are durable and mutually linked under docs/ai.
+    evidence: All docs/ai YAML parses and project-structure routing names this roadmap.
+  - id: M1
+    name: Safe staged startup and terminal recovery
+    status: physical_acceptance_partial
+    depends_on: [M0]
+    remaining: Three consecutive current-version contact-free startup/home/disable repetitions and a deliberate cancel during motion are still required; prior J5/J6 incidents remain retained safety evidence.
+    evidence: The no-command motor smoke produced 583 consecutive all-six-enabled fault-free samples. During the earlier J6 fault the typed guard revoked authority at the first fault, sent no later command, proved six disabled flags and stopped every child. Schema-v3 binds negative storage, increasing startup and decreasing storage. The latest 50-percent task proved startup wrist, rough home, terminal storage wrist, stable hold, all-six disable and exact child cleanup with safe_shutdown=true. Two builds, 145 focused tests, 428 complete tests and both command-free rootless suites pass with exact +3.139536232/-3.139536232 stage deltas.
+    work:
+      - Inspect J6 wrist/cable after the collision flag and preserve the earlier J5 inspection evidence.
+      - Retain the recorded negative J6 storage branch; require schema-v3 and pre-enable rejection of a positive non-ready branch.
+      - Prove software-only all-six enable rollback/watchdog and exact CAD-holder incident-pose rejection, builds and rootless qualifications.
+      - Run the exact saved profile at five-percent speed with emergency stop ready.
+      - Prove STARTUP_WRIST changes only J6, ROUGH_HOME reaches all six configured joints, Cancel/Home uses a fresh direct route, STORAGE_WRIST reaches the configured J6, final hold is stable and all six motors disable.
+      - Test cancellation during real motion and one controllable perception/planning failure.
+    exit_criteria: Every case ends with exact stage evidence, configured-joint convergence, six disabled flags, zero mission-owned children and coordinator/RViz still resident.
+  - id: M2
+    name: Rough-coordinate target acquisition
+    status: software_complete_physical_pending
+    depends_on: [M1]
+    work:
+      - Validate centered-first one-look/replan behavior at close and farther reachable distances.
+      - Test hints offset by representative directions up to 0.10 m and require lock within five distinct looks.
+      - Test no-target and lost-target cases and verify safe terminal behavior.
+    exit_criteria: Fresh measured lock is obtained without unnecessary motion when visible; bounded misses return a retryable result and satisfy M1 shutdown evidence.
+  - id: M3
+    name: Exact occlusion assessment and iterative reobservation
+    status: software_complete_physical_pending
+    depends_on: [M2]
+    work:
+      - Validate clear, harmful rigid, unknown and human/hand scenes using synchronized archived RGB-D and exact capture-time TF.
+      - Require two associated heavy observations before contact authorization.
+      - Verify every proposed/confirmed action forces a new heavy observation and assessment.
+    exit_criteria: Clear scenes proceed; harmful qualified objects produce bounded proposals; unsafe or uncertain scenes return NEEDS_OPERATOR and still satisfy M1 shutdown evidence.
+  - id: M4
+    name: Qualified push and pick/place occlusion removal
+    status: blocked
+    depends_on: [M3]
+    blocker: Gripper TCP, open/closed finger geometry, attached-object lifecycle, allowed-contact policy, grasp closure, push contact and supported placement are not physically qualified; manipulation_model_qualified=false is mandatory.
+    work:
+      - Calibrate and validate gripper/TCP and collision states.
+      - Qualify a low-speed marker/stick outward push, then heavy reobservation.
+      - Qualify grasp, lift, observed-support placement, release and attached-object cleanup, then heavy reobservation.
+      - Add or enable a separately owned contact executor only after proposal-only and physical safety evidence passes.
+    exit_criteria: Both push and pick/place clear a harmful rigid occlusion without target disturbance or unsafe contact, and every failure returns through M1.
+  - id: M5
+    name: Feature-diverse measured NBV capture
+    status: physical_execution_passed_completion_open
+    depends_on: [M2, M3]
+    work:
+      - Preserve the accepted 24-view execution and safe shutdown from scan_20260811_190342; inspect why it stopped 6.49 degrees short of the azimuth floor and failed measured convergence.
+      - Run the current one-view closed loop on close and farther reachable targets.
+      - Audit actual camera position/look, both Y sides, azimuth/elevation spans, visible distinctive features and per-view novel masked surface.
+      - Inspect all persisted RGB-D/mask/TF metadata and tune ranking only from measured failures without weakening collision, visibility, standoff or GOOD/CLEAR gates.
+    exit_criteria: A current-version mission records 8-24 accepted captures, at least two views per Y side, at least 120 degrees azimuth, at least 25 degrees elevation and three consecutive novel-surface gains at or below 0.02.
+  - id: M6
+    name: Delayed target mesh reconstruction
+    status: software_complete_physical_pending
+    depends_on: [M5, M1]
+    work:
+      - Complete a successful dataset and verify its immutable manifest/hash.
+      - Send wrong and correct tracked-base-home identities and prove rejection/idempotence.
+      - Run isolated reconstruction, inspect registration metrics and visually inspect the PLY for completeness, duplicates and target-only geometry.
+    exit_criteria: Exact base-home correlation produces one durable successful mesh job and a usable validated mesh; corrupt or mismatched inputs fail without changing accepted data.
+  - id: M7
+    name: Tracked-robot production integration
+    status: partial
+    depends_on: [M1, M2, M5, M6]
+    work:
+      - Connect the real tracked-robot client to RunTargetScan through the gateway and verify durable completion/failure/retry semantics.
+      - Integrate and validate odom-to-piper_base_link TF without adding a fixed software workspace box.
+      - Add trustworthy stationary/brake authority and chassis/environment collision geometry before mounted arm motion.
+      - Validate reconnect, duplicate task, stale pose, covariance, timeout and base-home reporting behavior.
+    exit_criteria: Real tracked-robot jobs and base-home reports pass identity, transform, safety and recovery tests while the coordinator remains ready across sequential jobs.
+  - id: M8
+    name: Whole-system operational acceptance
+    status: pending
+    depends_on: [M1, M2, M3, M4, M5, M6, M7]
+    work:
+      - Execute the complete acceptance matrix, repair every discovered integration/logic defect at its owning module and repeat affected tests.
+      - Run three consecutive current-version end-to-end successes and the required failure/cancel cases.
+      - Freeze evidence, exact configuration hashes, operating limits and operator procedure.
+    exit_criteria: Every item under definition_of_done is evidenced; no milestone is pending, partial, blocked or accepted only by stale historical runs.
+
+next_execution_order:
+  - Audit scan_20260811_190342 achieved poses, masks, candidate failures and surface-gain sequence; repair the final coverage/convergence selection gap without weakening completion thresholds.
+  - Instrument and characterize tesseract_stream_v1 timing semantics; preserve full collision-qualified geometry and keep 100 percent unqualified.
+  - Complete remaining M1 deliberate cancel-to-hold and three-repeat staged startup/home/disable acceptance under explicit physical authorization.
+  - M2 close/far and 0.10 m-offset acquisition matrix.
+  - M3 clear/rigid/unknown exact heavy-occlusion matrix.
+  - M5 clear-scene feature-diverse adaptive 8-to-24 capture and three-view measured convergence.
+  - M6 tracked-base-home handshake and physical dataset reconstruction.
+  - M4 contact-model qualification, push first and pick/place second.
+  - M7 real tracked-base integration and mounted safety authority.
+  - M8 three consecutive full missions plus failure/cancel acceptance.
+
+engineering_agent_obligations:
+  before_work:
+    - Read docs/ai in the index order and use ownership, contracts, flows, guardrails and debt as the navigation map.
+    - Check this roadmap and identify the active milestone, its dependencies, mandatory retests and whether physical authorization exists.
+    - Inspect current process/hardware state read-only before any live action; never infer safety from an old run.
+  during_work:
+    - Trace failures across the entire relevant flow and fix the owning cause rather than suppressing symptoms or weakening gates.
+    - Keep changes within owner_module and allowed_edit_paths unless coordinated dependencies are reviewed.
+    - Preserve coordinator/RViz lifetime, exclusive command ownership, Cancel/Home availability and safe terminal behavior.
+    - Use one observation/action/view and replan from measured state rather than committing a rigid open-loop sequence.
+    - Never run physical motion, camera or live-node tests unless the operator explicitly authorizes that test phase.
+    - Stop immediately on emergency stop, untrusted feedback/control, unexpected contact, strain or unsafe physical behavior and report NEEDS_OPERATOR.
+  after_each_change:
+    - Run the flow-specific tests required by 40-flows.yaml and 50-guardrails.yaml, then proportionate wider regressions, builds and command-free qualifications.
+    - Update every stale docs/ai YAML, this roadmap status/evidence, operator documentation and project-structure when layout changes.
+    - Distinguish software-complete, command-free qualified and physically accepted; never promote one into another.
+  after_each_physical_run:
+    - Record task/session IDs, exact configuration hashes, observed behavior, capture/coverage metrics, home error, motor flags, child cleanup and failure cause.
+    - If the run fails, preserve evidence, diagnose, implement the smallest owning fix, rerun offline checks and repeat only after explicit authorization remains clear.
+    - Do not stop at the first successful run when the milestone requires repetition or a matrix of conditions.
+
+operator_dependencies:
+  - Explicitly authorize each physical test phase and keep emergency stop access and a supervised clear bench.
+  - Place/remove targets or occluders and confirm unexpected physical contact/strain when a test requires it.
+  - Keep the tracked base stationary until brake authority and mounted collision/TF integration are accepted.
+  - Provide the real tracked-robot endpoint/network and its odometry/base-home behavior for M7.
+  - Approve manipulation calibration/contact fixtures before M4; software must not infer that authority.
+
+roadmap_update_protocol:
+  - Update last_reviewed, milestone status, evidence and next_execution_order whenever accepted evidence or a blocker changes.
+  - Put detailed defect histories and deferred cleanup in 60-debt.yaml; keep this file concise enough to answer what the goal is, what remains and what happens next.
+  - A milestone may move to complete only when its exit criteria are met on the current implementation and configuration.
+  - If code and roadmap disagree, code plus current test evidence describe behavior, but the task is not finished until this roadmap and every affected architecture document are corrected.

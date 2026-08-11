@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import json
+import math
+import time
 
 import rclpy
 from rclpy.node import Node
@@ -11,6 +13,7 @@ from piper_mobile_manipulation.msg import Target3D, TrackedTarget
 from piper_mobile_manipulation.scan_motion import orbit_camera_view
 from piper_mobile_manipulation.scan_session_memory import (
     filter_and_order_viewpoints,
+    history_coverage_target_center,
     validate_history_payload,
 )
 
@@ -49,6 +52,47 @@ def evenly_downsample(values, max_count):
     return [values[i] for i in indexes]
 
 
+def viewpoint_replan_required(
+        last_center, center, last_history_signature, history_signature,
+        translation_threshold_m, elapsed_sec, minimum_period_sec):
+    """Suppress tracker-rate duplicates while preserving meaningful replans."""
+    if last_center is None or last_history_signature != history_signature:
+        return True
+    displacement = math.sqrt(sum(
+        (float(center[axis]) - float(last_center[axis])) ** 2
+        for axis in ('x', 'y', 'z')))
+    if displacement < max(0.0, float(translation_threshold_m)):
+        return False
+    return float(elapsed_sec) >= max(0.0, float(minimum_period_sec))
+
+
+def viewpoint_refresh_required(elapsed_sec, refresh_period_sec):
+    """Keep an unchanged safe candidate set fresh for downstream gates."""
+    elapsed = float(elapsed_sec)
+    period = float(refresh_period_sec)
+    if not math.isfinite(elapsed) or not math.isfinite(period) or period <= 0.0:
+        return False
+    return elapsed >= period
+
+
+def target_frame_rejection_reason(frame_id, planning_frame_id='base_link'):
+    """Reject target coordinates that are not already in the planning frame.
+
+    ``/piper/target_3d`` is normally a camera-optical-frame measurement while
+    ``/piper/tracked_target`` is expressed in ``base_link``. Treating the raw
+    fallback numbers as base coordinates can move an otherwise valid NBV dome
+    to a fictitious target after a short tracker publication gap.
+    """
+    supplied = str(frame_id).strip()
+    expected = str(planning_frame_id).strip()
+    if not expected:
+        return 'scan planning frame is not configured'
+    if supplied != expected:
+        return 'target frame %s is not scan planning frame %s' % (
+            supplied or '<empty>', expected)
+    return ''
+
+
 class ScanViewpointPlannerNode(Node):
     def __init__(self):
         super().__init__('scan_viewpoint_planner_node')
@@ -61,17 +105,19 @@ class ScanViewpointPlannerNode(Node):
         self.declare_parameter('scan_coverage_topic', '/piper/scan_coverage')
         self.declare_parameter(
             'scan_session_history_topic', '/piper/scan_session_history')
+        self.declare_parameter('planning_frame_id', 'base_link')
 
         self.declare_parameter('desired_scan_angle_deg', 250)
         self.declare_parameter('viewpoint_center_angle_deg', 0.0)
-        self.declare_parameter('viewpoint_step_deg', 15)
+        self.declare_parameter('viewpoint_step_deg', 7.5)
         self.declare_parameter('scan_radius_m', 0.45)
+        self.declare_parameter('scan_radius_offsets_m', [0.0, -0.06, 0.06])
         self.declare_parameter('min_scan_radius_m', 0.30)
         self.declare_parameter('max_scan_radius_m', 0.80)
         self.declare_parameter('camera_pitch_deg', -10)
         self.declare_parameter('camera_pitch_offsets_deg', [0.0])
         self.declare_parameter('keep_object_centered', True)
-        self.declare_parameter('max_viewpoints', 20)
+        self.declare_parameter('max_viewpoints', 25)
         self.declare_parameter('dry_run', True)
         self.declare_parameter('debug', True)
         self.declare_parameter('use_predicted_target_for_scan', True)
@@ -79,11 +125,18 @@ class ScanViewpointPlannerNode(Node):
         self.declare_parameter('session_max_views', 13)
         self.declare_parameter('duplicate_position_tolerance_m', 0.012)
         self.declare_parameter('duplicate_look_tolerance_deg', 2.0)
+        self.declare_parameter('target_replan_translation_m', 0.01)
+        self.declare_parameter('target_replan_min_period_sec', 0.5)
+        self.declare_parameter('target_plan_refresh_period_sec', 0.5)
 
         self.target_status = 'UNKNOWN'
         self.latest_camera_info = None
         self.last_tracked_time = None
         self.latest_history = None
+        self.last_planned_center = None
+        self.last_planned_history_signature = None
+        self.last_plan_monotonic = 0.0
+        self.last_frame_warning_monotonic = 0.0
         self.pub_viewpoints = self.create_publisher(
             String, self.get_parameter('scan_viewpoints_topic').value, 10
         )
@@ -155,6 +208,17 @@ class ScanViewpointPlannerNode(Node):
     def target_cb(self, msg, source):
         if not msg.valid:
             return
+        frame_rejection = target_frame_rejection_reason(
+            msg.header.frame_id,
+            self.get_parameter('planning_frame_id').value)
+        if frame_rejection:
+            now = time.monotonic()
+            if now - self.last_frame_warning_monotonic >= 5.0:
+                self.get_logger().warn(
+                    'Ignoring %s for multiview planning: %s; waiting for a '
+                    'transformed tracked target' % (source, frame_rejection))
+                self.last_frame_warning_monotonic = now
+            return
         if source in ('target_3d', 'object_of_interest_3d') and \
                 self.recent_tracked_target_available():
             return
@@ -170,31 +234,57 @@ class ScanViewpointPlannerNode(Node):
             'z': float(msg.point.z),
         }
         frame_id = msg.header.frame_id
-        angles = self.viewpoint_angles()
-        radius = self.scan_radius()
-        viewpoints = []
-        index = 0
-        for pitch_offset_deg in self.get_parameter(
-                'camera_pitch_offsets_deg').value:
-            pitch_deg = (
-                float(self.get_parameter('camera_pitch_deg').value)
-                + float(pitch_offset_deg))
-            for angle_deg in angles:
-                viewpoint = self.make_viewpoint(
-                    index, angle_deg, radius, center, frame_id, pitch_deg)
-                viewpoints.append(viewpoint)
-                index += 1
         history = self.latest_history or {
             'session_id': '',
             'accepted_views': 0,
             'max_views': int(self.get_parameter('session_max_views').value),
             'entries': [],
         }
+        history_signature = json.dumps(
+            history, sort_keys=True, separators=(',', ':'))
+        now = time.monotonic()
+        replan_required = viewpoint_replan_required(
+                self.last_planned_center,
+                center,
+                self.last_planned_history_signature,
+                history_signature,
+                self.get_parameter('target_replan_translation_m').value,
+                now - self.last_plan_monotonic,
+                self.get_parameter('target_replan_min_period_sec').value)
+        refresh_required = viewpoint_refresh_required(
+            now - self.last_plan_monotonic,
+            self.get_parameter('target_plan_refresh_period_sec').value)
+        if not replan_required and not refresh_required:
+            return
+        angles = self.viewpoint_angles()
+        radius = self.scan_radius()
+        viewpoints = []
+        index = 0
+        for radius_offset_m in self.get_parameter(
+                'scan_radius_offsets_m').value:
+            flexible_radius = min(
+                float(self.get_parameter('max_scan_radius_m').value),
+                max(
+                    float(self.get_parameter('min_scan_radius_m').value),
+                    radius + float(radius_offset_m)))
+            for pitch_offset_deg in self.get_parameter(
+                    'camera_pitch_offsets_deg').value:
+                pitch_deg = (
+                    float(self.get_parameter('camera_pitch_deg').value)
+                    + float(pitch_offset_deg))
+                for angle_deg in angles:
+                    viewpoint = self.make_viewpoint(
+                        index, angle_deg, flexible_radius, center, frame_id,
+                        pitch_deg)
+                    viewpoints.append(viewpoint)
+                    index += 1
         viewpoints = filter_and_order_viewpoints(
             viewpoints,
             history['entries'],
             self.get_parameter('duplicate_position_tolerance_m').value,
             self.get_parameter('duplicate_look_tolerance_deg').value,
+            accepted_entries=history.get('accepted_entries', []),
+            target_center=history_coverage_target_center(history, center),
         )
         remaining = max(
             0, int(history['max_views']) - int(history['accepted_views']))
@@ -229,6 +319,8 @@ class ScanViewpointPlannerNode(Node):
                     'session_id': history['session_id'],
                     'accepted_views': int(history['accepted_views']),
                     'max_views': int(history['max_views']),
+                    'coverage_target_center': history_coverage_target_center(
+                        history, center),
                 },
                 'remaining_viewpoints': int(remaining),
                 'viewpoints': viewpoints,
@@ -260,6 +352,9 @@ class ScanViewpointPlannerNode(Node):
             sort_keys=True,
         )
         self.pub_coverage.publish(coverage_msg)
+        self.last_planned_center = dict(center)
+        self.last_planned_history_signature = history_signature
+        self.last_plan_monotonic = now
 
         if self.param_bool('debug'):
             self.get_logger().info(

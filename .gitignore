@@ -41,6 +41,10 @@ AI_perception_tests/test_sets/real_l515_baseline/
 AI_perception_tests/test_sets/real_l515_baseline/*_results.yaml
 AI_perception_tests/test_sets/real_l515_baseline/ai_readiness_summary.yaml
 
+# Local third-party literature archive. Keep citations/notes in the repository,
+# but do not publish large copyrighted source PDFs with the robot software.
+sources/
+
 # Local AI model checkouts, environments, and weights
 AI_perception_tests/groundingdino_test/Grounded-SAM-2/
 AI_perception_tests/groundingdino_test/GroundingDINO/

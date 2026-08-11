@@ -9,7 +9,8 @@ from piper_mobile_manipulation.mission_core import sha256_value
 
 
 class MissionSpool:
-    SUBDIRECTORIES = ('goals', 'status', 'results', 'heartbeat')
+    SUBDIRECTORIES = (
+        'goals', 'status', 'results', 'heartbeat', 'base_home', 'mesh_jobs')
 
     def __init__(self, root):
         self.root = Path(root).expanduser().resolve()

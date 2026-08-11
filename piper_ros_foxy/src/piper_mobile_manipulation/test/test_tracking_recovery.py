@@ -1,4 +1,5 @@
 from collections import deque
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -6,9 +7,13 @@ import cv2
 import numpy as np
 import pytest
 import yaml
+from std_msgs.msg import Header
 
 from piper_mobile_manipulation.occlusion_checker_node import OcclusionCheckerNode
-from piper_mobile_manipulation.obstacle_instance_3d_node import ObstacleInstance3DNode
+from piper_mobile_manipulation.obstacle_instance_3d_node import (
+    ObstacleInstance3DNode,
+    tf_listener_recovery_due,
+)
 from piper_mobile_manipulation.safe_servo_node import SafeServoNode
 from piper_mobile_manipulation.sam2_live_bridge_node import Sam2LiveBridgeNode
 from piper_mobile_manipulation.target_tracker_node import TargetTrackerNode
@@ -35,7 +40,56 @@ class FakePublisher:
         self.messages.append(message)
 
 
-def test_empty_rough_acquisition_result_emits_correlated_clear_scene():
+def test_live_target_only_scene_publishes_without_waiting_for_tf():
+    publisher = FakePublisher()
+
+    class FakeBridge:
+        @staticmethod
+        def imgmsg_to_cv2(message, _encoding):
+            return message.pixels
+
+    class TfMustNotBeUsed:
+        @staticmethod
+        def lookup_transform(*_args, **_kwargs):
+            raise AssertionError('target-only clear scene does not require TF')
+
+    header = Header()
+    header.stamp.sec = 12
+    header.stamp.nanosec = 34
+    header.frame_id = 'camera_color_optical_frame'
+    ids_msg = SimpleNamespace(
+        header=header,
+        pixels=np.ones((4, 5), dtype=np.uint16),
+    )
+    depth_msg = SimpleNamespace(
+        header=header,
+        encoding='16UC1',
+        pixels=np.full((4, 5), 400, dtype=np.uint16),
+    )
+    info_msg = SimpleNamespace(header=header, k=[1.0] * 9)
+    node = SimpleNamespace(
+        bridge=FakeBridge(),
+        publisher=publisher,
+        tf_buffer=TfMustNotBeUsed(),
+        get_parameter=lambda name: SimpleNamespace(value={
+            'base_frame': 'base_link',
+        }[name]),
+    )
+
+    ObstacleInstance3DNode.process(
+        node, ids_msg, depth_msg, info_msg,
+        {'objects': [{'object_id': 1, 'role': 'target'}]},
+    )
+
+    assert len(publisher.messages) == 1
+    scene = publisher.messages[0]
+    assert scene.header is header
+    assert not scene.scene_blocked
+    assert list(scene.instances) == []
+    assert scene.blocking_reason == 'clear:live_target_only_frame'
+
+
+def test_exact_empty_rough_acquisition_emits_correlated_clear_scene():
     publisher = FakePublisher()
     node = SimpleNamespace(
         publisher=publisher,
@@ -46,6 +100,7 @@ def test_empty_rough_acquisition_result_emits_correlated_clear_scene():
         '"worker_status":"target_mask_missing",'
         '"reason":"rough_acquisition_viewpoint",'
         '"obstacle_count":0,'
+        '"unsafe_obstacle_count":0,'
         '"image_stamp":{"sec":12,"nanosec":34}}'))
 
     ObstacleInstance3DNode.heavy_status_cb(node, status)
@@ -70,7 +125,208 @@ def test_obstacle_only_result_is_not_misreported_as_clear():
         '"worker_status":"target_mask_missing",'
         '"reason":"rough_acquisition_viewpoint",'
         '"obstacle_count":1,'
+        '"unsafe_obstacle_count":1,'
         '"image_stamp":{"sec":12,"nanosec":34}}'))
+
+    ObstacleInstance3DNode.heavy_status_cb(node, status)
+
+    assert publisher.messages == []
+
+
+def test_target_missing_scan_reacquisition_never_claims_clear_scene():
+    publisher = FakePublisher()
+    node = SimpleNamespace(
+        publisher=publisher,
+        get_parameter=lambda _name: SimpleNamespace(value='base_link'),
+    )
+    status = SimpleNamespace(data=(
+        '{"state":"worker_result_rejected",'
+        '"worker_status":"target_mask_missing",'
+        '"reason":"sam2_target_lost_retry",'
+        '"obstacle_count":0,'
+        '"unsafe_obstacle_count":0,'
+        '"image_stamp":{"sec":15,"nanosec":61}}'))
+
+    ObstacleInstance3DNode.heavy_status_cb(node, status)
+
+    assert publisher.messages == []
+
+
+def test_published_target_only_probe_emits_exact_clear_scene():
+    publisher = FakePublisher()
+    node = SimpleNamespace(
+        publisher=publisher,
+        get_parameter=lambda _name: SimpleNamespace(value='base_link'),
+    )
+    status = SimpleNamespace(data=(
+        '{"state":"published","reason":"workflow_occlusion_probe",'
+        '"obstacle_count":0,"unsafe_obstacle_count":0,'
+        '"image_stamp":{"sec":15,"nanosec":61}}'))
+
+    ObstacleInstance3DNode.heavy_status_cb(node, status)
+
+    assert len(publisher.messages) == 1
+    scene = publisher.messages[0]
+    assert scene.header.stamp.sec == 15
+    assert scene.header.stamp.nanosec == 61
+    assert not scene.scene_blocked
+    assert list(scene.instances) == []
+
+
+def test_published_obstacle_probe_emits_blocking_exact_scene():
+    publisher = FakePublisher()
+    node = SimpleNamespace(
+        publisher=publisher,
+        get_parameter=lambda _name: SimpleNamespace(value='base_link'),
+    )
+    status = SimpleNamespace(data=(
+        '{"state":"published","reason":"workflow_occlusion_probe",'
+        '"obstacle_count":1,"unsafe_obstacle_count":1,'
+        '"obstacle_labels":["unknown depth foreground"],'
+        '"obstacle_confidences":[1.0],'
+        '"tracked_objects":[{"object_id":2,"role":"obstacle",'
+        '"label":"unknown depth foreground","confidence":1.0,'
+        '"unsafe":true}],'
+        '"image_stamp":{"sec":15,"nanosec":61}}'))
+
+    ObstacleInstance3DNode.heavy_status_cb(node, status)
+
+    assert len(publisher.messages) == 1
+    scene = publisher.messages[0]
+    assert scene.scene_blocked
+    assert not scene.instances
+    assert 'semantic_probe_projection_failed' in scene.blocking_reason
+
+
+def test_published_obstacle_probe_projects_archived_masks(tmp_path):
+    job_id = 'projection-regression'
+    request_dir = tmp_path / 'archive' / job_id
+    response_dir = tmp_path / 'consumed' / job_id
+    request_dir.mkdir(parents=True)
+    response_dir.mkdir(parents=True)
+    depth = np.full((20, 20), 400, dtype=np.uint16)
+    np.save(str(request_dir / 'depth.npy'), depth)
+    with (request_dir / 'request.yaml').open('w', encoding='utf-8') as stream:
+        yaml.safe_dump({
+            'depth_encoding': '16UC1',
+            'camera_matrix': [100.0, 0.0, 10.0, 0.0, 100.0, 10.0,
+                              0.0, 0.0, 1.0],
+            'frame_id': 'camera_color_optical_frame',
+        }, stream)
+    target_mask = np.zeros((20, 20), dtype=np.uint8)
+    target_mask[7:17, 7:17] = 255
+    obstacle_mask = np.zeros((20, 20), dtype=np.uint8)
+    obstacle_mask[2:10, 7:17] = 255
+    assert cv2.imwrite(str(response_dir / 'target_mask.png'), target_mask)
+    assert cv2.imwrite(str(response_dir / 'obstacle_2.png'), obstacle_mask)
+
+    transform = SimpleNamespace(transform=SimpleNamespace(
+        translation=SimpleNamespace(x=0.0, y=0.0, z=0.0),
+        rotation=SimpleNamespace(x=0.0, y=0.0, z=0.0, w=1.0),
+    ))
+    publisher = FakePublisher()
+    parameters = {
+        'base_frame': 'base_link',
+        'heavy_spool_dir': str(tmp_path),
+        'transform_timeout_sec': 0.20,
+        'movable_whitelist': ['stick'],
+        'depth_min_m': 0.25,
+        'depth_max_m': 1.20,
+        'min_valid_depth_pixels': 20,
+        'min_valid_depth_ratio': 0.40,
+        'mask_erode_px': 0,
+        'bounds_low_percentile': 2.0,
+        'bounds_high_percentile': 98.0,
+    }
+    node = SimpleNamespace(
+        publisher=publisher,
+        tf_buffer=SimpleNamespace(lookup_transform=lambda *_args, **_kwargs: transform),
+        heavy_tracks={},
+        track_generation='test-generation',
+        get_parameter=lambda name: SimpleNamespace(value=parameters[name]),
+        config=lambda: {
+            name: parameters[name] for name in (
+                'depth_min_m', 'depth_max_m', 'min_valid_depth_pixels',
+                'min_valid_depth_ratio', 'mask_erode_px',
+                'bounds_low_percentile', 'bounds_high_percentile')
+        },
+        set_point=ObstacleInstance3DNode.set_point,
+        set_footprint=ObstacleInstance3DNode.set_footprint,
+    )
+    node.match_heavy_track = lambda label, center: (
+        ObstacleInstance3DNode.match_heavy_track(node, label, center))
+    status = SimpleNamespace(data=json.dumps({
+        'state': 'published',
+        'reason': 'workflow_occlusion_probe',
+        'job_id': job_id,
+        'obstacle_count': 1,
+        'unsafe_obstacle_count': 0,
+        'tracked_objects': [{
+            'object_id': 2,
+            'role': 'obstacle',
+            'label': 'stick',
+            'confidence': 0.9,
+            'unsafe': False,
+            'mask_file': 'obstacle_2.png',
+        }],
+        'image_stamp': {'sec': 15, 'nanosec': 61},
+    }))
+
+    ObstacleInstance3DNode.heavy_status_cb(node, status)
+
+    assert len(publisher.messages) == 1
+    scene = publisher.messages[0]
+    assert len(scene.instances) == 1
+    assert scene.instances[0].valid
+    assert scene.instances[0].semantic_label == 'stick'
+    assert scene.instances[0].track_id.startswith('heavy-test-generation-stick-')
+    assert scene.blocking_reason == 'clear'
+
+
+def test_archived_mask_read_survives_response_to_consumed_atomic_move(
+        tmp_path, monkeypatch):
+    job_id = 'atomic-move-regression'
+    response_dir = tmp_path / 'responses' / job_id
+    consumed_dir = tmp_path / 'consumed' / job_id
+    response_dir.mkdir(parents=True)
+    consumed_dir.parent.mkdir(parents=True)
+    mask_path = response_dir / 'target_mask.png'
+    mask = np.full((12, 16), 255, dtype=np.uint8)
+    assert cv2.imwrite(str(mask_path), mask)
+    original_imread = cv2.imread
+    moved = {'done': False}
+
+    def moving_imread(path, mode):
+        if str(path) == str(mask_path.resolve()) and not moved['done']:
+            response_dir.rename(consumed_dir)
+            moved['done'] = True
+        return original_imread(path, mode)
+
+    monkeypatch.setattr(cv2, 'imread', moving_imread)
+    node = SimpleNamespace(get_parameter=lambda _name: SimpleNamespace(
+        value=str(tmp_path)))
+
+    recovered = ObstacleInstance3DNode.heavy_response_mask(
+        node, job_id, 'target_mask.png')
+
+    assert moved['done']
+    assert recovered is not None
+    assert recovered.shape == mask.shape
+
+
+def test_worker_failure_does_not_refresh_clear_scene():
+    publisher = FakePublisher()
+    node = SimpleNamespace(
+        publisher=publisher,
+        get_parameter=lambda _name: SimpleNamespace(value='base_link'),
+    )
+    status = SimpleNamespace(data=(
+        '{"state":"worker_result_rejected",'
+        '"worker_status":"inference_failed",'
+        '"reason":"sam2_target_lost_retry",'
+        '"obstacle_count":0,'
+        '"unsafe_obstacle_count":0,'
+        '"image_stamp":{"sec":15,"nanosec":61}}'))
 
     ObstacleInstance3DNode.heavy_status_cb(node, status)
 
@@ -679,3 +935,16 @@ def test_safe_servo_holds_until_tracker_is_actively_tracking():
     reason = SafeServoNode.stop_reason(servo, SimpleNamespace())
 
     assert reason == 'target_status=SEARCHING'
+
+
+def test_tf_listener_recovery_requires_continuous_failure_window():
+    assert not tf_listener_recovery_due(
+        False, 10.0, 0.0, 20.0, 3.0, 2.0)
+    assert not tf_listener_recovery_due(
+        True, None, 0.0, 20.0, 3.0, 2.0)
+    assert not tf_listener_recovery_due(
+        True, 10.0, 0.0, 12.9, 3.0, 2.0)
+    assert not tf_listener_recovery_due(
+        True, 10.0, 12.5, 13.1, 3.0, 2.0)
+    assert tf_listener_recovery_due(
+        True, 10.0, 10.0, 13.1, 3.0, 2.0)

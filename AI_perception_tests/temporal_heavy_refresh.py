@@ -28,6 +28,7 @@ from run_groundingdino_on_capture import (  # noqa: E402
     DEFAULT_OBSTACLE_PROMPT,
     DEFAULT_REPO_DIR,
     DEFAULT_TEXT_THRESHOLD,
+    preload_groundingdino_model,
     run_on_capture,
     target_mask_appearance_validation,
 )
@@ -37,6 +38,16 @@ from sam2_refine_on_capture import (  # noqa: E402
     DEFAULT_SAM2_CONFIG,
     refine_capture,
 )
+
+
+def preload_heavy_models(device: str = "cuda") -> None:
+    """Load local heavy-model state before the worker publishes readiness."""
+    preload_groundingdino_model(
+        repo_dir=DEFAULT_REPO_DIR,
+        config_path=DEFAULT_CONFIG_PATH,
+        checkpoint_path=DEFAULT_CHECKPOINT_PATH,
+        device=device,
+    )
 
 
 def write_yaml(path: Path, payload: dict[str, Any]) -> None:
@@ -110,8 +121,9 @@ def prepare_event_capture(
 def validated_refined_target(
     capture_dir: Path,
     target: dict[str, Any],
+    target_profile: str = "green_cube",
 ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
-    """Accept a SAM2 target only when its exact RGB mask remains green."""
+    """Apply profile-specific appearance validation to the refined mask."""
     image = cv2.imread(str(capture_dir / "rgb.png"), cv2.IMREAD_COLOR)
     mask_path = Path(str(target.get("mask_png", "")))
     mask = (
@@ -119,7 +131,8 @@ def validated_refined_target(
         if mask_path.is_file()
         else None
     )
-    validation = target_mask_appearance_validation(image, mask)
+    validation = target_mask_appearance_validation(
+        image, mask, target_profile=target_profile)
     target["target_appearance_validation"] = validation
     return (target if validation["accepted"] else None), validation
 
@@ -138,9 +151,28 @@ def classify_refined_obstacles(
 
 
 def run_heavy_refresh(capture_dir: Path, output_root: Path, device: str = "cpu") -> dict[str, Any]:
+    mission = {}
+    mission_path = capture_dir / "mission_context.yaml"
+    if mission_path.is_file():
+        with mission_path.open("r", encoding="utf-8") as stream:
+            loaded = yaml.safe_load(stream)
+        mission = loaded if isinstance(loaded, dict) else {}
+    target_label = str(mission.get("target_label", "green cube"))
+    target_profile = str(mission.get("target_profile", "green_cube"))
+    target_prompt = str(mission.get("target_prompt", DEFAULT_PROMPT))
+    obstacle_groups = [
+        group.strip() for group in DEFAULT_OBSTACLE_PROMPT.split("|")
+        if group.strip()
+    ]
+    normalized_target = set(target_label.lower().replace("_", " ").split())
+    obstacle_prompt = " | ".join(
+        group for group in obstacle_groups
+        if not normalized_target.intersection(
+            set(group.lower().replace(".", " ").split())))
+    obstacle_prompt = obstacle_prompt or "hand . finger ."
     grounding = run_on_capture(
         capture_dir=capture_dir,
-        prompt=DEFAULT_PROMPT,
+        prompt=target_prompt,
         output_root=output_root,
         repo_dir=DEFAULT_REPO_DIR,
         config_path=DEFAULT_CONFIG_PATH,
@@ -148,8 +180,10 @@ def run_heavy_refresh(capture_dir: Path, output_root: Path, device: str = "cpu")
         box_threshold=DEFAULT_BOX_THRESHOLD,
         text_threshold=DEFAULT_TEXT_THRESHOLD,
         device=device,
-        obstacle_prompt=DEFAULT_OBSTACLE_PROMPT,
+        obstacle_prompt=obstacle_prompt,
         local_box_threshold=DEFAULT_LOCAL_BOX_THRESHOLD,
+        target_label=target_label,
+        target_profile=target_profile,
     )
     grounding_boxes = Path(grounding["outputs"]["boxes_yaml"])
     sam2 = refine_capture(
@@ -178,6 +212,7 @@ def run_heavy_refresh(capture_dir: Path, output_root: Path, device: str = "cpu")
         target, target_validation = validated_refined_target(
             capture_dir,
             target_candidates[0],
+            target_profile=target_profile,
         )
     targets = [target] if target is not None else []
     obstacles = [
@@ -204,6 +239,11 @@ def run_heavy_refresh(capture_dir: Path, output_root: Path, device: str = "cpu")
     ]
     return {
         "status": "ok" if target_mask_path else "target_mask_missing",
+        "task_id": str(mission.get("task_id", "")),
+        "mission_sha256": str(mission.get("mission_sha256", "")),
+        "requested_target_label": target_label,
+        "target_profile": target_profile,
+        "target_prompt": target_prompt,
         "target_source": grounding.get("summary", {}).get("target_source", "none"),
         "target_label": str(
             (grounding.get("summary", {}).get("best_target_detection") or {}).get("label", "target")

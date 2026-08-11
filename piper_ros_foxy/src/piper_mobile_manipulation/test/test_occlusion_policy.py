@@ -8,7 +8,7 @@ from piper_mobile_manipulation.occlusion_policy import (
 
 def evidence(**changes):
     values = dict(
-        track_id='prop-1', object_id=1, label='leaf', observation_count=2,
+        track_id='prop-1', object_id=1, label='marker', observation_count=2,
         confirmed_in_probe=True, target_overlap_ratio=0.20,
         closer_depth_ratio=0.15, predicted_surface_gain=0.12,
         predicted_unlocked_viewpoints=2, confidence=0.8, valid=True,
@@ -30,7 +30,7 @@ def test_contact_requires_two_view_depth_ordered_benefit():
 
 def test_hand_is_terminal_and_unknown_semantics_never_authorize_contact():
     assert 'terminal' in evidence_rejection(evidence(label='hand'))
-    assert 'qualified movable' in evidence_rejection(evidence(label='obstacle'))
+    assert 'qualified rigid' in evidence_rejection(evidence(label='obstacle'))
 
 
 def test_pick_is_preferred_then_push_is_bounded():

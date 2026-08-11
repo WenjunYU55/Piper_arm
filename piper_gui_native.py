@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import json
+import math
 import os
 import queue
 import signal
@@ -52,16 +53,22 @@ from piper_gui_automation import (
     WORKFLOW_ASSESSMENT_TIMEOUT_SEC,
 )
 from piper_mobile_manipulation.msg import (
+    MeshJobStatus,
     ScanExecutionPlan,
     ScanExecutionStatus,
     TesseractReadiness,
     TrackingHealth,
 )
 from piper_mobile_manipulation.action import RunTargetScan
-from piper_mobile_manipulation.home_pose import load_home_pose, save_home_pose
+from piper_mobile_manipulation.home_pose import (
+    load_home_pose,
+    save_home_pose,
+    validate_home_profile_limits,
+)
 from piper_mobile_manipulation.srv import (
     ApproveScanExecution,
     PrepareAcquisition,
+    ReportTrackedRobotHomed,
     RequestTesseractPlan,
 )
 from piper_mobile_manipulation.scan_motion import (
@@ -81,7 +88,7 @@ DEFAULT_JOINTS = [
     ("joint3", -2.8, 2.8, "rad"),
     ("joint4", -2.8, 2.8, "rad"),
     ("joint5", -2.1, 2.1, "rad"),
-    ("joint6", -2.0944, 2.0944, "rad"),
+    ("joint6", -math.pi, math.pi, "rad"),
     ("gripper", 0.0, 0.08, "m"),
 ]
 
@@ -218,6 +225,12 @@ class PiperGuiRos(Node):
                 self.tesseract_readiness_callback,
                 10,
             ),
+            self.create_subscription(
+                MeshJobStatus,
+                "/piper/mesh_job_status",
+                lambda msg: self.events.put(("mesh_job_status", msg)),
+                10,
+            ),
         ]
         self.acquisition_prepare_client = self.create_client(
             PrepareAcquisition, "/scan_target_acquisition/prepare",
@@ -242,6 +255,10 @@ class PiperGuiRos(Node):
             callback_group=self.service_callback_group)
         self.mission_goal_handle = None
         self.mission_task_id = ''
+        self.report_base_home_client = self.create_client(
+            ReportTrackedRobotHomed,
+            '/piper/report_tracked_robot_homed',
+            callback_group=self.service_callback_group)
 
     def feedback_callback(self, msg: JointState) -> None:
         self.latest_feedback = msg
@@ -776,7 +793,7 @@ class PiperGuiRos(Node):
         goal.task_id = task_id
         goal.task_type = 'SCAN_3D'
         goal.target_label = label.strip() or 'green cube'
-        goal.target_profile = 'green_cube'
+        goal.target_profile = ''
         goal.target_confidence = 1.0
         goal.deadline_sec = 1200.0
         goal.rough_target = PoseWithCovarianceStamped()
@@ -836,19 +853,59 @@ class PiperGuiRos(Node):
                 RunTargetScan.Goal.OUTCOME_UNSUPPORTED_TARGET_PROFILE:
                     'UNSUPPORTED_TARGET_PROFILE',
                 RunTargetScan.Goal.OUTCOME_NEEDS_OPERATOR: 'NEEDS_OPERATOR',
+                RunTargetScan.Goal.OUTCOME_REPOSITION_REQUIRED:
+                    'REPOSITION_REQUIRED',
             }
-            message = '%s: %s; safe shutdown=%s; captures=%d; dataset=%s' % (
-                outcomes.get(result.outcome, 'UNKNOWN'), result.reason,
+            outcome = outcomes.get(result.outcome, 'UNKNOWN')
+            message = ('%s: %s; code=%s; retryable=%s; safe shutdown=%s; '
+                       'captures=%d; dataset=%s') % (
+                outcome, result.reason,
+                result.failure_code or 'none',
+                'yes' if result.retryable else 'no',
                 'proved' if result.safe_shutdown else 'not proved',
                 result.capture_count,
                 result.dataset_path or 'unavailable')
+            result_payload = {
+                'task_id': task_id,
+                'outcome': outcome,
+                'safe_shutdown': bool(result.safe_shutdown),
+                'dataset_path': str(result.dataset_path),
+                'manifest_sha256': str(result.manifest_sha256),
+                'mesh_job_id': str(result.mesh_job_id),
+            }
         except Exception as exc:
             message = 'mission result failed: %s' % exc
+            result_payload = None
         if self.mission_task_id != task_id:
             return
         self.mission_goal_handle = None
         self.mission_task_id = ''
         self.events.put(('mission_state', ('IDLE', message)))
+        if result_payload is not None:
+            self.events.put(('mission_result', result_payload))
+
+    def report_tracked_robot_homed(self, result_payload):
+        threading.Thread(
+            target=self._report_tracked_robot_homed,
+            args=(dict(result_payload),), daemon=True).start()
+
+    def _report_tracked_robot_homed(self, payload):
+        if not self.report_base_home_client.wait_for_service(timeout_sec=5.0):
+            self.events.put((
+                'mesh_job_request',
+                (False, 'tracked-robot home service is unavailable')))
+            return
+        request = ReportTrackedRobotHomed.Request()
+        request.task_id = str(payload.get('task_id', ''))
+        request.mesh_job_id = str(payload.get('mesh_job_id', ''))
+        request.manifest_sha256 = str(payload.get('manifest_sha256', ''))
+        request.homed_at = self.get_clock().now().to_msg()
+        future = self.report_base_home_client.call_async(request)
+        self._wait_for_future(
+            future, 10.0, 'mesh_job_request',
+            lambda result: (
+                bool(result.accepted),
+                '%s: %s' % (result.state, result.message)))
 
     def destroy_node(self):
         client = getattr(self, 'mission_action_client', None)
@@ -975,6 +1032,9 @@ class PiperGuiApp:
         self.automation_capture_var = tk.StringVar(value="RGB-D capture unavailable")
         self.mission_label_var = tk.StringVar(value="green cube")
         self.mission_status_var = tk.StringVar(value="Autonomous mission idle")
+        self.mesh_status_var = tk.StringVar(
+            value="Mesh reconstruction is waiting for a completed scan")
+        self.last_successful_mission = None
         self.home_status_var = tk.StringVar(
             value="Home: validated compact default")
         self.mission_in_progress = False
@@ -1093,9 +1153,9 @@ class PiperGuiApp:
             parent,
             text=(
                 "This tab mirrors the final tracked-robot workflow. Enter the "
-                "rough green-cube coordinate, then press one button. The mission "
+                "rough target coordinate and label, then press one button. The mission "
                 "owns driver/camera/perception startup, arm enable, rough search, "
-                "target lock, 13-view Tesseract planning, synchronized capture, "
+                "target lock, adaptive 8-to-24-view Tesseract planning, synchronized capture, "
                 "return home, current-position hold, disable, and shutdown."
             ),
             wraplength=820,
@@ -1103,7 +1163,7 @@ class PiperGuiApp:
         ).grid(row=1, column=0, sticky="ew", pady=(8, 16))
 
         target = ttk.LabelFrame(
-            parent, text="Rough green-cube target in base_link", padding=12)
+            parent, text="Rough target in base_link", padding=12)
         target.grid(row=2, column=0, sticky="ew")
         for column, (axis, variable) in enumerate(
                 zip(("X (m)", "Y (m)", "Z (m)"), self.rough_coordinate_vars)):
@@ -1112,23 +1172,36 @@ class PiperGuiApp:
                 padx=(0 if column == 0 else 18, 5))
             ttk.Entry(target, textvariable=variable, width=14).grid(
                 row=0, column=column * 2 + 1)
+        ttk.Label(target, text="Target label").grid(
+            row=1, column=0, padx=(0, 5), sticky="w", pady=(10, 0))
+        ttk.Entry(
+            target, textvariable=self.mission_label_var, width=28).grid(
+                row=1, column=1, columnspan=2, sticky="w", pady=(10, 0))
         ttk.Label(
             target,
-            text="Target profile: green cube (minimum confidence 60%)",
+            text=("Exact 'green cube' uses the calibrated profile; all other "
+                  "labels use the open-vocabulary profile (minimum confidence 60%)."),
             foreground="#52606d",
-        ).grid(row=1, column=0, columnspan=6, sticky="w", pady=(10, 0))
+            wraplength=480,
+            justify="left",
+        ).grid(row=1, column=3, columnspan=3, sticky="w", pady=(10, 0))
         ttk.Button(
             target,
-            text="Use Current Feedback as Home",
+            text="Record Rough / Ready Home",
             command=self.use_current_feedback_as_home,
         ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        ttk.Button(
+            target,
+            text="Record Current J6 as Storage",
+            command=self.use_current_feedback_as_storage,
+        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 0))
         ttk.Label(
             target,
             textvariable=self.home_status_var,
             foreground="#52606d",
             wraplength=570,
             justify="left",
-        ).grid(row=2, column=2, columnspan=4, sticky="w", padx=(10, 0),
+        ).grid(row=2, column=2, rowspan=2, columnspan=4, sticky="w", padx=(10, 0),
                pady=(10, 0))
 
         controls = ttk.Frame(parent)
@@ -1146,6 +1219,13 @@ class PiperGuiApp:
             state="disabled",
         )
         self.mission_cancel_button.grid(row=0, column=1)
+        self.report_base_home_button = ttk.Button(
+            controls,
+            text="Tracked Robot Homed / Build Mesh",
+            command=self.report_tracked_robot_homed,
+            state="disabled",
+        )
+        self.report_base_home_button.grid(row=0, column=2, padx=(8, 0))
 
         status = ttk.LabelFrame(parent, text="Mission status", padding=12)
         status.grid(row=4, column=0, sticky="ew", pady=(6, 0))
@@ -1156,6 +1236,13 @@ class PiperGuiApp:
             wraplength=790,
             justify="left",
         ).grid(row=0, column=0, sticky="ew")
+        ttk.Label(
+            status,
+            textvariable=self.mesh_status_var,
+            foreground="#52606d",
+            wraplength=790,
+            justify="left",
+        ).grid(row=1, column=0, sticky="ew", pady=(6, 0))
 
         ttk.Label(
             parent,
@@ -1463,6 +1550,8 @@ class PiperGuiApp:
         self.cancel_home_shutdown_report_pending = False
         self.cancel_home_retry_count = 0
         self.mission_in_progress = True
+        self.last_successful_mission = None
+        self.report_base_home_button.configure(state="disabled")
         self.ros_node.disable_manual_command_publisher()
         self.set_manual_motion_enabled(False)
         self.mission_start_button.configure(state="disabled")
@@ -1471,6 +1560,17 @@ class PiperGuiApp:
             'submitting complete task through /piper/run_target_scan')
         self.ros_node.submit_simulated_mission(
             coordinates, self.mission_label_var.get())
+
+    def report_tracked_robot_homed(self):
+        if not isinstance(self.last_successful_mission, dict):
+            self.mesh_status_var.set(
+                'No safely completed acquisition is waiting for reconstruction')
+            return
+        self.report_base_home_button.configure(state='disabled')
+        self.mesh_status_var.set(
+            'Reporting tracked-robot home and queueing reconstruction')
+        self.ros_node.report_tracked_robot_homed(
+            self.last_successful_mission)
 
     def load_selected_home(self):
         try:
@@ -1482,10 +1582,23 @@ class PiperGuiApp:
         if payload is None:
             os.environ.pop('PIPER_RETURN_HOME_POSITIONS_RAD', None)
             return
+        try:
+            validate_home_profile_limits(payload, URDF_JOINT_LIMITS)
+        except (TypeError, ValueError) as exc:
+            self.home_status_var.set('Home file invalid: %s' % exc)
+            os.environ.pop('PIPER_RETURN_HOME_POSITIONS_RAD', None)
+            return
         positions = payload['positions_rad']
         os.environ['PIPER_RETURN_HOME_POSITIONS_RAD'] = json.dumps(positions)
         self.home_status_var.set(
-            'Home J1-J6: ' + ', '.join('%.6f' % value for value in positions))
+            'Rough home J1-J6: '
+            + ', '.join('%.6f' % value for value in positions)
+            + '; ready J6 %.6f; storage J6 %.6f; staged=%s'
+            % (
+                float(payload['mission_ready_joint6_rad']),
+                float(payload['storage_joint6_rad']),
+                ('yes; startup increasing to zero'
+                 if payload.get('staged_home_configured') else 'no')))
 
     def use_current_feedback_as_home(self):
         if self.mission_in_progress:
@@ -1536,10 +1649,20 @@ class PiperGuiApp:
                 'Powered home target is outside the planning joint limits')
             return
         try:
+            existing = load_home_pose(HOME_POSE_PATH)
+            if existing is not None:
+                validate_home_profile_limits(existing, URDF_JOINT_LIMITS)
+            existing_storage = (
+                float(existing['storage_joint6_rad'])
+                if existing is not None
+                and existing.get('staged_home_configured') else None)
             save_home_pose(
                 HOME_POSE_PATH,
                 positions.tolist(),
                 observed_positions=observed_positions.tolist(),
+                mission_ready_joint6_rad=float(positions[5]),
+                storage_joint6_rad=existing_storage,
+                staged_home_configured=existing_storage is not None,
             )
         except (OSError, TypeError, ValueError) as exc:
             self.home_status_var.set('Could not save home: %s' % exc)
@@ -1550,6 +1673,52 @@ class PiperGuiApp:
             + '; saved from current feedback '
             + ', '.join('%.3f' % value for value in observed_positions)
             + ' (disabled J2/J3 droop normalized for powered return)')
+
+    def use_current_feedback_as_storage(self):
+        if self.mission_in_progress:
+            self.home_status_var.set(
+                'Storage J6 cannot change while an automatic mission is active')
+            return
+        feedback_age = (
+            math.inf if self.ros_node.latest_feedback_monotonic is None
+            else time.monotonic() - self.ros_node.latest_feedback_monotonic)
+        if (
+                self.feedback_positions is None
+                or len(self.feedback_positions) < 6
+                or feedback_age > 1.0):
+            self.home_status_var.set(
+                'Fresh six-joint feedback is required to record storage J6')
+            return
+        storage_j6 = float(self.feedback_positions[5])
+        if not math.isfinite(storage_j6):
+            self.home_status_var.set('Current J6 feedback is not finite')
+            return
+        if (
+                storage_j6 < float(URDF_JOINT_LIMITS[5, 0])
+                or storage_j6 > float(URDF_JOINT_LIMITS[5, 1])):
+            self.home_status_var.set(
+                'Current storage J6 is outside planning limits')
+            return
+        try:
+            profile = load_home_pose(HOME_POSE_PATH)
+            if profile is None:
+                raise ValueError(
+                    'record the rough / mission-ready home first')
+            save_home_pose(
+                HOME_POSE_PATH,
+                profile['positions_rad'],
+                observed_positions=profile.get(
+                    'observed_disabled_positions_rad'),
+                mission_ready_joint6_rad=profile[
+                    'mission_ready_joint6_rad'],
+                storage_joint6_rad=storage_j6,
+                staged_home_configured=True,
+            )
+        except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            self.home_status_var.set(
+                'Could not save storage J6: %s' % exc)
+            return
+        self.load_selected_home()
 
     def _build_status(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
@@ -3047,7 +3216,7 @@ class PiperGuiApp:
                     self.command_text.set(str(payload))
                 elif name == "mission_feedback":
                     self.mission_status_var.set(
-                        '%s: %s (%d/%d captures)' % (
+                        '%s: %s (%d accepted; model seed floor %d)' % (
                             payload.phase, payload.reason,
                             payload.accepted_captures,
                             payload.required_captures))
@@ -3074,6 +3243,38 @@ class PiperGuiApp:
                         state=(
                             "normal" if state == 'ACTIVE'
                             else "disabled"))
+                elif name == "mission_result":
+                    self.last_successful_mission = (
+                        dict(payload)
+                        if payload.get('outcome') == 'SUCCEEDED'
+                        and payload.get('safe_shutdown') is True
+                        and payload.get('mesh_job_id')
+                        else None)
+                    if self.last_successful_mission is not None:
+                        self.mesh_status_var.set(
+                            'Capture complete and arm shut down; report when '
+                            'the tracked robot is home to build mesh %s'
+                            % payload['mesh_job_id'])
+                        self.report_base_home_button.configure(state='normal')
+                elif name == "mesh_job_request":
+                    success, message = payload
+                    self.mesh_status_var.set(str(message))
+                    if not success and self.last_successful_mission is not None:
+                        self.report_base_home_button.configure(state='normal')
+                elif name == "mesh_job_status":
+                    current_job = (
+                        self.last_successful_mission.get('mesh_job_id', '')
+                        if isinstance(self.last_successful_mission, dict)
+                        else '')
+                    if current_job and str(payload.mesh_job_id) != current_job:
+                        continue
+                    self.mesh_status_var.set(
+                        '%s: %s%s' % (
+                            payload.state, payload.reason,
+                            ('; mesh=' + payload.mesh_path)
+                            if payload.mesh_path else ''))
+                    if payload.state == 'FAILED' and self.last_successful_mission:
+                        self.report_base_home_button.configure(state='disabled')
                 elif name == "automation_start":
                     generation, success, message = payload
                     if int(generation) != self.automation_generation:

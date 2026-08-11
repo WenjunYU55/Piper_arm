@@ -45,6 +45,20 @@ def test_gui_and_scan_launchers_enforce_foxy_transport_contract():
         assert "ROS_LOCALHOST_ONLY=0" in launcher
 
 
+def test_l515_parameter_transactions_are_process_bounded():
+    for relative_path in (
+            "L515_camera/start_l515_camera.sh",
+            "L515_camera/start_l515_camera_low_bandwidth.sh"):
+        launcher = (ROOT / relative_path).read_text(encoding="utf-8")
+        assert "camera_param()" in launcher
+        assert "timeout --signal=TERM --kill-after=1s 2s" in launcher
+        # Keep the raw CLI invocation inside the bounded helper. Every actual
+        # preset/global-time transaction must call that helper instead.
+        assert launcher.count("ros2 param") == 1
+        assert launcher.count("camera_param set --no-daemon --spin-time 0.5") == 3
+        assert launcher.count("camera_param get --no-daemon --spin-time 0.5") == 3
+
+
 def test_supervised_scan_launch_shuts_down_on_critical_child_exit():
     launch_source = (
         ROOT

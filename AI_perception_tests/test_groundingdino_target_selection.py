@@ -22,6 +22,8 @@ from run_groundingdino_on_capture import (  # noqa: E402
     MIN_TARGET_SEMANTIC_CONFIDENCE,
     TARGET_TERMS,
     UNSAFE_TERMS,
+    _GROUNDING_MODEL_CACHE,
+    cached_groundingdino_model,
     label_matches,
     target_detection_validation,
     target_mask_appearance_validation,
@@ -33,6 +35,23 @@ from temporal_heavy_refresh import classify_refined_obstacles  # noqa: E402
 
 
 class TargetSelectionTest(unittest.TestCase):
+    def test_grounding_model_is_loaded_once_per_worker_device(self):
+        calls = []
+        _GROUNDING_MODEL_CACHE.clear()
+
+        def load_model(config, checkpoint, device):
+            calls.append((config, checkpoint, device))
+            return object()
+
+        config = Path('/tmp/model-config.py')
+        checkpoint = Path('/tmp/model-checkpoint.pth')
+        first = cached_groundingdino_model(
+            load_model, config, checkpoint, 'cuda')
+        second = cached_groundingdino_model(
+            load_model, config, checkpoint, 'cuda')
+        self.assertIs(first, second)
+        self.assertEqual(len(calls), 1)
+
     def test_green_cube_is_target(self):
         self.assertTrue(label_matches('green cube', TARGET_TERMS))
 
@@ -52,14 +71,17 @@ class TargetSelectionTest(unittest.TestCase):
         self.assertTrue(label_matches('hand finger', UNSAFE_TERMS))
         self.assertFalse(label_matches('leaf branch', UNSAFE_TERMS))
         self.assertFalse(label_matches('cardboard box', UNSAFE_TERMS))
-        self.assertTrue(label_matches('leaf branch', CANDIDATE_SAFE_TERMS))
+        self.assertTrue(label_matches('felt tip marker', CANDIDATE_SAFE_TERMS))
         self.assertFalse(label_matches('cardboard box', CANDIDATE_SAFE_TERMS))
 
-    def test_live_obstacle_prompt_is_bounded_to_leaf_branch_and_hand(self):
-        self.assertIn('leaf', DEFAULT_OBSTACLE_PROMPT)
-        self.assertIn('branch', DEFAULT_OBSTACLE_PROMPT)
+    def test_live_obstacle_prompt_is_bounded_to_rigid_sticks_and_hand(self):
+        self.assertIn('pen', DEFAULT_OBSTACLE_PROMPT)
+        self.assertIn('marker', DEFAULT_OBSTACLE_PROMPT)
+        self.assertIn('stick', DEFAULT_OBSTACLE_PROMPT)
         self.assertIn('hand', DEFAULT_OBSTACLE_PROMPT)
-        for ignored_label in ('wire', 'cable', 'paper', 'cardboard', 'obstacle'):
+        for ignored_label in (
+                'leaf', 'branch', 'wire', 'cable', 'paper', 'cardboard',
+                'obstacle'):
             self.assertNotIn(ignored_label, DEFAULT_OBSTACLE_PROMPT)
 
     def test_only_explicit_human_mask_is_reported_unsafe(self):
@@ -136,6 +158,21 @@ class TargetSelectionTest(unittest.TestCase):
         self.assertEqual(rejected, [detection])
         self.assertFalse(detection['is_target_candidate'])
         self.assertFalse(detection['target_validation']['accepted'])
+
+    def test_generic_profile_accepts_non_green_semantic_target(self):
+        image = np.full((40, 80, 3), (80, 120, 160), dtype=np.uint8)
+        detection = {
+            'label': 'red sphere',
+            'confidence': 0.90,
+            'box_xyxy_pixels': [5.0, 10.0, 65.0, 30.0],
+            'is_target_candidate': True,
+        }
+
+        result = target_detection_validation(
+            detection, image, target_profile='generic_open_vocab')
+
+        self.assertTrue(result['accepted'])
+        self.assertEqual(result['minimum_green_fraction'], 0.0)
 
     def test_implausible_cube_box_aspect_is_rejected(self):
         image = np.zeros((40, 80, 3), dtype=np.uint8)

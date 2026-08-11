@@ -1,0 +1,5 @@
+string mesh_job_id
+---
+bool found
+string result_json
+string message

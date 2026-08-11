@@ -11,14 +11,23 @@ import time
 
 DEFAULT_DEADLINE_SEC = 1200.0
 MAX_DEADLINE_SEC = 1200.0
-REQUIRED_CAPTURES = 13
+# Automatic scanning is not a fixed-view sweep. This is only the minimum
+# number of accepted observations needed to seed a measured object model;
+# feature/side coverage and measured surface-gain convergence decide when the
+# mission actually completes, up to MAX_FEATURE_CAPTURES.
+REQUIRED_CAPTURES = 8
+MAX_FEATURE_CAPTURES = 24
 MAX_OCCLUSION_ACTIONS = 6
+MAX_PENDING_MISSIONS = 8
+MISSION_QUEUE_COALESCE_SEC = 1.0
 HEARTBEAT_TIMEOUT_SEC = 5.0
 TASK_ID_PATTERN = re.compile(r'^[A-Za-z0-9_.:-]{8,128}$')
+TARGET_WORD_PATTERN = re.compile(r'[A-Za-z0-9]+(?:-[A-Za-z0-9]+)?')
 
 
 class MissionPhase(str, Enum):
     LISTENING = 'LISTENING'
+    QUEUED = 'QUEUED'
     GOAL_LATCHED = 'GOAL_LATCHED'
     STARTING = 'STARTING'
     PREFLIGHT = 'PREFLIGHT'
@@ -60,7 +69,24 @@ TARGET_PROFILES = {
         minimum_confidence=0.60,
         semantic_hints=('leaf', 'branch', 'hand', 'finger'),
     ),
+    'generic_open_vocab': TargetProfile(
+        name='generic_open_vocab',
+        prompt='',
+        minimum_confidence=0.60,
+        semantic_hints=('leaf', 'branch', 'hand', 'finger'),
+    ),
 }
+
+
+def target_prompt(label):
+    """Build one bounded GroundingDINO phrase from operator text."""
+    words = TARGET_WORD_PATTERN.findall(str(label))
+    if not words:
+        raise ValueError('target_label must contain letters or numbers')
+    normalized = ' '.join(words[:12]).lower()
+    if len(normalized) > 96:
+        normalized = normalized[:96].rstrip()
+    return normalized + ' .'
 
 
 def canonical_bytes(value):
@@ -85,11 +111,14 @@ def validate_goal_payload(payload, now_sec=None):
     label = str(payload.get('target_label', '')).strip()
     if not label:
         raise ValueError('target_label is missing')
-    profile_name = str(payload.get('target_profile', '')).strip() or 'green_cube'
+    normalized_label = ' '.join(label.lower().replace('_', ' ').split())
+    requested_profile = str(payload.get('target_profile', '')).strip()
+    profile_name = requested_profile or (
+        'green_cube' if normalized_label == 'green cube'
+        else 'generic_open_vocab')
     profile = TARGET_PROFILES.get(profile_name)
     if profile is None:
         raise ValueError('unsupported target profile: %s' % profile_name)
-    normalized_label = ' '.join(label.lower().replace('_', ' ').split())
     if profile_name == 'green_cube' and normalized_label != 'green cube':
         raise ValueError(
             'green_cube profile requires target_label "green cube"')
@@ -134,6 +163,8 @@ def validate_goal_payload(payload, now_sec=None):
         'task_type': 'SCAN_3D',
         'target_label': label,
         'target_profile': profile_name,
+        'target_prompt': (
+            profile.prompt if profile.prompt else target_prompt(label)),
         'target_confidence': confidence,
         'deadline_sec': deadline,
         'rough_target': {
@@ -145,6 +176,68 @@ def validate_goal_payload(payload, now_sec=None):
     }
     normalized['mission_sha256'] = sha256_value(normalized)
     return normalized
+
+
+def mission_target_distance_m(normalized_goal):
+    """Return the rough-target Euclidean distance in the admitted base frame."""
+    try:
+        position = normalized_goal['rough_target']['position']
+        values = tuple(float(value) for value in position)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError('queued mission rough target is invalid') from exc
+    if len(values) != 3 or not all(math.isfinite(value) for value in values):
+        raise ValueError('queued mission rough target must contain finite XYZ')
+    return math.sqrt(sum(value * value for value in values))
+
+
+def closest_pending_mission(records):
+    """Choose the nearest pending mission with stable arrival-order ties."""
+    candidates = list(records)
+    if not candidates:
+        return None
+    return min(
+        candidates,
+        key=lambda record: (
+            mission_target_distance_m(record['normalized']),
+            int(record['sequence']),
+            str(record['normalized']['task_id']),
+        ),
+    )
+
+
+def mission_queue_ready(records, now_monotonic, coalesce_sec):
+    """Return whether the closest-first queue may start its next mission."""
+    candidates = list(records)
+    if not candidates:
+        return False
+    delay = float(coalesce_sec)
+    if not math.isfinite(delay) or delay < 0.0:
+        raise ValueError('mission queue coalescing delay is invalid')
+    oldest = min(float(record['admitted_monotonic']) for record in candidates)
+    return float(now_monotonic) - oldest >= delay
+
+
+def queued_cancel_result(normalized_goal, reason='queued mission cancelled'):
+    """Build a terminal result for a mission that never owned arm resources."""
+    payload = {
+        'task_id': str(normalized_goal['task_id']),
+        'mission_sha256': str(normalized_goal['mission_sha256']),
+        'outcome': 'CANCELLED',
+        'reason': str(reason),
+        'failure_code': 'CANCELLED',
+        'retryable': True,
+        'safe_shutdown': True,
+        'dataset_path': '',
+        'manifest_sha256': '',
+        'capture_count': 0,
+        'mesh_job_id': '',
+        'action_summary': {
+            'queue_cancelled_before_start': True,
+            'arm_resources_started': False,
+        },
+    }
+    payload['result_sha256'] = sha256_value(payload)
+    return payload
 
 
 @dataclass
@@ -159,11 +252,19 @@ class MissionSession:
     accepted_captures: int = 0
     heartbeat_monotonic: float = field(default_factory=time.monotonic)
     return_home_proved: bool = False
+    storage_wrist_proved: bool = False
+    startup_wrist_completed: bool = False
+    startup_home_completed: bool = False
+    perception_scene_established: bool = False
     current_hold_proved: bool = False
     disabled_proved: bool = False
     processes_stopped: bool = False
     arm_enabled: bool = False
+    motor_control_lost_reason: str = ''
     home_positions_rad: tuple = ()
+    storage_positions_rad: tuple = ()
+    mission_ready_joint6_rad: float = 0.0
+    storage_joint6_rad: float = 0.0
 
     @property
     def task_id(self):
@@ -208,6 +309,7 @@ class MissionSession:
         if (
                 not self.current_hold_proved
                 or not self.return_home_proved
+                or not self.storage_wrist_proved
                 or not self.disabled_proved):
             return MissionPhase.NEEDS_OPERATOR, (
                 'settled current-position hold, verified home return, and '
@@ -217,9 +319,11 @@ class MissionSession:
         return MissionPhase.FAILED, self.reason
 
     def result_payload(self, outcome, reason, dataset_path='', manifest_sha256='',
-                       mesh_job_id='', action_summary=None):
+                       mesh_job_id='', failure_code='', retryable=False,
+                       action_summary=None):
         safe_shutdown = bool(
             self.current_hold_proved and self.return_home_proved
+            and self.storage_wrist_proved
             and self.disabled_proved
             and self.processes_stopped)
         payload = {
@@ -227,6 +331,8 @@ class MissionSession:
             'mission_sha256': self.mission_sha256,
             'outcome': str(outcome),
             'reason': str(reason),
+            'failure_code': str(failure_code),
+            'retryable': bool(retryable),
             'safe_shutdown': safe_shutdown,
             'dataset_path': str(dataset_path),
             'manifest_sha256': str(manifest_sha256),

@@ -1,4 +1,7 @@
 from launch import LaunchDescription
+from launch.actions import EmitEvent, RegisterEventHandler
+from launch.event_handlers import OnProcessExit
+from launch.events import Shutdown
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 import os
@@ -9,7 +12,7 @@ def cfg(name):
 
 
 def generate_launch_description():
-    return LaunchDescription([
+    geometry_nodes = [
         Node(
             package='piper_mobile_manipulation',
             executable='motion_compensated_prompt_node.py',
@@ -83,4 +86,13 @@ def generate_launch_description():
             output='screen',
             parameters=[cfg('frames.yaml')],
         ),
-    ])
+    ]
+    shutdown_handlers = [
+        RegisterEventHandler(OnProcessExit(
+            target_action=node,
+            on_exit=[EmitEvent(event=Shutdown(
+                reason='critical GPU geometry component exited'))],
+        ))
+        for node in geometry_nodes
+    ]
+    return LaunchDescription([*shutdown_handlers, *geometry_nodes])

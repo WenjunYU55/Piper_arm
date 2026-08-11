@@ -49,7 +49,8 @@ def rough_hint_rejection_reason(
 def build_acquisition_viewpoints(
         rough_target, current_camera_position, standoff_m=0.45,
         camera_pitch_deg=-10.0, sweep_angle_deg=45.0,
-        fallback_standoff_m=None, current_camera_look_direction=None):
+        fallback_standoff_m=None, current_camera_look_direction=None,
+        look_index=0):
     """
     Build a bounded look-direction cone without overshooting the camera.
 
@@ -90,6 +91,9 @@ def build_acquisition_viewpoints(
     sweep = abs(float(sweep_angle_deg))
     if not math.isfinite(sweep):
         raise ValueError('acquisition sweep angle must be finite')
+    look_index = int(look_index)
+    if look_index < 0 or look_index >= 5:
+        raise ValueError('acquisition look index must be from 0 through 4')
 
     offset = current_camera - target
     current_distance = float(np.linalg.norm(offset))
@@ -163,12 +167,16 @@ def build_acquisition_viewpoints(
     center_camera, center_look = orbit_camera_view(
         target, azimuth_deg, effective_standoff, center_pitch_deg)
     world_up = np.asarray([0.0, 0.0, 1.0])
+    image_up = world_up - center_look * np.dot(world_up, center_look)
+    if float(np.linalg.norm(image_up)) < 1e-9:
+        image_up = np.asarray([0.0, 1.0, 0.0])
+    image_up /= np.linalg.norm(image_up)
 
     def append_cone_view(name, yaw_deg, pitch_deg):
         if len(viewpoints) >= 20:
             return
-        look = rotated(center_look, world_up, yaw_deg)
-        right = np.cross(look, world_up)
+        look = rotated(center_look, image_up, yaw_deg)
+        right = np.cross(look, image_up)
         if float(np.linalg.norm(right)) < 1e-9:
             raise ValueError('acquisition look direction has no pitch axis')
         look = rotated(look, right, pitch_deg)
@@ -245,4 +253,81 @@ def build_acquisition_viewpoints(
     for name, yaw_deg, pitch_deg in fallback_offsets:
         append_view(
             name, yaw_deg, pitch_deg, fallback_radius, 'compact_fallback')
-    return viewpoints
+    look_groups = (
+        ('center', 'compact_center', 'compact_left', 'compact_right'),
+        ('left', 'left_up', 'left_down', 'compact_left'),
+        ('right', 'right_up', 'right_down', 'compact_right'),
+        ('up', 'left_up', 'right_up', 'compact_left_high', 'compact_right_high'),
+        ('down', 'left_down', 'right_down', 'compact_left_low', 'compact_right_low'),
+    )
+    prefixes = look_groups[look_index]
+    selected = [
+        item for item in viewpoints
+        if any(
+            str(item.get('acquisition_look', '')).startswith(prefix)
+            for prefix in prefixes)
+    ]
+    if not selected:
+        raise ValueError('acquisition transaction has no candidate look')
+    primary = selected[0]
+    primary_camera = np.asarray([
+        primary['desired_camera_position'][axis] for axis in ('x', 'y', 'z')
+    ], dtype=float)
+    primary_look = np.asarray([
+        primary['desired_look_at_direction'][axis] for axis in ('x', 'y', 'z')
+    ], dtype=float)
+    local_candidates = (
+        selected[:5]
+        if look_index == 0 and fallback_standoff_m is not None
+        else [primary])
+    primary_image_up = world_up - primary_look * np.dot(world_up, primary_look)
+    if float(np.linalg.norm(primary_image_up)) < 1e-9:
+        primary_image_up = np.asarray([0.0, 1.0, 0.0])
+    primary_image_up /= np.linalg.norm(primary_image_up)
+    local_angle_deg = min(sweep, 15.0) if look_index == 0 else min(sweep, 5.0)
+    local_axes = (
+        ('local_left', primary_image_up, local_angle_deg),
+        ('local_right', primary_image_up, -local_angle_deg),
+    )
+    pitch_axis = np.cross(primary_look, world_up)
+    if float(np.linalg.norm(pitch_axis)) > 1e-9:
+        local_axes += (
+            ('local_up', pitch_axis, local_angle_deg),
+            ('local_down', pitch_axis, -local_angle_deg),
+        )
+    for suffix, axis, angle_deg in local_axes:
+        if len(local_candidates) >= 5:
+            break
+        camera = primary_camera.copy()
+        look = rotated(primary_look, axis, angle_deg)
+        look /= np.linalg.norm(look)
+        local_candidates.append({
+            **primary,
+            'acquisition_look': '%s_%s' % (
+                primary['acquisition_look'], suffix),
+            'acquisition_search_stage': 'flexible_local_region',
+            'desired_camera_position': dict(zip(
+                ('x', 'y', 'z'), (float(value) for value in camera))),
+            'desired_look_at_direction': dict(zip(
+                ('x', 'y', 'z'), (float(value) for value in look))),
+        })
+    selected = local_candidates
+    # Every transaction offers only one compact angular neighborhood at the
+    # measured camera position. The
+    # first candidate is the mandatory semantic look for this transaction;
+    # remaining candidates are bounded IK alternatives, not extra looks.
+    for index, item in enumerate(selected[:5]):
+        item['index'] = index
+        item['acquisition_transaction_index'] = look_index
+        # In the closed-loop contract this marker means "eligible as the one
+        # mandatory look in this transaction", not an exact center-pixel pose.
+        item['keep_object_centered'] = True
+        radial = np.asarray([
+            item['desired_camera_position'][axis] for axis in ('x', 'y', 'z')
+        ], dtype=float) - target
+        if (
+                float(np.dot(radial, offset)) <= 0.0
+                or float(np.linalg.norm(radial)) > current_distance + 1e-6):
+            raise ValueError(
+                'acquisition candidate crosses behind or beyond the close target')
+    return selected[:5]

@@ -50,7 +50,7 @@ class ScanTargetAcquisitionNode(Node):
             'future_tolerance_sec': 0.1,
             'transform_timeout_sec': 0.25,
             'standoff_m': 0.45,
-            'fallback_standoff_m': 0.30,
+            'fallback_standoff_m': 0.28,
             'acquisition_camera_pitch_deg': -10.0,
             'sweep_angle_deg': 45.0,
             'handoff_retry_sec': 0.50,
@@ -126,9 +126,13 @@ class ScanTargetAcquisitionNode(Node):
         )
 
     @staticmethod
-    def request_signature(session_id, hint):
+    def request_signature(session_id, look_index, hint=None):
+        if hint is None:
+            hint = look_index
+            look_index = 0
         return (
             str(session_id),
+            int(look_index),
             str(hint.header.frame_id),
             float(hint.point.x),
             float(hint.point.y),
@@ -144,7 +148,12 @@ class ScanTargetAcquisitionNode(Node):
                 'session_id must contain 8..128 letters, digits, _, ., :, or -')
             return response
         hint = request.rough_target
-        signature = self.request_signature(session_id, hint)
+        look_index = int(getattr(request, 'look_index', 0))
+        if look_index < 0 or look_index >= 5:
+            response.accepted = False
+            response.message = 'look_index must be from 0 through 4'
+            return response
+        signature = self.request_signature(session_id, look_index, hint)
         if session_id == self.active_session_id:
             if signature != self.active_request_signature:
                 response.accepted = False
@@ -197,6 +206,7 @@ class ScanTargetAcquisitionNode(Node):
                 self.get_parameter('sweep_angle_deg').value,
                 self.get_parameter('fallback_standoff_m').value,
                 camera_look,
+                look_index,
             )
         except (TransformException, ValueError) as exc:
             response.accepted = False
@@ -217,6 +227,7 @@ class ScanTargetAcquisitionNode(Node):
             'source_request_id': session_id,
             'dry_run': True,
             'source_service': '/scan_target_acquisition/prepare',
+            'acquisition_transaction_index': look_index,
             'rough_hint_stamp_ns': stamp_ns,
             'target_provenance': {
                 'source': 'rough_coordinate',

@@ -18,3 +18,15 @@ bool communication_status_joint_4
 bool communication_status_joint_5
 bool communication_status_joint_6
 
+# Authoritative low-speed FOC feedback.  The aggregate arm status can remain
+# zero when one motor has independently disabled, so motion consumers must use
+# these fields as well as err_code.
+bool motor_feedback_valid
+bool motor_1_driver_enabled
+bool motor_2_driver_enabled
+bool motor_3_driver_enabled
+bool motor_4_driver_enabled
+bool motor_5_driver_enabled
+bool motor_6_driver_enabled
+string[] motor_faults
+string motor_watchdog_reason

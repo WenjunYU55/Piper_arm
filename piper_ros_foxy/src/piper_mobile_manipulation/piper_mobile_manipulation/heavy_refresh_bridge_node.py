@@ -12,9 +12,10 @@ import numpy as np
 import rclpy
 import yaml
 from cv_bridge import CvBridge
+from message_filters import ApproximateTimeSynchronizer, Subscriber
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import CameraInfo, Image
 from std_msgs.msg import Header, String
 
 from piper_mobile_manipulation.heavy_refresh_contract import (
@@ -29,6 +30,7 @@ class HeavyRefreshBridgeNode(Node):
         super().__init__('heavy_refresh_bridge_node')
         self.declare_parameter('color_image_topic', '/camera/color/image_raw')
         self.declare_parameter('depth_image_topic', '/camera/aligned_depth_to_color/image_raw')
+        self.declare_parameter('camera_info_topic', '/camera/color/camera_info')
         self.declare_parameter('tracked_mask_topic', '/piper/temporal_target_mask')
         self.declare_parameter('request_topic', '/piper/heavy_refresh_request')
         self.declare_parameter('output_mask_topic', '/piper/heavy_target_mask')
@@ -40,6 +42,8 @@ class HeavyRefreshBridgeNode(Node):
         self.declare_parameter('sam2_live_spool_dir', '/tmp/piper_sam2_live')
         self.declare_parameter('seed_sam2_live', True)
         self.declare_parameter('response_poll_period_sec', 0.20)
+        self.declare_parameter('rgbd_sync_slop_sec', 0.08)
+        self.declare_parameter('rgbd_sync_queue_size', 20)
         self.declare_parameter('max_image_age_sec', 1.0)
         self.declare_parameter('idle_status_interval_sec', 2.0)
         self.declare_parameter('min_target_depth_valid_ratio', 0.05)
@@ -52,6 +56,8 @@ class HeavyRefreshBridgeNode(Node):
         self.latest_depth = None
         self.latest_mask = None
         self.latest_color_msg = None
+        self.latest_depth_msg = None
+        self.latest_camera_info = None
         self.latest_color_time = 0.0
         self.pending_request = None
         self.spool = Path(str(self.get_parameter('spool_dir').value))
@@ -71,8 +77,20 @@ class HeavyRefreshBridgeNode(Node):
             Image, self.get_parameter('all_obstacle_mask_topic').value, qos_profile_sensor_data
         )
         self.status_pub = self.create_publisher(String, self.get_parameter('status_topic').value, 10)
-        self.create_subscription(Image, self.get_parameter('color_image_topic').value, self.color_cb, qos_profile_sensor_data)
-        self.create_subscription(Image, self.get_parameter('depth_image_topic').value, self.depth_cb, qos_profile_sensor_data)
+        color_sub = Subscriber(
+            self, Image, self.get_parameter('color_image_topic').value,
+            qos_profile=qos_profile_sensor_data)
+        depth_sub = Subscriber(
+            self, Image, self.get_parameter('depth_image_topic').value,
+            qos_profile=qos_profile_sensor_data)
+        info_sub = Subscriber(
+            self, CameraInfo, self.get_parameter('camera_info_topic').value,
+            qos_profile=qos_profile_sensor_data)
+        self.rgbd_sync = ApproximateTimeSynchronizer(
+            [color_sub, depth_sub, info_sub],
+            int(self.get_parameter('rgbd_sync_queue_size').value),
+            float(self.get_parameter('rgbd_sync_slop_sec').value))
+        self.rgbd_sync.registerCallback(self.rgbd_cb)
         self.create_subscription(Image, self.get_parameter('tracked_mask_topic').value, self.mask_cb, qos_profile_sensor_data)
         self.create_subscription(String, self.get_parameter('request_topic').value, self.request_cb, 10)
         self.create_timer(float(self.get_parameter('response_poll_period_sec').value), self.poll_responses)
@@ -82,26 +100,29 @@ class HeavyRefreshBridgeNode(Node):
         )
         self.get_logger().warn('Heavy refresh bridge is read-only; real arm motion is disabled.')
 
-    def color_cb(self, msg):
+    def rgbd_cb(self, color_msg, depth_msg, info_msg):
         try:
-            self.latest_color = np.asarray(self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')).copy()
-            self.latest_color_msg = msg
+            color = np.asarray(self.bridge.imgmsg_to_cv2(
+                color_msg, desired_encoding='bgr8')).copy()
+            depth = np.asarray(self.bridge.imgmsg_to_cv2(
+                depth_msg, desired_encoding='passthrough')).copy()
+            if color.shape[:2] != depth.shape[:2]:
+                raise ValueError('aligned RGB-D shapes differ')
+            self.latest_color = color
+            self.latest_depth = depth
+            self.latest_color_msg = color_msg
+            self.latest_depth_msg = depth_msg
+            self.latest_camera_info = info_msg
             self.latest_color_time = time.monotonic()
             if (
                     self.pending_request is not None
                     and image_satisfies_request(
-                        self.pending_request, msg.header.stamp)):
+                        self.pending_request, color_msg.header.stamp)):
                 request = self.pending_request
                 self.pending_request = None
                 self.enqueue_request(request)
         except Exception as exc:
-            self.get_logger().warn('Color conversion failed: %s' % exc)
-
-    def depth_cb(self, msg):
-        try:
-            self.latest_depth = np.asarray(self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')).copy()
-        except Exception as exc:
-            self.get_logger().warn('Depth conversion failed: %s' % exc)
+            self.get_logger().warn('Synchronized RGB-D conversion failed: %s' % exc)
 
     def mask_cb(self, msg):
         try:
@@ -192,6 +213,14 @@ class HeavyRefreshBridgeNode(Node):
                 'image_stamp': {'sec': int(stamp.sec), 'nanosec': int(stamp.nanosec)},
                 'min_image_stamp': request.get('min_image_stamp'),
                 'frame_id': self.latest_color_msg.header.frame_id,
+                'depth_encoding': str(self.latest_depth_msg.encoding),
+                'camera_matrix': [
+                    float(value) for value in self.latest_camera_info.k],
+                'rgbd_stamp_delta_sec': abs(
+                    (int(self.latest_color_msg.header.stamp.sec)
+                     + int(self.latest_color_msg.header.stamp.nanosec) * 1e-9)
+                    - (int(self.latest_depth_msg.header.stamp.sec)
+                       + int(self.latest_depth_msg.header.stamp.nanosec) * 1e-9)),
                 'dry_run': True,
                 'real_arm_motion': False,
             }
@@ -251,6 +280,9 @@ class HeavyRefreshBridgeNode(Node):
                         target_confidence=result.get('target_confidence'),
                         obstacle_count=result.get('obstacle_count', 0),
                         obstacle_labels=result.get('obstacle_labels', []),
+                        obstacle_confidences=result.get(
+                            'obstacle_confidences', []),
+                        tracked_objects=result.get('tracked_objects', []),
                         unsafe_obstacle_count=result.get('unsafe_obstacle_count', 0),
                     )
                     header = self.result_header(result)
@@ -295,6 +327,9 @@ class HeavyRefreshBridgeNode(Node):
                         target_confidence=result.get('target_confidence'),
                         obstacle_count=result.get('obstacle_count', 0),
                         obstacle_labels=result.get('obstacle_labels', []),
+                        obstacle_confidences=result.get(
+                            'obstacle_confidences', []),
+                        tracked_objects=result.get('tracked_objects', []),
                         unsafe_obstacle_count=result.get('unsafe_obstacle_count', 0),
                     )
                     if bool(self.get_parameter('seed_sam2_live').value):

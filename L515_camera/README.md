@@ -186,11 +186,12 @@ clear obstacle state, settled TrackingHealth, and `SCAN_READY`. Tesseract preser
 the fixed-J6 fallback has been removed. The GUI selects one execution speed from 1 through 100 percent,
 default 5. The executor clamps only to the PiPER SDK's 1-100 percent range; recorded physical
 acceptance remains at 5 percent. Since 2026-07-27 the driver publishes fresh hash-bound controller
-velocity/acceleration limits and schema-v5 planning binds them with the selected speed, 100 Hz
-maximum rate, and `timed_movej_v2`. The isolated worker generates and collision-validates the exact
-C2 all-six-joint q/qdot/qddot/t schedule. Foxy never re-times it and streams at most one due point
-per 10 ms tick without skip, burst, or feedback pause. Sustained time-aligned following error,
-command-loop gaps, or changed limits abort to hold. The driver still caches unchanged mode/speed and
+velocity/acceleration limits and schema-v5 planning binds them with selected speed, the 20 Hz
+`tesseract_stream_v1` schedule, and its exact path hash. The isolated worker speed-scales and
+resamples collision-qualified OMPL/ISP positions with a 0.025 rad adjacent-step ceiling; qdot/qddot
+remain zero placeholders because PiPER does not consume them. Foxy does not pause at intermediate
+samples, guards following error at 0.30 rad, and waits only at the final endpoint. It aborts instead
+of bursting overdue samples or shortcutting a path. The driver still caches unchanged mode/speed and
 gripper writes. This new timing path has offline/build qualification but not yet physical acceptance.
 Each accepted view triggers a full-resolution workflow capture plus one fresh synchronized raw
 RGB/depth/mask/metadata record under `datasets/active_scan`. Follow the staged procedure in
@@ -279,21 +280,32 @@ repeated.
 The deployed calibration is:
 
 ```text
-calibration/hand_eye/session_20260701_local/calibration_result.yaml
+calibration/hand_eye/session_20260808_straight_mount/calibration_result.yaml
 ```
 
-It is accepted from 12 fitting and 3 held-out validation samples. A proposed +67.875-degree J6-frame
-adjustment reproduced the saved-sample algebra but failed a physical three-pose test on 2026-07-15.
-The deployed transform is therefore the original unadjusted solve: replaying those physical snapshots
-with it produced about 10.8 mm maximum translation drift and 1.37 degrees maximum rotation drift.
-Repeat the live fixed-board validation after restarting the TF publisher before automatic motion.
-Do not use
-`session_20260629_resample3`, which was rejected. Reproduce the solve from the compact committed
-sample metadata:
+The file preserves 12 fitting and 3 held-out samples captured after the camera was remounted
+straight on 2026-08-08. Those samples and the associated fixed-board reports encode 18 mm squares
+and 13 mm markers, but the physical board was measured on 2026-08-10 as 17 mm squares and 12 mm
+markers. The saved PARK result and all of its board-derived metric results are therefore wrong-scale
+provenance only; do not restore or deploy that transform. Low reprojection error cannot validate
+metric scale. The active transform instead comes from the operator-confirmed CAD housing, Intel
+Rev 003 depth datum, and the serial-bound factory colour-to-depth extrinsic, so it does not depend
+on the printed board scale. The prior `session_20260701_local` result remains preserved only as
+rollback history. Its proposed
++67.875-degree J6-frame adjustment failed physical testing and must not be reinstated. Do not use
+`session_20260629_resample3`, which was rejected. The active transform anchors the L515 depth origin 4.5 mm
+behind the front cover glass from Intel Rev 003 and composes the factory colour-to-depth extrinsic
+queried from device `f1120648`; this keeps the legitimate 4.225 mm longitudinal separation and
+1.322-degree relative optical-axis skew. The live overlay and corrected-scale five-pose validation
+passed on 2026-08-10; the latter passed every pose with 12.22 mm and 1.25 degree worst drift. Its
+report is `calibration/hand_eye/session_20260808_straight_mount/fixed_board_validation_registered_20260810_corrected_board.yaml`.
+Powered mission motion remains blocked until stationary-target repeatability also passes.
+For provenance only, the wrong-scale source solve can be reproduced from its saved sample metadata;
+do not deploy the result:
 
 ```bash
 python3 L515_camera/solve_hand_eye.py \
-  L515_camera/calibration/hand_eye/session_20260701_local
+  L515_camera/calibration/hand_eye/session_20260808_straight_mount
 ```
 
 Start the runtime TF publisher after the PiPER driver and camera:
@@ -314,8 +326,12 @@ Validate the physical chain with the fixed ChArUco board left stationary:
 ./L515_camera/run_fixed_board_validation.sh
 ```
 
-Stop the arm at each substantially different viewpoint, press Enter to average ten strict full-board
-detections, collect at least three poses, then enter `q`. The historical physical test used five poses
+Stop the arm at each substantially different viewpoint, wait until all six measured joint positions
+remain within 0.001 rad for 0.75 seconds, then press Enter to average ten new strict full-board
+detections. Collect at least five poses, then enter `q`. Instantaneous SDK velocity is diagnostic only
+and cannot authorize a capture because it can briefly read low during disabled-arm sag. The physically
+measured board uses 17 mm squares and 12 mm markers; do not restore the former 18/13 mm defaults.
+The historical physical test used five poses
 and measured maximum drift of 8.63 mm and 0.59 degrees against limits of 15 mm and 1.5 degrees. That
 report predates the J6 zero change. The failed shifted-transform report is
 `fixed_board_validation_post_j6_20260715_gui.yaml`; repeat the test with the restored deployed

@@ -1,0 +1,9 @@
+string task_id
+string mesh_job_id
+string manifest_sha256
+builtin_interfaces/Time homed_at
+---
+bool accepted
+string mesh_job_id
+string state
+string message

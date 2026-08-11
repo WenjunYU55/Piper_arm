@@ -5,12 +5,90 @@ from types import SimpleNamespace
 import piper_tesseract_foxy.worker as worker_module
 from piper_tesseract_foxy.contract import ContractError
 from piper_tesseract_foxy.worker import (
+    attached_box_floor_clearance_rejection,
+    camera_transform_path_rejection,
+    planning_budgets_for_request,
     quiesce_bootstrap_recovery_prefix,
     reverse_sdk_movej_points,
     sdk_movej_waypoint_trajectory,
     subdivide_joint_segment,
     TesseractBackend,
 )
+
+
+def optical_transform(angle_deg=0.0, z_m=0.0):
+    angle = np.deg2rad(float(angle_deg))
+    transform = np.eye(4)
+    transform[:3, 2] = [np.sin(angle), 0.0, np.cos(angle)]
+    transform[2, 3] = float(z_m)
+    return transform
+
+
+def test_worker_camera_path_rejects_off_axis_intermediate_fk():
+    rejection = camera_transform_path_rejection(
+        [optical_transform(0.0), optical_transform(25.0)],
+        [0.0, 0.0, 1.0])
+
+    assert 'leaves the 20.0-degree camera boresight cone' in rejection
+
+
+def test_worker_camera_path_accepts_compact_visible_route():
+    assert camera_transform_path_rejection(
+        [optical_transform(0.0), optical_transform(19.5)],
+        [0.0, 0.0, 1.0]) == ''
+
+
+def test_worker_attached_holder_box_rejects_floor_grazing_transform():
+    transform = np.eye(4)
+    transform[2, 3] = 0.004
+
+    assert attached_box_floor_clearance_rejection(
+        transform,
+        [0.0, 0.0, 0.0],
+        [0.10, 0.10, 0.004],
+        0.0,
+        0.005,
+        'camera holder/L515',
+    ) == (
+        'camera holder/L515 floor clearance 0.002000m is below 0.005000m')
+
+
+def test_worker_tries_next_ik_goal_after_visibility_rejection():
+    rejected_goal = np.asarray([0.1, 0, 0, 0, 0, 0], dtype=float)
+    accepted_goal = np.asarray([0.0, 0.2, 0, 0, 0, 0], dtype=float)
+    attempted = []
+
+    class FakeRobot:
+        @staticmethod
+        def fk(_group, joints, tip_link=None):
+            del tip_link
+            # The nearer synthetic IK branch rotates off-axis; the second
+            # branch preserves visibility and must be attempted next.
+            angle = 25.0 if 0.05 < float(joints[0]) < 0.15 else 10.0
+            if abs(float(joints[0])) < 1e-9:
+                angle = 0.0
+            return SimpleNamespace(matrix=optical_transform(angle))
+
+    def plan_segment(_start, goal, _step, _bootstrap):
+        attempted.append(np.asarray(goal).tolist())
+        return [
+            {'positions_rad': [0.0] * 6},
+            {'positions_rad': np.asarray(goal).tolist()},
+        ], {'minimum_clearance_m': 0.1}
+
+    backend = SimpleNamespace(
+        ik_joint_goals=lambda *_args: [rejected_goal, accepted_goal],
+        ensure_planning_time=lambda _context: None,
+        plan_segment_to_joint_goal=plan_segment,
+        robot=FakeRobot(),
+    )
+
+    _roll, points, _validation = TesseractBackend.plan_candidate(
+        backend, np.zeros(6), {}, [0.0], 0.1,
+        [[-1.0, 1.0]] * 6, 0.0, None, [0.0, 0.0, 1.0])
+
+    assert attempted == [rejected_goal.tolist(), accepted_goal.tolist()]
+    assert points[-1]['positions_rad'][1] == pytest.approx(0.2)
 
 
 def test_reverse_sdk_movej_points_preserves_reverse_order_and_durations():
@@ -65,20 +143,22 @@ def test_sdk_movej_target_keeps_joint6_free_and_zero_derivatives():
         },
     ]
     fast, fast_validation = sdk_movej_waypoint_trajectory(
-        source, 100.0, 100.0, 0.10,
+        source, 100.0, 20.0, 0.10,
         [[-1.0, 1.0]] * 6, [1.0] * 6, [2.0] * 6)
     slow, _ = sdk_movej_waypoint_trajectory(
-        source, 10.0, 100.0, 0.10,
+        source, 10.0, 20.0, 0.10,
         [[-1.0, 1.0]] * 6, [1.0] * 6, [2.0] * 6)
     assert fast[-1]['positions_rad'][5] == pytest.approx(0.4)
     assert slow[-1]['positions_rad'][5] == pytest.approx(0.4)
-    assert slow == fast
+    assert len(slow) > len(fast)
+    assert slow[-1]['time_from_start_s'] == pytest.approx(
+        fast[-1]['time_from_start_s'] * 10.0)
     assert fast_validation == fast
     assert all(point['velocities_rad_s'] == [0.0] * 6 for point in fast)
     assert all(point['accelerations_rad_s2'] == [0.0] * 6 for point in fast)
-    assert len(fast) == 2
+    assert len(fast) == 21
     assert fast[0]['positions_rad'] == pytest.approx([0.0] * 6)
-    assert fast[1]['positions_rad'] == pytest.approx(
+    assert fast[-1]['positions_rad'] == pytest.approx(
         [0.2, 0.0, 0.0, 0.0, 0.0, 0.4])
 
 
@@ -104,14 +184,14 @@ def test_sdk_movej_waypoint_order_stamps_respect_transport_rate():
         },
     ]
     emitted, _ = sdk_movej_waypoint_trajectory(
-        source, 100.0, 100.0, 0.10,
+        source, 100.0, 20.0, 0.10,
         [[-1.0, 1.0]] * 6, [1.0] * 6, [2.0] * 6)
-    assert len(emitted) == 2
+    assert len(emitted) >= 2
     intervals = [
         current['time_from_start_s'] - previous['time_from_start_s']
         for previous, current in zip(emitted[:-1], emitted[1:])
     ]
-    assert min(intervals) >= 0.01 - 1e-9
+    assert min(intervals) >= 0.05 - 1e-9
 
 
 def test_sdk_movej_allows_only_the_bound_bootstrap_start_outside_limits():
@@ -133,14 +213,14 @@ def test_sdk_movej_allows_only_the_bound_bootstrap_start_outside_limits():
     limits[2] = [-1.0, 0.0]
     with pytest.raises(ContractError, match='position limit'):
         sdk_movej_waypoint_trajectory(
-            source, 5.0, 100.0, 0.10,
+            source, 5.0, 20.0, 0.10,
             limits, [1.0] * 6, [2.0] * 6)
     emitted, _ = sdk_movej_waypoint_trajectory(
-        source, 5.0, 100.0, 0.10,
+        source, 5.0, 20.0, 0.10,
         limits, [1.0] * 6, [2.0] * 6,
         bootstrap_start_limit_tolerance_rad=0.04)
     assert emitted[0]['positions_rad'][2] == pytest.approx(0.0327)
-    assert emitted[1]['positions_rad'][2] == pytest.approx(-0.01)
+    assert emitted[-1]['positions_rad'][2] == pytest.approx(-0.01)
 
 
 def test_bootstrap_recovery_quiescing_prevents_anticipated_other_joint_motion():
@@ -173,7 +253,7 @@ def test_bootstrap_recovery_quiescing_prevents_anticipated_other_joint_motion():
     assert source[1]['accelerations_rad_s2'] == [0.0] * 6
 
     emitted, _ = sdk_movej_waypoint_trajectory(
-        source, 100.0, 100.0, 0.10,
+        source, 100.0, 20.0, 0.10,
         [[-1.0, 1.0]] * 6, [1.0] * 6, [2.0] * 6,
         mandatory_waypoints=[[0.02, 0.0, 0.0, 0.0, 0.0, 0.0]])
     emitted_boundary = next(
@@ -183,7 +263,7 @@ def test_bootstrap_recovery_quiescing_prevents_anticipated_other_joint_motion():
             [0.02, 0.0, 0.0, 0.0, 0.0, 0.0],
             atol=1e-9,
         ))
-    assert emitted_boundary == 1
+    assert 0 < emitted_boundary < len(emitted) - 1
     assert np.max(np.abs(np.asarray([
         point['positions_rad'][1:]
         for point in emitted[:emitted_boundary + 1]
@@ -237,8 +317,8 @@ def test_acquisition_worker_accepts_one_of_five_planned_looks():
             'max_execution_joint_step_rad': 0.10,
             'roll_samples_rad': [0.0],
             'effective_speed_percent': 100.0,
-            'command_rate_hz': 100.0,
-            'timing_policy': 'sdk_movej_targets_v1',
+            'command_rate_hz': 20.0,
+            'timing_policy': 'tesseract_stream_v1',
         },
         'limits': {
             'position_rad': [[-1.0, 1.0] for _ in range(6)],
@@ -281,7 +361,7 @@ def test_worker_planning_budget_expires_before_bridge_timeout(monkeypatch):
             'max_execution_joint_step_rad': 0.10,
             'roll_samples_rad': [0.0],
             'effective_speed_percent': 5.0,
-            'command_rate_hz': 100.0,
+            'command_rate_hz': 20.0,
         },
         'limits': {
             'position_rad': [[-1.0, 1.0] for _ in range(6)],
@@ -294,6 +374,21 @@ def test_worker_planning_budget_expires_before_bridge_timeout(monkeypatch):
 
     with pytest.raises(ContractError, match='before the bridge 180-second timeout'):
         TesseractBackend.plan(backend, request)
+
+
+def test_automatic_one_view_replan_has_a_tight_bounded_budget():
+    request = {
+        'plan_kind': 'MULTIVIEW_SCAN',
+        'planning': {
+            'min_viewpoints': 1,
+            'max_viewpoints': 1,
+            'include_return_home': False,
+        },
+    }
+    assert planning_budgets_for_request(request) == (45.0, 3.0)
+
+    request['planning']['include_return_home'] = True
+    assert planning_budgets_for_request(request) == (150.0, 5.0)
 
 
 def test_worker_budget_is_checked_between_candidate_planner_attempts(
@@ -374,8 +469,8 @@ def test_worker_retries_candidates_after_a_success_changes_start_state():
             'max_execution_joint_step_rad': 0.10,
             'roll_samples_rad': [0.0],
             'effective_speed_percent': 100.0,
-            'command_rate_hz': 100.0,
-            'timing_policy': 'sdk_movej_targets_v1',
+            'command_rate_hz': 20.0,
+            'timing_policy': 'tesseract_stream_v1',
         },
         'limits': {
             'position_rad': [[-3.0, 3.0] for _ in range(6)],
@@ -445,7 +540,7 @@ def test_multiview_worker_appends_collision_validated_return_home_segment():
             'max_execution_joint_step_rad': 0.10,
             'roll_samples_rad': [0.0],
             'effective_speed_percent': 5.0,
-            'command_rate_hz': 100.0,
+            'command_rate_hz': 20.0,
             'return_home_positions_rad': home,
         },
         'limits': {
@@ -465,6 +560,62 @@ def test_multiview_worker_appends_collision_validated_return_home_segment():
     assert segments[-1]['to_viewpoint'] == -2
     assert segments[-1]['points'][-1]['positions_rad'] == home
     assert return_calls == [([0.1] * 6, home, 0.10)]
+
+
+def test_closed_loop_worker_omits_unused_embedded_return_home_segment():
+    capture_points = [
+        {'positions_rad': [0.0] * 6},
+        {'positions_rad': [0.1] * 6},
+    ]
+    backend = SimpleNamespace(
+        reset_scene=lambda: None,
+        add_obstacles=lambda _obstacles: None,
+        find_bootstrap_recovery=lambda _request: None,
+        find_terminal_home_recovery=lambda *_args: pytest.fail(
+            'closed-loop one-view must not plan an unused embedded home'),
+        plan_segment_to_joint_goal=lambda *_args: pytest.fail(
+            'closed-loop one-view must not plan an unused embedded home'),
+        plan_candidate=lambda *_args: (
+            0.0,
+            capture_points,
+            {'minimum_clearance_m': 0.1, 'limiting_link_pair': 'none/none'},
+        ),
+    )
+    request = {
+        'plan_kind': 'MULTIVIEW_SCAN',
+        'scene': {
+            'obstacles': [],
+            'target_center_m': [0.4, 0.0, 0.0],
+            'candidate_views': [{
+                'id': 4,
+                'camera_position_m': [0.4, 0.0, 0.3],
+                'look_direction': [1.0, 0.0, 0.0],
+            }],
+        },
+        'planning': {
+            'min_viewpoints': 1,
+            'max_viewpoints': 1,
+            'include_return_home': False,
+            'max_execution_joint_step_rad': 0.10,
+            'roll_samples_rad': [0.0],
+            'effective_speed_percent': 5.0,
+            'command_rate_hz': 20.0,
+            'return_home_positions_rad': [0.0] * 6,
+        },
+        'limits': {
+            'position_rad': [[-1.0, 1.0] for _ in range(6)],
+            'joint_margin_rad': 0.03,
+            'max_velocity_rad_s': [3.0] * 6,
+            'max_acceleration_rad_s2': [5.0] * 6,
+        },
+        'start_state': {'positions_rad': [0.0] * 6},
+    }
+
+    selected, segments = TesseractBackend.plan(backend, request)
+
+    assert [item['id'] for item in selected] == [4]
+    assert len(segments) == 1
+    assert segments[0].get('is_return_home') is not True
 
 
 def test_multiview_worker_reverses_qualified_folded_home_recovery():
@@ -526,7 +677,7 @@ def test_multiview_worker_reverses_qualified_folded_home_recovery():
             'max_execution_joint_step_rad': 0.10,
             'roll_samples_rad': [0.0],
             'effective_speed_percent': 5.0,
-            'command_rate_hz': 100.0,
+            'command_rate_hz': 20.0,
             'return_home_positions_rad': home,
         },
         'limits': {
@@ -566,6 +717,16 @@ class FakeRecoveryBackend:
         return self.contacts(np.asarray(position, dtype=float))
 
     clearance_violations = TesseractBackend.clearance_violations
+
+
+def test_ik_goal_clearance_prescreen_uses_motion_bounded_policy():
+    backend = FakeRecoveryBackend(
+        lambda q: {('link2', 'link5'): float(q[0])})
+
+    assert not TesseractBackend.state_meets_required_clearance(
+        backend, np.asarray([0.099, 0, 0, 0, 0, 0]))
+    assert TesseractBackend.state_meets_required_clearance(
+        backend, np.asarray([0.101, 0, 0, 0, 0, 0]))
 
 
 def recovery_policy():
@@ -632,6 +793,125 @@ def test_bootstrap_recovery_policy_is_acquisition_only():
         'plan_kind': 'MULTIVIEW_SCAN',
         'scene': {'observation_mode': 'perception_snapshot'},
     }) is None
+
+
+def test_powered_start_home_policy_requires_explicit_static_scene_flag():
+    backend = SimpleNamespace(manifest={
+        'powered_start_home_recovery': {
+            'enabled': True,
+            'plan_kind': 'RETURN_HOME',
+            'observation_mode': 'perception_snapshot',
+            'required_scene_flag': 'startup_home_static',
+            'search_step_rad': 0.01,
+            'maximum_single_joint_delta_rad': 0.10,
+            'maximum_start_limit_violation_rad': 0.0,
+            'allowed_start_limit_joints': [2, 3],
+            'allowed_recovery_joints': [3],
+            'monotonic_tolerance_m': 0.0002,
+            'allowed_start_contacts': [{
+                'links': ['link2', 'link5'],
+                'maximum_penetration_m': 0.01,
+            }],
+        },
+    })
+    request = {
+        'plan_kind': 'RETURN_HOME',
+        'scene': {'observation_mode': 'perception_snapshot'},
+        'limits': {'bootstrap_start_limit_tolerance_rad': 0.0},
+    }
+    assert TesseractBackend.bootstrap_recovery_policy(
+        backend, request, 'powered_start_home_recovery') is None
+    request['scene']['startup_home_static'] = True
+    policy = TesseractBackend.bootstrap_recovery_policy(
+        backend, request, 'powered_start_home_recovery')
+    assert policy['allowed_recovery_joints'] == [3]
+
+
+def test_configured_home_direct_policy_cannot_escape_return_home_stage():
+    backend = SimpleNamespace(manifest={
+        'configured_home_direct_joint_move': {
+            'enabled': True,
+            'plan_kind': 'RETURN_HOME',
+            'maximum_start_limit_violation_rad': 0.3,
+            'allowed_start_limit_joints': [1, 2, 3, 4, 5, 6],
+            'allowed_home_stages': [
+                'CONFIGURED_HOME', 'STARTUP_WRIST', 'ROUGH_HOME',
+                'STORAGE_WRIST'],
+        },
+    })
+    request = {
+        'plan_kind': 'RETURN_HOME',
+        'planning': {'home_stage': 'STORAGE_WRIST'},
+    }
+    assert TesseractBackend.configured_home_direct_policy(
+        backend, request) == 'STORAGE_WRIST'
+
+    request['plan_kind'] = 'MULTIVIEW_SCAN'
+    assert TesseractBackend.configured_home_direct_policy(
+        backend, request) is None
+
+    request['plan_kind'] = 'RETURN_HOME'
+    request['planning']['home_stage'] = 'UNDECLARED_STAGE'
+    with pytest.raises(ContractError, match='not authorized'):
+        TesseractBackend.configured_home_direct_policy(backend, request)
+
+
+def test_configured_home_direct_binds_the_exact_stage_goal():
+    start = [0.0, -0.1, 0.2, 0.0, 0.4, 0.0]
+    storage = [0.0, -0.1, 0.2, 0.0, 0.4, -3.0]
+    backend = SimpleNamespace(
+        configured_home_direct_policy=lambda _request: 'STORAGE_WRIST',
+        manifest={'configured_home_direct_joint_move': {
+            'maximum_start_limit_violation_rad': 0.3,
+            'allowed_start_limit_joints': [1, 2, 3, 4, 5, 6],
+        }, 'validation_max_joint_l1_step_rad': 10.0},
+        execution_position_limits=[[-3.2, 3.2]] * 6,
+        command_rate_hz=20.0,
+        external_floor_clearance_policy=lambda: {'enabled': True},
+        external_floor_clearance_rejection=lambda _joints, _stage: '',
+    )
+
+    points, evidence = TesseractBackend.plan_configured_home_direct(
+        backend, {'limits': {
+            'configured_home_start_limit_tolerance_rad': 0.3,
+        }}, start, storage)
+
+    assert points[-1]['positions_rad'] == storage
+    assert evidence['configured_home_goal_positions_rad'] == storage
+    assert evidence['home_stage'] == 'STORAGE_WRIST'
+
+
+def test_configured_home_direct_accepts_relaxed_start_but_not_relaxed_goal():
+    request = {'limits': {
+        'configured_home_start_limit_tolerance_rad': 0.3,
+    }}
+    backend = SimpleNamespace(
+        configured_home_direct_policy=lambda _request: 'STARTUP_WRIST',
+        manifest={'configured_home_direct_joint_move': {
+            'maximum_start_limit_violation_rad': 0.3,
+            'allowed_start_limit_joints': [1, 2, 3, 4, 5, 6],
+        }, 'validation_max_joint_l1_step_rad': 10.0},
+        execution_position_limits=[[-1.0, 1.0]] * 6,
+        command_rate_hz=20.0,
+        external_floor_clearance_policy=lambda: {'enabled': True},
+        external_floor_clearance_rejection=lambda _joints, _stage: '',
+    )
+    start = [0.0, 0.0, 0.0, 0.0, 0.0, -1.03168]
+    goal = [0.0] * 6
+    points, _evidence = TesseractBackend.plan_configured_home_direct(
+        backend, request, start, goal)
+    assert points[0]['positions_rad'][5] == -1.03168
+
+    start[5] = -1.300001
+    with pytest.raises(ContractError, match='start exceeds'):
+        TesseractBackend.plan_configured_home_direct(
+            backend, request, start, goal)
+
+    start[5] = 0.0
+    goal[5] = 1.000001
+    with pytest.raises(ContractError, match='goal exceeds'):
+        TesseractBackend.plan_configured_home_direct(
+            backend, request, start, goal)
 
 
 def test_bootstrap_limit_recovery_moves_only_joint3_inward():
