@@ -407,8 +407,8 @@ def test_valid_but_rejected_tesseract_proposal_keeps_full_request_id():
             'min_execution_viewpoints': 13,
             'max_execution_viewpoints': 13,
             'acquisition_max_viewpoints': 5,
-            'trajectory_joint_step_rad': 0.025,
-            'trajectory_command_rate_hz': 20.0,
+            'trajectory_joint_step_rad': 0.03,
+            'trajectory_command_rate_hz': 100.0,
             'motion_limits_timeout_sec': 2.0,
             'speed_percent': 5.0,
         }[name]),
@@ -434,7 +434,7 @@ def test_valid_but_rejected_tesseract_proposal_keeps_full_request_id():
         bootstrap_recovery_joints=[],
         bootstrap_recovery_delta_rad=[],
         bootstrap_recovery_evidence_json=[],
-        command_rate_hz=20.0,
+        command_rate_hz=100.0,
         motion_limits_sha256='b' * 64,
         execution_speed_percent=5.0,
     )
@@ -1393,7 +1393,7 @@ def test_sdk_movej_target_path_is_accepted_without_geometry_changes():
     np.testing.assert_allclose(qd, velocities)
     np.testing.assert_allclose(qdd, accelerations)
     np.testing.assert_allclose(validated_times, times)
-    assert TIMING_POLICY_VERSION == 'tesseract_stream_v1'
+    assert TIMING_POLICY_VERSION == 'tesseract_stream_v3'
 
 
 def test_tesseract_point_requires_complete_finite_derivatives_and_time():
@@ -1419,7 +1419,7 @@ def test_tesseract_stream_rejects_rate_step_and_derivative_claims():
     with pytest.raises(ValueError, match='faster'):
         validate_sdk_movej_waypoint_path(
             positions, derivatives, derivatives, [0.0, 0.005],
-            command_rate_hz=20.0,
+            command_rate_hz=100.0,
         )
     with pytest.raises(ValueError, match='joint step'):
         validate_sdk_movej_waypoint_path(
@@ -1428,14 +1428,35 @@ def test_tesseract_stream_rejects_rate_step_and_derivative_claims():
                 np.full(6, 0.06)]),
             np.zeros((5, 6)), np.zeros((5, 6)),
             [0.0, 0.05, 0.10, 0.15, 0.20],
-            command_rate_hz=20.0,
+            command_rate_hz=100.0,
+            maximum_step_rad=0.02,
         )
     excessive_velocity = derivatives.copy()
     excessive_velocity[1, 5] = 1.1
     with pytest.raises(ValueError, match='derivatives must be zero'):
         validate_sdk_movej_waypoint_path(
             positions * 0.5, excessive_velocity, derivatives, [0.0, 0.05],
+            command_rate_hz=100.0,
+        )
+
+
+def test_tesseract_stream_rejects_speed_scaled_controller_limit_violation():
+    positions = np.asarray([
+        np.zeros(6),
+        [0.13, 0.0, 0.0, 0.0, 0.0, 0.0],
+    ])
+    derivatives = np.zeros_like(positions)
+    with pytest.raises(ValueError, match='velocity limit'):
+        validate_sdk_movej_waypoint_path(
+            positions,
+            derivatives,
+            derivatives,
+            [0.0, 0.05],
             command_rate_hz=20.0,
+            maximum_step_rad=0.20,
+            velocity_limits_rad_s=[3.0] * 6,
+            acceleration_limits_rad_s2=[5.0] * 6,
+            speed_percent=50.0,
         )
 
 
@@ -2186,6 +2207,10 @@ def test_executor_streams_due_tesseract_samples_without_waiting_at_each_one():
         command_sent_at=0.0,
         command_samples_sent=0,
         max_command_interval_sec=0.0,
+        stream_schedule_completion_logged=False,
+        last_stream_planned_duration_sec=0.0,
+        last_stream_actual_duration_sec=0.0,
+        last_stream_achieved_rate_hz=0.0,
         last_motion_status_at=0.0,
         waypoint_started_at=None,
         waypoint_last_progress_at=None,
@@ -2196,6 +2221,7 @@ def test_executor_streams_due_tesseract_samples_without_waiting_at_each_one():
         publish_joint_command=lambda target: published.append(
             np.asarray(target).copy()),
         publish_status=lambda: None,
+        get_logger=lambda: SimpleNamespace(info=lambda _message: None),
         abort_or_finish_captures=lambda reason: pytest.fail(reason),
     )
 
@@ -2210,6 +2236,10 @@ def test_executor_streams_due_tesseract_samples_without_waiting_at_each_one():
     np.testing.assert_allclose(published[-1], second)
     assert fake.path_index == 2
     assert fake.waypoint_started_at == pytest.approx(0.101)
+    assert fake.stream_schedule_completion_logged
+    assert fake.last_stream_planned_duration_sec == pytest.approx(0.10)
+    assert fake.last_stream_actual_duration_sec == pytest.approx(0.101)
+    assert fake.last_stream_achieved_rate_hz == pytest.approx(1.0 / 0.101)
 
 
 def test_executor_aborts_instead_of_bursting_or_shortcutting_overdue_path():

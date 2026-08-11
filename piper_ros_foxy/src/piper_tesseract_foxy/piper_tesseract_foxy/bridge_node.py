@@ -424,7 +424,7 @@ class TesseractPlanBridge(Node):
             'max_tracking_measurement_age_sec': 0.75,
             'max_execution_viewpoints': 13,
             'joint_limit_margin_rad': 0.03,
-            'trajectory_joint_step_rad': 0.025,
+            'trajectory_joint_step_rad': 0.05,
             'trajectory_command_rate_hz': 20.0,
             'speed_percent': 5.0,
             'roll_samples_rad': [-2.094395102, -1.047197551, 0.0,

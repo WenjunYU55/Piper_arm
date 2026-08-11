@@ -16,6 +16,7 @@ from piper_mobile_manipulation.target_acquisition import (
 from piper_tesseract_foxy.contract import ContractError, JOINT_NAMES
 from piper_tesseract_foxy.worker import (
     reverse_sdk_movej_points,
+    sdk_movej_waypoint_trajectory,
     TesseractBackend,
 )
 
@@ -73,11 +74,11 @@ def folded_home_return_regression(backend, home_positions):
         'planning': {
             'min_viewpoints': 0,
             'max_viewpoints': 0,
-            'max_execution_joint_step_rad': 0.10,
+            'max_execution_joint_step_rad': 0.05,
             'roll_samples_rad': [0.0],
             'effective_speed_percent': 100.0,
             'command_rate_hz': 20.0,
-            'timing_policy': 'tesseract_stream_v1',
+            'timing_policy': 'tesseract_stream_v3',
             'return_home_positions_rad': home.tolist(),
         },
         'limits': {
@@ -149,11 +150,11 @@ def august_11_holder_floor_incident_regression(backend, home_positions):
                 'home_stage': 'ROUGH_HOME',
                 'min_viewpoints': 0,
                 'max_viewpoints': 0,
-                'max_execution_joint_step_rad': 0.10,
+                'max_execution_joint_step_rad': 0.05,
                 'roll_samples_rad': [0.0],
                 'effective_speed_percent': 100.0,
                 'command_rate_hz': 20.0,
-                'timing_policy': 'tesseract_stream_v1',
+                'timing_policy': 'tesseract_stream_v3',
                 'return_home_positions_rad': list(home_positions),
                 'joint_goal_positions_rad': list(home_positions),
             },
@@ -194,11 +195,11 @@ def powered_start_home_return_regression(backend, home_positions):
             'planning': {
                 'min_viewpoints': 0,
                 'max_viewpoints': 0,
-                'max_execution_joint_step_rad': 0.10,
+                'max_execution_joint_step_rad': 0.05,
                 'roll_samples_rad': [0.0],
                 'effective_speed_percent': 5.0,
                 'command_rate_hz': 20.0,
-                'timing_policy': 'tesseract_stream_v1',
+                'timing_policy': 'tesseract_stream_v3',
                 'return_home_positions_rad': home.tolist(),
             },
             'limits': {
@@ -291,11 +292,11 @@ def staged_wrist_regression(backend, home_profile):
             'planning': {
                 'min_viewpoints': 0,
                 'max_viewpoints': 0,
-                'max_execution_joint_step_rad': 0.10,
+                'max_execution_joint_step_rad': 0.05,
                 'roll_samples_rad': [0.0],
                 'effective_speed_percent': 5.0,
                 'command_rate_hz': 20.0,
-                'timing_policy': 'tesseract_stream_v1',
+                'timing_policy': 'tesseract_stream_v3',
                 'return_home_positions_rad': goal.tolist(),
                 'home_stage': home_stage,
             },
@@ -381,7 +382,7 @@ def detour_regression(backend):
     if not backend.state_in_collision(midpoint):
         raise RuntimeError('detour fixture midpoint is not blocked')
     points, validation = backend.plan_segment_to_joint_goal(
-        start, goal, 0.025)
+        start, goal, 0.05)
     if len(points) <= 2:
         raise RuntimeError(
             'scheduled Tesseract detour collapsed to a direct endpoint')
@@ -415,14 +416,14 @@ def zero_start_acquisition_regression(backend):
         'planning': {
             'min_viewpoints': 1,
             'max_viewpoints': 4,
-            'max_execution_joint_step_rad': 0.10,
+            'max_execution_joint_step_rad': 0.05,
             'roll_samples_rad': [
                 -2.094395102, -1.047197551, 0.0,
                 1.047197551, 2.094395102, 3.141592654,
             ],
             'effective_speed_percent': 100.0,
             'command_rate_hz': 20.0,
-            'timing_policy': 'tesseract_stream_v1',
+            'timing_policy': 'tesseract_stream_v3',
         },
         'limits': {
             'position_rad': [
@@ -480,14 +481,14 @@ def centerline_zero_start_acquisition_regression(backend):
         'planning': {
             'min_viewpoints': 1,
             'max_viewpoints': 1,
-            'max_execution_joint_step_rad': 0.10,
+            'max_execution_joint_step_rad': 0.05,
             'roll_samples_rad': [
                 -2.094395102, -1.047197551, 0.0,
                 1.047197551, 2.094395102, 3.141592654,
             ],
             'effective_speed_percent': 100.0,
             'command_rate_hz': 20.0,
-            'timing_policy': 'tesseract_stream_v1',
+            'timing_policy': 'tesseract_stream_v3',
         },
         'limits': {
             'position_rad': [
@@ -554,14 +555,14 @@ def dual_limit_start_acquisition_regression(backend):
         'planning': {
             'min_viewpoints': 1,
             'max_viewpoints': 5,
-            'max_execution_joint_step_rad': 0.10,
+            'max_execution_joint_step_rad': 0.05,
             'roll_samples_rad': [
                 -2.094395102, -1.047197551, 0.0,
                 1.047197551, 2.094395102, 3.141592654,
             ],
             'effective_speed_percent': 100.0,
             'command_rate_hz': 20.0,
-            'timing_policy': 'tesseract_stream_v1',
+            'timing_policy': 'tesseract_stream_v3',
         },
         'limits': {
             'position_rad': [
@@ -631,14 +632,14 @@ def compact_start_acquisition_regression(backend):
         'planning': {
             'min_viewpoints': 1,
             'max_viewpoints': 4,
-            'max_execution_joint_step_rad': 0.10,
+            'max_execution_joint_step_rad': 0.05,
             'roll_samples_rad': [
                 -2.094395102, -1.047197551, 0.0,
                 1.047197551, 2.094395102, 3.141592654,
             ],
             'effective_speed_percent': 100.0,
             'command_rate_hz': 20.0,
-            'timing_policy': 'tesseract_stream_v1',
+            'timing_policy': 'tesseract_stream_v3',
         },
         'limits': {
             'position_rad': [
@@ -730,7 +731,7 @@ def run(args, include_compact=True):
     points, validation = backend.plan_segment(FIXTURE_START, {
         'camera_position_m': target_pose[:3, 3].tolist(),
         'look_direction': look.tolist(),
-    }, roll, 0.025)
+    }, roll, 0.05)
     times = np.asarray([point['time_from_start_s'] for point in points])
     if len(points) < 2 or not np.all(np.diff(times) > 0.0):
         raise RuntimeError('planner did not return strictly timed trajectory points')
@@ -745,6 +746,35 @@ def run(args, include_compact=True):
     planned_j6_change = float(points[-1]['positions_rad'][5] - points[0]['positions_rad'][5])
     if abs(planned_j6_change) < 0.30:
         raise RuntimeError('J6 freedom smoke failed: delta=%.6f' % planned_j6_change)
+    stage('five_percent_movej_model_timing')
+    timing_positions = [FIXTURE_START.copy() for _ in range(3)]
+    timing_positions[1][5] += 0.03
+    timing_positions[2][5] += 0.06
+    raw_timing = backend.time_parameterize_positions(timing_positions)
+    source_max_velocity = max(float(np.max(np.abs(
+        np.asarray(point['velocities_rad_s'], dtype=float)
+    ))) for point in raw_timing)
+    movej_model_timing, _ = sdk_movej_waypoint_trajectory(
+        raw_timing,
+        5.0,
+        20.0,
+        0.05,
+        backend.execution_position_limits,
+        [0.3] * 6,
+        [0.5] * 6,
+    )
+    emitted_max_velocity = max(float(np.max(np.abs(
+        np.asarray(second['positions_rad'], dtype=float)
+        - np.asarray(first['positions_rad'], dtype=float)
+    ))) / 0.05 for first, second in zip(
+        movej_model_timing[:-1], movej_model_timing[1:]))
+    if source_max_velocity <= 0.15:
+        raise RuntimeError(
+            '5 percent timing regression did not exercise ISP/MoveJ '
+            'derivative separation')
+    if emitted_max_velocity > 0.15 + 1e-6:
+        raise RuntimeError(
+            '5 percent MoveJ schedule exceeds the J6 model limit')
     stage('thin_obstacle_detour')
     backend.reset_scene()
     detour = detour_regression(backend)
@@ -799,6 +829,13 @@ def run(args, include_compact=True):
         'j6_start_rad': float(points[0]['positions_rad'][5]),
         'j6_end_rad': float(points[-1]['positions_rad'][5]),
         'j6_change_rad': planned_j6_change,
+        'five_percent_movej_model_timing': {
+            'source_max_velocity_rad_s': source_max_velocity,
+            'emitted_max_velocity_rad_s': emitted_max_velocity,
+            'trajectory_points': len(movej_model_timing),
+            'duration_s': float(
+                movej_model_timing[-1]['time_from_start_s']),
+        },
         'collision_model_qualified_for_hardware': bool(
             backend.manifest.get('qualified_for_hardware', False)),
         'thin_obstacle_detour': detour,

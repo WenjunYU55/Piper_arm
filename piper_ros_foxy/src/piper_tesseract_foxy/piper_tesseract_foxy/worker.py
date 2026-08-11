@@ -36,6 +36,11 @@ AUTOMATIC_ONE_VIEW_SEGMENT_BUDGET_SEC = 3.0
 WORKER_RESPONSE_RESERVE_SEC = 5.0
 SCAN_TARGET_MAX_BORESIGHT_DEG = 20.0
 SCAN_TARGET_MIN_DISTANCE_M = 0.22
+# Qualified PiPER URDF MoveJ velocity limits. J1-J5 are 5 rad/s and J6 is
+# 3 rad/s. MotionCtrl_2 applies the operator percentage to these controller
+# motions; the stream schedule mirrors that same percentage at 20 Hz.
+MOVEJ_NOMINAL_VELOCITY_RAD_S = np.asarray(
+    [5.0, 5.0, 5.0, 5.0, 5.0, 3.0], dtype=float)
 
 
 def planning_budgets_for_request(request):
@@ -297,13 +302,16 @@ def sdk_movej_waypoint_trajectory(
         mandatory_waypoints=(),
         bootstrap_start_limit_tolerance_rad=0.0,
 ):
-    """Resample the exact OMPL/ISP path onto a bounded execution schedule.
+    """Turn the exact Tesseract path into 20 Hz MoveJ position targets.
 
-    The controller accepts position targets rather than Tesseract's per-joint
-    derivatives.  We therefore preserve the planned joint-space geometry,
-    slow its ISP clock by the selected aggregate speed, and emit zero
-    derivative placeholders at a modest fixed rate. Mandatory recovery knots
-    are assigned exact scheduled indices so their evidence remains meaningful.
+    Tesseract supplies collision-free geometry; its ISP derivatives are not
+    commands accepted by the PiPER interface. Each source segment is therefore
+    sampled using the robot model's MoveJ speed multiplied once by the operator
+    percentage. Every source vertex remains in the emitted path, the hard
+    per-command step ceiling still applies, and MotionCtrl_2 receives the same
+    percentage for the controller's interpolation. The queried motor-limit
+    record remains validated and hash-bound health evidence, but it is not
+    multiplied into this schedule a second time.
     """
     if len(points) < 2:
         raise ContractError('trajectory has fewer than two points')
@@ -340,6 +348,8 @@ def sdk_movej_waypoint_trajectory(
             np.any(velocity_bounds <= 0.0)
             or np.any(acceleration_bounds <= 0.0)):
         raise ContractError('controller motion limits must be positive')
+    speed_scale = speed / 100.0
+    scheduled_velocity_bounds = MOVEJ_NOMINAL_VELOCITY_RAD_S * speed_scale
 
     mandatory_indices = []
     for waypoint in mandatory_waypoints:
@@ -371,69 +381,25 @@ def sdk_movej_waypoint_trajectory(
                 'Tesseract stream path exceeds a position limit')
 
     period = 1.0 / rate
-    source_times = times - times[0]
-    source_duration = float(source_times[-1])
-    if source_duration <= 0.0:
-        raise ContractError('Tesseract stream has no positive duration')
-    requested_duration = source_duration * (100.0 / speed)
-    steps = max(
-        len(mandatory_indices) + 1,
-        int(math.ceil(requested_duration * rate - 1e-12)),
-    )
-
-    # Use an integer-rate schedule. Increasing the step count lengthens the
-    # execution and guarantees the configured per-command joint-step ceiling
-    # without ever asking the publisher to exceed its declared rate.
-    def sample_path(step_count):
-        output_times = np.arange(step_count + 1, dtype=float) * period
-        mapped_times = np.linspace(0.0, source_duration, step_count + 1)
-        scheduled_positions = np.column_stack([
-            np.interp(mapped_times, source_times, positions[:, joint])
-            for joint in range(6)
-        ])
-        return output_times, mapped_times, scheduled_positions
-
-    output_times, mapped_times, output_positions = sample_path(steps)
-    while float(np.max(np.abs(np.diff(output_positions, axis=0)))) > (
-            maximum_step + 1e-9):
-        ratio = float(np.max(np.abs(np.diff(
-            output_positions, axis=0)))) / maximum_step
-        steps = max(steps + 1, int(math.ceil(steps * ratio)))
-        if steps + 1 > 60000:
+    output_positions = [positions[0].copy()]
+    # Allocate whole 20 Hz ticks independently to each collision-checked
+    # source segment. This makes the formula explicit and keeps every source
+    # vertex instead of cutting across a corner while resampling.
+    for first, second in zip(positions[:-1], positions[1:]):
+        delta = second - first
+        ticks_for_velocity = int(math.ceil(float(np.max(
+            np.abs(delta)
+            / (scheduled_velocity_bounds * period))) - 1e-12))
+        ticks_for_step = int(math.ceil(
+            float(np.max(np.abs(delta))) / maximum_step - 1e-12))
+        ticks = max(1, ticks_for_velocity, ticks_for_step)
+        if len(output_positions) + ticks > 60000:
             raise ContractError('scheduled Tesseract path exceeds point limit')
-        output_times, mapped_times, output_positions = sample_path(steps)
-
-    # Warp the source-time mapping piecewise so every declared recovery knot
-    # lands exactly on a command tick while retaining path order.
-    if mandatory_indices:
-        source_knots = [0.0] + [
-            float(source_times[index]) for index in mandatory_indices
-        ] + [source_duration]
-        schedule_knots = [0]
-        for source_time in source_knots[1:-1]:
-            ideal = int(round((source_time / source_duration) * steps))
-            schedule_knots.append(max(schedule_knots[-1] + 1, ideal))
-        schedule_knots.append(steps)
-        for index in range(len(schedule_knots) - 2, 0, -1):
-            schedule_knots[index] = min(
-                schedule_knots[index], schedule_knots[index + 1] - 1)
-        if any(
-                second <= first for first, second in zip(
-                    schedule_knots[:-1], schedule_knots[1:])):
-            raise ContractError('trajectory is too short to schedule recovery knots')
-        mapped_times = np.interp(
-            np.arange(steps + 1, dtype=float), schedule_knots, source_knots)
-        output_positions = np.column_stack([
-            np.interp(mapped_times, source_times, positions[:, joint])
-            for joint in range(6)
-        ])
-        for schedule_index, source_index in zip(
-                schedule_knots[1:-1], mandatory_indices):
-            output_positions[schedule_index] = positions[source_index]
-        if float(np.max(np.abs(np.diff(output_positions, axis=0)))) > (
-                maximum_step + 1e-9):
-            raise ContractError(
-                'recovery-knot scheduling exceeds the joint-step ceiling')
+        for tick in range(1, ticks + 1):
+            output_positions.append(
+                first + delta * (float(tick) / float(ticks)))
+    output_positions = np.asarray(output_positions, dtype=float)
+    output_times = np.arange(len(output_positions), dtype=float) * period
 
     emitted = []
     for when, position in zip(output_times, output_positions):
@@ -443,7 +409,10 @@ def sdk_movej_waypoint_trajectory(
             'velocities_rad_s': [0.0] * 6,
             'accelerations_rad_s2': [0.0] * 6,
         })
-    return emitted, [dict(point) for point in emitted]
+    # Every emitted point lies on one exact source segment. Collision proof is
+    # therefore performed once on the source geometry at the independent
+    # adaptive resolution, rather than once per transport tick.
+    return emitted, [dict(point) for point in points]
 
 
 def subdivide_joint_segment(first, second, maximum_l1_step):
@@ -1656,6 +1625,16 @@ class TesseractBackend:
         )
 
         profile = ISPCompositeProfile()
+        speed_scale = float(self.execution_speed_percent) / 100.0
+        if (
+                not math.isfinite(speed_scale)
+                or speed_scale < 0.01
+                or speed_scale > 1.0):
+            raise ContractError(
+                'execution speed scale must be within 0.01..1.0')
+        # ISP provides finite metadata over the exact path. PiPER does not
+        # consume those derivatives; requested speed is applied exactly once
+        # from the qualified MoveJ limits at the command boundary.
         profile.max_velocity_scaling_factor = 1.0
         profile.max_acceleration_scaling_factor = 1.0
         profiles = ProfileDictionary()

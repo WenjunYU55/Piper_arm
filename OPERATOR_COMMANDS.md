@@ -9,13 +9,28 @@ cd /home/prl/Piper_arm
 
 > **Current hardware state — 11 August 2026:** The earlier J6 startup fault,
 > J5 table contact and powered J5 dropout remain required incident history.
-> Their fail-closed containment is active. The latest operator-run 50-percent
-> task completed STARTUP_WRIST, 24 accepted captures, direct rough/storage
+> Their fail-closed containment is active. The historical v1 50-percent task
+> completed STARTUP_WRIST, 24 accepted captures, direct rough/storage
 > home, stable hold, all-six disable and child cleanup with
 > `safe_shutdown=true`; it failed only the independent coverage result at
-> 113.5/120 degrees azimuth and without measured convergence. Repeat the
-> read-only CAN/all-six preflight before every mission. This single run does
-> not qualify 100-percent dynamics.
+> 113.5/120 degrees azimuth and without measured convergence. The current
+> `tesseract_stream_v3` timing policy has command-free/rootless evidence and a
+> supervised 20-percent physical run. Task
+> `gui-sim-e9629c41e1224425b5adb0454b61ee3f` delivered acquisition and scan
+> segments at approximately 19-20 Hz, persisted 15 GOOD/CLEAR captures, and
+> the operator judged its speed consistent with direct MoveJ behavior. Its
+> later `NO_REACHABLE_PLAN` result was an independent adaptive-NBV frontier
+> exhaustion (65.3/120 degrees azimuth and unconverged measured surface), not
+> a stream-timing or shutdown failure; staged home, all-six disable, and exact
+> child cleanup completed with `safe_shutdown=true`.
+> It streams at 20 Hz and schedules J1-J5 from `5 rad/s * speed%` and J6
+> from `3 rad/s * speed%`; the 0.05-rad step ceiling currently preserves that
+> relationship through 20 percent. Higher settings remain capped and
+> unqualified.
+> Repeat the read-only CAN/all-six preflight before every mission. The 20-percent
+> observation does not replace the remaining staged 1/5/10-percent checks or a
+> deliberate cancel-to-hold test. No result qualifies
+> 100-percent dynamics yet.
 
 ## One-time host setup
 

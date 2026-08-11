@@ -12,8 +12,9 @@ import time
 
 SCHEMA_VERSION = 5
 JOINT_NAMES = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
-TIMING_POLICY = 'tesseract_stream_v1'
+TIMING_POLICY = 'tesseract_stream_v3'
 COMMAND_RATE_HZ = 20.0
+MOVEJ_NOMINAL_VELOCITY_RAD_S = (5.0, 5.0, 5.0, 5.0, 5.0, 3.0)
 MAX_PROTOCOL_VELOCITY_RAD_S = 3.0
 MAX_PROTOCOL_ACCELERATION_RAD_S2 = 5.0
 MAX_BOOTSTRAP_START_LIMIT_TOLERANCE_RAD = 0.04
@@ -343,7 +344,8 @@ def validate_request(payload, now_ns=None):
     if (
             not math.isfinite(command_rate)
             or abs(command_rate - COMMAND_RATE_HZ) > 1e-9):
-        raise ContractError('planning.command_rate_hz must be 20 Hz')
+        raise ContractError(
+            'planning.command_rate_hz must be %.0f Hz' % COMMAND_RATE_HZ)
     speed = float(planning.get('effective_speed_percent', 0.0))
     if not math.isfinite(speed) or speed < 1.0 or speed > 100.0:
         raise ContractError(
@@ -618,6 +620,8 @@ def validate_response(payload, request=None):
                 'segment %d direct configured home must have two points'
                 % segment_index)
         previous_time = -1.0
+        scheduled_positions = []
+        scheduled_times = []
         for point_index, point in enumerate(points):
             prefix = 'segment %d point %d' % (segment_index, point_index)
             when = float(point.get('time_from_start_s', -1.0))
@@ -627,6 +631,8 @@ def validate_response(payload, request=None):
             previous_time = when
             positions = finite_vector(
                 point.get('positions_rad'), 6, prefix + ' positions')
+            scheduled_positions.append(positions)
+            scheduled_times.append(when)
             velocities = finite_vector(
                 point.get('velocities_rad_s'), 6, prefix + ' velocities')
             accelerations = finite_vector(
@@ -714,6 +720,33 @@ def validate_response(payload, request=None):
                         raise ContractError(
                             '%s exceeds the scheduled joint-step ceiling'
                             % prefix)
+        if request is not None and not direct_home:
+            speed_scale = float(request['planning'][
+                'effective_speed_percent']) / 100.0
+            # MotionCtrl_2 interprets speed as a percentage of the qualified
+            # PiPER MoveJ model (J1-J5 5 rad/s, J6 3 rad/s). The queried
+            # motor-limit record is health/hash evidence and must not apply
+            # the percentage to the transport schedule a second time.
+            velocity_limits = [
+                float(value) * speed_scale
+                for value in MOVEJ_NOMINAL_VELOCITY_RAD_S]
+            for point_index in range(1, len(scheduled_positions)):
+                interval = scheduled_times[point_index] - scheduled_times[
+                    point_index - 1]
+                velocity = [
+                    (current - previous) / interval
+                    for current, previous in zip(
+                        scheduled_positions[point_index],
+                        scheduled_positions[point_index - 1],
+                    )
+                ]
+                if any(
+                        abs(value) > limit + 1e-6
+                        for value, limit in zip(
+                            velocity, velocity_limits)):
+                    raise ContractError(
+                        'segment %d exceeds a speed-scaled MoveJ model '
+                        'velocity limit' % segment_index)
         if direct_home and request is not None:
             planned_start = finite_vector(
                 points[0].get('positions_rad'), 6,

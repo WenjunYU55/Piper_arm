@@ -143,23 +143,183 @@ def test_sdk_movej_target_keeps_joint6_free_and_zero_derivatives():
         },
     ]
     fast, fast_validation = sdk_movej_waypoint_trajectory(
-        source, 100.0, 20.0, 0.10,
+        source, 100.0, 20.0, 0.05,
         [[-1.0, 1.0]] * 6, [1.0] * 6, [2.0] * 6)
+    slow_source = [dict(point) for point in source]
+    slow_source[1] = dict(slow_source[1])
+    slow_source[1]['time_from_start_s'] = 4.0
     slow, _ = sdk_movej_waypoint_trajectory(
-        source, 10.0, 20.0, 0.10,
+        slow_source, 10.0, 20.0, 0.05,
         [[-1.0, 1.0]] * 6, [1.0] * 6, [2.0] * 6)
     assert fast[-1]['positions_rad'][5] == pytest.approx(0.4)
     assert slow[-1]['positions_rad'][5] == pytest.approx(0.4)
     assert len(slow) > len(fast)
-    assert slow[-1]['time_from_start_s'] == pytest.approx(
-        fast[-1]['time_from_start_s'] * 10.0)
-    assert fast_validation == fast
+    assert slow[-1]['time_from_start_s'] == pytest.approx(1.35)
+    assert fast_validation == source
     assert all(point['velocities_rad_s'] == [0.0] * 6 for point in fast)
     assert all(point['accelerations_rad_s2'] == [0.0] * 6 for point in fast)
-    assert len(fast) == 21
+    assert len(fast) == 9
     assert fast[0]['positions_rad'] == pytest.approx([0.0] * 6)
     assert fast[-1]['positions_rad'] == pytest.approx(
         [0.2, 0.0, 0.0, 0.0, 0.0, 0.4])
+
+
+@pytest.mark.parametrize(
+    'speed_percent,expected_duration,expected_step',
+    [
+        (5.0, 1.2, 0.0125),
+        (20.0, 0.3, 0.05),
+        # The hard step ceiling deliberately caps rates above the currently
+        # qualified 20-percent stream envelope.
+        (100.0, 0.3, 0.05),
+    ],
+)
+def test_sdk_schedule_uses_speed_scaled_controller_velocity(
+        speed_percent, expected_duration, expected_step):
+    source = [
+        {
+            'time_from_start_s': 0.0,
+            'positions_rad': [0.0] * 6,
+            'velocities_rad_s': [0.0] * 6,
+            'accelerations_rad_s2': [0.0] * 6,
+        },
+        {
+            'time_from_start_s': 0.1,
+            'positions_rad': [0.3, 0.0, 0.0, 0.0, 0.0, 0.0],
+            'velocities_rad_s': [0.0] * 6,
+            'accelerations_rad_s2': [0.0] * 6,
+        },
+    ]
+    emitted, _ = sdk_movej_waypoint_trajectory(
+        source,
+        speed_percent,
+        20.0,
+        0.05,
+        [[-1.0, 1.0]] * 6,
+        [3.0] * 6,
+        [1000.0] * 6,
+    )
+    assert emitted[-1]['time_from_start_s'] == pytest.approx(
+        expected_duration)
+    maximum_step = max(
+        abs(current['positions_rad'][0] - previous['positions_rad'][0])
+        for previous, current in zip(emitted[:-1], emitted[1:])
+    )
+    assert maximum_step == pytest.approx(expected_step)
+
+
+def test_sdk_schedule_does_not_infer_acceleration_from_movej_setpoints():
+    source = [
+        {
+            'time_from_start_s': 0.0,
+            'positions_rad': [0.0] * 6,
+            'velocities_rad_s': [0.0] * 6,
+            'accelerations_rad_s2': [0.0] * 6,
+        },
+        {
+            'time_from_start_s': 0.05,
+            'positions_rad': [0.1, 0.0, 0.0, 0.0, 0.0, 0.0],
+            'velocities_rad_s': [0.0] * 6,
+            'accelerations_rad_s2': [0.0] * 6,
+        },
+        {
+            'time_from_start_s': 0.10,
+            'positions_rad': [0.1, 0.0, 0.0, 0.0, 0.0, 0.0],
+            'velocities_rad_s': [0.0] * 6,
+            'accelerations_rad_s2': [0.0] * 6,
+        },
+    ]
+    emitted, _ = sdk_movej_waypoint_trajectory(
+        source,
+        50.0,
+        20.0,
+        0.05,
+        [[-1.0, 1.0]] * 6,
+        [3.0] * 6,
+        [2.0] * 6,
+    )
+    positions = np.asarray([
+        point['positions_rad'] for point in emitted], dtype=float)
+    times = np.asarray([
+        point['time_from_start_s'] for point in emitted], dtype=float)
+    velocities = np.diff(positions, axis=0) / np.diff(times)[:, None]
+    accelerations = np.diff(velocities, axis=0) / 0.05
+    assert np.max(np.abs(velocities)) <= 2.5 + 1e-6
+    # Position-target corner acceleration is handled by MoveJ and must not
+    # inflate the explicit model-speed schedule.
+    assert emitted[-1]['time_from_start_s'] == pytest.approx(0.15)
+    assert np.max(np.abs(accelerations)) > 1.0
+
+
+def test_sdk_schedule_does_not_treat_isp_derivatives_as_movej_commands():
+    source = [
+        {
+            'time_from_start_s': 0.0,
+            'positions_rad': [0.0] * 6,
+            'velocities_rad_s': [0.0] * 6,
+            'accelerations_rad_s2': [0.0] * 6,
+        },
+        {
+            'time_from_start_s': 0.10,
+            'positions_rad': [0.1, 0.0, 0.0, 0.0, 0.0, 0.0],
+            'velocities_rad_s': [2.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            'accelerations_rad_s2': [3.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        },
+    ]
+    emitted, _ = sdk_movej_waypoint_trajectory(
+        source,
+        50.0,
+        20.0,
+        0.05,
+        [[-1.0, 1.0]] * 6,
+        [3.0] * 6,
+        [2.0] * 6,
+    )
+    interval_velocity = max(
+        abs(current['positions_rad'][0] - previous['positions_rad'][0]) / 0.05
+        for previous, current in zip(emitted[:-1], emitted[1:])
+    )
+    assert interval_velocity <= 2.5 + 1e-6
+    assert all(point['velocities_rad_s'] == [0.0] * 6 for point in emitted)
+    assert all(point['accelerations_rad_s2'] == [0.0] * 6 for point in emitted)
+
+
+def test_sdk_schedule_does_not_multiply_live_limit_at_five_percent():
+    source = [
+        {
+            'time_from_start_s': 0.0,
+            'positions_rad': [0.0] * 6,
+            'velocities_rad_s': [0.0] * 6,
+            'accelerations_rad_s2': [0.0] * 6,
+        },
+        {
+            'time_from_start_s': 0.05,
+            'positions_rad': [0.05, 0.0, 0.0, 0.0, 0.0, 0.0],
+            'velocities_rad_s': [0.8, 0.0, 0.0, 0.0, 0.0, 0.0],
+            'accelerations_rad_s2': [2.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        },
+        {
+            'time_from_start_s': 0.10,
+            'positions_rad': [0.1, 0.0, 0.0, 0.0, 0.0, 0.0],
+            'velocities_rad_s': [0.0] * 6,
+            'accelerations_rad_s2': [0.0] * 6,
+        },
+    ]
+    emitted, _ = sdk_movej_waypoint_trajectory(
+        source,
+        5.0,
+        20.0,
+        0.05,
+        [[-1.0, 1.0]] * 6,
+        [0.3] * 6,
+        [0.5] * 6,
+    )
+    maximum_velocity = max(
+        abs(current['positions_rad'][0] - previous['positions_rad'][0]) / 0.05
+        for previous, current in zip(emitted[:-1], emitted[1:])
+    )
+    assert maximum_velocity == pytest.approx(0.25)
+    assert emitted[-1]['time_from_start_s'] == pytest.approx(0.4)
 
 
 def test_sdk_movej_waypoint_order_stamps_respect_transport_rate():
@@ -318,7 +478,7 @@ def test_acquisition_worker_accepts_one_of_five_planned_looks():
             'roll_samples_rad': [0.0],
             'effective_speed_percent': 100.0,
             'command_rate_hz': 20.0,
-            'timing_policy': 'tesseract_stream_v1',
+            'timing_policy': 'tesseract_stream_v3',
         },
         'limits': {
             'position_rad': [[-1.0, 1.0] for _ in range(6)],
@@ -470,7 +630,7 @@ def test_worker_retries_candidates_after_a_success_changes_start_state():
             'roll_samples_rad': [0.0],
             'effective_speed_percent': 100.0,
             'command_rate_hz': 20.0,
-            'timing_policy': 'tesseract_stream_v1',
+            'timing_policy': 'tesseract_stream_v3',
         },
         'limits': {
             'position_rad': [[-3.0, 3.0] for _ in range(6)],
@@ -866,7 +1026,7 @@ def test_configured_home_direct_binds_the_exact_stage_goal():
             'allowed_start_limit_joints': [1, 2, 3, 4, 5, 6],
         }, 'validation_max_joint_l1_step_rad': 10.0},
         execution_position_limits=[[-3.2, 3.2]] * 6,
-        command_rate_hz=20.0,
+        command_rate_hz=100.0,
         external_floor_clearance_policy=lambda: {'enabled': True},
         external_floor_clearance_rejection=lambda _joints, _stage: '',
     )
@@ -892,7 +1052,7 @@ def test_configured_home_direct_accepts_relaxed_start_but_not_relaxed_goal():
             'allowed_start_limit_joints': [1, 2, 3, 4, 5, 6],
         }, 'validation_max_joint_l1_step_rad': 10.0},
         execution_position_limits=[[-1.0, 1.0]] * 6,
-        command_rate_hz=20.0,
+        command_rate_hz=100.0,
         external_floor_clearance_policy=lambda: {'enabled': True},
         external_floor_clearance_rejection=lambda _joints, _stage: '',
     )

@@ -42,42 +42,42 @@ current_snapshot_2026_08_11:
     rootless_tesseract_compact: PASS
     real_arm_motion: false
   latest_mission:
-    task_id: gui-sim-a130d7ad58a54815ab36341ed324be82
-    configured_free_motion_speed_percent: 50
-    accepted_captures: 24
+    task_id: gui-sim-e9629c41e1224425b5adb0454b61ee3f
+    configured_free_motion_speed_percent: 20
+    timing_policy: tesseract_stream_v3
+    accepted_captures: 15
     result: FAILED
-    failure_code: INSUFFICIENT_CAPTURE_QUALITY
+    failure_code: NO_REACHABLE_PLAN
     safe_shutdown: true
     startup_wrist_completed: true
     storage_wrist_proved: true
     achieved_coverage:
-      positive_y_side_views: 9
-      negative_y_side_views: 3
-      azimuth_span_deg: 113.51481943407279
-      elevation_span_deg: 37.46248988062635
+      positive_y_side_views: 2
+      negative_y_side_views: 2
+      azimuth_span_deg: 65.29534343287446
+      elevation_span_deg: 40.64433577405602
       measured_surface_converged: false
     blockers:
+      - no meaningfully distinct safe candidate remained inside the 6-30-degree closed-loop frontier
       - azimuth span remained below the 120-degree requirement
-      - three-view measured novel-surface gain did not converge
-    durable_dataset: datasets/active_scan/scan_20260811_190342
-    runtime_result: /tmp/piper_target_scan_missions/results/gui-sim-a130d7ad58a54815ab36341ed324be82.json
+      - measured novel-surface gain did not converge
+    durable_dataset: datasets/active_scan/scan_20260811_230742
+    runtime_result: /tmp/piper_target_scan_missions/results/gui-sim-e9629c41e1224425b5adb0454b61ee3f.json
   motion_timing_observation:
-    status: open
+    status: twenty_percent_tesseract_stream_v3_physically_accepted
     evidence: >-
-      At the same configured 50 percent, direct configured-home moves took
-      about 1.085 and 2.336 seconds. Tesseract scan segments normally took
-      1.559 to 4.909 seconds and one detour took 8.811 seconds. No scheduled
-      stream-overrun or missed-sample abort occurred.
+      At configured 20 percent, current v3 acquisition ran for 2.501 seconds
+      over 50 samples at 19.6 Hz. Scan segments ran at approximately 18.0-19.6
+      Hz with planned and actual durations aligned; recorded maximum following
+      error remained below the 0.30-rad guard. The operator judged the speed
+      consistent. The mission later failed only the independent adaptive-frontier
+      completion requirement and completed safe staged shutdown.
     diagnosis: >-
-      The host is not presently failing to service the 20 Hz stream. Normal
-      Tesseract paths retain longer collision-free geometry, scale ISP time by
-      100/effective_speed_percent and may be lengthened by the fixed 0.025-rad
-      adjacent-command ceiling. At 20 Hz that ceiling alone caps the commanded
-      per-joint slope at approximately 0.5 rad/s. PiPER also receives the same
-      aggregate MoveJ percentage, while dedicated home sends one endpoint and
-      lets the controller interpolate it directly. Point count is primarily a
-      consequence of planned duration, although repeated position-only
-      JointCtrl retargeting remains an interface limitation.
+      tesseract_stream_v3 resolves the reported Tesseract/direct-MoveJ speed
+      inconsistency for the physically observed 20-percent setting by applying
+      the selected percentage once to the MoveJ model and transmitting at 20 Hz.
+      Staged 1/5/10-percent behavior and deliberate cancel-to-hold remain pending;
+      settings above 20 percent remain step-capped and unqualified.
 
 problem_groups:
   hardware_and_motion_safety:
@@ -183,7 +183,7 @@ problem_groups:
       status: superseded
       symptom: Timed MoveJ execution emitted 7281 targets, moved slowly/choppily and repeatedly touched gripper validation.
       root_cause: PiPER consumes positions plus one aggregate speed and ignores transported Tesseract qdot/qddot.
-      correction: tesseract_stream_v1 sends arm-only position targets at a bounded schedule and never transports gripper commands.
+      correction: tesseract_stream_v1 sent arm-only position targets at a bounded schedule and never transported gripper commands; tesseract_stream_v3 retains that boundary at 20 Hz and every source vertex.
       evidence: [docs/ai/60-debt.yaml]
     - id: endpoint_only_execution_discarded_detours
       status: superseded
@@ -192,16 +192,28 @@ problem_groups:
       correction: Full OMPL/ISP path geometry is serialized, hash-bound, Bullet-revalidated and streamed.
       evidence: [docs/ai/30-contracts.yaml, docs/ai/60-debt.yaml]
     - id: tesseract_stream_vs_direct_home_speed_mismatch
-      status: open
+      status: resolved_at_twenty_percent_staged_validation_pending
       symptom: Tesseract motion is observably slower than activation/home at the same selected percentage.
-      root_cause: Streamed paths retain detours, scale ISP duration and enforce 0.025 rad at 20 Hz (about 0.5 rad/s), then also apply the aggregate PiPER MoveJ speed; home sends one direct endpoint.
-      correction: No production change yet. Evaluate native offline trajectory execution or velocity-derived online scheduling without discarding collision path geometry.
+      root_cause: Historical v1 retained detours but independently scaled ISP duration and enforced 0.025 rad at 20 Hz (about 0.5 rad/s), while home sent one direct endpoint.
+      correction: tesseract_stream_v3 retains every source vertex, samples exact source segments at 20 Hz using J1-J5 5 rad/s and J6 3 rad/s multiplied once by selected speed, sends the aligned aggregate MoveJ percentage, preserves detours/recovery knots and records per-segment timing/following telemetry. Fresh queried limits remain health/hash evidence rather than a second timing multiplier. Task gui-sim-e9629c41e1224425b5adb0454b61ee3f physically accepted timing at 20 percent; 1/5/10-percent stages and deliberate cancel-to-hold remain.
       evidence: [docs/ai/30-contracts.yaml, docs/ai/60-debt.yaml, current_snapshot_2026_08_11]
+    - id: tesseract_stream_v2_false_isp_derivative_rejection
+      status: superseded_by_tesseract_stream_v3
+      symptom: GUI mission gui-sim-50612c16547c4b14b6bcc498969a7eb4 rejected all five rough-acquisition candidates as exceeding a speed-scaled controller velocity limit; no acquisition stream executed.
+      root_cause: The first v2 implementation compared ISP derivatives from the robot-model planning domain with 5 percent of live controller feedback. The deployed arm reports 0.3 rad/s and 0.5 rad/s2 per joint, while ISP derivatives are planning metadata and are never transported through PiPER MoveJ.
+      correction: Remove the invalid source-derivative/controller comparison, keep ISP unscaled as a path clock, and enforce the selected percentage on every emitted 100 Hz position interval using the fresh measured velocity limits. Add unit and rootless regressions with the exact 0.3/0.5 values. The failed mission still completed direct home, hold, six-axis disable and child cleanup with safe_shutdown=true.
+      evidence: [/tmp/piper_target_scan_missions/results/gui-sim-50612c16547c4b14b6bcc498969a7eb4.json, /run/user/1000/piper_target_scan_logs/scan_stack.log, piper_ros_foxy/src/piper_tesseract_foxy/test/test_worker_validation.py]
+    - id: tesseract_stream_v2_transport_density_planning_timeout
+      status: software_fixed_physical_retest_pending
+      symptom: GUI mission gui-sim-b945943e849f4e68ba587401b94e1c58 completed acquisition and measured cube lock but the first MULTIVIEW_SCAN proposal exceeded its internal 45-second budget before returning a candidate, producing NO_REACHABLE_PLAN and zero captures.
+      root_cause: V2 made collision-validation workload depend on its speed-derived 100 Hz transport samples. The acquisition itself planned 19.550 seconds and delivered all 1,955 samples at 99.9 Hz with 0.0079 rad maximum following error, proving host servicing was not the failure. Repeating dense validation for automatic scan candidates consumed the planning budget.
+      correction: tesseract_stream_v3 retains every collision-checked source vertex, generates only exact on-segment 20 Hz transport targets from the MoveJ model percentage, and performs adaptive Bullet validation on source geometry independently of transport duration. Both command-free rootless suites pass. The failed v2 mission still completed direct home, hold, all-six disable and child cleanup with safe_shutdown=true.
+      evidence: [/tmp/piper_target_scan_missions/results/gui-sim-b945943e849f4e68ba587401b94e1c58.json, /run/user/1000/piper_target_scan_logs/scan_stack.log, piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/worker.py]
     - id: tesseract_stream_host_overrun_hypothesis
       status: resolved
       symptom: Slow motion was suspected to come from excessive point processing or a host unable to service the stream.
-      root_cause: Latest 50-percent evidence showed no missed 20 Hz sample or stream-overrun abort.
-      correction: Treat point density as planned-duration evidence; retain explicit dropped-sample and maximum-command-interval diagnostics.
+      root_cause: The v1 50-percent evidence showed no missed 20 Hz sample or stream-overrun abort.
+      correction: Treat point density as planned-duration evidence; v3 retains dropped-sample and maximum-command-interval diagnostics and adds planned/actual duration plus achieved-rate telemetry while decoupling collision validation from transport density.
       evidence: [/run/user/1000/piper_target_scan_logs/scan_stack.log, current_snapshot_2026_08_11]
     - id: embedded_contingency_home_in_one_view_plan
       status: resolved
@@ -227,6 +239,12 @@ problem_groups:
       root_cause: Candidate selection and/or measured coverage scoring failed to close the remaining azimuth and novelty gap before the hard maximum.
       correction: Inspect persisted achieved poses and masks before changing thresholds; preserve collision, quality and 24-view safety bound.
       evidence: [current_snapshot_2026_08_11, docs/ai/60-debt.yaml]
+    - id: fifteen_view_local_frontier_exhaustion
+      status: open
+      symptom: Current v3 task gui-sim-e9629c41e1224425b5adb0454b61ee3f persisted 15 GOOD/CLEAR views and both Y sides, but no distinct safe candidate remained inside the 6-30-degree closed-loop frontier at only 65.30/120 degrees azimuth and without measured-surface convergence.
+      root_cause: The candidate continuity/ranking policy exhausted its local frontier before it could extend global azimuth coverage; exact owning cause requires replay of achieved poses, rejected candidates and gain history.
+      correction: Audit scan_20260811_230742 and the matching planning log, then repair frontier continuity/ranking without widening collision, target-distance or optical-cone safety gates and without lowering feature-completion thresholds.
+      evidence: [/tmp/piper_target_scan_missions/results/gui-sim-e9629c41e1224425b5adb0454b61ee3f.json, datasets/active_scan/scan_20260811_230742, docs/ai/60-debt.yaml]
     - id: continuous_1050_candidate_refresh_during_motion
       status: open
       symptom: Planner regenerates and filters 1050 candidates repeatedly while an approved segment is already moving.

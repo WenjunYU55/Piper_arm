@@ -91,7 +91,7 @@ def request_fixture(plan_kind='MULTIVIEW_SCAN'):
             'max_execution_joint_step_rad': 0.10,
             'effective_speed_percent': 100.0,
             'command_rate_hz': 20.0,
-            'timing_policy': 'tesseract_stream_v1',
+            'timing_policy': 'tesseract_stream_v3',
             'joint_specific_costs': {},
             'return_home_positions_rad': (
                 [0.0, 0.0, -0.026, -0.039, 0.346, 0.107]
@@ -113,7 +113,7 @@ def scheduled_path(knots, maximum_step=0.10):
             for index in range(1, steps + 1)
         ])
     return [{
-        'time_from_start_s': round(index * 0.05, 9),
+        'time_from_start_s': round(index * 0.5, 9),
         'positions_rad': position,
         'velocities_rad_s': [0.0] * 6,
         'accelerations_rad_s2': [0.0] * 6,

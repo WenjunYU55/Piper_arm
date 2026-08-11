@@ -127,9 +127,13 @@ symptom_routing:
   scan_motion_is_jerky:
     inspect: [/piper/motion_limits, TesseractPlan timing_policy/execution_speed_percent/command_rate_hz/motion_limits_sha256, scan_trajectory.py, worker.py, scan_viewpoint_executor_node.py, scan_execution_params.yaml, piper_ctrl_single_node.py, /piper/scan_execution_status, /joint_states_single]
     note: >-
-      tesseract_stream_v1 binds fresh controller limits and selected aggregate
-      SDK speed, preserves the collision-qualified OMPL/ISP joint path, and
-      schedules arm-only position samples at 20 Hz. Intermediate samples do not
+      tesseract_stream_v3 binds fresh controller limits and selected aggregate
+      SDK speed, preserves every collision-checked OMPL/ISP source vertex, and
+      schedules exact on-segment arm-only positions at 20 Hz. The adapter uses
+      J1-J5 5 rad/s and J6 3 rad/s multiplied once by selected speed, plus a
+      0.05-rad hard step ceiling. Fresh queried limits remain health/hash
+      evidence and are not a second timing multiplier. ISP derivatives are
+      never treated as PiPER commands. Intermediate samples do not
       wait for convergence; feedback supplies a 0.30 rad following guard and
       final endpoint/settle proof. Any multi-sample schedule overrun aborts to
       hold rather than bursting or shortcutting a planned corner. Dedicated
@@ -137,8 +141,14 @@ symptom_routing:
       exception with its existing stage-bound collision-bypass evidence and
       feedback-gated endpoint. PiPER MoveJ does not consume per-joint qdot/qddot,
       so those response fields remain exact-zero placeholders. Software tests,
-      both affected builds and both command-free rootless suites pass; the new
-      stream still requires supervised 5-percent physical acceptance.
+      both affected builds and both command-free rootless suites pass. Task
+      gui-sim-e9629c41e1224425b5adb0454b61ee3f physically exercised the current
+      stream at 20 percent; planned/actual timing aligned at approximately
+      18.0-19.6 Hz and the operator judged speed consistent. The remaining
+      1/5/10-percent stages and deliberate cancel-to-hold are still pending;
+      settings above 20 percent remain capped and unqualified. Inspect
+      the diagnostic-state planned/actual duration, achieved rate, maximum
+      interval, dropped samples and following-error fields after each segment.
   arm_reaches_pose_but_never_settles:
     inspect: [/joint_states_single, /piper/scan_execution_status, scan_viewpoint_executor_node.py, target_scan_mission_node.py, scan_execution_params.yaml]
     note: Use an application-level subscriber to compare measured position deltas with SDK velocity. PiPER instantaneous velocity can spike while positions remain stationary and is diagnostic only. Normal endpoint proof requires target error at most 0.025 rad plus a continuous 0.005 rad position-anchor window; configured home uses 0.030 rad plus the same 0.005 rad stability. Do not raise timeouts or weaken target/position bounds to mask missing or moving feedback.
@@ -223,6 +233,9 @@ maintenance_routing_2026_08_04:
   automatic_feature_budget_exhausted:
     inspect: [target_scan_mission_node.py, mission_core.py, scan_session_memory.py, bridge_node.py, /piper/scan_session_history, /piper/scan_capture_status]
     note: At 8-23 captures the coordinator stops only when achieved history in the frozen measured coverage frame proves two views per Y side, 120-degree azimuth, 25-degree elevation and three consecutive measured novel-surface gains at or below 0.02. Otherwise it requests one more view. At 24, missing floors are INSUFFICIENT_CAPTURE_QUALITY. For later feature goals, construct the bounded 36-candidate membership by interleaving coverage leaders with nearest-current compact alternatives, then stable-partition that same membership so candidates with at least 0.03 normalized side advance after tolerance or 2 degrees of span gain are attempted before near-zero-progress nonregressing fallbacks. Never replace the compact members merely to fill a progress quota. Manual batch mode remains separately confirmed exact-13.
+  adaptive_frontier_exhausted_before_feature_completion:
+    inspect: [/piper/scan_session_history, /piper/tesseract_plan_status, target_scan_mission_node.py, scan_session_memory.py, piper_tesseract_foxy/bridge_node.py, persisted capture camera poses and measured surface-gain sequence]
+    note: Task gui-sim-e9629c41e1224425b5adb0454b61ee3f persisted 15 GOOD/CLEAR captures and two views on each Y side, then returned NO_REACHABLE_PLAN because no distinct safe candidate remained inside the 6-30-degree closed-loop frontier while azimuth was only 65.30/120 degrees and measured surface had not converged. Preserve the safety frontier and completion thresholds. Audit why candidate membership/ranking exhausted locally instead of treating speed or shutdown as the cause; the same run physically accepted v3 timing at 20 percent and completed safe staged shutdown.
   nbv_target_center_jumps_to_camera_coordinates:
     inspect: [scan_viewpoint_planner_node.py target_frame_rejection_reason, scan_planning_params.yaml planning_frame_id, /piper/tracked_target, /piper/target_3d, /piper/scan_viewpoints, target_tracker_node.py]
     note: /piper/target_3d is normally camera_color_optical_frame while multiview candidates are base_link. The planner must accept a centre only when header.frame_id exactly equals planning_frame_id=base_link. During a tracker gap it waits for transformed measured tracking and must not use the raw optical point as a coordinate fallback. Reproduce with alternating base_link tracked-target and camera-optical raw-target callbacks and verify every emitted scan header/centre remains base_link.

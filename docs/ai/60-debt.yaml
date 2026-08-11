@@ -168,7 +168,7 @@ deferred_cleanup:
       completed five physical viewpoints with five accepted/modeled clouds on 2026-07-24. Acceptance
       exposed and fixed post-motion depth latching, TF starvation, tracking-freshness mismatch,
       target-cloud QoS incompatibility, and capture/status ordering.
-    next_cut: Preserve the 2026-07-24 stop-per-sample and 2026-07-29 endpoint-only runs as historical fixtures. The current tesseract_stream_v1 instead serializes the full collision-qualified OMPL/ISP path at 20 Hz, scales duration by selected speed, pins recovery knots, enforces 0.025 rad adjacent steps, uses a 0.30 rad following guard, and waits only at the final endpoint. Both command-free rootless suites pass, including a 175-point detour around a blocked direct midpoint. Perform the first supervised physical regression at 5 percent, deliberately cancel to hold, and verify no overrun/burst/shortcut before qualifying higher speeds.
+    next_cut: Preserve the 2026-07-24 stop-per-sample, 2026-07-29 endpoint-only and 2026-08-11 tesseract_stream_v1/v2 runs as historical fixtures. The current tesseract_stream_v3 retains every collision-checked OMPL/ISP source vertex, adds exact on-segment targets at 20 Hz, and applies selected speed once to the qualified MoveJ model [5,5,5,5,5,3] rad/s. It retains the 0.05 rad hard adjacent-step ceiling, 0.30 rad following guard and final-only settle. Fresh queried limits remain hash-bound health evidence rather than a second timing multiplier. V2 acquired the target and delivered 1,955 samples at 99.9 Hz but exhausted the first one-view 45-second budget validating transport-density samples; v3 validates source geometry independently of schedule length. V3 task gui-sim-e9629c41e1224425b5adb0454b61ee3f physically accepted the 20-percent timing behavior at approximately 18.0-19.6 Hz over acquisition and scan segments, with aligned planned/actual duration and safe terminal home/disable. Complete 1/5/10-percent staging and deliberate cancel-to-hold before extending beyond the exact-through-20-percent envelope.
   - id: foxy_proposal_callback_delivery
     issue: >-
       On 2026-07-21 Foxy/Fast DDS exposed already-running /arm_status and
@@ -221,7 +221,7 @@ deferred_cleanup:
       The resulting target churn was slow/choppy and also repeatedly ran the gripper-bound check.
       A later feedback-gated waypoint attempt completed acquisition with 70 commands but still
       looked segmented, while one GUI endpoint returned smoothly to compact. The current
-      tesseract_stream_v1 resolves the collision/smoothness conflict by retaining the exact OMPL/ISP
+      tesseract_stream_v1 first resolved the collision/smoothness conflict by retaining the exact OMPL/ISP
       path, resampling it at 20 Hz after speed scaling, and publishing intermediate positions without
       per-point feedback stops. It never claims controller qdot/qddot, bursts overdue samples, or
       shortcuts a planned corner. Feedback supplies a 0.30 rad following guard and final convergence.
@@ -233,27 +233,29 @@ deferred_cleanup:
       physical evidence for the stream and against a host servicing bottleneck, not acceptance of
       every speed or deliberate cancel behavior.
     next_cut: >-
-      Persist requested duration, resampled point count, actual command intervals, following error,
-      settle time and controller speed for every segment. Evaluate a supported native/offline
-      trajectory interface or a velocity-derived online schedule without dropping OMPL corners or
-      weakening collision revalidation. Confirm zero GripperCtrl output and deliberate
-      cancel-to-hold, then characterize 1/5/10/50/100 percent separately; 100 percent remains
-      unqualified and MoveJ must never be described as qdot/qddot tracking.
+      tesseract_stream_v3 now uses MoveJ-model-derived 20 Hz scheduling and records planned
+      and actual duration, point count, achieved rate, maximum command interval, dropped samples
+      and following error. Its 20-percent physical timing observation is accepted. Confirm zero
+      GripperCtrl output and deliberate cancel-to-hold, then characterize 1/5/10 percent separately;
+      settings above 20 percent remain capped and unqualified and MoveJ must never be described as
+      qdot/qddot tracking.
   - id: tesseract_controller_speed_semantics_2026_08_11
-    status: diagnosed_open
+    status: twenty_percent_physically_accepted_staged_validation_pending
     issue: >-
-      The GUI percentage currently changes both ISP duration and the PiPER MoveJ aggregate speed,
-      while the fixed 0.025-rad adjacent-command ceiling at 20 Hz independently caps commanded
-      joint slope near 0.5 rad/s. Direct home supplies one endpoint for controller interpolation,
-      so matching percentages do not imply matching duration or path shape. The latest 50-percent
-      run produced no scheduled-stream overrun; the remaining mismatch is path/schedule/controller
-      semantics rather than demonstrated host starvation.
+      tesseract_stream_v1 changed ISP duration separately and imposed a fixed 0.025-rad-at-20-Hz
+      slope ceiling near 0.5 rad/s. tesseract_stream_v3 replaces v2's measured-limit/100-Hz policy:
+      each exact collision-checked source segment is sampled at 20 Hz from J1-J5 5 rad/s and J6
+      3 rad/s multiplied once by selected speed, every source vertex is retained, and the adapter
+      enforces a 0.05-rad hard step ceiling while sending the same aggregate MoveJ percentage.
+      Fresh queried limits remain mandatory health/hash evidence. Direct home still supplies one
+      endpoint, so identical percentages do not imply identical path length or duration.
     next_cut: >-
-      Measure the current boundary before changing it. Prefer an interface that executes the full
-      collision-qualified trajectory natively; otherwise derive the online schedule from bounded
-      joint velocity/acceleration and measured following behavior. Never collapse a detour into an
-      endpoint merely to match home speed, and require command-free regression plus staged physical
-      speed characterization for any change.
+      The software boundary is implemented and command-free qualified. Task
+      gui-sim-e9629c41e1224425b5adb0454b61ee3f physically accepted the 20-percent timing behavior:
+      acquisition and scan segments ran at approximately 18.0-19.6 Hz with aligned planned/actual
+      durations, and the operator judged speed consistent. Characterize 1/5/10 percent and deliberate
+      cancel-to-hold while retaining hold/overrun/following-error gates. Never collapse a detour into
+      an endpoint merely to match home speed.
   - id: rough_target_acquisition_hardware_acceptance
     issue: >-
       Command-free rough-coordinate acquisition, schema-v5 plan-kind/provenance/scene-mode/controller-limit/timing binding,
@@ -350,13 +352,21 @@ deferred_cleanup:
       achieved nine +Y and three -Y views plus 37.46 degrees elevation, and
       completed safe shutdown. It correctly failed completion at 113.51 degrees
       azimuth and without three consecutive measured gains at or below 0.02.
+      The following v3 20-percent task gui-sim-e9629c41e1224425b5adb0454b61ee3f
+      persisted 15 GOOD/CLEAR captures and achieved two views on each Y side,
+      65.30 degrees azimuth and 40.64 degrees elevation. It then exhausted all
+      distinct safe candidates in the 6-30-degree closed-loop frontier while
+      surface gain remained unconverged, returning NO_REACHABLE_PLAN with safe
+      staged shutdown. This narrows the open defect from fixed-count behavior to
+      candidate-frontier continuity/ranking after measured progress.
     next_cut: >-
-      Audit the persisted achieved poses, masks, candidate attempts and gain sequence from
-      scan_20260811_190342. Determine why the last safe candidates did not close the remaining
-      6.49-degree azimuth gap or convergence window, then improve ranking/replacement from measured
+      Audit the persisted achieved poses, masks, candidate attempts and gain sequences from
+      scan_20260811_190342 and scan_20260811_230742. Determine why the first run did not close its
+      final 6.49-degree azimuth gap and why the second exhausted the 6-30-degree local frontier at
+      only 65.30 degrees despite both Y sides. Improve continuity/ranking/replacement from measured
       evidence. Preserve two views per Y side, 120-degree azimuth, 25-degree elevation, three-view
       convergence, collision, hash, GOOD/CLEAR, optical-cone and 24-view safety gates. Do not lower
-      a completion threshold to make the recorded mission pass.
+      a completion threshold to make either recorded mission pass.
   - id: json_topics
     issue: Many runtime contracts use std_msgs/String JSON and can truncate visibly in ros2 topic echo or drift silently.
     next_cut: Migrate stable heavy-refresh, SAM2 status, scan quality, occlusion, viewpoints, and workflow plan/status contracts to custom messages incrementally.

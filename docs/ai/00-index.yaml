@@ -729,25 +729,25 @@ project:
     acquisition showed that timed_movej_v2 sent 7281 tiny targets even though PiPER MoveJ consumes
     only joint positions and one aggregate speed; its qdot/qddot fields were not controller inputs.
     That endpoint-only adapter later completed a 13-view physical run, but could not preserve an OMPL
-    detour. On 2026-08-11 it was superseded by tesseract_stream_v1. The worker now
-    retains the full collision-qualified OMPL/ISP path, slows the ISP clock by selected aggregate
-    speed, resamples at 20 Hz with at most 0.025 rad per joint sample, pins recovery knots, and hashes
+    detour. On 2026-08-11 it was superseded first by tesseract_stream_v1, then v2 and
+    tesseract_stream_v3. The current worker retains every collision-checked OMPL/ISP source vertex,
+    samples each source segment at 20 Hz from J1-J5 5 rad/s and J6 3 rad/s multiplied once by the
+    selected percentage, retains a 0.05-rad hard joint-step ceiling, and hashes
     every timestamped position. Foxy publishes intermediate arm-only targets without waiting at each
     one, guards measured following error at 0.30 rad, and feedback-gates only the final endpoint.
     Overdue multi-sample schedules abort rather than burst or shortcut. Configured home remains the
     exact two-point direct exception. qdot/qddot stay exact-zero transport placeholders.
     The driver caches unchanged MotionCtrl_2 mode/speed, never emits GripperCtrl for six-position
-    automation commands, and continues sending every JointCtrl target. A later 50-percent mission
-    physically executed acquisition and 24 accepted scan views on this stream without a logged
+    automation commands, and continues sending every JointCtrl target. A historical v1 50-percent mission
+    physically executed acquisition and 24 accepted scan views without a logged
     scheduled-stream overrun, then completed direct staged home and safe shutdown. It failed the
     independent feature-completion gates at 113.5 degrees azimuth and without measured convergence.
     The measured-lock handoff
     now uses the authoritative TrackedTarget/TrackingHealth/LOCKED tuple in both acquisition and
-    workflow Step 4; target_landmark remains diagnostic. The current stream therefore has one
-    physical execution result but still lacks deliberate cancel and staged multi-speed acceptance;
-    175 focused and 430 complete mobile/Tesseract tests pass,
-    both affected packages build, and both rootless collision qualifications pass with
-    real_arm_motion=false, including a 175-point detour around a blocked midpoint. The
+    workflow Step 4; target_landmark remains diagnostic. That physical execution result belongs to
+    v1. V3 still lacks deliberate cancel and staged physical acceptance; 200 focused
+    tests pass and both rootless collision qualifications pass with
+    real_arm_motion=false, including the blocked-midpoint detour and 0.15-rad/s J6 five-percent timing regression. The
     2026-07-24 5-percent run remains historical evidence for the former stop-per-sample executor.
     No current evidence qualifies 100-percent following dynamics.
     A live 2026-07-27 100-percent ROUGH_ACQUISITION run then triggered the unchanged sustained
@@ -783,7 +783,7 @@ project:
     packages rebuilt, 58 focused stability tests and a 143-test wider suite passed, both rootless
     qualifications returned PASS, and a 12-second isolated proposal-only launch kept all critical
     nodes alive until intentional shutdown. This repair issued no approval or physical arm motion;
-    repeated live restart and tesseract_stream_v1 hardware acceptance remain pending.
+    repeated live restart and current tesseract_stream_v3 hardware acceptance remain pending.
 live_bounded_scan_aim_update_2026_08_06: >-
   GUI mission scan_20260806_220358 physically proved the 7.5-degree grid and
   command-free plan-snapshot recovery by persisting seven hash-valid GOOD/CLEAR
@@ -965,9 +965,9 @@ paused_retry_repair_2026_08_10: >-
   even while homing; nontransient faults still abort. The 143 focused tests, 518
   broad software tests, eleven isolated AI tests and package rebuild pass.
   Physical authorization is paused and every hardware-capable child is off.
-latest_50_percent_scan_and_problem_ledger_update_2026_08_11: >-
+historical_v1_50_percent_scan_and_problem_ledger_update_2026_08_11: >-
   GUI task gui-sim-a130d7ad58a54815ab36341ed324be82 exercised the
-  current tesseract_stream_v1 path at a configured 50 percent, persisted 24
+  now-superseded tesseract_stream_v1 path at a configured 50 percent, persisted 24
   accepted captures in scan_20260811_190342, completed STARTUP_WRIST and the
   terminal ROUGH_HOME/STORAGE_WRIST sequence, and returned safe_shutdown=true
   with every mission-owned child stopped. It correctly failed quality rather
@@ -981,5 +981,48 @@ latest_50_percent_scan_and_problem_ledger_update_2026_08_11: >-
   lengthened by the fixed 0.025-rad-at-20-Hz ceiling (approximately 0.5 rad/s),
   then PiPER also receives the aggregate MoveJ percentage; configured home is
   one direct endpoint. Formal higher-speed qualification and a controller-side
-  trajectory alternative remain open. docs/ai/80-problem-log.yaml now indexes
+  trajectory alternative remained open at that point. tesseract_stream_v3 now uses 20 Hz
+  MoveJ-model-derived timing and awaits physical validation. docs/ai/80-problem-log.yaml indexes
   the full durable problem history and routes every entry to detailed evidence.
+tesseract_stream_v2_controller_timing_2026_08_11: >-
+  Historical tesseract_stream_v2 used ISP as an
+  unscaled smooth robot-model path clock; its derivatives are finite planning metadata and are not
+  PiPER commands. The worker samples the unchanged OMPL path at 100 Hz and lengthens it until the
+  emitted position stream obeys the requested percentage of fresh hash-bound measured per-joint
+  velocity limits or the 0.03-rad hard step ceiling, while sending the same aggregate MoveJ
+  percentage. It intentionally does not infer acceleration from piecewise MoveJ setpoints because
+  PiPER performs the controller interpolation. Recovery knots,
+  collision geometry, exact hashes, zero derivative transport placeholders, no-burst behavior,
+  the 0.30-rad following guard and final-only settle proof remain. Executor diagnostics and
+  completion logs expose planned/actual duration, samples, achieved rate, maximum interval,
+  dropped samples and following error. The first physical attempt
+  gui-sim-50612c16547c4b14b6bcc498969a7eb4 failed before acquisition motion because the initial
+  implementation incorrectly compared ISP derivatives with 5 percent of the measured 0.3-rad/s
+  controller limit; safe direct home, disable and cleanup succeeded. The corrected unit/rootless
+  regression bound the deployed 0.3-rad/s and 0.5-rad/s2 values. Its later physical task
+  gui-sim-b945943e849f4e68ba587401b94e1c58 acquired the target and delivered 1,955 acquisition
+  samples at 99.9 Hz with 0.0079 rad maximum following error, but exhausted the first automatic
+  scan-view 45-second budget while collision-validating speed-derived transport samples. The
+  mission failed NO_REACHABLE_PLAN yet completed direct home, all-six disable and exact cleanup
+  with safe_shutdown=true. V2 is superseded and must not be restored.
+tesseract_stream_v3_movej_timing_2026_08_11: >-
+  The current normal acquisition/scan policy is tesseract_stream_v3. It retains every exact
+  collision-checked OMPL/ISP source vertex, allocates whole 20 Hz ticks independently to each
+  segment from J1-J5 5 rad/s and J6 3 rad/s multiplied once by effective_speed_percent, and adds
+  only exact on-segment positions. A 0.05-rad hard adjacent-step ceiling preserves the model rate
+  through 20 percent; higher selections remain capped and unqualified. Fresh queried controller
+  limits remain mandatory hash-bound health evidence but are not a second schedule multiplier.
+  ISP qdot/qddot and acceleration are not PiPER transport commands. Adaptive Bullet validation
+  operates on source geometry independently of speed-derived transport density. The 200-test
+  focused suite passes, 465 non-linter functional tests pass with one skip, and both command-free
+  rootless suites pass with real_arm_motion=false. The rootless five-percent J6 regression emits
+  0.15 rad/s over nine points in 0.4 seconds. Supervised task
+  gui-sim-e9629c41e1224425b5adb0454b61ee3f physically exercised v3 at 20 percent:
+  acquisition used 50 samples over 2.501 seconds at 19.6 Hz, later scan segments
+  remained approximately 18.0-19.6 Hz with planned/actual durations aligned, and
+  the operator judged speed consistent. Fifteen GOOD/CLEAR captures were persisted
+  before the independent adaptive frontier returned NO_REACHABLE_PLAN at 65.30/120
+  degrees azimuth without measured-surface convergence. Rough/storage home,
+  all-six disable and child cleanup completed with safe_shutdown=true. The
+  20-percent timing behavior is physically accepted; 1/5/10-percent staging,
+  deliberate cancel-to-hold, NBV completion and settings above 20 percent remain pending.

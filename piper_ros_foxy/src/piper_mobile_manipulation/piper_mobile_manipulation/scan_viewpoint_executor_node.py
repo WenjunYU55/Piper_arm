@@ -461,7 +461,7 @@ class ScanViewpointExecutorNode(Node):
             'speed_percent': 5.0,
             'max_execution_viewpoints': 13,
             'min_execution_viewpoints': 13,
-            'trajectory_joint_step_rad': 0.025,
+            'trajectory_joint_step_rad': 0.05,
             'trajectory_command_rate_hz': 20.0,
             'executor_tick_rate_hz': 200.0,
             'trajectory_following_error_rad': 0.30,
@@ -615,6 +615,10 @@ class ScanViewpointExecutorNode(Node):
         self.max_command_interval_sec = 0.0
         self.dropped_command_samples = 0
         self.motion_started_at = None
+        self.stream_schedule_completion_logged = False
+        self.last_stream_planned_duration_sec = 0.0
+        self.last_stream_actual_duration_sec = 0.0
+        self.last_stream_achieved_rate_hz = 0.0
         self.last_motion_status_at = 0.0
         self.waypoint_started_at = None
         self.waypoint_last_progress_at = None
@@ -1177,6 +1181,13 @@ class ScanViewpointExecutorNode(Node):
                         times,
                         command_rate_hz=command_rate,
                         maximum_step_rad=validation_step,
+                        velocity_limits_rad_s=(
+                            None if configured_home_direct
+                            else limits.max_velocity_rad_s),
+                        acceleration_limits_rad_s2=(
+                            None if configured_home_direct
+                            else limits.max_acceleration_rad_s2),
+                        speed_percent=execution_speed,
                     )
             except ValueError as error:
                 reasons.append(
@@ -1766,6 +1777,20 @@ class ScanViewpointExecutorNode(Node):
             'command_samples_sent': self.command_samples_sent,
             'dropped_command_samples': self.dropped_command_samples,
             'max_command_interval_sec': self.max_command_interval_sec,
+            'current_stream_planned_duration_sec': (
+                float(self.current_path_times[-1])
+                if self.current_path_streaming and self.current_path_times
+                else 0.0),
+            'current_stream_elapsed_sec': (
+                max(0.0, self.now() - self.motion_started_at)
+                if self.current_path_streaming
+                and self.motion_started_at is not None else 0.0),
+            'last_stream_planned_duration_sec': (
+                self.last_stream_planned_duration_sec),
+            'last_stream_actual_duration_sec': (
+                self.last_stream_actual_duration_sec),
+            'last_stream_achieved_rate_hz': (
+                self.last_stream_achieved_rate_hz),
             'current_waypoint_error_rad': self.current_waypoint_error,
             'max_waypoint_error_rad': self.max_waypoint_error,
             'planned_viewpoints': self.plan_capture_count,
@@ -2176,6 +2201,29 @@ class ScanViewpointExecutorNode(Node):
                 self.waypoint_started_at = now
                 self.waypoint_last_progress_at = now
                 self.waypoint_best_error = self.total_joint_error(target)
+                if not self.stream_schedule_completion_logged:
+                    planned_duration = float(self.current_path_times[-1])
+                    actual_duration = elapsed
+                    interval_count = max(0, self.command_samples_sent - 1)
+                    achieved_rate = (
+                        float(interval_count) / actual_duration
+                        if actual_duration > 0.0 else 0.0)
+                    self.last_stream_planned_duration_sec = planned_duration
+                    self.last_stream_actual_duration_sec = actual_duration
+                    self.last_stream_achieved_rate_hz = achieved_rate
+                    self.stream_schedule_completion_logged = True
+                    self.get_logger().info(
+                        'Tesseract stream complete: planned=%.3fs '
+                        'actual=%.3fs samples=%d achieved_rate=%.1fHz '
+                        'max_interval=%.4fs max_following_error=%.4frad'
+                        % (
+                            planned_duration,
+                            actual_duration,
+                            self.command_samples_sent,
+                            achieved_rate,
+                            self.max_command_interval_sec,
+                            self.max_waypoint_error,
+                        ))
             self.publish_status()
             return
 
@@ -2993,6 +3041,7 @@ class ScanViewpointExecutorNode(Node):
         self.max_command_interval_sec = 0.0
         self.dropped_command_samples = 0
         self.motion_started_at = None
+        self.stream_schedule_completion_logged = False
         self.last_motion_status_at = 0.0
         self.waypoint_started_at = None
         self.waypoint_last_progress_at = None
