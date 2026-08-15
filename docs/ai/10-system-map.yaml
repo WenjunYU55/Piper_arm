@@ -1,6 +1,62 @@
 schema_version: 1
 document: system_map
+final_equivalence_boundary_2026_08_15:
+  baseline: 4945b480d8494fa840c0d2bc993c72834934a37f
+  report: docs/refactor/final_equivalence_report.md
+  physical_checklist: docs/refactor/physical_requalification_checklist.md
+  software_verdict: READY_FOR_SUPERVISED_PHYSICAL_REQUALIFICATION
+  difference_classes: {EXPECTED: internal ownership and requested architecture, BENIGN: inert cleanup formatting and documented five-to-5 target-absence reason/hash variation, UNEXPLAINED: none, SAFETY_RELEVANT: none}
+  authority: This verdict authorizes only staged operator-supervised requalification; it does not authorize autonomous physical motion or qualify contact manipulation.
+phase10_final_boundary_2026_08_15:
+  source: docs/refactor/final_architecture.md
+  dependency_direction: [ROS and Tk adapters, typed application components, subsystem interfaces, driver perception planning and capture owners]
+  authoritative_owners: {mission: mission_engine.py, ROS_action_and_queue: target_scan_mission_node.py, scan_command_boundary: scan_viewpoint_executor_node.py, process_mechanics: process_supervisor.py, telemetry: telemetry_store.py, GUI_presentation: piper_gui}
+  retained_evidence: [_legacy_run_pipeline, _legacy_safe_shutdown, latest telemetry compatibility mirrors, legacy authoritative safety checks, archived GUI characterization]
+  cleanup: [removed unreferenced utils/transforms.py, removed three unreferenced geometry helpers, removed one inert final-hold velocity calculation, removed one unused qualification import, documented tf2_geometry_msgs registration import]
+  invariant: No public interface, threshold, motion, calibration, TF, perception, Tesseract, startup, shutdown, or process policy changed.
+phase9_configuration_boundary:
+  source: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/configuration.py
+  coordinator_groups: [MissionConfig, ProcessConfig, MissionMotionConfig, MissionCaptureConfig, MissionWorkflowConfig]
+  executor_groups: [ExecutorInterfaceConfig, MotionConfig, TrackingConfig, CaptureConfig, SafetyConfig, PlanningConfig, ExecutorConfig]
+  load_order: [ROS node construction, unchanged parameter declaration with unchanged defaults, launch/YAML/CLI override resolution, one parameter read, startup validation, immutable group injection, runtime decisions]
+  separation: {static_configuration: typed groups, mission_input: RunTargetScan goal and per-mission child environment, runtime_telemetry: TelemetryStore, derived_state: MissionContext and executor plan/path/session state}
+  compatibility: target_scan_mission and scan_viewpoint_executor retain every parameter name/default/unit/override; configured_value fallback is only for unconstructed characterization doubles.
+phase7_viewpoint_executor_boundary_2026_08_14:
+  application_components: [plan_authorizer.py, trajectory_runner.py, capture_coordinator.py, executor_recovery.py]
+  ros_adapter_owner: scan_viewpoint_executor_node.py retains every existing subscription, publisher, service, client, QoS profile, timer, ROS message conversion and the sole optional joint-command publisher.
+  plan_boundary: PlanAuthorizer consumes frozen exact identity, mission authorization, expiry, target drift, dependency and already-computed path evidence; it publishes nothing and preserves the existing first-rejection detail at the ROS service boundary.
+  trajectory_boundary: TrajectoryRunner freezes one already-authorized six-joint schedule and returns typed wait, publish, advance, complete, cancel or failure decisions; only the node publishes JointState commands, with unchanged points, timestamps and monitoring thresholds.
+  capture_boundary: CaptureCoordinator owns status-propagation ordering and the established ten-attempt same-view readiness classification; the node retains ROS futures, service calls, accepted/rejected history and status publication.
+  recovery_boundary: RecoveryPolicy maps typed FailureCode/FailureTag evidence to retry, reacquire, replan or abort and never inspects Failure.detail; the Phase 2 legacy adapter remains only at string-only ROS response/status boundaries.
+  no_behavior_change: Phase 5 SafetyEvaluator remains shadow-only. Geometry/path validation, state ordering, motion/capture thresholds, command timing, home behavior and public ROS contracts are unchanged.
+phase6_mission_engine_boundary_2026_08_14:
+  application_owner: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission_engine.py owns the existing admitted mission sequence and terminal policy through injected operations without importing ROS.
+  ros_adapter_owner: target_scan_mission_node.py owns action admission and queueing, ROS-to-domain target conversion, cancellation forwarding, feedback/result conversion, durable writes and node lifecycle; _MissionNodeOperations translates engine calls to unchanged ROS helpers.
+  cancellation: cancel_cb forwards to a per-task CancellationToken; active production guards consume the token, while a goal-handle fallback remains only for direct Phase 0/1 helper compatibility.
+  retained_legacy: _legacy_run_pipeline and _legacy_safe_shutdown are frozen non-authoritative Phase 5 bodies; production execute_cb invokes MissionEngine.
+  no_authority_change: Phase 5 SafetyEvaluator remains executor shadow-only. MissionEngine does not add or remove a safety, readiness, motion, perception, planning or shutdown requirement.
 runtime_surfaces:
+  safety_evaluator_shadow:
+    process: pure in-process domain evaluator and bounded comparison log; no ROS node or process
+    owner: piper_mobile_manipulation/safety_evaluator.py
+    role: Names the executor's existing plan, acquisition, scan, capture, return-home and hold contexts; evaluates one immutable TelemetrySnapshot plus explicit authorization/plan evidence; compares its typed decision with the unchanged legacy authority.
+    consumers: [scan_viewpoint_executor_node.py]
+    boundary: Phase 5 shadow only. SafetyComparison results and SAFETY_SHADOW_DISAGREEMENT logs must never authorize commands, alter state, trigger recovery, home or disable, or change action results.
+    invariant: No threshold, ROS interface, QoS, parameter, motion, perception, Tesseract or home behavior changed; legacy proposal/runtime/hold gates remain authoritative.
+  telemetry_snapshot_model:
+    process: pure in-process domain store; no ROS node or process
+    owner: piper_mobile_manipulation/telemetry_store.py
+    role: Atomically binds callback values to unchanged receipt/source timestamps and frames, then supplies frozen defensive snapshots grouped as arm, perception, and mission observations.
+    consumers: [target_scan_mission_node.py, scan_viewpoint_executor_node.py]
+    boundary: Owns observations only; mission phases, executor plans/paths/commands, retries, futures, process ownership, and home/disable proofs remain in their existing state machines.
+    compatibility: Callback-written latest_* and executor updated mirrors remain temporarily for Phase 1 test seams and non-authoritative diagnostics; migrated safety decisions use TelemetrySnapshot.
+    invariant: The store defines no freshness threshold and adds no ROS interface. Each caller applies its unchanged strict age-greater-than-maximum stale rule to one coherent snapshot.
+  typed_failure_model:
+    process: pure in-process domain model; no ROS node or process
+    owner: piper_mobile_manipulation/failure_model.py
+    role: Carries stable FailureCode, immutable Failure detail/policy, and fine-grained FailureTag decisions for mission, executor, and GUI control flow while public ROS reasons remain strings.
+    legacy_boundary: legacy_failure_adapter is the only migrated mission-path location allowed to infer a code/tag/blocker from human-readable text. It exists because Foxy Trigger responses, status reasons, obstacle validity reasons, and workflow JSON do not expose typed failure fields.
+    invariant: Changing Failure.detail on an already typed Failure cannot change its code, retry, reacquisition, capture replacement, home, hold, abort, or GUI recovery decision.
   real_arm:
     process: piper_ctrl_single_node
     transport: SocketCAN can0 at 1 Mbps through piper_sdk
@@ -82,31 +138,16 @@ runtime_surfaces:
     current_status: After the 2026-08-09 fixed gripper-installation and visual L515 update, the exact rebuilt model passed both rootless suites with collision_model_qualified_for_hardware=true and real_arm_motion=false. On 2026-08-11 tesseract_stream_v3 superseded v2 and passed both command-free suites, including the preserved blocked-midpoint detour and a 5-percent J6 schedule at 0.15 rad/s. J6 remains fully free. The nanobind continuous manager is disabled after a repeatable segfault, so no output claims BulletCast or FCL validation. The current v3 stream has software/rootless evidence only.
   operator_ui:
     process: piper_gui_native.py
-    role: Real enable/disable and joint command GUI; its Graphical tab controls a draggable RViz twin. Its Automatic Scan tab accepts rough base_link XYZ plus an editable target label and submits the isolated RunTargetScan action. Its Acquire & Scan tab owns the Tesseract worker and scan-stack child processes, displays status, and requires one exact confirmation for acquisition plus a separate exact confirmation for the later qualified 13-view scan.
+    role: RunTargetScan client plus explicitly labelled commissioning controls. Automatic Scan accepts rough base_link XYZ plus an editable label, submits/cancels the production action and displays feedback/results. Diagnostics is read-only. Manual and Graphical tabs provide direct operator commissioning and the draggable RViz twin.
     preview_boundary: Opening, loading, and dragging the 3D model are motion-free. Mirror Preview requires fresh feedback, clean arm status, a valid conservative path, a confirmation dialog, and caps speed at 10 percent.
-    automation_boundary: >-
-      Driver, camera, and perception remain externally owned. Starting
-      automation destroys the GUI manual /joint_ctrl_single publisher, refuses
-      any existing automation stack or command publisher, and accepts a finite
-      GUI speed from 1 through 100 percent. Step 1 stays pending until both
-      owned parents, required critical nodes/services, a fresh ready worker
-      heartbeat, acquisition readiness, and sole executor ownership are
-      proven; Step 2 stays disabled otherwise. Step 2 binds one immutable
-      acquisition session, dispatches service responses on a re-entrant
-      two-thread GUI executor, retries the exact payload through a fresh client
-      endpoint after an 8-second timeout, preserves it for an operator retry
-      after two timeouts, and accepts only its correlated plan within 185
-      seconds. Step 4 is a generation-bound state machine driven by fresh
-      tracking and authoritative workflow diagnostics; it uses multiview
-      rather than acquisition readiness and has 15/12/185-second
-      workflow/queue/result deadlines. Any owned parent exit disables
-      automation and stops the other group. The GUI never enables motors and
-      restores manual ownership only after GUI-owned processes stop and no
-      command publisher remains. Disable is not a direct service call: the
-      sole command owner must send fresh current feedback, prove 0.025 rad
-      target and 0.005 rad sample-motion tolerances continuously for one
-      second, and only then request motor disable; the eight-second failure
-      path leaves motors enabled.
+    production_boundary: >-
+      The GUI owns no production process, readiness gate, mission transition,
+      plan approval, retry, replan, autonomous home or disable. It removes its
+      manual publisher for a submitted action and restores commissioning only
+      after the result and an empty command topic. MissionEngine owns all
+      autonomous behavior. The standalone commissioning Disable retains the
+      unchanged current-feedback hold and 0.025/0.005-rad one-second settle
+      proof with eight-second timeout before /enable_srv false.
     current_validation: The July 24 stop-per-sample route, July 29 endpoint-only route and August 11 v1/v2 routes validate earlier execution policies but not v3. V2 safely contained both the false ISP-derivative comparison and the later automatic one-view planning timeout. V3 passes 200 focused tests and both command-free rootless suites. Core proves source ISP velocity 0.197928 rad/s is planning metadata while the explicit five-percent J6 MoveJ schedule is 0.15 rad/s. Physical acceptance remains pending.
 environment_load_order:
   - source source_piper_foxy_environment.sh for GUI, driver-side scan tools, and manual Foxy checks; it clears inherited overlay variables, sources /opt/ros/foxy then piper_ros_foxy/install, and preflights exact package/import/schema identity
@@ -173,9 +214,9 @@ load_order_contracts:
   - Automatic scan execution requires the accepted hand-eye calibration, measured joint-bound file, fresh arm/tracking/obstacle feedback, and a SCAN_READY supervised workflow.
   - Rough acquisition is the only exception to target-tracking/SCAN_READY requirements. It requires explicit start, base_link hint freshness, exact ROUGH_ACQUISITION type/provenance/scene-mode/hash binding, camera-clock/joint/arm freshness, qualified collision output, exact approval, and the same GUI-selected 1-100 percent speed as the later scan. The first bootstrap-static segment alone omits perception obstacles; every later segment requires a fresh scene correlated to its settled semantic result.
   - Every acquisition semantic request must include a unique request_id and min_image_stamp after settling. Only a matching status and image stamp may advance the executor. A target lock must be a new stable base_link TrackedTarget after that result and within 0.30 m of the hint.
-  - GUI-managed automation owns exactly one Tesseract worker and one scan stack. The worker lock prevents duplicates. Acquisition and scan require two separate exact confirmations. ACQUIRED/SCAN_READY never auto-request or auto-approve a scan. Prepare Scan from Current Lock may explicitly adopt a fresh authoritative measured lock after a terminal acquisition, but starts a new scan phase and cannot reuse or reinterpret the failed acquisition approval; it creates exactly one fresh normal request, and only its correlated 13-view result may be separately confirmed. Cancellation, retry, replan, process exit, or another plan remains terminal for the phase that produced it.
+  - The GUI must not own a Tesseract worker, scan stack, acquisition request, plan approval, retry or replan. It submits/cancels RunTargetScan and reflects feedback/result; MissionEngine owns the complete production sequence.
   - The supervised viewpoint launch order is safety-relevant on this Foxy/Fast DDS host. Preserve the validated staggered order and freshness/retry gates; graph-visible endpoints without callbacks are not evidence of usable feedback.
-  - Manual GUI command publication and automatic execution are mutually exclusive. The Acquire & Scan tab enforces this by removing its manual publisher before launch; external publishers remain a hard refusal.
+  - Manual GUI commissioning publication and automatic execution are mutually exclusive. Automatic Scan removes the manual publisher before action submission and restores it only after a terminal result and empty command topic.
   - Proposal-only viewpoint execution must not create a /joint_ctrl_single publisher; motion mode must never call /enable_srv.
   - Tesseract is the only scan-planning backend and treats J1-J6 equally under the available controller/URDF limits and ordinary collision checks. The removed fixed-J6 fallback must not be restored; do not add a J6 lock or J6-specific cost.
   - The production robot description contains kinematics, inertials, visual/collision geometry, and joint limits only. Unused Gazebo plugins, ros_control transmissions, fake joint-state control, and simulation configs were removed; keep simulation isolated if it is introduced later.
@@ -201,7 +242,8 @@ state_owners:
   scan_motion_proposal_and_execution: scan_viewpoint_executor_node.py
   raw_rgbd_capture: scan_capture_node.py; owns fresh synchronized color/depth/camera-info buffering and one immutable RGB/depth/mask/metadata record after each accepted settled MULTIVIEW_SCAN viewpoint.
   atomic_rough_target_acquisition_and_handoff: scan_target_acquisition_node.py plus target_acquisition.py
-  gui_automation_session_and_processes: piper_gui_native.py plus piper_gui_automation.py
+  gui_action_client_and_presentation: piper_gui_native.py plus piper_gui/view_model.py, piper_gui/ros_client.py and piper_gui/app.py
+  archived_gui_workflow_characterization: piper_gui_automation.py; not imported by production GUI after Phase 8
   scan_kinematics_and_collision_validation: scan_motion.py
   timed_joint_command_schedule: scan_trajectory.py plus scan_viewpoint_executor_node.py
   tesseract_request_and_ros_plan: piper_tesseract_foxy/bridge_node.py; freezes live measured state, selects the bounded coverage/compact position shortlist, biases each automatic exact look toward current measured optical-Z by at most 12 target-centred degrees, hashes/spools the resulting exact request, and republishes only a validated matching response.
@@ -222,7 +264,7 @@ message_boundaries:
   filesystem_manifests: YAML metadata plus image/mask files and READY markers in both GPU spools; canonical hashed JSON requests/responses in the Tesseract spool.
   tf: world to base_link is fixed and base_link through link1..link8/gripper plus fixed camera_holder/l515_visual comes from robot_state_publisher; link6-to-gripper_base includes the physical yaw-pi installation offset. base_link to camera_link is separately dynamic from joint feedback using the accepted link6 calibration; RealSense owns camera_link to optical frames; tracker outputs remain in base_link when TF is enabled.
 ui_boundaries:
-  piper_gui_native: Hardware-capable. Manual mode publishes /joint_ctrl_single and calls /enable_srv. Acquire & Scan destroys that publisher, owns the worker/scan child processes, and uses executor approval/cancel services; it never calls enable automatically.
+  piper_gui_native: Hardware-capable only through explicitly labelled commissioning controls. Automatic Scan destroys the manual publisher, submits/cancels /piper/run_target_scan, displays action feedback/results and owns no mission child process or executor approval/retry/replan/home logic. Manual mode publishes /joint_ctrl_single and calls /enable_srv; the preview-only RViz child remains GUI-owned.
   rviz_and_debug_viewers: Read-only visualizers for camera, masks, point clouds, markers, and scan overlays.
   ros2_cli: Services under /supervised_cube_workflow are operator approvals but remain dry-run.
   scan_executor_cli: /scan_viewpoint_executor/approve can start real low-speed motion only when the executor was launched with motion opt-in and the exact plan ID and confirmation phrase are supplied; Tesseract also requires the exact trajectory_sha256 and qualified model. Cancel requests a current-position hold.
@@ -260,7 +302,7 @@ implementation_map_2026_08_04:
     untrustworthy_control_failure: emergency stop, nonfinite feedback, feedback beyond the direct-home-only 0.3-rad start band, an out-of-limit goal, controller/command fault, waypoint failure or no progress forbids the target; hold if possible, remain enabled and return NEEDS_OPERATOR.
   deployment_scope: Bench-only with externally stationary/clear base. Tracked-chassis collision TF and brake authority are deferred and required before mounted acceptance.
   powered_start_home:
-    path: mission enable -> /scan_viewpoint_executor/hold -> /tesseract_plan_bridge/request_startup_home_plan -> isolated worker -> exact hash approval -> executor -> configured-home feedback proof
+    path: mission enable -> /scan_viewpoint_executor/execute_home_stage STARTUP_WRIST -> positive-only driver wrap gate -> /scan_viewpoint_executor/execute_home_stage ROUGH_HOME -> configured-home feedback proof
     authority: Every direct home stage permits an empty target-obstacle scene and ignores camera health. configured_home_direct_joint_move, collision_validation_bypassed, validation marker, exact home_stage and exact configured_home_goal_positions_rad are trajectory-digest bound through worker/bridge evidence; STARTUP_WRIST and STORAGE_WRIST retain their own endpoints instead of being compared with rough home. /cancel is not used for a normal hold.
     live_proof: The final 2026-08-04 GUI run completed startup normalization before rough acquisition, and the later semantic-occlusion failure returned through a normal scene-gated home transaction, disabled all motors, and stopped all mission children.
   gui_failure_path_validation:
@@ -273,9 +315,9 @@ implementation_map_2026_08_04:
     launch_escalation: target_scan_mission.launch.py waits 180 seconds before SIGTERM and 10 more before SIGKILL so ordinary bounded recovery is not truncated by the default five-second process timeout.
     live_evidence: The pre-fix duplicate action acceptance enabled the arm and orphaned two child generations when both coordinators were interrupted. Recovery reached saved home within 0.00145 rad, proved one-second motion below 0.00178 rad, disabled all six motors and removed all children.
 staged_shutdown_and_reconstruction_2026_08_10:
-  startup_load_order: [coordinator remains resident, mission starts driver and scan/perception workers, feedback hold, STARTUP_WRIST J6-only plan, ROUGH_HOME plan, acquisition]
-  terminal_load_order: [stop and measured hold, fresh ROUGH_HOME plan, STORAGE_WRIST J6-only plan, settled hold, feedback-confirmed disable, stop mission-owned nodes, preserve coordinator and RViz]
-  home_authority: piper_home_pose.json schema 2 plus RequestTesseractPlan home_stage and six-joint joint_goal_positions_rad; the response/evidence repeats that exact goal as configured_home_goal_positions_rad. Tesseract and executor retain exact request/start/stage-specific-goal/limit/hash authority. Dedicated zero-capture home stages deliberately bypass collision planning/recheck; all other motion retains normal collision authority.
+  startup_load_order: [coordinator remains resident, mission starts driver and scan/perception workers, enable, direct STARTUP_WRIST positive-only J6 endpoint, direct ROUGH_HOME endpoint, acquisition]
+  terminal_load_order: [stop and measured hold, direct PRE_HOME endpoint, direct ROUGH_HOME endpoint, direct STORAGE_WRIST J6-only endpoint, settled hold, feedback-confirmed disable, stop mission-owned nodes, preserve coordinator and RViz]
+  home_authority: piper_home_pose.json schema 4 plus the mission-authorized ExecuteHomeStage service. The executor binds task ID, mission SHA-256, named stage, exact six-joint endpoint, fresh joint/arm/motion-limit evidence and independent dense holder/L515 external-clearance validation. Tesseract does not plan production configured-home stages. Robot self-collision is intentionally not evaluated for these operator-recorded endpoints; all ordinary acquisition/scan motion retains normal Tesseract collision authority.
   acquisition_runtime_refresh_authority: The first ROUGH_ACQUISITION segment remains bootstrap_static across a transient telemetry hold/resume. WAITING_FOR_RUNTIME_REFRESH cannot introduce an obstacle-stream dependency that the exact approved segment never had; later acquisition and multiview motion keep their normal scene authority.
   live_empty_obstacle_path: SAM2 target-only object_ids frame -> obstacle_instance_3d immediate timestamped empty clear array without TF -> executor fresh obstacle authority. Any ID greater than one follows object metadata plus aligned depth plus exact-time camera-to-base TF before publication.
   exact_multiview_scene_lifetime: A fresh valid obstacle scene is mandatory at pre-motion runtime refresh and is frozen only while the resulting exact collision-qualified MULTIVIEW_SCAN endpoint is in MOVING. SAM2 target-loss/WAITING_FOR_SEED may age that snapshot until the endpoint. New blocked/invalid arrays remain active stop signals, and every later endpoint requires another fresh settled scene.
@@ -300,3 +342,19 @@ powered_j5_dropout_update_2026_08_11:
   terminal_untrusted_control: If powered motor proof is lost, the mission revokes authorization immediately and sends no further arm command, including hold, home, storage or disable. It waits read-only for the driver watchdog to prove all six axes false, stops its owned process generation, preserves coordinator/RViz, and returns NEEDS_OPERATOR with safe_shutdown=false. Manual recovery cannot be reported as automatic configured-home proof.
   planning_budget: Automatic closed-loop one-view MULTIVIEW_SCAN uses a 45-second worker budget and three-second OMPL attempts so every observation/replan remains bounded. Manual batch and non-one-view requests retain 150 seconds and five-second OMPL attempts.
   load_order_contract: Load collision_model.yaml and scan_execution_params.yaml envelope values before accepting any planning/execution readiness. The worker's dense external-floor result and executor's independent check must agree before a direct-home command can be approved.
+phase4_process_supervision_2026_08_14:
+  owner: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/process_supervisor.py
+  autonomous_start_order: [driver, vision, hand_eye, tesseract_worker, scan_stack]
+  ownership: Only exact Popen handles created with start_new_session by this supervisor belong to the mission. Coordinator, RViz, GUI groups, reconstruction jobs and manifest-owned nested vision groups are not adopted.
+  shutdown_order: [reverse dependency SIGINT, shared 5-second wait, SIGTERM for survivors, shared 3-second wait, report any survivor without SIGKILL]
+  mission_integration: target_scan_mission_node retains commands/readiness and staged safety policy but delegates environment inheritance, Popen/log/group details, polling, exit collection and child signalling.
+
+selected_feature_reintegration_2026_08_15:
+  branch: reintegrate/selected-archived-features
+  direct_home_service: /scan_viewpoint_executor/execute_home_stage
+  startup_order: [STARTUP_WRIST positive-only direct MoveJ, ROUGH_HOME direct MoveJ]
+  terminal_order: [hold measured state, PRE_HOME direct MoveJ, ROUGH_HOME direct MoveJ, STORAGE_WRIST direct MoveJ, settled hold, feedback-confirmed disable, owned-child cleanup]
+  normal_motion_adapter: Tesseract paths are pass-through blended only when the actual blended geometry passes dense validation. A densely validated straight start-to-goal chord uses one native MoveJ endpoint; paths needing a detour retain the complete streamed Tesseract geometry.
+  dataset_cleanup: An identity-bound failed scan directory is removed only after owned writers stop, only when it contains zero accepted captures and no unknown or completed artifacts.
+  reconstruction: Offline masked TSDF is the baseline; bounded GICP is optional and rejected when its correction, provenance or quality gates fail. GUI validation is command-free.
+  qualification: Software-only integration; no physical command was executed. Follow docs/refactor/physical_requalification_checklist.md before motion.

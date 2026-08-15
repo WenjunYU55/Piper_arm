@@ -1,10 +1,251 @@
+import math
+
 from piper.piper_ctrl_single_node import (
     JOINT_FEEDBACK_RAW_TO_RAD,
+    JOINT6_STARTUP_WRAP_TARGET_RAD,
+    JOINT6_STARTUP_LIMIT_RAD,
     coherent_joint_feedback,
+    continuous_joint6_feedback,
     controller_command_position,
     decode_joint_feedback_pair,
     joint_feedback_warning_due,
+    standard_joint6_feedback,
+    startup_joint6_controller_target,
+    startup_joint6_direction_update,
 )
+
+
+def test_joint6_startup_limit_is_exactly_240_degrees():
+    assert abs(JOINT6_STARTUP_LIMIT_RAD - math.radians(240.0)) < 1e-12
+
+
+def test_joint6_first_feedback_at_240_degree_storage_selects_negative_branch():
+    wrapped_positive = math.radians(120.0)
+    logical = continuous_joint6_feedback(wrapped_positive)
+    assert abs(logical + JOINT6_STARTUP_LIMIT_RAD) < 1e-12
+
+
+def test_joint6_first_ambiguous_feedback_selects_negative_storage_branch():
+    wrapped_positive = 3.126426
+    assert continuous_joint6_feedback(wrapped_positive) < 0.0
+    assert abs(
+        continuous_joint6_feedback(wrapped_positive)
+        - (wrapped_positive - 2.0 * math.pi)) < 1e-12
+
+
+def test_joint6_feedback_unwraps_continuously_across_signed_pi():
+    first = continuous_joint6_feedback(3.126426)
+    before_wrap = continuous_joint6_feedback(3.140000, first)
+    after_wrap = continuous_joint6_feedback(-3.130000, before_wrap)
+    assert first < before_wrap < after_wrap < 0.0
+    assert after_wrap - before_wrap < 0.02
+
+
+def test_joint6_standard_feedback_restores_signed_pi_after_startup():
+    assert standard_joint6_feedback(0.0) == 0.0
+    assert standard_joint6_feedback(math.pi) == math.pi
+    assert standard_joint6_feedback(-3.20) > 3.0
+
+
+def test_startup_joint6_maps_extended_negative_target_ahead_of_positive_raw():
+    raw = 3.011637
+    canonical = raw - 2.0 * math.pi
+    mapped, waiting = startup_joint6_controller_target(
+        raw, canonical, canonical)
+    assert abs(mapped - raw) < 1e-12
+    assert waiting is False
+
+    mapped, waiting = startup_joint6_controller_target(
+        3.05, -3.233185307, -3.20, canonical)
+    assert abs(mapped - (2.0 * math.pi - 3.20)) < 1e-12
+    assert mapped > 3.05
+    assert waiting is False
+
+
+def test_startup_joint6_uses_3_2_rad_bridge_for_measured_wrap():
+    mapped, waiting = startup_joint6_controller_target(
+        3.12, -3.163185307, -3.10, -3.20)
+    assert mapped == JOINT6_STARTUP_WRAP_TARGET_RAD
+    assert waiting is True
+
+    mapped, waiting = startup_joint6_controller_target(
+        -3.14, -3.14, -3.10, -3.20)
+    assert mapped == -3.10
+    assert waiting is False
+
+
+def test_exact_bridge_endpoint_advances_from_storage_raw_feedback():
+    raw_storage = 3.143130
+    logical_storage = raw_storage - 2.0 * math.pi
+    logical_bridge = (
+        JOINT6_STARTUP_WRAP_TARGET_RAD - 2.0 * math.pi)
+    mapped, waiting = startup_joint6_controller_target(
+        raw_storage, logical_storage, logical_bridge, logical_storage)
+    assert mapped == JOINT6_STARTUP_WRAP_TARGET_RAD
+    assert mapped > raw_storage
+    assert waiting is True
+
+    raw_overshoot = JOINT6_STARTUP_WRAP_TARGET_RAD + 0.0007
+    mapped, waiting = startup_joint6_controller_target(
+        raw_overshoot,
+        raw_overshoot - 2.0 * math.pi,
+        logical_bridge,
+        logical_bridge,
+    )
+    assert mapped == raw_overshoot
+    assert waiting is True
+
+
+def test_startup_joint6_zero_goal_never_emits_ambiguous_half_turn():
+    raw_before_wrap = math.radians(120.0)
+    logical_before_wrap = math.radians(-240.0)
+    mapped, waiting = startup_joint6_controller_target(
+        raw_before_wrap, logical_before_wrap, 0.0)
+    assert mapped == 2.0 * math.pi
+    assert mapped > raw_before_wrap
+    assert waiting is False
+
+    raw_after_wrap = JOINT6_STARTUP_WRAP_TARGET_RAD - 2.0 * math.pi
+    mapped, waiting = startup_joint6_controller_target(
+        raw_after_wrap, raw_after_wrap, 0.0, previous_target=0.0)
+    assert mapped == 0.0
+    assert 0.0 < mapped - raw_after_wrap < math.pi
+    assert waiting is False
+
+
+def test_startup_zero_does_not_depend_on_fresh_bridge_raw_snapshot():
+    stale_raw = JOINT6_STARTUP_WRAP_TARGET_RAD - 0.012
+    logical = stale_raw - 2.0 * math.pi
+    mapped, waiting = startup_joint6_controller_target(
+        stale_raw,
+        logical,
+        0.0,
+        previous_target=(
+            JOINT6_STARTUP_WRAP_TARGET_RAD - 2.0 * math.pi),
+    )
+    assert mapped == 2.0 * math.pi
+    assert mapped > stale_raw
+    assert waiting is False
+
+
+def test_startup_joint6_zero_is_noop_not_positive_pi_wrap():
+    mapped, waiting = startup_joint6_controller_target(0.0, 0.0, 0.0)
+    assert mapped == 0.0
+    assert waiting is False
+
+
+def test_startup_joint6_accepts_240_degree_boundary_and_rejects_beyond_it():
+    raw = math.radians(120.0)
+    target = -JOINT6_STARTUP_LIMIT_RAD
+    mapped, waiting = startup_joint6_controller_target(raw, target, target)
+    assert abs(mapped - raw) < 1e-12
+    assert waiting is False
+
+    try:
+        startup_joint6_controller_target(
+            raw, target, target - math.radians(0.01))
+    except ValueError as exc:
+        assert 'outside [-240deg, 0]' in str(exc)
+    else:
+        raise AssertionError('startup target below -240 degrees was accepted')
+
+
+def test_startup_joint6_can_resume_positive_motion_from_negative_midpoint():
+    mapped, waiting = startup_joint6_controller_target(
+        -1.25, -1.25, -0.75)
+    assert mapped == -0.75
+    assert mapped > -1.25
+    assert waiting is False
+
+
+def test_startup_joint6_rejects_negative_direction_command():
+    try:
+        startup_joint6_controller_target(
+            -3.0, -3.0, -3.10, previous_target=-2.90)
+    except ValueError as exc:
+        assert 'decreased' in str(exc)
+    else:
+        raise AssertionError('decreasing startup J6 target was accepted')
+
+    try:
+        startup_joint6_controller_target(
+            -3.0, -3.0, -3.005, previous_target=None)
+    except ValueError as exc:
+        assert 'behind raw feedback' in str(exc)
+    else:
+        raise AssertionError('small negative startup J6 command was accepted')
+
+
+def test_startup_joint6_full_wrap_trace_can_only_advance_positive():
+    raw_trace = [3.011637, 3.05, 3.10, 3.14, -3.13, -2.8, -1.5, -0.2]
+    target_trace = [-3.271548, -3.23, -3.18, -3.10,
+                    -3.00, -2.70, -1.30, 0.0]
+    previous_logical = None
+    previous_target = None
+    for raw, target in zip(raw_trace, target_trace):
+        logical = continuous_joint6_feedback(raw, previous_logical)
+        mapped, _waiting = startup_joint6_controller_target(
+            raw, logical, target, previous_target)
+        # Before the measured signed wrap, the driver must never expose a
+        # negative absolute target to the controller.
+        if raw >= 0.0:
+            assert mapped >= raw - 1e-4
+            assert mapped >= 0.0
+        else:
+            # After wrapping, an increasing logical target is also an
+            # increasing raw target and therefore remains positive motion.
+            assert mapped >= raw - 1e-4
+        if previous_target is not None:
+            assert target >= previous_target
+        previous_logical = logical
+        previous_target = target
+
+
+def test_startup_joint6_240_degree_trace_can_only_advance_positive():
+    raw_trace = [
+        math.radians(120.0),
+        math.radians(150.0),
+        math.radians(179.9),
+        math.radians(-179.9),
+        math.radians(-120.0),
+        math.radians(-30.0),
+        0.0,
+    ]
+    target_trace = [
+        math.radians(-240.0),
+        math.radians(-210.0),
+        math.radians(-180.1),
+        math.radians(-170.0),
+        math.radians(-110.0),
+        math.radians(-20.0),
+        0.0,
+    ]
+    previous_logical = None
+    previous_target = None
+    for raw, target in zip(raw_trace, target_trace):
+        logical = continuous_joint6_feedback(raw, previous_logical)
+        mapped, _waiting = startup_joint6_controller_target(
+            raw, logical, target, previous_target)
+        assert mapped >= raw - 1e-4
+        if previous_target is not None:
+            assert target >= previous_target
+        previous_logical = logical
+        previous_target = target
+
+
+def test_startup_direction_watchdog_accepts_positive_wrap_and_trips_reverse():
+    previous = None
+    continuous = 0.0
+    high_water = 0.0
+    for raw in [3.18, 3.20, 3.24, 4.0, 6.27, 0.01]:
+        continuous, high_water, wrong = startup_joint6_direction_update(
+            raw, previous, continuous, high_water)
+        assert not wrong
+        previous = raw
+
+    continuous, high_water, wrong = startup_joint6_direction_update(
+        -0.02, previous, continuous, high_water)
+    assert wrong
 
 
 def _signed_pair(first, second):

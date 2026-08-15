@@ -23,17 +23,22 @@ def cfg(name):
 
 
 def home_override():
-    raw = os.environ.get('PIPER_RETURN_HOME_POSITIONS_RAD', '').strip()
-    if not raw:
-        return {}
-    try:
-        values = [float(value) for value in json.loads(raw)]
-    except (TypeError, ValueError, json.JSONDecodeError) as exc:
-        raise RuntimeError('invalid PIPER_RETURN_HOME_POSITIONS_RAD: %s' % exc)
-    if len(values) != 6 or not all(math.isfinite(value) for value in values):
-        raise RuntimeError(
-            'PIPER_RETURN_HOME_POSITIONS_RAD must contain six finite values')
-    return {'return_home_positions_rad': values}
+    result = {}
+    for environment_name, parameter_name in (
+            ('PIPER_RETURN_HOME_POSITIONS_RAD', 'return_home_positions_rad'),
+            ('PIPER_PRE_HOME_POSITIONS_RAD', 'pre_home_positions_rad')):
+        raw = os.environ.get(environment_name, '').strip()
+        if not raw:
+            continue
+        try:
+            values = [float(value) for value in json.loads(raw)]
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise RuntimeError('invalid %s: %s' % (environment_name, exc))
+        if len(values) != 6 or not all(math.isfinite(value) for value in values):
+            raise RuntimeError(
+                '%s must contain six finite values' % environment_name)
+        result[parameter_name] = values
+    return result
 
 
 def generate_launch_description():

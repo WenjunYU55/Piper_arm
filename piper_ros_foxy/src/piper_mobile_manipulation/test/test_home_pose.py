@@ -61,7 +61,8 @@ def test_staged_home_profile_preserves_other_joints_for_wrist_moves(tmp_path):
     rough = [0.1, 0.2, -0.3, 0.4, 0.5, 1.2]
     save_home_pose(
         path, rough, storage_joint6_rad=-0.5,
-        mission_ready_joint6_rad=1.2)
+        mission_ready_joint6_rad=1.2,
+        pre_home_positions_rad=rough)
     profile = load_home_pose(path)
     assert profile['staged_home_configured'] is True
     targets = staged_home_targets(

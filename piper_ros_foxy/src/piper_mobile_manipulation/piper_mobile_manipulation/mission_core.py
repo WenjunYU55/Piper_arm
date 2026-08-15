@@ -252,6 +252,7 @@ class MissionSession:
     accepted_captures: int = 0
     heartbeat_monotonic: float = field(default_factory=time.monotonic)
     return_home_proved: bool = False
+    pre_home_completed: bool = False
     storage_wrist_proved: bool = False
     startup_wrist_completed: bool = False
     startup_home_completed: bool = False
@@ -262,6 +263,7 @@ class MissionSession:
     arm_enabled: bool = False
     motor_control_lost_reason: str = ''
     home_positions_rad: tuple = ()
+    pre_home_positions_rad: tuple = ()
     storage_positions_rad: tuple = ()
     mission_ready_joint6_rad: float = 0.0
     storage_joint6_rad: float = 0.0

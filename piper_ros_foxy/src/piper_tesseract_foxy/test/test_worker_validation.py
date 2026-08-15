@@ -69,7 +69,8 @@ def test_worker_tries_next_ik_goal_after_visibility_rejection():
                 angle = 0.0
             return SimpleNamespace(matrix=optical_transform(angle))
 
-    def plan_segment(_start, goal, _step, _bootstrap):
+    def plan_segment(
+            _start, goal, _step, _bootstrap, **_planning_context):
         attempted.append(np.asarray(goal).tolist())
         return [
             {'positions_rad': [0.0] * 6},
@@ -563,7 +564,7 @@ def test_worker_budget_is_checked_between_candidate_planner_attempts(
     ]
     attempts = []
 
-    def reject_attempt(*_args):
+    def reject_attempt(*_args, **_planning_context):
         attempts.append(True)
         raise ContractError('synthetic planner failure')
 

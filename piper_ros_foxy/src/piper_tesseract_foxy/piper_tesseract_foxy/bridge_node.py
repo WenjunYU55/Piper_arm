@@ -233,6 +233,7 @@ def balanced_closed_loop_candidates(
     )
     has_progress_contract = any(
         'coverage_progress_score' in item for item in coverage_order)
+
     def progress_threshold(item):
         objective = str(item.get('coverage_objective', ''))
         if objective in ('positive_y_face', 'negative_y_face'):
@@ -1273,6 +1274,30 @@ class TesseractPlanBridge(Node):
                     segment.get('collision_validation_bypassed', False)),
                 'home_stage': str(segment.get('home_stage', '')),
                 'validation': str(segment.get('validation', '')),
+                'trajectory_blending': str(segment.get(
+                    'trajectory_blending', '')),
+                'pass_through_blending_applied': bool(segment.get(
+                    'pass_through_blending_applied', False)),
+                'pass_through_blend_fallback_used': bool(segment.get(
+                    'pass_through_blend_fallback_used', False)),
+                'pass_through_blended_corners': int(segment.get(
+                    'pass_through_blended_corners', 0)),
+                'pass_through_source_points': int(segment.get(
+                    'pass_through_source_points', 0)),
+                'pass_through_geometry_points': int(segment.get(
+                    'pass_through_geometry_points', 0)),
+                'pass_through_maximum_radius_rad': float(segment.get(
+                    'pass_through_maximum_radius_rad', 0.0)),
+                'pass_through_blend_reason': str(segment.get(
+                    'pass_through_blend_reason', '')),
+                'sdk_execution_mode': str(segment.get(
+                    'sdk_execution_mode', 'TESSERACT_STREAM')),
+                'sdk_command_anchor_count': int(segment.get(
+                    'sdk_command_anchor_count', 0)),
+                'direct_movej_validation': str(segment.get(
+                    'direct_movej_validation', '')),
+                'direct_movej_source_points': int(segment.get(
+                    'direct_movej_source_points', 0)),
                 'used': recovery_used,
                 'minimum_clearance_m': (
                     float(segment['bootstrap_recovery_minimum_clearance_m'])

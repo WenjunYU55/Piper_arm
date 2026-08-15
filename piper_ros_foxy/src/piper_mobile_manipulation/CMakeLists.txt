@@ -38,6 +38,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/AuthorizeMission.srv"
   "srv/GetTargetScanResult.srv"
   "srv/ApproveScanExecution.srv"
+  "srv/ExecuteHomeStage.srv"
   "srv/PrepareAcquisition.srv"
   "srv/RequestTesseractPlan.srv"
   "srv/ReportTrackedRobotHomed.srv"
@@ -115,6 +116,29 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_occlusion_policy test/test_occlusion_policy.py)
   ament_add_pytest_test(
     test_reconstruction_jobs test/test_reconstruction_jobs.py)
+  ament_add_pytest_test(
+    test_phase1_mission_characterization
+    test/test_phase1_mission_characterization.py)
+  ament_add_pytest_test(
+    test_phase1_executor_characterization
+    test/test_phase1_executor_characterization.py)
+  ament_add_pytest_test(
+    test_phase1_external_contract_characterization
+    test/test_phase1_external_contract_characterization.py)
+  ament_add_pytest_test(
+    test_failure_model test/test_failure_model.py)
+  ament_add_pytest_test(
+    test_telemetry_store test/test_telemetry_store.py)
+  ament_add_pytest_test(
+    test_process_supervisor test/test_process_supervisor.py)
+  ament_add_pytest_test(
+    test_safety_evaluator test/test_safety_evaluator.py)
+  ament_add_pytest_test(
+    test_mission_engine test/test_mission_engine.py)
+  ament_add_pytest_test(
+    test_phase7_viewpoint_components
+    test/test_phase7_viewpoint_components.py)
+  ament_add_pytest_test(test_configuration test/test_configuration.py)
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)

@@ -94,25 +94,14 @@ def test_step45_auto_recovery_is_bounded_and_never_hides_operator_blockers():
         assert step45_auto_recovery_blocker(operator_stop)
 
 
-def test_step45_auto_recovery_prepares_only_and_requires_new_confirmation():
+def test_legacy_recovery_helpers_are_not_used_by_production_gui():
     source = (
         Path(__file__).resolve().parent / 'piper_gui_native.py'
     ).read_text(encoding='utf-8')
-    assert 'prepare_scan_from_current_lock(automatic=True)' in source
-    assert 'A new Step 5 approval is still ' in source
-    assert 'required."' in source
-    assert 'provide a new Step 5 confirmation for this exact hash' in source
-    assert 'workflow_state == "WAIT_CAPTURE"' in source
-    assert 'previous view capture to finish cleanup' in source
-    assert '"replanning is disabled after scan progress so completed "' not in source
-    assert 'scan_expected_views = remaining_views' in source
-    approval_success = source.split(
-        'elif name == "scan_approval":', 1)[1].split(
-            'elif name == "scan_cancel":', 1)[0]
-    assert 'self.step45_auto_recovery_attempts = 0' not in approval_success
-    assert 'the exact displayed proposal ' in source
-    assert 'was invalidated while the confirmation dialog was open' in source
-    assert '"No active 13-view plan: " + str(message)' in source
+    assert 'prepare_scan_from_current_lock' not in source
+    assert 'step45_auto_recovery' not in source
+    assert 'scan_approval' not in source
+    assert 'MissionActionClient' in source
 
 
 def test_automatic_scan_is_a_separate_one_start_button_tab():
@@ -127,16 +116,14 @@ def test_automatic_scan_is_a_separate_one_start_button_tab():
     assert 'rough green-cube coordinate' not in automatic
     assert 'text="Start Complete Automated Scan"' in source
     assert 'command=self.start_automated_scan' in source
-    assert 'text="Acquire & Scan"' in source
+    assert 'text="Acquire & Scan"' not in source
     assert 'Production mission API simulator' not in source
     assert 'physical obstacle removal is NOT enabled yet' in source
-    assert "self._advance_automation_generation()" in source
-    assert "self.automation_session = AutomationSession()" in source
-    assert "if self.mission_in_progress:" in source.split(
-        'def handle_scan_plan', 1)[1].split('def ', 1)[0]
-    scan_status = source.split('elif name == "scan_status":', 1)[1].split(
-        'elif name == ', 1)[0]
-    assert 'if self.mission_in_progress:' in scan_status
+    assert 'Commissioning: Manual' in source
+    assert 'Commissioning: 3D Preview' in source
+    assert 'PrepareAcquisition' not in source
+    assert 'ApproveScanExecution' not in source
+    assert 'RequestTesseractPlan' not in source
 
 
 def plan(
@@ -481,63 +468,45 @@ def test_gui_joint6_fallback_uses_full_turn_limit():
     assert '("joint6", -math.pi, math.pi, "rad")' in source
 
 
-def test_step2_timeout_uses_fresh_clients_and_preserves_exact_retry():
+def test_production_gui_has_no_step2_service_or_retry_state():
     source = (
         Path(__file__).resolve().parent / 'piper_gui_native.py'
     ).read_text(encoding='utf-8')
-    assert 'client = self._fresh_acquisition_prepare_client()' in source
-    assert 'for attempt in range(2):' in source
-    assert '"timeout",' in source
-    assert 'preserve_request=(outcome == "timeout")' in source
-    assert 'self.pending_acquisition_session_id' in source
-    assert 'self.pending_acquisition_stack_generation' in source
+    assert '_fresh_acquisition_prepare_client' not in source
+    assert 'pending_acquisition_session_id' not in source
+    assert 'acquisition_plan_deadline' not in source
+    assert '/scan_target_acquisition/prepare' not in source
 
 
-def test_post_acceptance_acquisition_failures_start_a_fresh_session():
+def test_production_gui_does_not_classify_acquisition_failures():
     source = (
         Path(__file__).resolve().parent / 'piper_gui_native.py'
     ).read_text(encoding='utf-8')
-    assert '"Step 2 with a fresh session."' in source
-    invalid_handler = source.split(
-        '"Acquisition proposal invalidated: %s; retry Step 2."', 1)[1]
-    assert 'preserve_request=False' in invalid_handler[:300]
+    assert 'Acquisition proposal invalidated' not in source
+    assert '_acquisition_fail' not in source
+    assert 'as_failure(' not in source
 
 
-def test_rejected_acquisition_approval_is_a_fresh_step2_retry():
+def test_production_gui_does_not_approve_executor_plans():
     source = (
         Path(__file__).resolve().parent / 'piper_gui_native.py'
     ).read_text(encoding='utf-8')
-    handler = source.split(
-        'elif name == "acquisition_approval":', 1)[1].split(
-            'elif name == "scan_approval":', 1)[0]
-    assert 'self.automation_session = AutomationSession()' in handler
-    assert 'self._acquisition_fail(' in handler
-    assert 'preserve_request=False' in handler
-    assert '"arm first, then retry Step 2 for a fresh plan."' in handler
-    assert '"Acquisition plan ready. The arm must already be enabled so "' in source
-    assert '"this plan starts from the measured loaded pose.' in source
+    assert '/scan_viewpoint_executor/approve' not in source
+    assert 'ApproveScanExecution' not in source
+    assert 'acquisition_approval' not in source
+    assert 'scan_approval' not in source
 
 
-def test_step2_requires_gui_confirmed_enable_and_invalidates_old_plan():
+def test_production_action_owns_enable_and_plan_invalidation():
     source = (
         Path(__file__).resolve().parent / 'piper_gui_native.py'
     ).read_text(encoding='utf-8')
-    assert 'self.arm_enable_confirmed = False' in source
-    prepare = source.split(
-        'def prepare_acquisition(self) -> None:', 1)[1].split(
-            'def confirm_acquisition(self) -> None:', 1)[0]
-    assert 'if not self.arm_enable_confirmed:' in prepare
-    assert '"Enable the arm through this GUI before Step 2 so Tesseract "' in prepare
-    buttons = source.split(
-        'def update_automation_buttons(self) -> None:', 1)[1].split(
-            'def poll_automation(self) -> None:', 1)[0]
-    assert 'self.arm_enable_confirmed' in buttons
-    handler = source.split(
-        'elif name == "enable_service":', 1)[1].split(
-            'elif name == "command_blocked":', 1)[0]
-    assert 'self.arm_enable_confirmed = bool(enabled and success)' in handler
-    assert 'preserve_request=False' in handler
-    assert '"fresh plan from the measured loaded pose."' in handler
+    assert 'arm_enable_confirmed' not in source
+    assert 'prepare_acquisition' not in source
+    assert 'update_automation_buttons' not in source
+    automatic = source.split('def start_automated_scan', 1)[1].split(
+        'def report_tracked_robot_homed', 1)[0]
+    assert 'self.ros_node.submit_mission(request)' in automatic
 
 
 def test_disable_requires_an_acknowledged_settled_current_feedback_hold():
@@ -549,7 +518,8 @@ def test_disable_requires_an_acknowledged_settled_current_feedback_hold():
         'def request_safe_disable(self) -> None:', 1)[1].split(
             'def use_feedback(self) -> None:', 1)[0]
     assert 'self.fresh_feedback()' in safe_disable
-    assert 'self.ros_node.cancel_scan()' in safe_disable
+    assert 'self.ros_node.cancel_scan()' not in safe_disable
+    assert 'Cancel and Home' in safe_disable
     assert 'self.ros_node.publish_joint_target(positions, speed, effort)' in safe_disable
     assert 'if self.safe_disable_target is None:' in safe_disable
     assert 'target_error <= 0.025 and motion_delta <= 0.005' in safe_disable

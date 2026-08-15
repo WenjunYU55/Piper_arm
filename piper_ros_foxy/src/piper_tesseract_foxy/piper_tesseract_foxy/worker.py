@@ -41,6 +41,10 @@ SCAN_TARGET_MIN_DISTANCE_M = 0.22
 # motions; the stream schedule mirrors that same percentage at 20 Hz.
 MOVEJ_NOMINAL_VELOCITY_RAD_S = np.asarray(
     [5.0, 5.0, 5.0, 5.0, 5.0, 3.0], dtype=float)
+PASS_THROUGH_BLEND_MAX_RADIUS_RAD = 0.06
+PASS_THROUGH_BLEND_FRACTION = 0.25
+PASS_THROUGH_BLEND_MIN_SAMPLES = 4
+MAX_BLEND_GEOMETRY_POINTS = 12000
 
 
 def planning_budgets_for_request(request):
@@ -84,6 +88,116 @@ def finite_six(value, label):
     if array.shape != (6,) or not np.all(np.isfinite(array)):
         raise ContractError('%s must contain six finite values' % label)
     return array
+
+
+def pass_through_blend_geometry(
+        points, maximum_step_rad,
+        maximum_radius_rad=PASS_THROUGH_BLEND_MAX_RADIUS_RAD,
+        blend_fraction=PASS_THROUGH_BLEND_FRACTION,
+        minimum_samples=PASS_THROUGH_BLEND_MIN_SAMPLES):
+    """Round internal path corners before dense revalidation."""
+    if not isinstance(points, list) or len(points) < 2:
+        raise ContractError('blend source path has fewer than two points')
+    maximum_step = float(maximum_step_rad)
+    maximum_radius = float(maximum_radius_rad)
+    fraction = float(blend_fraction)
+    samples = int(minimum_samples)
+    if not math.isfinite(maximum_step) or maximum_step <= 0.0:
+        raise ContractError('blend maximum joint step is invalid')
+    if not math.isfinite(maximum_radius) or maximum_radius <= 0.0:
+        raise ContractError('blend maximum radius is invalid')
+    if not math.isfinite(fraction) or fraction <= 0.0 or fraction > 0.25:
+        raise ContractError('blend fraction must be within (0, 0.25]')
+    if samples < 2 or samples > 64:
+        raise ContractError('blend minimum sample count is invalid')
+    source = np.asarray([
+        finite_six(point.get('positions_rad'), 'blend source position')
+        for point in points], dtype=float)
+    if len(source) < 3:
+        return [dict(point) for point in points], {
+            'applied': False,
+            'reason': 'path has no internal corner',
+            'source_points': int(len(source)),
+            'geometry_points': int(len(source)),
+            'blended_corners': 0,
+        }
+    geometry = [source[0].copy()]
+    blended_corners = 0
+
+    def append(position):
+        value = finite_six(position, 'blended joint position')
+        if float(np.max(np.abs(value - geometry[-1]))) > 1e-10:
+            geometry.append(value.copy())
+
+    for index in range(1, len(source) - 1):
+        previous, corner, following = source[index - 1:index + 2]
+        incoming = corner - previous
+        outgoing = following - corner
+        incoming_length = float(np.max(np.abs(incoming)))
+        outgoing_length = float(np.max(np.abs(outgoing)))
+        if incoming_length <= 1e-9 or outgoing_length <= 1e-9:
+            append(corner)
+            continue
+        cosine = float(np.dot(incoming, outgoing) / (
+            np.linalg.norm(incoming) * np.linalg.norm(outgoing)))
+        cosine = min(1.0, max(-1.0, cosine))
+        if cosine >= 0.9995:
+            continue
+        if cosine <= -0.9995:
+            append(corner)
+            continue
+        entry = corner - incoming * min(
+            fraction, maximum_radius / incoming_length)
+        exit_point = corner + outgoing * min(
+            fraction, maximum_radius / outgoing_length)
+        append(entry)
+        arc_extent = max(
+            float(np.max(np.abs(corner - entry))),
+            float(np.max(np.abs(exit_point - corner))))
+        arc_samples = max(
+            samples,
+            int(math.ceil((2.0 * arc_extent) / maximum_step - 1e-12)))
+        for sample_index in range(1, arc_samples + 1):
+            u = float(sample_index) / float(arc_samples)
+            one_minus = 1.0 - u
+            append(
+                one_minus * one_minus * entry
+                + 2.0 * one_minus * u * corner
+                + u * u * exit_point)
+        blended_corners += 1
+        if len(geometry) > MAX_BLEND_GEOMETRY_POINTS:
+            return [dict(point) for point in points], {
+                'applied': False,
+                'reason': 'bounded blend geometry point limit exceeded',
+                'source_points': int(len(source)),
+                'geometry_points': int(len(source)),
+                'blended_corners': 0,
+            }
+    append(source[-1])
+    if blended_corners == 0:
+        return [dict(point) for point in points], {
+            'applied': False,
+            'reason': 'path has no blendable internal turn',
+            'source_points': int(len(source)),
+            'geometry_points': int(len(source)),
+            'blended_corners': 0,
+        }
+    output = [{
+        'time_from_start_s': float(index),
+        'positions_rad': position.tolist(),
+        'velocities_rad_s': [0.0] * 6,
+        'accelerations_rad_s2': [0.0] * 6,
+    } for index, position in enumerate(geometry)]
+    return output, {
+        'applied': True,
+        'reason': '',
+        'source_points': int(len(source)),
+        'geometry_points': int(len(output)),
+        'blended_corners': int(blended_corners),
+        'maximum_radius_rad': float(maximum_radius),
+        'blend_fraction': float(fraction),
+        'minimum_corner_samples': int(samples),
+    }
 
 
 def attached_box_floor_clearance_rejection(
@@ -1323,7 +1437,8 @@ class TesseractBackend:
                 'before a candidate roll/IK OMPL attempt')
             try:
                 points, validation = self.plan_segment_to_joint_goal(
-                    start_array, goal, maximum_step, bootstrap_recovery)
+                    start_array, goal, maximum_step, bootstrap_recovery,
+                    visibility_target=visibility_target)
                 if visibility_target is not None:
                     positions = []
                     for point_index, point in enumerate(points):
@@ -1352,7 +1467,8 @@ class TesseractBackend:
 
     def plan_segment_to_joint_goal(
             self, start, goal, maximum_step, bootstrap_recovery=None,
-            bootstrap_policy_name='bootstrap_start_recovery'):
+            bootstrap_policy_name='bootstrap_start_recovery',
+            visibility_target=None):
         planning_time = self.remaining_planning_time(
             'before an OMPL segment solve')
         program = self.api['MotionProgram'](
@@ -1398,8 +1514,19 @@ class TesseractBackend:
                 bootstrap_recovery['bootstrap_recovery_end_positions_rad'],
                 bootstrap_recovery['bootstrap_recovery_joints'])
 
+        blend_metadata = {
+            'applied': False,
+            'reason': 'bootstrap recovery keeps exact source geometry',
+            'source_points': int(len(raw)),
+            'geometry_points': int(len(raw)),
+            'blended_corners': 0,
+        }
+        schedule_source = raw
+        if bootstrap_recovery is None:
+            schedule_source, blend_metadata = pass_through_blend_geometry(
+                raw, maximum_step)
         points, validation_points = sdk_movej_waypoint_trajectory(
-            raw,
+            schedule_source,
             self.execution_speed_percent,
             self.command_rate_hz,
             maximum_step,
@@ -1420,7 +1547,30 @@ class TesseractBackend:
         if bootstrap_recovery is None:
             self.ensure_planning_time(
                 'before adaptive collision validation')
-            validation = self.final_validate(validation_points)
+            try:
+                validation = self.final_validate(validation_points)
+            except ContractError as blend_error:
+                if not bool(blend_metadata.get('applied', False)):
+                    raise
+                self.ensure_planning_time(
+                    'before exact-polyline blend fallback validation')
+                points, validation_points = sdk_movej_waypoint_trajectory(
+                    raw,
+                    self.execution_speed_percent,
+                    self.command_rate_hz,
+                    maximum_step,
+                    self.execution_position_limits,
+                    self.execution_velocity_limits,
+                    self.execution_acceleration_limits,
+                )
+                validation = self.final_validate(validation_points)
+                blend_metadata = {
+                    **blend_metadata,
+                    'applied': False,
+                    'fallback_used': True,
+                    'reason': str(blend_error)[:512],
+                    'geometry_points': int(len(validation_points)),
+                }
         else:
             endpoint = finite_six(
                 bootstrap_recovery['bootstrap_recovery_end_positions_rad'],
@@ -1523,6 +1673,108 @@ class TesseractBackend:
                     'bootstrap_start_contacts':
                         bootstrap_recovery['bootstrap_start_contacts'],
                 })
+        def visibility_rejection(candidate_points):
+            if visibility_target is None:
+                return ''
+            positions = []
+            for point_index, point in enumerate(candidate_points):
+                current = finite_six(
+                    point['positions_rad'], 'visibility path position')
+                if point_index == 0:
+                    positions.append(current)
+                else:
+                    positions.extend(subdivide_joint_segment(
+                        positions[-1], current, maximum_step)[1:])
+            transforms = [
+                np.asarray(self.robot.fk(
+                    'manipulator', joints,
+                    tip_link='camera_optical_frame').matrix)
+                for joints in positions]
+            return camera_transform_path_rejection(
+                transforms, visibility_target)
+
+        visibility_error = visibility_rejection(points)
+        if visibility_error and bool(blend_metadata.get('applied', False)):
+            self.ensure_planning_time(
+                'before exact-polyline visibility fallback validation')
+            points, validation_points = sdk_movej_waypoint_trajectory(
+                raw,
+                self.execution_speed_percent,
+                self.command_rate_hz,
+                maximum_step,
+                self.execution_position_limits,
+                self.execution_velocity_limits,
+                self.execution_acceleration_limits,
+            )
+            validation = self.final_validate(validation_points)
+            blend_metadata = {
+                **blend_metadata,
+                'applied': False,
+                'fallback_used': True,
+                'reason': str(visibility_error)[:512],
+                'geometry_points': int(len(validation_points)),
+            }
+            visibility_error = visibility_rejection(points)
+        if visibility_error:
+            raise ContractError(visibility_error)
+
+        sdk_execution_mode = 'TESSERACT_STREAM'
+        direct_movej_reason = 'not evaluated for a recovery segment'
+        if bootstrap_recovery is None:
+            try:
+                direct_source = [dict(raw[0]), dict(raw[-1])]
+                direct_source[0]['time_from_start_s'] = 0.0
+                direct_source[1]['time_from_start_s'] = max(
+                    1e-6, float(raw[-1]['time_from_start_s']))
+                direct_points, direct_validation_points = (
+                    sdk_movej_waypoint_trajectory(
+                        direct_source,
+                        self.execution_speed_percent,
+                        self.command_rate_hz,
+                        maximum_step,
+                        self.execution_position_limits,
+                        self.execution_velocity_limits,
+                        self.execution_acceleration_limits,
+                    ))
+                direct_validation = self.final_validate(
+                    direct_validation_points)
+                direct_visibility_error = visibility_rejection(direct_points)
+                if direct_visibility_error:
+                    raise ContractError(direct_visibility_error)
+            except (ContractError, RuntimeError, ValueError) as direct_error:
+                direct_movej_reason = str(direct_error)[:512]
+            else:
+                points = direct_points
+                validation_points = direct_validation_points
+                validation = direct_validation
+                sdk_execution_mode = 'DIRECT_MOVEJ'
+                direct_movej_reason = (
+                    'exact start-to-goal joint chord independently passed '
+                    'dense collision, attached-tool and visibility validation')
+        validation.update({
+            'trajectory_blending': 'pass_through_quadratic_v1',
+            'pass_through_blending_applied': bool(
+                blend_metadata.get('applied', False)),
+            'pass_through_blend_fallback_used': bool(
+                blend_metadata.get('fallback_used', False)),
+            'pass_through_blended_corners': int(
+                blend_metadata.get('blended_corners', 0)),
+            'pass_through_source_points': int(
+                blend_metadata.get('source_points', len(raw))),
+            'pass_through_geometry_points': int(
+                blend_metadata.get('geometry_points', len(validation_points))),
+            'pass_through_maximum_radius_rad': float(
+                blend_metadata.get('maximum_radius_rad', 0.0)),
+            'pass_through_blend_reason': str(
+                blend_metadata.get('reason', '')),
+            'sdk_execution_mode': sdk_execution_mode,
+            'sdk_command_anchor_count': (
+                1 if sdk_execution_mode == 'DIRECT_MOVEJ'
+                else max(1, len(points) - 1)),
+            'direct_movej_validation': direct_movej_reason,
+            'direct_movej_source_points': (
+                2 if sdk_execution_mode == 'DIRECT_MOVEJ' else 0),
+        })
         return points, validation
 
     def plan_dual_recovery_return_home(

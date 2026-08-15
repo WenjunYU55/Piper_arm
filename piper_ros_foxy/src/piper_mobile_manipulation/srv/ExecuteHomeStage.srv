@@ -1,0 +1,9 @@
+string task_id
+string mission_sha256
+string home_stage
+# STARTUP_WRIST, PRE_HOME, ROUGH_HOME, or STORAGE_WRIST.
+float64[] joint_goal_positions_rad
+---
+bool accepted
+string execution_id
+string message

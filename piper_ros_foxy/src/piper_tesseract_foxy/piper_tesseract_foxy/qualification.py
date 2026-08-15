@@ -15,7 +15,6 @@ from piper_mobile_manipulation.target_acquisition import (
 )
 from piper_tesseract_foxy.contract import ContractError, JOINT_NAMES
 from piper_tesseract_foxy.worker import (
-    reverse_sdk_movej_points,
     sdk_movej_waypoint_trajectory,
     TesseractBackend,
 )

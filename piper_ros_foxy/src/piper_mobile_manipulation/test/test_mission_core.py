@@ -20,6 +20,7 @@ from piper_mobile_manipulation.mission_core import (
     validate_goal_payload,
 )
 from piper_mobile_manipulation.mission_spool import MissionSpool
+from piper_mobile_manipulation.mission_engine import MissionEngine
 from piper_mobile_manipulation.target_scan_mission_node import (
     ManagedProcessSet,
     failure_code_for_reason,
@@ -44,10 +45,13 @@ def test_mission_constructor_does_not_read_parameters_before_declaration():
 
 
 def test_startup_wrist_direction_is_proved_before_motor_enable():
-    source = inspect.getsource(TargetScanMissionNode.run_pipeline)
-    direction_gate = source.index('validate_staged_wrist_direction(')
-    enable_call = source.index('self.call_enable(True)')
-    assert direction_gate < enable_call
+    handlers = list(MissionEngine.PIPELINE_HANDLERS)
+    assert handlers.index(MissionPhase.PREFLIGHT) < handlers.index(
+        MissionPhase.ENABLE_AND_HOLD)
+    assert 'validate_staged_wrist_direction(' in inspect.getsource(
+        MissionEngine._handle_preflight)
+    assert 'enable_arm(context, True)' in inspect.getsource(
+        MissionEngine._handle_enable_and_hold)
 
 
 def test_only_transient_live_perception_blocks_retry_exact_plan_approval():
@@ -162,6 +166,7 @@ def test_shutdown_uses_static_home_until_perception_scene_is_established():
     session.acquisition_attempt = 1
     assert shutdown_uses_startup_home(session)
     session.perception_scene_established = True
+    session.pre_home_positions_rad = [0.0] * 6
     assert not shutdown_uses_startup_home(session)
 
 
@@ -348,23 +353,20 @@ def test_shutdown_holds_current_state_then_uses_dedicated_home_plan():
     session = SimpleNamespace(
         return_home_proved=False,
         home_positions_rad=[0.0] * 6,
+        task_id='task-direct-home', mission_sha256='a' * 64,
     )
     cancel_client = object()
-    home_plan_client = object()
+    execute_client = object()
     state = {'at_home': False, 'approved': False}
     node = SimpleNamespace(
         cancel_client=cancel_client,
-        return_home_plan_client=home_plan_client,
+        execute_home_stage_client=execute_client,
         latest_execution=SimpleNamespace(
             state='ABORTED', reason='approved plan start reached'),
         latest_execution_at=time.monotonic() + 10.0,
-        latest_plan=SimpleNamespace(
-            valid=True, plan_kind='RETURN_HOME', plan_id='home-plan'),
-        latest_plan_at=time.monotonic() + 10.0,
         processes=SimpleNamespace(failed=lambda: {}),
         at_configured_home=lambda _session, **_kwargs: state['at_home'],
         wait_for_stable_joint_stream=lambda *_args: None,
-        clear_plan_cache=lambda: None,
     )
 
     def call_service(client, *_args, **_kwargs):
@@ -373,19 +375,17 @@ def test_shutdown_holds_current_state_then_uses_dedicated_home_plan():
                 success=True,
                 message=('proposal cancelled; current joint hold requested '
                          'before dedicated current-state return-home replanning'))
-        assert client is home_plan_client
-        return SimpleNamespace(accepted=True, request_id='home-plan')
-
-    def approve_plan(_goal_handle, _session, _plan):
+        assert client is execute_client
         state['approved'] = True
         state['at_home'] = True
         node.latest_execution = SimpleNamespace(
+            plan_id='direct-home',
             state='ABORTED',
             reason='dedicated collision-qualified configured home reached')
         node.latest_execution_at = time.monotonic() + 10.0
-
+        return SimpleNamespace(
+            accepted=True, execution_id='direct-home', message='accepted')
     node.call_service = call_service
-    node.approve_plan = approve_plan
 
     assert TargetScanMissionNode.prove_return_home_for_shutdown(node, session)
     assert state['approved']
@@ -396,41 +396,31 @@ def test_startup_home_uses_nonterminal_hold_and_static_plan_service():
     session = SimpleNamespace(
         return_home_proved=False,
         home_positions_rad=[0.0] * 6,
+        task_id='task-startup-home', mission_sha256='b' * 64,
     )
-    hold_client = object()
-    startup_home_plan_client = object()
+    execute_client = object()
     state = {'at_home': False, 'approved': False}
     node = SimpleNamespace(
-        hold_client=hold_client,
-        startup_home_plan_client=startup_home_plan_client,
+        execute_home_stage_client=execute_client,
         latest_execution=None,
         latest_execution_at=0.0,
-        latest_plan=SimpleNamespace(
-            valid=True, plan_kind='RETURN_HOME', plan_id='startup-home-plan'),
-        latest_plan_at=time.monotonic() + 10.0,
         processes=SimpleNamespace(failed=lambda: {}),
         at_configured_home=lambda _session, **_kwargs: state['at_home'],
-        wait_for_stable_joint_stream=lambda *_args: None,
-        clear_plan_cache=lambda: None,
+        require_fresh_joint_feedback=lambda: None,
     )
 
     def call_service(client, *_args, **_kwargs):
-        if client is hold_client:
-            return SimpleNamespace(
-                success=True, message='current joint hold requested')
-        assert client is startup_home_plan_client
-        return SimpleNamespace(
-            accepted=True, request_id='startup-home-plan', message='queued')
-
-    def approve_plan(_goal_handle, _session, _plan):
+        assert client is execute_client
         state['approved'] = True
         state['at_home'] = True
         node.latest_execution = SimpleNamespace(
+            plan_id='direct-startup-home',
             state='ABORTED', reason='configured home reached')
         node.latest_execution_at = time.monotonic() + 10.0
-
+        return SimpleNamespace(
+            accepted=True, execution_id='direct-startup-home',
+            message='accepted')
     node.call_service = call_service
-    node.approve_plan = approve_plan
 
     assert TargetScanMissionNode.prove_return_home_for_shutdown(
         node, session, startup=True)
@@ -674,11 +664,12 @@ def test_shutdown_never_calls_disable_before_home_is_proved():
     session.arm_enabled = True
     session.startup_home_completed = True
     session.perception_scene_established = True
+    session.pre_home_positions_rad = [0.0] * 6
     session.storage_positions_rad = [0.0] * 6
     calls = []
     harness = SimpleNamespace(
         transition=lambda *_args, **_kwargs: None,
-        prove_return_home_for_shutdown=lambda _session: False,
+        prove_return_home_for_shutdown=lambda _session, **_kwargs: False,
         prove_current_hold_for_shutdown=lambda _session: True,
         call_enable=lambda enabled: calls.append(bool(enabled)),
     )
@@ -686,7 +677,7 @@ def test_shutdown_never_calls_disable_before_home_is_proved():
     failure = TargetScanMissionNode.safe_shutdown(
         harness, session, normal_completion=False)
 
-    assert 'home return was not proved' in str(failure)
+    assert 'pre-home was not proved' in str(failure)
     assert calls == []
     assert session.arm_enabled
 
@@ -696,13 +687,20 @@ def test_cancel_shutdown_returns_home_before_disable_and_process_stop():
     session.arm_enabled = True
     session.startup_home_completed = True
     session.perception_scene_established = True
+    session.pre_home_positions_rad = [0.0] * 6
     session.storage_positions_rad = [0.0] * 6
     calls = []
 
     def prove_home(bound_session, **kwargs):
         stage = kwargs.get('home_stage', 'ROUGH_HOME')
-        calls.append('storage' if stage == 'STORAGE_WRIST' else 'home')
-        bound_session.return_home_proved = True
+        calls.append({
+            'PRE_HOME': 'pre_home',
+            'STORAGE_WRIST': 'storage',
+        }.get(stage, 'home'))
+        if stage == 'PRE_HOME':
+            bound_session.pre_home_completed = True
+        else:
+            bound_session.return_home_proved = True
         if stage == 'STORAGE_WRIST':
             bound_session.storage_wrist_proved = True
         return True
@@ -723,7 +721,8 @@ def test_cancel_shutdown_returns_home_before_disable_and_process_stop():
         failure=RuntimeError('operator cancelled scan execution'))
 
     assert failure is None
-    assert calls[:4] == ['home', 'storage', 'hold', ('enable', False)]
+    assert calls[:5] == [
+        'pre_home', 'home', 'storage', 'hold', ('enable', False)]
     assert calls[-1] == 'stop'
     assert session.disabled_proved and session.processes_stopped
 
@@ -731,9 +730,10 @@ def test_cancel_shutdown_returns_home_before_disable_and_process_stop():
 def test_pre_acquisition_shutdown_reuses_static_startup_home_authority():
     session = MissionSession(validate_goal_payload(goal(), now_sec=1001.0))
     session.arm_enabled = True
+    session.pre_home_positions_rad = [0.0] * 6
     calls = []
 
-    def prove_home(_session, startup=False):
+    def prove_home(_session, startup=False, **_kwargs):
         calls.append(bool(startup))
         return False
 
@@ -797,42 +797,33 @@ def test_startup_home_returns_immediately_on_non_success_abort():
 
     def call_service(client, _request, _timeout, _label):
         calls.append(client)
-        if client == 'hold':
-            return SimpleNamespace(
-                success=True, message='current joint hold requested')
         return SimpleNamespace(
-            accepted=True, request_id='startup-home-request', message='queued')
+            accepted=True, execution_id='startup-home-request',
+            message='accepted')
 
     harness = SimpleNamespace(
         last_return_home_diagnostic='',
         at_configured_home=lambda _session, **_kwargs: False,
         call_service=call_service,
-        hold_client='hold',
-        cancel_client='cancel',
-        startup_home_plan_client='startup_plan',
-        return_home_plan_client='return_plan',
-        wait_for_stable_joint_stream=lambda *_args, **_kwargs: None,
-        clear_plan_cache=lambda: None,
-        latest_plan=SimpleNamespace(
-            plan_kind='RETURN_HOME', plan_id='startup-home-request',
-            valid=True, reason=''),
-        latest_plan_at=float('inf'),
-        approve_plan=lambda *_args, **_kwargs: None,
+        execute_home_stage_client='direct_home',
+        require_fresh_joint_feedback=lambda: None,
         latest_execution=SimpleNamespace(
+            plan_id='startup-home-request',
             state='ABORTED',
             reason='return-home runtime safety gate stopped motion'),
         latest_execution_at=float('inf'),
         processes=SimpleNamespace(failed=lambda: {}),
     )
     session = SimpleNamespace(
-        return_home_proved=False, home_positions_rad=[0.0] * 6)
+        return_home_proved=False, home_positions_rad=[0.0] * 6,
+        task_id='task-startup-abort', mission_sha256='d' * 64)
 
     proved = TargetScanMissionNode.prove_return_home_for_shutdown(
         harness, session, startup=True)
 
     assert not proved
     assert 'home execution aborted' in harness.last_return_home_diagnostic
-    assert calls == ['hold', 'startup_plan']
+    assert calls == ['direct_home']
 
 
 def test_transient_invalid_scene_attempts_fresh_qualified_home():
@@ -840,13 +831,20 @@ def test_transient_invalid_scene_attempts_fresh_qualified_home():
     session.arm_enabled = True
     session.startup_home_completed = True
     session.perception_scene_established = True
+    session.pre_home_positions_rad = [0.0] * 6
     session.storage_positions_rad = [0.0] * 6
     calls = []
 
     def prove_home(bound_session, **kwargs):
         stage = kwargs.get('home_stage', 'ROUGH_HOME')
-        calls.append('storage' if stage == 'STORAGE_WRIST' else 'home')
-        bound_session.return_home_proved = True
+        calls.append({
+            'PRE_HOME': 'pre_home',
+            'STORAGE_WRIST': 'storage',
+        }.get(stage, 'home'))
+        if stage == 'PRE_HOME':
+            bound_session.pre_home_completed = True
+        else:
+            bound_session.return_home_proved = True
         if stage == 'STORAGE_WRIST':
             bound_session.storage_wrist_proved = True
         return True
@@ -866,7 +864,7 @@ def test_transient_invalid_scene_attempts_fresh_qualified_home():
             'runtime safety gate: invalid obstacle geometry is present'))
 
     assert failure is None
-    assert calls == ['home', 'storage', ('enable', False)]
+    assert calls == ['pre_home', 'home', 'storage', ('enable', False)]
     assert not session.arm_enabled
 
 
@@ -875,13 +873,20 @@ def test_collision_failure_still_attempts_direct_configured_home():
     session.arm_enabled = True
     session.startup_home_completed = True
     session.perception_scene_established = True
+    session.pre_home_positions_rad = [0.0] * 6
     session.storage_positions_rad = [0.0] * 6
     calls = []
 
     def prove_home(bound_session, **kwargs):
         stage = kwargs.get('home_stage', 'ROUGH_HOME')
-        calls.append('storage' if stage == 'STORAGE_WRIST' else 'home')
-        bound_session.return_home_proved = True
+        calls.append({
+            'PRE_HOME': 'pre_home',
+            'STORAGE_WRIST': 'storage',
+        }.get(stage, 'home'))
+        if stage == 'PRE_HOME':
+            bound_session.pre_home_completed = True
+        else:
+            bound_session.return_home_proved = True
         if stage == 'STORAGE_WRIST':
             bound_session.storage_wrist_proved = True
         return True
@@ -900,7 +905,7 @@ def test_collision_failure_still_attempts_direct_configured_home():
         failure=RuntimeError('obstacle collision is present'))
 
     assert failure is None
-    assert calls == ['home', 'storage', ('enable', False)]
+    assert calls == ['pre_home', 'home', 'storage', ('enable', False)]
     assert not session.arm_enabled
 
 

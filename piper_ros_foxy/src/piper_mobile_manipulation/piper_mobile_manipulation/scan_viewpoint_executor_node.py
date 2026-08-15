@@ -23,6 +23,37 @@ from piper_mobile_manipulation.msg import (
     TrackedTarget,
     TrackingHealth,
 )
+from piper_mobile_manipulation.failure_model import (
+    as_failure,
+    FailureTag,
+)
+from piper_mobile_manipulation.configuration import (
+    configured_value,
+    load_executor_configuration,
+)
+from piper_mobile_manipulation.capture_coordinator import (
+    CaptureAction,
+    CaptureCoordinator,
+    rgbd_capture_handoff_action as _rgbd_capture_handoff_action,
+    retryable_rgbd_capture_rejection as _retryable_capture_rejection,
+    visual_capture_rejection as _visual_capture_rejection,
+)
+from piper_mobile_manipulation.executor_recovery import (
+    RecoveryAction,
+    RecoveryContext,
+    RecoveryPolicy,
+    runtime_gate_action as _runtime_gate_action,
+    runtime_refresh_action,
+)
+from piper_mobile_manipulation.plan_authorizer import (
+    configured_home_endpoint_rejection,
+    direct_home_stage_rejection,
+    direct_home_stage_targets,
+    PlanAuthorizationRequest,
+    PlanAuthorizer,
+    target_drift_before_approval_rejection as _target_drift_rejection,
+    trajectory_count_rejection,
+)
 from piper_mobile_manipulation.scan_execution_modes import (
     acquired_target_rejection,
     commanded_speed_percent,
@@ -37,7 +68,6 @@ from piper_mobile_manipulation.scan_execution_modes import (
 )
 from piper_mobile_manipulation.scan_motion import (
     camera_target_path_reasons,
-    approval_rejection_reason,
     bootstrap_recovery_declaration_reasons,
     bootstrap_start_limit_recovery_reasons,
     CollisionBox,
@@ -60,7 +90,26 @@ from piper_mobile_manipulation.scan_trajectory import (
     validate_sdk_movej_waypoint_path,
     validate_tesseract_point,
 )
-from piper_mobile_manipulation.srv import ApproveScanExecution, AuthorizeMission
+from piper_mobile_manipulation.safety_evaluator import (
+    SafetyAuthorization,
+    SafetyComparisonLogger,
+    SafetyEvaluator,
+    SafetyInputs,
+    SafetyMode,
+    SafetyProfile,
+)
+from piper_mobile_manipulation.srv import (
+    ApproveScanExecution,
+    AuthorizeMission,
+    ExecuteHomeStage,
+)
+from piper_mobile_manipulation.telemetry_store import TelemetryStore
+from piper_mobile_manipulation.trajectory_runner import (
+    joint_progress_error,
+    TrajectoryAction,
+    TrajectoryRunner,
+    waypoint_motion_action,
+)
 
 
 ACTIVE_STATES = {
@@ -73,93 +122,83 @@ ACTIVE_STATES = {
 MAX_RGBD_CAPTURE_READINESS_RETRIES = 10
 
 
-def trajectory_count_rejection(
-        plan_kind, trajectory_count, viewpoint_count, closed_loop_one_view):
-    """Bind automatic one-view plans without an unused embedded home leg."""
-    trajectories = int(trajectory_count)
-    viewpoints = int(viewpoint_count)
-    if trajectories < 0 or viewpoints < 0:
-        return 'trajectory and viewpoint counts are invalid'
-    if plan_kind == RETURN_HOME:
-        if trajectories != 1 or viewpoints != 0:
-            return 'RETURN_HOME must contain one home trajectory and no viewpoints'
-        return ''
-    if plan_kind == MULTIVIEW_SCAN:
-        expected = viewpoints if closed_loop_one_view else viewpoints + 1
-        if trajectories != expected:
-            return (
-                'closed-loop MULTIVIEW_SCAN must contain only its one capture '
-                'trajectory' if closed_loop_one_view else
-                'MULTIVIEW_SCAN must include one final return-home trajectory')
-        return ''
-    if trajectories != viewpoints:
-        return 'trajectory and viewpoint counts differ'
-    return ''
-
-
-def configured_home_endpoint_rejection(
-        home_stage, trajectory_endpoint, declared_goal, rough_home):
-    """Validate the exact stage goal without conflating staged home targets."""
-    stage = str(home_stage).strip().upper()
-    allowed = {
-        'CONFIGURED_HOME', 'STARTUP_WRIST', 'ROUGH_HOME', 'STORAGE_WRIST'}
-    if stage not in allowed:
-        return 'configured-home stage is invalid'
-    try:
-        endpoint = np.asarray(trajectory_endpoint, dtype=float)
-        goal = np.asarray(declared_goal, dtype=float)
-    except (TypeError, ValueError):
-        return 'configured-home declared goal is invalid'
-    if (
-            endpoint.shape != (6,) or goal.shape != (6,)
-            or not np.all(np.isfinite(endpoint))
-            or not np.all(np.isfinite(goal))):
-        return 'configured-home declared goal must contain six finite joints'
-    if float(np.max(np.abs(endpoint - goal))) > 1e-9:
-        return 'configured-home declared goal does not match the trajectory endpoint'
-    if stage in ('CONFIGURED_HOME', 'ROUGH_HOME'):
-        try:
-            configured = np.asarray(rough_home, dtype=float)
-        except (TypeError, ValueError):
-            return 'configured return-home pose is invalid'
-        if configured.shape != (6,) or not np.all(np.isfinite(configured)):
-            return 'configured return-home pose must contain six finite joints'
-        if float(np.max(np.abs(endpoint - configured))) > 1e-6:
-            return 'Tesseract return-home endpoint does not match the executor configuration'
-    return ''
-
-
-def retryable_rgbd_capture_rejection(message):
-    """Classify bounded capture-input liveness gaps while the arm is held."""
-    text = str(message).lower()
-    return (
-        (
-            'timestamped camera transform is unavailable' in text
-            and 'extrapolation into the future' in text
+def sdk_command_path(path, velocities, accelerations, times, execution_mode,
+                     direct_home=False):
+    """Collapse a fully validated straight chord to one PiPER MoveJ goal."""
+    command_path = [np.asarray(item, dtype=float).copy() for item in path[1:]]
+    command_velocities = [
+        np.asarray(item, dtype=float).copy() for item in velocities[1:]]
+    command_accelerations = [
+        np.asarray(item, dtype=float).copy() for item in accelerations[1:]]
+    command_times = [float(item) for item in times[1:]]
+    mode = str(execution_mode).strip().upper()
+    if mode == 'DIRECT_MOVEJ' and not bool(direct_home):
+        return (
+            [np.asarray(path[-1], dtype=float).copy()],
+            [np.zeros(6, dtype=float)],
+            [np.zeros(6, dtype=float)],
+            [float(times[-1])],
+            False,
         )
-        or 'quality_rejected: scan quality is missing' in text
-        or 'quality_rejected: scan quality is stale' in text
-        or 'occlusion_rejected: occlusion evidence is missing' in text
-        or 'occlusion_rejected: occlusion evidence is stale' in text
-        or text == 'missing target_3d'
-        or text == 'missing detection mask'
-    )
-
-
-def visual_capture_rejection(message):
-    """Return true only when fresh evidence says this pose is unusable."""
-    text = str(message).lower()
-    if retryable_rgbd_capture_rejection(message):
-        return False
     return (
-        text.startswith('quality_rejected:')
-        or text.startswith('occlusion_rejected: settled target view is ')
-        # This is a fresh Target3D observation with valid=false, not missing
-        # transport. It proves the settled viewpoint is visually unusable and
-        # should consume the bounded replacement-view budget, just like the
-        # equivalent ScanQuality target_valid=false result.
-        or text == 'target_3d invalid'
-    )
+        command_path, command_velocities, command_accelerations,
+        command_times, bool(not direct_home and mode == 'TESSERACT_STREAM'))
+
+# Preserve Phase 1/downstream pure-helper imports while their implementation
+# lives in the focused Phase 7 application components.
+rgbd_capture_handoff_action = _rgbd_capture_handoff_action
+retryable_rgbd_capture_rejection = _retryable_capture_rejection
+visual_capture_rejection = _visual_capture_rejection
+target_drift_before_approval_rejection = _target_drift_rejection
+runtime_gate_action = _runtime_gate_action
+
+
+def message_source_metadata(message):
+    """Read optional ROS header metadata without changing callback policy."""
+    header = getattr(message, 'header', None)
+    stamp = getattr(header, 'stamp', None)
+    source_stamp_ns = None
+    if stamp is not None:
+        source_stamp_ns = (
+            int(getattr(stamp, 'sec', 0)) * 1_000_000_000
+            + int(getattr(stamp, 'nanosec', 0)))
+    return source_stamp_ns, str(getattr(header, 'frame_id', ''))
+
+
+def snapshot_observation(snapshot, key):
+    """Compatibility map from established freshness keys to typed fields."""
+    if key == 'joints':
+        return snapshot.arm.joints
+    if key == 'arm_status':
+        return snapshot.arm.status
+    if key == 'motion_limits':
+        return snapshot.arm.motion_limits
+    if key == 'camera_clock':
+        return snapshot.perception.camera
+    if key == 'tracked_target':
+        return snapshot.perception.target
+    if key == 'tracking':
+        return snapshot.perception.tracking
+    if key == 'target_status':
+        return snapshot.perception.target_status
+    if key == 'obstacles':
+        return snapshot.perception.obstacles
+    if key == 'scan':
+        return snapshot.mission.reachable_scan
+    if key == 'workflow':
+        return snapshot.mission.workflow
+    return None
+
+
+def mark_callback_observation(owner, key):
+    """Keep old one-argument test seams while atomically dating production."""
+    telemetry_store = getattr(owner, 'telemetry_store', None)
+    if telemetry_store is None:
+        owner.mark(key)
+        return None, None
+    observed_at = owner.now()
+    owner.updated[key] = observed_at
+    return observed_at, telemetry_store
 
 
 def approved_return_home_obstacle_snapshot(
@@ -213,7 +252,7 @@ def terminal_home_hold_required(state, reason):
     """Recognize an abort that has already completed its bounded home retrace."""
     return bool(
         str(state) == 'ABORTED'
-        and 'configured home reached' in str(reason).lower()
+        and as_failure(reason).has(FailureTag.TERMINAL_HOME_REACHED)
     )
 
 
@@ -267,26 +306,6 @@ def target_position_window_sample_settled(
     return True, anchor_values.copy()
 
 
-def runtime_refresh_action(reasons, elapsed_sec, timeout_sec):
-    if not reasons:
-        return 'start'
-    if float(elapsed_sec) >= float(timeout_sec):
-        return 'abort'
-    return 'wait'
-
-
-def runtime_gate_action(reasons):
-    """Hold for transient transport freshness gaps; abort real safety faults."""
-    if not reasons:
-        return 'continue'
-    if all(
-            str(reason).endswith('data missing or stale')
-            or str(reason).startswith('camera timestamp ')
-            for reason in reasons):
-        return 'hold_for_refresh'
-    return 'abort'
-
-
 def obstacle_scene_runtime_reasons(scene):
     """Classify temporary transform gaps separately from unsafe geometry."""
     instances = list(getattr(scene, 'instances', []))
@@ -297,42 +316,20 @@ def obstacle_scene_runtime_reasons(scene):
         getattr(item, 'valid', False))]
     if not invalid:
         return []
-    transient_prefixes = (
-        'transform_unavailable:',
-        'stale_transform',
-        'stale_source_data',
-    )
-    validity_reasons = [
-        str(getattr(item, 'validity_reason', '')).strip().lower()
+    validity_failures = [
+        as_failure(getattr(item, 'validity_reason', ''))
         for item in invalid
     ]
-    if validity_reasons and all(
-            any(reason.startswith(prefix) for prefix in transient_prefixes)
-            for reason in validity_reasons):
+    if validity_failures and all(
+            failure.has(FailureTag.OBSTACLE_TRANSFORM_TRANSIENT)
+            for failure in validity_failures):
         return ['obstacles data missing or stale']
     return ['invalid obstacle geometry is present']
 
 
 def abort_return_home_blocker(reason):
     """Block direct home only when command/feedback authority is untrusted."""
-    text = str(reason).strip().lower()
-    # Collision/perception failures no longer suppress the operator-requested
-    # direct configured-home target. Emergency-stop, invalid feedback,
-    # controller faults, and unavailable command authority still must block:
-    # without them the endpoint and final disable cannot be proved.
-    blockers = (
-        'emergency stop',
-        'joint feedback became invalid',
-        'outside configured limits',
-        'motion limits',
-        'arm status',
-        'arm is not enabled',
-        'err_code',
-        'waypoint did not reach',
-        'no measurable joint progress',
-        'command publisher',
-    )
-    return next((item for item in blockers if item in text), '')
+    return as_failure(reason).blocker
 
 
 def approved_retrace_validation_reasons(reasons):
@@ -348,18 +345,9 @@ def approved_retrace_validation_reasons(reasons):
     """
     return [
         str(reason) for reason in reasons
-        if 'self-collision clearance between link segments' not in str(reason)
+        if not as_failure(reason).has(
+            FailureTag.SELF_COLLISION_CLEARANCE_DUPLICATE)
     ]
-
-
-def rgbd_capture_handoff_action(
-        request_inflight, state_age_sec, propagation_sec):
-    """Sequence the status authorization before the RGB-D service request."""
-    if bool(request_inflight):
-        return 'wait_response'
-    if float(state_age_sec) < max(0.0, float(propagation_sec)):
-        return 'publish_authorization'
-    return 'request_capture'
 
 
 def missing_obstacles_can_wait(
@@ -386,178 +374,63 @@ def missing_obstacles_can_wait(
             'SETTLING', 'CAPTURING', 'CAPTURING_RGBD', 'WAIT_CAPTURE'))
 
 
-def waypoint_motion_action(
-        error_rad,
-        reached_tolerance_rad,
-        waypoint_elapsed_sec,
-        waypoint_timeout_sec,
-        progress_elapsed_sec,
-        progress_timeout_sec,
-):
-    """Classify feedback for one SDK MoveJ position target."""
-    error = float(error_rad)
-    if not math.isfinite(error):
-        return 'abort_invalid'
-    if error <= float(reached_tolerance_rad):
-        return 'advance'
-    if float(waypoint_elapsed_sec) > float(waypoint_timeout_sec):
-        return 'abort_timeout'
-    if float(progress_elapsed_sec) > float(progress_timeout_sec):
-        return 'abort_stalled'
-    return 'wait'
-
-
-def joint_progress_error(current, target):
-    """Measure total remaining motion so progress by any joint is visible."""
-    current_values = np.asarray(current, dtype=float)
-    target_values = np.asarray(target, dtype=float)
-    if (
-            current_values.shape != (6,)
-            or target_values.shape != (6,)
-            or not np.all(np.isfinite(current_values))
-            or not np.all(np.isfinite(target_values))):
-        return math.inf
-    return float(np.sum(np.abs(current_values - target_values)))
-
-
-def target_drift_before_approval_rejection(
-        drift_m, maximum_m, allow_target_motion):
-    if bool(allow_target_motion):
-        return ''
-    if float(drift_m) > float(maximum_m):
-        return 'target moved %.3fm after planning; refresh the plan' % float(
-            drift_m)
-    return ''
-
-
 class ScanViewpointExecutorNode(Node):
     def __init__(self):
         super().__init__('scan_viewpoint_executor')
-        defaults = {
-            'reachable_viewpoints_topic': '/piper/reachable_scan_viewpoints',
-            'joint_states_topic': '/joint_states_single',
-            'arm_status_topic': '/arm_status',
-            'motion_limits_topic': '/piper/motion_limits',
-            'tracking_health_topic': '/piper/tracking_health',
-            'tracked_target_topic': '/piper/tracked_target',
-            'camera_timestamp_health_topic': '/piper/camera_timestamp_health',
-            'target_status_topic': '/piper/target_status',
-            'obstacle_topic': '/piper/obstacle_instances_3d',
-            'workflow_status_topic': '/piper/supervised_workflow_status',
-            'scan_session_history_topic': '/piper/scan_session_history',
-            'joint_command_topic': '/joint_ctrl_single',
-            'plan_topic': '/piper/scan_execution_plan',
-            'status_topic': '/piper/scan_execution_status',
-            'capture_service': '/supervised_cube_workflow/capture_view',
-            'finish_scan_service': '/supervised_cube_workflow/finish_scan',
-            'rgbd_capture_service': '/scan_capture/capture_view',
-            'heavy_refresh_request_topic': '/piper/heavy_refresh_request',
-            'heavy_refresh_status_topic': '/piper/heavy_refresh_status',
-            'tesseract_plan_topic': '/piper/tesseract_plan',
-            'hand_eye_calibration_path': '',
-            'joint_bounds_path': '',
-            'enable_real_arm_motion': False,
-            'auto_capture': True,
-            'speed_percent': 5.0,
-            'max_execution_viewpoints': 13,
-            'min_execution_viewpoints': 13,
-            'trajectory_joint_step_rad': 0.05,
-            'trajectory_command_rate_hz': 20.0,
-            'executor_tick_rate_hz': 200.0,
-            'trajectory_following_error_rad': 0.30,
-            'trajectory_following_error_grace_sec': 1.0,
-            'plan_start_tolerance_rad': 0.025,
-            'joint_goal_tolerance_rad': 0.025,
-            'waypoint_reached_tolerance_rad': 0.025,
-            'waypoint_progress_epsilon_rad': 0.001,
-            'waypoint_timeout_sec': 90.0,
-            'waypoint_progress_timeout_sec': 20.0,
-            'joint_velocity_settled': 0.20,
-            'endpoint_position_settled_rad': 0.005,
-            'home_goal_tolerance_rad': 0.030,
-            'home_motion_tolerance_rad': 0.005,
-            'home_joint_feedback_timeout_sec': 1.0,
-            'home_settle_duration_sec': 1.0,
-            'home_settle_timeout_sec': 30.0,
-            'joint_feedback_limit_tolerance_rad': 0.005,
-            'configured_home_feedback_limit_tolerance_rad': 0.3,
-            'motion_limits_timeout_sec': 3.0,
-            'motion_limits_change_confirmation_sec': 7.0,
-            'motion_limits_change_minimum_samples': 3,
-            'runtime_refresh_timeout_sec': 3.0,
-            'runtime_recovery_timeout_sec': 30.0,
-            'settle_duration_sec': 1.5,
-            'settle_timeout_sec': 15.0,
-            'capture_timeout_sec': 20.0,
-            'finish_scan_timeout_sec': 10.0,
-            # The capture node independently authorizes service-mode saves
-            # from the executor status topic.  Give DDS time to deliver the
-            # CAPTURING_RGBD state before issuing the service request.
-            'capture_status_propagation_sec': 0.25,
-            'acquisition_fresh_frame_timeout_sec': 10.0,
-            'acquisition_grounding_timeout_sec': 60.0,
-            'acquisition_tracking_lock_timeout_sec': 10.0,
-            'acquisition_scene_timeout_sec': 15.0,
-            'acquisition_target_tolerance_m': 0.30,
-            'acquisition_max_viewpoints': 5,
-            'closed_loop_one_view': False,
-            'scan_target_max_boresight_deg': 20.0,
-            'scan_target_min_distance_m': 0.22,
-            'data_timeout_sec': 2.0,
-            'max_tracking_measurement_age_sec': 0.75,
-            'min_tracking_speed_scale': 0.10,
-            # Planning a collision-qualified 13-view proposal can consume most
-            # of the bridge's 180-second request window.  Start-state,
-            # obstacle, camera, tracking, arm and motion-limit checks are all
-            # repeated at approval, so leave enough post-result time for an
-            # operator to inspect and confirm the exact hash.
-            'plan_max_age_sec': 300.0,
-            'max_target_drift_before_approval_m': 0.015,
-            'allow_target_motion_during_scan': False,
-            # Nearest one-joint collision-qualified low-drop adjustment from
-            # GUI feedback. It is part of the exact trajectory/approval hash.
-            'return_home_positions_rad': [
-                0.000366362, 0.0, 0.0, 0.0, 0.43869236, 0.0],
-            'floor_z_m': 0.0,
-            'link_radius_m': 0.025,
-            'self_clearance_m': 0.060,
-            # CAD-derived link6-frame AABB of the installed cameraHolder.STL.
-            # The installed L515 visual body is contained by this box.
-            'camera_holder_envelope_center_link6_m': [
-                -0.029750002, 0.0, 0.0375],
-            'camera_holder_envelope_size_m': [
-                0.1395, 0.10572671, 0.053],
-            'camera_holder_external_clearance_m': 0.005,
-            'approval_confirmation': 'EXECUTE APPROVED SCAN',
-            'allow_mission_policy': False,
-            'debug': True,
-        }
-        for name, value in defaults.items():
-            self.declare_parameter(name, value)
+        self.configuration = load_executor_configuration(self)
 
-        calibration_path = str(self.get_parameter('hand_eye_calibration_path').value)
-        bounds_path = str(self.get_parameter('joint_bounds_path').value)
+        calibration_path = self.configuration.interfaces.hand_eye_calibration_path
+        bounds_path = self.configuration.interfaces.joint_bounds_path
         if not calibration_path:
             raise RuntimeError('hand_eye_calibration_path is required')
         if not bounds_path:
             raise RuntimeError('joint_bounds_path is required')
-        if bool(self.get_parameter('enable_real_arm_motion').value):
+        if self.configuration.motion.enable_real_arm_motion:
             calibration_rejection = powered_motion_calibration_rejection(
                 calibration_path)
             if calibration_rejection:
                 raise RuntimeError(calibration_rejection)
         self.kinematics = PiperScanKinematics(load_accepted_hand_eye(calibration_path))
         self.joint_limits, ignored_bounds = load_conservative_joint_limits(bounds_path)
+        self.telemetry_store = TelemetryStore(clock=self.now)
+        self.plan_authorizer = PlanAuthorizer()
+        self.trajectory_runner = TrajectoryRunner()
+        self.capture_coordinator = CaptureCoordinator(
+            MAX_RGBD_CAPTURE_READINESS_RETRIES)
+        self.recovery_policy = RecoveryPolicy()
+        # Phase 5 shadow only: legacy gates below remain authoritative.  The
+        # evaluator receives one immutable snapshot and parameter values copied
+        # once here; it never reads ROS or commands the arm.
+        self.safety_evaluator = SafetyEvaluator(SafetyProfile(
+            data_timeout_sec=self.configuration.tracking.data_timeout_sec,
+            motion_limits_timeout_sec=(
+                self.configuration.safety.motion_limits_timeout_sec),
+            max_tracking_measurement_age_sec=(
+                self.configuration.tracking.max_tracking_measurement_age_sec),
+            min_tracking_speed_scale=(
+                self.configuration.tracking.min_tracking_speed_scale),
+            configured_speed_percent=self.configuration.motion.speed_percent,
+            max_target_drift_before_approval_m=(
+                self.configuration.tracking.
+                max_target_drift_before_approval_m),
+            joint_feedback_limit_tolerance_rad=(
+                self.configuration.safety.
+                joint_feedback_limit_tolerance_rad),
+            configured_home_feedback_limit_tolerance_rad=(
+                self.configuration.safety.
+                configured_home_feedback_limit_tolerance_rad),
+            hold_joint_feedback_timeout_sec=(
+                self.configuration.motion.home_joint_feedback_timeout_sec),
+        ))
+        self.safety_comparison_logger = SafetyComparisonLogger()
 
         self.latest_scan = None
         self.latest_joint_state = None
         self.latest_arm_status = None
         self.latest_motion_limits = None
         self.motion_limit_stability = MotionLimitStability(
-            self.get_parameter(
-                'motion_limits_change_confirmation_sec').value,
-            self.get_parameter(
-                'motion_limits_change_minimum_samples').value,
+            self.configuration.safety.motion_limits_change_confirmation_sec,
+            self.configuration.safety.motion_limits_change_minimum_samples,
         )
         self.latest_tracking_health = None
         self.latest_tracked_target = None
@@ -589,6 +462,7 @@ class ScanViewpointExecutorNode(Node):
         self.plan_startup_home_static = []
         self.plan_configured_home_direct = []
         self.plan_configured_home_stages = []
+        self.plan_segment_execution_modes = []
         self.plan_viewpoints = []
         self.plan_candidate_count = 0
         self.plan_capture_count = 0
@@ -608,6 +482,7 @@ class ScanViewpointExecutorNode(Node):
         self.current_path_accelerations = []
         self.current_path_times = []
         self.current_path_streaming = False
+        self.current_trajectory = None
         self.path_index = 0
         self.command_target = None
         self.command_sent_at = 0.0
@@ -672,20 +547,22 @@ class ScanViewpointExecutorNode(Node):
         # that subscriber timing cannot turn a valid proposal into a timeout.
         self.plan_pub = self.create_publisher(
             ScanExecutionPlan,
-            self.get_parameter('plan_topic').value,
+            self.configuration.interfaces.plan_topic,
             history_qos,
         )
         self.status_pub = self.create_publisher(
-            ScanExecutionStatus, self.get_parameter('status_topic').value, 10)
+            ScanExecutionStatus, self.configuration.interfaces.status_topic,
+            10)
         self.scan_history_pub = self.create_publisher(
-            String, self.get_parameter('scan_session_history_topic').value,
+            String, self.configuration.interfaces.scan_session_history_topic,
             history_qos)
         self.command_pub = None
         if self.real_motion_enabled():
             self.command_pub = self.create_publisher(
-                JointState, self.get_parameter('joint_command_topic').value, 10)
+                JointState, self.configuration.interfaces.joint_command_topic,
+                10)
         self.create_subscription(
-            String, self.get_parameter('reachable_viewpoints_topic').value,
+            String, self.configuration.interfaces.reachable_viewpoints_topic,
             self.scan_cb, 10)
         self.tesseract_plan_qos = QoSProfile(
             depth=1,
@@ -693,58 +570,65 @@ class ScanViewpointExecutorNode(Node):
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
         self.tesseract_plan_sub = self.create_subscription(
-            TesseractPlan, self.get_parameter('tesseract_plan_topic').value,
+            TesseractPlan, self.configuration.interfaces.tesseract_plan_topic,
             self.tesseract_plan_cb, self.tesseract_plan_qos)
         self.create_subscription(
-            JointState, self.get_parameter('joint_states_topic').value,
+            JointState, self.configuration.interfaces.joint_states_topic,
             self.joint_cb, 10)
         self.create_subscription(
-            PiperStatusMsg, self.get_parameter('arm_status_topic').value,
+            PiperStatusMsg, self.configuration.interfaces.arm_status_topic,
             self.arm_status_cb, 10)
         self.create_subscription(
-            PiperMotionLimits, self.get_parameter('motion_limits_topic').value,
+            PiperMotionLimits,
+            self.configuration.interfaces.motion_limits_topic,
             self.motion_limits_cb, 10)
         self.create_subscription(
-            TrackingHealth, self.get_parameter('tracking_health_topic').value,
+            TrackingHealth,
+            self.configuration.interfaces.tracking_health_topic,
             self.tracking_health_cb, 10)
         self.create_subscription(
-            TrackedTarget, self.get_parameter('tracked_target_topic').value,
+            TrackedTarget, self.configuration.interfaces.tracked_target_topic,
             self.tracked_target_cb, 10)
         self.create_subscription(
             CameraTimestampHealth,
-            self.get_parameter('camera_timestamp_health_topic').value,
+            self.configuration.interfaces.camera_timestamp_health_topic,
             self.camera_timestamp_health_cb, 10)
         self.create_subscription(
-            String, self.get_parameter('target_status_topic').value,
+            String, self.configuration.interfaces.target_status_topic,
             self.target_status_cb, 10)
         self.create_subscription(
-            ObstacleInstance3DArray, self.get_parameter('obstacle_topic').value,
+            ObstacleInstance3DArray,
+            self.configuration.interfaces.obstacle_topic,
             self.obstacle_cb, 10)
         self.create_subscription(
-            String, self.get_parameter('workflow_status_topic').value,
+            String, self.configuration.interfaces.workflow_status_topic,
             self.workflow_cb, 10)
         self.create_service(ApproveScanExecution, '~/approve', self.approve_cb)
         self.create_service(
             AuthorizeMission, '~/authorize_mission', self.authorize_mission_cb)
+        self.create_service(
+            ExecuteHomeStage, '~/execute_home_stage',
+            self.execute_home_stage_cb)
         self.create_service(Trigger, '~/hold', self.hold_cb)
         self.create_service(Trigger, '~/cancel', self.cancel_cb)
         self.create_service(Trigger, '~/refresh_plan', self.refresh_cb)
         self.create_service(Trigger, '~/diagnostic_state', self.diagnostic_state_cb)
         self.capture_client = self.create_client(
-            Trigger, self.get_parameter('capture_service').value)
+            Trigger, self.configuration.interfaces.capture_service)
         self.rgbd_capture_client = self.create_client(
-            Trigger, self.get_parameter('rgbd_capture_service').value)
+            Trigger, self.configuration.interfaces.rgbd_capture_service)
         self.finish_scan_client = self.create_client(
-            Trigger, self.get_parameter('finish_scan_service').value)
+            Trigger, self.configuration.interfaces.finish_scan_service)
         self.heavy_refresh_pub = self.create_publisher(
-            String, self.get_parameter('heavy_refresh_request_topic').value, 10)
+            String,
+            self.configuration.interfaces.heavy_refresh_request_topic, 10)
         self.create_subscription(
-            String, self.get_parameter('heavy_refresh_status_topic').value,
+            String, self.configuration.interfaces.heavy_refresh_status_topic,
             self.heavy_refresh_status_cb, 10)
-        command_rate = float(self.get_parameter('trajectory_command_rate_hz').value)
+        command_rate = self.configuration.motion.trajectory_command_rate_hz
         if not math.isfinite(command_rate) or command_rate <= 0.0:
             raise RuntimeError('trajectory_command_rate_hz must be finite and positive')
-        tick_rate = float(self.get_parameter('executor_tick_rate_hz').value)
+        tick_rate = self.configuration.motion.executor_tick_rate_hz
         if (
                 not math.isfinite(tick_rate)
                 or tick_rate < 2.0 * command_rate):
@@ -766,13 +650,21 @@ class ScanViewpointExecutorNode(Node):
     def now(self):
         return time.monotonic()
 
-    def mark(self, key):
-        self.updated[key] = self.now()
+    def mark(self, key, observed_at=None):
+        self.updated[key] = (
+            self.now() if observed_at is None else float(observed_at))
 
     def fresh(self, key, timeout=None):
-        maximum = float(self.get_parameter('data_timeout_sec').value) \
+        maximum = float(configured_value(self, 'data_timeout_sec')) \
             if timeout is None else float(timeout)
-        return self.now() - self.updated.get(key, -1e9) <= maximum
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        if telemetry_store is None:
+            return self.now() - self.updated.get(key, -1e9) <= maximum
+        snapshot = telemetry_store.snapshot()
+        observation = snapshot_observation(snapshot, key)
+        return bool(
+            observation is not None
+            and not observation.is_stale_at(snapshot.captured_at, maximum))
 
     def scan_cb(self, msg):
         if self.state in ACTIVE_STATES:
@@ -783,7 +675,10 @@ class ScanViewpointExecutorNode(Node):
             self.invalidate_plan('invalid reachable viewpoint JSON: %s' % error)
             return
         self.latest_scan = payload
-        self.mark('scan')
+        observed_at, telemetry_store = mark_callback_observation(self, 'scan')
+        if telemetry_store is not None:
+            telemetry_store.update_reachable_scan(
+                payload, received_at=observed_at)
         if self.state == 'ABORTED':
             self.state = 'IDLE'
 
@@ -793,16 +688,41 @@ class ScanViewpointExecutorNode(Node):
         plan_kind = str(msg.plan_kind)
         source_request_id = str(msg.source_request_id)
         if not msg.valid:
+            planner_decision = self.plan_authorizer.planner_result(
+                False, msg.reason)
+            telemetry_store = getattr(self, 'telemetry_store', None)
+            snapshot = (
+                None if telemetry_store is None
+                else telemetry_store.snapshot())
+            ScanViewpointExecutorNode.record_plan_validation_safety_shadow(
+                self,
+                ['Tesseract proposal rejected: ' + msg.reason],
+                snapshot,
+                planner_result_valid=False,
+                plan_schema_valid=True,
+            )
             self.invalidate_plan(
-                'Tesseract proposal rejected: ' + msg.reason,
+                planner_decision.detail,
                 plan_kind=plan_kind,
                 source_request_id=source_request_id,
                 plan_id=str(msg.plan_id),
             )
             return
         motion_limits_timeout = float(
-            self.get_parameter('motion_limits_timeout_sec').value)
-        limits = self.latest_motion_limits
+            configured_value(self, 'motion_limits_timeout_sec'))
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        if telemetry_store is None:
+            limits = self.latest_motion_limits
+            limits_fresh = self.fresh(
+                'motion_limits', motion_limits_timeout)
+        else:
+            snapshot = telemetry_store.snapshot()
+            observation = snapshot.arm.motion_limits
+            limits = None if observation is None else observation.value
+            limits_fresh = bool(
+                observation is not None
+                and not observation.is_stale_at(
+                    snapshot.captured_at, motion_limits_timeout))
         limits_match_plan = bool(
             limits is not None
             and bool(limits.valid)
@@ -810,7 +730,7 @@ class ScanViewpointExecutorNode(Node):
             and str(msg.motion_limits_sha256) == str(limits.limits_sha256)
         )
         if (
-                not self.fresh('motion_limits', motion_limits_timeout)
+                not limits_fresh
                 and limits_match_plan):
             # The typed plan and the last accepted controller generation agree,
             # but a single-threaded executor can dequeue the plan just before a
@@ -861,13 +781,13 @@ class ScanViewpointExecutorNode(Node):
         count_rejection = plan_count_rejection(
             plan_kind,
             len(msg.viewpoint_indices),
-            int(self.get_parameter('min_execution_viewpoints').value),
-            int(self.get_parameter('acquisition_max_viewpoints').value),
+            int(configured_value(self, 'min_execution_viewpoints')),
+            int(configured_value(self, 'acquisition_max_viewpoints')),
             session_accepted_views=(
                 len(self.scan_history)
                 if plan_kind == MULTIVIEW_SCAN else 0),
             session_maximum_views=(
-                int(self.get_parameter('max_execution_viewpoints').value)
+                int(configured_value(self, 'max_execution_viewpoints'))
                 if plan_kind == MULTIVIEW_SCAN else None),
             closed_loop_one_view=self.param_bool('closed_loop_one_view'),
         )
@@ -886,12 +806,13 @@ class ScanViewpointExecutorNode(Node):
         startup_home_static_segments = []
         configured_home_direct_segments = []
         configured_home_stages = []
+        segment_execution_modes = []
         maximum_step = float(
-            self.get_parameter('trajectory_joint_step_rad').value)
-        command_rate = float(self.get_parameter('trajectory_command_rate_hz').value)
+            configured_value(self, 'trajectory_joint_step_rad'))
+        command_rate = float(configured_value(self, 'trajectory_command_rate_hz'))
         if abs(float(msg.command_rate_hz) - command_rate) > 1e-6:
             reasons.append('Tesseract command rate does not match the executor')
-        if not self.fresh('motion_limits', motion_limits_timeout):
+        if not limits_fresh:
             reasons.append('controller motion limits are missing or stale')
         if limits is None or not limits.valid:
             reasons.append('controller motion limits are invalid')
@@ -901,12 +822,19 @@ class ScanViewpointExecutorNode(Node):
                     or len(str(msg.motion_limits_sha256)) != 64):
                 reasons.append(
                     'Tesseract controller-limit binding is stale or mismatched')
+        if telemetry_store is None:
+            tracking_health = self.latest_tracking_health
+        else:
+            tracking_observation = snapshot.perception.tracking
+            tracking_health = (
+                None if tracking_observation is None
+                else tracking_observation.value)
         tracking_scale = (
-            float(self.latest_tracking_health.recommended_speed_scale)
-            if self.latest_tracking_health is not None else 1.0)
+            float(tracking_health.recommended_speed_scale)
+            if tracking_health is not None else 1.0)
         execution_speed = float(msg.execution_speed_percent)
         speed_rejection = planned_speed_rejection(
-            float(self.get_parameter('speed_percent').value),
+            float(configured_value(self, 'speed_percent')),
             plan_kind,
             tracking_scale,
             execution_speed,
@@ -986,6 +914,28 @@ class ScanViewpointExecutorNode(Node):
             configured_home_validation = str(
                 segment_evidence.get('validation', '')
                 if isinstance(segment_evidence, dict) else '')
+            sdk_execution_mode = str(
+                segment_evidence.get(
+                    'sdk_execution_mode', 'TESSERACT_STREAM')
+                if isinstance(segment_evidence, dict)
+                else 'TESSERACT_STREAM').strip().upper()
+            if sdk_execution_mode not in ('DIRECT_MOVEJ', 'TESSERACT_STREAM'):
+                reasons.append(
+                    'segment %d SDK execution mode is invalid' % segment_index)
+                sdk_execution_mode = 'TESSERACT_STREAM'
+            if sdk_execution_mode == 'DIRECT_MOVEJ':
+                if (
+                        recovery_end >= 0 or configured_home_direct
+                        or int(segment_evidence.get(
+                            'sdk_command_anchor_count', -1)) != 1
+                        or int(segment_evidence.get(
+                            'direct_movej_source_points', -1)) != 2
+                        or 'independently passed dense collision' not in str(
+                            segment_evidence.get(
+                                'direct_movej_validation', ''))):
+                    reasons.append(
+                        'segment %d direct MoveJ evidence is invalid'
+                        % segment_index)
             if configured_home_direct:
                 if not (
                         plan_kind == RETURN_HOME
@@ -996,8 +946,8 @@ class ScanViewpointExecutorNode(Node):
                         and len(path) == 2
                         and collision_bypassed
                         and configured_home_stage in (
-                            'CONFIGURED_HOME', 'STARTUP_WRIST', 'ROUGH_HOME',
-                            'STORAGE_WRIST')
+                            'CONFIGURED_HOME', 'STARTUP_WRIST', 'PRE_HOME',
+                            'ROUGH_HOME', 'STORAGE_WRIST')
                         and configured_home_validation ==
                         'configured_home_collision_validation_bypassed'):
                     reasons.append(
@@ -1008,7 +958,7 @@ class ScanViewpointExecutorNode(Node):
                     path[-1],
                     segment_evidence.get(
                         'configured_home_goal_positions_rad', []),
-                    self.get_parameter('return_home_positions_rad').value,
+                    configured_value(self, 'return_home_positions_rad'),
                 )
                 if endpoint_rejection:
                     reasons.append(
@@ -1209,11 +1159,12 @@ class ScanViewpointExecutorNode(Node):
             startup_home_static_segments.append(startup_home_static)
             configured_home_direct_segments.append(configured_home_direct)
             configured_home_stages.append(configured_home_stage)
+            segment_execution_modes.append(sdk_execution_mode)
         if (
                 returns_home and targets
                 and configured_home_direct_segments != [True]):
             configured_home = np.asarray(
-                self.get_parameter('return_home_positions_rad').value,
+                configured_value(self, 'return_home_positions_rad'),
                 dtype=float)
             if configured_home.shape != (6,) or not np.all(
                     np.isfinite(configured_home)):
@@ -1224,6 +1175,13 @@ class ScanViewpointExecutorNode(Node):
                 reasons.append(
                     'Tesseract return-home endpoint does not match the '
                     'executor configuration')
+        ScanViewpointExecutorNode.record_plan_validation_safety_shadow(
+            self,
+            reasons,
+            None if telemetry_store is None else snapshot,
+            planner_result_valid=True,
+            plan_schema_valid=not reasons,
+        )
         if reasons:
             self.invalidate_plan(
                 'invalid Tesseract proposal: ' + '; '.join(reasons),
@@ -1251,6 +1209,7 @@ class ScanViewpointExecutorNode(Node):
         self.plan_startup_home_static = startup_home_static_segments
         self.plan_configured_home_direct = configured_home_direct_segments
         self.plan_configured_home_stages = configured_home_stages
+        self.plan_segment_execution_modes = segment_execution_modes
         self.plan_candidate_count = len(msg.viewpoint_indices)
         self.plan_capture_count = len(msg.viewpoint_indices)
         self.plan_returns_home = bool(returns_home)
@@ -1305,13 +1264,124 @@ class ScanViewpointExecutorNode(Node):
             ))
         self.publish_plan(True, self.reason)
 
+    def record_plan_validation_safety_shadow(
+            self, reasons, snapshot, planner_result_valid,
+            plan_schema_valid):
+        """Compare command-free Tesseract proposal validation in shadow."""
+        evaluator = getattr(self, 'safety_evaluator', None)
+        comparison_logger = getattr(
+            self, 'safety_comparison_logger', None)
+        if evaluator is None or comparison_logger is None or snapshot is None:
+            return reasons
+        limits_observation = snapshot.arm.motion_limits
+        limits = (
+            None if limits_observation is None
+            else limits_observation.value)
+        compatible = True
+        if limits is not None and bool(getattr(limits, 'valid', False)):
+            compatible = not bool(self.runtime_motion_limit_rejection(limits))
+        decision = evaluator.evaluate(
+            SafetyMode.PLAN_VALIDATION,
+            snapshot,
+            SafetyInputs(
+                planner_result_valid=bool(planner_result_valid),
+                plan_schema_valid=bool(plan_schema_valid),
+                # Command-free proposal receipt deliberately permits a
+                # proposal-only collision model; approval rejects it later.
+                collision_model_qualified=True,
+                motion_limits_compatible=compatible,
+            ),
+        )
+        comparison = comparison_logger.record(
+            'executor.tesseract_plan_validation', reasons, decision)
+        if not comparison.agreement:
+            self.get_logger().warn(
+                'SAFETY_SHADOW_DISAGREEMENT ' + comparison.to_json())
+        return reasons
+
+    def record_approval_safety_shadow(
+            self, reasons, snapshot, mode, plan_schema_valid=True,
+            collision_model_qualified=True, path_valid=True,
+            target_drift_m=None, capture_services_ready=True,
+            authorization_required=False, authorization_granted=True):
+        """Compare an outer approval gate without changing its response."""
+        evaluator = getattr(self, 'safety_evaluator', None)
+        comparison_logger = getattr(
+            self, 'safety_comparison_logger', None)
+        if evaluator is None or comparison_logger is None or snapshot is None:
+            return reasons
+        workflow_observation = snapshot.mission.workflow
+        workflow = (
+            None if workflow_observation is None
+            else workflow_observation.value)
+        workflow_ready = bool(
+            isinstance(workflow, dict)
+            and str(workflow.get('state', '')) == 'SCAN_READY')
+        limits_observation = snapshot.arm.motion_limits
+        limits = (
+            None if limits_observation is None
+            else limits_observation.value)
+        compatible = True
+        if limits is not None and bool(getattr(limits, 'valid', False)):
+            compatible = not bool(self.runtime_motion_limit_rejection(limits))
+        mode_value = mode if isinstance(mode, SafetyMode) else SafetyMode(mode)
+        decision = evaluator.evaluate(
+            mode_value,
+            snapshot,
+            SafetyInputs(
+                plan_schema_valid=bool(plan_schema_valid),
+                collision_model_qualified=bool(
+                    collision_model_qualified),
+                path_valid=bool(path_valid),
+                motion_limits_compatible=compatible,
+                target_drift_m=target_drift_m,
+                allow_target_motion=self.param_bool(
+                    'allow_target_motion_during_scan'),
+                static_obstacle_scene_authorized=mode_value in (
+                    SafetyMode.ACQUISITION_APPROVAL,
+                    SafetyMode.RETURN_HOME),
+                auto_capture=self.param_bool('auto_capture'),
+                workflow_required=mode_value == SafetyMode.SCAN_APPROVAL,
+                workflow_ready=workflow_ready,
+                plan_execution_speed_percent=float(getattr(
+                    self, 'plan_execution_speed_percent', 0.0)),
+                configured_home_direct=self.is_configured_home_direct(),
+                motion_control_authorized=self.real_motion_enabled(),
+                capture_services_ready=bool(capture_services_ready),
+                joint_limits=tuple(
+                    (float(bounds[0]), float(bounds[1]))
+                    for bounds in self.joint_limits),
+            ),
+            SafetyAuthorization(
+                required=bool(authorization_required),
+                granted=bool(authorization_granted)),
+        )
+        comparison = comparison_logger.record(
+            'executor.approve', reasons, decision)
+        if not comparison.agreement:
+            self.get_logger().warn(
+                'SAFETY_SHADOW_DISAGREEMENT ' + comparison.to_json())
+        return reasons
+
     def joint_cb(self, msg):
         self.latest_joint_state = msg
-        self.mark('joints')
+        observed_at, telemetry_store = mark_callback_observation(
+            self, 'joints')
+        if telemetry_store is not None:
+            source_stamp_ns, frame_id = message_source_metadata(msg)
+            telemetry_store.update_joints(
+                msg, received_at=observed_at,
+                source_stamp_ns=source_stamp_ns, frame_id=frame_id)
 
     def arm_status_cb(self, msg):
         self.latest_arm_status = msg
-        self.mark('arm_status')
+        observed_at, telemetry_store = mark_callback_observation(
+            self, 'arm_status')
+        if telemetry_store is not None:
+            source_stamp_ns, frame_id = message_source_metadata(msg)
+            telemetry_store.update_arm_status(
+                msg, received_at=observed_at,
+                source_stamp_ns=source_stamp_ns, frame_id=frame_id)
 
     def motion_limits_cb(self, msg):
         # A controller query updates twelve CAN replies independently.  A
@@ -1325,7 +1395,13 @@ class ScanViewpointExecutorNode(Node):
         if accepted is not None:
             self.latest_motion_limits = accepted
         if refreshed:
-            self.mark('motion_limits')
+            observed_at, telemetry_store = mark_callback_observation(
+                self, 'motion_limits')
+            if telemetry_store is not None:
+                source_stamp_ns, frame_id = message_source_metadata(accepted)
+                telemetry_store.update_motion_limits(
+                    accepted, received_at=observed_at,
+                    source_stamp_ns=source_stamp_ns, frame_id=frame_id)
             pending = getattr(self, 'pending_limit_refresh_plan', None)
             if pending is not None:
                 if self.now() <= self.pending_limit_refresh_deadline:
@@ -1348,37 +1424,72 @@ class ScanViewpointExecutorNode(Node):
 
     def tracking_health_cb(self, msg):
         self.latest_tracking_health = msg
-        self.mark('tracking')
+        observed_at, telemetry_store = mark_callback_observation(
+            self, 'tracking')
+        if telemetry_store is not None:
+            source_stamp_ns, frame_id = message_source_metadata(msg)
+            telemetry_store.update_tracking(
+                msg, received_at=observed_at,
+                source_stamp_ns=source_stamp_ns, frame_id=frame_id)
 
     def tracked_target_cb(self, msg):
         self.latest_tracked_target = msg
-        self.mark('tracked_target')
+        observed_at, telemetry_store = mark_callback_observation(
+            self, 'tracked_target')
+        if telemetry_store is not None:
+            source_stamp_ns, frame_id = message_source_metadata(msg)
+            telemetry_store.update_target(
+                msg, received_at=observed_at,
+                source_stamp_ns=source_stamp_ns, frame_id=frame_id)
 
     def camera_timestamp_health_cb(self, msg):
         self.latest_camera_timestamp_health = msg
+        telemetry_store = getattr(self, 'telemetry_store', None)
         self.mark('camera_clock')
+        if telemetry_store is not None:
+            observed_at = self.updated['camera_clock']
+            source_stamp_ns, frame_id = message_source_metadata(msg)
+            telemetry_store.update_camera(
+                msg, received_at=observed_at,
+                source_stamp_ns=source_stamp_ns, frame_id=frame_id)
 
     def target_status_cb(self, msg):
-        self.latest_target_status = str(msg.data).upper()
-        self.mark('target_status')
+        status = str(msg.data).upper()
+        self.latest_target_status = status
+        observed_at, telemetry_store = mark_callback_observation(
+            self, 'target_status')
+        if telemetry_store is not None:
+            telemetry_store.update_target_status(
+                status, received_at=observed_at)
 
     def obstacle_cb(self, msg):
         self.latest_obstacles = msg
-        self.mark('obstacles')
+        observed_at, telemetry_store = mark_callback_observation(
+            self, 'obstacles')
+        if telemetry_store is not None:
+            source_stamp_ns, frame_id = message_source_metadata(msg)
+            telemetry_store.update_obstacles(
+                msg, received_at=observed_at,
+                source_stamp_ns=source_stamp_ns, frame_id=frame_id)
 
     def workflow_cb(self, msg):
         try:
-            self.latest_workflow = json.loads(msg.data)
+            payload = json.loads(msg.data)
         except (TypeError, json.JSONDecodeError):
             return
-        session_id = str(self.latest_workflow.get('session_id', ''))
+        self.latest_workflow = payload
+        observed_at, telemetry_store = mark_callback_observation(
+            self, 'workflow')
+        if telemetry_store is not None:
+            telemetry_store.update_workflow(
+                payload, received_at=observed_at)
+        session_id = str(payload.get('session_id', ''))
         if session_id and session_id != self.scan_session_id:
             self.scan_session_id = session_id
             self.scan_history = []
             self.scan_rejections = []
             self.scan_coverage_target_center = None
             self.publish_scan_history()
-        self.mark('workflow')
 
     def heavy_refresh_status_cb(self, msg):
         try:
@@ -1510,11 +1621,24 @@ class ScanViewpointExecutorNode(Node):
             self.execution_tick()
             return
         if self.state == 'PROPOSAL_READY':
-            camera_health = self.latest_camera_timestamp_health
+            telemetry_store = getattr(self, 'telemetry_store', None)
+            if telemetry_store is None:
+                camera_health = self.latest_camera_timestamp_health
+                camera_fresh = self.fresh('camera_clock')
+            else:
+                snapshot = telemetry_store.snapshot()
+                observation = snapshot.perception.camera
+                camera_health = (
+                    None if observation is None else observation.value)
+                camera_fresh = bool(
+                    observation is not None
+                    and not observation.is_stale_at(
+                        snapshot.captured_at,
+                        float(configured_value(self, 'data_timeout_sec'))))
             if (
                     not self.is_configured_home_direct()
                     and (
-                    not self.fresh('camera_clock')
+                    not camera_fresh
                     or camera_health is None
                     or not camera_health.healthy)):
                 # Approval repeats the fresh camera-clock gate. Preserve the
@@ -1522,36 +1646,54 @@ class ScanViewpointExecutorNode(Node):
                 # confirmation dialog cannot race a replacement plan/hash.
                 return
             if self.now() - self.plan_created > float(
-                    self.get_parameter('plan_max_age_sec').value):
+                    configured_value(self, 'plan_max_age_sec')):
                 self.invalidate_plan('proposal expired; refresh viewpoints')
             return
 
     def approve_cb(self, request, response):
-        expected = str(self.get_parameter('approval_confirmation').value)
+        expected = str(configured_value(self, 'approval_confirmation'))
         mission_confirmation = 'MISSION_POLICY:' + self.mission_sha256
-        if str(request.confirmation) == mission_confirmation:
-            if not self.mission_authorization_valid():
-                response.accepted = False
-                response.message = (
-                    'autonomous execution is not bound to a live mission authorization')
-                return response
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        shadow_snapshot = (
+            None if telemetry_store is None else telemetry_store.snapshot())
+        shadow_mode = (
+            SafetyMode.ACQUISITION_APPROVAL if self.is_acquisition() else
+            SafetyMode.RETURN_HOME if self.is_return_home() else
+            SafetyMode.SCAN_APPROVAL)
+        mission_authorization_requested = (
+            str(request.confirmation) == mission_confirmation)
+        mission_authorization_granted = (
+            self.mission_authorization_valid()
+            if mission_authorization_requested else True)
+        if mission_authorization_requested and mission_authorization_granted:
             expected = mission_confirmation
-        rejection = approval_rejection_reason(
-            self.state,
-            self.plan_id if self.plan_targets else '',
-            request.plan_id,
-            request.confirmation,
-            expected,
-            self.real_motion_enabled(),
-            self.now() - self.plan_created,
-            float(self.get_parameter('plan_max_age_sec').value),
-            current_trajectory_sha256=self.plan_trajectory_sha256,
-            requested_trajectory_sha256=request.trajectory_sha256,
-            require_trajectory_hash=True,
+        authorization_request = PlanAuthorizationRequest(
+            state=self.state,
+            loaded_plan_id=self.plan_id if self.plan_targets else '',
+            requested_plan_id=str(request.plan_id),
+            confirmation=str(request.confirmation),
+            expected_confirmation=expected,
+            real_motion_enabled=self.real_motion_enabled(),
+            plan_age_sec=self.now() - self.plan_created,
+            plan_max_age_sec=float(
+                configured_value(self, 'plan_max_age_sec')),
+            loaded_trajectory_sha256=self.plan_trajectory_sha256,
+            requested_trajectory_sha256=str(request.trajectory_sha256),
+            mission_authorization_required=mission_authorization_requested,
+            mission_authorization_granted=mission_authorization_granted,
         )
-        if rejection:
+        authorizer = getattr(self, 'plan_authorizer', PlanAuthorizer())
+        authorization = authorizer.evaluate(authorization_request)
+        if not authorization.permitted:
             response.accepted = False
-            response.message = rejection
+            response.message = authorization.detail
+            ScanViewpointExecutorNode.record_approval_safety_shadow(
+                self, [response.message], shadow_snapshot, shadow_mode,
+                plan_schema_valid=bool(
+                    mission_authorization_requested
+                    and not mission_authorization_granted),
+                authorization_required=mission_authorization_requested,
+                authorization_granted=mission_authorization_granted)
             return response
         acquisition = self.is_acquisition()
         return_only = self.is_return_home()
@@ -1562,6 +1704,10 @@ class ScanViewpointExecutorNode(Node):
             allow_missing_obstacles=(
                 acquisition or return_only),
             allow_missing_camera=return_only,
+            shadow_mode=(
+                SafetyMode.ACQUISITION_APPROVAL if acquisition else
+                SafetyMode.RETURN_HOME if return_only else
+                SafetyMode.SCAN_APPROVAL),
         )
         if reasons:
             response.accepted = False
@@ -1571,52 +1717,79 @@ class ScanViewpointExecutorNode(Node):
             response.accepted = False
             response.message = (
                 'Tesseract collision model is proposal-only and not qualified for hardware')
+            ScanViewpointExecutorNode.record_approval_safety_shadow(
+                self, [response.message], shadow_snapshot, shadow_mode,
+                collision_model_qualified=False,
+                authorization_required=mission_authorization_requested,
+                authorization_granted=True)
             return response
-        if not (acquisition or return_only):
+        target_required = not (acquisition or return_only)
+        latest_target_center = None
+        target_drift = None
+        if target_required:
+            telemetry_store = getattr(self, 'telemetry_store', None)
+            if telemetry_store is None:
+                latest_scan = self.latest_scan
+            else:
+                observation = telemetry_store.snapshot().mission.reachable_scan
+                latest_scan = (
+                    None if observation is None else observation.value)
             latest_target_center = self.vector(
-                self.latest_scan.get('target_object_center')
-                if isinstance(self.latest_scan, dict) else None)
-            if latest_target_center is None or self.plan_target_center is None:
-                response.accepted = False
-                response.message = 'latest target center is unavailable'
-                return response
-            target_drift = float(np.linalg.norm(latest_target_center - self.plan_target_center))
-            drift_rejection = target_drift_before_approval_rejection(
-                target_drift,
-                self.get_parameter(
-                    'max_target_drift_before_approval_m').value,
-                self.get_parameter(
-                    'allow_target_motion_during_scan').value,
-            )
-            if drift_rejection:
-                response.accepted = False
-                response.message = drift_rejection
-                return response
-        if (
-                not (acquisition or return_only)
-                and self.param_bool('auto_capture')
-                and not self.capture_client.service_is_ready()):
+                latest_scan.get('target_object_center')
+                if isinstance(latest_scan, dict) else None)
+            if latest_target_center is not None and self.plan_target_center is not None:
+                target_drift = float(np.linalg.norm(
+                    latest_target_center - self.plan_target_center))
+        unavailable_dependencies = []
+        if target_required and self.param_bool('auto_capture'):
+            if not self.capture_client.service_is_ready():
+                unavailable_dependencies.append('capture service')
+            elif not self.rgbd_capture_client.service_is_ready():
+                unavailable_dependencies.append('RGB-D capture service')
+            elif not self.finish_scan_client.service_is_ready():
+                unavailable_dependencies.append('workflow finish service')
+        authorization = authorizer.evaluate(
+            PlanAuthorizationRequest(
+                **dict(
+                    authorization_request.__dict__,
+                    target_required=target_required,
+                    target_available=bool(
+                        latest_target_center is not None
+                        and self.plan_target_center is not None),
+                    target_drift_m=target_drift,
+                    maximum_target_drift_m=float(configured_value(
+                        self, 'max_target_drift_before_approval_m')),
+                    allow_target_motion=bool(configured_value(
+                        self, 'allow_target_motion_during_scan')),
+                    unavailable_dependencies=tuple(
+                        unavailable_dependencies),
+                )))
+        if not authorization.permitted:
             response.accepted = False
-            response.message = 'capture service is not ready'
-            return response
-        if (
-                not (acquisition or return_only)
-                and self.param_bool('auto_capture')
-                and not self.rgbd_capture_client.service_is_ready()):
-            response.accepted = False
-            response.message = 'RGB-D capture service is not ready'
-            return response
-        if (
-                not (acquisition or return_only)
-                and self.param_bool('auto_capture')
-                and not self.finish_scan_client.service_is_ready()):
-            response.accepted = False
-            response.message = 'workflow finish service is not ready'
+            response.message = authorization.detail
+            ScanViewpointExecutorNode.record_approval_safety_shadow(
+                self, [response.message], shadow_snapshot, shadow_mode,
+                plan_schema_valid=bool(latest_target_center is not None),
+                capture_services_ready=not unavailable_dependencies,
+                target_drift_m=target_drift,
+                authorization_required=mission_authorization_requested,
+                authorization_granted=mission_authorization_granted)
             return response
         path_reasons = self.prepare_current_view()
         if path_reasons:
+            authorization = authorizer.evaluate(
+                PlanAuthorizationRequest(
+                    **dict(
+                        authorization_request.__dict__,
+                        path_reasons=tuple(path_reasons),
+                    )))
             response.accepted = False
-            response.message = 'fresh trajectory validation failed: ' + '; '.join(path_reasons)
+            response.message = authorization.detail
+            ScanViewpointExecutorNode.record_approval_safety_shadow(
+                self, [response.message], shadow_snapshot, shadow_mode,
+                path_valid=False,
+                authorization_required=mission_authorization_requested,
+                authorization_granted=True)
             return response
         self.abort_return_in_progress = False
         self.abort_return_reason = ''
@@ -1627,7 +1800,7 @@ class ScanViewpointExecutorNode(Node):
                 or not self.retrace_joint_targets
                 or float(np.max(np.abs(
                     start_joints - self.retrace_joint_targets[-1]))) > float(
-                        self.get_parameter('plan_start_tolerance_rad').value)):
+                        configured_value(self, 'plan_start_tolerance_rad'))):
             # An uninterrupted acquisition+scan session can safely retrace
             # every already executed, separately approved endpoint to the
             # original loaded pose. A restarted executor falls back to the
@@ -1654,6 +1827,10 @@ class ScanViewpointExecutorNode(Node):
                 'return-home' if return_only else 'scan'),
             self.execution_speed_percent(),
         )
+        ScanViewpointExecutorNode.record_approval_safety_shadow(
+            self, [], shadow_snapshot, shadow_mode,
+            authorization_required=mission_authorization_requested,
+            authorization_granted=True)
         return response
 
     def authorize_mission_cb(self, request, response):
@@ -1697,6 +1874,121 @@ class ScanViewpointExecutorNode(Node):
         self.mission_expires_at_sec = expires
         response.accepted = True
         response.message = 'mission policy authorization bound to task and deadline'
+        return response
+
+    def execute_home_stage_cb(self, request, response):
+        """Execute one mission-authorized configured MoveJ stage directly."""
+        response.accepted = False
+        response.execution_id = ''
+        if self.state in ACTIVE_STATES:
+            response.message = 'executor is already running a motion transaction'
+            return response
+        if not self.real_motion_enabled() or self.command_pub is None:
+            response.message = 'real arm motion is not enabled in the executor'
+            return response
+        if not self.mission_authorization_valid():
+            response.message = 'mission authorization is missing or expired'
+            return response
+        if (str(request.task_id) != self.mission_task_id
+                or str(request.mission_sha256) != self.mission_sha256):
+            response.message = 'direct home mission identity does not match'
+            return response
+        try:
+            current = self.current_joints()
+        except ValueError as exc:
+            response.message = 'direct home has no valid current joints: %s' % exc
+            return response
+        goal = np.asarray(request.joint_goal_positions_rad, dtype=float)
+        rejection = direct_home_stage_rejection(
+            request.home_stage,
+            goal,
+            current,
+            self.configuration.motion.return_home_positions_rad,
+            self.joint_limits,
+            unchanged_tolerance_rad=(
+                self.configuration.motion.plan_start_tolerance_rad),
+            start_limit_tolerance_rad=(
+                self.configuration.safety.
+                configured_home_feedback_limit_tolerance_rad),
+            pre_home=self.configuration.motion.pre_home_positions_rad,
+        )
+        if rejection:
+            response.message = rejection
+            return response
+        motor_reasons = self.arm_status_reasons()
+        if motor_reasons:
+            response.message = 'direct home motor gate: ' + '; '.join(
+                motor_reasons)
+            return response
+        if not self.fresh(
+                'motion_limits',
+                self.configuration.safety.motion_limits_timeout_sec):
+            response.message = 'direct home motion limits are missing or stale'
+            return response
+        limits = self.latest_motion_limits
+        if limits is None or not bool(limits.valid):
+            response.message = 'direct home controller limits are invalid'
+            return response
+
+        stage = str(request.home_stage).strip().upper()
+        execution_id = 'direct-home-%d' % time.time_ns()
+        self.clear_plan()
+        self.plan_id = execution_id
+        self.plan_kind = RETURN_HOME
+        self.plan_created = time.time()
+        stage_targets = direct_home_stage_targets(stage, current, goal)
+        direct_path = [current.copy()] + [
+            item.copy() for item in stage_targets]
+        external_reasons = self.validate_attached_tool_external_path(
+            direct_path, [])
+        if external_reasons:
+            response.message = (
+                'direct home attached-tool clearance gate: '
+                + '; '.join(external_reasons))
+            return response
+        zeros = np.zeros(6, dtype=float)
+        self.plan_targets = [goal.copy()]
+        self.plan_paths = [[item.copy() for item in direct_path]]
+        self.plan_path_velocities = [[
+            zeros.copy() for _item in direct_path]]
+        self.plan_path_accelerations = [[
+            zeros.copy() for _item in direct_path]]
+        self.plan_path_times = [[0.0 for _item in direct_path]]
+        self.plan_configured_home_direct = [True]
+        self.plan_configured_home_stages = [stage]
+        self.plan_capture_count = 0
+        self.plan_returns_home = True
+        self.plan_execution_speed_percent = self.speed_percent()
+        self.plan_motion_limits_sha256 = str(limits.limits_sha256)
+        self.runtime_motion_limits_sha256 = str(limits.limits_sha256)
+        self.plan_collision_model_qualified = False
+        self.current_view = 0
+        self.current_path = [item.copy() for item in stage_targets]
+        self.current_path_velocities = [zeros.copy() for _item in stage_targets]
+        self.current_path_accelerations = [zeros.copy() for _item in stage_targets]
+        self.current_path_times = [0.0 for _item in stage_targets]
+        self.current_path_streaming = False
+        self.path_index = 0
+        self.command_target = None
+        self.command_sent_at = 0.0
+        self.command_samples_sent = 0
+        self.max_command_interval_sec = 0.0
+        self.dropped_command_samples = 0
+        self.motion_started_at = None
+        self.waypoint_started_at = None
+        self.waypoint_last_progress_at = None
+        self.waypoint_best_error = math.inf
+        self.current_waypoint_error = 0.0
+        self.max_waypoint_error = 0.0
+        self.begin_runtime_refresh(
+            'approved direct %s MoveJ endpoint started' % stage,
+            require_workflow=False,
+            allow_missing_obstacles=True,
+        )
+        response.accepted = True
+        response.execution_id = execution_id
+        response.message = (
+            'direct %s endpoint accepted without Tesseract planning' % stage)
         return response
 
     def mission_authorization_valid(self):
@@ -1770,10 +2062,10 @@ class ScanViewpointExecutorNode(Node):
             'trajectory_sha256': self.plan_trajectory_sha256,
             'execution_speed_percent': self.plan_execution_speed_percent,
             'trajectory_command_rate_hz': float(
-                self.get_parameter('trajectory_command_rate_hz').value),
+                configured_value(self, 'trajectory_command_rate_hz')),
             'motion_adapter': TIMING_POLICY_VERSION,
             'executor_tick_rate_hz': float(
-                self.get_parameter('executor_tick_rate_hz').value),
+                configured_value(self, 'executor_tick_rate_hz')),
             'command_samples_sent': self.command_samples_sent,
             'dropped_command_samples': self.dropped_command_samples,
             'max_command_interval_sec': self.max_command_interval_sec,
@@ -1798,7 +2090,7 @@ class ScanViewpointExecutorNode(Node):
             'session_accepted_views': len(self.scan_history),
             'session_remaining_views': max(
                 0,
-                int(self.get_parameter('max_execution_viewpoints').value)
+                int(configured_value(self, 'max_execution_viewpoints'))
                 - len(self.scan_history)),
             'returns_home': self.plan_returns_home,
             'first_view_max_joint_delta_rad': first_delta,
@@ -1819,6 +2111,14 @@ class ScanViewpointExecutorNode(Node):
         if self.state == 'WAITING_FOR_RUNTIME_REFRESH':
             self.waiting_for_runtime_refresh_tick()
             return
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        telemetry_snapshot = (
+            None if telemetry_store is None else telemetry_store.snapshot())
+        if telemetry_snapshot is None:
+            obstacles = self.latest_obstacles
+        else:
+            observation = telemetry_snapshot.perception.obstacles
+            obstacles = None if observation is None else observation.value
         reasons = self.runtime_reasons(
             require_settled=False,
             require_workflow=False,
@@ -1841,11 +2141,11 @@ class ScanViewpointExecutorNode(Node):
                 self.plan_kind,
                 self.state,
                 self.plan_collision_model_qualified,
-                self.latest_obstacles,
+                obstacles,
             ) or approved_return_home_obstacle_snapshot(
                 self.returning_home(),
                 self.plan_collision_model_qualified,
-                self.latest_obstacles,
+                obstacles,
             ),
             # PiPER's SDK MoveJ speed is fixed when a target is issued. Camera
             # motion can lower the tracking speed recommendation while that
@@ -1860,9 +2160,24 @@ class ScanViewpointExecutorNode(Node):
             # is diagnostic rather than a motion/capture cancellation gate.
             enforce_target_status=False,
             enforce_tracking_motion_state=False,
+            telemetry_snapshot=telemetry_snapshot,
+            shadow_mode=(
+                SafetyMode.RETURN_HOME if self.returning_home() else
+                SafetyMode.ACQUISITION_MOTION
+                if self.is_acquisition() else
+                SafetyMode.SCAN_CAPTURE if self.state in (
+                    'SETTLING', 'CAPTURING', 'CAPTURING_RGBD',
+                    'WAIT_CAPTURE') else
+                SafetyMode.SCAN_MOTION),
         )
         if reasons:
-            if runtime_gate_action(reasons) == 'hold_for_refresh':
+            recovery_policy = getattr(
+                self, 'recovery_policy', RecoveryPolicy())
+            recovery = recovery_policy.decide(
+                RecoveryContext.RUNTIME,
+                tuple(as_failure(reason) for reason in reasons),
+            )
+            if recovery.action is RecoveryAction.RETRY:
                 self.begin_runtime_recovery(reasons)
             elif self.returning_home():
                 ScanViewpointExecutorNode.handle_return_home_failure(
@@ -1949,6 +2264,14 @@ class ScanViewpointExecutorNode(Node):
     def waiting_for_runtime_refresh_tick(self):
         recovering = bool(self.runtime_refresh_resume_state)
         return_home = getattr(self, 'plan_kind', '') == RETURN_HOME
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        telemetry_snapshot = (
+            None if telemetry_store is None else telemetry_store.snapshot())
+        if telemetry_snapshot is None:
+            obstacles = getattr(self, 'latest_obstacles', None)
+        else:
+            observation = telemetry_snapshot.perception.obstacles
+            obstacles = None if observation is None else observation.value
         reasons = self.runtime_reasons(
             require_settled=True,
             require_workflow=self.runtime_refresh_require_workflow,
@@ -1966,13 +2289,26 @@ class ScanViewpointExecutorNode(Node):
             ) or approved_return_home_obstacle_snapshot(
                 self.returning_home(),
                 getattr(self, 'plan_collision_model_qualified', False),
-                getattr(self, 'latest_obstacles', None),
+                obstacles,
             ),
             settle_at_current_hold=recovering,
+            telemetry_snapshot=telemetry_snapshot,
+            shadow_mode=(
+                SafetyMode.RETURN_HOME if return_home else
+                SafetyMode.ACQUISITION_MOTION
+                if self.is_acquisition() else
+                SafetyMode.SCAN_APPROVAL
+                if self.runtime_refresh_require_workflow else
+                SafetyMode.SCAN_CAPTURE if str(
+                    self.runtime_refresh_resume_state) in (
+                        'SETTLING', 'CAPTURING', 'CAPTURING_RGBD',
+                        'WAIT_CAPTURE') else
+                SafetyMode.SCAN_MOTION),
         )
-        timeout = float(self.get_parameter(
+        timeout = float(configured_value(
+            self,
             'runtime_recovery_timeout_sec'
-            if recovering else 'runtime_refresh_timeout_sec').value)
+            if recovering else 'runtime_refresh_timeout_sec'))
         action = runtime_refresh_action(
             reasons, self.now() - self.state_started, timeout)
         if action == 'wait':
@@ -2035,8 +2371,7 @@ class ScanViewpointExecutorNode(Node):
         now = self.now()
         freshness_check = getattr(self, 'fresh', None)
         if callable(freshness_check) and not freshness_check(
-                'joints', float(self.get_parameter(
-                    'home_joint_feedback_timeout_sec').value)):
+                'joints', float(configured_value(self, 'home_joint_feedback_timeout_sec'))):
             self.abort_or_finish_captures(
                 'joint feedback became invalid during SDK MoveJ: no fresh '
                 'application-level sample')
@@ -2071,19 +2406,17 @@ class ScanViewpointExecutorNode(Node):
         if math.isfinite(error):
             self.max_waypoint_error = max(self.max_waypoint_error, error)
         epsilon = float(
-            self.get_parameter('waypoint_progress_epsilon_rad').value)
+            configured_value(self, 'waypoint_progress_epsilon_rad'))
         if progress_error + epsilon < self.waypoint_best_error:
             self.waypoint_best_error = progress_error
             self.waypoint_last_progress_at = now
         action = waypoint_motion_action(
             error,
-            float(self.get_parameter(
-                'waypoint_reached_tolerance_rad').value),
+            float(configured_value(self, 'waypoint_reached_tolerance_rad')),
             now - float(self.waypoint_started_at),
-            float(self.get_parameter('waypoint_timeout_sec').value),
+            float(configured_value(self, 'waypoint_timeout_sec')),
             now - float(self.waypoint_last_progress_at),
-            float(self.get_parameter(
-                'waypoint_progress_timeout_sec').value),
+            float(configured_value(self, 'waypoint_progress_timeout_sec')),
         )
         if action == 'abort_invalid':
             self.abort_or_finish_captures(
@@ -2150,13 +2483,11 @@ class ScanViewpointExecutorNode(Node):
             if math.isfinite(following_error):
                 self.max_waypoint_error = max(
                     self.max_waypoint_error, following_error)
-            grace = float(self.get_parameter(
-                'trajectory_following_error_grace_sec').value)
-            limit = float(self.get_parameter(
-                'trajectory_following_error_rad').value)
-            if elapsed >= grace and (
-                    not math.isfinite(following_error)
-                    or following_error > limit):
+            grace = float(configured_value(self, 'trajectory_following_error_grace_sec'))
+            limit = float(configured_value(self, 'trajectory_following_error_rad'))
+            following_decision = TrajectoryRunner.following_decision(
+                elapsed, following_error, grace, limit)
+            if following_decision.action is TrajectoryAction.FAILED_FOLLOWING:
                 self.abort_or_finish_captures(
                     'measured joints stopped following the scheduled '
                     'Tesseract path: max_error=%.9f rad limit=%.9f rad'
@@ -2164,28 +2495,23 @@ class ScanViewpointExecutorNode(Node):
                 return
 
         if self.path_index < len(self.current_path):
-            if elapsed + 1e-6 < self.current_path_times[self.path_index]:
+            stream_decision = TrajectoryRunner.stream_decision(
+                self.path_index, self.current_path_times, elapsed)
+            if stream_decision.action is TrajectoryAction.WAIT:
                 if now - self.last_motion_status_at >= 0.10:
                     self.last_motion_status_at = now
                     self.publish_status()
                 return
-
-            # Never burst stale goals and never shortcut collision-qualified
-            # path corners. More than one due sample means the schedule can no
-            # longer be followed faithfully, so hold/abort for a fresh plan.
-            due_index = self.path_index
-            while (
-                    due_index + 1 < len(self.current_path)
-                    and self.current_path_times[due_index + 1]
-                    <= elapsed + 1e-6):
-                due_index += 1
-            missed = due_index - self.path_index
-            if missed:
-                self.dropped_command_samples += missed
+            if stream_decision.action is TrajectoryAction.FAILED_OVERRUN:
+                self.dropped_command_samples += stream_decision.missed_samples
                 self.abort_or_finish_captures(
                     'scheduled Tesseract stream overran by %d samples; '
-                    'refusing to burst or shortcut the approved path' % missed)
+                    'refusing to burst or shortcut the approved path'
+                    % stream_decision.missed_samples)
                 return
+            # Never burst stale goals and never shortcut collision-qualified
+            # path corners. The pure runner returns exactly one due index.
+            due_index = int(stream_decision.sample_index)
             target = self.current_path[due_index]
             self.path_index = due_index + 1
             self.publish_joint_command(target)
@@ -2258,24 +2584,34 @@ class ScanViewpointExecutorNode(Node):
         self.publish_status()
 
     def settling_tick(self):
-        if self.now() - self.state_started > float(
-                self.get_parameter('settle_timeout_sec').value):
+        now = self.now()
+        settled = (
+            self.joints_settled()
+            if self.is_acquisition() else self.capture_pose_settled())
+        coordinator = getattr(
+            self, 'capture_coordinator',
+            CaptureCoordinator(MAX_RGBD_CAPTURE_READINESS_RETRIES))
+        settle_decision = coordinator.settle(
+            now - self.state_started,
+            settled,
+            self.settle_started,
+            now,
+            configured_value(self, 'settle_duration_sec'),
+            configured_value(self, 'settle_timeout_sec'),
+        )
+        if settle_decision.action is CaptureAction.ABORT:
             self.abort_motion(
                 'arm/camera did not settle before acquisition refresh'
                 if self.is_acquisition()
                 else 'arm/camera did not settle before timeout')
             return
-        settled = (
-            self.joints_settled()
-            if self.is_acquisition() else self.capture_pose_settled())
-        if not settled:
+        if settle_decision.reset_settle_window:
             self.settle_started = None
             return
-        if self.settle_started is None:
-            self.settle_started = self.now()
+        if settle_decision.action is CaptureAction.START_SETTLE_WINDOW:
+            self.settle_started = now
             return
-        if self.now() - self.settle_started < float(
-                self.get_parameter('settle_duration_sec').value):
+        if settle_decision.action is not CaptureAction.READY:
             return
         if self.is_acquisition():
             self.request_acquisition_refresh()
@@ -2283,10 +2619,21 @@ class ScanViewpointExecutorNode(Node):
         if not self.param_bool('auto_capture'):
             self.advance_view()
             return
-        if not self.workflow_ready():
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        snapshot = (
+            None if telemetry_store is None else telemetry_store.snapshot())
+        workflow_ready = (
+            self.workflow_ready() if snapshot is None else
+            ScanViewpointExecutorNode.workflow_ready(self, snapshot))
+        if not workflow_ready:
             self.abort_motion('supervised workflow is not SCAN_READY at capture time')
             return
-        self.capture_accepted_before = int(self.latest_workflow.get('accepted_views', 0))
+        if snapshot is None:
+            workflow = self.latest_workflow
+        else:
+            observation = snapshot.mission.workflow
+            workflow = None if observation is None else observation.value
+        self.capture_accepted_before = int(workflow.get('accepted_views', 0))
         self.set_state(
             'CAPTURING_RGBD',
             'settled viewpoint reached; saving synchronized RGB-D record')
@@ -2331,7 +2678,7 @@ class ScanViewpointExecutorNode(Node):
             self.abort_motion('acquisition refresh timing is missing')
             return
         if self.now() - self.acquisition_refresh_started > float(
-                self.get_parameter('acquisition_fresh_frame_timeout_sec').value):
+                configured_value(self, 'acquisition_fresh_frame_timeout_sec')):
             self.abort_motion(
                 'fresh post-settle camera frame or idle GroundingDINO worker '
                 'did not become available before timeout')
@@ -2341,27 +2688,59 @@ class ScanViewpointExecutorNode(Node):
             self.abort_motion('GroundingDINO queue acknowledgement is missing')
             return
         if self.now() - self.acquisition_job_started > float(
-                self.get_parameter('acquisition_grounding_timeout_sec').value):
+                configured_value(self, 'acquisition_grounding_timeout_sec')):
             self.abort_motion(
                 'matching GroundingDINO job exceeded the %.1f-second timeout'
-                % float(self.get_parameter(
-                    'acquisition_grounding_timeout_sec').value))
+                % float(configured_value(self, 'acquisition_grounding_timeout_sec')))
 
     def waiting_for_tracking_lock_tick(self):
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        if telemetry_store is None:
+            tracked_target = self.latest_tracked_target
+            tracking_health = self.latest_tracking_health
+            target_status = self.latest_target_status
+            tracked_target_at = self.updated.get('tracked_target', -1e9)
+            tracking_at = self.updated.get('tracking', -1e9)
+            target_status_at = self.updated.get('target_status', -1e9)
+            now = self.now()
+        else:
+            snapshot = telemetry_store.snapshot()
+            target_observation = snapshot.perception.target
+            tracking_observation = snapshot.perception.tracking
+            status_observation = snapshot.perception.target_status
+            tracked_target = (
+                None if target_observation is None
+                else target_observation.value)
+            tracking_health = (
+                None if tracking_observation is None
+                else tracking_observation.value)
+            target_status = (
+                'UNKNOWN' if status_observation is None
+                else status_observation.value)
+            tracked_target_at = (
+                -1e9 if target_observation is None
+                else target_observation.received_at)
+            tracking_at = (
+                -1e9 if tracking_observation is None
+                else tracking_observation.received_at)
+            target_status_at = (
+                -1e9 if status_observation is None
+                else status_observation.received_at)
+            now = snapshot.captured_at
         rejection = acquired_target_rejection(
-            self.latest_tracked_target,
-            self.latest_tracking_health,
-            self.latest_target_status,
-            self.updated.get('tracked_target', -1e9),
-            self.updated.get('tracking', -1e9),
-            self.updated.get('target_status', -1e9),
+            tracked_target,
+            tracking_health,
+            target_status,
+            tracked_target_at,
+            tracking_at,
+            target_status_at,
             self.acquisition_detection_completed,
-            self.now(),
-            float(self.get_parameter('data_timeout_sec').value),
-            float(self.get_parameter('max_tracking_measurement_age_sec').value),
+            now,
+            float(configured_value(self, 'data_timeout_sec')),
+            float(configured_value(self, 'max_tracking_measurement_age_sec')),
             self.acquisition_job_image_stamp_ns,
             self.plan_target_center,
-            float(self.get_parameter('acquisition_target_tolerance_m').value),
+            float(configured_value(self, 'acquisition_target_tolerance_m')),
         )
         if not rejection:
             self.command_target = None
@@ -2374,7 +2753,7 @@ class ScanViewpointExecutorNode(Node):
                 'measured target tracking locked; remaining acquisition looks cancelled')
             return
         if self.now() - self.state_started < float(
-                self.get_parameter('acquisition_tracking_lock_timeout_sec').value):
+                configured_value(self, 'acquisition_tracking_lock_timeout_sec')):
             return
         self.get_logger().warn(
             'GroundingDINO detection did not produce an acceptable measured lock: %s'
@@ -2385,11 +2764,23 @@ class ScanViewpointExecutorNode(Node):
             'post-settle semantic scene')
 
     def waiting_for_obstacle_scene_tick(self):
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        if telemetry_store is None:
+            obstacles = self.latest_obstacles
+            obstacles_at = self.updated.get('obstacles', -1e9)
+            now = self.now()
+        else:
+            snapshot = telemetry_store.snapshot()
+            observation = snapshot.perception.obstacles
+            obstacles = None if observation is None else observation.value
+            obstacles_at = (
+                -1e9 if observation is None else observation.received_at)
+            now = snapshot.captured_at
         status, reason = correlated_obstacle_scene_status(
-            self.latest_obstacles,
-            self.updated.get('obstacles', -1e9),
-            self.now(),
-            float(self.get_parameter('data_timeout_sec').value),
+            obstacles,
+            obstacles_at,
+            now,
+            float(configured_value(self, 'data_timeout_sec')),
             self.acquisition_job_image_stamp_ns,
         )
         if status == 'ready':
@@ -2401,7 +2792,7 @@ class ScanViewpointExecutorNode(Node):
                 'post-settle semantic scene rejected: ' + reason)
             return
         if self.now() - self.state_started > float(
-                self.get_parameter('acquisition_scene_timeout_sec').value):
+                configured_value(self, 'acquisition_scene_timeout_sec')):
             self.abort_motion(
                 'post-settle semantic scene did not become ready before timeout: '
                 + reason)
@@ -2433,6 +2824,7 @@ class ScanViewpointExecutorNode(Node):
             require_workflow=False,
             allow_untracked=True,
             allow_missing_obstacles=False,
+            shadow_mode=SafetyMode.ACQUISITION_MOTION,
         )
         if runtime:
             self.abort_motion(
@@ -2451,7 +2843,7 @@ class ScanViewpointExecutorNode(Node):
 
     def capturing_tick(self):
         if self.now() - self.state_started > float(
-                self.get_parameter('capture_timeout_sec').value):
+                configured_value(self, 'capture_timeout_sec')):
             self.abort_motion('capture service response timed out')
             return
         if self.capture_future is None or not self.capture_future.done():
@@ -2472,18 +2864,21 @@ class ScanViewpointExecutorNode(Node):
 
     def capturing_rgbd_tick(self):
         if self.now() - self.state_started > float(
-                self.get_parameter('capture_timeout_sec').value):
+                configured_value(self, 'capture_timeout_sec')):
             self.abort_motion('RGB-D capture service response timed out')
             return
-        action = rgbd_capture_handoff_action(
+        coordinator = getattr(
+            self, 'capture_coordinator',
+            CaptureCoordinator(MAX_RGBD_CAPTURE_READINESS_RETRIES))
+        capture_decision = coordinator.handoff(
             self.rgbd_capture_future is not None,
             self.now() - self.state_started,
-            self.get_parameter('capture_status_propagation_sec').value,
+            configured_value(self, 'capture_status_propagation_sec'),
         )
-        if action == 'publish_authorization':
+        if capture_decision.action is CaptureAction.PUBLISH_AUTHORIZATION:
             self.publish_status()
             return
-        if action == 'request_capture':
+        if capture_decision.action is CaptureAction.REQUEST_CAPTURE:
             # Republish immediately before dispatch as well.  The service is
             # called exactly once because rgbd_capture_future is assigned
             # synchronously here.
@@ -2501,17 +2896,17 @@ class ScanViewpointExecutorNode(Node):
             return
         if result is None or not result.success:
             message = result.message if result is not None else 'empty service response'
-            if (
-                    retryable_rgbd_capture_rejection(message)
-                    and self.rgbd_capture_attempts
-                    < MAX_RGBD_CAPTURE_READINESS_RETRIES):
+            failure = as_failure(message)
+            capture_decision = coordinator.classify_result(
+                False, failure, self.rgbd_capture_attempts)
+            if capture_decision.action is CaptureAction.RETRY_SAME_VIEW:
                 self.rgbd_capture_future = None
                 self.set_state(
                     'CAPTURING_RGBD',
                     'capture evidence is still catching up with the settled '
                     'frame; retrying the same viewpoint without moving')
                 return
-            if visual_capture_rejection(message):
+            if capture_decision.action is CaptureAction.REPLAN_VIEW:
                 self.record_rejected_view(message)
                 self.command_target = None
                 self.current_path = []
@@ -2537,12 +2932,18 @@ class ScanViewpointExecutorNode(Node):
 
     def wait_capture_tick(self):
         if self.now() - self.state_started > float(
-                self.get_parameter('capture_timeout_sec').value):
+                configured_value(self, 'capture_timeout_sec')):
             self.abort_motion('accepted capture did not return workflow to SCAN_READY')
             return
         if not self.workflow_ready():
             return
-        accepted = int(self.latest_workflow.get('accepted_views', 0))
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        if telemetry_store is None:
+            workflow = self.latest_workflow
+        else:
+            observation = telemetry_store.snapshot().mission.workflow
+            workflow = None if observation is None else observation.value
+        accepted = int(workflow.get('accepted_views', 0))
         if accepted <= self.capture_accepted_before:
             return
         if not self.record_accepted_view(accepted):
@@ -2626,7 +3027,7 @@ class ScanViewpointExecutorNode(Node):
         self.current_view += 1
         if self.current_view >= self.plan_capture_count:
             required = (
-                int(self.get_parameter('max_execution_viewpoints').value)
+                int(configured_value(self, 'max_execution_viewpoints'))
                 if hasattr(self, 'get_parameter')
                 else int(self.plan_capture_count))
             accepted_total = (
@@ -2715,7 +3116,7 @@ class ScanViewpointExecutorNode(Node):
 
     def return_home_settling_tick(self):
         if self.now() - self.state_started > float(
-                self.get_parameter('home_settle_timeout_sec').value):
+                configured_value(self, 'home_settle_timeout_sec')):
             ScanViewpointExecutorNode.handle_return_home_failure(
                 self,
                 'approved home position did not settle before timeout')
@@ -2727,7 +3128,7 @@ class ScanViewpointExecutorNode(Node):
             self.settle_started = self.now()
             return
         if self.now() - self.settle_started < float(
-                self.get_parameter('home_settle_duration_sec').value):
+                configured_value(self, 'home_settle_duration_sec')):
             return
         self.complete_return_home()
 
@@ -2812,7 +3213,7 @@ class ScanViewpointExecutorNode(Node):
     def finish_workflow_tick(self):
         self.publish_hold()
         if self.now() - self.state_started > float(
-                self.get_parameter('finish_scan_timeout_sec').value):
+                configured_value(self, 'finish_scan_timeout_sec')):
             if self.current_view >= self.plan_capture_count:
                 self.finish_capture_session(
                     'workflow finish service response timed out')
@@ -2876,7 +3277,7 @@ class ScanViewpointExecutorNode(Node):
         if len(path) != len(path_times):
             return ['waypoint positions and order stamps differ in length']
         start_tolerance = float(
-            self.get_parameter('plan_start_tolerance_rad').value)
+            configured_value(self, 'plan_start_tolerance_rad'))
         if float(np.max(np.abs(path[0] - start))) > start_tolerance:
             return ['current state changed beyond the approved plan-start tolerance']
         # A cumulative joint-distance gate rejects valid collision-aware
@@ -2923,16 +3324,23 @@ class ScanViewpointExecutorNode(Node):
             if self.current_view < len(self.plan_bootstrap_recovery_end_points)
             else -1)
         if direct_home:
+            configured_stages = getattr(
+                self, 'plan_configured_home_stages', [''])
+            configured_stage = str(configured_stages[0]).strip().upper()
+            startup_bridge_path = bool(
+                configured_stage == 'STARTUP_WRIST'
+                and len(path) == 3
+                and np.max(np.abs(path[1][:5] - path[0][:5])) <= 1e-9
+                and abs(float(path[1][5]) - (3.2 - 2.0 * math.pi)) <= 1e-9)
             if not (
                     self.is_return_home()
                     and self.plan_returns_home
                     and self.plan_capture_count == 0
                     and self.current_view == 0
-                    and len(path) == 2
-                    and getattr(
-                        self, 'plan_configured_home_stages', [''])[0] in (
-                            'CONFIGURED_HOME', 'STARTUP_WRIST', 'ROUGH_HOME',
-                            'STORAGE_WRIST')):
+                    and (len(path) == 2 or startup_bridge_path)
+                    and configured_stage in (
+                        'CONFIGURED_HOME', 'STARTUP_WRIST', 'PRE_HOME',
+                        'ROUGH_HOME', 'STORAGE_WRIST')):
                 return [
                     'configured-home collision bypass escaped its approved scope']
             # The configured resting fold is intentionally not representable
@@ -2961,9 +3369,9 @@ class ScanViewpointExecutorNode(Node):
                 self.joint_limits,
                 obstacle_boxes=obstacle_boxes,
                 joint_margin_rad=0.0,
-                floor_z_m=float(self.get_parameter('floor_z_m').value),
-                link_radius_m=float(self.get_parameter('link_radius_m').value),
-                self_clearance_m=float(self.get_parameter('self_clearance_m').value),
+                floor_z_m=float(configured_value(self, 'floor_z_m')),
+                link_radius_m=float(configured_value(self, 'link_radius_m')),
+                self_clearance_m=float(configured_value(self, 'self_clearance_m')),
                 recovery_joint_number=(
                     self.plan_bootstrap_recovery_joint_sets[self.current_view]
                     if self.current_view
@@ -2984,11 +3392,11 @@ class ScanViewpointExecutorNode(Node):
                     self.joint_limits,
                     obstacle_boxes=obstacle_boxes,
                     joint_margin_rad=0.0,
-                    floor_z_m=float(self.get_parameter('floor_z_m').value),
+                    floor_z_m=float(configured_value(self, 'floor_z_m')),
                     link_radius_m=float(
-                        self.get_parameter('link_radius_m').value),
+                        configured_value(self, 'link_radius_m')),
                     self_clearance_m=float(
-                        self.get_parameter('self_clearance_m').value),
+                        configured_value(self, 'self_clearance_m')),
                     recovery_joint_number=(
                         getattr(
                             self, 'plan_powered_start_recovery_joint_sets', []
@@ -3024,16 +3432,37 @@ class ScanViewpointExecutorNode(Node):
                 self.kinematics,
                 self.validation_path(path),
                 self.plan_target_center,
-                self.get_parameter('scan_target_max_boresight_deg').value,
-                self.get_parameter('scan_target_min_distance_m').value,
+                configured_value(self, 'scan_target_max_boresight_deg'),
+                configured_value(self, 'scan_target_min_distance_m'),
             )
             if visibility_reasons:
                 return visibility_reasons
+        execution_mode = (
+            getattr(self, 'plan_segment_execution_modes', [])[self.current_view]
+            if self.current_view < len(getattr(
+                self, 'plan_segment_execution_modes', []))
+            else 'TESSERACT_STREAM')
+        command_path, command_velocities, command_accelerations, \
+            command_times, streaming = sdk_command_path(
+                path,
+                self.plan_path_velocities[self.current_view],
+                self.plan_path_accelerations[self.current_view],
+                path_times, execution_mode, direct_home)
         self.current_path = command_path
         self.current_path_velocities = command_velocities
         self.current_path_accelerations = command_accelerations
         self.current_path_times = command_times
-        self.current_path_streaming = not direct_home
+        self.current_path_streaming = streaming
+        try:
+            runner = getattr(self, 'trajectory_runner', TrajectoryRunner())
+            self.current_trajectory = runner.begin(
+                getattr(self, 'plan_id', 'compatibility-plan'),
+                command_path,
+                command_times,
+                self.current_path_streaming,
+            )
+        except ValueError as error:
+            return [str(error)]
         self.path_index = 0
         self.command_target = None
         self.command_sent_at = 0.0
@@ -3060,9 +3489,9 @@ class ScanViewpointExecutorNode(Node):
             self.joint_limits,
             obstacle_boxes=obstacle_boxes,
             joint_margin_rad=0.0,
-            floor_z_m=float(self.get_parameter('floor_z_m').value),
-            link_radius_m=float(self.get_parameter('link_radius_m').value),
-            self_clearance_m=float(self.get_parameter('self_clearance_m').value),
+            floor_z_m=float(configured_value(self, 'floor_z_m')),
+            link_radius_m=float(configured_value(self, 'link_radius_m')),
+            self_clearance_m=float(configured_value(self, 'self_clearance_m')),
         )
 
     def validate_attached_tool_external_path(self, path, obstacle_boxes):
@@ -3070,13 +3499,11 @@ class ScanViewpointExecutorNode(Node):
         return validate_attached_box_external_clearance_path(
             self.kinematics,
             self.validation_path(path),
-            self.get_parameter(
-                'camera_holder_envelope_center_link6_m').value,
-            self.get_parameter('camera_holder_envelope_size_m').value,
+            configured_value(self, 'camera_holder_envelope_center_link6_m'),
+            configured_value(self, 'camera_holder_envelope_size_m'),
             obstacle_boxes=obstacle_boxes,
-            floor_z_m=float(self.get_parameter('floor_z_m').value),
-            clearance_m=float(self.get_parameter(
-                'camera_holder_external_clearance_m').value),
+            floor_z_m=float(configured_value(self, 'floor_z_m')),
+            clearance_m=float(configured_value(self, 'camera_holder_external_clearance_m')),
             label='camera holder/L515',
         )
 
@@ -3085,12 +3512,88 @@ class ScanViewpointExecutorNode(Node):
         if not path:
             return []
         maximum_step = float(
-            self.get_parameter('trajectory_joint_step_rad').value)
+            configured_value(self, 'trajectory_joint_step_rad'))
         dense = [np.asarray(path[0], dtype=float).copy()]
         for endpoint in path[1:]:
             dense.extend(interpolate_joint_path(
                 dense[-1], endpoint, maximum_step))
         return dense
+
+    def inferred_shadow_safety_mode(
+            self, require_settled, require_workflow,
+            allow_missing_obstacles, settle_at_current_hold):
+        """Name an existing legacy boolean combination for shadow logging."""
+        if self.returning_home():
+            return SafetyMode.RETURN_HOME
+        if self.is_acquisition():
+            if require_settled and allow_missing_obstacles:
+                return SafetyMode.ACQUISITION_APPROVAL
+            return SafetyMode.ACQUISITION_MOTION
+        if require_settled and require_workflow:
+            return SafetyMode.SCAN_APPROVAL
+        if str(getattr(self, 'state', '')) in (
+                'SETTLING', 'CAPTURING', 'CAPTURING_RGBD', 'WAIT_CAPTURE'):
+            return SafetyMode.SCAN_CAPTURE
+        if settle_at_current_hold:
+            # A recovery hold preserves the interrupted operating policy; its
+            # current-position settle proof is carried as explicit evidence.
+            return SafetyMode.SCAN_MOTION
+        return SafetyMode.SCAN_MOTION
+
+    def record_runtime_safety_shadow(
+            self, reasons, snapshot, mode, require_workflow,
+            allow_missing_obstacles, allow_stale_obstacles,
+            settled_result=None):
+        """Observe one legacy runtime decision without influencing its result."""
+        evaluator = getattr(self, 'safety_evaluator', None)
+        comparison_logger = getattr(
+            self, 'safety_comparison_logger', None)
+        if evaluator is None or comparison_logger is None or snapshot is None:
+            return reasons
+        limits_observation = snapshot.arm.motion_limits
+        limits = (
+            None if limits_observation is None
+            else limits_observation.value)
+        compatible = True
+        if limits is not None and bool(getattr(limits, 'valid', False)):
+            compatible = not bool(self.runtime_motion_limit_rejection(limits))
+        workflow_observation = snapshot.mission.workflow
+        workflow = (
+            None if workflow_observation is None
+            else workflow_observation.value)
+        workflow_ready = bool(
+            isinstance(workflow, dict)
+            and str(workflow.get('state', '')) == 'SCAN_READY')
+        mode_value = mode if isinstance(mode, SafetyMode) else SafetyMode(mode)
+        decision = evaluator.evaluate(
+            mode_value,
+            snapshot,
+            SafetyInputs(
+                collision_model_qualified=bool(getattr(
+                    self, 'plan_collision_model_qualified', False)),
+                motion_limits_compatible=compatible,
+                joints_settled=settled_result,
+                approved_obstacle_snapshot=bool(allow_stale_obstacles),
+                static_obstacle_scene_authorized=bool(
+                    allow_missing_obstacles),
+                auto_capture=self.param_bool('auto_capture'),
+                workflow_required=bool(require_workflow),
+                workflow_ready=workflow_ready,
+                plan_execution_speed_percent=float(getattr(
+                    self, 'plan_execution_speed_percent', 0.0)),
+                configured_home_direct=self.is_configured_home_direct(),
+                motion_control_authorized=self.real_motion_enabled(),
+                joint_limits=tuple(
+                    (float(bounds[0]), float(bounds[1]))
+                    for bounds in self.joint_limits),
+            ),
+        )
+        comparison = comparison_logger.record(
+            'executor.runtime_reasons', reasons, decision)
+        if not comparison.agreement:
+            self.get_logger().warn(
+                'SAFETY_SHADOW_DISAGREEMENT ' + comparison.to_json())
+        return reasons
 
     def runtime_reasons(
             self, require_settled, require_workflow, allow_untracked=False,
@@ -3100,8 +3603,32 @@ class ScanViewpointExecutorNode(Node):
             enforce_tracking_speed_allowance=True,
             enforce_target_status=True,
             enforce_tracking_motion_state=True,
-            settle_at_current_hold=False):
+            settle_at_current_hold=False, telemetry_snapshot=None,
+            shadow_mode=None):
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        snapshot = (
+            None if telemetry_store is None else
+            (telemetry_store.snapshot()
+             if telemetry_snapshot is None else telemetry_snapshot))
+
+        def snapshot_fresh(key, timeout=None):
+            if snapshot is None:
+                return self.fresh(key, timeout)
+            maximum = float(configured_value(self, 'data_timeout_sec')) \
+                if timeout is None else float(timeout)
+            observation = snapshot_observation(snapshot, key)
+            return bool(
+                observation is not None
+                and not observation.is_stale_at(
+                    snapshot.captured_at, maximum))
+
         reasons = []
+        settled_result = None
+        mode = shadow_mode or (
+            SafetyMode.SCAN_MOTION if snapshot is None else
+            ScanViewpointExecutorNode.inferred_shadow_safety_mode(
+                self, require_settled, require_workflow,
+                allow_missing_obstacles, settle_at_current_hold))
         required_keys = ['joints', 'arm_status']
         if not allow_missing_camera:
             required_keys.append('camera_clock')
@@ -3110,15 +3637,21 @@ class ScanViewpointExecutorNode(Node):
         if not allow_untracked:
             required_keys.extend(['tracking', 'target_status'])
         for key in required_keys:
-            if not self.fresh(key):
+            if not snapshot_fresh(key):
                 reasons.append('%s data missing or stale' % key)
-        if not self.fresh(
+        if not snapshot_fresh(
                 'motion_limits',
-                float(self.get_parameter('motion_limits_timeout_sec').value)):
+                float(configured_value(self, 'motion_limits_timeout_sec'))):
             reasons.append('motion_limits data missing or stale')
         if reasons:
-            return reasons
-        limits = self.latest_motion_limits
+            return ScanViewpointExecutorNode.record_runtime_safety_shadow(
+                self,
+                reasons, snapshot, mode, require_workflow,
+                allow_missing_obstacles, allow_stale_obstacles,
+                settled_result)
+        limits = (
+            self.latest_motion_limits if snapshot is None else
+            snapshot.arm.motion_limits.value)
         if limits is None or not limits.valid:
             reasons.append(
                 'controller motion limits changed after trajectory planning')
@@ -3137,10 +3670,16 @@ class ScanViewpointExecutorNode(Node):
                     'approved waypoint path remains within the fresh limits'
                     % (previous_hash, self.runtime_motion_limits_sha256))
         try:
-            joints = self.current_joints()
+            joints = (
+                self.current_joints() if snapshot is None else
+                ScanViewpointExecutorNode.current_joints(self, snapshot))
         except ValueError as error:
             reasons.append(str(error))
-            return reasons
+            return ScanViewpointExecutorNode.record_runtime_safety_shadow(
+                self,
+                reasons, snapshot, mode, require_workflow,
+                allow_missing_obstacles, allow_stale_obstacles,
+                settled_result)
         try:
             current_view = int(getattr(self, 'current_view', -1))
             recovery_end_points = getattr(
@@ -3170,20 +3709,47 @@ class ScanViewpointExecutorNode(Node):
                     reasons.extend(configured_home_feedback_limit_reasons(
                         joints,
                         self.joint_limits,
-                        float(self.get_parameter(
-                            'configured_home_feedback_limit_tolerance_rad').value),
+                        float(configured_value(
+                            self,
+                            'configured_home_feedback_limit_tolerance_rad')),
                     ))
                 else:
                     reasons.extend(feedback_joint_limit_reasons(
                         joints,
                         self.joint_limits,
-                        float(self.get_parameter(
-                            'joint_feedback_limit_tolerance_rad').value),
+                        float(configured_value(self, 'joint_feedback_limit_tolerance_rad')),
                     ))
         except (IndexError, ValueError) as error:
             reasons.append(str(error))
-        reasons.extend(self.arm_status_reasons())
-        camera_health = self.latest_camera_timestamp_health
+        if snapshot is None:
+            reasons.extend(self.arm_status_reasons())
+            camera_health = self.latest_camera_timestamp_health
+            obstacles = self.latest_obstacles
+            health = self.latest_tracking_health
+            target_status = self.latest_target_status
+        else:
+            status_observation = snapshot.arm.status
+            reasons.extend(ScanViewpointExecutorNode.arm_status_reasons(
+                self,
+                None if status_observation is None
+                else status_observation.value,
+                use_provided=True))
+            camera_observation = snapshot.perception.camera
+            camera_health = (
+                None if camera_observation is None
+                else camera_observation.value)
+            obstacle_observation = snapshot.perception.obstacles
+            obstacles = (
+                None if obstacle_observation is None
+                else obstacle_observation.value)
+            tracking_observation = snapshot.perception.tracking
+            health = (
+                None if tracking_observation is None
+                else tracking_observation.value)
+            status_observation = snapshot.perception.target_status
+            target_status = (
+                'UNKNOWN' if status_observation is None
+                else status_observation.value)
         if not allow_missing_camera and (
                 camera_health is None or not camera_health.healthy):
             state = camera_health.state if camera_health is not None else 'MISSING'
@@ -3191,16 +3757,17 @@ class ScanViewpointExecutorNode(Node):
             reasons.append('camera timestamp %s: %s' % (state, detail))
         if not allow_missing_obstacles:
             reasons.extend(obstacle_scene_runtime_reasons(
-                self.latest_obstacles))
+                obstacles))
         if allow_untracked:
-            if require_settled and not self.joints_settled(
-                    settle_at_current=settle_at_current_hold):
+            if require_settled:
+                settled_result = self.joints_settled(
+                    settle_at_current=settle_at_current_hold)
+            if require_settled and not settled_result:
                 reasons.append(
                     'joint feedback is not settled at the current-position hold'
                     if settle_at_current_hold else
                     'joint feedback is not settled for acquisition')
         else:
-            health = self.latest_tracking_health
             if enforce_tracking_motion_state:
                 if require_settled:
                     if health.lifecycle_state != 'TRACKING' or not health.camera_settled:
@@ -3210,14 +3777,14 @@ class ScanViewpointExecutorNode(Node):
                 elif health.lifecycle_state not in ('TRACKING', 'DEGRADED'):
                     reasons.append('tracking lifecycle=%s' % health.lifecycle_state)
                 if float(health.measurement_age_sec) > float(
-                        self.get_parameter('max_tracking_measurement_age_sec').value):
+                        configured_value(self, 'max_tracking_measurement_age_sec')):
                     reasons.append('tracking measurement is stale')
                 if float(health.recommended_speed_scale) < float(
-                        self.get_parameter('min_tracking_speed_scale').value):
+                        configured_value(self, 'min_tracking_speed_scale')):
                     reasons.append(
                         'tracking speed scale is below the motion threshold')
             current_allowed_speed = commanded_speed_percent(
-                float(self.get_parameter('speed_percent').value),
+                float(configured_value(self, 'speed_percent')),
                 self.plan_kind,
                 float(health.recommended_speed_scale),
             )
@@ -3234,11 +3801,19 @@ class ScanViewpointExecutorNode(Node):
             if (
                     enforce_tracking_motion_state
                     and enforce_target_status
-                    and self.latest_target_status not in ('TRACKING', 'LOCKED')):
-                reasons.append('target_status=%s' % self.latest_target_status)
-        if require_workflow and self.param_bool('auto_capture') and not self.workflow_ready():
-            reasons.append('supervised workflow is not SCAN_READY')
-        return reasons
+                    and target_status not in ('TRACKING', 'LOCKED')):
+                reasons.append('target_status=%s' % target_status)
+        if require_workflow and self.param_bool('auto_capture'):
+            workflow_ready = (
+                self.workflow_ready() if snapshot is None else
+                ScanViewpointExecutorNode.workflow_ready(self, snapshot))
+            if not workflow_ready:
+                reasons.append('supervised workflow is not SCAN_READY')
+        return ScanViewpointExecutorNode.record_runtime_safety_shadow(
+            self,
+            reasons, snapshot, mode, require_workflow,
+            allow_missing_obstacles, allow_stale_obstacles,
+            settled_result)
 
     def runtime_motion_limit_rejection(self, limits):
         """Accept a fresh valid limit generation for position-only SDK MoveJ.
@@ -3264,8 +3839,14 @@ class ScanViewpointExecutorNode(Node):
             return 'fresh controller motion limits are malformed'
         return ''
 
-    def arm_status_reasons(self):
-        status = self.latest_arm_status
+    def arm_status_reasons(self, status=None, use_provided=False):
+        if not use_provided:
+            telemetry_store = getattr(self, 'telemetry_store', None)
+            if telemetry_store is None:
+                status = self.latest_arm_status
+            else:
+                observation = telemetry_store.snapshot().arm.status
+                status = None if observation is None else observation.value
         if status is None:
             return ['arm status is missing']
         reasons = []
@@ -3290,16 +3871,36 @@ class ScanViewpointExecutorNode(Node):
         return reasons
 
     def settled_and_tracking(self):
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        if telemetry_store is None:
+            camera_health = self.latest_camera_timestamp_health
+            health = self.latest_tracking_health
+            target_status = self.latest_target_status
+        else:
+            snapshot = telemetry_store.snapshot()
+            camera_observation = snapshot.perception.camera
+            tracking_observation = snapshot.perception.tracking
+            status_observation = snapshot.perception.target_status
+            camera_health = (
+                None if camera_observation is None
+                else camera_observation.value)
+            health = (
+                None if tracking_observation is None
+                else tracking_observation.value)
+            target_status = (
+                'UNKNOWN' if status_observation is None
+                else status_observation.value)
         if (
-                self.latest_camera_timestamp_health is None
-                or not self.latest_camera_timestamp_health.healthy):
+                camera_health is None or not camera_health.healthy):
             return False
-        health = self.latest_tracking_health
         if health is None or health.lifecycle_state != 'TRACKING' or not health.camera_settled:
             return False
-        if health.prediction_only or self.latest_target_status not in ('TRACKING', 'LOCKED'):
+        if health.prediction_only or target_status not in ('TRACKING', 'LOCKED'):
             return False
-        return self.joints_settled()
+        return (
+            self.joints_settled() if telemetry_store is None else
+            ScanViewpointExecutorNode.joints_settled(
+                self, snapshot=snapshot))
 
     def capture_pose_settled(self):
         """Gate RGB-D on a stationary arm and healthy camera clock.
@@ -3309,18 +3910,46 @@ class ScanViewpointExecutorNode(Node):
         synchronized RGB-D record can be saved, so they must not discard the
         remaining 13-view plan.
         """
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        if telemetry_store is None:
+            camera_health = self.latest_camera_timestamp_health
+            snapshot = None
+        else:
+            snapshot = telemetry_store.snapshot()
+            observation = snapshot.perception.camera
+            camera_health = None if observation is None else observation.value
         return bool(
-            self.latest_camera_timestamp_health is not None
-            and self.latest_camera_timestamp_health.healthy
-            and self.joints_settled()
-        )
+            camera_health is not None
+            and camera_health.healthy
+            and (
+                self.joints_settled() if telemetry_store is None else
+                ScanViewpointExecutorNode.joints_settled(
+                    self, snapshot=snapshot)))
 
-    def joints_settled(self, settle_at_current=False):
-        if self.latest_joint_state is None or not self.fresh('joints', 1.0):
+    def joints_settled(self, settle_at_current=False, snapshot=None):
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        if telemetry_store is None:
+            joints = self.latest_joint_state
+            joints_fresh = self.fresh('joints', 1.0)
+            updated_at = float(self.updated.get('joints', -1e9))
+            snapshot = None
+        else:
+            snapshot = (
+                telemetry_store.snapshot() if snapshot is None else snapshot)
+            observation = snapshot.arm.joints
+            joints = None if observation is None else observation.value
+            joints_fresh = bool(
+                observation is not None
+                and not observation.is_stale_at(snapshot.captured_at, 1.0))
+            updated_at = (
+                -1e9 if observation is None else observation.received_at)
+        if joints is None or not joints_fresh:
             self.settle_position_anchor = None
             self.settle_last_sample_ok = False
             return False
-        current = self.current_joints()
+        current = (
+            self.current_joints() if snapshot is None else
+            ScanViewpointExecutorNode.current_joints(self, snapshot))
         # Proposal approval has no active endpoint yet.  In that phase the
         # measured pose itself is the only valid stationary-hold target.  Once
         # execution publishes an endpoint, continue to bind settling to that
@@ -3328,15 +3957,14 @@ class ScanViewpointExecutorNode(Node):
         target = self.command_target
         if settle_at_current or target is None:
             target = current
-        updated_at = float(self.updated.get('joints', -1e9))
         if updated_at <= self.settle_last_joint_update:
             return self.settle_last_sample_ok
         settled, anchor = target_position_window_sample_settled(
             current,
             target,
             self.settle_position_anchor,
-            float(self.get_parameter('joint_goal_tolerance_rad').value),
-            float(self.get_parameter('endpoint_position_settled_rad').value),
+            float(configured_value(self, 'joint_goal_tolerance_rad')),
+            float(configured_value(self, 'endpoint_position_settled_rad')),
         )
         self.settle_position_anchor = anchor
         self.settle_last_joint_update = updated_at
@@ -3353,40 +3981,73 @@ class ScanViewpointExecutorNode(Node):
         within the approved home tolerance and successive samples must move by
         no more than a small bounded delta.
         """
-        feedback_timeout = float(self.get_parameter(
-            'home_joint_feedback_timeout_sec').value)
+        feedback_timeout = float(configured_value(self, 'home_joint_feedback_timeout_sec'))
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        if telemetry_store is None:
+            joints = self.latest_joint_state
+            joints_fresh = self.fresh('joints', feedback_timeout)
+            updated_at = float(self.updated.get('joints', -1e9))
+            snapshot = None
+        else:
+            snapshot = telemetry_store.snapshot()
+            observation = snapshot.arm.joints
+            joints = None if observation is None else observation.value
+            joints_fresh = bool(
+                observation is not None
+                and not observation.is_stale_at(
+                    snapshot.captured_at, feedback_timeout))
+            updated_at = (
+                -1e9 if observation is None else observation.received_at)
         if (
-                self.latest_joint_state is None
+                joints is None
                 or self.command_target is None
-                or not self.fresh('joints', feedback_timeout)):
+                or not joints_fresh):
             self.home_settle_previous_joints = None
             self.home_settle_last_sample_ok = False
             return False
-        updated_at = float(self.updated.get('joints', -1e9))
         if updated_at <= self.home_settle_last_joint_update:
             return self.home_settle_last_sample_ok
-        current = np.asarray(self.current_joints(), dtype=float)
+        current = np.asarray(
+            self.current_joints() if snapshot is None else
+            ScanViewpointExecutorNode.current_joints(self, snapshot),
+            dtype=float)
         settled = home_position_sample_settled(
             current,
             self.command_target,
             self.home_settle_previous_joints,
-            float(self.get_parameter('home_goal_tolerance_rad').value),
-            float(self.get_parameter('home_motion_tolerance_rad').value),
+            float(configured_value(self, 'home_goal_tolerance_rad')),
+            float(configured_value(self, 'home_motion_tolerance_rad')),
         )
         self.home_settle_previous_joints = current
         self.home_settle_last_joint_update = updated_at
         self.home_settle_last_sample_ok = bool(settled)
         return bool(settled)
 
-    def workflow_ready(self):
-        return isinstance(self.latest_workflow, dict) and \
-            str(self.latest_workflow.get('state', '')) == 'SCAN_READY'
+    def workflow_ready(self, snapshot=None):
+        if snapshot is None:
+            telemetry_store = getattr(self, 'telemetry_store', None)
+            if telemetry_store is None:
+                workflow = self.latest_workflow
+            else:
+                observation = telemetry_store.snapshot().mission.workflow
+                workflow = None if observation is None else observation.value
+        else:
+            observation = snapshot.mission.workflow
+            workflow = None if observation is None else observation.value
+        return isinstance(workflow, dict) and \
+            str(workflow.get('state', '')) == 'SCAN_READY'
 
     def obstacle_boxes(self):
-        if self.latest_obstacles is None:
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        if telemetry_store is None:
+            obstacles = self.latest_obstacles
+        else:
+            observation = telemetry_store.snapshot().perception.obstacles
+            obstacles = None if observation is None else observation.value
+        if obstacles is None:
             return []
         boxes = []
-        for item in self.latest_obstacles.instances:
+        for item in obstacles.instances:
             if not item.valid:
                 continue
             boxes.append(CollisionBox(
@@ -3400,12 +4061,24 @@ class ScanViewpointExecutorNode(Node):
             ))
         return boxes
 
-    def publish_joint_command(self, target):
+    def publish_joint_command(self, target, explicit_hold=False):
         if self.command_pub is None:
             raise RuntimeError('real-motion publisher does not exist in proposal-only mode')
         msg = JointState()
         msg.header.stamp = self.get_clock().now().to_msg()
-        msg.header.frame_id = 'piper_scan_executor_sdk_movej'
+        stage = ''
+        configured_home_check = getattr(
+            self, 'is_configured_home_direct', None)
+        if callable(configured_home_check) and configured_home_check():
+            stages = getattr(self, 'plan_configured_home_stages', [])
+            if 0 <= self.current_view < len(stages):
+                stage = str(stages[self.current_view]).strip().upper()
+        if bool(explicit_hold):
+            msg.header.frame_id = 'piper_scan_executor_hold'
+        elif stage == 'STARTUP_WRIST':
+            msg.header.frame_id = 'piper_scan_executor_startup_wrist'
+        else:
+            msg.header.frame_id = 'piper_scan_executor_sdk_movej'
         msg.name = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6', 'joint7']
         # Six positions deliberately mean "arm only" to the PiPER driver.
         # velocity[6] retains the driver's established aggregate-speed field
@@ -3415,20 +4088,71 @@ class ScanViewpointExecutorNode(Node):
         msg.velocity = [0.0] * 6 + [speed]
         self.command_pub.publish(msg)
 
+    def record_hold_safety_shadow(self, snapshot, held, legacy_reason=''):
+        """Compare the existing hold outcome after it has remained authoritative."""
+        evaluator = getattr(self, 'safety_evaluator', None)
+        comparison_logger = getattr(
+            self, 'safety_comparison_logger', None)
+        if evaluator is None or comparison_logger is None or snapshot is None:
+            return bool(held)
+        decision = evaluator.evaluate(
+            SafetyMode.HOLD_CURRENT,
+            snapshot,
+            SafetyInputs(
+                motion_control_authorized=self.real_motion_enabled(),
+            ),
+        )
+        legacy_reasons = () if held else (str(legacy_reason),)
+        comparison = comparison_logger.record(
+            'executor.publish_hold', legacy_reasons, decision)
+        if not comparison.agreement:
+            self.get_logger().warn(
+                'SAFETY_SHADOW_DISAGREEMENT ' + comparison.to_json())
+        return bool(held)
+
     def publish_hold(self):
-        if self.latest_joint_state is None or not self.real_motion_enabled():
-            return False
-        freshness_check = getattr(self, 'fresh', None)
-        if callable(freshness_check) and not freshness_check(
-                'joints', float(self.get_parameter(
-                    'home_joint_feedback_timeout_sec').value)):
-            return False
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        if telemetry_store is None:
+            joints = self.latest_joint_state
+            freshness_check = getattr(self, 'fresh', None)
+            joints_fresh = bool(
+                not callable(freshness_check)
+                or freshness_check(
+                    'joints', float(configured_value(self, 'home_joint_feedback_timeout_sec'))))
+            snapshot = None
+        else:
+            snapshot = telemetry_store.snapshot()
+            observation = snapshot.arm.joints
+            joints = None if observation is None else observation.value
+            joints_fresh = bool(
+                observation is not None
+                and not observation.is_stale_at(
+                    snapshot.captured_at,
+                    float(configured_value(self, 'home_joint_feedback_timeout_sec'))))
+        if joints is None or not self.real_motion_enabled():
+            reason = (
+                'joint feedback is missing'
+                if joints is None else
+                'motion-control authority is unavailable')
+            return ScanViewpointExecutorNode.record_hold_safety_shadow(
+                self, snapshot, False, reason)
+        if not joints_fresh:
+            return ScanViewpointExecutorNode.record_hold_safety_shadow(
+                self, snapshot, False,
+                'joint feedback is missing or stale')
         try:
             self.publish_joint_command(
-                energized_hold_target(self.current_joints()))
+                energized_hold_target(
+                    self.current_joints() if snapshot is None else
+                    ScanViewpointExecutorNode.current_joints(
+                        self, snapshot)),
+                explicit_hold=True)
         except ValueError:
-            return False
-        return True
+            return ScanViewpointExecutorNode.record_hold_safety_shadow(
+                self, snapshot, False,
+                'joint feedback has fewer than six finite arm joints')
+        return ScanViewpointExecutorNode.record_hold_safety_shadow(
+            self, snapshot, True)
 
     def abort_motion(self, reason):
         blocker = abort_return_home_blocker(reason)
@@ -3464,11 +4188,12 @@ class ScanViewpointExecutorNode(Node):
             allow_untracked=True,
             allow_missing_obstacles=use_bootstrap_scene,
             allow_stale_obstacles=use_bootstrap_scene,
+            shadow_mode=SafetyMode.RETURN_HOME,
         )
         if runtime:
             return False, 'fresh return-home safety gate failed: ' + '; '.join(runtime)
         tolerance = float(
-            self.get_parameter('plan_start_tolerance_rad').value)
+            configured_value(self, 'plan_start_tolerance_rad'))
         at_latest_endpoint = float(np.max(np.abs(
             current - self.retrace_joint_targets[-1]))) <= tolerance
         # At a settled endpoint, omit that same endpoint.  After cancellation
@@ -3539,6 +4264,7 @@ class ScanViewpointExecutorNode(Node):
         self.current_path_accelerations = []
         self.current_path_times = []
         self.current_path_streaming = False
+        self.current_trajectory = None
         self.motion_started_at = None
         self.waypoint_started_at = None
         self.waypoint_last_progress_at = None
@@ -3622,6 +4348,7 @@ class ScanViewpointExecutorNode(Node):
         self.plan_startup_home_static = []
         self.plan_configured_home_direct = []
         self.plan_configured_home_stages = []
+        self.plan_segment_execution_modes = []
         self.plan_viewpoints = []
         self.plan_candidate_count = 0
         self.plan_capture_count = 0
@@ -3647,6 +4374,7 @@ class ScanViewpointExecutorNode(Node):
         self.current_path_accelerations = []
         self.current_path_times = []
         self.current_path_streaming = False
+        self.current_trajectory = None
         self.path_index = 0
         self.command_target = None
         self.command_sent_at = 0.0
@@ -3692,7 +4420,7 @@ class ScanViewpointExecutorNode(Node):
         msg.execution_speed_percent = float(
             self.plan_execution_speed_percent)
         msg.command_rate_hz = float(
-            self.get_parameter('trajectory_command_rate_hz').value)
+            configured_value(self, 'trajectory_command_rate_hz'))
         msg.timing_policy = TIMING_POLICY_VERSION
         msg.valid = bool(valid)
         msg.dry_run = True
@@ -3742,9 +4470,16 @@ class ScanViewpointExecutorNode(Node):
             if self.plan_capture_count else 0)
         msg.total_views = self.plan_capture_count
         msg.commanded_speed_percent = self.execution_speed_percent() if active else 0.0
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        if telemetry_store is None:
+            tracking_health = self.latest_tracking_health
+        else:
+            observation = telemetry_store.snapshot().perception.tracking
+            tracking_health = (
+                None if observation is None else observation.value)
         msg.tracking_speed_scale = float(
-            self.latest_tracking_health.recommended_speed_scale
-            if self.latest_tracking_health is not None else 0.0)
+            tracking_health.recommended_speed_scale
+            if tracking_health is not None else 0.0)
         msg.max_joint_error_rad = float(
             self.current_waypoint_error
             if self.command_target is not None else 0.0)
@@ -3762,17 +4497,27 @@ class ScanViewpointExecutorNode(Node):
             'session_id': self.scan_session_id,
             'accepted_views': len(self.scan_history),
             'max_views': int(
-                self.get_parameter('max_execution_viewpoints').value),
+                configured_value(self, 'max_execution_viewpoints')),
             'entries': list(self.scan_history),
             'rejected_entries': list(self.scan_rejections),
             'coverage_target_center': coverage_target_center,
         }, sort_keys=True)
         self.scan_history_pub.publish(msg)
 
-    def current_joints(self):
-        if self.latest_joint_state is None or len(self.latest_joint_state.position) < 6:
+    def current_joints(self, snapshot=None):
+        if snapshot is None:
+            telemetry_store = getattr(self, 'telemetry_store', None)
+            if telemetry_store is None:
+                joints = self.latest_joint_state
+            else:
+                observation = telemetry_store.snapshot().arm.joints
+                joints = None if observation is None else observation.value
+        else:
+            observation = snapshot.arm.joints
+            joints = None if observation is None else observation.value
+        if joints is None or len(joints.position) < 6:
             raise ValueError('joint feedback has fewer than six arm joints')
-        values = np.asarray(self.latest_joint_state.position[:6], dtype=float)
+        values = np.asarray(joints.position[:6], dtype=float)
         if not np.all(np.isfinite(values)):
             raise ValueError('joint feedback contains non-finite values')
         return values
@@ -3800,16 +4545,23 @@ class ScanViewpointExecutorNode(Node):
         return result if np.all(np.isfinite(result)) else None
 
     def speed_percent(self):
-        return max(1.0, min(100.0, float(self.get_parameter('speed_percent').value)))
+        return max(1.0, min(100.0, float(configured_value(self, 'speed_percent'))))
 
     def execution_speed_percent(self):
         if self.plan_execution_speed_percent > 0.0:
             return float(self.plan_execution_speed_percent)
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        if telemetry_store is None:
+            tracking_health = self.latest_tracking_health
+        else:
+            observation = telemetry_store.snapshot().perception.tracking
+            tracking_health = (
+                None if observation is None else observation.value)
         scale = (
-            float(self.latest_tracking_health.recommended_speed_scale)
-            if self.latest_tracking_health is not None else 0.0)
+            float(tracking_health.recommended_speed_scale)
+            if tracking_health is not None else 0.0)
         return commanded_speed_percent(
-            float(self.get_parameter('speed_percent').value),
+            float(configured_value(self, 'speed_percent')),
             self.plan_kind,
             scale,
         )
@@ -3853,7 +4605,7 @@ class ScanViewpointExecutorNode(Node):
         return self.param_bool('enable_real_arm_motion')
 
     def param_bool(self, name):
-        value = self.get_parameter(name).value
+        value = configured_value(self, name)
         if isinstance(value, str):
             return value.lower() in ('1', 'true', 'yes', 'on')
         return bool(value)

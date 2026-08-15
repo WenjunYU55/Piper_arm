@@ -22,13 +22,30 @@ from scipy.spatial.transform import Rotation as R  # For Euler angle to quaterni
 from numpy import clip
 
 
+JOINT6_LIMIT_RAD = math.pi
+JOINT6_STARTUP_LIMIT_RAD = math.radians(240.0)
+JOINT6_WRAP_RAD = 2.0 * math.pi
+JOINT6_STARTUP_READY_TOLERANCE_RAD = 0.03
+JOINT6_STARTUP_COMMAND_EPSILON_RAD = 1e-4
+JOINT6_STARTUP_WRAP_TARGET_RAD = 3.2
+JOINT6_STARTUP_WRAP_SETTLE_TOLERANCE_RAD = 0.005
+MOTOR_WATCHDOG_STARTUP_GRACE_SEC = 0.5
+JOINT6_STARTUP_DIRECTION_TRIP_RAD = 0.01
+JOINT6_STARTUP_CONTROLLER_MAX_DEG = 365.0
+JOINT6_STARTUP_CONTROLLER_REQUIRED_DEG = 360.0
+JOINT6_STARTUP_CONTROLLER_LIMIT_TIMEOUT_SEC = 2.0
+PIPER_SETTING_UNCHANGED = 0x7FFF
+JOINT6_STARTUP_COMMAND_FRAME = 'piper_scan_executor_startup_wrist'
+JOINT6_HOLD_COMMAND_FRAME = 'piper_scan_executor_hold'
+
+
 DEFAULT_JOINT_BOUNDS = {
     'joint1': (-2.8, 2.8),
     'joint2': (-2.1, 2.1),
     'joint3': (-2.8, 2.8),
     'joint4': (-2.8, 2.8),
     'joint5': (-2.1, 2.1),
-    'joint6': (-math.pi, math.pi),
+    'joint6': (-JOINT6_LIMIT_RAD, JOINT6_LIMIT_RAD),
     'joint7': (0.0, 0.08),
 }
 
@@ -70,6 +87,176 @@ def controller_command_position(joint_name, value):
     if bounds is None:
         return result
     return min(float(bounds[1]), max(float(bounds[0]), result))
+
+
+def continuous_joint6_feedback(raw_value, previous_value=None):
+    """
+    Return the in-range J6 equivalent continuous with prior feedback.
+
+    Controller feedback wraps at +/-pi.  The ordinary configured J6 range is
+    exactly that interval, but the startup transaction may represent its saved
+    storage pose down to -240 degrees while crossing the signed boundary in the
+    positive physical direction.  The first ambiguous sample therefore
+    selects its negative logical equivalent.  Later samples select the
+    equivalent closest to the last publication so the startup observation is
+    continuous through the wrap.
+    """
+    raw = float(raw_value)
+    if not math.isfinite(raw):
+        return raw
+    candidates = [
+        candidate
+        for candidate in (
+            raw - JOINT6_WRAP_RAD, raw, raw + JOINT6_WRAP_RAD)
+        if (
+            -JOINT6_STARTUP_LIMIT_RAD - 1e-12
+            <= candidate
+            <= JOINT6_STARTUP_LIMIT_RAD + 1e-12
+        )
+    ]
+    if not candidates:
+        return raw
+    if previous_value is None or not math.isfinite(float(previous_value)):
+        negative = [candidate for candidate in candidates if candidate < 0.0]
+        if negative:
+            return min(negative, key=lambda candidate: abs(candidate - raw))
+        return min(candidates, key=lambda candidate: abs(candidate - raw))
+    previous = float(previous_value)
+    return min(
+        candidates,
+        key=lambda candidate: (abs(candidate - previous), candidate > 0.0),
+    )
+
+
+def standard_joint6_feedback(raw_value):
+    """Return J6 in the ordinary closed [-pi, +pi] interval."""
+    raw = float(raw_value)
+    if not math.isfinite(raw):
+        return raw
+    wrapped = (raw + math.pi) % JOINT6_WRAP_RAD - math.pi
+    if wrapped == -math.pi and raw > 0.0:
+        return math.pi
+    return wrapped
+
+
+def startup_joint6_direction_update(
+        raw_feedback, previous_raw_feedback, unwrapped_feedback,
+        high_water_feedback,
+        trip_tolerance=JOINT6_STARTUP_DIRECTION_TRIP_RAD):
+    """Track physical J6 direction across controller-coordinate wraps."""
+    raw = float(raw_feedback)
+    if previous_raw_feedback is None:
+        return raw, raw, False
+    previous = float(previous_raw_feedback)
+    continuous = float(unwrapped_feedback)
+    high_water = float(high_water_feedback)
+    delta = raw - previous
+    if delta < -math.pi:
+        delta += JOINT6_WRAP_RAD
+    elif delta > math.pi:
+        delta -= JOINT6_WRAP_RAD
+    continuous += delta
+    high_water = max(high_water, continuous)
+    wrong_direction = bool(
+        continuous < high_water - float(trip_tolerance))
+    return continuous, high_water, wrong_direction
+
+
+def startup_joint6_controller_target(
+        raw_feedback, canonical_feedback, requested_target,
+        previous_target=None):
+    """
+    Map one increasing startup-only J6 target to the controller wrap.
+
+    A target below -pi is represented on the controller's positive side while
+    raw feedback is positive.  The executor first requests the logical
+    equivalent of raw +3.2 rad, then logical ready zero.  Ready zero must remain
+    on the same increasing controller branch and therefore maps to raw +2*pi;
+    sending numeric controller zero after +3.2 causes forbidden anticlockwise
+    motion.  Every logical target must be nondecreasing, and the driver retains
+    the resulting controller-turn offset after startup completes.
+    """
+    raw = float(raw_feedback)
+    canonical = float(canonical_feedback)
+    target = float(requested_target)
+    if not all(math.isfinite(value) for value in (raw, canonical, target)):
+        raise ValueError('startup J6 command contains non-finite feedback')
+    if target < -JOINT6_STARTUP_LIMIT_RAD - 1e-9 or target > 1e-9:
+        raise ValueError(
+            'startup J6 target %.6f is outside [-240deg, 0]' % target)
+    measured_hold = abs(target - canonical) <= \
+        JOINT6_STARTUP_COMMAND_EPSILON_RAD
+    if previous_target is not None:
+        previous = float(previous_target)
+        if (
+                target < previous - 1e-9
+                and not measured_hold):
+            raise ValueError(
+                'startup J6 target decreased from %.6f to %.6f'
+                % (previous, target))
+
+    waiting_for_feedback_wrap = False
+    wrapped_positive_side = bool(
+        raw >= 0.0
+        and canonical < 0.0
+        and abs(raw - canonical) > math.pi)
+    if wrapped_positive_side:
+        if target < -math.pi:
+            desired_controller_target = target + JOINT6_WRAP_RAD
+        elif (
+                abs(target - (
+                    JOINT6_STARTUP_WRAP_TARGET_RAD - JOINT6_WRAP_RAD))
+                <= JOINT6_STARTUP_WRAP_SETTLE_TOLERANCE_RAD):
+            # The executor presents the +3.2 controller bridge through its
+            # equivalent negative logical endpoint. Command the bridge until
+            # measured raw feedback is actually inside its settle band. Only
+            # then retain harmless positive servo overshoot rather than
+            # correcting it backwards. Holding every exact bridge request at
+            # its pre-bridge feedback caused a zero-progress startup timeout.
+            if raw < (
+                    JOINT6_STARTUP_WRAP_TARGET_RAD -
+                    JOINT6_STARTUP_WRAP_SETTLE_TOLERANCE_RAD):
+                desired_controller_target = JOINT6_STARTUP_WRAP_TARGET_RAD
+            else:
+                desired_controller_target = raw
+            waiting_for_feedback_wrap = True
+        elif abs(target) <= JOINT6_STARTUP_COMMAND_EPSILON_RAD:
+            # Logical ready zero is always raw +2*pi on this wrapped-positive
+            # startup branch. Do not make this mapping depend on observing the
+            # bridge in this callback: the executor publishes each MoveJ
+            # endpoint once, and the driver's coherent CAN snapshot can lag
+            # the ROS feedback that just proved +3.2 by a few milliseconds.
+            # Re-emitting +3.2 for that one zero message leaves the endpoint
+            # permanently stalled. The enable handshake has already proved a
+            # controller positive limit of at least +360 degrees, so +2*pi is
+            # both monotonic and controller-authorized from any such sample.
+            desired_controller_target = target + JOINT6_WRAP_RAD
+        else:
+            desired_controller_target = JOINT6_STARTUP_WRAP_TARGET_RAD
+            waiting_for_feedback_wrap = True
+    else:
+        desired_controller_target = target
+
+    if (
+            desired_controller_target < raw -
+            JOINT6_STARTUP_COMMAND_EPSILON_RAD
+            and not measured_hold):
+        bridge_overshoot = raw - desired_controller_target
+        if (
+                waiting_for_feedback_wrap
+                and bridge_overshoot <=
+                JOINT6_STARTUP_WRAP_SETTLE_TOLERANCE_RAD):
+            # MoveJ can settle a fraction beyond the +3.2-rad bridge.  Never
+            # command the bridge backwards to correct that harmless servo
+            # overshoot: retain the exact measured controller coordinate.
+            # The executor already observes the equivalent negative logical
+            # angle within its endpoint tolerance and can advance to zero.
+            desired_controller_target = raw
+        else:
+            raise ValueError(
+                'startup J6 controller target %.6f is behind raw feedback %.6f'
+                % (desired_controller_target, raw))
+    return desired_controller_target, waiting_for_feedback_wrap
 
 
 def decode_joint_feedback_pair(arbitration_id, data):
@@ -321,6 +508,69 @@ def request_piper_enable_state(piper, enabled, timeout_sec,
         sleep_fn(ENABLE_RETRY_PERIOD_SEC)
 
 
+def qualify_startup_joint6_controller_limit(
+        piper,
+        configured_max_deg=JOINT6_STARTUP_CONTROLLER_MAX_DEG,
+        required_max_deg=JOINT6_STARTUP_CONTROLLER_REQUIRED_DEG,
+        timeout_sec=JOINT6_STARTUP_CONTROLLER_LIMIT_TIMEOUT_SEC,
+        monotonic_fn=time.monotonic,
+        sleep_fn=time.sleep):
+    """
+    Set and prove the controller range required by positive-only startup.
+
+    A logical startup position as low as -240 degrees is represented on the
+    controller's positive multi-turn branch. Returning to logical zero while
+    moving only in the positive direction therefore reaches raw +360 degrees.
+    The controller gets a small convergence margin; its negative limit and
+    maximum speed remain unchanged. Ordinary logical J6 commands remain
+    bounded to [-pi, +pi] by this driver.
+    """
+    configured = float(configured_max_deg)
+    required = float(required_max_deg)
+    if (
+            not math.isfinite(configured)
+            or not math.isfinite(required)
+            or configured < required
+            or required < 360.0):
+        return False, 'invalid startup J6 controller-limit configuration'
+    setter = getattr(piper, 'MotorAngleLimitMaxSpdSet', None)
+    query = getattr(piper, 'SearchMotorMaxAngleSpdAccLimit', None)
+    getter = getattr(piper, 'GetAllMotorAngleLimitMaxSpd', None)
+    if not all(callable(method) for method in (setter, query, getter)):
+        return False, 'PiPER SDK lacks controller-limit qualification APIs'
+    setter(
+        6,
+        int(round(configured * 10.0)),
+        PIPER_SETTING_UNCHANGED,
+        PIPER_SETTING_UNCHANGED,
+    )
+    deadline = monotonic_fn() + max(0.0, float(timeout_sec))
+    last_value = None
+    while True:
+        query(6, 0x01)
+        feedback = getter()
+        try:
+            motor = feedback.all_motor_angle_limit_max_spd.motor[6]
+            if int(motor.motor_num) == 6:
+                last_value = float(motor.max_angle_limit) * 0.1
+        except (AttributeError, IndexError, KeyError, TypeError, ValueError):
+            last_value = None
+        if (
+                last_value is not None
+                and math.isfinite(last_value)
+                and last_value >= required - 1e-9):
+            return True, 'controller J6 positive limit %.1f deg' % last_value
+        remaining = deadline - monotonic_fn()
+        if remaining <= 0.0:
+            shown = (
+                'unavailable' if last_value is None
+                else '%.1f deg' % last_value)
+            return False, (
+                'controller J6 positive limit did not reach %.1f deg; got %s'
+                % (required, shown))
+        sleep_fn(min(0.05, remaining))
+
+
 class PiperRosNode(Node):
     """Run the ROS 2 node for the robotic arm."""
 
@@ -334,6 +584,10 @@ class PiperRosNode(Node):
         self.declare_parameter('joint_bounds_path', '')
         self.declare_parameter('motion_limit_query_period_sec', 5.0)
         self.declare_parameter('motion_limit_max_age_sec', 10.0)
+        self.declare_parameter(
+            'startup_joint6_controller_max_deg',
+            JOINT6_STARTUP_CONTROLLER_MAX_DEG,
+        )
 
         self.can_port = (
             self.get_parameter('can_port').get_parameter_value().string_value)
@@ -345,6 +599,9 @@ class PiperRosNode(Node):
             'enable_timeout').get_parameter_value().double_value
         self.joint_bounds_path = self.get_parameter(
             'joint_bounds_path').get_parameter_value().string_value
+        self.startup_joint6_controller_max_deg = self.get_parameter(
+            'startup_joint6_controller_max_deg'
+        ).get_parameter_value().double_value
         self.joint_bounds = self.load_joint_bounds(self.joint_bounds_path)
 
         self.get_logger().info(f"can_port is {self.can_port}")
@@ -354,6 +611,9 @@ class PiperRosNode(Node):
         self.get_logger().info(
             f"joint_bounds_path is "
             f"{self.joint_bounds_path or 'default limits'}")
+        self.get_logger().info(
+            'startup_joint6_controller_max_deg is %.1f'
+            % self.startup_joint6_controller_max_deg)
         self.feedback_callback_group = MutuallyExclusiveCallbackGroup()
         self.motion_limit_callback_group = MutuallyExclusiveCallbackGroup()
         self.motion_limit_query_callback_group = MutuallyExclusiveCallbackGroup()
@@ -388,6 +648,19 @@ class PiperRosNode(Node):
         self._raw_joint_last_valid_at = time.monotonic()
         self._raw_joint_warning_at = 0.0
         self._raw_joint_stop = threading.Event()
+        self._continuous_joint6_feedback = None
+        self._published_joint6_feedback = None
+        self._raw_joint6_feedback = None
+        self._latest_raw_arm_positions = None
+        self._startup_joint6_armed = False
+        self._startup_joint6_active = False
+        self._startup_joint6_finished = False
+        self._startup_joint6_last_target = None
+        self._startup_joint6_last_controller_target = None
+        self._joint6_controller_turn_offset = 0.0
+        self._startup_joint6_direction_previous_raw = None
+        self._startup_joint6_direction_unwrapped = None
+        self._startup_joint6_direction_high_water = None
         self._raw_joint_bus = None
         self._raw_joint_thread = None
         # Enable flag
@@ -397,6 +670,7 @@ class PiperRosNode(Node):
         self._gripper_command_signature = None
         self._motor_watchdog_reason = ''
         self._motor_watchdog_disable_at = 0.0
+        self._motor_watchdog_started_at = time.monotonic()
         self._latest_motor_states = None
         self._latest_motor_faults = None
         self._disable_required = False
@@ -640,6 +914,8 @@ class PiperRosNode(Node):
             try:
                 succeeded = request_piper_enable_state(
                     self.piper, True, self.enable_timeout)
+                if succeeded:
+                    succeeded = self.qualify_startup_joint6_limit()
                 if not succeeded:
                     self._disable_required = True
                     rollback_succeeded = request_piper_enable_state(
@@ -658,6 +934,20 @@ class PiperRosNode(Node):
         else:
             self.get_logger().fatal(
                 'Automatic enable failed and rollback could not prove all six motors disabled')
+
+    def qualify_startup_joint6_limit(self):
+        """Prove the controller has room for positive-only startup to zero."""
+        succeeded, reason = qualify_startup_joint6_controller_limit(
+            self.piper,
+            configured_max_deg=self.startup_joint6_controller_max_deg,
+        )
+        if succeeded:
+            self.get_logger().info(
+                'Qualified positive-only startup range: %s' % reason)
+        else:
+            self.get_logger().error(
+                'Could not qualify positive-only startup range: %s' % reason)
+        return succeeded
 
     def publish_feedback(self):
         """Publish one executor-owned feedback sample from the robotic arm."""
@@ -683,6 +973,23 @@ class PiperRosNode(Node):
         transition_active = bool(getattr(
             self, '_enable_transition_active', False))
         disable_required = bool(getattr(self, '_disable_required', False))
+        # The SDK exposes six low-speed motor records that are refreshed one
+        # at a time.  Immediately after attaching to an already-powered arm,
+        # the first aggregate read can therefore look partially enabled even
+        # though no motor changed state.  Allow only that initial, fault-free,
+        # non-commanded snapshot time to cohere.  A real fault or an explicit
+        # disable requirement still acts immediately, and a persistent partial
+        # state is fail-closed as soon as the bounded grace expires.
+        watchdog_age = time.monotonic() - float(getattr(
+            self, '_motor_watchdog_started_at', 0.0))
+        if (
+                partial_enable
+                and not active_faults
+                and not disable_required
+                and not transition_active
+                and watchdog_age < MOTOR_WATCHDOG_STARTUP_GRACE_SEC):
+            self._motor_watchdog_reason = ''
+            return
         unsafe = any(states) and (
             disable_required
             or
@@ -784,7 +1091,91 @@ class PiperRosNode(Node):
         self.joint_states.header.stamp = self.get_clock().now().to_msg()
         speed_feedback = self.piper.GetArmHighSpdInfoMsgs()
         gripper_feedback = self.piper.GetArmGripperMsgs().gripper_state
-        joint_0, joint_1, joint_2, joint_3, joint_4, joint_5 = positions
+        joint_0, joint_1, joint_2, joint_3, joint_4, raw_joint_5 = positions
+        # Keep one immutable coherent controller-coordinate snapshot for
+        # STARTUP_WRIST.  That transaction must rotate J6 only.  In
+        # particular, powered gravity relaxation can leave J2/J3 just beyond
+        # their ordinary command limits; clipping those axes while issuing the
+        # J6 endpoint creates unintended motion and makes the executor wait on
+        # a pose that the driver never commanded.
+        self._latest_raw_arm_positions = tuple(float(value) for value in positions)
+        self._raw_joint6_feedback = raw_joint_5
+        if self._startup_joint6_active:
+            if self._startup_joint6_direction_previous_raw is None:
+                continuous_direction, high_water, wrong_direction = \
+                    startup_joint6_direction_update(
+                        raw_joint_5, None, raw_joint_5, raw_joint_5)
+            else:
+                continuous_direction, high_water, wrong_direction = \
+                    startup_joint6_direction_update(
+                        raw_joint_5,
+                        self._startup_joint6_direction_previous_raw,
+                        self._startup_joint6_direction_unwrapped,
+                        self._startup_joint6_direction_high_water,
+                    )
+            self._startup_joint6_direction_previous_raw = raw_joint_5
+            self._startup_joint6_direction_unwrapped = continuous_direction
+            self._startup_joint6_direction_high_water = high_water
+            if wrong_direction:
+                reason = (
+                    'startup J6 moved in the forbidden negative direction: '
+                    'unwrapped feedback %.6f fell behind high-water %.6f rad'
+                    % (continuous_direction, high_water))
+                self.piper.DisableArm(7)
+                self._PiperRosNode__enable_flag = False
+                self._disable_required = True
+                self._motor_watchdog_reason = reason
+                self.reset_command_cache()
+                self.get_logger().error(
+                    'Fail-closed startup direction watchdog disabled all '
+                    'axes: ' + reason)
+        previous_joint_5 = self._continuous_joint6_feedback
+        if self._startup_joint6_finished:
+            joint_5 = standard_joint6_feedback(raw_joint_5)
+        else:
+            joint_5 = continuous_joint6_feedback(
+                raw_joint_5, previous_joint_5)
+            if previous_joint_5 is None:
+                # A fresh driver may begin at storage or part-way through an
+                # interrupted startup. Any nonpositive logical J6 state can
+                # safely resume toward zero. A genuinely positive state is
+                # deliberately left unarmed because reaching zero from there
+                # would require forbidden negative startup motion.
+                self._startup_joint6_armed = bool(joint_5 <= 1e-9)
+                if self._startup_joint6_armed:
+                    self.get_logger().info(
+                        'Armed startup-only negative J6 branch from raw '
+                        'feedback %.6f rad as %.6f rad'
+                        % (raw_joint_5, joint_5))
+            self._continuous_joint6_feedback = joint_5
+            if (
+                    self._startup_joint6_active
+                    and self._startup_joint6_last_target is not None
+                    and abs(self._startup_joint6_last_target) <=
+                    JOINT6_STARTUP_READY_TOLERANCE_RAD
+                    and abs(joint_5) <=
+                    JOINT6_STARTUP_READY_TOLERANCE_RAD):
+                self._startup_joint6_active = False
+                self._startup_joint6_armed = False
+                self._startup_joint6_finished = True
+                self._startup_joint6_last_target = None
+                self._startup_joint6_last_controller_target = None
+                self._startup_joint6_direction_previous_raw = None
+                self._startup_joint6_direction_unwrapped = None
+                self._startup_joint6_direction_high_water = None
+                self._joint6_controller_turn_offset = (
+                    round(
+                        (raw_joint_5 - standard_joint6_feedback(raw_joint_5))
+                        / JOINT6_WRAP_RAD)
+                    * JOINT6_WRAP_RAD)
+                self._continuous_joint6_feedback = None
+                joint_5 = standard_joint6_feedback(raw_joint_5)
+                self.get_logger().info(
+                    'Startup-only positive J6 rotation reached ready zero; '
+                    'restored standard [-pi,+pi] logical feedback with '
+                    'controller turn offset %.6f rad'
+                    % self._joint6_controller_turn_offset)
+        self._published_joint6_feedback = joint_5
         joint_6: float = gripper_feedback.grippers_angle / 1000000
         vel_0: float = speed_feedback.motor_1.motor_speed / 1000
         vel_1: float = speed_feedback.motor_2.motor_speed / 1000
@@ -922,8 +1313,123 @@ class PiperRosNode(Node):
             'joint4', self.get_joint_value(joint_data, 'joint4', 3))
         arm_joint_4 = self.enforce_joint_bound(
             'joint5', self.get_joint_value(joint_data, 'joint5', 4))
-        arm_joint_5 = self.enforce_joint_bound(
-            'joint6', self.get_joint_value(joint_data, 'joint6', 5))
+        requested_joint_6 = self.get_joint_value(joint_data, 'joint6', 5)
+        command_frame = str(getattr(
+            getattr(joint_data, 'header', None), 'frame_id', ''))
+        startup_stage_command = command_frame == JOINT6_STARTUP_COMMAND_FRAME
+        explicit_hold_command = command_frame == JOINT6_HOLD_COMMAND_FRAME
+        startup_transaction_available = bool(
+            getattr(self, '_startup_joint6_active', False)
+            or getattr(self, '_startup_joint6_armed', False))
+        startup_stage_candidate = bool(
+            not bool(getattr(self, '_startup_joint6_finished', True))
+            and getattr(self, '_raw_joint6_feedback', None) is not None
+            and getattr(self, '_published_joint6_feedback', None) is not None
+            and requested_joint_6 <= 1e-9
+            and startup_transaction_available
+            and startup_stage_command
+        )
+        startup_hold_candidate = bool(
+            not bool(getattr(self, '_startup_joint6_finished', True))
+            and getattr(self, '_raw_joint6_feedback', None) is not None
+            and getattr(self, '_published_joint6_feedback', None) is not None
+            and startup_transaction_available
+            and explicit_hold_command
+        )
+        if startup_stage_command and not startup_stage_candidate:
+            self.get_logger().error(
+                'Rejected STARTUP_WRIST J6 command outside the armed '
+                'startup-only positive-direction transaction')
+            return
+        if (
+                startup_transaction_available
+                and not startup_stage_candidate
+                and not startup_hold_candidate):
+            self.get_logger().error(
+                'Rejected non-startup J6 motion while STARTUP_WRIST is armed; '
+                'only the explicit measured hold or tagged positive-direction '
+                'startup transaction is allowed')
+            return
+        if startup_hold_candidate:
+            # The executor's hold snapshot and this callback's newest driver
+            # feedback are asynchronous. Never use their small discrepancy as
+            # a J6 move while startup is armed: command the exact measured J6
+            # controller coordinate and leave the transaction state unchanged.
+            arm_joint_5, _waiting_for_wrap = \
+                startup_joint6_controller_target(
+                    self._raw_joint6_feedback,
+                    self._published_joint6_feedback,
+                    self._published_joint6_feedback,
+                    None,
+                )
+        elif startup_stage_candidate:
+            try:
+                arm_joint_5, waiting_for_wrap = \
+                    startup_joint6_controller_target(
+                        self._raw_joint6_feedback,
+                        self._published_joint6_feedback,
+                        requested_joint_6,
+                        self._startup_joint6_last_target,
+                    )
+            except ValueError as exc:
+                self.get_logger().error(
+                    'Rejected unsafe startup J6 command: %s' % exc)
+                return
+            if not self._startup_joint6_active:
+                self.get_logger().info(
+                    'Activated startup-only positive J6 command mode')
+            self._startup_joint6_active = True
+            self._startup_joint6_last_target = requested_joint_6
+            previous_controller_target = getattr(
+                self, '_startup_joint6_last_controller_target', None)
+            if (
+                    previous_controller_target is None
+                    or abs(float(arm_joint_5) - float(
+                        previous_controller_target)) > 1e-4):
+                self.get_logger().info(
+                    'STARTUP_WRIST map logical %.6f raw_feedback %.6f '
+                    'logical_feedback %.6f -> raw_target %.6f'
+                    % (
+                        requested_joint_6,
+                        self._raw_joint6_feedback,
+                        self._published_joint6_feedback,
+                        arm_joint_5,
+                    ))
+                self._startup_joint6_last_controller_target = arm_joint_5
+            if waiting_for_wrap:
+                self.get_logger().debug(
+                    'Commanding startup-only raw +3.2-rad wrap bridge before '
+                    'the final positive raw +2*pi move to logical ready zero')
+        else:
+            logical_joint_6 = self.enforce_joint_bound(
+                'joint6', requested_joint_6)
+            # A completed positive-only startup can leave the controller on
+            # its +2*pi multi-turn branch while ROS correctly publishes
+            # logical ready zero.  Keep every later MoveJ target on that same
+            # controller branch for the rest of the powered session.  Dropping
+            # the offset here numerically commands a large anticlockwise move.
+            arm_joint_5 = (
+                logical_joint_6
+                + float(getattr(
+                    self, '_joint6_controller_turn_offset', 0.0)))
+        if startup_stage_candidate or startup_hold_candidate:
+            measured = getattr(self, '_latest_raw_arm_positions', None)
+            if (
+                    measured is None
+                    or len(measured) < 5
+                    or not all(math.isfinite(float(value))
+                               for value in measured[:5])):
+                self.get_logger().error(
+                    'Rejected STARTUP_WRIST command without a fresh coherent '
+                    'J1-J5 controller-coordinate snapshot')
+                return
+            # PiPER JointCtrl always transports all six axes.  Preserve the
+            # newest measured J1-J5 exactly for this tagged transaction and do
+            # not pass them through ordinary command-limit normalization.
+            # STARTUP_WRIST authority is J6-only; ROUGH_HOME immediately after
+            # it restores the configured all-joint pose normally.
+            arm_joint_0, arm_joint_1, arm_joint_2, arm_joint_3, arm_joint_4 = (
+                float(value) for value in measured[:5])
         self.get_logger().debug(
             "arm joints: %.6f %.6f %.6f %.6f %.6f %.6f"
             % (
@@ -992,6 +1498,8 @@ class PiperRosNode(Node):
                 succeeded = request_piper_enable_state(
                     self.piper, requested_enable, self.enable_timeout)
                 rollback_succeeded = True
+                if succeeded and requested_enable:
+                    succeeded = self.qualify_startup_joint6_limit()
                 if not succeeded and requested_enable:
                     self._disable_required = True
                     rollback_succeeded = request_piper_enable_state(
@@ -1023,6 +1531,8 @@ class PiperRosNode(Node):
                     self.enable_timeout,
                 )
                 rollback_succeeded = True
+                if succeeded and requested_enable:
+                    succeeded = self.qualify_startup_joint6_limit()
                 if not succeeded and requested_enable:
                     # Keep the transition lock held until the failed enable is
                     # proved fully disabled; another caller must not re-enable

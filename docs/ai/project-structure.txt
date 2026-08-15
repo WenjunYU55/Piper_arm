@@ -1,5 +1,7 @@
 Piper_arm/
-├── docs/ai/                         AI-first architecture, contracts, flows, guardrails, debt, authoritative 70-roadmap.yaml milestones, and consolidated 80-problem-log.yaml incident history
+├── docs/ai/                         AI-first architecture, contracts, flows, guardrails, debt, authoritative 70-roadmap.yaml milestones, consolidated 80-problem-log.yaml incident history, and implemented-feature rewrite bookmark
+├── docs/refactor/                   Phase 0/1 baselines, Phase 2-9 extraction records, Phase 10 final architecture, final equivalence audit, and staged physical requalification checklist
+├── piper_gui/                       Phase 8 Tk-independent mission ViewModel, action-client callback adapter and GUI lifecycle bootstrap; owns no production mission policy
 ├── CAD/                             User-supplied physical reference photos; the holder/L515 runtime STL copies are owned by piper_description/meshes, while original CAD source provenance is currently absent
 ├── piper_ros_foxy/                  ROS 2 Foxy colcon workspace
 │   └── src/
@@ -8,13 +10,13 @@ Piper_arm/
 │       ├── piper_msgs/              Vendor arm messages, typed hash-bound read-only controller motion limits, and Enable service
 │       ├── piper_mobile_manipulation/
 │           ├── msg/                 Project custom ROS messages
-│           ├── srv/                 Atomic rough-target acquisition, exact scan approval, and Tesseract request services
+│           ├── srv/                 Atomic rough-target acquisition, exact scan approval, Tesseract request services, and mission-authorized ExecuteHomeStage
 │           ├── action/              RunTargetScan open-label mission API with stable failure code and retryability
 │           ├── config/              Camera/tracking, closed-loop 15-degree acquisition, 7.5-degree/flexible-distance scan region, adaptive capture, and 20 Hz tesseract_stream_v3 execution/following/settle parameters
 │           ├── launch/              Perception, tracking, scan, dry-run, and opt-in executor composition with one shared planner/workflow/bridge/executor/capture session maximum
-│           ├── piper_mobile_manipulation/  ROS nodes plus pure geometry, bounded closest-first multi-target admission, atomic centered-first rough acquisition, open-vocabulary mission propagation, no fixed workspace box, achieved-FK adaptive coverage, 8-to-24-view completion, GOOD/CLEAR capture replacement, exact 20 Hz MoveJ-model-scaled collision-qualified Tesseract path streaming with timing/following telemetry, 0.30 rad following guard/final-only convergence/no-burst overrun, stale-feedback command/hold refusal, and the separate two-point direct-home exemption with independent CAD-holder external-clearance enforcement
+│           ├── piper_mobile_manipulation/  ROS nodes plus typed failures, immutable TelemetryStore snapshots, SafetyEvaluator shadow comparisons, ROS-free MissionEngine, immutable typed configuration, mission-authorized ExecuteHomeStage, schema-v4 terminal PRE_HOME sequencing, guarded zero-capture cleanup, and executor adapters for densely proven native MoveJ chords versus streamed Tesseract detours
 │           └── test/                ROS package pytest tests
-│       └── piper_tesseract_foxy/    Command-free Foxy/schema-v5 spool adapter, typed readiness, bounded IK shortlist, collision model builder, and ROS-free OMPL/ISP worker that retains every source vertex, schedules J1-J5/J6 from the 5/3-rad/s MoveJ model at 20 Hz, validates source geometry independently of transport density, and retains direct configured home as a two-point exception; core/compact rootless qualifications are command-free
+│       └── piper_tesseract_foxy/    Command-free Foxy/schema-v5 spool adapter, typed readiness, bounded IK shortlist, collision model builder, and ROS-free OMPL/ISP worker with bounded pass-through smoothing, dense validation/fallback, and explicit DIRECT_MOVEJ versus TESSERACT_STREAM evidence; configured home is owned by ExecuteHomeStage
 ├── motion_planning/tesseract/       Pinned Ubuntu 24.04 Tesseract 0.35 OCI and rootless Bubblewrap setup/run/qualification assets
 ├── L515_camera/                     Pinned RealSense build, camera/runtime wrappers, viewers, and shared measured-board (17 mm square/12 mm marker) strict position-stability-gated hand-eye capture/validation
 │   ├── calibration/hand_eye/        Deployed datasheet/factory-registered optical transform plus preserved raw hand-eye samples and pre-registration validation records
@@ -25,7 +27,7 @@ Piper_arm/
 │   └── realsense_ws/                Generated/source RealSense workspace; do not edit install output
 ├── AI_perception_tests/             Offline datasets/tools and isolated GPU model workers
 │   └── groundingdino_test/          Grounded-SAM-2 environment, scripts, requirements, asset fetch
-├── reconstruction/                  Offline masked RGB-D TSDF consumer; accepts 8-24 views only with manifest/metadata count agreement
+├── reconstruction/                  Offline masked RGB-D TSDF, optional bounded GICP, provenance/quality reports, preview rendering and Open3D validation
 ├── README.md                        Dependency surfaces and installation overview
 ├── SYSTEM_HANDOFF.md                Whole-system architecture, validated state, limitations, and continuation
 ├── OPERATOR_COMMANDS.md             Supported runtime and safety command reference
@@ -37,12 +39,13 @@ Piper_arm/
 ├── start_gui.sh                     Native real-arm GUI launcher
 ├── fastdds_gui_udp_only.xml         Foxy GUI/scan loopback-only UDP profile; disables stale shared-memory graph transport
 ├── enable_piper.sh / disable_piper.sh  Explicit software motor control
-├── piper_gui_native.py              Manual/Graphical GUI plus editable-label one-button Automatic Scan action controls and readiness/service-gated, parent-supervised, publisher-exclusive Acquire & Scan controls; atomic acquisition sessions; Step-4 owned-stack bootstrap; explicit current-lock adoption/workflow start/request; and two separate exact confirmations
-├── piper_gui_automation.py          Pure exact-target/session, direct tracking-health preflight, authoritative measured-lock adoption, request-correlation, and separate acquisition/13-view approval rules
-├── test_piper_gui_automation.py     GUI automation contract tests
+├── piper_gui_native.py              Production RunTargetScan client UI plus read-only mission/perception diagnostics and explicitly separated manual/home-profile/RViz-preview commissioning controls; owns no production scan children, phase transitions, plan approvals, retries, replans or autonomous shutdown
+├── piper_gui_automation.py          Archived side-effect-free pre-Phase-8 GUI workflow characterization helpers; not imported by the production GUI
+├── test_piper_gui_automation.py     Archived helper characterization plus Phase 8 native-GUI ownership assertions
+├── test_piper_gui_phase8.py         Tk-free ViewModel/action-client/bootstrap and no-alternate-controller regressions
 ├── test_gui_transport_profile.py    GUI/scan Fast DDS launcher and XML transport contract tests
 ├── piper_joint_bounds.json          Measured hard joint-bound records
-├── piper_home_pose.json             Hash-bound schema-v3 rough/ready and negative-storage profile; startup J6 increases to zero and positive non-ready feedback blocks before enable
+├── piper_home_pose.json             Ignored local hash-bound schema-v4 rough/ready, terminal PRE_HOME and negative-storage profile; startup J6 is positive-only and positive non-ready feedback blocks before enable
 ├── piper_calibrate_bounds.py        Joint-bound recorder
 └── piper_joint6_zero.py             Direct-SDK J6 diagnostic/calibration utility
 
@@ -54,6 +57,15 @@ Repository-root build/install/log trees are intentionally absent and unsupported
 sourcing them can shadow the canonical piper_ros_foxy generated interfaces.
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/surface_coverage.py - measured base_link masked RGB-D voxel coverage and convergence
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/reconstruction_jobs.py - durable mesh job identity, base-home correlation and state transitions
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/process_supervisor.py - exact mission-owned process-group startup, health, generation logs and bounded policy-driven shutdown
+piper_ros_foxy/src/piper_mobile_manipulation/test/test_process_supervisor.py - fake-process startup/crash/escalation/repeated-generation/ownership regressions
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/safety_evaluator.py - pure named-mode safety decisions and bounded legacy shadow comparison records
+piper_ros_foxy/src/piper_mobile_manipulation/test/test_safety_evaluator.py - all-mode telemetry/authorization/planner/motor/disagreement regressions
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/plan_authorizer.py - pure exact plan/mission authorization decisions
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/trajectory_runner.py - pure authorized trajectory schedule and monitoring decisions
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/capture_coordinator.py - pure settled RGB-D handoff and bounded retry policy
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/executor_recovery.py - typed retry/reacquire/replan/abort policy
+piper_ros_foxy/src/piper_mobile_manipulation/test/test_phase7_viewpoint_components.py - Phase 7 component and recovery-matrix regressions
 piper_ros_foxy/src/piper_mobile_manipulation/test/test_gpu_geometry_launch.py - critical GPU-geometry child-exit supervision contract
 piper_ros_foxy/src/piper_mobile_manipulation/msg/MeshJobStatus.msg - transient-local reconstruction status contract
 piper_ros_foxy/src/piper_mobile_manipulation/srv/ReportTrackedRobotHomed.srv - tracked-base home handshake

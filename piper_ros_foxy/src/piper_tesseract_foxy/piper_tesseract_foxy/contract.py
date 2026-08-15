@@ -376,8 +376,9 @@ def validate_request(payload, now_ns=None):
             raise ContractError('RETURN_HOME must include its direct home segment')
     elif minimum_views < 1 or minimum_views > MAX_CAPTURE_VIEWPOINTS:
         raise ContractError('planning.min_viewpoints is invalid')
-    if plan_kind != 'RETURN_HOME' and (maximum_views < minimum_views \
-            or maximum_views > MAX_CAPTURE_VIEWPOINTS \
+    if plan_kind != 'RETURN_HOME' and (
+            maximum_views < minimum_views
+            or maximum_views > MAX_CAPTURE_VIEWPOINTS
             or maximum_views > len(candidates)):
         raise ContractError('planning.max_viewpoints is invalid')
     if plan_kind == 'MULTIVIEW_SCAN' and minimum_views != maximum_views:

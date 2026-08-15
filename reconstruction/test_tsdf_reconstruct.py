@@ -6,6 +6,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+cv2 = pytest.importorskip('cv2')
+
 
 PATH = Path(__file__).with_name('tsdf_reconstruct.py')
 SPEC = importlib.util.spec_from_file_location('tsdf_reconstruct', PATH)
@@ -81,3 +83,231 @@ def test_manifest_integrity_rejects_changed_artifact(tmp_path):
     artifact.write_bytes(b'changed')
     with pytest.raises(ValueError, match='size changed'):
         MODULE.validate_manifest_integrity(tmp_path, manifest)
+
+
+def test_manifest_rejects_escaping_and_duplicate_artifacts(tmp_path):
+    outside = tmp_path.parent / 'outside.bin'
+    outside.write_bytes(b'outside')
+    unsigned = {
+        'capture_count': 8,
+        'files': [{
+            'path': '../outside.bin',
+            'bytes': outside.stat().st_size,
+            'sha256': MODULE.sha256_file(outside),
+        }],
+    }
+    manifest = dict(unsigned, manifest_sha256=MODULE.canonical_sha256(unsigned))
+    with pytest.raises(ValueError, match='escapes'):
+        MODULE.validate_manifest_integrity(tmp_path, manifest)
+
+
+def test_frame_artifacts_are_resolved_from_manifest_not_absolute_metadata(tmp_path):
+    frames = tmp_path / 'frames'
+    frames.mkdir()
+    metadata_path = frames / 'view_000_metadata.yaml'
+    paths = {}
+    records = []
+    for suffix in ('rgb.png', 'depth.png', 'mask.png'):
+        path = frames / ('view_000_' + suffix)
+        path.write_bytes(suffix.encode('ascii'))
+        relative = path.relative_to(tmp_path).as_posix()
+        paths[suffix] = path
+        records.append({
+            'path': relative, 'bytes': path.stat().st_size,
+            'sha256': MODULE.sha256_file(path),
+        })
+    manifest = {'files': records}
+    metadata = {
+        'rgb_file_path': '/old/machine/view_000_rgb.png',
+        'depth_png_file_path': '/old/machine/view_000_depth.png',
+        'mask_file_path': '/old/machine/view_000_mask.png',
+    }
+    resolved = MODULE.resolve_frame_artifacts(
+        tmp_path, metadata_path, metadata, manifest)
+    assert resolved == {
+        'rgb': paths['rgb.png'], 'depth': paths['depth.png'],
+        'mask': paths['mask.png']}
+    metadata['rgb_file_path'] = '/tmp/unrelated.png'
+    with pytest.raises(ValueError, match='manifest-listed rgb'):
+        MODULE.resolve_frame_artifacts(
+            tmp_path, metadata_path, metadata, manifest)
+
+
+def _schema_v2_artifacts(tmp_path):
+    frames = tmp_path / 'frames'
+    frames.mkdir(exist_ok=True)
+    metadata_path = frames / 'view_000_metadata.yaml'
+    suffixes = {
+        'rgb_file_path': 'rgb.png',
+        'depth_png_file_path': 'depth.png',
+        'mask_file_path': 'mask.png',
+        'native_depth_file_path': 'native_depth.npy',
+        'native_depth_png_file_path': 'native_depth.png',
+        'confidence_file_path': 'confidence.png',
+        'target_depth_png_file_path': 'target_depth.png',
+        'target_support_mask_file_path': 'target_support_mask.png',
+    }
+    metadata = {'capture_schema_version': 2}
+    records = []
+    for key, suffix in suffixes.items():
+        path = frames / ('view_000_' + suffix)
+        if suffix == 'native_depth.npy':
+            with path.open('wb') as stream:
+                np.save(stream, np.full((4, 5), 400, dtype=np.uint16))
+        elif suffix == 'native_depth.png':
+            assert cv2.imwrite(
+                str(path), np.full((4, 5), 400, dtype=np.uint16))
+        elif suffix == 'confidence.png':
+            assert cv2.imwrite(str(path), np.full((4, 5), 8, dtype=np.uint8))
+        elif suffix == 'target_depth.png':
+            assert cv2.imwrite(
+                str(path), np.full((5, 6), 400, dtype=np.uint16))
+        elif suffix == 'target_support_mask.png':
+            assert cv2.imwrite(
+                str(path), np.full((5, 6), 255, dtype=np.uint8))
+        else:
+            path.write_bytes(suffix.encode('ascii'))
+        metadata[key] = '/old/machine/' + path.name
+        records.append({
+            'path': path.relative_to(tmp_path).as_posix(),
+            'bytes': path.stat().st_size,
+            'sha256': MODULE.sha256_file(path),
+        })
+    manifest = {
+        'capture_schema_version': 2,
+        'confidence_policy': {'minimum_grade': 8},
+        'files': records,
+    }
+    return metadata_path, metadata, manifest
+
+
+def test_schema_v2_artifacts_and_confidence_provenance_are_required(tmp_path):
+    metadata_path, metadata, manifest = _schema_v2_artifacts(tmp_path)
+    artifacts = MODULE.resolve_frame_artifacts(
+        tmp_path, metadata_path, metadata, manifest)
+    metadata.update({
+        'synchronization': {
+            'mask_rgb_exact': True,
+            'rgb_native_depth_delta_sec': 0.012,
+            'native_depth_confidence_delta_sec': 0.001,
+            'maximum_rgb_native_depth_delta_sec': 0.04,
+            'maximum_native_depth_confidence_delta_sec': 0.005,
+        },
+        'confidence_quality': {
+            'confidence_threshold': 8,
+            'confident_fraction': 0.92,
+            'projected_output_points': 30,
+        },
+        'target_valid': True,
+        'synchronized_target_3d': {'valid': True},
+    })
+    provenance = MODULE.confidence_capture_provenance(
+        metadata, manifest, artifacts, cv2)
+    assert provenance['confidence_qualified'] is True
+    assert provenance['minimum_confidence_grade'] == 8
+    metadata['synchronization']['mask_rgb_exact'] = False
+    with pytest.raises(ValueError, match='exactly RGB-correlated'):
+        MODULE.confidence_capture_provenance(
+            metadata, manifest, artifacts, cv2)
+
+
+def test_capture_schema_controls_certification():
+    certified = {
+        'classification': 'CERTIFIED',
+        'calibration_sha256': 'a' * 64,
+        'reason': 'calibration bound',
+    }
+    manifest = {
+        'capture_schema_version': 2,
+        'confidence_policy': {'minimum_grade': 8},
+    }
+    result = MODULE.capture_schema_provenance(
+        manifest, [{'capture_schema_version': 2}] * 8, certified)
+    assert result['classification'] == 'CERTIFIED'
+    assert result['confidence_qualified'] is True
+    with pytest.raises(ValueError, match='predates confidence-qualified'):
+        MODULE.capture_schema_provenance(
+            {}, [{'capture_schema_version': 1}] * 8, certified)
+    diagnostic = MODULE.capture_schema_provenance(
+        {}, [{'capture_schema_version': 1}] * 8, certified,
+        allow_historical=True)
+    assert diagnostic['classification'] == 'DIAGNOSTIC_ONLY'
+    assert diagnostic['confidence_qualified'] is False
+
+
+def test_missing_calibration_requires_explicit_diagnostic_mode():
+    frames = [{'calibration_sha256': ''} for _ in range(8)]
+    with pytest.raises(ValueError, match='no calibration identity'):
+        MODULE.calibration_provenance(
+            {'calibration_sha256': ''}, frames, allow_missing=False)
+    assert MODULE.calibration_provenance(
+        {'calibration_sha256': ''}, frames,
+        allow_missing=True)['classification'] == 'DIAGNOSTIC_ONLY'
+
+
+def test_calibration_identity_must_match_every_frame():
+    identity = 'a' * 64
+    frames = [{'calibration_sha256': identity} for _ in range(8)]
+    assert MODULE.calibration_provenance(
+        {'calibration_sha256': identity}, frames)['classification'] == 'CERTIFIED'
+    frames[-1]['calibration_sha256'] = 'b' * 64
+    with pytest.raises(ValueError, match='one calibration identity'):
+        MODULE.calibration_provenance(
+            {'calibration_sha256': identity}, frames)
+
+
+def test_quality_thresholds_are_explicit():
+    assert MODULE.quality_classification(0.004, 0.96) == 'PASS'
+    assert MODULE.quality_classification(0.007, 0.96) == 'WARN'
+    assert MODULE.quality_classification(0.004, 0.90) == 'WARN'
+    assert MODULE.quality_classification(0.011, 1.0) == 'FAIL'
+    assert MODULE.quality_classification(0.004, 0.79) == 'FAIL'
+    assert MODULE.dimension_classification(0.004) == 'GOOD'
+    assert MODULE.dimension_classification(0.007) == 'WARN'
+    assert MODULE.dimension_classification(0.011) == 'POOR'
+
+
+def test_known_target_dimensions_reject_aligned_depth_background():
+    depth = np.asarray([
+        [0, 400, 405],
+        [395, 440, 500],
+    ], dtype=np.uint16)
+    mask = np.asarray([
+        [0, 255, 255],
+        [255, 255, 255],
+    ], dtype=np.uint8)
+    supported, report = MODULE.target_depth_support_mask(
+        depth, mask, 0.400, np.asarray([0.04, 0.04, 0.04]))
+    assert supported.tolist() == [[False, True, True], [True, False, False]]
+    assert report['masked_points_before'] == 5
+    assert report['masked_points_after'] == 3
+
+
+def test_unknown_target_size_keeps_binary_mask_without_dimension_claim():
+    mask = np.asarray([[0, 255]], dtype=np.uint8)
+    supported, report = MODULE.target_depth_support_mask(
+        np.asarray([[400, 900]], dtype=np.uint16), mask, 0.4, None)
+    assert supported.tolist() == [[False, True]]
+    assert report is None
+
+
+def _selection_report(residual, dimension_error, component=0.98,
+                      quality='PASS'):
+    return {
+        'structural_quality': quality,
+        'mesh_metrics': {
+            'dominant_component_triangle_ratio': component,
+            'point_to_mesh_residual': {'median_m': residual},
+            'dimension_check': {'mean_absolute_error_m': dimension_error},
+        },
+    }
+
+
+def test_auto_selection_requires_material_safe_gicp_improvement():
+    robot = _selection_report(0.006, 0.004)
+    gicp = _selection_report(0.005, 0.005)
+    assert MODULE.select_registration_report(robot, gicp)[0] == 'bounded_gicp'
+    weak = _selection_report(0.0057, 0.003)
+    assert MODULE.select_registration_report(robot, weak)[0] == 'robot_pose'
+    fragmented = _selection_report(0.004, 0.003, component=0.80)
+    assert MODULE.select_registration_report(robot, fragmented)[0] == 'robot_pose'

@@ -9,9 +9,10 @@ import tempfile
 import time
 
 
-HOME_POSE_SCHEMA_VERSION = 3
+HOME_POSE_SCHEMA_VERSION = 4
 LEGACY_HOME_POSE_SCHEMA_VERSION = 1
 UNDIRECTED_STAGED_HOME_POSE_SCHEMA_VERSION = 2
+DIRECTED_STAGED_HOME_POSE_SCHEMA_VERSION = 3
 STARTUP_WRIST_DIRECTION = 'increasing'
 STORAGE_WRIST_DIRECTION = 'decreasing'
 WRIST_DIRECTION_READY_TOLERANCE_RAD = 0.030
@@ -76,6 +77,15 @@ def validate_home_profile_limits(profile, joint_limits, tolerance_rad=0.0):
         if value < low - tolerance or value > high + tolerance:
             raise ValueError(
                 'rough home joint%d is outside planning limits' % (index + 1))
+    if bool(profile.get('pre_home_configured', False)):
+        pre_home = validate_home_positions(
+            profile.get('pre_home_positions_rad'))
+        for index, value in enumerate(pre_home):
+            low, high = parsed_limits[index]
+            if value < low - tolerance or value > high + tolerance:
+                raise ValueError(
+                    'pre-home joint%d is outside planning limits'
+                    % (index + 1))
     for label, value in (
             ('mission-ready joint6', profile.get('mission_ready_joint6_rad')),
             ('storage joint6', profile.get('storage_joint6_rad'))):
@@ -116,14 +126,15 @@ def validate_staged_wrist_direction(profile, current_positions=None):
                 WRIST_DIRECTION_READY_TOLERANCE_RAD
                 and current >= ready):
             raise ValueError(
-                'measured J6 is on the positive storage branch; increasing '
+                'measured J6 %.6f rad is on the positive storage branch; '
+                'increasing '
                 'startup requires the configured negative-J6 storage branch '
-                'before enable')
+                'before enable' % current)
     return profile
 
 
 def staged_home_targets(profile, current_positions):
-    """Return startup-wrist, rough-home and storage-wrist joint targets.
+    """Return startup-wrist, pre-home, rough-home and storage targets.
 
     The two wrist moves deliberately preserve joints 1-5.  The rough-home
     target remains a normal six-joint collision-planned pose, so J6 is back at
@@ -133,6 +144,9 @@ def staged_home_targets(profile, current_positions):
         raise ValueError('home profile is missing')
     current = validate_home_positions(current_positions)
     rough = validate_home_positions(profile.get('positions_rad'))
+    if not bool(profile.get('pre_home_configured', False)):
+        raise ValueError('pre-home waypoint is not configured')
+    pre_home = validate_home_positions(profile.get('pre_home_positions_rad'))
     ready = validate_joint6(
         profile.get('mission_ready_joint6_rad'),
         'mission-ready joint6 angle')
@@ -148,6 +162,7 @@ def staged_home_targets(profile, current_positions):
     storage_wrist[5] = storage
     return {
         'startup_wrist_positions_rad': startup_wrist,
+        'pre_home_positions_rad': pre_home,
         'rough_home_positions_rad': rough,
         'storage_wrist_positions_rad': storage_wrist,
     }
@@ -156,7 +171,8 @@ def staged_home_targets(profile, current_positions):
 def save_home_pose(
         path, positions, observed_positions=None,
         storage_joint6_rad=None, mission_ready_joint6_rad=None,
-        staged_home_configured=None):
+        staged_home_configured=None, pre_home_positions_rad=None,
+        pre_home_configured=None):
     destination = Path(path).expanduser().resolve()
     destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     ready = validate_home_positions(positions)[5]
@@ -172,6 +188,15 @@ def save_home_pose(
         bool(staged_home_configured)
         if staged_home_configured is not None
         else storage_joint6_rad is not None)
+    pre_home_is_configured = (
+        bool(pre_home_configured)
+        if pre_home_configured is not None
+        else pre_home_positions_rad is not None)
+    pre_home = (
+        validate_home_positions(pre_home_positions_rad)
+        if pre_home_is_configured else None)
+    if pre_home_is_configured and pre_home is None:
+        raise ValueError('pre-home waypoint is missing')
     payload = {
         'schema_version': HOME_POSE_SCHEMA_VERSION,
         'joint_names': [
@@ -180,8 +205,11 @@ def save_home_pose(
         'mission_ready_joint6_rad': ready,
         'storage_joint6_rad': storage,
         'staged_home_configured': configured,
+        'pre_home_configured': pre_home_is_configured,
         'saved_at_sec': time.time(),
     }
+    if pre_home_is_configured:
+        payload['pre_home_positions_rad'] = pre_home
     if configured:
         payload['startup_wrist_direction'] = STARTUP_WRIST_DIRECTION
         payload['storage_wrist_direction'] = STORAGE_WRIST_DIRECTION
@@ -224,6 +252,7 @@ def load_home_pose(path):
     if schema not in (
             LEGACY_HOME_POSE_SCHEMA_VERSION,
             UNDIRECTED_STAGED_HOME_POSE_SCHEMA_VERSION,
+            DIRECTED_STAGED_HOME_POSE_SCHEMA_VERSION,
             HOME_POSE_SCHEMA_VERSION):
         raise ValueError('home pose schema version is unsupported')
     positions = validate_home_positions(payload.get('positions_rad'))
@@ -258,6 +287,20 @@ def load_home_pose(path):
             result['storage_wrist_direction'] = str(
                 payload.get('storage_wrist_direction', ''))
             validate_staged_wrist_direction(result)
+    if schema < HOME_POSE_SCHEMA_VERSION:
+        result['pre_home_configured'] = False
+        result.pop('pre_home_positions_rad', None)
+    else:
+        if not isinstance(payload.get('pre_home_configured'), bool):
+            raise ValueError('pre_home_configured must be boolean')
+        result['pre_home_configured'] = bool(
+            payload['pre_home_configured'])
+        if result['pre_home_configured']:
+            result['pre_home_positions_rad'] = validate_home_positions(
+                payload.get('pre_home_positions_rad'))
+        elif 'pre_home_positions_rad' in payload:
+            raise ValueError(
+                'unconfigured pre-home profile contains a motion target')
     if 'observed_disabled_positions_rad' in payload:
         result['observed_disabled_positions_rad'] = validate_home_positions(
             payload.get('observed_disabled_positions_rad'))

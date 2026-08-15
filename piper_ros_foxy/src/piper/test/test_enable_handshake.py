@@ -8,16 +8,20 @@ import pytest
 from piper.piper_ctrl_single_node import (
     controller_motion_limits,
     DEFAULT_JOINT_BOUNDS,
+    JOINT6_LIMIT_RAD,
     motor_driver_faults,
     motion_limits_sha256,
     PiperRosNode,
     motor_driver_enable_states,
+    qualify_startup_joint6_controller_limit,
     request_piper_enable_state,
 )
 
 
-def test_joint6_fallback_bound_is_one_full_turn():
-    assert DEFAULT_JOINT_BOUNDS['joint6'] == (-math.pi, math.pi)
+def test_joint6_fallback_bound_is_standard_signed_pi():
+    assert math.isclose(JOINT6_LIMIT_RAD, math.pi)
+    assert DEFAULT_JOINT_BOUNDS['joint6'] == (
+        -JOINT6_LIMIT_RAD, JOINT6_LIMIT_RAD)
 
 
 class FakeClock:
@@ -29,6 +33,55 @@ class FakeClock:
 
     def sleep(self, duration):
         self.now += duration
+
+
+class FakeControllerLimitPiper:
+    def __init__(self, reported_max_tenths=3100, apply_setting=True):
+        self.reported_max_tenths = reported_max_tenths
+        self.apply_setting = apply_setting
+        self.set_calls = []
+        self.query_calls = []
+
+    def MotorAngleLimitMaxSpdSet(
+            self, motor_num, max_angle_limit, min_angle_limit, max_joint_spd):
+        self.set_calls.append((
+            motor_num, max_angle_limit, min_angle_limit, max_joint_spd))
+        if self.apply_setting:
+            self.reported_max_tenths = max_angle_limit
+
+    def SearchMotorMaxAngleSpdAccLimit(self, motor_num, content):
+        self.query_calls.append((motor_num, content))
+
+    def GetAllMotorAngleLimitMaxSpd(self):
+        motors = [None] * 7
+        motors[6] = SimpleNamespace(
+            motor_num=6,
+            max_angle_limit=self.reported_max_tenths,
+        )
+        return SimpleNamespace(
+            all_motor_angle_limit_max_spd=SimpleNamespace(motor=motors))
+
+
+def test_positive_only_startup_controller_limit_is_set_and_proved():
+    piper = FakeControllerLimitPiper()
+    succeeded, reason = qualify_startup_joint6_controller_limit(piper)
+    assert succeeded is True
+    assert '365.0 deg' in reason
+    assert piper.set_calls == [(6, 3650, 0x7FFF, 0x7FFF)]
+    assert piper.query_calls == [(6, 0x01)]
+
+
+def test_positive_only_startup_controller_limit_fails_closed_at_310_deg():
+    piper = FakeControllerLimitPiper(apply_setting=False)
+    clock = FakeClock()
+    succeeded, reason = qualify_startup_joint6_controller_limit(
+        piper,
+        timeout_sec=0.1,
+        monotonic_fn=clock.monotonic,
+        sleep_fn=clock.sleep,
+    )
+    assert succeeded is False
+    assert 'got 310.0 deg' in reason
 
 
 class FakePiper:
@@ -223,6 +276,65 @@ def test_motor_watchdog_allows_bounded_fault_free_enable_transition():
     assert piper.states == [True, True, True, False, False, False]
 
 
+def test_motor_watchdog_allows_initial_sdk_snapshot_to_cohere():
+    class WatchdogPiper(FakePiper):
+        def __init__(self):
+            super().__init__()
+            self.disable_arm_calls = []
+
+        def DisableArm(self, motor):
+            self.disable_arm_calls.append(motor)
+
+    piper = WatchdogPiper()
+    piper.states = [False, True, True, True, True, True]
+    node = SimpleNamespace(
+        piper=piper,
+        _PiperRosNode__enable_flag=False,
+        _disable_required=False,
+        _enable_transition_active=False,
+        _motor_watchdog_reason='',
+        _motor_watchdog_disable_at=0.0,
+        _motor_watchdog_started_at=__import__('time').monotonic(),
+        reset_command_cache=lambda: None,
+        get_logger=lambda: SimpleNamespace(error=lambda _message: None),
+    )
+
+    PiperRosNode.fail_closed_motor_watchdog(node)
+
+    assert piper.disable_arm_calls == []
+    assert node._latest_motor_states == (
+        False, True, True, True, True, True)
+
+
+def test_motor_watchdog_startup_grace_never_masks_motor_fault():
+    class WatchdogPiper(FakePiper):
+        def __init__(self):
+            super().__init__()
+            self.disable_arm_calls = []
+
+        def DisableArm(self, motor):
+            self.disable_arm_calls.append(motor)
+
+    piper = WatchdogPiper()
+    piper.states = [False, True, True, True, True, True]
+    piper.faults[4].add('collision_status')
+    node = SimpleNamespace(
+        piper=piper,
+        _PiperRosNode__enable_flag=False,
+        _disable_required=False,
+        _enable_transition_active=False,
+        _motor_watchdog_reason='',
+        _motor_watchdog_disable_at=0.0,
+        _motor_watchdog_started_at=__import__('time').monotonic(),
+        reset_command_cache=lambda: None,
+        get_logger=lambda: SimpleNamespace(error=lambda _message: None),
+    )
+
+    PiperRosNode.fail_closed_motor_watchdog(node)
+
+    assert piper.disable_arm_calls == [7]
+
+
 def test_motor_watchdog_retries_latched_all_axis_disable():
     class WatchdogPiper(FakePiper):
         def __init__(self):
@@ -397,6 +509,260 @@ def test_arm_only_movej_commands_cannot_actuate_the_gripper():
     assert len(node.piper.joint_commands) == 1
     assert node.piper.motion_commands == [(1, 1, 5)]
     assert node.piper.gripper_commands == []
+
+
+def test_startup_joint6_callback_never_commands_negative_before_raw_wrap():
+    class StartupNode(FakeCommandNode):
+        enforce_joint_bound = PiperRosNode.enforce_joint_bound
+        get_joint_value = PiperRosNode.get_joint_value
+        get_joint_velocity = PiperRosNode.get_joint_velocity
+        get_joint_effort = PiperRosNode.get_joint_effort
+        send_motion_ctrl_2_if_changed = PiperRosNode.send_motion_ctrl_2_if_changed
+        send_gripper_if_changed = PiperRosNode.send_gripper_if_changed
+
+        def __init__(self):
+            super().__init__()
+            self.joint_bounds = dict(DEFAULT_JOINT_BOUNDS)
+            self.gripper_exist = False
+            self._joint_feedback_lock = threading.Lock()
+            self.last_commanded_joint_positions = None
+            self.last_command_feedback_best_error = None
+            self.last_joint_commanded_at = 0.0
+            self.last_joint_feedback_positions = None
+            self._startup_joint6_finished = False
+            self._startup_joint6_armed = True
+            self._startup_joint6_active = False
+            self._startup_joint6_last_target = None
+            self._raw_joint6_feedback = 3.011637
+            self._published_joint6_feedback = 3.011637 - 2.0 * math.pi
+            self._latest_raw_arm_positions = (
+                0.07, -0.048633872, 0.025625236, 0.055, 0.348, 3.011637)
+            self.logger = SimpleNamespace(
+                debug=lambda *_args: None,
+                info=lambda *_args: None,
+                warn=lambda *_args: None,
+                error=lambda *_args: None,
+            )
+
+        def GetEnableFlag(self):
+            return True
+
+        def get_logger(self):
+            return self.logger
+
+    node = StartupNode()
+    command = SimpleNamespace(
+        header=SimpleNamespace(
+            frame_id='piper_scan_executor_startup_wrist'),
+        name=['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6'],
+        position=[0.07, -0.048633872, 0.025625236, 0.055, 0.348, 0.0],
+        velocity=[0.0] * 6,
+        effort=[],
+    )
+
+    untagged = SimpleNamespace(
+        header=SimpleNamespace(frame_id='piper_scan_executor_sdk_movej'),
+        name=list(command.name),
+        position=list(command.position),
+        velocity=list(command.velocity),
+        effort=[],
+    )
+    PiperRosNode.joint_callback(node, untagged)
+    assert node.piper.joint_commands == []
+
+    PiperRosNode.joint_callback(node, command)
+    before_wrap = node.piper.joint_commands[-1][5]
+    assert before_wrap > 180000
+    factor = 57324.840764
+    # Reproduce the live failure: J2/J3 are outside the controller's ordinary
+    # powered command range after gravity relaxation.  STARTUP_WRIST must keep
+    # their newest coherent feedback instead of clipping them to zero/bounds.
+    assert node.piper.joint_commands[-1][1] == round(-0.048633872 * factor)
+    assert node.piper.joint_commands[-1][2] == round(0.025625236 * factor)
+
+    node._raw_joint6_feedback = -3.13
+    node._published_joint6_feedback = -3.13
+    PiperRosNode.joint_callback(node, command)
+    after_wrap = node.piper.joint_commands[-1][5]
+    assert after_wrap == 0
+    assert after_wrap > round(-3.13 * 57324.840764)
+
+
+def test_startup_wrap_bridge_continues_positive_to_raw_two_pi():
+    class StartupNode(FakeCommandNode):
+        enforce_joint_bound = PiperRosNode.enforce_joint_bound
+        get_joint_value = PiperRosNode.get_joint_value
+        get_joint_velocity = PiperRosNode.get_joint_velocity
+        get_joint_effort = PiperRosNode.get_joint_effort
+        send_motion_ctrl_2_if_changed = PiperRosNode.send_motion_ctrl_2_if_changed
+        send_gripper_if_changed = PiperRosNode.send_gripper_if_changed
+
+        def __init__(self):
+            super().__init__()
+            self.joint_bounds = dict(DEFAULT_JOINT_BOUNDS)
+            self.gripper_exist = False
+            self._startup_joint6_finished = False
+            self._startup_joint6_armed = True
+            self._startup_joint6_active = True
+            self._startup_joint6_last_target = 0.0
+            self._raw_joint6_feedback = 3.200695
+            self._published_joint6_feedback = 3.200695 - 2.0 * math.pi
+            self._latest_raw_arm_positions = (
+                0.070770308, 0.0, 0.0, 0.055977796, 0.348164796,
+                3.200695)
+            self.errors = []
+            self.logger = SimpleNamespace(
+                debug=lambda *_args: None,
+                info=lambda *_args: None,
+                warn=lambda *_args: None,
+                error=self.errors.append,
+            )
+
+        def GetEnableFlag(self):
+            return True
+
+        def get_logger(self):
+            return self.logger
+
+    node = StartupNode()
+    command = SimpleNamespace(
+        header=SimpleNamespace(
+            frame_id='piper_scan_executor_startup_wrist'),
+        name=['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6'],
+        position=[0.070770308, 0.0, 0.0, 0.055977796, 0.348164796, 0.0],
+        velocity=[0.0] * 6,
+        effort=[],
+    )
+
+    PiperRosNode.joint_callback(node, command)
+
+    assert node.errors == []
+    assert len(node.piper.joint_commands) == 1
+    # Once +3.2 is measured, logical ready zero must remain on the same
+    # increasing controller branch. A numeric zero command here rotates the
+    # physical wrist anticlockwise and is forbidden.
+    ready_command = node.piper.joint_commands[-1][5]
+    measured_command = round(node._raw_joint6_feedback * 57324.840764)
+    assert ready_command == round((2.0 * math.pi) * 57324.840764)
+    assert ready_command > measured_command
+
+    node.piper.joint_commands.clear()
+    node._startup_joint6_last_target = 3.2 - 2.0 * math.pi
+    command.position[-1] = 3.2 - 2.0 * math.pi
+    PiperRosNode.joint_callback(node, command)
+
+    assert len(node.piper.joint_commands) == 1
+    # A repeated bridge endpoint retains measured raw J6 and never reverses
+    # to correct the 0.000695-rad overshoot.
+    assert node.piper.joint_commands[-1][5] == round(
+        node._raw_joint6_feedback * 57324.840764)
+
+
+def test_startup_joint6_explicit_hold_uses_measured_raw_coordinate():
+    class StartupNode(FakeCommandNode):
+        enforce_joint_bound = PiperRosNode.enforce_joint_bound
+        get_joint_value = PiperRosNode.get_joint_value
+        get_joint_velocity = PiperRosNode.get_joint_velocity
+        get_joint_effort = PiperRosNode.get_joint_effort
+        send_motion_ctrl_2_if_changed = PiperRosNode.send_motion_ctrl_2_if_changed
+        send_gripper_if_changed = PiperRosNode.send_gripper_if_changed
+
+        def __init__(self):
+            super().__init__()
+            self.joint_bounds = dict(DEFAULT_JOINT_BOUNDS)
+            self.gripper_exist = False
+            self._startup_joint6_finished = False
+            self._startup_joint6_armed = True
+            self._startup_joint6_active = False
+            self._startup_joint6_last_target = None
+            self._raw_joint6_feedback = 3.071260
+            self._published_joint6_feedback = 3.071260 - 2.0 * math.pi
+            self._latest_raw_arm_positions = (
+                0.0, -0.048337, 0.012455, 0.0, 0.401072, 3.071260)
+            self.logger = SimpleNamespace(
+                debug=lambda *_args: None,
+                info=lambda *_args: None,
+                warn=lambda *_args: None,
+                error=lambda *_args: None,
+            )
+
+        def GetEnableFlag(self):
+            return True
+
+        def get_logger(self):
+            return self.logger
+
+    node = StartupNode()
+    # Reproduce the failed run's asynchronous executor snapshot: its logical
+    # J6 is 0.016 rad behind the driver's current sample. The explicit hold
+    # must emit the exact measured raw coordinate, not rotate either way.
+    command = SimpleNamespace(
+        header=SimpleNamespace(frame_id='piper_scan_executor_hold'),
+        name=['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6'],
+        position=[0.0, 0.0, 0.0, 0.0, 0.4, -3.228165],
+        velocity=[0.0] * 6,
+        effort=[],
+    )
+
+    PiperRosNode.joint_callback(node, command)
+
+    assert len(node.piper.joint_commands) == 1
+    expected = round(3.071260 * 57324.840764)
+    assert node.piper.joint_commands[-1][5] == expected
+    assert node._startup_joint6_armed
+    assert not node._startup_joint6_active
+    assert node._startup_joint6_last_target is None
+
+
+def test_normal_joint6_command_retains_completed_startup_turn_offset():
+    class ReadyNode(FakeCommandNode):
+        enforce_joint_bound = PiperRosNode.enforce_joint_bound
+        get_joint_value = PiperRosNode.get_joint_value
+        get_joint_velocity = PiperRosNode.get_joint_velocity
+        get_joint_effort = PiperRosNode.get_joint_effort
+        send_motion_ctrl_2_if_changed = PiperRosNode.send_motion_ctrl_2_if_changed
+        send_gripper_if_changed = PiperRosNode.send_gripper_if_changed
+
+        def __init__(self):
+            super().__init__()
+            self.joint_bounds = dict(DEFAULT_JOINT_BOUNDS)
+            self.gripper_exist = False
+            self._startup_joint6_finished = True
+            self._startup_joint6_armed = False
+            self._startup_joint6_active = False
+            self._joint6_controller_turn_offset = 2.0 * math.pi
+            self.logger = SimpleNamespace(
+                debug=lambda *_args: None,
+                info=lambda *_args: None,
+                warn=lambda *_args: None,
+                error=lambda *_args: None,
+            )
+
+        def GetEnableFlag(self):
+            return True
+
+        def get_logger(self):
+            return self.logger
+
+    node = ReadyNode()
+    command = SimpleNamespace(
+        header=SimpleNamespace(frame_id='piper_scan_executor_sdk_movej'),
+        name=['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6'],
+        position=[0.0, 0.0, 0.0, 0.0, 0.4, 0.0],
+        velocity=[0.0] * 6,
+        effort=[],
+    )
+
+    PiperRosNode.joint_callback(node, command)
+    ready_raw = node.piper.joint_commands[-1][5]
+    assert ready_raw == round((2.0 * math.pi) * 57324.840764)
+
+    command.position[-1] = -3.139536232
+    PiperRosNode.joint_callback(node, command)
+    storage_raw = node.piper.joint_commands[-1][5]
+    assert storage_raw == round(
+        (2.0 * math.pi - 3.139536232) * 57324.840764)
+    assert storage_raw < ready_raw
 
 
 def test_controller_motion_limits_are_typed_converted_and_hash_bound():

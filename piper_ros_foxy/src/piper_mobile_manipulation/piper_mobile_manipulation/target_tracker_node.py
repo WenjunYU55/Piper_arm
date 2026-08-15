@@ -2,7 +2,8 @@
 import math
 
 import rclpy
-import tf2_geometry_msgs
+# Importing this module registers geometry message conversions with tf2.
+import tf2_geometry_msgs  # noqa: F401
 from geometry_msgs.msg import PointStamped
 from rclpy.duration import Duration
 from rclpy.executors import MultiThreadedExecutor
@@ -170,7 +171,9 @@ class TargetTrackerNode(Node):
         out.predicted_position.y = float(y + vy * self.prediction_horizon)
         out.predicted_position.z = float(z + vz * self.prediction_horizon)
         out.speed = float(speed)
-        track_confidence = float(min(1.0, self.track_frames / float(max(self.min_track_frames, 1))))
+        track_confidence = float(min(
+            1.0,
+            self.track_frames / float(max(self.min_track_frames, 1))))
         out.confidence = float(track_confidence * measurement_confidence)
         out.stable = (
             self.track_frames >= self.min_track_frames
@@ -332,7 +335,8 @@ class TargetTrackerNode(Node):
     def scaled_measurement_noise(self, confidence):
         confidence = max(float(confidence), self.min_measurement_confidence)
         confidence = min(confidence, 1.0)
-        return self.base_measurement_noise * (1.0 + (1.0 - confidence) * self.confidence_noise_scale)
+        return self.base_measurement_noise * (
+            1.0 + (1.0 - confidence) * self.confidence_noise_scale)
 
     def refresh_runtime_params(self):
         self.prediction_horizon = float(self.get_parameter('prediction_horizon_s').value)
@@ -344,7 +348,8 @@ class TargetTrackerNode(Node):
         self.output_frame = self.get_parameter('piper_base_frame').value
         self.camera_frame = self.get_parameter('camera_frame').value
         self.transform_timeout_s = float(self.get_parameter('transform_timeout_s').value)
-        self.min_measurement_confidence = float(self.get_parameter('min_measurement_confidence').value)
+        self.min_measurement_confidence = float(
+            self.get_parameter('min_measurement_confidence').value)
         self.confidence_noise_scale = float(self.get_parameter('confidence_noise_scale').value)
         self.base_measurement_noise = float(self.get_parameter('measurement_noise').value)
         self.depth_gate_m = float(self.get_parameter('depth_gate_m').value)

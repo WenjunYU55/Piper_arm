@@ -1,8 +1,15 @@
-"""Pure state and validation helpers for the GUI acquisition session."""
+"""Archived Phase 1 characterization helpers for the retired GUI workflow.
+
+Phase 8 removed this module from the production GUI import graph.  The
+production GUI now submits ``RunTargetScan`` and does not execute these rules;
+they remain temporarily so the pre-refactor behavior record stays testable.
+"""
 
 from dataclasses import dataclass
 from enum import Enum
 import math
+
+from piper_mobile_manipulation.failure_model import as_failure
 
 
 ROUGH_ACQUISITION = 'ROUGH_ACQUISITION'
@@ -68,26 +75,7 @@ def step45_auto_recovery_blocker(message):
     a new proposal, but it never approves motion.  Explicit workspace,
     ownership, hardware and model blockers therefore remain operator stops.
     """
-    text = str(message).strip().lower()
-    operator_stops = (
-        'movable clutter',
-        'clear the workspace',
-        'obstacle scene is blocked',
-        'obstacle geometry is invalid',
-        'incompatible active state',
-        'command publisher',
-        'collision model is not qualified',
-        'outside configured limits',
-        'arm is not enabled',
-        'managed scan stack failed',
-        'managed automation process stopped',
-        'operator cancelled',
-        'emergency stop',
-    )
-    for blocker in operator_stops:
-        if blocker in text:
-            return blocker
-    return ''
+    return as_failure(message).recovery_blocker
 
 
 def command_publisher_ownership_rejection(

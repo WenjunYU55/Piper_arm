@@ -1,5 +1,29 @@
 schema_version: 1
 document: ai_context_index
+navigation:
+  implemented_features_bookmark: docs/ai/90-implemented-features-bookmark.yaml
+  phase0_refactor_baseline:
+    architecture: docs/refactor/current_architecture.md
+    external_contracts: docs/refactor/external_contracts.md
+    safety_invariants: docs/refactor/safety_invariants.md
+    refactor_risks: docs/refactor/refactor_risks.md
+    build_and_tests: docs/refactor/baseline_test_results.md
+    phase1_discovered_behaviour_questions: docs/refactor/discovered_behaviour_questions.md
+    phase2_typed_failure_model: docs/refactor/phase2_typed_failures.md
+    phase3_telemetry_snapshots: docs/refactor/phase3_telemetry_store.md
+    phase4_process_supervision: docs/refactor/phase4_process_supervisor.md
+    phase5_safety_evaluator_shadow: docs/refactor/phase5_safety_evaluator.md
+    phase6_mission_engine: docs/refactor/phase6_mission_engine.md
+    phase7_executor_responsibility_map: docs/refactor/phase7_executor_responsibility_map.md
+    phase7_viewpoint_components: docs/refactor/phase7_viewpoint_components.md
+    phase8_gui_responsibility_map: docs/refactor/phase8_gui_responsibility_map.md
+    phase8_gui_architecture: docs/refactor/phase8_gui_architecture.md
+    phase8_gui_test_results: docs/refactor/phase8_test_results.md
+    phase9_typed_configuration: docs/refactor/phase9_configuration.md
+    phase9_test_results: docs/refactor/phase9_test_results.md
+    phase10_final_architecture: docs/refactor/final_architecture.md
+    final_behavioural_equivalence_audit: docs/refactor/final_equivalence_report.md
+    supervised_physical_requalification: docs/refactor/physical_requalification_checklist.md
 project:
   name: Piper_arm
   purpose: Bounded closest-first multi-target eye-in-hand RGB-D rough-target acquisition, open-vocabulary tracking, occlusion assessment, adaptive feature-gated 8-to-24-view capture, and guarded sequential low-speed scan execution for an AgileX PiPER arm with Intel RealSense L515.
@@ -837,7 +861,7 @@ entrypoints:
   mission_roadmap: docs/ai/70-roadmap.yaml
   consolidated_problem_log: docs/ai/80-problem-log.yaml
   arm_driver: start_piper.sh
-  manual_arm_ui: start_gui.sh; manual joints, RViz STL digital-twin mirroring, and Acquire & Scan session controls
+  manual_arm_ui: start_gui.sh; RunTargetScan client, read-only diagnostics, explicitly labelled manual joints/home-profile tools, and RViz STL digital-twin mirroring
   hand_eye_tf: L515_camera/run_hand_eye_tf.sh
   gpu_perception: L515_camera/run_gpu_vision_pipeline.sh
   dry_run_supervisor: L515_camera/run_supervised_cube_workflow.sh
@@ -878,11 +902,12 @@ hot_paths:
   gpu_refresh: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/heavy_refresh_bridge_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/heavy_refresh_contract.py, AI_perception_tests/heavy_model_worker.py, AI_perception_tests/sam2_live_worker.py]
   camera_clock_safety: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/camera_timestamp_watchdog_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/camera_timestamp_health.py, L515_camera/run_gpu_vision_pipeline.sh]
   camera_motion_compensation: [L515_camera/publish_hand_eye_tf.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/motion_compensated_prompt_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/utils/mask_reprojection.py]
-  hardware_commands: [piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py, piper_gui_native.py, piper_gui_automation.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_motion.py, start_piper.sh]
+  hardware_commands: [piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py, piper_gui_native.py commissioning only, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_motion.py, start_piper.sh]
   supervised_dry_run: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/supervised_cube_workflow_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/supervised_workflow.py]
   supervised_scan_motion: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_trajectory.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_target_acquisition_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_motion.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture_node.py, piper_ros_foxy/src/piper_mobile_manipulation/config/scan_execution_params.yaml, piper_ros_foxy/src/piper_mobile_manipulation/config/scan_capture_params.yaml]
   tesseract_planning_boundary: [piper_ros_foxy/src/piper_tesseract_foxy, motion_planning/tesseract]
   mission_process_ownership: [run_target_scan_mission.sh, piper_ros_foxy/src/piper_mobile_manipulation/launch/target_scan_mission.launch.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_scan_mission_node.py]
+  typed_mission_executor_configuration: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/configuration.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_configuration.py, docs/refactor/phase9_configuration.md]
 update_rules:
   - Update 10-system-map and 40-flows when launch composition, process order, TF ownership, or state ownership changes.
   - Update 30-contracts when topics, services, custom messages, JSON String payloads, spool manifests, parameters, or persisted files change.
@@ -893,7 +918,7 @@ update_rules:
   - Update project-structure.txt when top-level or ROS package layout changes.
   - Describe checked-out source, including intentional uncommitted work; never infer behavior solely from generated build/install trees.
 implementation_update_2026_08_10:
-  staged_home: A schema-v3 home profile binds rough-home/mission-ready J6, negative storage J6 and increasing startup plus decreasing storage directions. The measured signed branch is checked before enable. Startup proves direct J6-only ready then direct rough home; every controllable terminal path proves a fresh direct rough-home target then direct J6-only storage before hold, disable and owned-child cleanup. Collision validation is explicitly bypassed only on these dedicated zero-capture RETURN_HOME stages because the operator-confirmed resting fold intentionally violates conservative self-envelope geometry. ROS JointState array sequences are accepted as six-joint inputs. Each direct stage transports its exact hash-bound configured_home_goal_positions_rad; STARTUP_WRIST and STORAGE_WRIST are checked against their own goal. Schema-v1/v2 profiles remain readable for diagnostics but cannot start an autonomous mission when require_staged_home_profile is true.
+  staged_home: A schema-v4 home profile binds rough-home/mission-ready J6, terminal-only PRE_HOME, negative storage J6, positive-only startup and decreasing storage direction. The measured signed branch is checked before enable. Startup executes direct J6-only STARTUP_WRIST then direct ROUGH_HOME through ExecuteHomeStage. Every controllable terminal path holds, then executes PRE_HOME, ROUGH_HOME and J6-only STORAGE_WRIST before final hold, disable and owned-child cleanup. Tesseract is not used for configured-home stages. Robot self-collision planning is intentionally bypassed for these operator-recorded stages, while fresh feedback/motor/limit evidence and dense installed-holder external clearance remain mandatory. ROS JointState array sequences are accepted as six-joint inputs. Older profiles remain readable for diagnostics but cannot start an autonomous mission when require_staged_home_profile is true.
   occlusion: Heavy refresh now archives synchronized color, aligned depth and camera intrinsics. Exact response masks are projected with the capture-time TF; pen/marker/stick contact proposals require two associated settled observations, at least five-percent target support and closer-depth occlusion, predicted surface benefit and bounded uncertainty. Contact motion remains blocked by manipulation_model_qualified=false.
   scanning: Automatic completion combines achieved-FK side/span floors with measured base_link target-surface voxels from persisted RGB-D masks. Eight accepted views seed the model but do not force completion; twenty-four is the safety maximum, and three consecutive novel-surface fractions at or below 0.02 establish convergence.
   reconstruction: Successful safe shutdown allocates a durable mesh job. Only a task/job/manifest-correlated tracked-robot-homed report queues isolated TSDF reconstruction; status and final PLY/hash/quality are durable and queryable.
@@ -1026,3 +1051,10 @@ tesseract_stream_v3_movej_timing_2026_08_11: >-
   all-six disable and child cleanup completed with safe_shutdown=true. The
   20-percent timing behavior is physically accepted; 1/5/10-percent staging,
   deliberate cancel-to-hold, NBV completion and settings above 20 percent remain pending.
+
+selected_feature_reintegration_2026_08_15:
+  branch: reintegrate/selected-archived-features
+  active: [direct ExecuteHomeStage configured home, schema-v4 terminal PRE_HOME, positive-only startup J6 wrap bridge, guarded zero-capture dataset cleanup, densely proven direct MoveJ selection, pass-through smoothing with dense fallback, masked TSDF plus bounded GICP and GUI validation]
+  deferred: [reachable full-sphere NBV v2, NBV planning-budget recovery, shared ambiguity-aware depth-layer selector, confidence-qualified L515 capture schema 2]
+  navigation: [docs/ai/30-contracts.yaml execute_home_stage_contract_2026_08_15, docs/ai/40-flows.yaml selected_reintegration_flow_2026_08_15, docs/ai/50-guardrails.yaml staged_home_guardrail_2026_08_10, docs/ai/90-implemented-features-bookmark.yaml selected_reintegration_2026_08_15]
+  qualification: Software-only. No physical motion was run during this integration.

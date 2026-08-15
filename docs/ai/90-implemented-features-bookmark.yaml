@@ -1,0 +1,302 @@
+schema_version: 1
+document: implemented_features_bookmark
+updated_at: 2026-08-14
+purpose: >-
+  Preserve the system capabilities that must not be forgotten during the
+  core-integration rewrite. This is a feature inventory, not a declaration
+  that the complete physical pipeline has passed end to end.
+
+repository_snapshots:
+  active_rollback:
+    path: /home/prl/Piper_arm
+    commit: 4945b480d8494fa840c0d2bc993c72834934a37f
+    branch: rewrite/core-integration-v2
+    meaning: Latest GitHub-pushed baseline restored to the canonical absolute path.
+  preserved_later_version:
+    path: /home/prl/Piper_arm_previous_version
+    commit: a96117f5143896efef5b1a0199a6e2e45bcb24b3
+    branch: archive/pre-core-rewrite-2026-08-14
+    meaning: >-
+      Complete pre-rewrite integration snapshot containing later features and
+      fixes that are not all present in the active rollback.
+
+status_terms:
+  ACTIVE: Present in the active rollback source.
+  ARCHIVED_LATER: Present only, or materially improved, in the preserved later version.
+  PHYSICALLY_DEMONSTRATED: At least one bounded physical run exercised the stated behavior.
+  SOFTWARE_QUALIFIED: Tests/builds or command-free qualification passed, but full physical acceptance is incomplete.
+  PARTIAL: Interfaces or policy exist, but the intended real-world behavior is not complete.
+
+active_rollback_features:
+  - id: always_on_mission_coordinator
+    status: [ACTIVE, PHYSICALLY_DEMONSTRATED]
+    summary: >-
+      Singleton RunTargetScan action coordinator remains ready between jobs,
+      owns mission process generations and returns durable task outcomes.
+    authority: [run_target_scan_mission.sh, target_scan_mission_node.py, mission_core.py]
+
+  - id: closest_first_multi_target_queue
+    status: [ACTIVE, SOFTWARE_QUALIFIED]
+    summary: >-
+      Bounded eight-entry queue groups near-simultaneous jobs, selects the
+      closest rough target first, preserves arrival order for ties and runs
+      exactly one physical mission at a time through its shutdown boundary.
+    authority: [target_scan_mission_node.py, mission_spool.py]
+
+  - id: gui_tracked_robot_substitute
+    status: [ACTIVE, PHYSICALLY_DEMONSTRATED]
+    summary: >-
+      The Tk GUI can submit the same typed text-label plus stamped rough-pose
+      mission contract intended for the tracked robot and exposes Cancel/Home.
+    authority: [piper_gui_native.py, RunTargetScan.action]
+
+  - id: managed_stack_lifecycle
+    status: [ACTIVE, PHYSICALLY_DEMONSTRATED]
+    summary: >-
+      The coordinator starts the disabled arm driver, L515, GPU perception,
+      hand-eye TF, Tesseract and scan nodes in order, monitors critical
+      children, and owns their cleanup while coordinator and RViz may remain.
+    authority: [target_scan_mission_node.py, target_scan_mission.launch.py, run_gpu_vision_pipeline.sh]
+
+  - id: typed_safety_and_control_authority
+    status: [ACTIVE, PHYSICALLY_DEMONSTRATED]
+    summary: >-
+      Fresh joint feedback, all-six motor enable state, per-motor faults,
+      controller limits, plan identity/hash and sole command-publisher
+      ownership gate every powered motion. Partial enable or a motor fault
+      revokes authority and triggers all-axis disable behavior.
+    authority: [piper_ctrl_single_node.py, scan_viewpoint_executor_node.py, PiperStatusMsg.msg]
+
+  - id: bounded_speed_execution
+    status: [ACTIVE, PHYSICALLY_DEMONSTRATED]
+    summary: >-
+      Qualified low-speed execution scales the PiPER MoveJ model once, streams
+      collision-qualified paths at 20 Hz, caps adjacent commands, monitors
+      following error and proves final convergence and settling.
+    authority: [scan_trajectory.py, scan_viewpoint_executor_node.py, scan_execution_params.yaml]
+
+  - id: isolated_six_joint_tesseract_planning
+    status: [ACTIVE, SOFTWARE_QUALIFIED]
+    summary: >-
+      A network/CAN/ROS-free Tesseract 0.35 worker performs free six-joint IK,
+      deterministic OMPL/ISP planning, dense Bullet validation, response
+      hashing and proposal-only qualification using the PiPER, gripper,
+      camera-holder and conservative L515 geometry.
+    authority: [motion_planning/tesseract, piper_tesseract_foxy]
+
+  - id: close_range_one_look_acquisition
+    status: [ACTIVE, PHYSICALLY_DEMONSTRATED]
+    summary: >-
+      Acquisition starts from the measured camera pose, tries a compact
+      centered look and then bounded left/right/up/down looks near 15 degrees,
+      performs one observation per plan and stops after a measured lock or at
+      most five looks.
+    authority: [scan_target_acquisition_node.py, target_acquisition.py, target_scan_mission_node.py]
+
+  - id: open_vocabulary_grounded_segmentation
+    status: [ACTIVE, PHYSICALLY_DEMONSTRATED]
+    summary: >-
+      Offline-cached GroundingDINO supplies language-conditioned detections,
+      SAM2 supplies temporal target/obstacle masks, and request-correlated
+      heavy refresh reseeds perception after settling or tracking loss.
+    authority: [AI_perception_tests/groundingdino_test, heavy_refresh_bridge_node.py, sam2_live_bridge_node.py]
+
+  - id: depth_tf_validated_target_lock
+    status: [ACTIVE, PHYSICALLY_DEMONSTRATED]
+    summary: >-
+      Masked aligned depth, camera intrinsics, capture-time TF, tracking health,
+      stable base-frame target state and LOCKED status are combined before a
+      measured target may authorize scan planning.
+    authority: [depth_to_3d_node.py, target_tracker_node.py, target_landmark_node.py]
+
+  - id: occlusion_evidence_and_removal_proposals
+    status: [ACTIVE, PARTIAL]
+    summary: >-
+      Target and obstacle masks are projected into base_link, occlusion quality
+      is assessed after a correlated semantic probe, and the workflow can
+      propose outward push or support-validated pick/place with an observed
+      drop patch. Real manipulation remains unqualified.
+    authority: [obstacle_instance_3d_node.py, occlusion_checker_node.py, supervised_workflow.py]
+
+  - id: adaptive_closed_loop_nbv
+    status: [ACTIVE, PHYSICALLY_DEMONSTRATED]
+    summary: >-
+      Automatic scanning plans one viewpoint at a time from the measured target,
+      stores achieved camera FK and accepted/rejected history, replaces rejected
+      views, and uses target-facing direction, Y-side, azimuth, elevation and
+      measured-surface novelty rather than a fixed capture count alone.
+    authority: [scan_viewpoint_planner_node.py, scan_session_memory.py, surface_coverage.py]
+
+  - id: adaptive_capture_budget
+    status: [ACTIVE, SOFTWARE_QUALIFIED]
+    summary: >-
+      Eight accepted views seed the model and 24 is the maximum. Completion
+      requires useful achieved-view diversity and three consecutive low
+      measured novel-surface gains; reaching the cap without those floors is a
+      retryable quality failure.
+    authority: [target_scan_mission_node.py, scan_session_memory.py, surface_coverage.py]
+
+  - id: validated_rgbd_mask_capture
+    status: [ACTIVE, PHYSICALLY_DEMONSTRATED]
+    summary: >-
+      Each accepted settled viewpoint writes immutable RGB, raw depth, metric
+      depth PNG, mask and metadata with intrinsics, joints, camera transform and
+      mission/plan identity. Only synchronized GOOD/CLEAR target-valid evidence
+      increments the accepted count.
+    authority: [scan_capture_node.py, scan_capture.py, scan_quality_node.py]
+
+  - id: tracking_loss_hold_and_replan
+    status: [ACTIVE, PHYSICALLY_DEMONSTRATED]
+    summary: >-
+      LOW_CONFIDENCE, LOST, SEARCHING, prediction-only or stale target state
+      blocks capture and new motion, holds the achieved pose, requests semantic
+      recovery and then revalidates or replans from current measured state.
+    authority: [scan_viewpoint_executor_node.py, target_scan_mission_node.py]
+
+  - id: staged_home_profile_and_cancel_path
+    status: [ACTIVE, PHYSICALLY_DEMONSTRATED]
+    summary: >-
+      Hash-verified schema-4 home data binds positive-only startup J6 toward the
+      mission-ready angle, terminal-only pre-home, rough home, decreasing
+      storage J6, stable hold, feedback-confirmed disable and owned-child
+      cleanup. Configured home stages use the typed direct-home service rather
+      than Tesseract; the reintegrated route requires supervised physical
+      requalification.
+    authority: [piper_home_pose.json, home_pose.py, target_scan_mission_node.py]
+
+  - id: calibrated_l515_tf_and_robot_model
+    status: [ACTIVE, PHYSICALLY_DEMONSTRATED]
+    summary: >-
+      The installed camera holder and L515 visual model, manufacturer depth
+      datum, serial-specific factory color/depth extrinsic and corrected 17 mm
+      square/12 mm marker validation are represented in TF and planning inputs.
+    authority: [piper_description.xacro, calibration_result.yaml, publish_hand_eye_tf.py]
+
+  - id: selectable_camera_profiles
+    status: [ACTIVE, SOFTWARE_QUALIFIED]
+    summary: >-
+      GUI mission input carries bounded RGB resolution and frame-rate choices;
+      640x480 at 30 Hz remains the operationally evidenced profile while higher
+      RGB modes are available for benchmarking and calibration.
+    authority: [piper_gui_native.py, mission_core.py, start_l515_camera.sh]
+
+  - id: baseline_offline_masked_tsdf
+    status: [ACTIVE, SOFTWARE_QUALIFIED]
+    summary: >-
+      Successful adaptive datasets can be checked for manifest/frame-count and
+      capture-time transform consistency and fused offline into a masked TSDF
+      with a quality report. This baseline is not yet a proven good mesh.
+    authority: [reconstruction/tsdf_reconstruct.py, reconstruction_jobs.py]
+
+later_feature_reintegration_status:
+  - id: direct_configured_home_without_tesseract
+    status: [ACTIVE, SOFTWARE_REQUALIFIED, PHYSICAL_REQUALIFICATION_REQUIRED]
+    summary: >-
+      Typed ExecuteHomeStage moved STARTUP_WRIST, PRE_HOME, ROUGH_HOME and
+      STORAGE_WRIST out of Tesseract and executed authenticated direct MoveJ
+      endpoints with feedback, direction, motor, limit and settle checks.
+    authority: [piper_mobile_manipulation/srv/ExecuteHomeStage.srv, scan_viewpoint_executor_node.py, target_scan_mission_node.py]
+
+  - id: schema4_pre_home_waypoint
+    status: [ACTIVE, SOFTWARE_REQUALIFIED, PHYSICAL_REQUALIFICATION_REQUIRED]
+    summary: >-
+      A recorded PRE_HOME waypoint was inserted only in the return sequence
+      before rough home to avoid the J5/camera-holder collision posture.
+    authority: [piper_home_pose.json, home_pose.py, mission_core.py, target_scan_mission_node.py]
+
+  - id: startup_j6_positive_only_wrap_bridge
+    status: [ACTIVE, SOFTWARE_REQUALIFIED, PHYSICAL_REQUALIFICATION_REQUIRED]
+    summary: >-
+      Driver-owned startup logic represented the negative storage branch,
+      allowed only positive rotation, used the qualified raw wrap bridge and
+      retained its controller-turn offset until terminal storage.
+    authority: [piper_ctrl_single_node.py, scan_viewpoint_executor_node.py]
+
+  - id: guarded_zero_capture_dataset_deletion
+    status: [ACTIVE, SOFTWARE_REQUALIFIED]
+    summary: >-
+      Failed missions with zero accepted captures removed only their exact
+      identity-bound incomplete dataset after the writer stopped; historical
+      datasets and any folder containing accepted artifacts were preserved.
+    authority: [target_scan_mission_node.py]
+
+  - id: reachable_full_sphere_nbv_v2
+    status: [ARCHIVED_LATER, SOFTWARE_QUALIFIED]
+    summary: >-
+      Full-sphere candidate directions, adaptive profile-aware distance,
+      achieved acquisition-pose graph seeding, hard 10-degree ray de-duplication,
+      reachable-bin coverage, capture-skipping transits and bounded alternative
+      planning replaced repeated local-hemisphere selections.
+    source: /home/prl/Piper_arm_previous_version/piper_ros_foxy/src/piper_mobile_manipulation
+
+  - id: nbv_planning_budget_recovery
+    status: [ARCHIVED_LATER, SOFTWARE_QUALIFIED]
+    summary: >-
+      Stable 810-candidate envelopes were cached, planner work paused while a
+      request was active, exhausted candidate IDs were reported and excluded,
+      and at most three complete transactions were allowed for one view.
+    source: /home/prl/Piper_arm_previous_version
+
+  - id: shared_depth_layer_selector
+    status: [ARCHIVED_LATER, SOFTWARE_QUALIFIED]
+    summary: >-
+      One ambiguity-aware target-depth selector served live target geometry,
+      stable landmark, occlusion fallback and capture, preventing SAM boundary
+      pixels from switching between foreground target and background layers.
+    source: /home/prl/Piper_arm_previous_version/piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/utils/target_depth.py
+
+  - id: confidence_qualified_capture_schema2
+    status: [ARCHIVED_LATER, SOFTWARE_QUALIFIED]
+    summary: >-
+      Native L515 depth/confidence synchronization, exact RGB-mask identity,
+      adaptive erosion, depth-continuous primary components and immutable
+      confidence artifacts strengthened capture acceptance.
+    source: /home/prl/Piper_arm_previous_version
+
+  - id: smooth_direct_movej_or_streamed_detour
+    status: [ACTIVE, SOFTWARE_REQUALIFIED, PHYSICAL_REQUALIFICATION_REQUIRED]
+    summary: >-
+      A densely proven straight joint chord could use one native MoveJ endpoint
+      for continuous controller interpolation; a route needing collision
+      avoidance retained its complete Tesseract stream and detour geometry.
+    authority: [worker.py, scan_viewpoint_executor_node.py]
+
+  - id: pass_through_stream_smoothing
+    status: [ACTIVE, SOFTWARE_REQUALIFIED, PHYSICAL_REQUALIFICATION_REQUIRED]
+    summary: >-
+      Bounded internal path blending reduced stop-at-waypoint behavior while
+      preserving exact start/end/reversal points and validating the actual
+      blended geometry before execution.
+    authority: [worker.py, scan_viewpoint_executor_node.py]
+
+  - id: tsdf_bounded_gicp_and_gui_validation
+    status: [ACTIVE, SOFTWARE_REQUALIFIED]
+    summary: >-
+      Reconstruction compared robot-pose TSDF with bounded local GICP, enforced
+      manifest/calibration/confidence provenance, produced PLY/quality reports,
+      and added command-free GUI previews and Open3D inspection.
+    authority: [reconstruction/tsdf_reconstruct.py, reconstruction/gui_support.py, reconstruction/view_reconstruction.py, piper_gui_native.py]
+
+known_incomplete_or_unproven:
+  - Complete physical E2E success from target submission through diverse scan, home, disable and cleanup has not been re-established after restoring the rollback.
+  - Physical branch/leaf removal by either push or pick/place is not qualified; manipulation_model_qualified remains false.
+  - Safe-area inference for real placement has proposal logic but no accepted physical end-to-end evidence.
+  - NBV has produced useful paths and captures, but repeatable both-Y-side/full reachable-coverage completion remains physically unproven.
+  - Reachable full-sphere NBV v2 and its planning-budget recovery remain archived. The cleaned architecture does not by itself correct local-frontier exhaustion, repeated same-sector selection, or repeated candidate recomputation.
+  - The archived confidence-qualified TSDF/GICP implementation rejected the available 15-view and 24-view datasets for duplicated or oversized geometry; no optimizer was approved.
+  - Outdoor wind, rigid target motion and non-rigid deformation handling are archived design work only.
+  - The tracked robot transport/odometry/base-home handshake is represented by typed interfaces and the GUI substitute, not a completed two-machine deployment.
+  - Gazebo or Isaac simulation and sim-to-real occlusion-removal validation are not implemented as an accepted pipeline.
+
+rewrite_rule: >-
+  Treat this file as a preservation checklist. Reintroduce archived-later items
+  in small subsystem patches only after the active rollback behavior is
+  measured. Do not copy the archived integration wholesale, do not weaken
+  safety gates to recover progress, and update this bookmark whenever a feature
+  becomes active, is rejected, or gains new physical evidence.
+
+selected_reintegration_2026_08_15:
+  branch: reintegrate/selected-archived-features
+  active_features: [direct_configured_home_without_tesseract, schema4_pre_home_waypoint, startup_j6_positive_only_wrap_bridge, guarded_zero_capture_dataset_deletion, smooth_direct_movej_or_streamed_detour, pass_through_stream_smoothing, tsdf_bounded_gicp_and_gui_validation]
+  deferred_features: [reachable_full_sphere_nbv_v2, nbv_planning_budget_recovery, shared_depth_layer_selector, confidence_qualified_capture_schema2]
+  physical_status: No physical command was executed during reintegration. Every motion-affecting feature requires the staged supervised checklist before use.

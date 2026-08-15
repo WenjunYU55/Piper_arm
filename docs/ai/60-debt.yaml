@@ -5,7 +5,140 @@ roadmap_relationship: >-
   milestone status, completion gates and next execution order. This document
   owns detailed unresolved defects, deferred cleanup and historical evidence.
   When a debt item changes a milestone blocker or acceptance state, update both.
+final_equivalence_audit_2026_08_15:
+  baseline: 4945b480d8494fa840c0d2bc993c72834934a37f
+  status: ready_for_supervised_physical_requalification_not_yet_physically_requalified
+  report: docs/refactor/final_equivalence_report.md
+  checklist: docs/refactor/physical_requalification_checklist.md
+  unexplained_differences: []
+  safety_relevant_refactor_differences: []
+  retained_limits: [no immutable complete mission ROS bag, late terminal cancellation baseline behavior, visual replacement exhaustion retains MISSION_FAILED, target-absence human result reason says 5 rather than baseline five and changes the derived result hash, safety evaluator remains shadow-only, frozen legacy pipeline bodies await supervised trace]
 deferred_cleanup:
+  - id: phase10_conservative_cleanup_2026_08_15
+    status: completed_with_documented_retention_gates
+    issue: >-
+      Repository reference search proved utils/transforms.py, three geometry
+      helpers, one final-hold velocity calculation, and one qualification import
+      inert. They were removed.
+      Other apparent duplicates remain tied to explicit compatibility, safety,
+      commissioning, or subsystem ownership and were not deleted.
+    next_cut: >-
+      Follow the existing item-specific gates below. In particular, collect the
+      supervised mission trace before removing frozen Phase 5 bodies, migrate
+      every consumer before removing telemetry mirrors, and do not promote or
+      delete legacy safety checks until shadow equivalence is separately reviewed.
+    required_retests: [full Phase 1-9 characterization, normal build, colcon test, command-free Tesseract qualifications]
+  - id: phase9_remaining_node_local_configuration_2026_08_14
+    status: coordinator_and_executor_centralized_other_node_boundaries_deferred
+    issue: >-
+      The autonomous coordinator and viewpoint executor now load 98 unchanged
+      ROS parameters once into immutable typed groups. Twenty-nine other
+      mobile-manipulation Python files still contain node-local parameter
+      access across perception, tracking, capture, occlusion, workflow,
+      visualization and legacy servo responsibilities. Equal literal values
+      across those files frequently have different units or trust semantics.
+    next_cut: >-
+      Centralize another subsystem only with its own default-equivalence tests
+      and owner-specific types. Do not make a universal Config, combine
+      mission input/telemetry/derived state with static configuration, or
+      consolidate equal numeric literals without semantic proof.
+    required_retests: [test_configuration.py, subsystem characterization, public parameter catalog, full mobile-manipulation tests, normal build]
+  - id: phase7_remaining_executor_orchestration_2026_08_14
+    status: focused_application_decisions_extracted_ros_orchestration_retained
+    issue: >-
+      Exact plan authorization, one-trajectory monitoring, settled capture
+      sequencing and typed recovery selection now live in four ROS-free
+      components. The node still owns the large Tesseract ROS normalization,
+      geometry/path revalidation, acquisition correlation, scan-history
+      persistence and explicit state dispatch because moving those together
+      would exceed this behavior-preserving phase and disturb safety-shadow
+      observation points.
+    next_cut: >-
+      Characterize proposal normalization and acquisition-correlation data as
+      immutable domain inputs, then extract them one subsystem at a time.
+      Preserve the node as the sole command/status publisher, keep Phase 5
+      safety shadow-only, and do not combine geometry authority, session
+      history or home semantics merely to reduce line count.
+    required_retests: [test_phase7_viewpoint_components.py, Phase 1 executor characterization, full scan_motion and mobile-manipulation suites, public contract hashes, normal build]
+  - id: phase6_frozen_legacy_mission_bodies_2026_08_14
+    status: new_engine_authoritative_legacy_bodies_non_authoritative
+    issue: >-
+      MissionEngine now owns the production admitted mission and shutdown
+      sequence, while the former Phase 5 run_pipeline and safe_shutdown bodies
+      remain renamed as _legacy_run_pipeline and _legacy_safe_shutdown. Pure
+      engine tests and existing characterization prove software phase/outcome
+      equivalence, but no live mission phase comparison was run during this
+      software-only refactor.
+    next_cut: >-
+      Collect an explicitly authorized supervised mission trace and compare it
+      with the frozen Phase 1 sequence. Remove the two non-authoritative bodies
+      only in a reviewed cleanup after that evidence; keep public Python
+      compatibility delegates while downstream tests/imports require them.
+      Never allow fallback selection at runtime or maintain two authorities.
+    required_retests: [test_mission_engine.py, Phase 1 mission characterization, mission_core shutdown tests, full mobile-manipulation suite, public contract hashes, normal build]
+  - id: phase5_safety_shadow_equivalence_2026_08_14
+    status: shadow_active_legacy_authoritative
+    issue: >-
+      The executor now names eight observed safety contexts and records typed
+      shadow decisions for proposal validation, runtime gating and hold. The
+      legacy gates still own every command and transition. Synthetic tests
+      deliberately expose the boundary where collision qualification is
+      enforced outside runtime_reasons, and HOLD_CURRENT preserves its narrow
+      feedback/command-authority helper contract.
+    next_cut: >-
+      Collect structured comparison evidence across command-free and later
+      explicitly authorized supervised runs. Resolve disagreements by locating
+      the correct trust-boundary owner, not by weakening either check. Do not
+      switch authority, remove duplicate checks, or fold coordinator preflight,
+      contact manipulation or disable into the executor without a separate
+      reviewed phase.
+    required_retests: [test_safety_evaluator.py, Phase 1 characterization, full scan_motion and mobile-manipulation suites, normal build, later supervised comparison audit before any authority switch]
+  - id: phase4_remaining_process_owners_2026_08_14
+    status: autonomous_mission_and_gui_separated_other_policies_deferred
+    issue: >-
+      The autonomous coordinator now delegates exact owned child mechanics to
+      ProcessSupervisor. Phase 8 removed GUI ownership of the Tesseract worker,
+      supervised scan stack and their SIGINT/SIGTERM/SIGKILL groups; the GUI
+      retains only its preview-only RViz child. The gateway retains bounded
+      offline reconstruction subprocess.run, and camera shell wrappers retain
+      nested setsid generations plus their validated manifest cleanup.
+    next_cut: >-
+      Do not migrate the preview-only child into production mission process
+      supervision. Do not merge the camera manifest, reconstruction job,
+      worker lock, coordinator signal or launch policies merely to remove every
+      subprocess spelling; their ownership boundaries and escalation semantics
+      intentionally differ.
+  - id: phase8_archived_gui_workflow_helpers_2026_08_14
+    status: removed_from_runtime_import_graph_retained_for_characterization
+    issue: >-
+      piper_gui_automation.py retains the pure Phase 1 Step 1-5 validation and
+      session helpers so the historical behavior remains testable, but
+      piper_gui_native.py no longer imports or executes it. Keeping it forever
+      could confuse maintainers into treating the retired GUI workflow as a
+      supported alternate controller.
+    next_cut: >-
+      After the Phase 8 action-client boundary has remained stable for one
+      reviewed release, move any still-useful pure fixtures under tests and
+      delete the compatibility module in a separately reviewed cleanup. Never
+      reconnect it to the native GUI.
+    required_retests: [test_piper_gui_phase8.py, test_piper_gui_automation.py, GUI import/bootstrap, public RunTargetScan contract, normal build]
+  - id: phase3_latest_telemetry_compatibility_mirrors_2026_08_14
+    status: coherent_store_active_incremental_mirror_removal_deferred
+    issue: >-
+      target_scan_mission_node and scan_viewpoint_executor_node now write
+      callback observations into node-local TelemetryStore instances and their
+      critical decisions consume immutable snapshots, but Phase 1 unbound
+      method harnesses and several non-authoritative diagnostics/session
+      consumers still expect latest_* fields. The executor updated dictionary
+      also remains as a receipt-time compatibility mirror.
+    next_cut: >-
+      Migrate remaining diagnostics and Phase 1 fixtures to snapshots in small
+      reviewed patches, then remove each callback mirror only after rg proves
+      it has no consumer. Do not fold plan/path/command/retry/process or
+      home-disable state into TelemetryStore, centralize thresholds, or change
+      ROS callback/QoS behavior while removing mirrors. Preserve the derived
+      latest_scan_target_center until session-state ownership is refactored.
+    required_retests: [test_telemetry_store.py, Phase 1 characterization, failure model, mission core, full scan_motion and mobile-manipulation suites, public ROS hashes, normal build]
   - id: startup_j6_clockwise_branch_2026_08_11
     status: direction_contract_corrected_physical_retry_required
     issue: >-
@@ -369,7 +502,8 @@ deferred_cleanup:
       a completion threshold to make either recorded mission pass.
   - id: json_topics
     issue: Many runtime contracts use std_msgs/String JSON and can truncate visibly in ros2 topic echo or drift silently.
-    next_cut: Migrate stable heavy-refresh, SAM2 status, scan quality, occlusion, viewpoints, and workflow plan/status contracts to custom messages incrementally.
+    phase2_status: Behavior-affecting mission/executor/GUI phrase parsing is centralized in failure_model.py's temporary legacy adapter; public string interfaces are unchanged.
+    next_cut: Migrate stable heavy-refresh, SAM2 status, scan quality, occlusion, viewpoints, workflow plan/status, and string-only failure responses to custom messages incrementally; remove each matching adapter rule only after its producer and consumer are versioned together.
   - id: launch_fragmentation
     issue: Shell wrappers and multiple overlays still duplicate some environment/topic defaults. The unused command-coupled piper/start_single_piper_rviz.launch.py, display_xacro.launch.py, joint_state_publisher_gui dependency, Gazebo/transmission stubs, simulation configs, girpper_exist alias, and rviz_ctrl_flag were removed on 2026-07-24. The safe live path remains piper_description/display_live_robot.launch.py, and the private interactive path remains joint_preview.launch.py.
     next_cut: Centralize remaining launch arguments and keep wrappers as thin validated operator entrypoints. If simulation is needed later, add it as a separately owned model/launch path that cannot share the hardware command topic.
@@ -856,3 +990,19 @@ live_e2e_status_2026_08_06:
     KeyboardInterrupt without a traceback. The package rebuild and all 326
     mobile-manipulation tests pass. Supervised physical two-target acceptance
     remains pending behind the J5 inspection gate.
+
+selected_reintegration_debt_2026_08_15:
+  completed_software_ports:
+    - Direct configured home now bypasses Tesseract through ExecuteHomeStage while retaining mission identity, feedback, motor, limit, installed-holder external-clearance, settle, hold and disable gates.
+    - Schema-v4 terminal PRE_HOME and the driver-owned positive-only J6 startup wrap bridge are active.
+    - Zero-capture failed-dataset deletion is identity/path/artifact guarded.
+    - Normal Tesseract output can use a densely validated direct chord or pass-through-smoothed streamed detour with exact fallback.
+    - Offline reconstruction exposes masked TSDF, optional bounded GICP, quality reports and command-free GUI validation.
+  remaining_nbv_debt:
+    issue: The cleaned architecture improves ownership and testability but does not change the local-frontier NBV algorithm. It can still exhaust one reachable sector, miss the opposite Y side and recompute large candidate envelopes.
+    next_cut: Port reachable full-sphere NBV v2 first, measure its reachable-bin coverage and candidate identity behavior, then port cache/exhausted-ID/planning-budget recovery only if timing traces still require it.
+    must_not_bundle_with: [depth-layer selection, confidence capture schema, physical occlusion manipulation]
+  remaining_perception_debt:
+    issue: Shared ambiguity-aware depth-layer selection and confidence-qualified L515 capture schema 2 remain archived. Refactoring alone does not remove background-layer contamination or depth-driven target jitter.
+    next_cut: Port shared target-depth selection before adding confidence provenance, with recorded RGB-D equivalence tests and no motion.
+  physical_requalification: Required for every motion-affecting completed port; no hardware process was started during this work.

@@ -5,12 +5,14 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import signal
-import subprocess
+import shutil
 import threading
 import time
 
 import numpy as np
+import yaml
 import rclpy
 from geometry_msgs.msg import PointStamped
 from piper_msgs.msg import PiperStatusMsg
@@ -27,26 +29,57 @@ from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformException, TransformListener
 
 from piper_mobile_manipulation.action import RunTargetScan
+from piper_mobile_manipulation.configuration import (
+    configured_value,
+    load_mission_configuration,
+    MissionCaptureConfig,
+    MissionMotionConfig,
+    MissionWorkflowConfig,
+)
 from piper_mobile_manipulation.home_pose import (
     load_home_pose,
     staged_home_targets,
     validate_home_profile_limits,
     validate_staged_wrist_direction,
 )
+from piper_mobile_manipulation.failure_model import (
+    as_failure,
+    FailureTag,
+)
 from piper_mobile_manipulation.mission_core import (
-    MISSION_QUEUE_COALESCE_SEC,
-    MAX_FEATURE_CAPTURES,
     MAX_OCCLUSION_ACTIONS,
-    MAX_PENDING_MISSIONS,
     MissionPhase,
     MissionRegistry,
-    REQUIRED_CAPTURES,
     closest_pending_mission,
     mission_queue_ready,
     queued_cancel_result,
     validate_goal_payload,
 )
+from piper_mobile_manipulation.mission_engine import (
+    ACQUISITION_SERVICE_TIMEOUT_SEC,
+    CancellationToken,
+    failure_code_for_reason,
+    feature_capture_decision,
+    MAX_SCAN_QUALITY_REPLANS,
+    MAX_SCAN_TARGET_DRIFT_REPLANS,
+    MissionContext,
+    MissionEngine,
+    MissionFailure,
+    PLAN_APPROVAL_TRANSIENT_TIMEOUT_SEC,
+    planning_rejection_allows_current_state_home,
+    PLAN_REQUEST_QUEUE_TIMEOUT_SEC,
+    PLAN_RESULT_TIMEOUT_SEC,
+    retryable_plan_approval_rejection,
+    safe_view_exhaustion_after_capture,
+    SCAN_VISUAL_REACQUISITION_TIMEOUT_SEC,
+    shutdown_uses_startup_home,
+    target_drift_requires_replan,
+    visual_reacquisition_plan_approval_rejection,
+    visual_reacquisition_plan_request_rejection,
+    WORKFLOW_ASSESSMENT_TIMEOUT_SEC,
+)
 from piper_mobile_manipulation.mission_spool import MissionSpool
+from piper_mobile_manipulation.process_supervisor import ProcessSupervisor
 from piper_mobile_manipulation.reconstruction_jobs import (
     mesh_job_id,
     waiting_job,
@@ -82,338 +115,368 @@ from piper_mobile_manipulation.surface_coverage import (
     measured_surface_coverage,
     persisted_achieved_history,
 )
+from piper_mobile_manipulation.telemetry_store import TelemetryStore
 from piper_mobile_manipulation.srv import (
     ApproveScanExecution,
     AuthorizeMission,
+    ExecuteHomeStage,
     GetTargetScanResult,
     PrepareAcquisition,
     RequestTesseractPlan,
 )
 
 
-ACQUISITION_SERVICE_TIMEOUT_SEC = 8.0
-WORKFLOW_ASSESSMENT_TIMEOUT_SEC = 75.0
-PLAN_REQUEST_QUEUE_TIMEOUT_SEC = 12.0
-PLAN_RESULT_TIMEOUT_SEC = 185.0
-PLAN_APPROVAL_TRANSIENT_TIMEOUT_SEC = 5.0
-SCAN_VISUAL_REACQUISITION_TIMEOUT_SEC = 30.0
-MAX_SCAN_QUALITY_REPLANS = 8
-MAX_SCAN_TARGET_DRIFT_REPLANS = 8
-
-
-class ManagedProcessSet:
-    """Own exact process groups and stop them in reverse dependency order."""
-
-    def __init__(self, log_root):
-        self.log_root = Path(log_root)
-        self.log_root.mkdir(parents=True, exist_ok=True)
-        self.entries = {}
-        self.log_offsets = {}
-
-    def begin_generation(self):
-        """Forget only fully stopped entries before admitting a new mission."""
-        live = sorted(
-            name for name, (process, _log, _path) in self.entries.items()
-            if process.poll() is None)
-        if live:
-            return live
-        for _process, log, _path in self.entries.values():
-            if not log.closed:
-                log.close()
-        self.entries.clear()
-        self.log_offsets.clear()
-        return []
-
-    def start(self, name, command, environment):
-        if name in self.entries and self.entries[name][0].poll() is None:
-            return
-        log_path = self.log_root / (name + '.log')
-        self.log_offsets[name] = (
-            log_path.stat().st_size if log_path.exists() else 0)
-        log = open(log_path, 'ab', buffering=0)
-        process = subprocess.Popen(
-            list(command), stdout=log, stderr=subprocess.STDOUT,
-            env=dict(environment), start_new_session=True)
-        self.entries[name] = (process, log, str(log_path))
-
-    def log_since_start(self, name):
-        entry = self.entries.get(name)
-        if entry is None:
-            return ''
-        path = Path(entry[2])
-        try:
-            with open(path, 'rb') as stream:
-                stream.seek(self.log_offsets.get(name, 0))
-                return stream.read(256 * 1024).decode('utf-8', errors='replace')
-        except OSError:
-            return ''
-
-    def failed(self):
-        return {
-            name: process.returncode
-            for name, (process, _log, _path) in self.entries.items()
-            if process.poll() is not None
-        }
-
-    def health(self):
-        return {
-            name: {
-                'pid': int(process.pid),
-                'running': process.poll() is None,
-                'returncode': process.poll(),
-                'log': path,
-            }
-            for name, (process, _log, path) in self.entries.items()
-        }
-
-    def stop_all(self):
-        entries = list(self.entries.items())[::-1]
-        for _name, (process, _log, _path) in entries:
-            if process.poll() is None:
-                try:
-                    os.killpg(process.pid, signal.SIGINT)
-                except ProcessLookupError:
-                    pass
-        deadline = time.monotonic() + 5.0
-        while time.monotonic() < deadline and any(
-                process.poll() is None for _, (process, _, _) in entries):
-            time.sleep(0.05)
-        for _name, (process, _log, _path) in entries:
-            if process.poll() is None:
-                try:
-                    os.killpg(process.pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
-        deadline = time.monotonic() + 3.0
-        while time.monotonic() < deadline and any(
-                process.poll() is None for _, (process, _, _) in entries):
-            time.sleep(0.05)
-        for _name, (process, log, _path) in entries:
-            if process.poll() is None:
-                # Do not SIGKILL an arm command owner. Its continued liveness
-                # is surfaced as NEEDS_OPERATOR instead of claiming shutdown.
+def discard_failed_zero_capture_dataset(
+        scan_dir, dataset_root, task_id, mission_sha256):
+    """Delete only an identity-matched failed dataset with no captures."""
+    try:
+        raw_candidate = Path(str(scan_dir))
+        if raw_candidate.is_symlink():
+            return False, 'scan dataset path is a symbolic link'
+        root = Path(dataset_root).resolve(strict=True)
+        candidate = raw_candidate.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return False, 'scan directory or dataset root does not exist'
+    if candidate.parent != root or not re.fullmatch(
+            r'scan_[0-9]{8}_[0-9]{6}(?:_[A-Za-z0-9_-]+)?',
+            candidate.name):
+        return False, 'scan directory is outside the guarded dataset root'
+    if not candidate.is_dir():
+        return False, 'scan dataset is not a regular directory'
+    try:
+        metadata = yaml.safe_load(
+            (candidate / 'metadata.yaml').read_text(encoding='utf-8'))
+    except (OSError, TypeError, ValueError, yaml.YAMLError) as exc:
+        return False, 'scan metadata is unreadable: %s' % exc
+    if not isinstance(metadata, dict):
+        return False, 'scan metadata is not a mapping'
+    if (str(metadata.get('task_id', '')) != str(task_id)
+            or str(metadata.get('mission_sha256', ''))
+            != str(mission_sha256)):
+        return False, 'scan metadata does not match the failed mission'
+    allowed_root_files = {
+        'metadata.yaml', 'manifest.json', 'coverage_envelope.yaml'}
+    incomplete_frame_pattern = re.compile(
+        r'view_[0-9]{3}_(?:rgb|depth|mask|native_depth|confidence|'
+        r'target_depth|target_support_mask)(?:\.partial)?\.(?:png|npy)$')
+    for path in candidate.rglob('*'):
+        if path.is_symlink():
+            return False, 'scan dataset contains a symbolic link'
+        if not path.is_file():
+            continue
+        relative = path.relative_to(candidate)
+        if relative.as_posix() in allowed_root_files:
+            continue
+        if relative.parent.as_posix() == 'frames':
+            if re.fullmatch(r'view_[0-9]{3}_metadata\.yaml', path.name):
+                return False, 'scan contains one or more completed captures'
+            if incomplete_frame_pattern.fullmatch(path.name):
                 continue
-            log.close()
-        return not any(process.poll() is None for _, (process, _, _) in entries)
+        return False, 'scan contains unknown or derived artifacts'
+    manifest_path = candidate / 'manifest.json'
+    if manifest_path.exists():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+            capture_count = int(manifest.get('capture_count', -1))
+        except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            return False, 'scan manifest is unreadable: %s' % exc
+        if capture_count != 0:
+            return False, 'scan manifest records one or more captures'
+    shutil.rmtree(candidate)
+    return True, 'failed zero-capture scan dataset was permanently removed'
 
 
-class MissionFailure(RuntimeError):
-    def __init__(self, reason, needs_operator=False, outcome='FAILED',
-                 failure_code='', retryable=None):
-        super().__init__(reason)
-        self.needs_operator = bool(needs_operator)
-        self.outcome = str(outcome)
-        self.failure_code = str(failure_code)
-        self.retryable = (
-            not self.needs_operator if retryable is None else bool(retryable))
+def find_failed_mission_dataset(dataset_root, task_id, mission_sha256):
+    """Find one exact identity-matched mission directory."""
+    try:
+        root = Path(dataset_root).resolve(strict=True)
+    except (OSError, RuntimeError):
+        return '', 'dataset root does not exist'
+    matches = []
+    for candidate in sorted(root.glob('scan_*')):
+        if candidate.is_symlink() or not candidate.is_dir():
+            continue
+        if not re.fullmatch(
+                r'scan_[0-9]{8}_[0-9]{6}(?:_[A-Za-z0-9_-]+)?',
+                candidate.name):
+            continue
+        try:
+            metadata = yaml.safe_load(
+                (candidate / 'metadata.yaml').read_text(encoding='utf-8'))
+        except (OSError, TypeError, ValueError, yaml.YAMLError):
+            continue
+        if (isinstance(metadata, dict)
+                and str(metadata.get('task_id', '')) == str(task_id)
+                and str(metadata.get('mission_sha256', ''))
+                == str(mission_sha256)):
+            matches.append(candidate)
+    if len(matches) == 1:
+        return str(matches[0]), 'found exact identity-matched mission dataset'
+    if not matches:
+        return '', 'no identity-matched mission dataset exists'
+    return '', 'multiple identity-matched mission datasets exist'
 
 
-def failure_code_for_reason(reason):
-    """Return one stable tracked-robot failure code for legacy exceptions."""
-    lowered = str(reason).lower()
-    if 'cancel' in lowered:
-        return 'CANCELLED'
-    # Preserve the actionable root cause when a sensor startup itself times
-    # out instead of misreporting it as the overall mission deadline.
-    if 'camera' in lowered or 'vision' in lowered or 'sensor' in lowered:
-        return 'SENSOR_UNAVAILABLE'
-    if 'deadline' in lowered or 'timed out' in lowered:
-        return 'DEADLINE_EXPIRED'
-    if 'capture' in lowered or 'quality' in lowered:
-        return 'INSUFFICIENT_CAPTURE_QUALITY'
-    if (
-            'occlud' in lowered
-            or 'occlusion' in lowered
-            or 'manipulation' in lowered):
-        return 'OCCLUSION_NOT_CLEARED'
-    if 'target' in lowered and ('not found' in lowered or 'lock' in lowered):
-        return 'TARGET_NOT_FOUND'
-    if (
-            'plan' in lowered or 'reachable' in lowered or 'ik' in lowered
-            or 'scan candidate' in lowered or 'view frontier' in lowered):
-        return 'NO_REACHABLE_PLAN'
-    if any(term in lowered for term in (
-            'joint feedback', 'collision', 'hold', 'disable',
-            'control', 'arm status')) or any(
-                token == 'can' for token in lowered.replace(':', ' ').split()):
-        return 'CONTROL_UNTRUSTWORTHY'
-    return 'MISSION_FAILED'
+# Import compatibility for Phase 0/1 tests and downstream tooling.  Production
+# ownership is implemented only by ProcessSupervisor.
+ManagedProcessSet = ProcessSupervisor
+
+# Phase 1 froze these module-level imports as a downstream compatibility seam.
+__all__ = (
+    'ACQUISITION_SERVICE_TIMEOUT_SEC',
+    'MAX_SCAN_QUALITY_REPLANS',
+    'MAX_SCAN_TARGET_DRIFT_REPLANS',
+    'PLAN_APPROVAL_TRANSIENT_TIMEOUT_SEC',
+    'PLAN_REQUEST_QUEUE_TIMEOUT_SEC',
+    'PLAN_RESULT_TIMEOUT_SEC',
+    'SCAN_VISUAL_REACQUISITION_TIMEOUT_SEC',
+    'WORKFLOW_ASSESSMENT_TIMEOUT_SEC',
+)
 
 
-def retryable_plan_approval_rejection(reason):
-    """Retry only an unchanged plan's transient live-state gate."""
-    text = str(reason).lower()
-    if not text.startswith('execution blocked:'):
+class _MissionNodeOperations:
+    """Translate pure MissionEngine operations to the existing ROS node."""
+
+    def __init__(self, node, goal_handle, cancellation, rough_target=None):
+        self.node = node
+        self.goal_handle = goal_handle
+        self.cancellation = cancellation
+        self.rough_target = rough_target
+
+    @property
+    def session(self):
+        """Return the currently bound session for compatibility diagnostics."""
+        return getattr(self.node, '_active_engine_session', None)
+
+    def begin_process_generation(self, _context):
+        return self.node.processes.begin_generation()
+
+    def snapshot_target(self, _context):
+        return self.node.snapshot_target(self.rough_target)
+
+    def transition(self, context, phase, reason):
+        self.node.transition(self.goal_handle, context.session, phase, reason)
+
+    def progress(self, context, reason):
+        self.node.startup_progress(
+            self.goal_handle, context.session, reason)
+
+    def selected_home_profile(self, _context):
+        return self.node.selected_home_profile()
+
+    def bind_home_profile(self, _context, profile):
+        self.node.current_home_profile = profile
+
+    def current_home_profile(self, _context):
+        return self.node.current_home_profile
+
+    def start_processes(self, context):
+        self.node.start_processes(self.goal_handle, context.session)
+
+    def wait_for_enable_service(self, context, timeout):
+        self.node.wait_for(
+            self.goal_handle, context.session,
+            lambda: self.node.enable_client.service_is_ready(), timeout,
+            'PiPER enable service did not become ready')
+
+    def wait_for_stable_readiness(
+            self, context, mode, stable_sec, timeout_sec):
+        self.node.wait_for_stable_readiness(
+            self.goal_handle, context.session, mode, stable_sec, timeout_sec)
+
+    def wait_for_stable_joint_stream(
+            self, context, stable_sec, timeout_sec, label):
+        self.node.wait_for_stable_joint_stream(
+            stable_sec, timeout_sec, label,
+            self.goal_handle, context.session)
+
+    def require_fresh_joint_feedback(self, _context):
+        self.node.require_fresh_joint_feedback()
+
+    def current_joint_positions(self, _context):
+        return self.node.latest_joints.position[:6]
+
+    def boolean_option(self, _context, name):
+        return self.node.param_bool(name)
+
+    def numeric_option(self, _context, name):
+        return configured_value(self.node, name)
+
+    def authorize_mission(self, context, revoke=False):
+        return self.node.authorize_mission(context.session, revoke=revoke)
+
+    def enable_arm(self, _context, enabled):
+        return self.node.call_enable(enabled)
+
+    def arm_enable_guard_started(self, _context):
+        self.node.motor_enable_guard_after = time.monotonic() + 0.5
+
+    def prove_current_hold(self, context):
+        return self.node.prove_current_hold(
+            self.goal_handle, context.session)
+
+    def hold_diagnostic(self, _context):
+        return str(self.node.last_hold_diagnostic)
+
+    def prove_home(
+            self, context, startup=False, target_positions=None,
+            home_stage='ROUGH_HOME', interruptible=False):
+        kwargs = {}
+        if startup:
+            kwargs['startup'] = True
+        if interruptible:
+            kwargs['goal_handle'] = self.goal_handle
+        if target_positions is not None:
+            kwargs['target_positions'] = target_positions
+        if str(home_stage) != 'ROUGH_HOME':
+            kwargs['home_stage'] = home_stage
+        return self.node.prove_return_home_for_shutdown(
+            context.session, **kwargs)
+
+    def return_home_diagnostic(self, _context):
+        return str(getattr(self.node, 'last_return_home_diagnostic', ''))
+
+    def clear_plan_cache(self, _context):
+        return self.node.clear_plan_cache()
+
+    def prepare_acquisition(self, context):
+        return self.node.prepare_acquisition(
+            context.session, context.target)
+
+    def wait_for_plan(self, context, kind, request_id, timeout):
+        return self.node.wait_for_plan(
+            self.goal_handle, context.session, kind, request_id, timeout)
+
+    def approve_plan(self, context, plan):
+        return self.node.approve_plan(
+            self.goal_handle, context.session, plan)
+
+    def wait_for_execution(
+            self, context, successes, timeout, failures):
+        return self.node.wait_for_execution(
+            self.goal_handle, context.session, successes, timeout, failures)
+
+    def start_and_wait_workflow(self, context):
+        return self.node.start_and_wait_workflow(
+            self.goal_handle, context.session)
+
+    def readiness_rejection(self, _context, mode):
+        return self.node.readiness_rejection(mode)
+
+    def capture_count(self, _context):
+        return int(self.node.latest_capture.get('captured_frame_count', 0))
+
+    def current_feature_coverage(self, _context):
+        return self.node.current_scan_feature_coverage()
+
+    def request_multiview_plan(self, context):
+        return self.node.request_multiview_plan(
+            self.goal_handle, context.session)
+
+    def remaining_time(self, context):
+        return context.session.remaining()
+
+    def wait_for_scan_history(self, context, timeout):
+        self.node.wait_for(
+            self.goal_handle, context.session,
+            lambda: int((self.node.latest_scan_history or {}).get(
+                'accepted_views', 0)) >= context.session.accepted_captures,
+            timeout,
+            'scan history did not catch up with the final accepted capture')
+
+    def wait_for_all_motors_disabled(self, _context, timeout):
+        deadline = time.monotonic() + float(timeout)
+        while time.monotonic() < deadline:
+            telemetry_store = getattr(self.node, 'telemetry_store', None)
+            if telemetry_store is None:
+                status = self.node.latest_arm_status
+                age = time.monotonic() - self.node.latest_arm_status_at
+            else:
+                snapshot = telemetry_store.snapshot()
+                observation = snapshot.arm.status
+                status = None if observation is None else observation.value
+                age = (
+                    math.inf if observation is None else
+                    observation.age_at(snapshot.captured_at))
+            if (
+                    status is not None
+                    and age <= 0.5
+                    and bool(getattr(status, 'motor_feedback_valid', False))
+                    and not any(motor_driver_states(status))):
+                return True
+            time.sleep(0.02)
         return False
-    return any(marker in text for marker in (
-        'tracking is not settled tracking',
-        'tracking is prediction-only',
-        'tracking speed scale is below the motion threshold',
-        'camera timestamp health is stale',
-        'joint feedback is not settled',
-        # TrackedTarget and target_status are separate ROS topics published
-        # back-to-back by the tracker.  At a closed-loop replan boundary the
-        # executor can therefore briefly have the new measured target and the
-        # preceding LOW_CONFIDENCE/LOST/SEARCHING string.  No motion is
-        # authorized while approval is rejected; retain the exact proposal
-        # long enough for the automatic SAM2/GroundingDINO recovery to publish
-        # a fresh measured lock.
-        'target_status=low_confidence',
-        'target_status=lost',
-        'target_status=searching',
-    ))
+
+    def stop_processes(self, _context):
+        return self.node.processes.stop_all()
+
+    def abort_return_home_blocker(self, _context, failure):
+        return abort_return_home_blocker(failure)
+
+    def prove_shutdown_hold(self, context):
+        return self.node.prove_current_hold_for_shutdown(context.session)
 
 
-def visual_reacquisition_plan_approval_rejection(reason):
-    """Recognize a no-motion scan approval wait for a fresh measured lock."""
-    text = str(reason).lower()
-    return (
-        text.startswith('execution blocked:')
-        and any(marker in text for marker in (
-            'target_status=low_confidence',
-            'target_status=lost',
-            'target_status=searching',
-        ))
+def mission_engine_for(owner, operations):
+    """Inject typed production config while retaining old pure test seams."""
+    configuration = getattr(owner, 'configuration', None)
+    if configuration is None:
+        if not hasattr(owner, 'param_bool'):
+            return MissionEngine(
+                operations,
+                motion_config=MissionMotionConfig(
+                    enable_real_arm_motion=False,
+                    motion_speed_profile_qualified=False,
+                    free_motion_speed_percent=30.0,
+                    contact_speed_percent=10.0,
+                    home_pose_path='',
+                    require_staged_home_profile=True,
+                ),
+                capture_config=MissionCaptureConfig(
+                    required_captures=8, maximum_captures=24),
+                workflow_config=MissionWorkflowConfig(),
+            )
+        return MissionEngine(operations)
+    return MissionEngine(
+        operations,
+        motion_config=configuration.motion,
+        capture_config=configuration.capture,
+        workflow_config=configuration.workflow,
     )
 
 
-def visual_reacquisition_plan_request_rejection(reason):
-    """Recognize a command-free planning snapshot that only lacks a lock."""
-    text = str(reason).lower()
-    return (
-        text.startswith('planning blocked:')
-        and any(marker in text for marker in (
-            'tracking is not settled tracking',
-            'tracking is prediction-only',
-            'tracking measurement is stale',
-        ))
-    )
-
-
-def shutdown_uses_startup_home(session):
-    """Use static home authority only before perception owns a scene."""
-    return bool(
-        not getattr(session, 'perception_scene_established', False)
-        and int(getattr(session, 'accepted_captures', 0)) == 0)
-
-
-def target_drift_requires_replan(reason):
-    """Recognize the executor's no-motion stale-target-plan rejection."""
-    text = str(reason).lower().strip()
-    return (
-        text.startswith('target moved ')
-        and ' after planning; refresh the plan' in text
-    )
-
-
-def safe_view_exhaustion_after_capture(
-        reason, accepted_captures, feature_coverage=None,
-        required_captures=REQUIRED_CAPTURES):
-    """Recognize a proved end of the adaptive safe-view frontier.
-
-    This is deliberately narrower than a generic planning failure.  It only
-    applies after the model-seed capture floor and only when the one-view
-    Tesseract transaction reports that none of the remaining distinct
-    candidates has a finite, bounded, collision-free IK solution.
-    """
-    text = str(reason).lower().strip()
-    return (
-        int(accepted_captures) >= int(required_captures)
-        and isinstance(feature_coverage, dict)
-        and feature_coverage.get('sufficient') is True
-        and 'multiview_scan planning failed:' in text
-        and 'planning_failed: only 0 viewpoints planned; require at least 1 of 1'
-        in text
-        and 'no finite bounded collision-free ik goal for any roll' in text
-    )
-
-
-def feature_capture_decision(
-        accepted_captures, required_captures, maximum_captures,
-        feature_coverage):
-    """Choose continue, complete, or exhausted from achieved feature proof."""
-    accepted = int(accepted_captures)
-    required = int(required_captures)
-    maximum = int(maximum_captures)
-    if required < 1 or maximum < required or accepted < 0:
-        raise ValueError('feature capture bounds are invalid')
-    sufficient = bool(
-        isinstance(feature_coverage, dict)
-        and feature_coverage.get('sufficient') is True)
-    if accepted >= required and sufficient:
-        return 'COMPLETE'
-    if accepted >= maximum:
-        return 'EXHAUSTED'
-    return 'CONTINUE'
-
-
-def planning_rejection_allows_current_state_home(reason):
-    """Identify failures that may be re-qualified by a fresh home plan.
-
-    A rejected proposal is not evidence that a new home route is unsafe.  A
-    transient invalid obstacle snapshot also is not permanent evidence: the
-    dedicated current-state home transaction takes a new scene snapshot and
-    independently fails closed if geometry is still invalid.  All hardware,
-    collision, clearance, progress, and general obstacle faults remain under
-    ``abort_return_home_blocker``.
-    """
-    text = str(reason).lower().strip()
-    return (
-        (
-            'planning failed: tesseract proposal rejected:' in text
-            and 'planning_failed:' in text
-        )
-        or 'runtime safety gate: invalid obstacle geometry is present' in text
-        or (
-            'fresh runtime telemetry did not arrive' in text
-            and 'obstacles data missing or stale' in text
-        )
-    )
+def workflow_config_for(owner):
+    """Return frozen production workflow config or characterization defaults."""
+    configuration = getattr(owner, 'configuration', None)
+    if configuration is None:
+        return MissionWorkflowConfig()
+    return configuration.workflow
 
 
 class TargetScanMissionNode(Node):
     def __init__(self):
         super().__init__('target_scan_mission')
-        defaults = {
-            'project_root': '/home/prl/Piper_arm',
-            'manage_processes': True,
-            'enable_real_arm_motion': False,
-            'motion_speed_profile_qualified': False,
-            'free_motion_speed_percent': 30.0,
-            'contact_speed_percent': 10.0,
-            'required_captures': REQUIRED_CAPTURES,
-            'maximum_captures': MAX_FEATURE_CAPTURES,
-            'home_pose_path': '',
-            'require_staged_home_profile': True,
-            'mission_spool_root': os.path.join(
-                os.environ.get('XDG_RUNTIME_DIR', '/tmp'),
-                'piper_target_scan_missions'),
-            'process_log_root': os.path.join(
-                os.environ.get('XDG_RUNTIME_DIR', '/tmp'),
-                'piper_target_scan_logs'),
-            'require_gateway_heartbeat': False,
-            'max_pending_missions': MAX_PENDING_MISSIONS,
-            'mission_queue_coalesce_sec': MISSION_QUEUE_COALESCE_SEC,
-            'debug': True,
-        }
-        for name, value in defaults.items():
-            self.declare_parameter(name, value)
+        self.configuration = load_mission_configuration(self)
         self.callback_group = ReentrantCallbackGroup()
         self._lock = threading.RLock()
+        self.telemetry_store = TelemetryStore(clock=time.monotonic)
         self._spool_seen = set()
         self._pending_missions = {}
         self._action_reservations = {}
         self._prevalidated_goals = {}
+        self._cancellation_tokens = {}
+        self._active_cancellation_token = None
+        self._active_engine_session = None
         self._queue_sequence = 0
         self._dispatch_task_id = ''
         self._process_shutdown_requested = False
         self._process_shutdown_quiescent_since = 0.0
         self.registry = MissionRegistry()
         self.spool = MissionSpool(
-            self.get_parameter('mission_spool_root').value)
+            self.configuration.process.mission_spool_root)
         self.load_durable_results()
-        self.processes = ManagedProcessSet(
-            self.get_parameter('process_log_root').value)
+        self.processes = ProcessSupervisor(
+            self.configuration.process.process_log_root)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         self.latest_readiness = None
@@ -485,6 +548,10 @@ class TargetScanMissionNode(Node):
             RequestTesseractPlan,
             '/tesseract_plan_bridge/request_startup_home_plan',
             callback_group=self.callback_group)
+        self.execute_home_stage_client = self.create_client(
+            ExecuteHomeStage,
+            '/scan_viewpoint_executor/execute_home_stage',
+            callback_group=self.callback_group)
         self.approve_client = self.create_client(
             ApproveScanExecution, '/scan_viewpoint_executor/approve',
             callback_group=self.callback_group)
@@ -524,6 +591,10 @@ class TargetScanMissionNode(Node):
             self._process_shutdown_requested = True
             self._process_shutdown_quiescent_since = 0.0
         if first_request:
+            with self._lock:
+                tokens = tuple(self._cancellation_tokens.values())
+            for token in tokens:
+                token.cancel('coordinator shutdown requested')
             self.get_logger().warn(
                 'coordinator shutdown requested; cancelling any active '
                 'mission through home, hold, disable, and child cleanup')
@@ -541,10 +612,7 @@ class TargetScanMissionNode(Node):
         if active or queued:
             self._process_shutdown_quiescent_since = 0.0
             return
-        live = any(
-            process.poll() is None
-            for process, _log, _path in self.processes.entries.values())
-        if live:
+        if self.processes.has_live_processes():
             self._process_shutdown_quiescent_since = 0.0
             return
         now = time.monotonic()
@@ -571,17 +639,25 @@ class TargetScanMissionNode(Node):
                     'ignoring invalid durable result %s: %s' % (path, exc))
 
     def param_bool(self, name):
-        value = self.get_parameter(name).value
+        value = configured_value(self, name)
         return value.lower() in ('1', 'true', 'yes', 'on') \
             if isinstance(value, str) else bool(value)
 
     def readiness_cb(self, msg):
+        received_at = time.monotonic()
         with self._lock:
-            self.latest_readiness, self.latest_readiness_at = msg, time.monotonic()
+            self.latest_readiness, self.latest_readiness_at = msg, received_at
+            self.telemetry_store.update_readiness(
+                msg, received_at=received_at,
+                frame_id=str(getattr(msg.header, 'frame_id', '')))
 
     def plan_cb(self, msg):
+        received_at = time.monotonic()
         with self._lock:
-            self.latest_plan, self.latest_plan_at = msg, time.monotonic()
+            self.latest_plan, self.latest_plan_at = msg, received_at
+            self.telemetry_store.update_plan(
+                msg, received_at=received_at,
+                frame_id=str(getattr(msg.header, 'frame_id', '')))
             if (
                     str(msg.plan_kind) == 'MULTIVIEW_SCAN'
                     and bool(msg.valid)):
@@ -592,8 +668,12 @@ class TargetScanMissionNode(Node):
                 }
 
     def execution_cb(self, msg):
+        received_at = time.monotonic()
         with self._lock:
-            self.latest_execution, self.latest_execution_at = msg, time.monotonic()
+            self.latest_execution, self.latest_execution_at = msg, received_at
+            self.telemetry_store.update_execution(
+                msg, received_at=received_at,
+                frame_id=str(getattr(msg.header, 'frame_id', '')))
 
     def capture_cb(self, msg):
         try:
@@ -601,24 +681,41 @@ class TargetScanMissionNode(Node):
         except (json.JSONDecodeError, TypeError):
             return
         if isinstance(payload, dict):
+            received_at = time.monotonic()
             with self._lock:
-                self.latest_capture, self.latest_capture_at = payload, time.monotonic()
+                self.latest_capture, self.latest_capture_at = payload, received_at
+                self.telemetry_store.update_capture(
+                    payload, received_at=received_at)
 
     def scan_history_cb(self, msg):
         try:
             payload = validate_history_payload(
                 json.loads(msg.data),
-                int(self.get_parameter('maximum_captures').value))
+                int(configured_value(self, 'maximum_captures')))
         except (json.JSONDecodeError, TypeError, ValueError):
             return
+        received_at = time.monotonic()
         with self._lock:
             self.latest_scan_history = payload
-            self.latest_scan_history_at = time.monotonic()
+            self.latest_scan_history_at = received_at
+            self.telemetry_store.update_scan_history(
+                payload, received_at=received_at)
 
     def current_scan_feature_coverage(self):
-        history = self.latest_scan_history or {}
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        if telemetry_store is None:
+            history = self.latest_scan_history or {}
+            capture = self.latest_capture
+        else:
+            snapshot = telemetry_store.snapshot()
+            history = (
+                snapshot.mission.scan_history.value
+                if snapshot.mission.scan_history is not None else {})
+            capture = (
+                snapshot.mission.capture.value
+                if snapshot.mission.capture is not None else {})
         persisted = persisted_achieved_history(
-            self.latest_capture.get('scan_dir', ''))
+            capture.get('scan_dir', ''))
         achieved_entries = history.get('accepted_entries', [])
         if (
                 persisted.get('available')
@@ -629,12 +726,12 @@ class TargetScanMissionNode(Node):
         if target_center is None:
             target_center = persisted.get('target_center')
         surface = measured_surface_coverage(
-            self.latest_capture.get('scan_dir', ''),
-            minimum_views=int(self.get_parameter('required_captures').value))
+            capture.get('scan_dir', ''),
+            minimum_views=int(configured_value(self, 'required_captures')))
         coverage = achieved_feature_coverage(
             achieved_entries,
             target_center,
-            minimum_views=int(self.get_parameter('required_captures').value),
+            minimum_views=int(configured_value(self, 'required_captures')),
             surface_coverage=surface)
         coverage['achieved_history_source'] = (
             'persisted_capture_metadata'
@@ -673,17 +770,28 @@ class TargetScanMissionNode(Node):
             self.latest_joints = msg
             self.latest_joints_at = received_at
             self.latest_joint_source_ns = stamp_ns
+            self.telemetry_store.update_joints(
+                msg, received_at=received_at, source_stamp_ns=stamp_ns,
+                frame_id=str(getattr(msg.header, 'frame_id', '')))
             self.joint_feedback_rejection = ''
 
     def arm_status_cb(self, msg):
+        received_at = time.monotonic()
         with self._lock:
             self.latest_arm_status = msg
-            self.latest_arm_status_at = time.monotonic()
+            self.latest_arm_status_at = received_at
+            self.telemetry_store.update_arm_status(
+                msg, received_at=received_at,
+                frame_id=str(getattr(msg.header, 'frame_id', '')))
 
     def camera_health_cb(self, msg):
+        received_at = time.monotonic()
         with self._lock:
             self.latest_camera_health = msg
-            self.latest_camera_health_at = time.monotonic()
+            self.latest_camera_health_at = received_at
+            self.telemetry_store.update_camera(
+                msg, received_at=received_at,
+                frame_id=str(getattr(msg.header, 'frame_id', '')))
 
     @staticmethod
     def goal_payload(goal):
@@ -732,7 +840,7 @@ class TargetScanMissionNode(Node):
                 len(self._action_reservations)
                 + len(self._pending_missions))
             maximum = int(
-                self.get_parameter('max_pending_missions').value)
+                configured_value(self, 'max_pending_missions'))
             if maximum < 1 or pending >= maximum:
                 self.get_logger().warn(
                     'rejecting target-scan goal: bounded mission queue is full')
@@ -744,6 +852,7 @@ class TargetScanMissionNode(Node):
                 'admitted_monotonic': time.monotonic(),
                 'source': 'action',
             }
+            self._cancellation_tokens[task_id] = CancellationToken()
             return GoalResponse.ACCEPT
 
     def handle_accepted_cb(self, goal_handle):
@@ -771,7 +880,12 @@ class TargetScanMissionNode(Node):
             self._pending_missions[task_id] = record
             self.write_queued_status(record)
 
-    def cancel_cb(self, _goal_handle):
+    def cancel_cb(self, goal_handle):
+        task_id = str(goal_handle.request.task_id)
+        with self._lock:
+            token = self._cancellation_tokens.get(task_id)
+        if token is not None:
+            token.cancel('tracked robot cancelled the task')
         return CancelResponse.ACCEPT
 
     def get_result_cb(self, request, response):
@@ -786,6 +900,17 @@ class TargetScanMissionNode(Node):
         task_id = str(goal_handle.request.task_id)
         with self._lock:
             normalized = self._prevalidated_goals.pop(task_id, None)
+            cancellation_tokens = getattr(
+                self, '_cancellation_tokens', None)
+            if cancellation_tokens is None:
+                cancellation_tokens = {}
+                self._cancellation_tokens = cancellation_tokens
+            cancellation = cancellation_tokens.get(task_id)
+            if cancellation is None:
+                cancellation = CancellationToken()
+                cancellation_tokens[task_id] = cancellation
+        if bool(goal_handle.is_cancel_requested):
+            cancellation.cancel('tracked robot cancelled the task')
         if normalized is None:
             try:
                 normalized = validate_goal_payload(
@@ -794,9 +919,7 @@ class TargetScanMissionNode(Node):
                 goal_handle.abort()
                 self.finish_queue_dispatch(task_id)
                 return self.action_result('FAILED', str(exc), False)
-        if (
-                bool(goal_handle.is_cancel_requested)
-                or self._process_shutdown_requested):
+        if cancellation.cancelled or self._process_shutdown_requested:
             reason = (
                 'coordinator stopped before queued mission started'
                 if self._process_shutdown_requested
@@ -823,69 +946,69 @@ class TargetScanMissionNode(Node):
         session = record
         self.clear_runtime_caches()
         self.write_status(session)
-        transformed_target = None
-        failure = None
-        owns_process_generation = False
+        context = MissionContext(session=session, cancellation=cancellation)
+        operations = _MissionNodeOperations(
+            self, goal_handle, cancellation,
+            rough_target=goal_handle.request.rough_target)
+        self._active_cancellation_token = cancellation
+        self._active_engine_session = session
         try:
-            live_processes = self.processes.begin_generation()
-            if live_processes:
-                raise MissionFailure(
-                    'previous mission still owns live process groups: %s'
-                    % ', '.join(live_processes),
-                    needs_operator=True,
-                    failure_code='CONTROL_UNTRUSTWORTHY', retryable=False)
-            owns_process_generation = True
-            transformed_target = self.snapshot_target(goal_handle.request.rough_target)
-            self.run_pipeline(goal_handle, session, transformed_target)
-        except MissionFailure as exc:
-            failure = exc
-        except Exception as exc:  # Preserve shutdown even on unexpected ROS errors.
-            failure = MissionFailure('mission exception: %s' % exc)
-
-        if failure is None:
-            shutdown_failure = self.safe_shutdown(
-                session, normal_completion=True)
-            if shutdown_failure is not None:
-                failure = shutdown_failure
-        else:
-            # A generation-admission failure means every live process group
-            # belongs to the previous mission.  Never let the rejected mission
-            # stop command owners that it did not start, especially while the
-            # previous arm state may still be enabled and awaiting recovery.
-            shutdown_failure = (
-                self.safe_shutdown(
-                    session, normal_completion=False, failure=failure)
-                if owns_process_generation else None)
-            if shutdown_failure is not None:
-                failure = MissionFailure(
-                    '%s; safe shutdown also failed: %s'
-                    % (failure, shutdown_failure),
-                    needs_operator=True,
-                    failure_code='CONTROL_UNTRUSTWORTHY', retryable=False)
-            elif failure.outcome == 'CANCELLED':
-                failure = MissionFailure(
-                    'task failed: cancelled; arm returned to configured home, '
-                    'disabled, and pipeline stopped; please retry',
-                    outcome='CANCELLED', failure_code='CANCELLED',
-                    retryable=True)
-
+            engine_result = mission_engine_for(
+                self, operations).execute(context)
+        finally:
+            self._active_cancellation_token = None
+            self._active_engine_session = None
+        failure = engine_result.failure
         capture = dict(self.latest_capture)
-        if failure is None:
-            session.phase = MissionPhase.SUCCEEDED
-            session.reason = (
-                'distinctive-feature target scan completed with %d accepted '
-                'diverse views and PiPER shut down safely'
-                % session.accepted_captures)
-            outcome = 'SUCCEEDED'
+        discarded_dataset_path = ''
+        dataset_discarded = False
+        dataset_discard_reason = ''
+        candidate_dataset_path = str(capture.get('scan_dir', '')).strip()
+        process_health = self.processes.health()
+        capture_writer_stopped = not bool(
+            process_health.get('scan_stack', {}).get('running', False))
+        try:
+            project_root_value = configured_value(self, 'project_root')
+        except (AttributeError, KeyError):
+            project_root_value = None
+        dataset_root = (
+            Path(str(project_root_value)) / 'datasets' / 'active_scan'
+            if project_root_value else None)
+        if failure is not None and not candidate_dataset_path \
+                and capture_writer_stopped and dataset_root is not None:
+            candidate_dataset_path, dataset_discard_reason = (
+                find_failed_mission_dataset(
+                    dataset_root, session.task_id, session.mission_sha256))
+        if failure is not None and candidate_dataset_path:
+            try:
+                reported_captures = int(
+                    capture.get('captured_frame_count', 0) or 0)
+            except (TypeError, ValueError):
+                reported_captures = -1
+            if not capture_writer_stopped:
+                dataset_discard_reason = (
+                    'refused zero-capture cleanup while scan writer is active')
+            elif (dataset_root is not None
+                  and session.accepted_captures == 0
+                  and reported_captures == 0):
+                discarded_dataset_path = candidate_dataset_path
+                dataset_discarded, dataset_discard_reason = (
+                    discard_failed_zero_capture_dataset(
+                        discarded_dataset_path, dataset_root,
+                        session.task_id, session.mission_sha256))
+                if dataset_discarded:
+                    capture['scan_dir'] = ''
+                    capture['manifest_sha256'] = ''
+                    self.get_logger().warn(
+                        dataset_discard_reason + ': ' + discarded_dataset_path)
+                else:
+                    self.get_logger().error(
+                        'refused failed-scan dataset cleanup for %s: %s'
+                        % (discarded_dataset_path, dataset_discard_reason))
+        outcome = engine_result.outcome
+        if engine_result.succeeded:
             goal_handle.succeed()
         else:
-            session.phase = (
-                MissionPhase.NEEDS_OPERATOR
-                if failure.needs_operator else MissionPhase.FAILED)
-            session.reason = str(failure)
-            outcome = (
-                'NEEDS_OPERATOR' if failure.needs_operator
-                else failure.outcome)
             if outcome == 'CANCELLED':
                 self.finish_action_handle(goal_handle, 'CANCELLED')
             else:
@@ -908,6 +1031,9 @@ class TargetScanMissionNode(Node):
             action_summary={
                 'processes': self.processes.health(),
                 'home_positions_rad': list(session.home_positions_rad),
+                'pre_home_positions_rad': list(
+                    session.pre_home_positions_rad),
+                'pre_home_completed': bool(session.pre_home_completed),
                 'storage_positions_rad': list(
                     session.storage_positions_rad),
                 'startup_wrist_completed': bool(
@@ -921,6 +1047,9 @@ class TargetScanMissionNode(Node):
                 'target_prompt': session.goal['target_prompt'],
                 'scan_feature_coverage': dict(
                     self.last_scan_feature_coverage),
+                'zero_capture_dataset_discarded': bool(dataset_discarded),
+                'discarded_dataset_path': discarded_dataset_path,
+                'dataset_discard_reason': dataset_discard_reason,
             },
         )
         with self._lock:
@@ -944,6 +1073,10 @@ class TargetScanMissionNode(Node):
         with self._lock:
             if self._dispatch_task_id == str(task_id):
                 self._dispatch_task_id = ''
+            cancellation_tokens = getattr(
+                self, '_cancellation_tokens', None)
+            if cancellation_tokens is not None:
+                cancellation_tokens.pop(str(task_id), None)
 
     @staticmethod
     def finish_action_handle(goal_handle, outcome):
@@ -956,9 +1089,23 @@ class TargetScanMissionNode(Node):
             goal_handle.abort()
 
     def run_pipeline(self, goal_handle, session, target):
+        """Delegate the compatibility entry point to the mission engine."""
+        cancellation = getattr(self, '_active_cancellation_token', None)
+        if cancellation is None:
+            cancellation = CancellationToken()
+        context = MissionContext(
+            session=session, cancellation=cancellation, target=target)
+        operations = _MissionNodeOperations(
+            self, goal_handle, cancellation)
+        return mission_engine_for(self, operations).run_pipeline(context)
+
+    def _legacy_run_pipeline(self, goal_handle, session, target):
+        """Frozen Phase 5 implementation retained for equivalence review."""
         profile = self.selected_home_profile()
         self.current_home_profile = profile
         session.home_positions_rad = tuple(profile['positions_rad'])
+        session.pre_home_positions_rad = tuple(
+            profile.get('pre_home_positions_rad', ()))
         session.mission_ready_joint6_rad = float(
             profile['mission_ready_joint6_rad'])
         session.storage_joint6_rad = float(profile['storage_joint6_rad'])
@@ -1003,8 +1150,8 @@ class TargetScanMissionNode(Node):
                 'speed profile is not physically qualified; arm remained '
                 'disabled'
                 % (
-                    self.get_parameter('free_motion_speed_percent').value,
-                    self.get_parameter('contact_speed_percent').value))
+                    configured_value(self, 'free_motion_speed_percent'),
+                    configured_value(self, 'contact_speed_percent')))
         self.authorize_mission(session)
         self.transition(goal_handle, session, MissionPhase.ENABLE_AND_HOLD,
                         'enabling arm and proving current-position hold')
@@ -1065,7 +1212,7 @@ class TargetScanMissionNode(Node):
             request_id = self.prepare_acquisition(session, target)
             plan = self.wait_for_plan(
                 goal_handle, session, 'ROUGH_ACQUISITION', request_id,
-                PLAN_RESULT_TIMEOUT_SEC)
+                workflow_config_for(self).plan_result_timeout_sec)
             self.approve_plan(goal_handle, session, plan)
             self.transition(
                 goal_handle, session, MissionPhase.TARGET_LOCK,
@@ -1116,8 +1263,8 @@ class TargetScanMissionNode(Node):
         quality_replans = 0
         target_drift_replans = 0
         execution = None
-        required = int(self.get_parameter('required_captures').value)
-        maximum = int(self.get_parameter('maximum_captures').value)
+        required = int(configured_value(self, 'required_captures'))
+        maximum = int(configured_value(self, 'maximum_captures'))
         if required < 1 or maximum < required:
             raise MissionFailure(
                 'capture bounds are invalid: minimum %d maximum %d'
@@ -1159,14 +1306,14 @@ class TargetScanMissionNode(Node):
             try:
                 plan = self.wait_for_plan(
                     goal_handle, session, 'MULTIVIEW_SCAN', request_id,
-                    PLAN_RESULT_TIMEOUT_SEC)
+                    workflow_config_for(self).plan_result_timeout_sec)
             except MissionFailure as exc:
                 coverage = self.current_scan_feature_coverage()
                 if not safe_view_exhaustion_after_capture(
                         exc, accepted, coverage, required):
                     if (
-                            'only 0 viewpoints planned; require at least 1 of 1'
-                            in str(exc)
+                            as_failure(exc).has(
+                                FailureTag.EMPTY_VIEW_FRONTIER)
                             and coverage.get('blockers')):
                         raise MissionFailure(
                             '%s; safe-view frontier ended before distinctive '
@@ -1189,7 +1336,8 @@ class TargetScanMissionNode(Node):
                 if (
                         not target_drift_requires_replan(exc)
                         or target_drift_replans
-                        >= MAX_SCAN_TARGET_DRIFT_REPLANS):
+                        >= workflow_config_for(
+                            self).max_scan_target_drift_replans):
                     raise
                 target_drift_replans += 1
                 self.startup_progress(
@@ -1198,7 +1346,8 @@ class TargetScanMissionNode(Node):
                     'authorized, replanning from the fresh lock (%d/%d)'
                     % (
                         target_drift_replans,
-                        MAX_SCAN_TARGET_DRIFT_REPLANS))
+                        workflow_config_for(
+                            self).max_scan_target_drift_replans))
                 self.wait_for_stable_readiness(
                     goal_handle, session, 'multiview', 0.5, 30.0)
                 continue
@@ -1213,7 +1362,8 @@ class TargetScanMissionNode(Node):
             session.accepted_captures = int(
                 self.latest_capture.get('captured_frame_count', 0))
             if str(execution.state) == 'VIEW_REJECTED':
-                if quality_replans >= MAX_SCAN_QUALITY_REPLANS:
+                if quality_replans >= workflow_config_for(
+                        self).max_scan_quality_replans:
                     raise MissionFailure(
                         'visual replacement budget exhausted: '
                         + str(execution.reason))
@@ -1223,7 +1373,8 @@ class TargetScanMissionNode(Node):
                     'view rejected by fresh visual gates; executor is holding, '
                     'excluding that pose and replanning '
                     '(%d/%d)' % (
-                        quality_replans, MAX_SCAN_QUALITY_REPLANS))
+                        quality_replans,
+                        workflow_config_for(self).max_scan_quality_replans))
                 self.wait_for_stable_readiness(
                     goal_handle, session, 'multiview', 0.5, 30.0)
                 continue
@@ -1248,7 +1399,7 @@ class TargetScanMissionNode(Node):
                 'executor completed with %d captures outside the bounded '
                 '%d-%d contract'
                 % (session.accepted_captures, required, maximum))
-        if 'home reached' not in str(execution.reason).lower():
+        if not as_failure(execution.reason).has(FailureTag.HOME_REACHED):
             raise MissionFailure(
                 'captures completed but return-home was not proved: %s'
                 % execution.reason)
@@ -1272,9 +1423,8 @@ class TargetScanMissionNode(Node):
     def start_processes(self, goal_handle, session):
         if not self.param_bool('manage_processes'):
             return
-        root = Path(str(self.get_parameter('project_root').value)).resolve()
-        environment = dict(os.environ)
-        environment.update({
+        root = Path(str(configured_value(self, 'project_root'))).resolve()
+        environment = ProcessSupervisor.build_environment({
             'PIPER_ARM_ROOT': str(root),
             'PIPER_AUTO_ENABLE': 'false',
             'PIPER_ENABLE_REAL_VIEWPOINT_MOTION': (
@@ -1282,13 +1432,15 @@ class TargetScanMissionNode(Node):
             'PIPER_VIEWPOINT_MISSION_POLICY': '1',
             'PIPER_VIEWPOINT_CLOSED_LOOP_ONE_VIEW': '1',
             'PIPER_VIEWPOINT_SPEED_PERCENT': str(
-                self.get_parameter('free_motion_speed_percent').value),
+                configured_value(self, 'free_motion_speed_percent')),
             'PIPER_VIEWPOINT_MAX_VIEWS': str(
-                self.get_parameter('maximum_captures').value),
+                configured_value(self, 'maximum_captures')),
             'PIPER_VIEWPOINT_MIN_VIEWS': str(
-                self.get_parameter('required_captures').value),
+                configured_value(self, 'required_captures')),
             'PIPER_RETURN_HOME_POSITIONS_RAD': json.dumps(
                 list(session.home_positions_rad), separators=(',', ':')),
+            'PIPER_PRE_HOME_POSITIONS_RAD': json.dumps(
+                list(session.pre_home_positions_rad), separators=(',', ':')),
             'PIPER_MISSION_TASK_ID': session.task_id,
             'PIPER_MISSION_SHA256': session.mission_sha256,
             'PIPER_TARGET_LABEL': session.goal['target_label'],
@@ -1308,6 +1460,9 @@ class TargetScanMissionNode(Node):
             self.latest_arm_status = None
             self.latest_arm_status_at = 0.0
             self.motor_enable_guard_after = 0.0
+            telemetry_store = getattr(self, 'telemetry_store', None)
+            if telemetry_store is not None:
+                telemetry_store.clear_arm_feedback()
         self.startup_progress(
             goal_handle, session,
             'starting disabled PiPER driver and waiting for its service')
@@ -1336,6 +1491,9 @@ class TargetScanMissionNode(Node):
         with self._lock:
             self.latest_camera_health = None
             self.latest_camera_health_at = 0.0
+            telemetry_store = getattr(self, 'telemetry_store', None)
+            if telemetry_store is not None:
+                telemetry_store.clear_camera()
         self.startup_progress(
             goal_handle, session,
             'driver feedback ready; starting camera and GPU perception')
@@ -1403,9 +1561,16 @@ class TargetScanMissionNode(Node):
                     % (label, failed['driver']))
             now = time.monotonic()
             with self._lock:
-                fresh = (
-                    self.latest_joints is not None
-                    and now - self.latest_joints_at <= 0.25)
+                telemetry_store = getattr(self, 'telemetry_store', None)
+                if telemetry_store is None:
+                    fresh = (
+                        self.latest_joints is not None
+                        and now - self.latest_joints_at <= 0.25)
+                else:
+                    observation = telemetry_store.snapshot().arm.joints
+                    fresh = (
+                        observation is not None
+                        and not observation.is_stale_at(now, 0.25))
                 stable_since = self.joint_stream_stable_since
                 rejection = self.joint_feedback_rejection
             if (
@@ -1436,9 +1601,15 @@ class TargetScanMissionNode(Node):
                     % failed['vision'])
             log = self.processes.log_since_start('vision')
             missing = [marker for marker in required_markers if marker not in log]
-            with self._lock:
+            telemetry_store = getattr(self, 'telemetry_store', None)
+            if telemetry_store is None:
                 health = self.latest_camera_health
                 health_at = self.latest_camera_health_at
+            else:
+                observation = telemetry_store.snapshot().perception.camera
+                health = None if observation is None else observation.value
+                health_at = (
+                    0.0 if observation is None else observation.received_at)
             camera_ready = (
                 health is not None
                 and health_at >= started_at
@@ -1524,10 +1695,10 @@ class TargetScanMissionNode(Node):
         raise MissionFailure('Tesseract worker startup timed out: ' + last_reason)
 
     def selected_home_profile(self):
-        configured = str(self.get_parameter('home_pose_path').value).strip()
+        configured = str(configured_value(self, 'home_pose_path')).strip()
         if not configured:
             configured = str(
-                Path(str(self.get_parameter('project_root').value)).resolve()
+                Path(str(configured_value(self, 'project_root'))).resolve()
                 / 'piper_home_pose.json')
         try:
             payload = load_home_pose(configured)
@@ -1547,6 +1718,11 @@ class TargetScanMissionNode(Node):
                     'configured home pose is legacy-only; record the '
                     'mission-ready and storage J6 poses in the GUI before '
                     'enabling autonomous motion',
+                    failure_code='CONTROL_UNTRUSTWORTHY', retryable=False)
+            if not bool(payload.get('pre_home_configured', False)):
+                raise MissionFailure(
+                    'configured home pose has no terminal pre-home waypoint; '
+                    'record pre-home before enabling autonomous motion',
                     failure_code='CONTROL_UNTRUSTWORTHY', retryable=False)
             return payload
         raise MissionFailure(
@@ -1612,14 +1788,17 @@ class TargetScanMissionNode(Node):
         request.rough_target.point.y = float(target[1])
         request.rough_target.point.z = float(target[2])
         result = self.call_service(
-            self.prepare_client, request, ACQUISITION_SERVICE_TIMEOUT_SEC,
+            self.prepare_client, request,
+            workflow_config_for(self).acquisition_service_timeout_sec,
             'rough acquisition service')
         if not result.accepted or str(result.session_id) != request.session_id:
             raise MissionFailure(str(result.message))
         return request.session_id
 
     def request_multiview_plan(self, goal_handle, session):
-        queue_deadline = time.monotonic() + PLAN_REQUEST_QUEUE_TIMEOUT_SEC
+        queue_deadline = (
+            time.monotonic()
+            + workflow_config_for(self).plan_request_queue_timeout_sec)
         visual_deadline = None
         while time.monotonic() < (
                 visual_deadline if visual_deadline is not None
@@ -1635,7 +1814,10 @@ class TargetScanMissionNode(Node):
                 'Tesseract plan request service')
             if result.accepted:
                 return str(result.request_id)
-            if result.request_id and 'already pending' in str(result.message):
+            if (
+                    result.request_id
+                    and as_failure(result.message).has(
+                        FailureTag.REQUEST_ALREADY_PENDING)):
                 time.sleep(0.25)
                 continue
             if visual_reacquisition_plan_request_rejection(result.message):
@@ -1645,7 +1827,8 @@ class TargetScanMissionNode(Node):
                     # authorized.  Let the existing SAM2/heavy recovery restore
                     # one measured lock, then retry a completely fresh snapshot.
                     visual_deadline = (
-                        now + SCAN_VISUAL_REACQUISITION_TIMEOUT_SEC)
+                        now + workflow_config_for(
+                            self).scan_visual_reacquisition_timeout_sec)
                     self.startup_progress(
                         goal_handle, session,
                         'target confidence dipped before scan planning; '
@@ -1670,8 +1853,16 @@ class TargetScanMissionNode(Node):
         generation_started = time.monotonic()
 
         def matching():
-            plan = self.latest_plan
-            if plan is None or self.latest_plan_at < generation_started:
+            telemetry_store = getattr(self, 'telemetry_store', None)
+            if telemetry_store is None:
+                plan = self.latest_plan
+                received_at = self.latest_plan_at
+            else:
+                observation = telemetry_store.snapshot().mission.plan
+                plan = None if observation is None else observation.value
+                received_at = (
+                    0.0 if observation is None else observation.received_at)
+            if plan is None or received_at < generation_started:
                 return False
             if str(plan.plan_kind) != kind:
                 return False
@@ -1692,7 +1883,12 @@ class TargetScanMissionNode(Node):
         self.wait_for(
             goal_handle, session, matching, timeout,
             'timed out waiting for correlated %s plan' % kind)
-        plan = self.latest_plan
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        if telemetry_store is None:
+            plan = self.latest_plan
+        else:
+            observation = telemetry_store.snapshot().mission.plan
+            plan = None if observation is None else observation.value
         if kind == 'MULTIVIEW_SCAN':
             if int(plan.planned_viewpoints) != 1:
                 raise MissionFailure(
@@ -1702,7 +1898,8 @@ class TargetScanMissionNode(Node):
 
     def approve_plan(self, goal_handle, session, plan):
         normal_deadline = (
-            time.monotonic() + PLAN_APPROVAL_TRANSIENT_TIMEOUT_SEC)
+            time.monotonic()
+            + workflow_config_for(self).plan_approval_transient_timeout_sec)
         visual_reacquisition_deadline = None
         while True:
             request = ApproveScanExecution.Request()
@@ -1726,7 +1923,8 @@ class TargetScanMissionNode(Node):
                 # a changed measured center is still rejected by the executor
                 # and handled by the outer fresh-plan loop.
                 visual_reacquisition_deadline = (
-                    now + SCAN_VISUAL_REACQUISITION_TIMEOUT_SEC)
+                    now + workflow_config_for(
+                        self).scan_visual_reacquisition_timeout_sec)
                 self.startup_progress(
                     goal_handle, session,
                     'target confidence dipped between scan views; holding '
@@ -1760,9 +1958,14 @@ class TargetScanMissionNode(Node):
         result = self.call_service(
             self.workflow_start_client, Trigger.Request(), 8.0,
             'workflow start service')
-        if not result.success and 'already active' not in str(result.message):
+        if (
+                not result.success
+                and not as_failure(result.message).has(
+                    FailureTag.WORKFLOW_ALREADY_ACTIVE)):
             raise MissionFailure(str(result.message))
-        deadline = time.monotonic() + WORKFLOW_ASSESSMENT_TIMEOUT_SEC
+        deadline = (
+            time.monotonic()
+            + workflow_config_for(self).workflow_assessment_timeout_sec)
         while time.monotonic() < deadline:
             self.guard(goal_handle, session)
             diagnostic = self.call_service(
@@ -1786,14 +1989,22 @@ class TargetScanMissionNode(Node):
             time.sleep(0.25)
         raise MissionFailure(
             'dedicated workflow occlusion assessment exceeded %.0f seconds'
-            % WORKFLOW_ASSESSMENT_TIMEOUT_SEC)
+            % workflow_config_for(self).workflow_assessment_timeout_sec)
 
     def wait_for_execution(self, goal_handle, session, successes, timeout, failures):
         started = time.monotonic()
 
         def completed():
-            status = self.latest_execution
-            if status is None or self.latest_execution_at < started:
+            telemetry_store = getattr(self, 'telemetry_store', None)
+            if telemetry_store is None:
+                status = self.latest_execution
+                received_at = self.latest_execution_at
+            else:
+                observation = telemetry_store.snapshot().mission.execution
+                status = None if observation is None else observation.value
+                received_at = (
+                    0.0 if observation is None else observation.received_at)
+            if status is None or received_at < started:
                 return False
             state = str(status.state)
             if (
@@ -1810,26 +2021,50 @@ class TargetScanMissionNode(Node):
         self.wait_for(
             goal_handle, session, completed, timeout,
             'execution did not reach %s before timeout' % '/'.join(successes))
-        return self.latest_execution
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        if telemetry_store is None:
+            return self.latest_execution
+        observation = telemetry_store.snapshot().mission.execution
+        return None if observation is None else observation.value
 
     def prove_current_hold(self, goal_handle, session):
         self.require_fresh_joint_feedback()
         # The enable service can return between CAN feedback samples.  Bind
         # the hold to the first sample received after enable completes so a
         # pre-enable sample cannot make a correctly held arm look displaced.
-        previous_sample_at = self.latest_joints_at
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        if telemetry_store is None:
+            previous_sample_at = self.latest_joints_at
+        else:
+            observation = telemetry_store.snapshot().arm.joints
+            previous_sample_at = (
+                0.0 if observation is None else observation.received_at)
         fresh_deadline = time.monotonic() + 1.0
-        while (
-                self.latest_joints_at <= previous_sample_at
-                and time.monotonic() < fresh_deadline):
+        while time.monotonic() < fresh_deadline:
+            if telemetry_store is None:
+                sample_at = self.latest_joints_at
+            else:
+                observation = telemetry_store.snapshot().arm.joints
+                sample_at = (
+                    0.0 if observation is None else observation.received_at)
+            if sample_at > previous_sample_at:
+                break
             self.guard(goal_handle, session)
             time.sleep(0.01)
         self.require_fresh_joint_feedback()
-        initial = energized_hold_target(self.latest_joints.position[:6])
+        if telemetry_store is None:
+            joints = self.latest_joints
+        else:
+            observation = telemetry_store.snapshot().arm.joints
+            joints = None if observation is None else observation.value
+        initial = energized_hold_target(joints.position[:6])
         result = self.call_service(
             self.hold_client, Trigger.Request(), 8.0,
             'executor current-position hold service')
-        if not result.success or 'hold requested' not in str(result.message):
+        if (
+                not result.success
+                or not as_failure(result.message).has(
+                    FailureTag.HOLD_REQUESTED)):
             return False
         settled_since = None
         deadline = time.monotonic() + 15.0
@@ -1838,13 +2073,23 @@ class TargetScanMissionNode(Node):
         last_current = np.asarray(initial, dtype=float)
         while time.monotonic() < deadline:
             self.guard(goal_handle, session)
-            if self.latest_joints is None or time.monotonic() - self.latest_joints_at > 1.0:
+            if telemetry_store is None:
+                joints = self.latest_joints
+                age = time.monotonic() - self.latest_joints_at
+            else:
+                snapshot = telemetry_store.snapshot()
+                observation = snapshot.arm.joints
+                joints = None if observation is None else observation.value
+                age = (
+                    math.inf if observation is None else
+                    observation.age_at(snapshot.captured_at))
+            if joints is None or age > 1.0:
                 settled_since = None
                 time.sleep(0.05)
                 continue
-            current = np.asarray(self.latest_joints.position[:6], dtype=float)
+            current = np.asarray(joints.position[:6], dtype=float)
             delta = float(np.max(np.abs(current - initial)))
-            velocities = np.asarray(self.latest_joints.velocity[:6], dtype=float)
+            velocities = np.asarray(joints.velocity[:6], dtype=float)
             velocity = float(np.max(np.abs(velocities))) if velocities.size == 6 else math.inf
             last_delta = delta
             last_velocity = velocity
@@ -1874,6 +2119,19 @@ class TargetScanMissionNode(Node):
         return False
 
     def safe_shutdown(self, session, normal_completion, failure=None):
+        """Compatibility entry point for the engine-owned terminal sequence."""
+        cancellation = getattr(self, '_active_cancellation_token', None)
+        if cancellation is None:
+            cancellation = CancellationToken()
+        context = MissionContext(session=session, cancellation=cancellation)
+        operations = _MissionNodeOperations(
+            self, None, cancellation)
+        return mission_engine_for(self, operations).shutdown(
+            context, normal_completion=normal_completion, failure=failure)
+
+    def _legacy_safe_shutdown(
+            self, session, normal_completion, failure=None):
+        """Frozen Phase 5 shutdown retained until live shadow observation."""
         try:
             if session.motor_control_lost_reason:
                 # The driver watchdog owns the emergency all-axis disable.
@@ -1883,9 +2141,18 @@ class TargetScanMissionNode(Node):
                 deadline = time.monotonic() + 2.0
                 all_disabled = False
                 while time.monotonic() < deadline:
-                    with self._lock:
+                    telemetry_store = getattr(self, 'telemetry_store', None)
+                    if telemetry_store is None:
                         status = self.latest_arm_status
                         age = time.monotonic() - self.latest_arm_status_at
+                    else:
+                        snapshot = telemetry_store.snapshot()
+                        observation = snapshot.arm.status
+                        status = (
+                            None if observation is None else observation.value)
+                        age = (
+                            math.inf if observation is None else
+                            observation.age_at(snapshot.captured_at))
                     if (
                             status is not None
                             and age <= 0.5
@@ -1922,6 +2189,7 @@ class TargetScanMissionNode(Node):
                     + session.motor_control_lost_reason, True)
             if not session.arm_enabled:
                 session.current_hold_proved = True
+                session.pre_home_completed = True
                 session.return_home_proved = True
                 session.storage_wrist_proved = True
                 session.disabled_proved = True
@@ -1936,12 +2204,13 @@ class TargetScanMissionNode(Node):
                     return MissionFailure(
                         'one or more PiPER-owned processes remain alive', True)
                 return None
-            if not session.return_home_proved:
-                failure_reason = str(failure) if failure is not None else ''
+            if not session.pre_home_completed:
+                typed_failure = (
+                    as_failure(failure) if failure is not None else None)
                 blocker = (
                     '' if planning_rejection_allows_current_state_home(
-                        failure_reason)
-                    else abort_return_home_blocker(failure_reason))
+                        typed_failure)
+                    else abort_return_home_blocker(typed_failure))
                 if blocker:
                     return MissionFailure(
                         'configured home return was not attempted because the '
@@ -1950,23 +2219,42 @@ class TargetScanMissionNode(Node):
                 self.transition(
                     None, session, MissionPhase.RETURNING_HOME,
                     'cancellation/failure accepted; holding, then requesting '
-                    'one fresh direct configured-home joint target with '
+                    'the configured direct pre-home joint target with '
                     'only the configured folded self-collision exemption; '
                     'camera-holder floor/external clearance remains mandatory')
                 startup_home = shutdown_uses_startup_home(session)
-                home_proved = (
-                    self.prove_return_home_for_shutdown(
-                        session, startup=True)
-                    if startup_home else
-                    self.prove_return_home_for_shutdown(session))
-                if not home_proved:
+                pre_home_target = list(session.pre_home_positions_rad)
+                if len(pre_home_target) != 6:
+                    return MissionFailure(
+                        'pre-home target is missing; arm remains enabled in '
+                        'a current-position hold', True)
+                if not self.prove_return_home_for_shutdown(
+                        session, startup=startup_home,
+                        target_positions=pre_home_target,
+                        home_stage='PRE_HOME'):
                     if session.motor_control_lost_reason:
                         return self.safe_shutdown(
                             session, normal_completion=False, failure=failure)
                     diagnostic = str(getattr(
                         self, 'last_return_home_diagnostic', '')).strip()
                     return MissionFailure(
-                        'configured home return was not proved; arm remains '
+                        'configured pre-home was not proved; arm remains '
+                        'enabled in a current-position hold'
+                        + (': ' + diagnostic if diagnostic else ''), True)
+                session.pre_home_completed = True
+            if not session.return_home_proved:
+                self.transition(
+                    None, session, MissionPhase.RETURNING_HOME,
+                    'pre-home proved; moving directly to configured rough home')
+                startup_home = shutdown_uses_startup_home(session)
+                if not self.prove_return_home_for_shutdown(
+                        session, startup=startup_home,
+                        target_positions=list(session.home_positions_rad),
+                        home_stage='ROUGH_HOME'):
+                    diagnostic = str(getattr(
+                        self, 'last_return_home_diagnostic', '')).strip()
+                    return MissionFailure(
+                        'configured rough home was not proved; arm remains '
                         'enabled in a current-position hold'
                         + (': ' + diagnostic if diagnostic else ''), True)
             if not session.storage_wrist_proved:
@@ -2025,13 +2313,28 @@ class TargetScanMissionNode(Node):
             return MissionFailure(str(exc), True)
 
     def at_configured_home(
-            self, session, tolerance_rad=0.030, target_positions=None):
+            self, session, tolerance_rad=0.030, target_positions=None,
+            home_stage=None):
         self.require_fresh_joint_feedback()
-        current = np.asarray(self.latest_joints.position[:6], dtype=float)
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        if telemetry_store is None:
+            joints = self.latest_joints
+        else:
+            observation = telemetry_store.snapshot().arm.joints
+            joints = None if observation is None else observation.value
+        current = np.asarray(joints.position[:6], dtype=float)
         target = np.asarray(
             session.home_positions_rad
             if target_positions is None else target_positions,
             dtype=float)
+        if str(home_stage or '').strip().upper() == 'STARTUP_WRIST':
+            return bool(
+                current.shape == (6,)
+                and target.shape == (6,)
+                and np.all(np.isfinite(current))
+                and np.all(np.isfinite(target))
+                and abs(float(current[5]) - float(target[5]))
+                <= float(tolerance_rad))
         return bool(
             current.shape == (6,)
             and target.shape == (6,)
@@ -2069,14 +2372,13 @@ class TargetScanMissionNode(Node):
 
         def critical_process_failure():
             failed = self.processes.failed()
-            names = sorted(
-                set(failed).intersection(
-                    ('driver', 'scan_stack', 'tesseract_worker')))
+            names = sorted(set(failed).intersection(('driver', 'scan_stack')))
             return names
 
         try:
             if self.at_configured_home(
-                    session, target_positions=target_positions):
+                    session, target_positions=target_positions,
+                    home_stage=home_stage):
                 session.return_home_proved = True
                 self.last_return_home_diagnostic = (
                     'fresh feedback is already within %s tolerance'
@@ -2084,77 +2386,71 @@ class TargetScanMissionNode(Node):
                 return True
         except MissionFailure as exc:
             return fail_home(exc)
-        result = self.call_service(
-            self.hold_client if startup else self.cancel_client,
-            Trigger.Request(), 8.0,
-            ('executor startup hold-before-home service' if startup else
-             'executor stop-and-hold-before-home service'))
-        message = str(result.message).lower()
-        if not result.success:
-            return fail_home(result.message or 'executor could not hold before home')
-        if 'hold' not in message:
-            return fail_home(
-                'executor response did not prove a hold before home: '
-                + str(result.message))
-        try:
-            self.wait_for_stable_joint_stream(
-                0.5, 15.0, 'held feedback before dedicated home planning')
-        except MissionFailure as exc:
-            return fail_home(exc)
+        if startup:
+            try:
+                self.require_fresh_joint_feedback()
+            except MissionFailure as exc:
+                return fail_home(exc)
+        else:
+            result = self.call_service(
+                self.cancel_client, Trigger.Request(), 8.0,
+                'executor stop-and-hold-before-home service')
+            if not result.success:
+                return fail_home(
+                    result.message or 'executor could not hold before home')
+            if not as_failure(result.message).has(
+                    FailureTag.HOLD_ACKNOWLEDGED):
+                return fail_home(
+                    'executor response did not prove a hold before home: '
+                    + str(result.message))
+            try:
+                self.wait_for_stable_joint_stream(
+                    0.5, 15.0, 'held feedback before direct home motion')
+            except MissionFailure as exc:
+                return fail_home(exc)
 
-        self.clear_plan_cache()
-        queued_at = time.monotonic()
-        request = RequestTesseractPlan.Request()
-        request.force_refresh = False
+        request = ExecuteHomeStage.Request()
+        request.task_id = session.task_id
+        request.mission_sha256 = session.mission_sha256
         request.home_stage = str(home_stage).upper()
         request.joint_goal_positions_rad = [
             float(value) for value in target_positions]
-        planned = self.call_service(
-            (self.startup_home_plan_client
-             if startup else self.return_home_plan_client), request,
-            PLAN_REQUEST_QUEUE_TIMEOUT_SEC,
-            ('startup Tesseract configured-home plan service'
-             if startup else
-             'dedicated Tesseract return-home plan service'))
-        if not planned.accepted or not planned.request_id:
-            return fail_home(
-                'home planning request was rejected: ' + str(planned.message))
-        request_id = str(planned.request_id)
-        deadline = time.monotonic() + PLAN_RESULT_TIMEOUT_SEC
-        plan = None
-        while time.monotonic() < deadline:
-            guard_active_mission()
-            candidate = self.latest_plan
-            if (
-                    candidate is not None
-                    and self.latest_plan_at >= queued_at
-                    and str(candidate.plan_kind) == 'RETURN_HOME'
-                    and str(candidate.plan_id) == request_id):
-                if not bool(candidate.valid):
-                    return fail_home(
-                        'home plan was invalid: ' + str(candidate.reason))
-                plan = candidate
-                break
-            failed = critical_process_failure()
-            if failed:
-                return fail_home(
-                    'critical process exited while planning home: '
-                    + ', '.join(failed))
-            time.sleep(0.05)
-        if plan is None:
-            return fail_home('timed out waiting for the correlated home plan')
         execution_started = time.monotonic()
-        self.approve_plan(goal_handle, session, plan)
-        deadline = time.monotonic() + PLAN_RESULT_TIMEOUT_SEC
+        started = self.call_service(
+            self.execute_home_stage_client, request,
+            workflow_config_for(self).plan_request_queue_timeout_sec,
+            'direct configured-home executor service')
+        if not started.accepted or not started.execution_id:
+            return fail_home(
+                'direct home request was rejected: ' + str(started.message))
+        execution_id = str(started.execution_id)
+        deadline = (
+            time.monotonic() + workflow_config_for(
+                self).plan_result_timeout_sec)
         while time.monotonic() < deadline:
             guard_active_mission()
-            status = self.latest_execution
-            if status is not None and self.latest_execution_at >= execution_started:
+            telemetry_store = getattr(self, 'telemetry_store', None)
+            if telemetry_store is None:
+                status = self.latest_execution
+                status_at = self.latest_execution_at
+            else:
+                observation = telemetry_store.snapshot().mission.execution
+                status = None if observation is None else observation.value
+                status_at = (
+                    0.0 if observation is None else observation.received_at)
+            if (
+                    status is not None
+                    and status_at >= execution_started
+                    and str(status.plan_id) == execution_id):
                 state = str(status.state)
                 reason = str(status.reason)
-                if state == 'ABORTED' and 'configured home reached' in reason.lower():
+                if (
+                        state == 'ABORTED'
+                        and as_failure(reason).has(
+                            FailureTag.TERMINAL_HOME_REACHED)):
                     if self.at_configured_home(
-                            session, target_positions=target_positions):
+                            session, target_positions=target_positions,
+                            home_stage=home_stage):
                         session.return_home_proved = True
                         self.last_return_home_diagnostic = (
                             '%s reached and feedback-proved'
@@ -2171,33 +2467,50 @@ class TargetScanMissionNode(Node):
             failed = critical_process_failure()
             if failed:
                 return fail_home(
-                    'critical process exited during home motion: '
+                    'critical process exited during direct home motion: '
                     + ', '.join(failed))
             time.sleep(0.05)
-        return fail_home('timed out waiting for configured-home execution proof')
+        return fail_home(
+            'timed out waiting for direct configured-home execution proof')
 
     def prove_current_hold_for_shutdown(self, session):
         try:
             self.guard_motor_control(session)
             self.require_fresh_joint_feedback()
-            initial = energized_hold_target(self.latest_joints.position[:6])
+            telemetry_store = getattr(self, 'telemetry_store', None)
+            if telemetry_store is None:
+                joints = self.latest_joints
+            else:
+                observation = telemetry_store.snapshot().arm.joints
+                joints = None if observation is None else observation.value
+            initial = energized_hold_target(joints.position[:6])
             result = self.call_service(
                 self.hold_client, Trigger.Request(), 8.0,
                 'executor shutdown hold service')
-            if not result.success or 'hold requested' not in str(result.message):
+            if (
+                    not result.success
+                    or not as_failure(result.message).has(
+                        FailureTag.HOLD_REQUESTED)):
                 return False
             deadline, settled_since = time.monotonic() + 15.0, None
             while time.monotonic() < deadline:
                 self.guard_motor_control(session)
-                if self.latest_joints is None or time.monotonic() - self.latest_joints_at > 1.0:
+                if telemetry_store is None:
+                    joints = self.latest_joints
+                    age = time.monotonic() - self.latest_joints_at
+                else:
+                    snapshot = telemetry_store.snapshot()
+                    observation = snapshot.arm.joints
+                    joints = (
+                        None if observation is None else observation.value)
+                    age = (
+                        math.inf if observation is None else
+                        observation.age_at(snapshot.captured_at))
+                if joints is None or age > 1.0:
                     settled_since = None
                 else:
-                    current = np.asarray(self.latest_joints.position[:6], dtype=float)
+                    current = np.asarray(joints.position[:6], dtype=float)
                     delta = float(np.max(np.abs(current - initial)))
-                    velocity_values = np.asarray(
-                        self.latest_joints.velocity[:6], dtype=float)
-                    velocity = float(np.max(np.abs(velocity_values))) \
-                        if velocity_values.size == 6 else math.inf
                     if delta <= 0.005:
                         settled_since = settled_since or time.monotonic()
                         if time.monotonic() - settled_since >= 1.0:
@@ -2279,9 +2592,18 @@ class TargetScanMissionNode(Node):
         if (
                 bool(getattr(session, 'arm_enabled', False))
                 and time.monotonic() >= self.motor_enable_guard_after):
-            with self._lock:
+            telemetry_store = getattr(self, 'telemetry_store', None)
+            if telemetry_store is None:
                 arm_status = self.latest_arm_status
                 arm_status_age = time.monotonic() - self.latest_arm_status_at
+            else:
+                snapshot = telemetry_store.snapshot()
+                observation = snapshot.arm.status
+                arm_status = (
+                    None if observation is None else observation.value)
+                arm_status_age = (
+                    math.inf if observation is None else
+                    observation.age_at(snapshot.captured_at))
             motor_reasons = (
                 ['arm/motor status is missing or stale']
                 if arm_status is None or arm_status_age > 0.5 else
@@ -2297,14 +2619,29 @@ class TargetScanMissionNode(Node):
                     failure_code='CONTROL_UNTRUSTWORTHY', retryable=False)
 
     def guard(self, goal_handle, session):
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        if telemetry_store is None:
+            capture = self.latest_capture
+        else:
+            observation = telemetry_store.snapshot().mission.capture
+            capture = {} if observation is None else observation.value
         session.accepted_captures = int(
-            self.latest_capture.get('captured_frame_count',
-                                    session.accepted_captures))
+            capture.get('captured_frame_count', session.accepted_captures))
+        cancellation = getattr(self, '_active_cancellation_token', None)
         if self._process_shutdown_requested:
             raise MissionFailure(
                 'coordinator shutdown requested', outcome='CANCELLED',
                 failure_code='CANCELLED', retryable=True)
-        if goal_handle is not None and goal_handle.is_cancel_requested:
+        if cancellation is not None and cancellation.cancelled:
+            raise MissionFailure(
+                cancellation.reason or 'tracked robot cancelled the task',
+                outcome='CANCELLED', failure_code='CANCELLED', retryable=True)
+        # Compatibility only for Phase 0/1 harnesses and direct helper calls.
+        # Production execution always binds the application cancellation token.
+        if (
+                cancellation is None
+                and goal_handle is not None
+                and goal_handle.is_cancel_requested):
             raise MissionFailure(
                 'tracked robot cancelled the task', outcome='CANCELLED')
         if session.deadline_expired():
@@ -2330,8 +2667,18 @@ class TargetScanMissionNode(Node):
         self.publish_feedback(goal_handle, session)
 
     def readiness_rejection(self, mode):
-        readiness = self.latest_readiness
-        if readiness is None or time.monotonic() - self.latest_readiness_at > 1.0:
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        if telemetry_store is None:
+            readiness = self.latest_readiness
+            age = time.monotonic() - self.latest_readiness_at
+        else:
+            snapshot = telemetry_store.snapshot()
+            observation = snapshot.mission.readiness
+            readiness = None if observation is None else observation.value
+            age = (
+                math.inf if observation is None else
+                observation.age_at(snapshot.captured_at))
+        if readiness is None or age > 1.0:
             return 'Tesseract readiness is missing or stale'
         if not readiness.worker_ready:
             return 'Tesseract worker is not ready'
@@ -2347,8 +2694,18 @@ class TargetScanMissionNode(Node):
         return 'unsupported Tesseract readiness mode'
 
     def require_fresh_joint_feedback(self):
-        joints = self.latest_joints
-        if joints is None or time.monotonic() - self.latest_joints_at > 1.0:
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        if telemetry_store is None:
+            joints = self.latest_joints
+            age = time.monotonic() - self.latest_joints_at
+        else:
+            snapshot = telemetry_store.snapshot()
+            observation = snapshot.arm.joints
+            joints = None if observation is None else observation.value
+            age = (
+                math.inf if observation is None else
+                observation.age_at(snapshot.captured_at))
+        if joints is None or age > 1.0:
             raise MissionFailure('joint feedback is missing or stale')
         values = np.asarray(joints.position[:6], dtype=float)
         if values.shape != (6,) or not np.all(np.isfinite(values)):
@@ -2358,6 +2715,9 @@ class TargetScanMissionNode(Node):
         with self._lock:
             self.latest_plan = None
             self.latest_plan_at = 0.0
+            telemetry_store = getattr(self, 'telemetry_store', None)
+            if telemetry_store is not None:
+                telemetry_store.clear_plan()
 
     def clear_runtime_caches(self):
         """Discard evidence and terminal messages from the previous mission."""
@@ -2374,6 +2734,9 @@ class TargetScanMissionNode(Node):
             self.latest_scan_history_at = 0.0
             self.latest_scan_target_center = None
             self.last_scan_feature_coverage = {}
+            telemetry_store = getattr(self, 'telemetry_store', None)
+            if telemetry_store is not None:
+                telemetry_store.clear_mission_runtime()
 
     def transition(self, goal_handle, session, phase, reason):
         session.transition(phase, reason)
@@ -2395,7 +2758,7 @@ class TargetScanMissionNode(Node):
             'remaining_sec': session.remaining(),
             'accepted_captures': session.accepted_captures,
             'required_captures': int(
-                self.get_parameter('required_captures').value),
+                configured_value(self, 'required_captures')),
             'processes': self.processes.health(),
         })
 
@@ -2410,10 +2773,16 @@ class TargetScanMissionNode(Node):
         feedback.acquisition_attempt = int(session.acquisition_attempt)
         feedback.occlusion_action = int(session.occlusion_action)
         feedback.occlusion_action_limit = MAX_OCCLUSION_ACTIONS
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        if telemetry_store is None:
+            capture = self.latest_capture
+        else:
+            observation = telemetry_store.snapshot().mission.capture
+            capture = {} if observation is None else observation.value
         feedback.accepted_captures = int(
-            self.latest_capture.get('captured_frame_count', 0))
+            capture.get('captured_frame_count', 0))
         feedback.required_captures = int(
-            self.get_parameter('required_captures').value)
+            configured_value(self, 'required_captures'))
         feedback.process_health_json = json.dumps(
             self.processes.health(), sort_keys=True)
         feedback.shutdown_phase = (
@@ -2442,7 +2811,7 @@ class TargetScanMissionNode(Node):
             'remaining_sec': float(normalized['deadline_sec']),
             'accepted_captures': 0,
             'required_captures': int(
-                self.get_parameter('required_captures').value),
+                configured_value(self, 'required_captures')),
             'processes': self.processes.health(),
         })
         if record['source'] == 'action':
@@ -2453,7 +2822,7 @@ class TargetScanMissionNode(Node):
             feedback.remaining_sec = float(normalized['deadline_sec'])
             feedback.accepted_captures = 0
             feedback.required_captures = int(
-                self.get_parameter('required_captures').value)
+                configured_value(self, 'required_captures'))
             feedback.occlusion_action_limit = MAX_OCCLUSION_ACTIONS
             feedback.process_health_json = json.dumps(
                 self.processes.health(), sort_keys=True)
@@ -2498,8 +2867,8 @@ class TargetScanMissionNode(Node):
                 records = list(self._pending_missions.values())
                 ready = mission_queue_ready(
                     records, time.monotonic(),
-                    float(self.get_parameter(
-                        'mission_queue_coalesce_sec').value))
+                    float(configured_value(
+                        self, 'mission_queue_coalesce_sec')))
                 selected = closest_pending_mission(records) if ready else None
                 if selected is not None:
                     task_id = selected['normalized']['task_id']
@@ -2531,7 +2900,7 @@ class TargetScanMissionNode(Node):
                         or task_id in self._pending_missions):
                     continue
                 maximum = int(
-                    self.get_parameter('max_pending_missions').value)
+                    configured_value(self, 'max_pending_missions'))
                 if (
                         len(self._pending_missions)
                         + len(self._action_reservations) >= maximum):

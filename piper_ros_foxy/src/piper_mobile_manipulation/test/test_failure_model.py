@@ -1,0 +1,219 @@
+"""Regression tests for typed failures and legacy string compatibility."""
+
+from dataclasses import replace
+
+import pytest
+
+from piper_mobile_manipulation.failure_model import (
+    as_failure,
+    Failure,
+    FailureCode,
+    FailureTag,
+    legacy_failure_adapter,
+)
+from piper_mobile_manipulation.scan_viewpoint_executor_node import (
+    abort_return_home_blocker,
+    retryable_rgbd_capture_rejection,
+    runtime_gate_action,
+    terminal_home_hold_required,
+    visual_capture_rejection,
+)
+from piper_mobile_manipulation.target_scan_mission_node import (
+    failure_code_for_reason,
+    MissionFailure,
+    planning_rejection_allows_current_state_home,
+    retryable_plan_approval_rejection,
+    target_drift_requires_replan,
+    visual_reacquisition_plan_approval_rejection,
+    visual_reacquisition_plan_request_rejection,
+)
+
+
+@pytest.mark.parametrize('detail, expected', (
+    ('tracked robot cancelled the task', FailureCode.CANCELLED),
+    ('camera vision startup timed out', FailureCode.SENSOR_UNAVAILABLE),
+    ('mission deadline expired', FailureCode.DEADLINE_EXPIRED),
+    ('capture quality was insufficient',
+     FailureCode.INSUFFICIENT_CAPTURE_QUALITY),
+    ('occlusion was not cleared', FailureCode.OCCLUSION_NOT_CLEARED),
+    ('target lock was not found', FailureCode.TARGET_NOT_FOUND),
+    ('no reachable IK plan exists', FailureCode.NO_REACHABLE_PLAN),
+    ('CAN bus feedback is unavailable',
+     FailureCode.CONTROL_UNTRUSTWORTHY),
+    ('visual replacement budget exhausted', FailureCode.MISSION_FAILED),
+))
+def test_legacy_public_failure_code_mapping_is_preserved(detail, expected):
+    failure = legacy_failure_adapter(detail)
+
+    assert failure.code is expected
+    assert failure_code_for_reason(detail) == expected.value
+
+
+def test_explicit_failure_code_overrides_legacy_detail_classification():
+    failure = legacy_failure_adapter(
+        'camera wording that would historically imply a sensor failure',
+        code=FailureCode.TARGET_NOT_FOUND,
+        retryable=False,
+    )
+
+    assert failure.code is FailureCode.TARGET_NOT_FOUND
+    assert failure.retryable is False
+
+
+@pytest.mark.parametrize('tag, decision', (
+    (
+        FailureTag.PLAN_APPROVAL_RETRY,
+        retryable_plan_approval_rejection,
+    ),
+    (
+        FailureTag.PLAN_APPROVAL_VISUAL_REACQUISITION,
+        visual_reacquisition_plan_approval_rejection,
+    ),
+    (
+        FailureTag.PLAN_REQUEST_VISUAL_REACQUISITION,
+        visual_reacquisition_plan_request_rejection,
+    ),
+    (FailureTag.TARGET_DRIFT_REPLAN, target_drift_requires_replan),
+    (
+        FailureTag.PLAN_REJECTION_HOME_ALLOWED,
+        planning_rejection_allows_current_state_home,
+    ),
+    (
+        FailureTag.CAPTURE_RETRY_SAME_VIEW,
+        retryable_rgbd_capture_rejection,
+    ),
+    (FailureTag.CAPTURE_REJECT_VIEW, visual_capture_rejection),
+))
+def test_machine_decisions_do_not_depend_on_detail_wording(tag, decision):
+    failure = Failure(
+        code=FailureCode.MISSION_FAILED,
+        detail='first operator-facing explanation',
+        tags=frozenset((tag,)),
+    )
+
+    assert decision(failure)
+    assert decision(
+        failure.with_detail('completely different human wording'))
+
+
+def test_terminal_home_decision_is_independent_of_reason_wording():
+    failure = Failure(
+        code=FailureCode.CONTROL_UNTRUSTWORTHY,
+        detail='old home wording',
+        tags=frozenset((FailureTag.TERMINAL_HOME_REACHED,)),
+    )
+
+    assert terminal_home_hold_required('ABORTED', failure)
+    assert terminal_home_hold_required(
+        'ABORTED', failure.with_detail('home proof wording revised'))
+    assert not terminal_home_hold_required('INVALID', failure)
+
+
+def test_runtime_freshness_decision_uses_tags_for_typed_failures():
+    gap = Failure(
+        code=FailureCode.SENSOR_UNAVAILABLE,
+        detail='legacy freshness wording',
+        tags=frozenset((FailureTag.RUNTIME_FRESHNESS_GAP,)),
+    )
+    fault = Failure(
+        code=FailureCode.CONTROL_UNTRUSTWORTHY,
+        detail='legacy safety wording',
+    )
+
+    assert runtime_gate_action([
+        gap.with_detail('camera producer has not caught up'),
+    ]) == 'hold_for_refresh'
+    assert runtime_gate_action([gap, fault]) == 'abort'
+
+
+def test_return_home_blocker_is_machine_data_not_reparsed_detail():
+    failure = Failure(
+        code=FailureCode.CONTROL_UNTRUSTWORTHY,
+        detail='old controller wording',
+        tags=frozenset((FailureTag.RETURN_HOME_BLOCKED,)),
+        blocker='arm status',
+        needs_operator=True,
+        retryable=False,
+    )
+
+    assert abort_return_home_blocker(failure) == 'arm status'
+    assert abort_return_home_blocker(
+        failure.with_detail('the explanation has been rewritten')) \
+        == 'arm status'
+
+
+def test_gui_recovery_blocker_is_machine_data_not_reparsed_detail():
+    failure = Failure(
+        code=FailureCode.CONTROL_UNTRUSTWORTHY,
+        detail='old workspace wording',
+        tags=frozenset((FailureTag.GUI_AUTO_RECOVERY_BLOCKED,)),
+        recovery_blocker='clear the workspace',
+    )
+
+    assert as_failure(failure).recovery_blocker == 'clear the workspace'
+    assert as_failure(
+        failure.with_detail('operator guidance was rewritten')
+    ).recovery_blocker == 'clear the workspace'
+
+
+def test_mission_exception_carries_typed_failure_and_legacy_attributes():
+    typed = Failure(
+        code=FailureCode.TARGET_NOT_FOUND,
+        detail='target observation was unavailable',
+        tags=frozenset((
+            FailureTag.PLAN_REQUEST_VISUAL_REACQUISITION,
+        )),
+        retryable=True,
+    )
+
+    error = MissionFailure(typed)
+
+    assert str(error) == typed.detail
+    assert error.failure is typed
+    assert error.failure_code == 'TARGET_NOT_FOUND'
+    assert error.retryable is True
+    assert error.needs_operator is False
+    assert as_failure(error) is typed
+
+
+def test_failure_is_immutable_and_with_detail_preserves_machine_fields():
+    original = Failure(
+        code=FailureCode.NO_REACHABLE_PLAN,
+        detail='old detail',
+        tags=frozenset((FailureTag.EMPTY_VIEW_FRONTIER,)),
+        retryable=False,
+        blocker='command publisher',
+    )
+    changed = original.with_detail('new detail')
+
+    assert changed == replace(original, detail='new detail')
+    assert changed.code is original.code
+    assert changed.tags is original.tags
+    assert changed.retryable is original.retryable
+    assert changed.blocker == original.blocker
+
+
+@pytest.mark.parametrize('detail, tag', (
+    (
+        'execution blocked: target_status=LOW_CONFIDENCE',
+        FailureTag.PLAN_APPROVAL_VISUAL_REACQUISITION,
+    ),
+    (
+        'planning blocked: tracking measurement is stale',
+        FailureTag.PLAN_REQUEST_VISUAL_REACQUISITION,
+    ),
+    (
+        'quality_rejected: scan quality is stale',
+        FailureTag.CAPTURE_RETRY_SAME_VIEW,
+    ),
+    (
+        'quality_rejected: target is clipped',
+        FailureTag.CAPTURE_REJECT_VIEW,
+    ),
+    (
+        'proposal cancelled; configured home reached; hold requested',
+        FailureTag.TERMINAL_HOME_REACHED,
+    ),
+))
+def test_legacy_adapter_tags_string_only_ros_boundaries(detail, tag):
+    assert legacy_failure_adapter(detail).has(tag)

@@ -1,91 +1,41 @@
-"""Command-free GUI-to-acquisition service transport regression."""
+"""Command-free GUI ROS ownership regression for Phase 8."""
 
-import os
-from pathlib import Path
 import queue
-import threading
-import time
 
 import rclpy
-from geometry_msgs.msg import TransformStamped
-from rclpy.executors import MultiThreadedExecutor
-from rclpy.node import Node
-from tf2_ros import StaticTransformBroadcaster
 
 from piper_gui_native import PiperGuiRos
-from piper_mobile_manipulation.scan_target_acquisition_node import (
-    ScanTargetAcquisitionNode,
-)
+from piper_gui.view_model import validate_mission_request
 
 
-def test_real_prepare_service_round_trip_enables_async_plan_wait(monkeypatch):
-    """The real service must acknowledge the GUI request before its deadline."""
-    repository = Path(__file__).resolve().parent
-    monkeypatch.setenv(
-        'FASTRTPS_DEFAULT_PROFILES_FILE',
-        str(repository / 'fastdds_gui_udp_only.xml'),
-    )
-    monkeypatch.setenv('RMW_FASTRTPS_USE_QOS_FROM_XML', '0')
-    monkeypatch.setenv('ROS_LOCALHOST_ONLY', '0')
-    assert os.environ['RMW_FASTRTPS_USE_QOS_FROM_XML'] == '0'
-
+def test_gui_exposes_action_client_without_legacy_acquisition_services():
     events = queue.Queue()
     rclpy.init()
     gui = PiperGuiRos(events)
-    acquisition = ScanTargetAcquisitionNode()
-    tf_node = Node('piper_gui_prepare_service_test_tf')
-    broadcaster = StaticTransformBroadcaster(tf_node)
-    executor = MultiThreadedExecutor(num_threads=4)
-    for node in (gui, acquisition, tf_node):
-        executor.add_node(node)
-    spin_thread = threading.Thread(target=executor.spin, daemon=True)
-    spin_thread.start()
     try:
-        transform = TransformStamped()
-        transform.header.stamp = tf_node.get_clock().now().to_msg()
-        transform.header.frame_id = 'base_link'
-        transform.child_frame_id = 'camera_color_optical_frame'
-        transform.transform.translation.x = 0.0
-        transform.transform.translation.y = 0.0
-        transform.transform.translation.z = 0.45
-        transform.transform.rotation.w = 1.0
-        broadcaster.sendTransform(transform)
+        assert gui.mission_action_client is not None
+        assert gui.mission_client is not None
+        assert not hasattr(gui, 'acquisition_prepare_client')
+        assert not hasattr(gui, 'multiview_plan_client')
+        assert not hasattr(gui, 'workflow_start_client')
+        assert not hasattr(gui, 'scan_approve_client')
+        assert not hasattr(gui, 'scan_cancel_client')
 
-        # Allow the static transform and service endpoint to traverse the same
-        # loopback-DDS discovery path used by the managed GUI stack.
-        deadline = time.monotonic() + 5.0
-        while (
-                not gui.acquisition_prepare_client.service_is_ready()
-                and time.monotonic() < deadline):
-            time.sleep(0.05)
-        assert gui.acquisition_prepare_client.service_is_ready()
-
-        gui.publish_rough_target_and_start(
-            (0.40, 0.0, 0.20),
-            'acq-service-roundtrip-0001',
-            stack_generation=7,
-            attempt_generation=11,
+        goal = gui._build_mission_goal(
+            'gui-sim-contract',
+            validate_mission_request((0.4, -0.1, 0.2), 'green cube'),
         )
-
-        event_deadline = time.monotonic() + 10.0
-        result = None
-        while time.monotonic() < event_deadline:
-            try:
-                name, payload = events.get(timeout=0.25)
-            except queue.Empty:
-                continue
-            if name == 'acquisition_start':
-                result = payload
-                break
-        assert result is not None
-        stack_generation, attempt_generation, outcome, message = result
-        assert stack_generation == 7
-        assert attempt_generation == 11
-        assert outcome == 'accepted', message
-        assert 'asynchronous' in message
+        assert goal.task_id == 'gui-sim-contract'
+        assert goal.task_type == 'SCAN_3D'
+        assert goal.target_label == 'green cube'
+        assert goal.target_profile == ''
+        assert goal.target_confidence == 1.0
+        assert goal.deadline_sec == 1200.0
+        assert goal.rough_target.header.frame_id == 'base_link'
+        point = goal.rough_target.pose.pose.position
+        assert (point.x, point.y, point.z) == (0.4, -0.1, 0.2)
+        covariance = goal.rough_target.pose.covariance
+        assert covariance[0] == covariance[7] == covariance[14] == 0.01
     finally:
-        executor.shutdown()
-        for node in (gui, acquisition, tf_node):
-            node.destroy_node()
+        gui.destroy_node()
         rclpy.shutdown()
-        spin_thread.join(timeout=2.0)
