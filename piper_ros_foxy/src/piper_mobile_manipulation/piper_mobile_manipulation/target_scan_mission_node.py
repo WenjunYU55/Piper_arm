@@ -780,9 +780,12 @@ class TargetScanMissionNode(Node):
         with self._lock:
             self.latest_arm_status = msg
             self.latest_arm_status_at = received_at
+            # PiperStatusMsg has no std_msgs/Header.  Keep its existing
+            # receipt-time freshness semantics and record an empty frame.
+            header = getattr(msg, 'header', None)
             self.telemetry_store.update_arm_status(
                 msg, received_at=received_at,
-                frame_id=str(getattr(msg.header, 'frame_id', '')))
+                frame_id=str(getattr(header, 'frame_id', '')))
 
     def camera_health_cb(self, msg):
         received_at = time.monotonic()

@@ -103,11 +103,20 @@ clock; concurrent writers; revision/value/timestamp consistency; frozen
 dataclasses and defensive copies; selective clearing; callback metadata; and
 old/new freshness, readiness, and joint-decision equivalence.
 
+The first supervised reintegration attempt on 2026-08-16 exposed one missing
+characterization case: `PiperStatusMsg` has no ROS `Header`, while the migrated
+mission callback had directly dereferenced `msg.header`. The coordinator
+failed before enable or motion. The callback now preserves the intended
+receipt-time-only status observation with empty frame/source metadata, and a
+headerless-message regression prevents recurrence. All six motors were proved
+disabled before the orphaned, mission-started driver group was terminated.
+
 Validation on 2026-08-14 is software-only. No arm, camera, GPU worker, or
 physical ROS process was started.
 
 - Phase 1/Phase 2 characterization baseline before Phase 3: 107 passed.
-- Phase 3 telemetry-store tests: 13 passed.
+- Phase 3 telemetry-store tests: 14 passed after the headerless arm-status
+  regression was added.
 - Phase 1 characterization, telemetry, and scan-motion regression selection:
   210 passed.
 - Complete `piper_mobile_manipulation/test` suite: 458 passed.

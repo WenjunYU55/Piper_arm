@@ -67,6 +67,7 @@ telemetry_snapshot_guardrail_2026_08_14:
   invariants:
     - TelemetryStore owns observations only and must never absorb mission phases, executor plans/paths/commands, service futures, retry counters, process ownership, or home/disable proofs.
     - Each callback observation atomically binds its value to the existing monotonic receipt time and preserves optional ROS source stamp/frame provenance. A decision must not mix values and receipt times from different callback generations.
+    - Header metadata is optional at the telemetry boundary. In particular, PiperStatusMsg has no Header and retains receipt-time-only freshness with an empty frame/source stamp; callbacks must not invent metadata or dereference a missing header.
     - TelemetrySnapshot and its domain/observation envelopes remain frozen and defensively copied. Mutation of an input or returned nested ROS/dictionary value must not affect the store or a later snapshot.
     - No freshness value belongs in TelemetryStore. Preserve every existing caller-owned timeout and the exact age greater-than maximum stale boundary.
     - ROS subscriptions, QoS, public interfaces, numerical safety values, motion/perception/Tesseract policy, and terminal home/hold/disable behavior remain unchanged.

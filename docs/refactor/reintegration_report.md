@@ -53,8 +53,9 @@ drift, capture, and retry defaults are unchanged.
 ## Qualification boundary
 
 The original selected-port validation completed with 592 mobile-manipulation
-tests. The feature-7/8 extension adds 12 regressions, bringing that suite to
-604 passing tests. The complete software matrix now passes 102 Tesseract
+tests. The feature-7/8 extension plus the live-discovered headerless
+arm-status regression bring that suite to 605 passing tests. The complete
+software matrix now passes 102 Tesseract
 tests, 54 PiPER-driver tests plus one intentional skip, 93 root
 GUI/calibration/description/reconstruction tests plus one intentional skip,
 and 26 focused reconstruction/provenance tests. The complete five-package ROS

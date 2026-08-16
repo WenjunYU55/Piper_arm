@@ -247,6 +247,28 @@ def test_executor_callback_updates_legacy_mirror_and_store_together():
     assert snapshot.perception.target.frame_id == 'base_link'
 
 
+def test_mission_arm_status_callback_accepts_headerless_piper_status():
+    mission = SimpleNamespace(
+        _lock=threading.RLock(),
+        latest_arm_status=None,
+        latest_arm_status_at=0.0,
+        telemetry_store=TelemetryStore(),
+    )
+    message = SimpleNamespace(
+        err_code=0,
+        motor_feedback_valid=True,
+        motor_1_driver_enabled=False,
+    )
+
+    TargetScanMissionNode.arm_status_cb(mission, message)
+    observation = mission.telemetry_store.snapshot().arm.status
+
+    assert mission.latest_arm_status is message
+    assert mission.latest_arm_status_at > 0.0
+    assert observation.value.err_code == 0
+    assert observation.frame_id == ''
+
+
 def test_mission_readiness_decision_matches_legacy_fields():
     now = 1e12
     readiness = SimpleNamespace(

@@ -1,6 +1,6 @@
 schema_version: 1
 document: consolidated_problem_and_incident_log
-last_reviewed: '2026-08-11'
+last_reviewed: '2026-08-16'
 purpose: >-
   Durable, concise index of the material hardware, software, integration and
   operational problems encountered while building the PiPER target-scanning
@@ -327,6 +327,12 @@ problem_groups:
       evidence: [docs/ai/00-index.yaml, docs/ai/05-admin.yaml]
 
   middleware_process_and_build:
+    - id: headerless_arm_status_crashed_coordinator
+      status: resolved
+      symptom: The first supervised reintegration mission crashed before motion when the coordinator received PiperStatusMsg, leaving the just-started driver process to be contained separately.
+      root_cause: The Phase-3 telemetry callback dereferenced msg.header even though PiperStatusMsg has no Header field.
+      correction: Preserve receipt-time-only arm-status freshness, tolerate absent header metadata, and characterize the callback with a headerless status message. The incident crossed no enable or motion boundary; all six motors were read back disabled before the exact orphan process group was stopped.
+      evidence: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_scan_mission_node.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_telemetry_store.py, docs/refactor/phase3_telemetry_store.md]
     - id: duplicate_coordinator_and_command_ownership
       status: resolved
       symptom: Multiple coordinators could accept the same action and start duplicate command owners.
