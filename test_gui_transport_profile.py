@@ -52,13 +52,17 @@ def test_l515_parameter_transactions_are_process_bounded():
         launcher = (ROOT / relative_path).read_text(encoding="utf-8")
         assert "enable_confidence:=true" in launcher
         assert "enable_confidence:=false" not in launcher
+        assert "enable_sync:=true" in launcher
         assert "camera_param()" in launcher
+        assert "camera_stream_ready()" in launcher
+        assert launcher.index("camera_stream_ready &&") < launcher.index(
+            "camera_param set --no-daemon --spin-time 0.5")
         assert "timeout --signal=TERM --kill-after=1s 2s" in launcher
         # Keep the raw CLI invocation inside the bounded helper. Every actual
         # preset/global-time transaction must call that helper instead.
         assert launcher.count("ros2 param") == 1
         assert launcher.count("camera_param set --no-daemon --spin-time 0.5") == 3
-        assert launcher.count("camera_param get --no-daemon --spin-time 0.5") == 3
+        assert launcher.count("camera_param get --no-daemon --spin-time 0.5") == 5
 
 
 def test_supervised_scan_launch_shuts_down_on_critical_child_exit():

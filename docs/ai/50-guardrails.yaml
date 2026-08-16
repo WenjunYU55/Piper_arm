@@ -406,6 +406,7 @@ target_depth_and_schema2_guardrail_2026_08_16:
     - A semantic mask is support, not proof that every enclosed depth pixel belongs to the target. Live Target3D, stable landmark, occlusion fallback and capture must use the shared ambiguity-aware selector.
     - A close candidate score tie fails closed. Do not silently choose a seed pixel, whole-mask median, nearest layer, largest layer or previous layer in only one consumer.
     - Accepted schema-2 capture requires exact mask/RGB stamp identity, bounded native depth/confidence synchronization, timestamped base-to-colour and depth-to-colour transforms, valid L515 4-bit confidence representation, configured confidence support and an unambiguous component.
+    - Camera launch must enable stream synchronization and observe a color CameraInfo sample before changing preset/global-time controls. Do not restore eager parameter writes that can race the expanded confidence stream's USB startup.
     - The default grade 8, 50-point, 0.50 confident-fraction, 0.15 component-fraction, 0.08 ambiguity, 0.005-second native slop and existing 0.08-second RGB-D slop are independent units and must not be changed as cleanup.
     - A frame is immutable only after every artifact and its metadata commit. Partial schema-2 files may never increment capture count or enter the manifest.
     - Capture-time aligned depth and live Target3D remain diagnostic provenance; reconstruction uses confidence-qualified target depth/support and validates all manifest hashes before fusion.

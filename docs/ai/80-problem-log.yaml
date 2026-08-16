@@ -277,6 +277,12 @@ problem_groups:
       root_cause: Unbounded Foxy direct-discovery calls.
       correction: Every pre-node parameter transaction has a two-second external bound and the startup loop retries/fails closed.
       evidence: [docs/ai/05-admin.yaml, L515_camera/start_l515_camera.sh]
+    - id: l515_confidence_startup_reconfiguration_race
+      status: resolved_live_camera_only
+      symptom: Enabling native L515 confidence caused the normal wrapper to report RS2_USB_STATUS_BUSY and never declare the RGB global-time control.
+      root_cause: The wrapper changed preset/global-time controls while depth, confidence and RGB were still claiming USB interfaces, forcing an unsafe partial stream re-enable.
+      correction: Both launchers enable stream synchronization, wait for a real color CameraInfo sample and only then apply and verify preset/global-time controls.
+      evidence: [L515_camera/start_l515_camera.sh, L515_camera/start_l515_camera_low_bandwidth.sh, test_gui_transport_profile.py, docs/ai/60-debt.yaml]
     - id: model_worker_network_retry
       status: resolved
       symptom: GroundingDINO worker readiness could stall on Hugging Face network retries.

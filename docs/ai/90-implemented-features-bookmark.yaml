@@ -1,6 +1,6 @@
 schema_version: 1
 document: implemented_features_bookmark
-updated_at: 2026-08-14
+updated_at: 2026-08-16
 purpose: >-
   Preserve the system capabilities that must not be forgotten during the
   core-integration rewrite. This is a feature inventory, not a declaration
@@ -246,11 +246,13 @@ later_feature_reintegration_status:
     source: /home/prl/Piper_arm_previous_version/piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/utils/target_depth.py
 
   - id: confidence_qualified_capture_schema2
-    status: [ACTIVE, SOFTWARE_REQUALIFIED, LIVE_SENSOR_REQUALIFICATION_REQUIRED]
+    status: [ACTIVE, SOFTWARE_REQUALIFIED, PARTIAL]
     summary: >-
       Native L515 depth/confidence synchronization, exact RGB-mask identity,
       adaptive erosion, depth-continuous primary components and immutable
-      confidence artifacts strengthened capture acceptance.
+      confidence artifacts strengthened capture acceptance. A motors-disabled
+      native stream test passed after adding a CameraInfo startup barrier;
+      semantic target jitter and persisted schema-2 capture remain to qualify.
     source: /home/prl/Piper_arm_previous_version
 
   - id: smooth_direct_movej_or_streamed_detour

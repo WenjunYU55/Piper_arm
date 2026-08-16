@@ -45,8 +45,10 @@ drift, capture, and retry defaults are unchanged.
 - NBV planning-budget recovery should follow the full-sphere port only if
   measured traces still show repeated candidate generation or timeouts.
 - Shared depth-layer selection and confidence-qualified schema 2 are now
-  software-integrated in that order. Live sensor-only requalification is still
-  required before their physical effect is claimed.
+  software-integrated in that order. A motors-disabled native L515 stream test
+  passed on 2026-08-16 after fixing an eager-control USB startup race, but
+  stationary target jitter and a persisted schema-2 capture still require
+  live-sensor qualification before their physical effect is claimed.
 
 ## Qualification boundary
 

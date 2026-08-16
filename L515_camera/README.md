@@ -91,6 +91,13 @@ timestamp, and writes native depth, confidence, projected target depth, and
 target-support artifacts. Aligned depth and live `Target3D` remain diagnostic
 provenance. Historical schema-1 datasets are not upgraded by editing metadata.
 
+Both camera launchers wait for a real color CameraInfo sample before changing
+the live visual-preset or global-time controls. This ordering is required when
+confidence is enabled: applying those controls while depth/confidence/RGB are
+still claiming USB interfaces can force a partial re-enable and fail with
+`RS2_USB_STATUS_BUSY`. Startup remains bounded and fails closed if the stream
+barrier or required controls cannot be proved.
+
 View the output:
 
 ```bash

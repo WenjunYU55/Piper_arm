@@ -65,7 +65,7 @@ symptom_routing:
     note: If CAN counters and piper_ctrl_single_node remain active but /joint_states_single and /arm_status deliver no samples to an exact-QoS probe, verify the installed driver contains the monotonic wall-clock feedback loop and restart the disabled-arm driver. Do not bypass downstream freshness gates.
   camera_missing_or_slow:
     inspect: [L515_camera/check_l515_ros.sh, L515_camera/diagnose_l515_usb.sh, L515_camera/start_l515_camera.sh, L515_camera/start_l515_camera_low_bandwidth.sh]
-    note: The normal and low-bandwidth launchers externally bound each direct Foxy parameter CLI transaction to two seconds. If the camera node is late or absent, preserve that bound and let the startup loop retry/fail closed; an unbounded pre-node direct-discovery command can consume system memory.
+    note: The normal and low-bandwidth launchers externally bound each direct Foxy parameter CLI transaction to two seconds. With native confidence enabled they also wait for a real color CameraInfo sample before changing the visual preset or global-time controls; changing those controls while depth/confidence/RGB is still claiming USB can produce RS2_USB_STATUS_BUSY. Preserve both the process bound and stream-ready gate and let startup retry/fail closed.
   camera_clock_stale_or_nonmonotonic:
     inspect: [/piper/camera_timestamp_health, /joint_states_single position stability, camera_timestamp_watchdog_node.py, camera_timestamp_watchdog_params.yaml, /tmp/piper_vision_recovery/request.yaml, L515_camera/run_gpu_vision_pipeline.sh]
   gpu_pipeline_ctrl_c_leaves_workers:

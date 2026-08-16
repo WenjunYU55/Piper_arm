@@ -44,6 +44,7 @@ ros2 launch realsense2_camera rs_launch.py \
   infra_qos:=SENSOR_DATA \
   infra_info_qos:=SENSOR_DATA \
   align_depth.enable:=true \
+  enable_sync:=true \
   clip_distance:=-1.0 \
   pointcloud.enable:=false \
   pointcloud.stream_index_filter:=0 \
@@ -69,12 +70,26 @@ camera_param() {
   timeout --signal=TERM --kill-after=1s 2s \
     ros2 param "$@"
 }
+camera_stream_ready() {
+  # Avoid changing controls while the depth/confidence/RGB streams are still
+  # claiming their USB interfaces.
+  (
+    set +o pipefail
+    timeout --signal=TERM --kill-after=1s 3s \
+      ros2 topic echo --qos-profile sensor_data \
+        /camera/color/camera_info sensor_msgs/msg/CameraInfo 2>/dev/null |
+      head -n 1 | grep -q .
+  )
+}
 for _ in $(seq 1 40); do
   if ! kill -0 "$launch_pid" 2>/dev/null; then
     wait "$launch_pid"
     exit $?
   fi
-  if camera_param set --no-daemon --spin-time 0.5 /camera/camera depth_module.visual_preset "$preset" >/dev/null 2>&1 &&
+  if camera_stream_ready &&
+     camera_param get --no-daemon --spin-time 0.5 /camera/camera depth_module.global_time_enabled >/dev/null 2>&1 &&
+     camera_param get --no-daemon --spin-time 0.5 /camera/camera rgb_camera.global_time_enabled >/dev/null 2>&1 &&
+     camera_param set --no-daemon --spin-time 0.5 /camera/camera depth_module.visual_preset "$preset" >/dev/null 2>&1 &&
      camera_param set --no-daemon --spin-time 0.5 /camera/camera depth_module.global_time_enabled true >/dev/null 2>&1 &&
      camera_param set --no-daemon --spin-time 0.5 /camera/camera rgb_camera.global_time_enabled true >/dev/null 2>&1 &&
      camera_param get --no-daemon --spin-time 0.5 /camera/camera depth_module.global_time_enabled 2>/dev/null | grep -q 'Boolean value is: True' &&

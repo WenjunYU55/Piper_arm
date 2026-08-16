@@ -446,6 +446,7 @@ failed_dataset_cleanup_contract_2026_08_15:
 
 confidence_capture_schema2_contract_2026_08_16:
   additive_inputs: [/camera/depth/image_rect_raw, /camera/depth/camera_info, /camera/confidence/image_rect_raw]
+  camera_startup: Both L515 launchers enable synchronized streams, require a real color CameraInfo sample before applying visual-preset/global-time controls, externally bound every parameter transaction, and fail closed unless preset 5 plus both global-time controls are verified.
   immutable_identity: The SAM mask must have the exact RGB stamp; native depth/confidence/camera-info use the configured bounded synchronizer and native depth must remain within the unchanged RGB-D slop.
   confidence: L515 mono8 accepts only logical grades 0..15 or exact high-nibble RAW8 values 0,16,...,240. The default minimum grade is 8, minimum points 50, and minimum confident fraction 0.50.
   outputs: [RGB PNG, aligned depth NPY and millimetre PNG, exact mask PNG, native depth NPY and PNG, normalized confidence PNG, projected target-depth PNG, target-support mask PNG, frame metadata YAML, hash manifest]
