@@ -69,3 +69,12 @@ nonzero only for known repository style debt: the mobile package currently has
 Motion-affecting ports are not physically qualified by those results.
 Use `physical_requalification_checklist.md` from the first stage; do not jump
 directly to an autonomous scan.
+
+The first 2026-08-16 five-percent retry exposed a startup integration mismatch
+before any scan trajectory: the exact extended negative J6 hold was compared
+with a clipped minus-pi reference, and STARTUP_WRIST was passed through the
+unrelated generic 0.3-rad home allowance. The software correction preserves
+the exact hold coordinate and existing hard minus-240-degree startup branch;
+physical retry remains pending after guarded recovery. The same inspection
+also found all-zero gripper CAN feedback, so J7/J8 and manipulation remain
+unqualified pending a separate controller/connection test.

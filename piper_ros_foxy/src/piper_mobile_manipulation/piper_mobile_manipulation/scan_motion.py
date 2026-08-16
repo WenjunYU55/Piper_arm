@@ -140,6 +140,11 @@ def energized_hold_target(joints):
     )
 
 
+def startup_measured_hold_reference(joints):
+    """Retain the exact measured pose used by the armed startup hold."""
+    return finite_joints(joints).copy()
+
+
 def orbit_camera_view(center, angle_deg, radius_m, camera_pitch_deg):
     center_vector = np.asarray(center, dtype=float)
     if center_vector.shape != (3,) or not np.all(np.isfinite(center_vector)):
@@ -317,7 +322,7 @@ def feedback_joint_limit_reasons(joints, limits, tolerance_rad=0.0):
 
 
 def configured_home_feedback_limit_reasons(
-        joints, limits, tolerance_rad=0.0):
+        joints, limits, tolerance_rad=0.0, home_stage=''):
     """Validate only a dedicated direct-home measured start/return path.
 
     A disabled arm can mechanically relax beyond an inclusive coordinate
@@ -337,14 +342,28 @@ def configured_home_feedback_limit_reasons(
             '[0.0, %.4f] rad'
             % MAX_CONFIGURED_HOME_FEEDBACK_LIMIT_TOLERANCE_RAD)
     reasons = []
+    stage = str(home_stage).strip().upper()
     for index, value in enumerate(values):
         low = float(bounds[index, 0])
         high = float(bounds[index, 1])
-        if value < low - tolerance or value > high + tolerance:
+        effective_low = low
+        effective_tolerance = tolerance
+        if stage == 'STARTUP_WRIST' and index == 5:
+            # The positive-only driver transaction already owns and enforces
+            # this operator-approved extended logical branch.  Do not make
+            # its measured start pass through the unrelated generic
+            # post-disable relaxation allowance.
+            effective_low = min(low, -math.radians(240.0))
+            effective_tolerance = 0.0
+        if (
+                value < effective_low - effective_tolerance
+                or value > high + effective_tolerance):
             reasons.append(
                 'current joint%d feedback %.6f is outside configured limits '
                 '[%.6f, %.6f] with %.6f rad direct-home tolerance'
-                % (index + 1, value, low, high, tolerance))
+                % (
+                    index + 1, value, effective_low, high,
+                    effective_tolerance))
     return reasons
 
 

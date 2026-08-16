@@ -93,6 +93,7 @@ from piper_mobile_manipulation.msg import (
 from piper_mobile_manipulation.scan_capture import rigid_transform_matrix
 from piper_mobile_manipulation.scan_motion import (
     energized_hold_target,
+    startup_measured_hold_reference,
     motor_control_reasons,
     motor_driver_states,
     URDF_JOINT_LIMITS,
@@ -2060,7 +2061,10 @@ class TargetScanMissionNode(Node):
         else:
             observation = telemetry_store.snapshot().arm.joints
             joints = None if observation is None else observation.value
-        initial = energized_hold_target(joints.position[:6])
+        # While STARTUP_WRIST is armed, the driver deliberately holds the
+        # exact measured extended J6 coordinate instead of clipping it to
+        # [-pi, +pi].  The settle reference must describe that same command.
+        initial = startup_measured_hold_reference(joints.position[:6])
         result = self.call_service(
             self.hold_client, Trigger.Request(), 8.0,
             'executor current-position hold service')

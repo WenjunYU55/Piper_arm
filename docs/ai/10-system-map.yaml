@@ -302,7 +302,7 @@ implementation_map_2026_08_04:
     untrustworthy_control_failure: emergency stop, nonfinite feedback, feedback beyond the direct-home-only 0.3-rad start band, an out-of-limit goal, controller/command fault, waypoint failure or no progress forbids the target; hold if possible, remain enabled and return NEEDS_OPERATOR.
   deployment_scope: Bench-only with externally stationary/clear base. Tracked-chassis collision TF and brake authority are deferred and required before mounted acceptance.
   powered_start_home:
-    path: mission enable -> /scan_viewpoint_executor/execute_home_stage STARTUP_WRIST -> positive-only driver wrap gate -> /scan_viewpoint_executor/execute_home_stage ROUGH_HOME -> configured-home feedback proof
+    path: mission enable -> exact measured startup hold (including the extended negative J6 branch) -> /scan_viewpoint_executor/execute_home_stage STARTUP_WRIST -> positive-only driver wrap gate -> /scan_viewpoint_executor/execute_home_stage ROUGH_HOME -> configured-home feedback proof
     authority: Every direct home stage permits an empty target-obstacle scene and ignores camera health. configured_home_direct_joint_move, collision_validation_bypassed, validation marker, exact home_stage and exact configured_home_goal_positions_rad are trajectory-digest bound through worker/bridge evidence; STARTUP_WRIST and STORAGE_WRIST retain their own endpoints instead of being compared with rough home. /cancel is not used for a normal hold.
     live_proof: The final 2026-08-04 GUI run completed startup normalization before rough acquisition, and the later semantic-occlusion failure returned through a normal scene-gated home transaction, disabled all motors, and stopped all mission children.
   gui_failure_path_validation:

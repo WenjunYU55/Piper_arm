@@ -27,6 +27,7 @@ from piper_mobile_manipulation.scan_motion import (
     CollisionBox,
     configured_home_feedback_limit_reasons,
     energized_hold_target,
+    startup_measured_hold_reference,
     feedback_joint_limit_reasons,
     PiperScanKinematics,
     configuration_collision_reasons,
@@ -188,6 +189,13 @@ def test_energized_hold_uses_the_measured_powered_pose():
         energized_hold_target(disabled_pose),
         [-0.017, 0.0, 0.0, -0.082, 0.290, 0.102],
     )
+
+
+def test_startup_hold_reference_preserves_extended_negative_joint6():
+    measured = [0.0, 0.0, 0.0, 0.0, 0.32, -3.459665]
+
+    np.testing.assert_allclose(
+        startup_measured_hold_reference(measured), measured)
 
 
 def test_capture_input_liveness_gaps_are_retryable_while_held():
@@ -1303,6 +1311,23 @@ def test_configured_home_feedback_allows_only_the_operator_qualified_band():
     with pytest.raises(ValueError, match=r'within \[0.0, 0.3000\]'):
         configured_home_feedback_limit_reasons(
             np.zeros(6), URDF_JOINT_LIMITS, tolerance_rad=0.3001)
+
+
+def test_startup_wrist_uses_its_existing_240_degree_branch_not_home_slack():
+    joints = np.zeros(6)
+    joints[5] = -3.459665
+
+    assert configured_home_feedback_limit_reasons(
+        joints, URDF_JOINT_LIMITS, tolerance_rad=0.3,
+        home_stage='STARTUP_WRIST') == []
+    assert configured_home_feedback_limit_reasons(
+        joints, URDF_JOINT_LIMITS, tolerance_rad=0.3)
+
+    joints[5] = -math.radians(240.0) - 0.000001
+    reasons = configured_home_feedback_limit_reasons(
+        joints, URDF_JOINT_LIMITS, tolerance_rad=0.3,
+        home_stage='STARTUP_WRIST')
+    assert len(reasons) == 1
 
 
 def test_bootstrap_limit_recovery_accepts_only_monotonic_joint3_inward_path():

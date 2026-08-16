@@ -3706,12 +3706,19 @@ class ScanViewpointExecutorNode(Node):
                 ))
             else:
                 if self.is_configured_home_direct():
+                    configured_stages = getattr(
+                        self, 'plan_configured_home_stages', [])
+                    configured_stage = (
+                        str(configured_stages[current_view]).strip().upper()
+                        if 0 <= current_view < len(configured_stages)
+                        else '')
                     reasons.extend(configured_home_feedback_limit_reasons(
                         joints,
                         self.joint_limits,
                         float(configured_value(
                             self,
                             'configured_home_feedback_limit_tolerance_rad')),
+                        home_stage=configured_stage,
                     ))
                 else:
                     reasons.extend(feedback_joint_limit_reasons(

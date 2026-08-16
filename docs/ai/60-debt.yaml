@@ -179,14 +179,20 @@ deferred_cleanup:
       rootless suites pass the exact profile; physical staged acceptance remains
       outstanding. manipulation_model_qualified remains false because gripper
       TCP, finger open/closed collision states, attached-object collision and
-      allowed-contact behavior have not passed staged physical validation.
+      allowed-contact behavior have not passed staged physical validation. A
+      2026-08-16 live read showed raw gripper CAN feedback 0x2A8 continuously
+      all-zero (zero stroke/effort, disabled and not homed) while the jaws
+      could be moved manually; J7/J8 therefore remained zero in ROS/RViz.
     next_cut: >-
       With a clear supervised bench and emergency stop ready, run the exact
       saved profile at 5 percent: STARTUP_WRIST, ROUGH_HOME, cancel from a
       representative non-home pose, direct ROUGH_HOME, STORAGE_WRIST, stable
       hold and six-motor disable. Confirm the real camera/cable path matches the
       intended fold and stop on unexpected contact or strain. Qualify marker
-      push before pick/place, validate a real observed support drop and only
+      push before pick/place. With the arm otherwise safely recovered and a
+      clear gripper, separately validate the official clear-disable then
+      enable gripper sequence and require nonzero/fresh 0x2A8 status before
+      trusting J7/J8. Validate a real observed support drop and only
       then consider setting manipulation_model_qualified true. Never enable
       contact execution merely to make the mission proceed.
   - id: validate_measured_nbv_and_delayed_mesh_physically

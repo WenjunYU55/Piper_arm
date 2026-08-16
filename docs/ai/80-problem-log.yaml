@@ -81,6 +81,18 @@ current_snapshot_2026_08_11:
 
 problem_groups:
   hardware_and_motion_safety:
+    - id: startup_hold_clipped_extended_j6_2026_08_16
+      status: physical_validation_pending
+      symptom: A five-percent mission enabled successfully but failed its first hold because measured J6 -3.459665 rad was compared with a clipped -pi reference; terminal pre-home then rejected the same start as 0.318072 rad outside the generic 0.3-rad allowance.
+      root_cause: The mission hold and executor generic direct-home feedback gate did not share the driver-owned extended negative STARTUP_WRIST coordinate contract.
+      correction: The startup hold now settles against exact measured feedback, and STARTUP_WRIST alone uses the existing hard minus-240-degree branch while the ordinary 0.3-rad direct-home tolerance remains unchanged. No scan trajectory ran; the arm remained fault-free in an enabled hold and requires guarded operator recovery before restart.
+      evidence: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_motion.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_scan_mission_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py]
+    - id: gripper_feedback_all_zero_2026_08_16
+      status: open
+      symptom: Manually moving the physical jaws produced no J7/J8 motion in ROS or RViz; 245 ROS samples and raw CAN 0x2A8 remained zero.
+      root_cause: The gripper feedback reports zero stroke/effort with disabled and not-homed status. The driver sends one enable after arm enable, whereas the SDK example uses clear-disable then enable; physical connection/controller state remains to be established.
+      correction: Do not infer jaw position or authorize manipulation from J7/J8. After safe arm recovery, test the gripper controller separately with a clear workspace and require fresh nonzero status/position feedback before changing production enable behavior.
+      evidence: [piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py, docs/ai/60-debt.yaml]
     - id: j5_table_contact_terminal_home_2026_08_11
       status: resolved
       symptom: The installed camera-holder/L515 assembly contacted the table during terminal home and J5 faulted.
