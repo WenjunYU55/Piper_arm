@@ -240,7 +240,7 @@ state_owners:
   fixed_target_landmark: target_landmark_node.py; two-thread TF executor prevents timestamped lookup starvation.
   scan_workflow_state: supervised_cube_workflow_node.py; owns capture/status ordering, target-cloud sensor QoS, accepted/modelled counters, and read-only diagnostic state.
   scan_motion_proposal_and_execution: scan_viewpoint_executor_node.py
-  raw_rgbd_capture: scan_capture_node.py; owns fresh synchronized color/depth/camera-info buffering and one immutable RGB/depth/mask/metadata record after each accepted settled MULTIVIEW_SCAN viewpoint.
+  raw_rgbd_capture: scan_capture_node.py; owns exact mask/RGB correlation, synchronized aligned RGB-D plus native L515 depth/confidence buffering, confidence-qualified target support, and one transactional schema-2 artifact set after each accepted settled MULTIVIEW_SCAN viewpoint.
   atomic_rough_target_acquisition_and_handoff: scan_target_acquisition_node.py plus target_acquisition.py
   gui_action_client_and_presentation: piper_gui_native.py plus piper_gui/view_model.py, piper_gui/ros_client.py and piper_gui/app.py
   archived_gui_workflow_characterization: piper_gui_automation.py; not imported by production GUI after Phase 8
@@ -257,7 +257,7 @@ storage_owners:
   heavy_spool: {path: /tmp/piper_heavy_refresh, ros_owner: heavy_refresh_bridge_node.py, worker_owner: heavy_model_worker.py}
   sam2_spool: {path: /tmp/piper_sam2_live, ros_owner: sam2_live_bridge_node.py, worker_owner: sam2_live_worker.py}
   tesseract_spool: {path: /run/user/<uid>/piper_tesseract_plans when XDG_RUNTIME_DIR exists, fallback: /tmp/piper_tesseract_plans, ros_owner: tesseract_plan_bridge, worker_owner: isolated Tesseract worker, mode: private 0700 directories with atomic canonical request/response JSON plus atomic bounded worker_health.json}
-  active_scan_dataset: {path: datasets/active_scan, writer: scan_capture_node.py, per_view: [RGB PNG, raw depth NPY, 16-bit millimetre depth PNG, mask PNG, YAML metadata with intrinsics/joints/execution identity]}
+  active_scan_dataset: {path: datasets/active_scan, writer: scan_capture_node.py, schema: 2, per_view: [RGB PNG, aligned raw depth NPY and millimetre PNG, exact SAM mask PNG, native depth NPY and PNG, normalized L515 confidence PNG, projected target-depth PNG, target-support mask PNG, YAML metadata with both intrinsics, transforms, timestamps, confidence quality, joints and execution identity]}
 message_boundaries:
   ros_native: sensor_msgs, geometry_msgs, visualization_msgs, trajectory_msgs, piper_msgs, custom perception messages, ScanExecutionPlan/Status, TesseractPlan/Status/Readiness, PrepareAcquisition, ApproveScanExecution, and RequestTesseractPlan.
   ros_json_strings: Heavy/SAM2 status and request, scan quality/occlusion/viewpoints, removal plan, target model, and workflow status.
@@ -357,4 +357,5 @@ selected_feature_reintegration_2026_08_15:
   normal_motion_adapter: Tesseract paths are pass-through blended only when the actual blended geometry passes dense validation. A densely validated straight start-to-goal chord uses one native MoveJ endpoint; paths needing a detour retain the complete streamed Tesseract geometry.
   dataset_cleanup: An identity-bound failed scan directory is removed only after owned writers stop, only when it contains zero accepted captures and no unknown or completed artifacts.
   reconstruction: Offline masked TSDF is the baseline; bounded GICP is optional and rejected when its correction, provenance or quality gates fail. GUI validation is command-free.
+  perception_depth: One shared seed-independent depth-mode/component selector serves live Target3D, stable landmark, occlusion fallback and capture. Capture uses native L515 confidence before persistence; aligned depth and live Target3D are diagnostic provenance in schema-2 records.
   qualification: Software-only integration; no physical command was executed. Follow docs/refactor/physical_requalification_checklist.md before motion.

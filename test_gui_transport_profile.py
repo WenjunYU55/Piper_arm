@@ -50,6 +50,8 @@ def test_l515_parameter_transactions_are_process_bounded():
             "L515_camera/start_l515_camera.sh",
             "L515_camera/start_l515_camera_low_bandwidth.sh"):
         launcher = (ROOT / relative_path).read_text(encoding="utf-8")
+        assert "enable_confidence:=true" in launcher
+        assert "enable_confidence:=false" not in launcher
         assert "camera_param()" in launcher
         assert "timeout --signal=TERM --kill-after=1s 2s" in launcher
         # Keep the raw CLI invocation inside the bounded helper. Every actual

@@ -238,7 +238,7 @@ later_feature_reintegration_status:
     source: /home/prl/Piper_arm_previous_version
 
   - id: shared_depth_layer_selector
-    status: [ARCHIVED_LATER, SOFTWARE_QUALIFIED]
+    status: [ACTIVE, SOFTWARE_REQUALIFIED, LIVE_SENSOR_REQUALIFICATION_REQUIRED]
     summary: >-
       One ambiguity-aware target-depth selector served live target geometry,
       stable landmark, occlusion fallback and capture, preventing SAM boundary
@@ -246,7 +246,7 @@ later_feature_reintegration_status:
     source: /home/prl/Piper_arm_previous_version/piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/utils/target_depth.py
 
   - id: confidence_qualified_capture_schema2
-    status: [ARCHIVED_LATER, SOFTWARE_QUALIFIED]
+    status: [ACTIVE, SOFTWARE_REQUALIFIED, LIVE_SENSOR_REQUALIFICATION_REQUIRED]
     summary: >-
       Native L515 depth/confidence synchronization, exact RGB-mask identity,
       adaptive erosion, depth-continuous primary components and immutable
@@ -297,6 +297,6 @@ rewrite_rule: >-
 
 selected_reintegration_2026_08_15:
   branch: reintegrate/selected-archived-features
-  active_features: [direct_configured_home_without_tesseract, schema4_pre_home_waypoint, startup_j6_positive_only_wrap_bridge, guarded_zero_capture_dataset_deletion, smooth_direct_movej_or_streamed_detour, pass_through_stream_smoothing, tsdf_bounded_gicp_and_gui_validation]
-  deferred_features: [reachable_full_sphere_nbv_v2, nbv_planning_budget_recovery, shared_depth_layer_selector, confidence_qualified_capture_schema2]
+  active_features: [direct_configured_home_without_tesseract, schema4_pre_home_waypoint, startup_j6_positive_only_wrap_bridge, guarded_zero_capture_dataset_deletion, smooth_direct_movej_or_streamed_detour, pass_through_stream_smoothing, tsdf_bounded_gicp_and_gui_validation, shared_depth_layer_selector, confidence_qualified_capture_schema2]
+  deferred_features: [reachable_full_sphere_nbv_v2, nbv_planning_budget_recovery]
   physical_status: No physical command was executed during reintegration. Every motion-affecting feature requires the staged supervised checklist before use.

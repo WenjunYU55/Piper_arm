@@ -200,6 +200,13 @@ def test_capture_input_liveness_gaps_are_retryable_while_held():
         'QUALITY_REJECTED: scan quality is missing')
     assert retryable_rgbd_capture_rejection('missing target_3d')
     assert retryable_rgbd_capture_rejection('missing detection mask')
+    assert retryable_rgbd_capture_rejection(
+        'confidence-qualified RGB-D bundle is still catching up with the '
+        'exact detection-mask timestamp')
+    assert retryable_rgbd_capture_rejection(
+        'confidence-qualified native depth bundle is stale')
+    assert retryable_rgbd_capture_rejection(
+        'RGB and native depth timestamps are not synchronized')
     assert not retryable_rgbd_capture_rejection(
         'timestamped camera transform is unavailable: invalid frame')
     assert not retryable_rgbd_capture_rejection('camera files could not be saved')
@@ -211,6 +218,8 @@ def test_only_fresh_visual_rejections_exclude_a_pose():
     assert visual_capture_rejection(
         'OCCLUSION_REJECTED: settled target view is PARTIALLY_OCCLUDED')
     assert visual_capture_rejection('target_3d invalid')
+    assert visual_capture_rejection(
+        'DEPTH_QUALITY_REJECTED: ambiguous target depth layers')
     assert not retryable_rgbd_capture_rejection('target_3d invalid')
     assert not visual_capture_rejection(
         'OCCLUSION_REJECTED: occlusion evidence is stale')

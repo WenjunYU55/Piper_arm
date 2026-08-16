@@ -10,7 +10,8 @@ Files:
 - `build_realsense_ws.sh`: applies the local L515/Foxy patch and builds the RealSense source workspace.
 - `source_l515_environment.sh`: sources ROS 2 Foxy plus the local RealSense and PiPER overlays.
 - `check_l515_ros.sh`: checks whether RealSense ROS, this ROS package, and camera topics are visible.
-- `start_l515_camera.sh`: starts aligned RGB-D and applies the L515 Short Range preset.
+- `start_l515_camera.sh`: starts synchronized RGB, aligned/native depth, and
+  the L515 4-bit confidence stream; it also applies the Short Range preset.
 - `run_heavy_refresh_bridge.sh`: snapshots heavy-refresh requests into filesystem jobs and publishes returned masks.
 - `run_heavy_model_worker.sh`: runs GroundingDINO/SAM2 in the isolated Python 3.10 environment.
 - `run_sam2_live_bridge.sh`: spools live RGB frames and publishes GPU SAM2 masks back into ROS.
@@ -80,6 +81,15 @@ rolling SAM2 state resets every eight frames using the latest masks, bounding GP
 validated RTX 3090. Live SAM2 inference defaults to 384 pixels wide and its masks are restored to the
 native 640x480 RGB-D resolution with nearest-neighbour resizing. Override this with
 `PIPER_SAM2_INFERENCE_WIDTH`; use `640` for native-resolution live inference.
+
+Accepted automatic scan captures additionally require
+`/camera/depth/image_rect_raw`, `/camera/depth/camera_info`, and
+`/camera/confidence/image_rect_raw`. The mono8 confidence image carries L515
+grades 0 through 15; capture schema 2 keeps grade 8 or better. It pairs native
+depth and confidence within 5 ms, correlates the SAM mask to the exact RGB
+timestamp, and writes native depth, confidence, projected target depth, and
+target-support artifacts. Aligned depth and live `Target3D` remain diagnostic
+provenance. Historical schema-1 datasets are not upgraded by editing metadata.
 
 View the output:
 

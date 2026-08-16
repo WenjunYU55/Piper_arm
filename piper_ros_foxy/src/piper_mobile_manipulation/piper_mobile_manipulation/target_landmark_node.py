@@ -27,6 +27,9 @@ from piper_mobile_manipulation.target_landmark_geometry import (
     maximum_pairwise_distance,
     project_camera_point,
 )
+from piper_mobile_manipulation.utils.target_depth import (
+    select_target_depth_component,
+)
 
 
 class TargetLandmarkNode(Node):
@@ -46,6 +49,8 @@ class TargetLandmarkNode(Node):
             'mask_erode_px': 2,
             'min_valid_depth_pixels': 50,
             'min_valid_depth_ratio': 0.40,
+            'minimum_depth_component_fraction': 0.15,
+            'depth_component_ambiguity_margin': 0.08,
             'initial_sample_count': 5,
             'initial_max_spread_m': 0.020,
             'measurement_gate_m': 0.050,
@@ -145,6 +150,16 @@ class TargetLandmarkNode(Node):
             raise ValueError('insufficient_valid_depth_pixels')
         if ratio < float(self.get_parameter('min_valid_depth_ratio').value):
             raise ValueError('insufficient_valid_depth_ratio')
+        valid, _ = select_target_depth_component(
+            valid, depth,
+            minimum_points=int(self.get_parameter(
+                'min_valid_depth_pixels').value),
+            minimum_support_fraction=float(self.get_parameter(
+                'minimum_depth_component_fraction').value),
+            ambiguity_margin=float(self.get_parameter(
+                'depth_component_ambiguity_margin').value))
+        count = int(np.count_nonzero(valid))
+        ratio = float(count) / float(original_count)
         v, u = np.nonzero(valid)
         z = depth[valid]
         fx, fy = float(camera_matrix[0]), float(camera_matrix[4])

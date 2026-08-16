@@ -10,6 +10,9 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CameraInfo, Image
 
 from piper_mobile_manipulation.msg import Detection2D, Target3D
+from piper_mobile_manipulation.utils.target_depth import (
+    select_target_depth_component,
+)
 
 
 def depth_jump_reacquisition(
@@ -41,6 +44,31 @@ def depth_jump_reacquisition(
     return False, mean_depth, count, False
 
 
+def primary_depth_component(
+        valid, depth_m, seed_u, seed_v, absolute_band_m,
+        neighbour_jump_m):
+    """Compatibility wrapper for the shared seed-independent selector."""
+    support = np.asarray(valid, dtype=bool)
+    depth = np.asarray(depth_m, dtype=np.float64)
+    if support.shape != depth.shape or support.ndim != 2:
+        raise ValueError('valid support and depth must be matching 2D arrays')
+    if not np.any(support):
+        return np.zeros_like(support), math.nan
+    band = max(float(absolute_band_m), 0.0)
+    if band <= 0.0:
+        rows, columns = np.nonzero(support)
+        nearest = int(np.argmin(
+            (columns - float(seed_u)) ** 2 + (rows - float(seed_v)) ** 2))
+        return support.copy(), float(depth[rows[nearest], columns[nearest]])
+    selected, report = select_target_depth_component(
+        support, depth, center_u=seed_u, center_v=seed_v,
+        depth_band_m=band,
+        minimum_peak_separation_m=max(float(neighbour_jump_m) * 2.0, 0.025),
+        minimum_points=1, minimum_support_fraction=0.0,
+        ambiguity_margin=0.0)
+    return selected, float(report['selected_depth_m'])
+
+
 class DepthTo3DNode(Node):
     def __init__(self):
         super().__init__('depth_to_3d_node')
@@ -70,6 +98,10 @@ class DepthTo3DNode(Node):
         self.declare_parameter('use_mask_depth', True)
         self.declare_parameter('mask_max_age_s', 0.20)
         self.declare_parameter('mask_erode_px', 2)
+        self.declare_parameter('primary_depth_band_m', 0.03)
+        self.declare_parameter('primary_depth_neighbour_jump_m', 0.015)
+        self.declare_parameter('primary_depth_minimum_fraction', 0.15)
+        self.declare_parameter('primary_depth_ambiguity_margin', 0.08)
         self.declare_parameter('debug', True)
         self.declare_parameter('sync_queue_size', 10)
         self.declare_parameter('sync_slop_sec', 0.08)
@@ -164,8 +196,52 @@ class DepthTo3DNode(Node):
 
         out.roi_width = float(x1 - x0)
         out.roi_height = float(y1 - y0)
-        valid_count = int(np.count_nonzero(valid))
+        raw_valid_count = int(np.count_nonzero(valid))
         total_count = int(crop.size)
+        raw_ratio = float(raw_valid_count) / float(max(total_count, 1))
+        out.valid_depth_ratio = raw_ratio
+
+        if (
+                raw_valid_count < self.min_valid_depth_pixels
+                or raw_ratio < self.min_ratio):
+            out.valid = False
+            self.pub.publish(out)
+            self.log_debug(
+                'Depth rejected source=%s valid_pixels=%d ratio=%.2f roi=%dx%d'
+                % (out.depth_source, raw_valid_count, raw_ratio,
+                   x1 - x0, y1 - y0),
+                warn=True,
+            )
+            return
+
+        primary_fraction = 1.0
+        if mask is not None:
+            try:
+                valid, component_report = select_target_depth_component(
+                    valid, crop,
+                    center_u=float(detection_msg.u) - float(x0),
+                    center_v=float(detection_msg.v) - float(y0),
+                    depth_band_m=self.primary_depth_band_m,
+                    minimum_peak_separation_m=max(
+                        self.primary_depth_neighbour_jump_m * 2.0, 0.025),
+                    minimum_points=self.min_valid_depth_pixels,
+                    minimum_support_fraction=(
+                        self.primary_depth_minimum_fraction),
+                    ambiguity_margin=self.primary_depth_ambiguity_margin,
+                    preferred_depth_m=self.previous_depth,
+                )
+            except ValueError as exc:
+                out.valid = False
+                self.pub.publish(out)
+                self.log_debug(
+                    'Depth rejected source=%s layer_selection=%s'
+                    % (out.depth_source, exc), warn=True)
+                return
+            valid_count = int(np.count_nonzero(valid))
+            primary_fraction = float(
+                component_report['selected_support_fraction'])
+        else:
+            valid_count = raw_valid_count
         ratio = float(valid_count) / float(max(total_count, 1))
         out.valid_depth_ratio = ratio
 
@@ -173,8 +249,9 @@ class DepthTo3DNode(Node):
             out.valid = False
             self.pub.publish(out)
             self.log_debug(
-                'Depth rejected source=%s valid_pixels=%d ratio=%.2f roi=%dx%d'
-                % (out.depth_source, valid_count, ratio, x1 - x0, y1 - y0),
+                'Depth rejected source=%s primary_component=%d/%d roi=%dx%d'
+                % (out.depth_source, valid_count, raw_valid_count,
+                   x1 - x0, y1 - y0),
                 warn=True,
             )
             return
@@ -259,7 +336,9 @@ class DepthTo3DNode(Node):
         out.valid = True
         self.pub.publish(out)
         self.log_debug(
-            'Target3D source=%s camera_frame=(%.3f, %.3f, %.3f) raw_z=%.3f ratio=%.2f valid=%d roi=%dx%d std=%.3f det_conf=%.2f depth_conf=%.2f conf=%.2f'
+            'Target3D source=%s camera_frame=(%.3f, %.3f, %.3f) '
+            'raw_z=%.3f ratio=%.2f valid=%d primary=%.2f roi=%dx%d '
+            'std=%.3f det_conf=%.2f depth_conf=%.2f conf=%.2f'
             % (
                 out.depth_source,
                 out.point.x,
@@ -268,6 +347,7 @@ class DepthTo3DNode(Node):
                 z,
                 ratio,
                 valid_count,
+                primary_fraction,
                 x1 - x0,
                 y1 - y0,
                 depth_stddev,
@@ -383,6 +463,19 @@ class DepthTo3DNode(Node):
         self.use_mask_depth = bool(self.get_parameter('use_mask_depth').value)
         self.mask_max_age_s = float(self.get_parameter('mask_max_age_s').value)
         self.mask_erode_px = max(0, int(self.get_parameter('mask_erode_px').value))
+        self.primary_depth_band_m = max(
+            0.0, float(self.get_parameter('primary_depth_band_m').value))
+        self.primary_depth_neighbour_jump_m = max(
+            0.0,
+            float(self.get_parameter(
+                'primary_depth_neighbour_jump_m').value),
+        )
+        self.primary_depth_minimum_fraction = float(np.clip(
+            self.get_parameter('primary_depth_minimum_fraction').value,
+            0.0, 1.0))
+        self.primary_depth_ambiguity_margin = max(
+            0.0, float(self.get_parameter(
+                'primary_depth_ambiguity_margin').value))
         self.debug = bool(self.get_parameter('debug').value)
 
     def log_debug(self, message, warn=False):

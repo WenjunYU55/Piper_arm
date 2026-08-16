@@ -204,14 +204,36 @@ def legacy_failure_adapter(
         or 'occlusion_rejected: occlusion evidence is missing' in lowered
         or 'occlusion_rejected: occlusion evidence is stale' in lowered
         or lowered == 'missing target_3d'
-        or lowered == 'missing detection mask')
+        or lowered == 'missing detection mask'
+        or 'confidence-qualified rgb-d bundle is still catching up' in lowered
+        or 'confidence-qualified native depth is still catching up' in lowered
+        or 'confidence-qualified rgb-d bundle is stale' in lowered
+        or 'confidence-qualified native depth bundle is stale' in lowered
+        or 'confidence-qualified rgb-d bundle timestamps are not synchronized'
+        in lowered
+        or (
+            'confidence-qualified native depth bundle timestamps are not '
+            'synchronized' in lowered)
+        or 'confidence-qualified rgb-d bundle has an invalid timestamp'
+        in lowered
+        or 'confidence-qualified native depth bundle has an invalid timestamp'
+        in lowered
+        or 'confidence-qualified rgb-d bundle receipt time is unavailable'
+        in lowered
+        or (
+            'confidence-qualified native depth bundle receipt time is '
+            'unavailable' in lowered)
+        or lowered == (
+            'native depth and confidence timestamps are not synchronized')
+        or lowered == 'rgb and native depth timestamps are not synchronized')
     if capture_retry:
         tags.add(FailureTag.CAPTURE_RETRY_SAME_VIEW)
     if not capture_retry and (
             lowered.startswith('quality_rejected:')
             or lowered.startswith(
                 'occlusion_rejected: settled target view is ')
-            or lowered == 'target_3d invalid'):
+            or lowered == 'target_3d invalid'
+            or lowered.startswith('depth_quality_rejected:')):
         tags.add(FailureTag.CAPTURE_REJECT_VIEW)
 
     if 'home reached' in lowered:

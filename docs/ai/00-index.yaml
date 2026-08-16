@@ -1054,7 +1054,12 @@ tesseract_stream_v3_movej_timing_2026_08_11: >-
 
 selected_feature_reintegration_2026_08_15:
   branch: reintegrate/selected-archived-features
-  active: [direct ExecuteHomeStage configured home, schema-v4 terminal PRE_HOME, positive-only startup J6 wrap bridge, guarded zero-capture dataset cleanup, densely proven direct MoveJ selection, pass-through smoothing with dense fallback, masked TSDF plus bounded GICP and GUI validation]
-  deferred: [reachable full-sphere NBV v2, NBV planning-budget recovery, shared ambiguity-aware depth-layer selector, confidence-qualified L515 capture schema 2]
+  active: [direct ExecuteHomeStage configured home, schema-v4 terminal PRE_HOME, positive-only startup J6 wrap bridge, guarded zero-capture dataset cleanup, densely proven direct MoveJ selection, pass-through smoothing with dense fallback, masked TSDF plus bounded GICP and GUI validation, shared ambiguity-aware depth-layer selection, confidence-qualified L515 capture schema 2]
+  deferred: [reachable full-sphere NBV v2, NBV planning-budget recovery]
   navigation: [docs/ai/30-contracts.yaml execute_home_stage_contract_2026_08_15, docs/ai/40-flows.yaml selected_reintegration_flow_2026_08_15, docs/ai/50-guardrails.yaml staged_home_guardrail_2026_08_10, docs/ai/90-implemented-features-bookmark.yaml selected_reintegration_2026_08_15]
   qualification: Software-only. No physical motion was run during this integration.
+selected_perception_reintegration_2026_08_16:
+  order: [shared target-depth selector, live geometry consumers, native L515 confidence capture, schema-2 provenance]
+  authority: piper_mobile_manipulation/utils/target_depth.py owns target-layer selection; scan_capture.py owns pure native-depth projection and confidence qualification; scan_capture_node.py owns exact-time correlation and transactional persistence.
+  compatibility: Existing ROS topics, services, QoS, RGB-D slop, target-valid default, TF semantics, calibration, motion, and NBV behavior remain unchanged. Native depth and confidence subscriptions are additive.
+  qualification: Software and recorded-data only; no camera, GPU, arm, or mission process was started.

@@ -400,3 +400,15 @@ reconstruction_validation_guardrail_2026_08_15:
     - A correction outside configured translation/rotation/fitness/correspondence bounds is rejected and reported, not silently integrated.
     - GUI build/preview/view operations are offline and cannot start a mission or command hardware.
   must_retest_if_changed: [reconstruction/test_tsdf_reconstruct.py, reconstruction/test_gui_support.py, GUI import and ViewModel tests, representative immutable dataset validation]
+
+target_depth_and_schema2_guardrail_2026_08_16:
+  invariants:
+    - A semantic mask is support, not proof that every enclosed depth pixel belongs to the target. Live Target3D, stable landmark, occlusion fallback and capture must use the shared ambiguity-aware selector.
+    - A close candidate score tie fails closed. Do not silently choose a seed pixel, whole-mask median, nearest layer, largest layer or previous layer in only one consumer.
+    - Accepted schema-2 capture requires exact mask/RGB stamp identity, bounded native depth/confidence synchronization, timestamped base-to-colour and depth-to-colour transforms, valid L515 4-bit confidence representation, configured confidence support and an unambiguous component.
+    - The default grade 8, 50-point, 0.50 confident-fraction, 0.15 component-fraction, 0.08 ambiguity, 0.005-second native slop and existing 0.08-second RGB-D slop are independent units and must not be changed as cleanup.
+    - A frame is immutable only after every artifact and its metadata commit. Partial schema-2 files may never increment capture count or enter the manifest.
+    - Capture-time aligned depth and live Target3D remain diagnostic provenance; reconstruction uses confidence-qualified target depth/support and validates all manifest hashes before fusion.
+    - These perception/capture changes grant no motion, collision, NBV or physical-manipulation authority.
+  blast_radius: [live target position and jitter, stable lock, occlusion state, capture retry versus replan, immutable dataset format, TSDF/GICP input]
+  must_retest_if_changed: [test_depth_to_3d.py shared-mode and ambiguity cases, test_scan_capture.py timestamp/confidence/projection/transaction helpers, full piper_mobile_manipulation characterization suite, reconstruction provenance and tamper tests, camera launch confidence-stream contract, normal package build, recorded RGB-D replay before live sensors]

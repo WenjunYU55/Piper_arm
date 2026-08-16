@@ -30,6 +30,12 @@
     use_mask_depth: true
     mask_max_age_s: 0.20
     mask_erode_px: 2
+    # Select one coherent target surface rather than any background depth
+    # pixels included by the semantic mask.
+    primary_depth_band_m: 0.03
+    primary_depth_neighbour_jump_m: 0.015
+    primary_depth_minimum_fraction: 0.15
+    primary_depth_ambiguity_margin: 0.08
     debug: true
     sync_queue_size: 10
     sync_slop_sec: 0.08

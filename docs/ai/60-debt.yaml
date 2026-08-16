@@ -443,8 +443,9 @@ deferred_cleanup:
       extend hint life, broaden the first-segment scene exception, bypass the correlated scene gate
       on later looks, or reuse a session merely to make acquisition appear successful.
   - id: reconstruction_gap
-    issue: Multi-view target model is accumulated PointCloud2 geometry, not TSDF/mesh reconstruction; Open3D is not a declared dependency. The supervised executor records synchronized raw RGB, raw depth, viewable 16-bit depth, mask, intrinsics, joints, and execution metadata once per accepted viewpoint. The 2026-07-29 dataset scan_20260729_150616 live-audited all 13 records with one plan/session, GOOD quality, CLEAR occlusion, and exact RGB/depth stamps.
-    next_cut: Repeat the stationary 13-view run for registration repeatability, then add an isolated reconstruction worker that consumes those immutable records and publishes typed mesh status without changing the qualified motion boundary.
+    status: software_implemented_physical_quality_open_2026-08-16
+    issue: Offline robot-pose TSDF and optional bounded GICP now consume hash-validated confidence-qualified schema-2 target artifacts and publish durable reconstruction results after the tracked-base-home handshake. Existing archived datasets were previously rejected for duplicated or oversized geometry, so mesh quality is not physically qualified.
+    next_cut: Capture one stationary schema-2 dataset after sensor-only requalification, run baseline TSDF first, inspect dimensions/completeness/registration report in the command-free GUI, and consult the operator before enabling or tuning bounded GICP. Do not weaken provenance or quality gates to accept historical schema-1 data.
   - id: close_range_closed_loop_planning
     status: physical_24_view_execution_passed_quality_completion_open_2026-08-11
     issue: >-
@@ -1003,6 +1004,7 @@ selected_reintegration_debt_2026_08_15:
     next_cut: Port reachable full-sphere NBV v2 first, measure its reachable-bin coverage and candidate identity behavior, then port cache/exhausted-ID/planning-budget recovery only if timing traces still require it.
     must_not_bundle_with: [depth-layer selection, confidence capture schema, physical occlusion manipulation]
   remaining_perception_debt:
-    issue: Shared ambiguity-aware depth-layer selection and confidence-qualified L515 capture schema 2 remain archived. Refactoring alone does not remove background-layer contamination or depth-driven target jitter.
-    next_cut: Port shared target-depth selection before adding confidence provenance, with recorded RGB-D equivalence tests and no motion.
+    status: software_port_complete_2026-08-16
+    issue: Shared ambiguity-aware depth-layer selection and confidence-qualified L515 capture schema 2 are active in the cleaned architecture. Software tests cover layer separation/ambiguity, exact/nearest timestamp correlation, both legitimate confidence encodings, low-confidence rejection and reconstruction provenance. Live L515 sensor behavior and target-jitter reduction are not yet requalified.
+    next_cut: Follow the physical checklist only through recorded data and live sensors with motors disabled. Measure stationary target jitter, confidence histograms, correlation rejection rate and schema-2 completeness before authorizing any arm motion. Keep NBV 5/6 separate.
   physical_requalification: Required for every motion-affecting completed port; no hardware process was started during this work.

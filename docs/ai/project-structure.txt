@@ -14,11 +14,11 @@ Piper_arm/
 │           ├── action/              RunTargetScan open-label mission API with stable failure code and retryability
 │           ├── config/              Camera/tracking, closed-loop 15-degree acquisition, 7.5-degree/flexible-distance scan region, adaptive capture, and 20 Hz tesseract_stream_v3 execution/following/settle parameters
 │           ├── launch/              Perception, tracking, scan, dry-run, and opt-in executor composition with one shared planner/workflow/bridge/executor/capture session maximum
-│           ├── piper_mobile_manipulation/  ROS nodes plus typed failures, immutable TelemetryStore snapshots, SafetyEvaluator shadow comparisons, ROS-free MissionEngine, immutable typed configuration, mission-authorized ExecuteHomeStage, schema-v4 terminal PRE_HOME sequencing, guarded zero-capture cleanup, and executor adapters for densely proven native MoveJ chords versus streamed Tesseract detours
+│           ├── piper_mobile_manipulation/  ROS nodes plus typed failures, immutable TelemetryStore snapshots, SafetyEvaluator shadow comparisons, ROS-free MissionEngine, immutable typed configuration, shared ambiguity-aware target-depth selection, confidence-qualified transactional capture schema 2, mission-authorized ExecuteHomeStage, schema-v4 terminal PRE_HOME sequencing, guarded zero-capture cleanup, and executor adapters for densely proven native MoveJ chords versus streamed Tesseract detours
 │           └── test/                ROS package pytest tests
 │       └── piper_tesseract_foxy/    Command-free Foxy/schema-v5 spool adapter, typed readiness, bounded IK shortlist, collision model builder, and ROS-free OMPL/ISP worker with bounded pass-through smoothing, dense validation/fallback, and explicit DIRECT_MOVEJ versus TESSERACT_STREAM evidence; configured home is owned by ExecuteHomeStage
 ├── motion_planning/tesseract/       Pinned Ubuntu 24.04 Tesseract 0.35 OCI and rootless Bubblewrap setup/run/qualification assets
-├── L515_camera/                     Pinned RealSense build, camera/runtime wrappers, viewers, and shared measured-board (17 mm square/12 mm marker) strict position-stability-gated hand-eye capture/validation
+├── L515_camera/                     Pinned RealSense build, aligned/native depth plus 4-bit confidence camera/runtime wrappers, viewers, and shared measured-board (17 mm square/12 mm marker) strict position-stability-gated hand-eye capture/validation
 │   ├── calibration/hand_eye/        Deployed datasheet/factory-registered optical transform plus preserved raw hand-eye samples and pre-registration validation records
 │   ├── patches/                     Pinned realsense-ros compatibility patches
 │   ├── stop_gpu_vision_pipeline.sh  Validated orphan-safe GPU process-group shutdown

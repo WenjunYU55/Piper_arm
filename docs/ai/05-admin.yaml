@@ -87,7 +87,10 @@ symptom_routing:
     note: /piper/target_cloud is best-effort sensor QoS and the workflow subscription must match it. The workflow caches a capture cloud while WAIT_CAPTURE and processes it after the matching accumulating/full_resolution_refinement acceptance, regardless of message order.
   accepted_view_missing_rgbd_record:
     inspect: [/scan_capture/capture_view, /piper/scan_capture_status, datasets/active_scan, scan_capture_node.py, scan_capture.py, scan_capture_params.yaml, scan_viewpoint_executor_node.py]
-    note: In supervised service mode the executor must enter CAPTURING_RGBD and receive a successful fresh synchronized RGB/depth/camera-info/mask write before WAIT_CAPTURE. A missing service, stale/skewed bundle, absent mask/target, dry-run capture node, or failed image write aborts and holds.
+    note: In supervised service mode the executor must enter CAPTURING_RGBD and receive one exact-stamp mask/RGB identity plus synchronized aligned RGB-D, native depth/camera-info, L515 confidence, TF and GOOD/CLEAR evidence. Schema 2 writes all artifacts transactionally. Catch-up/stale synchronization gaps retry at the held pose; fresh depth-quality rejection excludes the view; malformed provenance or failed persistence aborts and holds.
+  target_depth_layer_jitter:
+    inspect: [utils/target_depth.py, depth_to_3d_node.py, target_landmark_node.py, occlusion_checker_node.py, scan_capture.py, camera_params.yaml, test_depth_to_3d.py]
+    note: All target-depth consumers must use the shared ambiguity-aware component selector. A close score tie fails closed; do not restore whole-mask median depth or seed-pixel flood filling independently in one consumer.
   false_occlusion:
     inspect: [occlusion_checker_node.py, occlusion_checker_params.yaml, /piper/occlusion_status]
   heavy_refresh_storm:

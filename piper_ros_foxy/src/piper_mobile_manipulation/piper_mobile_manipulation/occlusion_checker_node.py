@@ -17,6 +17,9 @@ from piper_mobile_manipulation.msg import (
     ScanExecutionStatus,
     Target3D,
 )
+from piper_mobile_manipulation.utils.target_depth import (
+    select_target_depth_component,
+)
 
 
 class OcclusionCheckerNode(Node):
@@ -557,9 +560,16 @@ class OcclusionCheckerNode(Node):
                     return value
 
         masked = depth_m[mask_bool & self.valid_depth_mask(depth_m)]
+        valid = mask_bool & self.valid_depth_mask(depth_m)
         if masked.size == 0:
             return None
-        return float(np.median(masked))
+        try:
+            _, report = select_target_depth_component(
+                valid, depth_m, minimum_points=20,
+                minimum_support_fraction=0.15, ambiguity_margin=0.08)
+        except ValueError:
+            return None
+        return float(report['selected_depth_m'])
 
     def latest_target_depth_field(self):
         if self.latest_target is None:

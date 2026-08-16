@@ -180,3 +180,12 @@ selected_reintegration_ownership_2026_08_15:
     owner_module: reconstruction/tsdf_reconstruct.py
     allowed_edit_paths: [reconstruction, piper_gui_native.py]
     must_not_move_without: [dataset manifest and capture provenance, calibration hash, confidence availability, output quality report, command-free GUI boundary]
+  target_depth_selection:
+    owner_module: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/utils/target_depth.py
+    allowed_edit_paths: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/utils/target_depth.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/depth_to_3d_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_landmark_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/occlusion_checker_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_depth_to_3d.py]
+    must_not_move_without: [live target geometry, landmark stability, occlusion depth evidence, capture confidence qualification]
+  confidence_capture_schema2:
+    owner_module: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture.py
+    runtime_owner: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture_node.py
+    allowed_edit_paths: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/failure_model.py, piper_ros_foxy/src/piper_mobile_manipulation/config/scan_capture_params.yaml, L515_camera/start_l515_camera.sh, L515_camera/start_l515_camera_low_bandwidth.sh, reconstruction]
+    must_not_move_without: [exact mask/RGB stamp identity, native depth/confidence synchronization, depth-to-colour TF, transactional artifact commit, manifest hashes, reconstruction provenance validation, capture retry/replan policy]

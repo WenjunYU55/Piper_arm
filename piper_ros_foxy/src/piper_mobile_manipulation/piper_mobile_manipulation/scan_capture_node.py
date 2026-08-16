@@ -3,6 +3,7 @@ import json
 import math
 import os
 import time
+from collections import deque
 from datetime import datetime
 
 import cv2
@@ -22,9 +23,14 @@ from tf2_ros import Buffer, TransformException, TransformListener
 
 from piper_mobile_manipulation.msg import ScanExecutionStatus, Target3D
 from piper_mobile_manipulation.scan_capture import (
+    DepthQualityRejected,
     capture_diagnostic_rejection,
     depth_millimetres,
+    exact_stamped_item,
+    nearest_stamped_item,
+    qualify_target_depth,
     rigid_transform_matrix,
+    stamp_seconds,
     synchronized_bundle_rejection,
 )
 
@@ -40,6 +46,12 @@ class ScanCaptureNode(Node):
         self.declare_parameter('color_image_topic', '/camera/color/image_raw')
         self.declare_parameter('depth_image_topic', '/camera/aligned_depth_to_color/image_raw')
         self.declare_parameter('camera_info_topic', '/camera/color/camera_info')
+        self.declare_parameter(
+            'native_depth_image_topic', '/camera/depth/image_rect_raw')
+        self.declare_parameter(
+            'native_depth_camera_info_topic', '/camera/depth/camera_info')
+        self.declare_parameter(
+            'confidence_image_topic', '/camera/confidence/image_rect_raw')
         self.declare_parameter('mask_topic', '/piper/sam2_target_mask')
         self.declare_parameter('target_3d_topic', '/piper/target_3d')
         self.declare_parameter('scan_viewpoints_topic', '/piper/scan_viewpoints')
@@ -69,6 +81,13 @@ class ScanCaptureNode(Node):
         self.declare_parameter('max_frames_per_scan', 30)
         self.declare_parameter('max_bundle_age_sec', 1.0)
         self.declare_parameter('synchronization_slop_sec', 0.08)
+        self.declare_parameter('native_depth_confidence_slop_sec', 0.005)
+        self.declare_parameter('capture_cache_size', 240)
+        self.declare_parameter('minimum_depth_confidence', 8)
+        self.declare_parameter('minimum_confident_target_points', 50)
+        self.declare_parameter('minimum_confident_target_fraction', 0.50)
+        self.declare_parameter('minimum_primary_component_fraction', 0.15)
+        self.declare_parameter('depth_component_ambiguity_margin', 0.08)
         self.declare_parameter('require_valid_target', True)
         self.declare_parameter('require_mask', True)
         self.declare_parameter('require_depth', True)
@@ -91,6 +110,12 @@ class ScanCaptureNode(Node):
         self.latest_joint_state = None
         self.latest_execution_status = None
         self.latest_camera_transform = None
+        self.latest_color_from_depth_transform = None
+        self.color_bundle_cache = deque(maxlen=max(
+            20, int(self.get_parameter('capture_cache_size').value)))
+        self.native_bundle_cache = deque(maxlen=max(
+            20, int(self.get_parameter('capture_cache_size').value)))
+        self.prepared_capture = None
         self.latest_scan_viewpoints = None
         self.latest_reachable_scan_viewpoints = None
         self.latest_scan_coverage = None
@@ -137,6 +162,8 @@ class ScanCaptureNode(Node):
                     self.get_parameter('target_prompt').value),
                 'calibration_sha256': str(
                     self.get_parameter('calibration_sha256').value),
+                'capture_schema_version': 2,
+                'confidence_policy': self.confidence_policy_metadata(),
                 'topics': self.topic_metadata(),
             },
         )
@@ -165,6 +192,26 @@ class ScanCaptureNode(Node):
             float(self.get_parameter('synchronization_slop_sec').value),
         )
         self.rgbd_sync.registerCallback(self.rgbd_cb)
+        self.native_depth_sub = Subscriber(
+            self, Image,
+            self.get_parameter('native_depth_image_topic').value,
+            qos_profile=qos_profile_sensor_data)
+        self.native_depth_info_sub = Subscriber(
+            self, CameraInfo,
+            self.get_parameter('native_depth_camera_info_topic').value,
+            qos_profile=qos_profile_sensor_data)
+        self.confidence_sub = Subscriber(
+            self, Image,
+            self.get_parameter('confidence_image_topic').value,
+            qos_profile=qos_profile_sensor_data)
+        self.native_sync = ApproximateTimeSynchronizer(
+            [self.native_depth_sub, self.confidence_sub,
+             self.native_depth_info_sub],
+            20,
+            float(self.get_parameter(
+                'native_depth_confidence_slop_sec').value),
+        )
+        self.native_sync.registerCallback(self.native_bundle_cb)
         self._retained_subscriptions = []
         self._retained_subscriptions.append(self.create_subscription(
             Image,
@@ -237,6 +284,12 @@ class ScanCaptureNode(Node):
         self.latest_depth = depth
         self.latest_camera_info = camera_info
         self.latest_bundle_received_at = time.monotonic()
+        self.color_bundle_cache.append((
+            color, depth, camera_info, self.latest_bundle_received_at))
+
+    def native_bundle_cb(self, depth, confidence, camera_info):
+        self.native_bundle_cache.append((
+            depth, confidence, camera_info, time.monotonic()))
 
     def mask_cb(self, msg):
         self.latest_mask = msg
@@ -309,24 +362,11 @@ class ScanCaptureNode(Node):
         return response
 
     def capture_ready(self):
+        self.prepared_capture = None
         if not self.param_bool('dry_run'):
             return False, 'dry_run is false'
         if self.param_bool('enable_real_arm_motion'):
             return False, 'enable_real_arm_motion is true'
-        bundle_reason = synchronized_bundle_rejection(
-            self.latest_color,
-            self.latest_depth,
-            self.latest_camera_info,
-            self.latest_bundle_received_at,
-            time.monotonic(),
-            float(self.get_parameter('max_bundle_age_sec').value),
-            float(self.get_parameter('synchronization_slop_sec').value),
-        )
-        if bundle_reason:
-            return False, bundle_reason
-        transform_reason = self.refresh_camera_transform()
-        if transform_reason and self.param_bool('require_camera_transform'):
-            return False, transform_reason
         if self.param_bool('require_mask') and self.latest_mask is None:
             return False, 'missing detection mask'
         if self.param_bool('require_valid_target'):
@@ -372,96 +412,223 @@ class ScanCaptureNode(Node):
                 )
                 if reason:
                     return False, reason
+        prepared, reason = self.prepare_confidence_capture()
+        if reason:
+            return False, reason
+        self.prepared_capture = prepared
         return True, ''
 
-    def refresh_camera_transform(self):
-        if self.latest_color is None:
-            return 'camera transform cannot be correlated without RGB timestamp'
+    @staticmethod
+    def transform_matrix(message):
+        transform = message.transform
+        return rigid_transform_matrix(
+            [transform.translation.x, transform.translation.y,
+             transform.translation.z],
+            [transform.rotation.x, transform.rotation.y,
+             transform.rotation.z, transform.rotation.w])
+
+    def refresh_camera_transforms(self, depth_message):
+        stamp = Time.from_msg(depth_message.header.stamp)
         try:
             self.latest_camera_transform = self.tf_buffer.lookup_transform(
                 str(self.get_parameter('base_frame').value),
                 str(self.get_parameter('camera_optical_frame').value),
-                Time.from_msg(self.latest_color.header.stamp),
+                stamp,
                 timeout=Duration(seconds=float(self.get_parameter(
                     'camera_transform_timeout_sec').value)),
             )
+            self.latest_color_from_depth_transform = (
+                self.tf_buffer.lookup_transform(
+                    str(self.get_parameter('camera_optical_frame').value),
+                    str(depth_message.header.frame_id),
+                    stamp,
+                    timeout=Duration(seconds=float(self.get_parameter(
+                        'camera_transform_timeout_sec').value)),
+                ))
         except TransformException as exc:
             self.latest_camera_transform = None
+            self.latest_color_from_depth_transform = None
             return 'timestamped camera transform is unavailable: %s' % exc
         return ''
 
+    def prepare_confidence_capture(self):
+        """Prepare one immutable mask/RGB/depth/confidence observation."""
+        if self.latest_mask is None:
+            return None, 'missing detection mask'
+        color_bundle = exact_stamped_item(
+            self.color_bundle_cache, self.latest_mask)
+        if color_bundle is None:
+            return None, (
+                'confidence-qualified RGB-D bundle is still catching up with '
+                'the exact detection-mask timestamp')
+        color, aligned_depth, color_info, color_received_at = color_bundle
+        bundle_reason = synchronized_bundle_rejection(
+            color, aligned_depth, color_info, color_received_at,
+            time.monotonic(),
+            float(self.get_parameter('max_bundle_age_sec').value),
+            float(self.get_parameter('synchronization_slop_sec').value),
+        )
+        if bundle_reason:
+            return None, (
+                'confidence-qualified RGB-D bundle ' +
+                bundle_reason.lower().replace('rgb-d bundle ', ''))
+        native_bundle = nearest_stamped_item(
+            self.native_bundle_cache, color,
+            float(self.get_parameter('synchronization_slop_sec').value))
+        if native_bundle is None:
+            return None, (
+                'confidence-qualified native depth is still catching up with '
+                'the exact RGB frame')
+        native_depth, confidence, native_info, native_received_at = \
+            native_bundle
+        native_slop = float(self.get_parameter(
+            'native_depth_confidence_slop_sec').value)
+        native_reason = synchronized_bundle_rejection(
+            native_depth, confidence, native_info, native_received_at,
+            time.monotonic(),
+            float(self.get_parameter('max_bundle_age_sec').value),
+            native_slop)
+        if native_reason:
+            return None, (
+                'confidence-qualified native depth bundle ' +
+                native_reason.lower().replace('rgb-d bundle ', ''))
+        rgb_depth_delta = abs(
+            stamp_seconds(color) - stamp_seconds(native_depth))
+        if rgb_depth_delta > float(
+                self.get_parameter('synchronization_slop_sec').value):
+            return None, 'RGB and native depth timestamps are not synchronized'
+        transform_reason = self.refresh_camera_transforms(native_depth)
+        if transform_reason:
+            return None, transform_reason
+        try:
+            rgb = np.asarray(self.bridge.imgmsg_to_cv2(
+                color, desired_encoding='bgr8')).copy()
+            aligned = np.asarray(self.bridge.imgmsg_to_cv2(
+                aligned_depth, desired_encoding='passthrough')).copy()
+            raw_depth = np.asarray(self.bridge.imgmsg_to_cv2(
+                native_depth, desired_encoding='passthrough')).copy()
+            if str(confidence.encoding).upper() not in ('MONO8', '8UC1'):
+                raise ValueError(
+                    'L515 confidence image encoding must be mono8')
+            grades = np.asarray(self.bridge.imgmsg_to_cv2(
+                confidence, desired_encoding='mono8')).copy()
+            mask = np.asarray(self.bridge.imgmsg_to_cv2(
+                self.latest_mask, desired_encoding='mono8')).copy()
+            if mask.shape != rgb.shape[:2]:
+                raise ValueError(
+                    'detection mask shape does not match exact RGB frame')
+            qualified = qualify_target_depth(
+                raw_depth, native_depth.encoding, grades, mask,
+                native_info.k, color_info.k, color_info.d,
+                color_info.distortion_model,
+                self.transform_matrix(
+                    self.latest_color_from_depth_transform),
+                minimum_confidence=int(self.get_parameter(
+                    'minimum_depth_confidence').value),
+                minimum_points=int(self.get_parameter(
+                    'minimum_confident_target_points').value),
+                minimum_confident_fraction=float(self.get_parameter(
+                    'minimum_confident_target_fraction').value),
+                minimum_component_fraction=float(self.get_parameter(
+                    'minimum_primary_component_fraction').value),
+                component_ambiguity_margin=float(self.get_parameter(
+                    'depth_component_ambiguity_margin').value),
+            )
+        except DepthQualityRejected as exc:
+            return None, str(exc)
+        except (TypeError, ValueError, cv2.error) as exc:
+            return None, 'confidence-qualified capture is invalid: %s' % exc
+        return {
+            'color_message': color,
+            'aligned_depth_message': aligned_depth,
+            'color_info': color_info,
+            'native_depth_message': native_depth,
+            'native_depth_info': native_info,
+            'confidence_message': confidence,
+            'mask_message': self.latest_mask,
+            'rgb': rgb,
+            'aligned_depth': aligned,
+            'mask': mask,
+            'qualified': qualified,
+            'rgb_native_depth_delta_sec': rgb_depth_delta,
+            'native_depth_confidence_delta_sec': abs(
+                stamp_seconds(native_depth) - stamp_seconds(confidence)),
+            'mask_rgb_delta_sec': abs(
+                stamp_seconds(self.latest_mask) - stamp_seconds(color)),
+            'camera_transform': self.latest_camera_transform,
+            'color_from_depth_transform': (
+                self.latest_color_from_depth_transform),
+        }, ''
+
     def capture_frame(self, now):
+        prepared = self.prepared_capture
+        if not isinstance(prepared, dict):
+            return False, 'confidence-qualified capture was not prepared'
         index = self.frame_index
         prefix = 'view_%03d' % index
-        rgb_path = os.path.join(self.frames_dir, prefix + '_rgb.png')
-        depth_path = os.path.join(self.frames_dir, prefix + '_depth.npy')
-        depth_png_path = os.path.join(self.frames_dir, prefix + '_depth.png')
-        mask_path = os.path.join(self.frames_dir, prefix + '_mask.png')
-        metadata_path = os.path.join(self.frames_dir, prefix + '_metadata.yaml')
-
+        paths = {
+            'rgb': os.path.join(self.frames_dir, prefix + '_rgb.png'),
+            'depth_npy': os.path.join(self.frames_dir, prefix + '_depth.npy'),
+            'depth_png': os.path.join(self.frames_dir, prefix + '_depth.png'),
+            'mask': os.path.join(self.frames_dir, prefix + '_mask.png'),
+            'native_depth_npy': os.path.join(
+                self.frames_dir, prefix + '_native_depth.npy'),
+            'native_depth_png': os.path.join(
+                self.frames_dir, prefix + '_native_depth.png'),
+            'confidence': os.path.join(
+                self.frames_dir, prefix + '_confidence.png'),
+            'target_depth': os.path.join(
+                self.frames_dir, prefix + '_target_depth.png'),
+            'target_support_mask': os.path.join(
+                self.frames_dir, prefix + '_target_support_mask.png'),
+            'metadata': os.path.join(
+                self.frames_dir, prefix + '_metadata.yaml'),
+        }
+        aligned_depth_mm = depth_millimetres(
+            prepared['aligned_depth'],
+            prepared['aligned_depth_message'].encoding)
+        qualified = prepared['qualified']
+        images = {
+            'rgb': prepared['rgb'],
+            'depth_png': aligned_depth_mm,
+            'mask': prepared['mask'],
+            'native_depth_png': qualified['native_depth_mm'],
+            'confidence': qualified['confidence'],
+            'target_depth': qualified['target_depth_mm'],
+            'target_support_mask': qualified['target_support_mask'],
+        }
+        arrays = {
+            'depth_npy': prepared['aligned_depth'],
+            'native_depth_npy': qualified['native_depth_mm'],
+        }
+        metadata = self.frame_metadata(index, now, paths, prepared)
+        temporary = {}
+        committed = []
         try:
-            rgb = self.bridge.imgmsg_to_cv2(self.latest_color, desired_encoding='bgr8')
-            if not cv2.imwrite(rgb_path, rgb):
-                raise OSError('cv2.imwrite returned false')
+            for key, image in images.items():
+                temporary[key] = self.partial_path(paths[key])
+                if not cv2.imwrite(temporary[key], image):
+                    raise OSError('%s cv2.imwrite returned false' % key)
+            for key, array in arrays.items():
+                temporary[key] = self.partial_path(paths[key])
+                with open(temporary[key], 'wb') as stream:
+                    np.save(stream, np.asarray(array), allow_pickle=False)
+            temporary['metadata'] = self.partial_path(paths['metadata'])
+            self.write_yaml(temporary['metadata'], metadata)
+            for key in list(images) + list(arrays) + ['metadata']:
+                os.replace(temporary[key], paths[key])
+                committed.append(paths[key])
         except Exception as exc:
-            self.note_skip('RGB save failed')
-            self.publish_status('skipped', 'RGB save failed: %s' % exc)
-            return False, 'RGB save failed: %s' % exc
-
-        depth_saved = False
-        depth_dtype = ''
-        if self.latest_depth is not None:
-            try:
-                depth = self.bridge.imgmsg_to_cv2(self.latest_depth, desired_encoding='passthrough')
-                depth = np.asarray(depth)
-                depth_dtype = str(depth.dtype)
-                np.save(depth_path, depth)
-                if not cv2.imwrite(
-                        depth_png_path,
-                        depth_millimetres(depth, self.latest_depth.encoding)):
-                    raise OSError('depth PNG cv2.imwrite returned false')
-                depth_saved = True
-            except Exception as exc:
-                if self.param_bool('require_depth'):
-                    self.note_skip('depth save failed')
-                    self.publish_status('skipped', 'depth save failed: %s' % exc)
-                    return False, 'depth save failed: %s' % exc
-                depth_path = ''
-                depth_png_path = ''
-                self.get_logger().warn('optional depth save failed: %s' % exc)
-
-        mask_saved = False
-        if self.latest_mask is not None:
-            try:
-                mask = self.bridge.imgmsg_to_cv2(self.latest_mask, desired_encoding='mono8')
-                if not cv2.imwrite(mask_path, mask):
-                    raise OSError('cv2.imwrite returned false')
-                mask_saved = True
-            except Exception as exc:
-                if self.param_bool('require_mask'):
-                    self.note_skip('mask save failed')
-                    self.publish_status('skipped', 'mask save failed: %s' % exc)
-                    return False, 'mask save failed: %s' % exc
-                mask_path = ''
-                self.get_logger().warn('optional mask save failed: %s' % exc)
-
-        if not depth_saved:
-            depth_path = ''
-            depth_png_path = ''
-        if not mask_saved:
-            mask_path = ''
-
-        metadata = self.frame_metadata(
-            index,
-            now,
-            rgb_path,
-            depth_path,
-            depth_png_path,
-            depth_dtype,
-            mask_path,
-            metadata_path,
-        )
-        self.write_yaml(metadata_path, metadata)
+            for path in temporary.values():
+                if os.path.isfile(path):
+                    os.remove(path)
+            for path in committed:
+                if os.path.isfile(path):
+                    os.remove(path)
+            reason = 'confidence-qualified frame save failed: %s' % exc
+            self.note_skip(reason)
+            self.publish_status('skipped', reason)
+            return False, reason
         self.record_quality_count(metadata)
         self.record_occlusion_count(metadata)
 
@@ -472,12 +639,21 @@ class ScanCaptureNode(Node):
         self.publish_summary()
         if self.param_bool('debug'):
             self.get_logger().info('saved scan frame %03d to %s' % (index, self.frames_dir))
+        self.prepared_capture = None
         return True, 'saved viewpoint %03d to %s' % (index, self.frames_dir)
 
-    def frame_metadata(
-            self, index, now, rgb_path, depth_path, depth_png_path, depth_dtype,
-            mask_path, metadata_path):
+    @staticmethod
+    def partial_path(path):
+        root, extension = os.path.splitext(path)
+        return root + '.partial' + extension
+
+    def frame_metadata(self, index, now, paths, prepared):
         target = self.target_metadata(self.latest_target)
+        qualified = prepared['qualified']
+        synchronized_target = dict(qualified['target'])
+        synchronized_target['available'] = True
+        synchronized_target['header'] = self.header_metadata(
+            prepared['native_depth_message'].header)
         planned_count = self.planned_viewpoint_count()
         reachable_count = self.reachable_viewpoint_count()
         coverage_target = self.scan_coverage_target()
@@ -486,14 +662,42 @@ class ScanCaptureNode(Node):
         execution = self.execution_status_metadata(
             self.latest_execution_status)
         return {
+            'capture_schema_version': 2,
             'frame_index': int(index),
             'capture_timestamp': self.ros_time_to_dict(now.to_msg()),
             'capture_wall_time': self.wall_time_string(),
-            'rgb_topic_timestamp': self.header_stamp(self.latest_color),
-            'depth_topic_timestamp': self.header_stamp(self.latest_depth),
-            'camera_info': self.camera_info_metadata(self.latest_camera_info),
+            'rgb_topic_timestamp': self.header_stamp(
+                prepared['color_message']),
+            'depth_topic_timestamp': self.header_stamp(
+                prepared['aligned_depth_message']),
+            'native_depth_topic_timestamp': self.header_stamp(
+                prepared['native_depth_message']),
+            'confidence_topic_timestamp': self.header_stamp(
+                prepared['confidence_message']),
+            'mask_topic_timestamp': self.header_stamp(
+                prepared['mask_message']),
+            'camera_info': self.camera_info_metadata(prepared['color_info']),
+            'native_depth_camera_info': self.camera_info_metadata(
+                prepared['native_depth_info']),
             'camera_transform': self.camera_transform_metadata(
-                self.latest_camera_transform),
+                prepared['camera_transform']),
+            'color_from_depth_transform': self.camera_transform_metadata(
+                prepared['color_from_depth_transform']),
+            'synchronization': {
+                'mask_rgb_delta_sec': float(
+                    prepared['mask_rgb_delta_sec']),
+                'rgb_native_depth_delta_sec': float(
+                    prepared['rgb_native_depth_delta_sec']),
+                'native_depth_confidence_delta_sec': float(
+                    prepared['native_depth_confidence_delta_sec']),
+                'mask_rgb_exact': bool(
+                    prepared['mask_rgb_delta_sec'] == 0.0),
+                'maximum_rgb_native_depth_delta_sec': float(
+                    self.get_parameter('synchronization_slop_sec').value),
+                'maximum_native_depth_confidence_delta_sec': float(
+                    self.get_parameter(
+                        'native_depth_confidence_slop_sec').value),
+            },
             'task_id': str(self.get_parameter('task_id').value),
             'mission_sha256': str(
                 self.get_parameter('mission_sha256').value),
@@ -503,7 +707,10 @@ class ScanCaptureNode(Node):
             'calibration_sha256': str(
                 self.get_parameter('calibration_sha256').value),
             'target_3d': target,
-            'target_valid': bool(self.latest_target.valid) if self.latest_target is not None else False,
+            'target_3d_role': 'diagnostic_live_provenance_only',
+            'synchronized_target_3d': synchronized_target,
+            'target_valid': True,
+            'confidence_quality': qualified['quality'],
             'planned_viewpoint_count': planned_count,
             'reachable_viewpoint_count': reachable_count,
             'scan_coverage_target': coverage_target,
@@ -546,14 +753,25 @@ class ScanCaptureNode(Node):
                 'real_arm_motion', False)),
             'capture_node_dry_run': self.param_bool('dry_run'),
             'capture_node_real_arm_motion': False,
-            'rgb_file_path': rgb_path,
-            'depth_file_path': depth_path,
-            'depth_png_file_path': depth_png_path,
-            'depth_encoding': str(self.latest_depth.encoding),
-            'depth_npy_dtype': depth_dtype,
+            'rgb_file_path': paths['rgb'],
+            'depth_file_path': paths['depth_npy'],
+            'depth_png_file_path': paths['depth_png'],
+            'depth_encoding': str(
+                prepared['aligned_depth_message'].encoding),
+            'depth_npy_dtype': str(prepared['aligned_depth'].dtype),
             'depth_png_units': 'millimetres',
-            'mask_file_path': mask_path,
-            'metadata_file_path': metadata_path,
+            'mask_file_path': paths['mask'],
+            'native_depth_file_path': paths['native_depth_npy'],
+            'native_depth_png_file_path': paths['native_depth_png'],
+            'native_depth_encoding': str(
+                prepared['native_depth_message'].encoding),
+            'confidence_file_path': paths['confidence'],
+            'confidence_encoding': str(
+                prepared['confidence_message'].encoding),
+            'confidence_grade_range': [0, 15],
+            'target_depth_png_file_path': paths['target_depth'],
+            'target_support_mask_file_path': paths['target_support_mask'],
+            'metadata_file_path': paths['metadata'],
             'joint_state': self.joint_state_metadata(self.latest_joint_state),
             'scan_execution': execution,
         }
@@ -925,6 +1143,12 @@ class ScanCaptureNode(Node):
             'color_image': self.get_parameter('color_image_topic').value,
             'depth_image': self.get_parameter('depth_image_topic').value,
             'camera_info': self.get_parameter('camera_info_topic').value,
+            'native_depth_image': self.get_parameter(
+                'native_depth_image_topic').value,
+            'native_depth_camera_info': self.get_parameter(
+                'native_depth_camera_info_topic').value,
+            'confidence_image': self.get_parameter(
+                'confidence_image_topic').value,
             'mask': self.get_parameter('mask_topic').value,
             'target_3d': self.get_parameter('target_3d_topic').value,
             'scan_viewpoints': self.get_parameter('scan_viewpoints_topic').value,
@@ -941,6 +1165,25 @@ class ScanCaptureNode(Node):
                 self.get_parameter('base_frame').value,
                 self.get_parameter('camera_optical_frame').value),
             'capture_service': '/scan_capture/capture_view',
+        }
+
+    def confidence_policy_metadata(self):
+        return {
+            'minimum_grade': int(self.get_parameter(
+                'minimum_depth_confidence').value),
+            'grade_range': [0, 15],
+            'minimum_target_points': int(self.get_parameter(
+                'minimum_confident_target_points').value),
+            'minimum_confident_fraction': float(self.get_parameter(
+                'minimum_confident_target_fraction').value),
+            'minimum_primary_component_fraction': float(self.get_parameter(
+                'minimum_primary_component_fraction').value),
+            'depth_component_ambiguity_margin': float(self.get_parameter(
+                'depth_component_ambiguity_margin').value),
+            'mask_erosion': 'adaptive one-native-depth-pixel equivalent',
+            'target_cluster': (
+                'scored multi-layer 8-connected component; '
+                'ambiguous depth layers fail closed'),
         }
 
     def create_scan_dir(self):
@@ -970,7 +1213,8 @@ class ScanCaptureNode(Node):
                 'sha256': self.file_sha256(path),
             })
         payload = {
-            'schema_version': 1,
+            'schema_version': 2,
+            'capture_schema_version': 2,
             'task_id': str(self.get_parameter('task_id').value),
             'mission_sha256': str(
                 self.get_parameter('mission_sha256').value),
@@ -979,6 +1223,7 @@ class ScanCaptureNode(Node):
             'target_prompt': str(self.get_parameter('target_prompt').value),
             'calibration_sha256': str(
                 self.get_parameter('calibration_sha256').value),
+            'confidence_policy': self.confidence_policy_metadata(),
             'capture_count': int(self.frame_index),
             'files': files,
         }

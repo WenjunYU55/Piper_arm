@@ -3,8 +3,15 @@ from types import SimpleNamespace
 import numpy as np
 
 from piper_mobile_manipulation.scan_capture import (
+    DepthQualityRejected,
+    adaptive_eroded_mask,
     capture_diagnostic_rejection,
+    depth_connected_component,
     depth_millimetres,
+    exact_stamped_item,
+    nearest_stamped_item,
+    normalize_l515_confidence,
+    qualify_target_depth,
     rigid_transform_matrix,
     synchronized_bundle_rejection,
 )
@@ -54,6 +61,82 @@ def test_rigid_camera_transform_metadata_matrix_is_exact_and_finite():
         [0.0, 0.0, 1.0, 3.0],
         [0.0, 0.0, 0.0, 1.0],
     ]
+
+
+def test_exact_and_nearest_timestamp_cache_selection_are_distinct():
+    items = [(message(10.00), 'first'), (message(10.03), 'second')]
+    assert exact_stamped_item(items, message(10.03))[1] == 'second'
+    assert exact_stamped_item(items, message(10.02)) is None
+    assert nearest_stamped_item(items, message(10.02), 0.02)[1] == 'second'
+    assert nearest_stamped_item(items, message(10.20), 0.02) is None
+
+
+def test_mask_erosion_falls_back_before_destroying_a_small_target():
+    mask = np.zeros((12, 12), dtype=np.uint8)
+    mask[4:8, 4:8] = 255
+    result, report = adaptive_eroded_mask(mask, native_width=6)
+    assert report['erosion_applied'] is False
+    assert np.array_equal(result, mask > 0)
+
+
+def test_depth_connected_component_does_not_cross_a_depth_step():
+    candidate = np.ones((3, 4), dtype=bool)
+    depth = np.asarray([
+        [400, 401, 440, 441],
+        [400, 402, 439, 441],
+        [401, 402, 440, 442],
+    ], dtype=np.uint16)
+    selected = depth_connected_component(candidate, depth, (1, 0), 10.0)
+    assert int(np.count_nonzero(selected)) == 6
+    assert np.all(selected[:, :2])
+    assert not np.any(selected[:, 2:])
+
+
+def _qualified_fixture(confidence_grade=10):
+    depth = np.full((6, 6), 400, dtype=np.uint16)
+    confidence = np.full((6, 6), confidence_grade, dtype=np.uint8)
+    mask = np.full((12, 12), 255, dtype=np.uint8)
+    depth_k = [100.0, 0.0, 2.5, 0.0, 100.0, 2.5, 0.0, 0.0, 1.0]
+    color_k = [200.0, 0.0, 5.5, 0.0, 200.0, 5.5, 0.0, 0.0, 1.0]
+    return qualify_target_depth(
+        depth, '16UC1', confidence, mask, depth_k, color_k,
+        [0.0] * 5, 'plumb_bob', np.eye(4), minimum_confidence=8,
+        minimum_points=10, minimum_confident_fraction=0.5,
+        minimum_component_fraction=0.6)
+
+
+def test_confidence_target_uses_native_geometry_and_hardware_grades():
+    result = _qualified_fixture()
+    assert result['target']['valid'] is True
+    assert abs(result['target']['depth'] - 0.4) < 1e-9
+    assert result['quality']['confidence_threshold'] == 8
+    assert result['quality']['confident_fraction'] == 1.0
+    assert result['quality']['primary_component_fraction'] == 1.0
+    assert np.count_nonzero(result['target_support_mask']) >= 10
+
+
+def test_l515_left_justified_raw8_confidence_is_normalized_to_grades():
+    raw = np.asarray([[0, 16, 128, 240]], dtype=np.uint8)
+    grades, representation = normalize_l515_confidence(raw)
+    assert grades.tolist() == [[0, 1, 8, 15]]
+    assert representation == 'left_justified_4bit_raw8'
+
+    result = _qualified_fixture(confidence_grade=160)
+    assert result['quality']['confidence_input_representation'] == \
+        'left_justified_4bit_raw8'
+    assert result['quality']['confidence_grade_histogram_0_to_15'][10] == 36
+    assert int(result['confidence'].max()) == 10
+
+
+def test_l515_confidence_rejects_arbitrary_or_mixed_eight_bit_values():
+    with np.testing.assert_raises(ValueError):
+        normalize_l515_confidence(
+            np.asarray([[0, 15, 16, 17]], dtype=np.uint8))
+
+
+def test_complete_low_confidence_observation_is_a_visual_depth_rejection():
+    with np.testing.assert_raises(DepthQualityRejected):
+        _qualified_fixture(confidence_grade=4)
 
 
 def test_capture_requires_fresh_good_and_clear_visual_evidence():

@@ -3,6 +3,9 @@
     color_image_topic: "/camera/color/image_raw"
     depth_image_topic: "/camera/aligned_depth_to_color/image_raw"
     camera_info_topic: "/camera/color/camera_info"
+    native_depth_image_topic: "/camera/depth/image_rect_raw"
+    native_depth_camera_info_topic: "/camera/depth/camera_info"
+    confidence_image_topic: "/camera/confidence/image_rect_raw"
     mask_topic: "/piper/sam2_target_mask"
     target_3d_topic: "/piper/target_3d"
     scan_viewpoints_topic: "/piper/scan_viewpoints"
@@ -26,6 +29,13 @@
     max_frames_per_scan: 30
     max_bundle_age_sec: 1.0
     synchronization_slop_sec: 0.08
+    native_depth_confidence_slop_sec: 0.005
+    capture_cache_size: 240
+    minimum_depth_confidence: 8
+    minimum_confident_target_points: 50
+    minimum_confident_target_fraction: 0.50
+    minimum_primary_component_fraction: 0.15
+    depth_component_ambiguity_margin: 0.08
     require_valid_target: true
     require_mask: true
     require_depth: true

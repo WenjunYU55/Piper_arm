@@ -24,7 +24,7 @@ ros2 launch realsense2_camera rs_launch.py \
   device_type:=l515 \
   enable_color:=true \
   enable_depth:=true \
-  enable_confidence:=false \
+  enable_confidence:=true \
   enable_infra:=false \
   enable_infra1:=false \
   enable_infra2:=false \
