@@ -20,19 +20,24 @@ and the files named below are authoritative for that composition.
    fault/watchdog reason.
 4. Cancellation, deadline, process exit, unexpected exception and normal
    completion all enter the same staged shutdown transaction.
-5. Hold is a commanded current-feedback target followed by fresh feedback
-   convergence; it is not inferred from silence or from one velocity sample.
-6. Disable is attempted only after required home/storage/hold proofs. Failure
-   to prove safe shutdown is `NEEDS_OPERATOR` and never `safe_shutdown=true`.
+5. Autonomous startup and terminal shutdown do not call the redundant hold
+   service. PiPER position control retains the latest commanded target; each
+   home stage is proved from feedback and the final storage target is retained
+   until immediate feedback-confirmed disable. Executor-local recovery holds
+   remain unchanged.
+6. Disable is attempted only after required rough-home and storage proofs.
+   Failure to prove home, storage, disable or owned-process cleanup is
+   `NEEDS_OPERATOR` and never `safe_shutdown=true`.
 7. If any motor axis drops while powered, automatic home is forbidden. Wait
    for driver-owned six-axis disable, then clean up processes.
 8. Home is a fresh current-state plan. It never reverses or reuses a prior
    scan trajectory. Startup is J6 mission-ready then rough home; terminal home
-   is rough home then storage J6, final hold, disable and cleanup.
+   is pre-home, rough home, storage J6, retained final target, disable and cleanup.
 9. Dedicated configured-home stages may bypass robot self-collision only for
    the exact hash-bound home transaction. Joint limits, camera-holder external
-   floor clearance, timing, feedback convergence, hold, disable and cleanup
-   remain mandatory.
+   floor clearance, live all-six motor authority, timing, feedback convergence,
+   disable and cleanup remain mandatory. Camera/tracking/workflow/obstacle-topic
+   freshness and Tesseract controller-limit hash are not direct-home gates.
 10. Normal acquisition/scan motion always retains Tesseract IK, joint-limit,
     robot/attached-model collision, obstacle and target-visibility checks.
 11. A heavy result is correlated to its archived image/depth/intrinsics/stamp.
@@ -138,7 +143,7 @@ and the files named below are authoritative for that composition.
 | Minimum tracking speed-scale diagnostic | `0.10` |
 | Motor guard grace/status age | `0.5 s / 0.5 s` |
 | Motor-loss six-disabled wait | `2.0 s` |
-| Final coordinator hold | target/motion `0.005 rad`, stable `1.0 s`, timeout `15 s` |
+| Autonomous startup/terminal hold service | not called; configured-home feedback proof remains authoritative |
 | GUI safe-disable hold | target `0.025 rad`, motion `0.005 rad`, stable `1.0 s`, timeout `8 s`, polling `0.1 s` |
 | GUI manual safe-disable speed | clamped `1..5%` |
 

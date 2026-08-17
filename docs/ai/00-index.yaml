@@ -1,5 +1,11 @@
 schema_version: 1
 document: ai_context_index
+current_change_2026_08_17:
+  goal: Simplify mission shutdown and executor runtime gates without changing public ROS, numerical motion, perception, TF/calibration or scan-trajectory contracts.
+  authoritative_files: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission_engine.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/safety_evaluator.py]
+  result: MissionEngine is the sole mission/shutdown state machine; all owned failures attempt freshly qualified staged home unless current motor authority is lost; autonomous startup and terminal shutdown no longer issue redundant hold-service commands; executor runtime gates use one immutable named policy instead of interacting boolean switches; obsolete frozen mission copies and duplicate shadow safety evaluator are removed.
+  safety_boundary: Direct home still requires fresh finite joints, current all-six motor authority, exact configured stage/target, stage direction/change policy, holder/L515 external clearance, progress, convergence and settle proof. Confirmed motor authority loss remains the only automatic no-command route.
+  requalification: Software-only until all tests/build/command-free planning qualifications pass, then supervised physical staged-home/failure shutdown testing is required.
 navigation:
   implemented_features_bookmark: docs/ai/90-implemented-features-bookmark.yaml
   phase0_refactor_baseline:
@@ -28,6 +34,60 @@ project:
   name: Piper_arm
   purpose: Bounded closest-first multi-target eye-in-hand RGB-D rough-target acquisition, open-vocabulary tracking, occlusion assessment, adaptive feature-gated 8-to-24-view capture, and guarded sequential low-speed scan execution for an AgileX PiPER arm with Intel RealSense L515.
   runtime: Ubuntu 20.04; ROS 2 Foxy; ROS nodes on Python 3.8; isolated Grounded-SAM-2 workers on Python 3.10+.
+  operator_home_acceptance_2026_08_16: >-
+    Configured PRE_HOME, ROUGH_HOME and STORAGE_WRIST remain direct
+    ExecuteHomeStage/native MoveJ operations; they never call the Tesseract
+    worker. At the operator's direction, each J1-J6 configured-home endpoint
+    and successive-sample check now uses a 0.3-rad allowance for one second.
+    Startup and final current-position hold still publish and require an
+    acknowledgement, fresh finite feedback and trusted all-six motor status,
+    but their former 0.005-rad position-window proof is no longer a mission
+    gate. The GUI now exposes a shutdown-only pre-home recorder, displays that
+    pose, and preserves pre-home whenever rough/ready or storage J6 is edited;
+    the prior buttons could silently erase it. No physical motion was run for
+    this software change.
+  startup_j6_transaction_reset_2026_08_16: >-
+    Live task gui-sim-db1f2698f7c74951a83b9d229d875a49 exposed an
+    incomplete STARTUP_WRIST lifecycle defect. After the explicit disable,
+    disabled wrist relaxation fell from the retained 3.647663-rad high-water
+    mark toward 3.006090 rad; the still-active direction watchdog repeatedly
+    issued DisableArm(7) and defeated later Commissioning Enable attempts.
+    A proved explicit disable or a direction-watchdog trip now clears the
+    incomplete J6 target, raw/logical wrap state and direction high-water.
+    Focused driver and mission tests plus the affected package build pass; no
+    physical retest was run and the complete stack remains off.
+  startup_wrist_executor_scope_reintegration_2026_08_16: >-
+    E2E task gui-sim-904111b0d41b48a6bd16a10d3c29f538 exposed a partial
+    reintegration regression after J6 reached its qualified startup wrap
+    bridge: the executor still measured progress against stale pre-enable
+    J1-J5 targets, declared no progress with a 0.056274344-rad J2 residual,
+    and then requested PRE_HOME while the driver correctly retained
+    STARTUP_WRIST authority. The current branch now restores the archived
+    stage scope. Authenticated STARTUP_WRIST refreshes J1-J5 from one fresh
+    measured sample at each command boundary, evaluates progress/convergence
+    and settling from J6 only, and publishes no redundant hold between
+    STARTUP_WRIST and ROUGH_HOME. Every other direct-home and scan transaction
+    remains six-joint checked. The failed mission made zero captures and
+    reported NEEDS_OPERATOR with safe_shutdown=false; supervised physical
+    requalification remains required.
+  gripper_diagnostic_boundary_2026_08_16: >-
+    tools/debug_piper_gripper.py is the single-owner direct-SDK diagnostic for
+    CAN IDs 0x159 command and 0x2A8 feedback. Single-owner testing measured fresh
+    200 Hz feedback at the physically closed aperture (-0.210 mm), with no
+    reported gripper faults. A raw-CAN-correlated closed-target pulse transmitted
+    exactly disable 0x02, enable 0x01 and disable 0x02; feedback became enabled,
+    remained enabled for a separate five-second observation, and returned to
+    disabled/zero effort. No later overriding command was observed. Homing status
+    remained false. The production arm-enable path still sends one
+    ENABLE command at 0 mm and 1.0 N m after all six arm motors enable; no
+    behavior was changed. A supervised production-path test enabled all six arm
+    motors, opened J7 from 0.28 mm to 9.66 mm at 0.5 N m, then closed on a soft
+    object at 4.48--4.76 mm and sustained about 1.04 N m for five seconds without
+    faults. Final disable produced status disabled and zero effort. This proves
+    powered position control and holding; the reported softness was the unloaded
+    closed-target condition, not failed J7 torque. Homing status remains false,
+    so automatic zeroing remains prohibited and the absolute aperture datum still
+    needs separate manufacturer-procedure review.
   powered_j5_dropout_incident_2026_08_11: >-
     GUI task gui-sim-be1e6cd0d5e1419e9b4397261a530fd7 persisted 12
     GOOD/CLEAR captures in scan_20260811_144903, but remained one-sided
@@ -94,7 +154,7 @@ project:
     frames independently reported J6 -2.860630 rad (-163.902 degrees), all
     motors disabled and no faults; RViz had zero live /joint_states_single
     publishers and was not feedback authority. The corrected negative-storage
-    profile hash is c52e0110a0e6929018492e6adcaf097505596b3a84a17f00a6c2f6074f773398.
+    current schema-v4 profile hash is 9cd1f62264699e86f047c1bfe0010d10084d3b6b239df17de7386b5b2f18fb66.
     Two affected packages build, 145 focused tests and 428 complete
     mobile/Tesseract tests pass, and both command-free rootless suites prove
     startup delta +3.139536232 plus storage delta -3.139536232. Coordinator
@@ -154,10 +214,15 @@ project:
     explicit hash-bound collision_validation_bypassed marker (robot
     self-collision only) and the exact
     configured_home_goal_positions_rad through worker, response, bridge and
-    executor. They do not require camera or obstacle-scene
-    health. Joint limits, controller-limit hash, fresh feedback/start matching,
-    aggregate speed, endpoint convergence, stable hold, feedback disable and
-    owned-child cleanup remain mandatory. CAD-derived camera-holder/L515
+    executor. This original worker-routed form is historical; the current
+    mission-authorized ExecuteHomeStage/native MoveJ path does not call the
+    worker and does not require camera, tracking, workflow, obstacle-topic or
+    controller-limit-hash health. Hard limits, fresh finite feedback, current
+    all-six motor authority, exact configured endpoint and stage direction,
+    aggregate speed, endpoint convergence/settling, feedback disable and
+    owned-child cleanup remain mandatory. The controller retains the final
+    proved endpoint until immediate disable; no separate hold service is called.
+    CAD-derived camera-holder/L515
     support-plane and external-obstacle clearance is never bypassed. The
     exception cannot enter
     acquisition, scan, manipulation or an implicit multiview return. The exact
@@ -918,7 +983,7 @@ update_rules:
   - Update project-structure.txt when top-level or ROS package layout changes.
   - Describe checked-out source, including intentional uncommitted work; never infer behavior solely from generated build/install trees.
 implementation_update_2026_08_10:
-  staged_home: A schema-v4 home profile binds rough-home/mission-ready J6, terminal-only PRE_HOME, negative storage J6, positive-only startup and decreasing storage direction. The measured signed branch is checked before enable. Startup executes direct J6-only STARTUP_WRIST then direct ROUGH_HOME through ExecuteHomeStage. Every controllable terminal path holds, then executes PRE_HOME, ROUGH_HOME and J6-only STORAGE_WRIST before final hold, disable and owned-child cleanup. Tesseract is not used for configured-home stages. Robot self-collision planning is intentionally bypassed for these operator-recorded stages, while fresh feedback/motor/limit evidence and dense installed-holder external clearance remain mandatory. ROS JointState array sequences are accepted as six-joint inputs. Older profiles remain readable for diagnostics but cannot start an autonomous mission when require_staged_home_profile is true.
+  staged_home: A schema-v4 home profile binds rough-home/mission-ready J6, terminal-only PRE_HOME, negative storage J6, positive-only startup and decreasing storage direction. The measured signed branch is checked before enable. Startup executes direct J6-only STARTUP_WRIST then direct ROUGH_HOME through ExecuteHomeStage. Every controllable terminal path executes PRE_HOME, ROUGH_HOME and J6-only STORAGE_WRIST, retains the proved final controller target, then immediately performs feedback-confirmed disable and owned-child cleanup. Autonomous startup/shutdown does not call the redundant hold service. Tesseract is not used for configured-home stages. Robot self-collision planning is intentionally bypassed for these operator-recorded stages, while fresh feedback/motor evidence and dense installed-holder external clearance remain mandatory; Tesseract motion-limit telemetry is not direct-home authority. ROS JointState array sequences are accepted as six-joint inputs. Older profiles remain readable for diagnostics but cannot start an autonomous mission when require_staged_home_profile is true.
   occlusion: Heavy refresh now archives synchronized color, aligned depth and camera intrinsics. Exact response masks are projected with the capture-time TF; pen/marker/stick contact proposals require two associated settled observations, at least five-percent target support and closer-depth occlusion, predicted surface benefit and bounded uncertainty. Contact motion remains blocked by manipulation_model_qualified=false.
   scanning: Automatic completion combines achieved-FK side/span floors with measured base_link target-surface voxels from persisted RGB-D masks. Eight accepted views seed the model but do not force completion; twenty-four is the safety maximum, and three consecutive novel-surface fractions at or below 0.02 establish convergence.
   reconstruction: Successful safe shutdown allocates a durable mesh job. Only a task/job/manifest-correlated tracked-robot-homed report queues isolated TSDF reconstruction; status and final PLY/hash/quality are durable and queryable.
@@ -1063,3 +1128,19 @@ selected_perception_reintegration_2026_08_16:
   authority: piper_mobile_manipulation/utils/target_depth.py owns target-layer selection; scan_capture.py owns pure native-depth projection and confidence qualification; scan_capture_node.py owns exact-time correlation and transactional persistence.
   compatibility: Existing ROS topics, services, QoS, RGB-D slop, target-valid default, TF semantics, calibration, motion, and NBV behavior remain unchanged. Native depth and confidence subscriptions are additive.
   qualification: Software and recorded-data only; no camera, GPU, arm, or mission process was started.
+commissioning_control_reintegration_2026_08_16: >-
+  After that failed E2E run, GUI commissioning enable succeeded but manual
+  targets and its pre-disable hold were repeatedly rejected because the
+  still-running pre-fix driver retained STARTUP_WRIST authority. The GUI also
+  created a command publisher immediately on startup even while the scan
+  executor remained alive, and its strict 0.025/0.005-rad eight-second hold
+  window prevented the real disable service from being called. The current
+  branch now starts commissioning motion locked and creates its publisher only
+  after the ROS graph proves no other joint-command writer. While startup J6
+  is unfinished, explicit GUI commands may either hold J6 within 0.03 rad
+  while moving J1-J5 or move J6 alone in the already-approved positive
+  direction toward ready zero; negative startup motion remains rejected. The
+  explicitly labelled Commissioning Disable (No Home) sends no motion/hold
+  command and directly requests the driver's all-six feedback-proved disable.
+  Autonomous Cancel/Home and terminal homing are unchanged. Software-only
+  regression/build qualification is required before restarting the stack.

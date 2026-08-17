@@ -14,7 +14,7 @@ Piper_arm/
 │           ├── action/              RunTargetScan open-label mission API with stable failure code and retryability
 │           ├── config/              Camera/tracking, closed-loop 15-degree acquisition, 7.5-degree/flexible-distance scan region, adaptive capture, and 20 Hz tesseract_stream_v3 execution/following/settle parameters
 │           ├── launch/              Perception, tracking, scan, dry-run, and opt-in executor composition with one shared planner/workflow/bridge/executor/capture session maximum
-│           ├── piper_mobile_manipulation/  ROS nodes plus typed failures, immutable TelemetryStore snapshots, SafetyEvaluator shadow comparisons, ROS-free MissionEngine, immutable typed configuration, shared ambiguity-aware target-depth selection, confidence-qualified transactional capture schema 2, mission-authorized ExecuteHomeStage, schema-v4 terminal PRE_HOME sequencing, guarded zero-capture cleanup, and executor adapters for densely proven native MoveJ chords versus streamed Tesseract detours
+│           ├── piper_mobile_manipulation/  ROS nodes plus typed failures, immutable TelemetryStore snapshots, immutable named RuntimeGatePolicy, sole-authority ROS-free MissionEngine, immutable typed configuration, shared ambiguity-aware target-depth selection, confidence-qualified transactional capture schema 2, mission-authorized ExecuteHomeStage, schema-v4 terminal PRE_HOME sequencing, guarded zero-capture cleanup, and executor adapters for densely proven native MoveJ chords versus streamed Tesseract detours
 │           └── test/                ROS package pytest tests
 │       └── piper_tesseract_foxy/    Command-free Foxy/schema-v5 spool adapter, typed readiness, bounded IK shortlist, collision model builder, and ROS-free OMPL/ISP worker with bounded pass-through smoothing, dense validation/fallback, and explicit DIRECT_MOVEJ versus TESSERACT_STREAM evidence; configured home is owned by ExecuteHomeStage
 ├── motion_planning/tesseract/       Pinned Ubuntu 24.04 Tesseract 0.35 OCI and rootless Bubblewrap setup/run/qualification assets
@@ -36,10 +36,12 @@ Piper_arm/
 ├── source_piper_foxy_environment.sh Canonical Foxy + piper_ros_foxy overlay loader and interface preflight
 ├── start_piper.sh                   CAN setup and real driver launch, auto-enable off by default
 ├── check_piper_can.sh               Passive no-transmit CAN state/frame preflight
+├── tools/debug_piper_gripper.py      Single-owner no-zero direct-SDK gripper status/monitor and explicitly confirmed command diagnostics
+├── test_debug_piper_gripper.py       Pure fake-SDK unit coverage for gripper feedback, CAN IDs and no-zero command construction
 ├── start_gui.sh                     Native real-arm GUI launcher
 ├── fastdds_gui_udp_only.xml         Foxy GUI/scan loopback-only UDP profile; disables stale shared-memory graph transport
 ├── enable_piper.sh / disable_piper.sh  Explicit software motor control
-├── piper_gui_native.py              Production RunTargetScan client UI plus read-only mission/perception diagnostics and explicitly separated manual/home-profile/RViz-preview commissioning controls; owns no production scan children, phase transitions, plan approvals, retries, replans or autonomous shutdown
+├── piper_gui_native.py              Production RunTargetScan client UI plus read-only mission/perception diagnostics and explicitly separated manual/home-profile/RViz-preview commissioning controls; commissioning motion starts publisher-locked until sole ownership is proved and explicit no-home disable sends no motion; owns no production scan children, phase transitions, plan approvals, retries, replans or autonomous shutdown
 ├── piper_gui_automation.py          Archived side-effect-free pre-Phase-8 GUI workflow characterization helpers; not imported by the production GUI
 ├── test_piper_gui_automation.py     Archived helper characterization plus Phase 8 native-GUI ownership assertions
 ├── test_piper_gui_phase8.py         Tk-free ViewModel/action-client/bootstrap and no-alternate-controller regressions
@@ -59,8 +61,8 @@ piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/surface_c
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/reconstruction_jobs.py - durable mesh job identity, base-home correlation and state transitions
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/process_supervisor.py - exact mission-owned process-group startup, health, generation logs and bounded policy-driven shutdown
 piper_ros_foxy/src/piper_mobile_manipulation/test/test_process_supervisor.py - fake-process startup/crash/escalation/repeated-generation/ownership regressions
-piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/safety_evaluator.py - pure named-mode safety decisions and bounded legacy shadow comparison records
-piper_ros_foxy/src/piper_mobile_manipulation/test/test_safety_evaluator.py - all-mode telemetry/authorization/planner/motor/disagreement regressions
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/safety_evaluator.py - pure named immutable runtime evidence policies; no ROS, thresholds, telemetry evaluation or second permission authority
+piper_ros_foxy/src/piper_mobile_manipulation/test/test_safety_evaluator.py - all-mode named-policy boundary and immutability regressions
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/plan_authorizer.py - pure exact plan/mission authorization decisions
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/trajectory_runner.py - pure authorized trajectory schedule and monitoring decisions
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/capture_coordinator.py - pure settled RGB-D handoff and bounded retry policy

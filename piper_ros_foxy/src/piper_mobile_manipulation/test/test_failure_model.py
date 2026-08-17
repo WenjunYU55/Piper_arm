@@ -142,6 +142,17 @@ def test_return_home_blocker_is_machine_data_not_reparsed_detail():
         == 'arm status'
 
 
+@pytest.mark.parametrize('detail', [
+    'trajectory waypoint did not reach target',
+    'SDK MoveJ waypoint made no measurable joint progress before timeout',
+])
+def test_motion_execution_failure_does_not_suppress_fresh_home_attempt(detail):
+    failure = legacy_failure_adapter(detail)
+
+    assert not failure.has(FailureTag.RETURN_HOME_BLOCKED)
+    assert failure.blocker == ''
+
+
 def test_gui_recovery_blocker_is_machine_data_not_reparsed_detail():
     failure = Failure(
         code=FailureCode.CONTROL_UNTRUSTWORTHY,

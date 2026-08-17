@@ -1,6 +1,6 @@
 schema_version: 1
 document: consolidated_problem_and_incident_log
-last_reviewed: '2026-08-16'
+last_reviewed: '2026-08-17'
 purpose: >-
   Durable, concise index of the material hardware, software, integration and
   operational problems encountered while building the PiPER target-scanning
@@ -81,18 +81,42 @@ current_snapshot_2026_08_11:
 
 problem_groups:
   hardware_and_motion_safety:
+    - id: failure_reason_blocked_fresh_home_and_hold_blocked_disable_2026_08_17
+      status: physical_validation_pending
+      symptom: A controllable mission failure could remain powered instead of attempting the formerly reliable staged-home path; the executor also emitted 15881 identical RETURN_HOME shadow disagreements in one log.
+      root_cause: MissionEngine pre-classified the old scan failure before requesting fresh direct home, a redundant final-hold acknowledgement was treated as a disable prerequisite, runtime gate callers assembled ten interacting booleans, and an unused duplicate shadow evaluator remained active.
+      correction: Every owned failure now enters MissionEngine shutdown and fresh PRE_HOME/ROUGH_HOME/STORAGE_WRIST qualification unless current motor authority is lost. Autonomous startup and terminal shutdown no longer call the redundant hold service; a proved position-controller target is retained until confirmed disable. RuntimeGatePolicy supplies one named gate configuration; frozen mission copies and the duplicate shadow evaluator are removed.
+      evidence: [docs/ai/30-contracts.yaml, docs/ai/40-flows.yaml, docs/ai/50-guardrails.yaml, test_mission_engine.py, test_scan_motion.py, test_safety_evaluator.py]
+    - id: stale_startup_j6_watchdog_defeated_commissioning_enable_2026_08_16
+      status: software_fixed_physical_validation_pending
+      symptom: After an incomplete startup and explicit disable, later Commissioning Enable appeared to enable and immediately disable repeatedly.
+      root_cause: The driver retained STARTUP_WRIST active state and its 3.647663-rad direction high-water mark across disable; ordinary disabled wrist relaxation toward 3.006090 rad was misclassified as forbidden powered negative motion.
+      correction: Clear the incomplete startup target, direction integrator, high-water mark and continuous logical feedback after a proved explicit disable or direction-watchdog trip. The next coherent feedback sample independently re-arms a valid unfinished negative branch.
+      evidence: [/run/user/1000/piper_target_scan_logs/driver.log, piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py, piper_ros_foxy/src/piper/test/test_enable_handshake.py]
     - id: startup_hold_clipped_extended_j6_2026_08_16
       status: physical_validation_pending
       symptom: A five-percent mission enabled successfully but failed its first hold because measured J6 -3.459665 rad was compared with a clipped -pi reference; terminal pre-home then rejected the same start as 0.318072 rad outside the generic 0.3-rad allowance.
       root_cause: The mission hold and executor generic direct-home feedback gate did not share the driver-owned extended negative STARTUP_WRIST coordinate contract.
-      correction: The startup hold now settles against exact measured feedback, and STARTUP_WRIST alone uses the existing hard minus-240-degree branch while the ordinary 0.3-rad direct-home tolerance remains unchanged. No scan trajectory ran; the arm remained fault-free in an enabled hold and requires guarded operator recovery before restart.
+      correction: The startup hold publishes the exact measured extended-J6 command and requires acknowledgement plus fresh finite feedback, but no longer imposes a separate 0.005-rad position-window mission gate. STARTUP_WRIST alone retains the hard minus-240-degree branch. No scan trajectory ran; the arm remained fault-free in an enabled hold and requires guarded operator recovery before restart.
       evidence: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_motion.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_scan_mission_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py]
+    - id: startup_wrist_stale_nonowned_joint_target_2026_08_16
+      status: software_fixed_physical_validation_pending
+      symptom: E2E task gui-sim-904111b0d41b48a6bd16a10d3c29f538 reached the J6 startup wrap bridge but aborted for no measurable progress with J2 still 0.056274344 rad from the executor's stale target. Recovery PRE_HOME was then rejected because STARTUP_WRIST remained armed; the mission returned NEEDS_OPERATOR, safe_shutdown=false and zero captures.
+      root_cause: The selected-feature reintegration restored the startup wrap and extended feedback range but omitted the archived executor stage-scope logic. The driver correctly replaced J1-J5 with its newest coherent feedback for the J6-only command, while the executor continued evaluating the old six-joint command target and inserted another hold before ROUGH_HOME.
+      correction: Restore exact authenticated STARTUP_WRIST handling only—refresh J1-J5 at each command boundary, evaluate waypoint progress/convergence and settle using J6 alone, retain the full measured sample for the next stage, and omit the intermediate hold. All other stages remain six-joint checked.
+      evidence: [/tmp/piper_target_scan_missions/results/gui-sim-904111b0d41b48a6bd16a10d3c29f538.json, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_reintegrated_features.py]
+    - id: commissioning_manual_and_disable_blocked_2026_08_16
+      status: software_fixed_physical_validation_pending
+      symptom: After the failed E2E run, commissioning Enable returned true but posted manual poses never moved. Commissioning Safe Disable then timed out saying its current-feedback hold did not settle.
+      root_cause: Driver logs prove every piper_native_gui command, including the GUI's disable hold, was rejected while stale STARTUP_WRIST authority remained. The running driver predated the transaction-reset rebuild. Independently, the GUI created its publisher immediately even while scan_viewpoint_executor remained a writer, and refused to call /enable_srv false until a strict 0.025/0.005-rad hold window passed.
+      correction: Start GUI commissioning motion without a publisher and acquire it only after an empty command-topic proof. Give explicit GUI commands a bounded unfinished-startup contract—measured-J6 hold with J1-J5 motion, or positive J6-only movement toward zero. Replace the misleading settle-gated commissioning disable with an explicitly labelled no-home/no-motion direct service request; preserve autonomous Cancel/Home unchanged.
+      evidence: [/run/user/1000/piper_target_scan_logs/driver.log, piper_gui_native.py, piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py, piper_ros_foxy/src/piper/test/test_enable_handshake.py, test_piper_gui_phase8.py, test_piper_gui_automation.py]
     - id: gripper_feedback_all_zero_2026_08_16
-      status: open
-      symptom: Manually moving the physical jaws produced no J7/J8 motion in ROS or RViz; 245 ROS samples and raw CAN 0x2A8 remained zero.
-      root_cause: The gripper feedback reports zero stroke/effort with disabled and not-homed status. The driver sends one enable after arm enable, whereas the SDK example uses clear-disable then enable; physical connection/controller state remains to be established.
-      correction: Do not infer jaw position or authorize manipulation from J7/J8. After safe arm recovery, test the gripper controller separately with a clear workspace and require fresh nonzero status/position feedback before changing production enable behavior.
-      evidence: [piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py, docs/ai/60-debt.yaml]
+      status: resolved_expected_position_control_absolute_reference_pending
+      symptom: The gripper now mechanically operates but is reported not stiff after enable; earlier J7/J8 ROS feedback appeared fixed at zero.
+      root_cause: EXPECTED POSITION CONTROL. J7's enable bit alone while J1-J6 were disabled did not energize useful motion, making the initial direct stiffness test invalid. Through the normal production sequence, all six arm motors enabled first, J7 opened from 0.28 to 9.66 mm at 0.5 N m, and the standard 0 mm/1.0 N m command held a compliant object at 4.48--4.76 mm with approximately 1.04 N m for five seconds. Feedback was live, no fault or override occurred, and final disable succeeded. Soft unloaded jaws at an already-satisfied target were therefore not evidence of failed torque.
+      correction: No production control change is required for this symptom. Keep the proved all-six-arm-before-J7 ordering, do not force enabled jaws or increase effort for subjective stiffness, and retain the existing disable order. Homing status is still false, so treat the absolute aperture datum as a separate manufacturer-procedure question and never reset/set zero automatically.
+      evidence: [tools/debug_piper_gripper.py, test_debug_piper_gripper.py, piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py, piper_ros_foxy/src/piper/test/test_enable_handshake.py, docs/ai/60-debt.yaml]
     - id: j5_table_contact_terminal_home_2026_08_11
       status: resolved
       symptom: The installed camera-holder/L515 assembly contacted the table during terminal home and J5 faulted.
@@ -115,13 +139,13 @@ problem_groups:
       status: contained
       symptom: STARTUP_WRIST increased negative-branch J6 toward zero and J6 asserted collision and driver-error feedback after about 0.091 rad.
       root_cause: Physical wrist/cable cause remains unresolved; the increasing direction was later confirmed to be the intended direction.
-      correction: The motor guard issued no later arm command, all axes disabled, and schema-v3 binds negative storage, increasing startup and decreasing terminal storage.
+      correction: The motor guard issued no later arm command, all axes disabled, and current schema-v4 binds terminal pre-home, negative storage, increasing startup and decreasing terminal storage.
       evidence: [docs/ai/00-index.yaml, docs/ai/60-debt.yaml]
     - id: startup_j6_direction_misdiagnosis
       status: superseded
       symptom: A temporary repair changed startup to the positive/decreasing branch after the collision.
       root_cause: Clockwise direction was interpreted incorrectly relative to controller coordinates.
-      correction: Positive/decreasing startup is forbidden; current schema-v3 uses the operator-confirmed increasing negative-to-zero direction.
+      correction: Positive/decreasing startup is forbidden; current schema-v4 uses the operator-confirmed increasing negative-to-zero direction.
       evidence: [docs/ai/00-index.yaml, docs/ai/50-guardrails.yaml]
     - id: j6_controller_zero_offset
       status: resolved
@@ -139,14 +163,20 @@ problem_groups:
       status: resolved
       symptom: Failure/cancel recovery reversed previously executed targets instead of moving from current feedback directly to configured home.
       root_cause: Legacy approved-path retrace was being used as home authority.
-      correction: Automatic cleanup now holds, obtains fresh measured state and requests dedicated direct ROUGH_HOME then STORAGE_WRIST transactions.
+      correction: Automatic cleanup now acknowledges a measured hold, obtains fresh finite state and requests dedicated direct PRE_HOME, ROUGH_HOME then STORAGE_WRIST native MoveJ transactions without the Tesseract worker.
       evidence: [docs/ai/30-contracts.yaml, docs/ai/50-guardrails.yaml]
     - id: home_disabled_before_position_proof
       status: resolved
       symptom: Some failure paths could proceed toward disable without proving configured home and stable hold.
       root_cause: Terminal result handling and action-status races were incomplete.
-      correction: Home-stage action result, feedback convergence, stable hold, six-axis disable and exact child cleanup are mandatory and correlated.
+      correction: Home-stage action result, operator-authorized 0.3-rad per-joint feedback acceptance for one second, six-axis disable and exact child cleanup are mandatory and correlated. No redundant autonomous hold service is called between the proved final home target and disable.
       evidence: [docs/ai/40-flows.yaml, docs/ai/50-guardrails.yaml]
+    - id: gui_home_recording_erased_pre_home_2026_08_16
+      status: resolved
+      symptom: The GUI showed no pre-home recording button, and recording either rough/ready home or storage J6 could silently erase the valid shutdown-only pre-home from schema-v4.
+      root_cause: Both single-stage save calls omitted pre_home_positions_rad and save_home_pose correctly interpreted the omission as pre_home_configured=false.
+      correction: Add Record Pre-Home (Shutdown Only), display its six joints, and preserve every unaffected home stage whenever one stage is recorded.
+      evidence: [piper_gui_native.py, test_piper_gui_phase8.py, piper_home_pose.json]
     - id: configured_storage_self_collision_false_block
       status: resolved
       symptom: Conservative robot collision geometry rejected the intentionally supported stored fold.

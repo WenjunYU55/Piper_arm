@@ -309,13 +309,12 @@ class MissionSession:
     def shutdown_outcome(self):
         """Classify shutdown without ever equating process exit with safety."""
         if (
-                not self.current_hold_proved
-                or not self.return_home_proved
+                not self.return_home_proved
                 or not self.storage_wrist_proved
                 or not self.disabled_proved):
             return MissionPhase.NEEDS_OPERATOR, (
-                'settled current-position hold, verified home return, and '
-                'feedback-confirmed disable were not all proved')
+                'verified home return and feedback-confirmed disable were not '
+                'both proved')
         if not self.processes_stopped:
             return MissionPhase.FAILED, 'PiPER-owned processes did not all stop'
         return MissionPhase.FAILED, self.reason
@@ -324,8 +323,7 @@ class MissionSession:
                        mesh_job_id='', failure_code='', retryable=False,
                        action_summary=None):
         safe_shutdown = bool(
-            self.current_hold_proved and self.return_home_proved
-            and self.storage_wrist_proved
+            self.return_home_proved and self.storage_wrist_proved
             and self.disabled_proved
             and self.processes_stopped)
         payload = {

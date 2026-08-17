@@ -231,3 +231,48 @@ def test_native_gui_has_no_production_process_or_scan_controller_logic():
     assert 'ApproveScanExecution' not in source
     assert 'RequestTesseractPlan' not in source
     assert '/scan_viewpoint_executor/cancel' not in source
+
+
+def test_native_gui_exposes_all_staged_home_recording_controls():
+    source = open('piper_gui_native.py', encoding='utf-8').read()
+
+    assert 'Record Rough / Ready Home' in source
+    assert 'Record Pre-Home (Shutdown Only)' in source
+    assert 'Record Current J6 as Storage' in source
+
+
+def test_native_gui_preserves_pre_home_when_other_stages_are_recorded():
+    source = open('piper_gui_native.py', encoding='utf-8').read()
+
+    assert 'pre_home_positions_rad=existing_pre_home' in source
+    assert "pre_home_positions_rad=profile.get(" in source
+
+
+def test_commissioning_disable_calls_feedback_proved_service_without_hold_gate():
+    source = open('piper_gui_native.py', encoding='utf-8').read()
+    request_source = source.split(
+        '    def request_safe_disable(self) -> None:', 1)[1].split(
+        '    def use_feedback(self) -> None:', 1)[0]
+
+    assert 'call_enable_async(False)' in request_source
+    assert 'publish_joint_target' not in request_source
+    assert '_poll_safe_disable_settle' not in source
+    assert 'current-feedback hold did not settle' not in source
+    assert 'Commissioning Disable (No Home)' in source
+
+
+def test_commissioning_motion_starts_locked_until_graph_ownership_is_proved():
+    source = open('piper_gui_native.py', encoding='utf-8').read()
+    ros_init = source.split('class PiperGuiRos(Node):', 1)[1].split(
+        '    def feedback_callback', 1)[0]
+    restore = source.split(
+        '    def _restore_manual_controls_if_unowned(self):', 1)[1].split(
+        '    def report_tracked_robot_homed', 1)[0]
+
+    assert 'self.manual_commands_enabled = False' in ros_init
+    assert 'self.enable_manual_command_publisher()' not in ros_init
+    assert 'self.enable_button.configure(state="disabled")' in source
+    assert 'self.set_manual_motion_enabled(False)' in source
+    assert 'resolution_timeout_sec=0.5' in restore
+    assert 'disable_manual_command_publisher()' in restore
+    assert 'explicit no-home Disable remains available' in restore

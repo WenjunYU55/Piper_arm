@@ -1,5 +1,16 @@
 # Final refactor architecture
 
+> 2026-08-17 update: the later integration simplification made
+> `MissionEngine` the sole mission/shutdown authority, removed the uncalled
+> frozen mission bodies, and replaced the duplicate shadow evaluator with the
+> small immutable `RuntimeGatePolicy` mapping. Direct home now re-qualifies
+> from current arm/control evidence on every owned controllable failure; only
+> confirmed motor-control loss suppresses commands. This post-audit change is
+> software-tested (609 mobile tests, 82 affected driver/GUI/diagnostic tests,
+> changed-file lint clean, normal five-package Foxy build) but requires
+> supervised physical requalification. Historical package-wide lint debt
+> remains outside the changed files.
+
 ## Scope
 
 This is the Phase 10 architecture after the behavior-preserving Phase 0--9
@@ -21,7 +32,7 @@ algorithm, or Tesseract behavior changed during Phase 10.
 | `mission_core.py` | Mission phases, session state, queue/deduplication records, and result primitives. |
 | `mission_engine.py` | The admitted autonomous mission sequence and terminal shutdown sequence. |
 | `process_supervisor.py` | Exact owned-process generations, environment construction, health checks, reverse-order group shutdown, and shutdown reports. |
-| `safety_evaluator.py` | Pure named-mode safety evaluation and structured legacy/shadow comparison. It remains shadow-only. |
+| `safety_evaluator.py` | Pure named immutable runtime-gate policy mapping. It contains no ROS, thresholds, telemetry evaluator, command or second permission authority. |
 | `plan_authorizer.py` | Exact mission/plan identity, expiry, target drift, dependency evidence, typed authorization decisions, and configured-home stage/endpoint policy. |
 | `trajectory_runner.py` | Pure scheduling and feedback decisions for one already-authorized Tesseract trajectory. |
 | `capture_coordinator.py` | Settling-to-capture sequencing and typed capture retry/replacement/abort decisions. |
@@ -74,7 +85,7 @@ MissionEngine  ---> typed configuration / failures / cancellation / session
                          +---> TrajectoryRunner
                          +---> CaptureCoordinator
                          +---> RecoveryPolicy
-                         +---> SafetyEvaluator (shadow comparison only)
+                         +---> RuntimeGatePolicy (named evidence categories)
                          |
                          v
               driver / Tesseract / perception / capture
@@ -91,21 +102,25 @@ mechanics; it has no ROS or mission-policy authority.
 
 `MissionEngine` owns the established sequence: startup, readiness, enable,
 startup wrist, rough home, acquisition, target lock, occlusion probe,
-view planning/capture iteration, terminal pre-home, rough home, storage wrist, final hold,
-disable, process cleanup, and result classification. The mission ROS node owns
+view planning/capture iteration, terminal pre-home, rough home, storage wrist,
+the status-only `HOLDING` compatibility phase, disable, process cleanup, and
+result classification. Autonomous startup/shutdown does not call the redundant
+hold service. The mission ROS node owns
 admission, queuing, action mechanics, durable boundaries, and calls to concrete
 ROS dependencies. It must not grow a second workflow.
 
 ### Safety ownership
 
-The existing executor gates remain authoritative. `SafetyEvaluator` evaluates
-the same named contexts from explicit snapshots and records structured
-agreements/disagreements, but cannot authorize or reject motion. Tesseract
+The executor gates remain authoritative. `RuntimeGatePolicy` selects one
+complete named evidence profile so call sites cannot assemble contradictory
+boolean combinations; it does not evaluate or authorize motion itself. Tesseract
 retains IK/collision/path authority; the executor retains live identity,
 telemetry, limit, attached-tool, target, timing, and command-publication gates;
 the driver retains low-level all-axis enable/fault watchdog authority. Return
-home retains its narrowly scoped, hash-bound self-collision exception and all
-other documented proofs.
+home retains its narrowly scoped self-collision exception, live control,
+configured target/stage, attached-tool external-clearance and convergence
+proofs. It does not depend on moving-camera perception or a Tesseract
+controller-limit hash.
 
 ### Process ownership
 
@@ -152,12 +167,8 @@ their callback, configuration, or synchronization ownership differs.
 
 The following apparent cleanup candidates are intentionally retained:
 
-- `_legacy_run_pipeline` and `_legacy_safe_shutdown`, because Phase 1
-  equivalence tests call them and the documented supervised-trace removal gate
-  has not been met;
 - `latest_*` and executor receipt-time mirrors still consumed by diagnostics
   and characterization seams;
-- legacy safety checks while `SafetyEvaluator` remains shadow-only;
 - `ManagedProcessSet` and configuration exports used by compatibility tests;
 - `piper_gui_automation.py`, retained as archived Phase 1 characterization for
   the review period specified in `docs/ai/60-debt.yaml`;
@@ -168,10 +179,16 @@ The following apparent cleanup candidates are intentionally retained:
 ## Change rule after Phase 10
 
 New behavior belongs in the owner above and must preserve dependency direction.
+The uncalled `_legacy_run_pipeline`/`_legacy_safe_shutdown` bodies and duplicate
+`SafetyEvaluator`/`SafetyComparisonLogger` were removed on 2026-08-17 after
+reference search and focused characterization; their public compatibility
+delegates and the one authoritative executor gate remain.
+
 Removing a retained compatibility surface requires satisfying its explicit
 evidence gate in `docs/ai/60-debt.yaml`, updating `docs/ai`, and rerunning the
-linked characterization, build, and command-free planning checks. Phase 10 does
-not authorize the Phase 5 safety authority switch or further workflow redesign.
+linked characterization, build, and command-free planning checks. The
+2026-08-17 policy cleanup did not promote a new safety authority; it removed
+the unused duplicate and requires separate physical requalification.
 
 ## Phase 10 validation record
 

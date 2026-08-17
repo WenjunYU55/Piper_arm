@@ -8,12 +8,15 @@ import pytest
 from piper.piper_ctrl_single_node import (
     controller_motion_limits,
     DEFAULT_JOINT_BOUNDS,
+    format_gripper_feedback_diagnostic,
+    gripper_feedback_diagnostic,
     JOINT6_LIMIT_RAD,
     motor_driver_faults,
     motion_limits_sha256,
     PiperRosNode,
     motor_driver_enable_states,
     qualify_startup_joint6_controller_limit,
+    reset_startup_joint6_transaction,
     request_piper_enable_state,
 )
 
@@ -138,12 +141,78 @@ class FakeCommandPiper:
         self.joint_commands.append(command)
 
 
+class FakeGripperFeedbackPiper:
+    def __init__(self, timestamp=100.0, position_raw=40000,
+                 effort_raw=1000, enabled=True, homed=True, faults=()):
+        self.wrapper = SimpleNamespace(
+            time_stamp=timestamp,
+            Hz=200.0,
+            gripper_state=SimpleNamespace(
+                grippers_angle=position_raw,
+                grippers_effort=effort_raw,
+                foc_status=SimpleNamespace(
+                    driver_enable_status=enabled,
+                    homing_status=homed,
+                    **{
+                        field: field in faults
+                        for field in (
+                            'voltage_too_low', 'motor_overheating',
+                            'driver_overcurrent', 'driver_overheating',
+                            'sensor_status', 'driver_error_status')
+                    },
+                ),
+            ),
+        )
+
+    def GetArmGripperMsgs(self):
+        return self.wrapper
+
+
 class FakeCommandNode:
     def __init__(self):
         self.piper = FakeCommandPiper()
         self._command_cache_lock = threading.Lock()
         self._motion_ctrl_2_signature = None
         self._gripper_command_signature = None
+
+
+def test_gripper_diagnostic_reports_feedback_state_faults_and_units():
+    piper = FakeGripperFeedbackPiper(
+        faults=('voltage_too_low', 'driver_error_status'))
+
+    diagnostic = gripper_feedback_diagnostic(
+        piper, wall_time_fn=lambda: 100.25)
+
+    assert diagnostic == {
+        'available': True,
+        'timestamp': 100.0,
+        'age_sec': 0.25,
+        'hz': 200.0,
+        'position_raw': 40000,
+        'effort_raw': 1000,
+        'enabled': True,
+        'homed': True,
+        'faults': ('voltage_too_low', 'driver_error_status'),
+    }
+    formatted = format_gripper_feedback_diagnostic(diagnostic)
+    assert 'position=40000(40.000mm)' in formatted
+    assert 'effort=1000(1.000Nm)' in formatted
+    assert 'enabled=True' in formatted
+    assert 'faults=voltage_too_low,driver_error_status' in formatted
+
+
+def test_gripper_diagnostic_does_not_treat_sdk_default_as_live_feedback():
+    piper = FakeGripperFeedbackPiper(
+        timestamp=0.0, position_raw=0, effort_raw=0,
+        enabled=False, homed=False)
+
+    diagnostic = gripper_feedback_diagnostic(
+        piper, wall_time_fn=lambda: 100.0)
+
+    assert diagnostic['available'] is False
+    assert math.isinf(diagnostic['age_sec'])
+    assert format_gripper_feedback_diagnostic(
+        diagnostic) == 'feedback=NO_FEEDBACK'
 
 
 def test_removed_driver_compatibility_inputs_do_not_return():
@@ -423,6 +492,71 @@ def test_disable_requires_every_motor_feedback_flag_to_clear():
         piper, False, 1.0, clock.monotonic, clock.sleep)
     assert piper.disable_calls == 2
     assert clock.now == 0.01
+
+
+def test_proved_disable_clears_incomplete_j6_startup_watchdog_state():
+    piper = FakePiper(disable_results=[False])
+    piper.states = [True] * 6
+    node = SimpleNamespace(
+        piper=piper,
+        enable_timeout=0.1,
+        gripper_exist=False,
+        _PiperRosNode__enable_flag=True,
+        _disable_required=False,
+        _enable_transition_active=False,
+        _enable_transition_lock=threading.Lock(),
+        _startup_joint6_active=True,
+        _startup_joint6_armed=True,
+        _startup_joint6_last_target=-3.08,
+        _startup_joint6_last_controller_target=3.2,
+        _startup_joint6_direction_previous_raw=3.64,
+        _startup_joint6_direction_unwrapped=3.64,
+        _startup_joint6_direction_high_water=3.64,
+        _continuous_joint6_feedback=-2.64,
+        reset_command_cache=lambda: None,
+        send_gripper_if_changed=lambda *_args: None,
+        get_logger=lambda: SimpleNamespace(
+            info=lambda _message: None,
+            error=lambda _message: None,
+            fatal=lambda _message: None,
+        ),
+    )
+    request = SimpleNamespace(enable_request=False)
+    response = SimpleNamespace(enable_response=None)
+
+    PiperRosNode.handle_enable_service(node, request, response)
+
+    assert response.enable_response is True
+    assert piper.states == [False] * 6
+    assert node._startup_joint6_active is False
+    assert node._startup_joint6_armed is False
+    assert node._startup_joint6_direction_previous_raw is None
+    assert node._startup_joint6_direction_high_water is None
+    assert node._continuous_joint6_feedback is None
+
+
+def test_startup_reset_allows_next_feedback_generation_to_rearm_cleanly():
+    node = SimpleNamespace(
+        _startup_joint6_active=True,
+        _startup_joint6_armed=True,
+        _startup_joint6_last_target=-3.08,
+        _startup_joint6_last_controller_target=3.2,
+        _startup_joint6_direction_previous_raw=3.64,
+        _startup_joint6_direction_unwrapped=3.64,
+        _startup_joint6_direction_high_water=3.64,
+        _continuous_joint6_feedback=-2.64,
+    )
+
+    reset_startup_joint6_transaction(node)
+
+    assert node._startup_joint6_active is False
+    assert node._startup_joint6_armed is False
+    assert node._startup_joint6_last_target is None
+    assert node._startup_joint6_last_controller_target is None
+    assert node._startup_joint6_direction_previous_raw is None
+    assert node._startup_joint6_direction_unwrapped is None
+    assert node._startup_joint6_direction_high_water is None
+    assert node._continuous_joint6_feedback is None
 
 
 def test_enable_times_out_without_positive_feedback():
@@ -712,6 +846,126 @@ def test_startup_joint6_explicit_hold_uses_measured_raw_coordinate():
     assert node._startup_joint6_armed
     assert not node._startup_joint6_active
     assert node._startup_joint6_last_target is None
+
+
+def test_commissioning_can_hold_startup_j6_while_moving_other_joints():
+    class CommissioningNode(FakeCommandNode):
+        enforce_joint_bound = PiperRosNode.enforce_joint_bound
+        get_joint_value = PiperRosNode.get_joint_value
+        get_joint_velocity = PiperRosNode.get_joint_velocity
+        get_joint_effort = PiperRosNode.get_joint_effort
+        send_motion_ctrl_2_if_changed = PiperRosNode.send_motion_ctrl_2_if_changed
+        send_gripper_if_changed = PiperRosNode.send_gripper_if_changed
+
+        def __init__(self):
+            super().__init__()
+            self.joint_bounds = dict(DEFAULT_JOINT_BOUNDS)
+            self.gripper_exist = False
+            self._startup_joint6_finished = False
+            self._startup_joint6_armed = True
+            self._startup_joint6_active = False
+            self._startup_joint6_last_target = None
+            self._raw_joint6_feedback = 3.071260
+            self._published_joint6_feedback = 3.071260 - 2.0 * math.pi
+            self._latest_raw_arm_positions = (
+                0.0, 0.0, 0.0, 0.0, 0.4, 3.071260)
+            self.errors = []
+            self.logger = SimpleNamespace(
+                debug=lambda *_args: None,
+                info=lambda *_args: None,
+                warn=lambda *_args: None,
+                error=self.errors.append,
+            )
+
+        def GetEnableFlag(self):
+            return True
+
+        def get_logger(self):
+            return self.logger
+
+    node = CommissioningNode()
+    measured_logical_j6 = node._published_joint6_feedback
+    command = SimpleNamespace(
+        header=SimpleNamespace(frame_id='piper_native_gui'),
+        name=['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6'],
+        position=[0.2, 0.1, -0.1, 0.15, 0.3, measured_logical_j6],
+        velocity=[0.0] * 5 + [5.0],
+        effort=[],
+    )
+
+    PiperRosNode.joint_callback(node, command)
+
+    factor = 57324.840764
+    assert node.errors == []
+    assert len(node.piper.joint_commands) == 1
+    assert node.piper.joint_commands[-1][0] == round(0.2 * factor)
+    assert node.piper.joint_commands[-1][3] == round(0.15 * factor)
+    assert node.piper.joint_commands[-1][5] == round(3.071260 * factor)
+
+
+def test_commissioning_startup_j6_is_positive_only_and_j6_only():
+    class CommissioningNode(FakeCommandNode):
+        enforce_joint_bound = PiperRosNode.enforce_joint_bound
+        get_joint_value = PiperRosNode.get_joint_value
+        get_joint_velocity = PiperRosNode.get_joint_velocity
+        get_joint_effort = PiperRosNode.get_joint_effort
+        send_motion_ctrl_2_if_changed = PiperRosNode.send_motion_ctrl_2_if_changed
+        send_gripper_if_changed = PiperRosNode.send_gripper_if_changed
+
+        def __init__(self):
+            super().__init__()
+            self.joint_bounds = dict(DEFAULT_JOINT_BOUNDS)
+            self.gripper_exist = False
+            self._startup_joint6_finished = False
+            self._startup_joint6_armed = True
+            self._startup_joint6_active = False
+            self._startup_joint6_last_target = None
+            self._startup_joint6_last_controller_target = None
+            self._raw_joint6_feedback = 3.071260
+            self._published_joint6_feedback = 3.071260 - 2.0 * math.pi
+            self._latest_raw_arm_positions = (
+                0.01, 0.02, -0.03, 0.04, 0.4, 3.071260)
+            self.errors = []
+            self.logger = SimpleNamespace(
+                debug=lambda *_args: None,
+                info=lambda *_args: None,
+                warn=lambda *_args: None,
+                error=self.errors.append,
+            )
+
+        def GetEnableFlag(self):
+            return True
+
+        def get_logger(self):
+            return self.logger
+
+    node = CommissioningNode()
+    command = SimpleNamespace(
+        header=SimpleNamespace(frame_id='piper_native_gui'),
+        name=['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6'],
+        position=[0.5, 0.5, -0.5, 0.5, 0.5, 0.0],
+        velocity=[0.0] * 5 + [5.0],
+        effort=[],
+    )
+
+    PiperRosNode.joint_callback(node, command)
+
+    factor = 57324.840764
+    assert node.errors == []
+    assert len(node.piper.joint_commands) == 1
+    assert node.piper.joint_commands[-1][:5] == tuple(
+        round(value * factor) for value in node._latest_raw_arm_positions[:5])
+    assert node.piper.joint_commands[-1][5] == round(
+        (2.0 * math.pi) * factor)
+
+    node.piper.joint_commands.clear()
+    command.position[5] = node._published_joint6_feedback - 0.1
+    PiperRosNode.joint_callback(node, command)
+    assert node.piper.joint_commands == []
+    assert 'positive direction toward ready zero' in node.errors[-1]
+    assert node._startup_joint6_armed
+    assert node._startup_joint6_active
+    assert node._startup_joint6_last_target == 0.0
 
 
 def test_normal_joint6_command_retains_completed_startup_turn_offset():

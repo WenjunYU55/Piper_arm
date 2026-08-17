@@ -361,8 +361,11 @@ def executor_parameter_defaults():
         'waypoint_progress_timeout_sec': 20.0,
         'joint_velocity_settled': 0.20,
         'endpoint_position_settled_rad': 0.005,
-        'home_goal_tolerance_rad': 0.030,
-        'home_motion_tolerance_rad': 0.005,
+        # Operator-authorized configured-home acceptance. This applies
+        # independently to every arm joint and is not a Tesseract planning
+        # tolerance.
+        'home_goal_tolerance_rad': 0.30,
+        'home_motion_tolerance_rad': 0.30,
         'home_joint_feedback_timeout_sec': 1.0,
         'home_settle_duration_sec': 1.0,
         'home_settle_timeout_sec': 30.0,

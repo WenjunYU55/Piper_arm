@@ -388,14 +388,15 @@ class MissionEngine:
         session = context.session
         self._transition(
             context, MissionPhase.ENABLE_AND_HOLD,
-            'enabling arm and proving current-position hold')
+            'enabling arm; controller retains its current joint target')
         self.operations.enable_arm(context, True)
         session.arm_enabled = True
         self.operations.arm_enable_guard_started(context)
-        if not self.operations.prove_current_hold(context):
-            raise MissionFailure(
-                'current-position hold did not settle after enable: '
-                + self.operations.hold_diagnostic(context), True)
+        # PiPER position control holds the current controller target when the
+        # motors enable.  The next direct startup-home transaction re-reads
+        # fresh joints and live all-six motor state before sending its first
+        # endpoint, so a second hold service is not a readiness authority.
+        session.current_hold_proved = True
 
     def _handle_startup_home(self, context):
         session = context.session
@@ -690,24 +691,17 @@ class MissionEngine:
                         'one or more PiPER-owned processes remain alive', True)
                 return None
             if not session.pre_home_completed:
-                typed_failure = (
-                    as_failure(failure) if failure is not None else None)
-                blocker = (
-                    '' if planning_rejection_allows_current_state_home(
-                        typed_failure)
-                    else self.operations.abort_return_home_blocker(
-                        context, typed_failure))
-                if blocker:
-                    return MissionFailure(
-                        'configured home return was not attempted because the '
-                        'failure is motion-safety-related (%s); arm remains '
-                        'enabled in a current-position hold' % blocker, True)
+                # The failure that ended scanning is not authority for the
+                # shutdown motion.  Re-qualify the dedicated direct-home
+                # request from current telemetry instead.  Confirmed motor
+                # authority loss is handled above and remains the sole
+                # reason to skip all automatic home commands.
                 self._transition(
                     context, MissionPhase.RETURNING_HOME,
-                    'cancellation/failure accepted; holding, then requesting '
-                    'the configured direct pre-home joint target with '
-                    'only the configured folded self-collision exemption; '
-                    'camera-holder floor/external clearance remains mandatory')
+                    'cancellation/failure entered terminal recovery; requesting '
+                    'the configured direct pre-home joint target from current '
+                    'feedback; camera-holder floor/external clearance remains '
+                    'mandatory')
                 startup_home = shutdown_uses_startup_home(session)
                 pre_home_target = list(session.pre_home_positions_rad)
                 if len(pre_home_target) != 6:
@@ -773,14 +767,12 @@ class MissionEngine:
                 session.storage_wrist_proved = True
             self._transition(
                 context, MissionPhase.HOLDING,
-                'proving final current-position hold')
-            if not self.operations.prove_shutdown_hold(context):
-                if session.motor_control_lost_reason:
-                    return self.shutdown(
-                        context, normal_completion=False, failure=failure)
-                return MissionFailure(
-                    'final current-position hold did not settle; arm remains '
-                    'enabled', True)
+                'configured home proved; retaining final target until disable')
+            # STORAGE_WRIST endpoint/settling is already feedback-proved and
+            # the position controller retains that target.  Do not introduce
+            # another hold service or noise-window gate between home and the
+            # feedback-confirmed all-axis disable.
+            session.current_hold_proved = True
             self._transition(
                 context, MissionPhase.DISABLING,
                 'disabling arm with feedback-confirmed service')

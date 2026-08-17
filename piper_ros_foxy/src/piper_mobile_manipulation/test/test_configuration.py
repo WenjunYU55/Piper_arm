@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from piper_mobile_manipulation.configuration import (
     CaptureConfig,
@@ -88,8 +89,8 @@ LEGACY_EXECUTOR_DEFAULTS = {
     'waypoint_progress_timeout_sec': 20.0,
     'joint_velocity_settled': 0.20,
     'endpoint_position_settled_rad': 0.005,
-    'home_goal_tolerance_rad': 0.030,
-    'home_motion_tolerance_rad': 0.005,
+    'home_goal_tolerance_rad': 0.30,
+    'home_motion_tolerance_rad': 0.30,
     'home_joint_feedback_timeout_sec': 1.0,
     'home_settle_duration_sec': 1.0,
     'home_settle_timeout_sec': 30.0,
@@ -135,6 +136,18 @@ LEGACY_EXECUTOR_DEFAULTS = {
     'allow_mission_policy': False,
     'debug': True,
 }
+
+
+def test_deployed_home_acceptance_matches_typed_configuration_defaults():
+    path = Path(__file__).parents[1] / 'config' / 'scan_execution_params.yaml'
+    with path.open(encoding='utf-8') as stream:
+        deployed = yaml.safe_load(stream)['/**']['ros__parameters']
+
+    defaults = executor_parameter_defaults()
+    assert deployed['home_goal_tolerance_rad'] == \
+        defaults['home_goal_tolerance_rad'] == 0.30
+    assert deployed['home_motion_tolerance_rad'] == \
+        defaults['home_motion_tolerance_rad'] == 0.30
 
 
 class FakeParameterNode:

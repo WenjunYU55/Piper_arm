@@ -114,6 +114,10 @@ class FakeMissionOperations:
     def transition(self, context, phase, _reason):
         context.session.transition(phase, str(_reason), now=0.0)
         self.phase_trace.append(MissionPhase(phase).value)
+        if (
+                MissionPhase(phase) is MissionPhase.HOLDING
+                and self.terminal_cancel_stage == 'holding'):
+            context.cancellation.cancel('cancel during holding')
 
     def progress(self, _context, _reason):
         pass
@@ -335,7 +339,7 @@ def test_successful_engine_matches_frozen_legacy_phase_sequence():
 @pytest.mark.parametrize('stage', [
     'starting',
     'preflight',
-    'enable_hold',
+    'enable',
     'startup_home',
     'acquisition',
     'target_lock',
@@ -358,10 +362,75 @@ def test_major_phase_failures_use_the_existing_shutdown(stage):
         assert context.session.disabled_proved
 
 
+def test_original_failure_cannot_prevent_fresh_direct_home_qualification():
+    class Operations(FakeMissionOperations):
+        @staticmethod
+        def abort_return_home_blocker(_context, _failure):
+            raise AssertionError(
+                'the original scan failure must not own direct-home safety')
+
+    operations = Operations()
+    operations.failure_stage = 'capture'
+
+    operations, context, result = _execute(operations)
+
+    assert not result.succeeded
+    assert context.session.pre_home_completed
+    assert context.session.return_home_proved
+    assert context.session.storage_wrist_proved
+    assert context.session.disabled_proved
+    assert operations.events.index('pre_home') < operations.events.index(
+        'disable')
+
+
+def test_autonomous_path_does_not_call_redundant_hold_services():
+    class Operations(FakeMissionOperations):
+        def prove_current_hold(self, context):
+            raise AssertionError('startup hold service must not be called')
+
+        def prove_shutdown_hold(self, context):
+            raise AssertionError('shutdown hold service must not be called')
+
+    operations, context, result = _execute(Operations())
+
+    assert result.succeeded
+    assert context.session.current_hold_proved
+    assert context.session.return_home_proved
+    assert context.session.storage_wrist_proved
+    assert context.session.disabled_proved
+    assert context.session.processes_stopped
+    assert operations.phase_trace.index('HOLDING') < \
+        operations.phase_trace.index('DISABLING')
+
+
+def test_confirmed_motor_authority_loss_remains_the_only_no_home_path():
+    class Operations(FakeMissionOperations):
+        def wait_for_execution(
+                self, context, successes, _timeout, _failures):
+            if 'ACQUIRED' in successes:
+                context.session.motor_control_lost_reason = 'J5 disabled'
+                raise MissionFailure(
+                    'motor control became untrustworthy',
+                    needs_operator=True,
+                    failure_code='CONTROL_UNTRUSTWORTHY',
+                    retryable=False)
+            return super().wait_for_execution(
+                context, successes, _timeout, _failures)
+
+    operations, context, result = _execute(Operations())
+
+    assert not result.succeeded
+    assert result.outcome == 'NEEDS_OPERATOR'
+    assert not any(stage in operations.events for stage in (
+        'pre_home', 'return_home', 'storage_wrist'))
+    assert context.session.disabled_proved
+    assert context.session.processes_stopped
+
+
 @pytest.mark.parametrize('stage', [
     'starting',
     'preflight',
-    'enable_hold',
+    'enable',
     'startup_home',
     'acquisition',
     'target_lock',
@@ -397,7 +466,7 @@ def test_terminal_cancellation_does_not_interrupt_committed_shutdown(stage):
 
 
 @pytest.mark.parametrize('stage', [
-    'pre_home', 'return_home', 'storage_wrist', 'holding', 'disable', 'stopping',
+    'pre_home', 'return_home', 'storage_wrist', 'disable', 'stopping',
 ])
 def test_each_terminal_failure_retains_needs_operator_policy(stage):
     operations = FakeMissionOperations()
@@ -407,7 +476,7 @@ def test_each_terminal_failure_retains_needs_operator_policy(stage):
 
     assert result.outcome == 'NEEDS_OPERATOR'
     assert not result.succeeded
-    if stage in ('pre_home', 'return_home', 'storage_wrist', 'holding'):
+    if stage in ('pre_home', 'return_home', 'storage_wrist'):
         assert context.session.arm_enabled
         assert not context.session.disabled_proved
 

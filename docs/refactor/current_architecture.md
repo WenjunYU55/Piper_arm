@@ -1,5 +1,10 @@
 # Current architecture baseline
 
+> Baseline document. For the current post-refactor ownership and the
+> user-authorized 2026-08-17 mission-shutdown/runtime-gate simplification, read
+> `docs/refactor/final_architecture.md` and `docs/ai/10-system-map.yaml` first.
+> The Phase 5 shadow evaluator described below no longer exists.
+
 ## Scope and provenance
 
 This document freezes the observable architecture at commit

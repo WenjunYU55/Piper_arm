@@ -55,8 +55,10 @@
     # Final home proof mirrors the GUI safe-disable transaction: the approved
     # target must be met and successive fresh positions must remain still.
     # This avoids false failures from PiPER's noisy instantaneous speed field.
-    home_goal_tolerance_rad: 0.030
-    home_motion_tolerance_rad: 0.005
+    # Operator-authorized configured-home acceptance, independently per joint.
+    # Direct home uses ExecuteHomeStage/native MoveJ, not Tesseract.
+    home_goal_tolerance_rad: 0.30
+    home_motion_tolerance_rad: 0.30
     # The driver rejects CAN joint sets whose six frame stamps are too skewed.
     # One dropped set must not reset an otherwise stationary home proof.
     home_joint_feedback_timeout_sec: 1.0

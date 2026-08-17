@@ -1,6 +1,6 @@
 schema_version: 1
 document: mission_goal_and_delivery_roadmap
-last_reviewed: '2026-08-11'
+last_reviewed: '2026-08-17'
 authority:
   purpose: >-
     This is the durable source of truth for the product goal, milestone order,
@@ -27,6 +27,12 @@ mission_goal: >-
   started, and returns a durable success/failure result to the tracked robot.
   After the tracked robot reports that its base is home, the system reconstructs
   and exposes a validated target mesh from the accepted observations.
+
+current_integration_status_2026_08_17:
+  status: software_complete_physical_pending
+  completed: [MissionEngine sole mission/shutdown authority, fresh direct-home qualification on every owned controllable failure, motor-loss-only no-command exception, named immutable executor runtime gates, redundant autonomous startup and terminal hold-service calls removed, obsolete frozen mission and duplicate shadow evaluator removed]
+  unchanged: [scan trajectory paths/timing/speed, Tesseract and perception algorithms, public ROS contracts, numeric limits and thresholds, TF/calibration, configured home targets]
+  next: Run full software/build/rootless qualifications, push the reviewed branch, then perform the supervised physical checklist beginning with staged direct home and one injected non-motor failure-to-home case.
 
 system_behavior_required:
   input:
@@ -62,7 +68,7 @@ system_behavior_required:
   terminal_behavior:
     - Success, controllable failure and manual Cancel/Home first stop and hold the measured current pose.
     - Request a fresh direct ROUGH_HOME target and then a direct J6-only STORAGE_WRIST target.
-    - Dedicated home stages never retrace an old path and intentionally bypass only robot self-collision plus camera/tracking/obstacle freshness; the CAD-derived installed holder/L515 envelope must retain at least 0.005 m support-plane/external clearance, and hard limits, fresh trusted feedback/control, motor health, convergence, stable hold and disable proof remain mandatory.
+    - Dedicated PRE_HOME, ROUGH_HOME and STORAGE_WRIST stages never retrace an old path and bypass the Tesseract worker plus robot self-collision, camera/tracking/obstacle freshness and Tesseract motion-limit telemetry. The CAD-derived installed holder/L515 envelope must retain at least 0.005 m support-plane/external clearance; hard limits, fresh trusted feedback/control, motor health, the operator-authorized 0.3-rad per-joint home acceptance and disable proof remain mandatory. The controller retains each proved target; autonomous startup and shutdown do not request a second hold acknowledgement.
     - Stop all mission-owned nodes after disable while keeping coordinator and RViz ready.
     - Return outcome, stable failure code, retryable flag, safe_shutdown, capture result and mesh job identity to the tracked robot or GUI emulator.
   reconstruction:
@@ -76,7 +82,7 @@ definition_of_done:
     - Close and farther reachable targets can be acquired from rough hints with error up to 0.10 m without a fixed software workspace box.
     - Clear scenes produce feature-diverse, measured-converged RGB-D datasets and a usable mesh.
     - Qualified rigid occlusions can be cleared by both push and pick/place, with heavy reobservation after each action.
-    - Every success, failure and cancellation reaches the configured two-stage storage posture, holds, disables all six motors and removes all mission-owned children unless control feedback is untrustworthy.
+    - Every success, failure and cancellation reaches the configured staged storage posture, retains the final position-controller target, disables all six motors and removes all mission-owned children unless control feedback is untrustworthy.
     - The tracked robot receives a durable success/failure/retry result and can trigger reconstruction only after reporting base home.
   acceptance:
     - All affected offline tests, ROS builds, YAML checks and rootless Tesseract qualifications pass.
@@ -144,13 +150,13 @@ milestones:
     status: physical_acceptance_partial
     depends_on: [M0]
     remaining: Three consecutive current-version contact-free startup/home/disable repetitions and a deliberate cancel during motion are still required; prior J5/J6 incidents remain retained safety evidence.
-    evidence: The no-command motor smoke produced 583 consecutive all-six-enabled fault-free samples. During the earlier J6 fault the typed guard revoked authority at the first fault, sent no later command, proved six disabled flags and stopped every child. Schema-v3 binds negative storage, increasing startup and decreasing storage. The latest 50-percent task proved startup wrist, rough home, terminal storage wrist, stable hold, all-six disable and exact child cleanup with safe_shutdown=true. Two builds, 145 focused tests, 428 complete tests and both command-free rootless suites pass with exact +3.139536232/-3.139536232 stage deltas.
+    evidence: The no-command motor smoke produced 583 consecutive all-six-enabled fault-free samples. During the earlier J6 fault the typed guard revoked authority at the first fault, sent no later command, proved six disabled flags and stopped every child. Schema-v4 binds shutdown-only pre-home, negative storage, increasing startup and decreasing storage. A later incomplete startup proved a stale direction-high-water defect could defeat Commissioning Enable after disable; software now resets that transaction after proved disable or direction trip. Focused tests and the affected build pass; supervised physical requalification remains required.
     work:
       - Inspect J6 wrist/cable after the collision flag and preserve the earlier J5 inspection evidence.
-      - Retain the recorded negative J6 storage branch; require schema-v3 and pre-enable rejection of a positive non-ready branch.
+      - Retain the recorded negative J6 storage branch; require schema-v4 and pre-enable rejection of a positive non-ready branch.
       - Prove software-only all-six enable rollback/watchdog and exact CAD-holder incident-pose rejection, builds and rootless qualifications.
       - Run the exact saved profile at five-percent speed with emergency stop ready.
-      - Prove STARTUP_WRIST changes only J6, ROUGH_HOME reaches all six configured joints, Cancel/Home uses a fresh direct route, STORAGE_WRIST reaches the configured J6, final hold is stable and all six motors disable.
+      - Prove STARTUP_WRIST changes only J6, ROUGH_HOME reaches all six configured joints, Cancel/Home uses a fresh direct route, STORAGE_WRIST reaches the configured J6, no redundant autonomous hold-service request is sent, and all six motors disable.
       - Test cancellation during real motion and one controllable perception/planning failure.
     exit_criteria: Every case ends with exact stage evidence, configured-joint convergence, six disabled flags, zero mission-owned children and coordinator/RViz still resident.
   - id: M2
@@ -255,6 +261,7 @@ engineering_agent_obligations:
     - Do not stop at the first successful run when the milestone requires repetition or a matrix of conditions.
 
 operator_dependencies:
+  - Gripper command transport, powered 0--10 mm motion and five-second compliant-object holding at approximately 1.04 N m are proved through the sole production driver with exact 0x159/0x2A8 evidence. Final feedback is disabled, zero-effort and not-homed; zero/configuration remains a separate manufacturer-procedure decision, but holding-force qualification is no longer a blocker.
   - Explicitly authorize each physical test phase and keep emergency stop access and a supervised clear bench.
   - Place/remove targets or occluders and confirm unexpected physical contact/strain when a test requires it.
   - Keep the tracked base stationary until brake authority and mounted collision/TF integration are accepted.

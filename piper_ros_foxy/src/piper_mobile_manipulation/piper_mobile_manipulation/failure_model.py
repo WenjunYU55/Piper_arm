@@ -104,7 +104,8 @@ def _failure_code_from_legacy_detail(detail: str) -> FailureCode:
         return FailureCode.NO_REACHABLE_PLAN
     if any(term in lowered for term in (
             'joint feedback', 'collision', 'hold', 'disable',
-            'control', 'arm status')) or any(
+            'control', 'arm status', 'trajectory waypoint',
+            'joint progress')) or any(
                 token == 'can'
                 for token in lowered.replace(':', ' ').split()):
         return FailureCode.CONTROL_UNTRUSTWORTHY
@@ -272,8 +273,6 @@ def legacy_failure_adapter(
         'arm status',
         'arm is not enabled',
         'err_code',
-        'waypoint did not reach',
-        'no measurable joint progress',
         'command publisher',
     )
     blocker = next((item for item in blockers if item in lowered), '')

@@ -91,12 +91,10 @@ from piper_mobile_manipulation.scan_trajectory import (
     validate_tesseract_point,
 )
 from piper_mobile_manipulation.safety_evaluator import (
-    SafetyAuthorization,
-    SafetyComparisonLogger,
-    SafetyEvaluator,
-    SafetyInputs,
+    ObstacleAuthority,
+    RuntimeGatePolicy,
+    runtime_gate_policy,
     SafetyMode,
-    SafetyProfile,
 )
 from piper_mobile_manipulation.srv import (
     ApproveScanExecution,
@@ -143,6 +141,7 @@ def sdk_command_path(path, velocities, accelerations, times, execution_mode,
     return (
         command_path, command_velocities, command_accelerations,
         command_times, bool(not direct_home and mode == 'TESSERACT_STREAM'))
+
 
 # Preserve Phase 1/downstream pure-helper imports while their implementation
 # lives in the focused Phase 7 application components.
@@ -213,7 +212,8 @@ def approved_return_home_obstacle_snapshot(
 
 def approved_multiview_motion_obstacle_snapshot(
         plan_kind, state, collision_model_qualified, obstacles):
-    """Keep the approval-time scene only while one exact scan target moves.
+    """
+    Keep the approval-time scene only while one exact scan target moves.
 
     The eye-in-hand SAM2 stream can pause or request a new seed under motion
     blur.  It is not a dynamic safety scanner.  A MULTIVIEW_SCAN target reaches
@@ -232,7 +232,8 @@ def approved_multiview_motion_obstacle_snapshot(
 
 def bootstrap_abort_retrace_uses_static_scene(
         plan_kind, viewpoint_index, collision_model_qualified):
-    """Mirror the approval scene for the exact first acquisition retrace.
+    """
+    Mirror the approval scene for the exact first acquisition retrace.
 
     The first rough-acquisition segment is deliberately planned and validated
     before perception obstacle geometry exists.  A benign operator cancel may
@@ -333,7 +334,8 @@ def abort_return_home_blocker(reason):
 
 
 def approved_retrace_validation_reasons(reasons):
-    """Keep changing-scene checks without re-rejecting an executed path.
+    """
+    Keep changing-scene checks without re-rejecting an executed path.
 
     Every target in the abort history is an endpoint that this executor has
     already reached from an approval-bound, collision-qualified Tesseract
@@ -398,32 +400,6 @@ class ScanViewpointExecutorNode(Node):
         self.capture_coordinator = CaptureCoordinator(
             MAX_RGBD_CAPTURE_READINESS_RETRIES)
         self.recovery_policy = RecoveryPolicy()
-        # Phase 5 shadow only: legacy gates below remain authoritative.  The
-        # evaluator receives one immutable snapshot and parameter values copied
-        # once here; it never reads ROS or commands the arm.
-        self.safety_evaluator = SafetyEvaluator(SafetyProfile(
-            data_timeout_sec=self.configuration.tracking.data_timeout_sec,
-            motion_limits_timeout_sec=(
-                self.configuration.safety.motion_limits_timeout_sec),
-            max_tracking_measurement_age_sec=(
-                self.configuration.tracking.max_tracking_measurement_age_sec),
-            min_tracking_speed_scale=(
-                self.configuration.tracking.min_tracking_speed_scale),
-            configured_speed_percent=self.configuration.motion.speed_percent,
-            max_target_drift_before_approval_m=(
-                self.configuration.tracking.
-                max_target_drift_before_approval_m),
-            joint_feedback_limit_tolerance_rad=(
-                self.configuration.safety.
-                joint_feedback_limit_tolerance_rad),
-            configured_home_feedback_limit_tolerance_rad=(
-                self.configuration.safety.
-                configured_home_feedback_limit_tolerance_rad),
-            hold_joint_feedback_timeout_sec=(
-                self.configuration.motion.home_joint_feedback_timeout_sec),
-        ))
-        self.safety_comparison_logger = SafetyComparisonLogger()
-
         self.latest_scan = None
         self.latest_joint_state = None
         self.latest_arm_status = None
@@ -690,17 +666,6 @@ class ScanViewpointExecutorNode(Node):
         if not msg.valid:
             planner_decision = self.plan_authorizer.planner_result(
                 False, msg.reason)
-            telemetry_store = getattr(self, 'telemetry_store', None)
-            snapshot = (
-                None if telemetry_store is None
-                else telemetry_store.snapshot())
-            ScanViewpointExecutorNode.record_plan_validation_safety_shadow(
-                self,
-                ['Tesseract proposal rejected: ' + msg.reason],
-                snapshot,
-                planner_result_valid=False,
-                plan_schema_valid=True,
-            )
             self.invalidate_plan(
                 planner_decision.detail,
                 plan_kind=plan_kind,
@@ -1175,13 +1140,6 @@ class ScanViewpointExecutorNode(Node):
                 reasons.append(
                     'Tesseract return-home endpoint does not match the '
                     'executor configuration')
-        ScanViewpointExecutorNode.record_plan_validation_safety_shadow(
-            self,
-            reasons,
-            None if telemetry_store is None else snapshot,
-            planner_result_valid=True,
-            plan_schema_valid=not reasons,
-        )
         if reasons:
             self.invalidate_plan(
                 'invalid Tesseract proposal: ' + '; '.join(reasons),
@@ -1263,105 +1221,6 @@ class ScanViewpointExecutorNode(Node):
                 qualification,
             ))
         self.publish_plan(True, self.reason)
-
-    def record_plan_validation_safety_shadow(
-            self, reasons, snapshot, planner_result_valid,
-            plan_schema_valid):
-        """Compare command-free Tesseract proposal validation in shadow."""
-        evaluator = getattr(self, 'safety_evaluator', None)
-        comparison_logger = getattr(
-            self, 'safety_comparison_logger', None)
-        if evaluator is None or comparison_logger is None or snapshot is None:
-            return reasons
-        limits_observation = snapshot.arm.motion_limits
-        limits = (
-            None if limits_observation is None
-            else limits_observation.value)
-        compatible = True
-        if limits is not None and bool(getattr(limits, 'valid', False)):
-            compatible = not bool(self.runtime_motion_limit_rejection(limits))
-        decision = evaluator.evaluate(
-            SafetyMode.PLAN_VALIDATION,
-            snapshot,
-            SafetyInputs(
-                planner_result_valid=bool(planner_result_valid),
-                plan_schema_valid=bool(plan_schema_valid),
-                # Command-free proposal receipt deliberately permits a
-                # proposal-only collision model; approval rejects it later.
-                collision_model_qualified=True,
-                motion_limits_compatible=compatible,
-            ),
-        )
-        comparison = comparison_logger.record(
-            'executor.tesseract_plan_validation', reasons, decision)
-        if not comparison.agreement:
-            self.get_logger().warn(
-                'SAFETY_SHADOW_DISAGREEMENT ' + comparison.to_json())
-        return reasons
-
-    def record_approval_safety_shadow(
-            self, reasons, snapshot, mode, plan_schema_valid=True,
-            collision_model_qualified=True, path_valid=True,
-            target_drift_m=None, capture_services_ready=True,
-            authorization_required=False, authorization_granted=True):
-        """Compare an outer approval gate without changing its response."""
-        evaluator = getattr(self, 'safety_evaluator', None)
-        comparison_logger = getattr(
-            self, 'safety_comparison_logger', None)
-        if evaluator is None or comparison_logger is None or snapshot is None:
-            return reasons
-        workflow_observation = snapshot.mission.workflow
-        workflow = (
-            None if workflow_observation is None
-            else workflow_observation.value)
-        workflow_ready = bool(
-            isinstance(workflow, dict)
-            and str(workflow.get('state', '')) == 'SCAN_READY')
-        limits_observation = snapshot.arm.motion_limits
-        limits = (
-            None if limits_observation is None
-            else limits_observation.value)
-        compatible = True
-        if limits is not None and bool(getattr(limits, 'valid', False)):
-            compatible = not bool(self.runtime_motion_limit_rejection(limits))
-        mode_value = mode if isinstance(mode, SafetyMode) else SafetyMode(mode)
-        decision = evaluator.evaluate(
-            mode_value,
-            snapshot,
-            SafetyInputs(
-                plan_schema_valid=bool(plan_schema_valid),
-                collision_model_qualified=bool(
-                    collision_model_qualified),
-                path_valid=bool(path_valid),
-                motion_limits_compatible=compatible,
-                target_drift_m=target_drift_m,
-                allow_target_motion=self.param_bool(
-                    'allow_target_motion_during_scan'),
-                static_obstacle_scene_authorized=mode_value in (
-                    SafetyMode.ACQUISITION_APPROVAL,
-                    SafetyMode.RETURN_HOME),
-                auto_capture=self.param_bool('auto_capture'),
-                workflow_required=mode_value == SafetyMode.SCAN_APPROVAL,
-                workflow_ready=workflow_ready,
-                plan_execution_speed_percent=float(getattr(
-                    self, 'plan_execution_speed_percent', 0.0)),
-                configured_home_direct=self.is_configured_home_direct(),
-                motion_control_authorized=self.real_motion_enabled(),
-                capture_services_ready=bool(capture_services_ready),
-                joint_limits=tuple(
-                    (float(bounds[0]), float(bounds[1]))
-                    for bounds in self.joint_limits),
-            ),
-            SafetyAuthorization(
-                required=bool(authorization_required),
-                granted=bool(authorization_granted)),
-        )
-        comparison = comparison_logger.record(
-            'executor.approve', reasons, decision)
-        if not comparison.agreement:
-            self.get_logger().warn(
-                'SAFETY_SHADOW_DISAGREEMENT ' + comparison.to_json())
-        return reasons
 
     def joint_cb(self, msg):
         self.latest_joint_state = msg
@@ -1653,13 +1512,6 @@ class ScanViewpointExecutorNode(Node):
     def approve_cb(self, request, response):
         expected = str(configured_value(self, 'approval_confirmation'))
         mission_confirmation = 'MISSION_POLICY:' + self.mission_sha256
-        telemetry_store = getattr(self, 'telemetry_store', None)
-        shadow_snapshot = (
-            None if telemetry_store is None else telemetry_store.snapshot())
-        shadow_mode = (
-            SafetyMode.ACQUISITION_APPROVAL if self.is_acquisition() else
-            SafetyMode.RETURN_HOME if self.is_return_home() else
-            SafetyMode.SCAN_APPROVAL)
         mission_authorization_requested = (
             str(request.confirmation) == mission_confirmation)
         mission_authorization_granted = (
@@ -1687,28 +1539,21 @@ class ScanViewpointExecutorNode(Node):
         if not authorization.permitted:
             response.accepted = False
             response.message = authorization.detail
-            ScanViewpointExecutorNode.record_approval_safety_shadow(
-                self, [response.message], shadow_snapshot, shadow_mode,
-                plan_schema_valid=bool(
-                    mission_authorization_requested
-                    and not mission_authorization_granted),
-                authorization_required=mission_authorization_requested,
-                authorization_granted=mission_authorization_granted)
             return response
         acquisition = self.is_acquisition()
         return_only = self.is_return_home()
-        reasons = self.runtime_reasons(
+        approval_mode = (
+            SafetyMode.ACQUISITION_APPROVAL if acquisition else
+            SafetyMode.RETURN_HOME if return_only else
+            SafetyMode.SCAN_APPROVAL)
+        reasons = self.runtime_reasons(runtime_gate_policy(
+            approval_mode,
             require_settled=True,
-            require_workflow=not (acquisition or return_only),
-            allow_untracked=acquisition or return_only,
-            allow_missing_obstacles=(
-                acquisition or return_only),
-            allow_missing_camera=return_only,
-            shadow_mode=(
-                SafetyMode.ACQUISITION_APPROVAL if acquisition else
-                SafetyMode.RETURN_HOME if return_only else
-                SafetyMode.SCAN_APPROVAL),
-        )
+            obstacle_authority=(
+                ObstacleAuthority.STATIC_BOOTSTRAP
+                if acquisition or return_only else
+                ObstacleAuthority.LIVE),
+        ))
         if reasons:
             response.accepted = False
             response.message = 'execution blocked: ' + '; '.join(reasons)
@@ -1717,11 +1562,6 @@ class ScanViewpointExecutorNode(Node):
             response.accepted = False
             response.message = (
                 'Tesseract collision model is proposal-only and not qualified for hardware')
-            ScanViewpointExecutorNode.record_approval_safety_shadow(
-                self, [response.message], shadow_snapshot, shadow_mode,
-                collision_model_qualified=False,
-                authorization_required=mission_authorization_requested,
-                authorization_granted=True)
             return response
         target_required = not (acquisition or return_only)
         latest_target_center = None
@@ -1767,13 +1607,6 @@ class ScanViewpointExecutorNode(Node):
         if not authorization.permitted:
             response.accepted = False
             response.message = authorization.detail
-            ScanViewpointExecutorNode.record_approval_safety_shadow(
-                self, [response.message], shadow_snapshot, shadow_mode,
-                plan_schema_valid=bool(latest_target_center is not None),
-                capture_services_ready=not unavailable_dependencies,
-                target_drift_m=target_drift,
-                authorization_required=mission_authorization_requested,
-                authorization_granted=mission_authorization_granted)
             return response
         path_reasons = self.prepare_current_view()
         if path_reasons:
@@ -1785,11 +1618,6 @@ class ScanViewpointExecutorNode(Node):
                     )))
             response.accepted = False
             response.message = authorization.detail
-            ScanViewpointExecutorNode.record_approval_safety_shadow(
-                self, [response.message], shadow_snapshot, shadow_mode,
-                path_valid=False,
-                authorization_required=mission_authorization_requested,
-                authorization_granted=True)
             return response
         self.abort_return_in_progress = False
         self.abort_return_reason = ''
@@ -1827,10 +1655,6 @@ class ScanViewpointExecutorNode(Node):
                 'return-home' if return_only else 'scan'),
             self.execution_speed_percent(),
         )
-        ScanViewpointExecutorNode.record_approval_safety_shadow(
-            self, [], shadow_snapshot, shadow_mode,
-            authorization_required=mission_authorization_requested,
-            authorization_granted=True)
         return response
 
     def authorize_mission_cb(self, request, response):
@@ -1920,16 +1744,6 @@ class ScanViewpointExecutorNode(Node):
             response.message = 'direct home motor gate: ' + '; '.join(
                 motor_reasons)
             return response
-        if not self.fresh(
-                'motion_limits',
-                self.configuration.safety.motion_limits_timeout_sec):
-            response.message = 'direct home motion limits are missing or stale'
-            return response
-        limits = self.latest_motion_limits
-        if limits is None or not bool(limits.valid):
-            response.message = 'direct home controller limits are invalid'
-            return response
-
         stage = str(request.home_stage).strip().upper()
         execution_id = 'direct-home-%d' % time.time_ns()
         self.clear_plan()
@@ -1959,8 +1773,12 @@ class ScanViewpointExecutorNode(Node):
         self.plan_capture_count = 0
         self.plan_returns_home = True
         self.plan_execution_speed_percent = self.speed_percent()
-        self.plan_motion_limits_sha256 = str(limits.limits_sha256)
-        self.runtime_motion_limits_sha256 = str(limits.limits_sha256)
+        # Direct configured home uses the driver's bounded SDK MoveJ speed and
+        # the exact configured joint endpoint. Tesseract timing/limit hashes do
+        # not own this transaction; hard joint bounds, live motor authority and
+        # attached-tool external clearance remain mandatory.
+        self.plan_motion_limits_sha256 = ''
+        self.runtime_motion_limits_sha256 = ''
         self.plan_collision_model_qualified = False
         self.current_view = 0
         self.current_path = [item.copy() for item in stage_targets]
@@ -2119,57 +1937,39 @@ class ScanViewpointExecutorNode(Node):
         else:
             observation = telemetry_snapshot.perception.obstacles
             obstacles = None if observation is None else observation.value
-        reasons = self.runtime_reasons(
-            require_settled=False,
-            require_workflow=False,
-            allow_untracked=(
-                self.is_acquisition()
-                or getattr(self, 'plan_kind', '') in (
-                    MULTIVIEW_SCAN, RETURN_HOME)),
-            allow_missing_obstacles=missing_obstacles_can_wait(
+        runtime_mode = (
+            SafetyMode.RETURN_HOME if self.returning_home() else
+            SafetyMode.ACQUISITION_MOTION
+            if self.is_acquisition() else
+            SafetyMode.SCAN_CAPTURE if self.state in (
+                'SETTLING', 'CAPTURING', 'CAPTURING_RGBD',
+                'WAIT_CAPTURE') else
+            SafetyMode.SCAN_MOTION)
+        static_scene = bool(
+            missing_obstacles_can_wait(
                 self.plan_kind, self.current_view, self.state,
                 getattr(
-                    self, 'abort_return_bootstrap_static_scene', False)
-            ) or self.is_return_home(),
-            allow_missing_camera=self.is_return_home(),
-            allow_stale_obstacles=(
-                self.is_acquisition()
-                and self.acquisition_scene_snapshot_validated
-            ) or bool(getattr(
-                self, 'abort_return_bootstrap_static_scene', False
-            )) or self.is_startup_home_static() or approved_multiview_motion_obstacle_snapshot(
-                self.plan_kind,
-                self.state,
-                self.plan_collision_model_qualified,
-                obstacles,
-            ) or approved_return_home_obstacle_snapshot(
+                    self, 'abort_return_bootstrap_static_scene', False))
+            or self.is_return_home())
+        approved_scene = bool(
+            (self.is_acquisition()
+             and self.acquisition_scene_snapshot_validated)
+            or getattr(self, 'abort_return_bootstrap_static_scene', False)
+            or self.is_startup_home_static()
+            or approved_multiview_motion_obstacle_snapshot(
+                self.plan_kind, self.state,
+                self.plan_collision_model_qualified, obstacles)
+            or approved_return_home_obstacle_snapshot(
                 self.returning_home(),
-                self.plan_collision_model_qualified,
-                obstacles,
-            ),
-            # PiPER's SDK MoveJ speed is fixed when a target is issued. Camera
-            # motion can lower the tracking speed recommendation while that
-            # exact target is in flight, so enforce the allowance at the
-            # approval gate rather than retroactively aborting an already
-            # issued command. All non-tracking live safety gates remain
-            # active, and the next target still requires a fresh refresh.
-            enforce_tracking_speed_allowance=False,
-            # Eye-in-hand confidence can dip while the camera itself is
-            # moving, and the target is explicitly allowed to move during a
-            # scan.  Once the exact multiview proposal is approved, tracking
-            # is diagnostic rather than a motion/capture cancellation gate.
-            enforce_target_status=False,
-            enforce_tracking_motion_state=False,
-            telemetry_snapshot=telemetry_snapshot,
-            shadow_mode=(
-                SafetyMode.RETURN_HOME if self.returning_home() else
-                SafetyMode.ACQUISITION_MOTION
-                if self.is_acquisition() else
-                SafetyMode.SCAN_CAPTURE if self.state in (
-                    'SETTLING', 'CAPTURING', 'CAPTURING_RGBD',
-                    'WAIT_CAPTURE') else
-                SafetyMode.SCAN_MOTION),
-        )
+                self.plan_collision_model_qualified, obstacles))
+        scene_authority = (
+            ObstacleAuthority.STATIC_BOOTSTRAP if static_scene else
+            ObstacleAuthority.APPROVED_SNAPSHOT if approved_scene else
+            ObstacleAuthority.LIVE)
+        reasons = self.runtime_reasons(
+            runtime_gate_policy(
+                runtime_mode, obstacle_authority=scene_authority),
+            telemetry_snapshot=telemetry_snapshot)
         if reasons:
             recovery_policy = getattr(
                 self, 'recovery_policy', RecoveryPolicy())
@@ -2272,39 +2072,37 @@ class ScanViewpointExecutorNode(Node):
         else:
             observation = telemetry_snapshot.perception.obstacles
             obstacles = None if observation is None else observation.value
-        reasons = self.runtime_reasons(
-            require_settled=True,
-            require_workflow=self.runtime_refresh_require_workflow,
-            allow_untracked=(
-                self.is_acquisition()
-                or getattr(self, 'plan_kind', '') in (
-                    MULTIVIEW_SCAN, RETURN_HOME)),
-            allow_missing_obstacles=(
-                self.runtime_refresh_allow_missing_obstacles
-                or return_home),
-            allow_missing_camera=return_home,
-            allow_stale_obstacles=(
-                self.is_acquisition()
-                and self.acquisition_scene_snapshot_validated
-            ) or approved_return_home_obstacle_snapshot(
+        refresh_mode = (
+            SafetyMode.RETURN_HOME if return_home else
+            SafetyMode.ACQUISITION_MOTION
+            if self.is_acquisition() else
+            SafetyMode.SCAN_APPROVAL
+            if self.runtime_refresh_require_workflow else
+            SafetyMode.SCAN_CAPTURE if str(
+                self.runtime_refresh_resume_state) in (
+                    'SETTLING', 'CAPTURING', 'CAPTURING_RGBD',
+                    'WAIT_CAPTURE') else
+            SafetyMode.SCAN_MOTION)
+        static_scene = bool(
+            self.runtime_refresh_allow_missing_obstacles or return_home)
+        approved_scene = bool(
+            (self.is_acquisition()
+             and self.acquisition_scene_snapshot_validated)
+            or approved_return_home_obstacle_snapshot(
                 self.returning_home(),
                 getattr(self, 'plan_collision_model_qualified', False),
-                obstacles,
-            ),
-            settle_at_current_hold=recovering,
-            telemetry_snapshot=telemetry_snapshot,
-            shadow_mode=(
-                SafetyMode.RETURN_HOME if return_home else
-                SafetyMode.ACQUISITION_MOTION
-                if self.is_acquisition() else
-                SafetyMode.SCAN_APPROVAL
-                if self.runtime_refresh_require_workflow else
-                SafetyMode.SCAN_CAPTURE if str(
-                    self.runtime_refresh_resume_state) in (
-                        'SETTLING', 'CAPTURING', 'CAPTURING_RGBD',
-                        'WAIT_CAPTURE') else
-                SafetyMode.SCAN_MOTION),
-        )
+                obstacles))
+        scene_authority = (
+            ObstacleAuthority.STATIC_BOOTSTRAP if static_scene else
+            ObstacleAuthority.APPROVED_SNAPSHOT if approved_scene else
+            ObstacleAuthority.LIVE)
+        reasons = self.runtime_reasons(
+            runtime_gate_policy(
+                refresh_mode,
+                require_settled=True,
+                obstacle_authority=scene_authority,
+                settle_at_current_hold=recovering),
+            telemetry_snapshot=telemetry_snapshot)
         timeout = float(configured_value(
             self,
             'runtime_recovery_timeout_sec'
@@ -2559,7 +2357,17 @@ class ScanViewpointExecutorNode(Node):
         ScanViewpointExecutorNode.feedback_gated_moving_tick(self, now)
 
     def publish_next_waypoint(self, now):
-        target = self.current_path[self.path_index]
+        target = np.asarray(
+            self.current_path[self.path_index], dtype=float).copy()
+        if self.is_startup_wrist_direct():
+            # STARTUP_WRIST owns J6 only. Refresh J1-J5 at the exact command
+            # boundary so powered gravity relaxation cannot turn an old
+            # pre-enable snapshot into an unintended multi-joint target. The
+            # tagged driver command independently replaces J1-J5 with its
+            # newest coherent CAN sample before sending JointCtrl.
+            measured = self.current_joints()
+            target[:5] = measured[:5]
+            self.current_path[self.path_index] = target.copy()
         self.path_index += 1
         self.publish_joint_command(target)
         self.command_target = np.asarray(target, dtype=float).copy()
@@ -2819,13 +2627,11 @@ class ScanViewpointExecutorNode(Node):
                 'one acquisition look completed without measured target lock; '
                 'holding for fresh closed-loop replanning')
             return
-        runtime = self.runtime_reasons(
+        runtime = self.runtime_reasons(runtime_gate_policy(
+            SafetyMode.ACQUISITION_MOTION,
             require_settled=True,
-            require_workflow=False,
-            allow_untracked=True,
-            allow_missing_obstacles=False,
-            shadow_mode=SafetyMode.ACQUISITION_MOTION,
-        )
+            obstacle_authority=ObstacleAuthority.LIVE,
+        ))
         if runtime:
             self.abort_motion(
                 'next acquisition runtime gate failed: ' + '; '.join(runtime))
@@ -3104,7 +2910,12 @@ class ScanViewpointExecutorNode(Node):
         self.home_settle_previous_joints = None
         self.home_settle_last_joint_update = -1e9
         self.home_settle_last_sample_ok = False
-        self.publish_hold()
+        # PiPER retains the last MoveJ target after it is reached. A tagged
+        # hold between STARTUP_WRIST and ROUGH_HOME is redundant and would be
+        # a second asynchronous J6 transaction. Settle against the actual
+        # final startup command and let the mission start ROUGH_HOME next.
+        if not self.is_startup_wrist_direct():
+            self.publish_hold()
         self.set_state(
             'SETTLING_HOME',
             (
@@ -3519,92 +3330,21 @@ class ScanViewpointExecutorNode(Node):
                 dense[-1], endpoint, maximum_step))
         return dense
 
-    def inferred_shadow_safety_mode(
-            self, require_settled, require_workflow,
-            allow_missing_obstacles, settle_at_current_hold):
-        """Name an existing legacy boolean combination for shadow logging."""
-        if self.returning_home():
-            return SafetyMode.RETURN_HOME
-        if self.is_acquisition():
-            if require_settled and allow_missing_obstacles:
-                return SafetyMode.ACQUISITION_APPROVAL
-            return SafetyMode.ACQUISITION_MOTION
-        if require_settled and require_workflow:
-            return SafetyMode.SCAN_APPROVAL
-        if str(getattr(self, 'state', '')) in (
-                'SETTLING', 'CAPTURING', 'CAPTURING_RGBD', 'WAIT_CAPTURE'):
-            return SafetyMode.SCAN_CAPTURE
-        if settle_at_current_hold:
-            # A recovery hold preserves the interrupted operating policy; its
-            # current-position settle proof is carried as explicit evidence.
-            return SafetyMode.SCAN_MOTION
-        return SafetyMode.SCAN_MOTION
-
-    def record_runtime_safety_shadow(
-            self, reasons, snapshot, mode, require_workflow,
-            allow_missing_obstacles, allow_stale_obstacles,
-            settled_result=None):
-        """Observe one legacy runtime decision without influencing its result."""
-        evaluator = getattr(self, 'safety_evaluator', None)
-        comparison_logger = getattr(
-            self, 'safety_comparison_logger', None)
-        if evaluator is None or comparison_logger is None or snapshot is None:
-            return reasons
-        limits_observation = snapshot.arm.motion_limits
-        limits = (
-            None if limits_observation is None
-            else limits_observation.value)
-        compatible = True
-        if limits is not None and bool(getattr(limits, 'valid', False)):
-            compatible = not bool(self.runtime_motion_limit_rejection(limits))
-        workflow_observation = snapshot.mission.workflow
-        workflow = (
-            None if workflow_observation is None
-            else workflow_observation.value)
-        workflow_ready = bool(
-            isinstance(workflow, dict)
-            and str(workflow.get('state', '')) == 'SCAN_READY')
-        mode_value = mode if isinstance(mode, SafetyMode) else SafetyMode(mode)
-        decision = evaluator.evaluate(
-            mode_value,
-            snapshot,
-            SafetyInputs(
-                collision_model_qualified=bool(getattr(
-                    self, 'plan_collision_model_qualified', False)),
-                motion_limits_compatible=compatible,
-                joints_settled=settled_result,
-                approved_obstacle_snapshot=bool(allow_stale_obstacles),
-                static_obstacle_scene_authorized=bool(
-                    allow_missing_obstacles),
-                auto_capture=self.param_bool('auto_capture'),
-                workflow_required=bool(require_workflow),
-                workflow_ready=workflow_ready,
-                plan_execution_speed_percent=float(getattr(
-                    self, 'plan_execution_speed_percent', 0.0)),
-                configured_home_direct=self.is_configured_home_direct(),
-                motion_control_authorized=self.real_motion_enabled(),
-                joint_limits=tuple(
-                    (float(bounds[0]), float(bounds[1]))
-                    for bounds in self.joint_limits),
-            ),
-        )
-        comparison = comparison_logger.record(
-            'executor.runtime_reasons', reasons, decision)
-        if not comparison.agreement:
-            self.get_logger().warn(
-                'SAFETY_SHADOW_DISAGREEMENT ' + comparison.to_json())
-        return reasons
-
-    def runtime_reasons(
-            self, require_settled, require_workflow, allow_untracked=False,
-            allow_missing_obstacles=False,
-            allow_stale_obstacles=False,
-            allow_missing_camera=False,
-            enforce_tracking_speed_allowance=True,
-            enforce_target_status=True,
-            enforce_tracking_motion_state=True,
-            settle_at_current_hold=False, telemetry_snapshot=None,
-            shadow_mode=None):
+    def runtime_reasons(self, policy, telemetry_snapshot=None):
+        """Evaluate one explicit phase policy from one telemetry snapshot."""
+        if not isinstance(policy, RuntimeGatePolicy):
+            policy = runtime_gate_policy(policy)
+        require_settled = policy.require_settled
+        require_workflow = policy.require_workflow
+        allow_untracked = not policy.require_tracking
+        allow_missing_camera = not policy.require_camera
+        allow_missing_obstacles = (
+            policy.obstacle_authority
+            == ObstacleAuthority.STATIC_BOOTSTRAP)
+        allow_stale_obstacles = (
+            policy.obstacle_authority
+            == ObstacleAuthority.APPROVED_SNAPSHOT)
+        settle_at_current_hold = policy.settle_at_current_hold
         telemetry_store = getattr(self, 'telemetry_store', None)
         snapshot = (
             None if telemetry_store is None else
@@ -3623,12 +3363,6 @@ class ScanViewpointExecutorNode(Node):
                     snapshot.captured_at, maximum))
 
         reasons = []
-        settled_result = None
-        mode = shadow_mode or (
-            SafetyMode.SCAN_MOTION if snapshot is None else
-            ScanViewpointExecutorNode.inferred_shadow_safety_mode(
-                self, require_settled, require_workflow,
-                allow_missing_obstacles, settle_at_current_hold))
         required_keys = ['joints', 'arm_status']
         if not allow_missing_camera:
             required_keys.append('camera_clock')
@@ -3639,47 +3373,43 @@ class ScanViewpointExecutorNode(Node):
         for key in required_keys:
             if not snapshot_fresh(key):
                 reasons.append('%s data missing or stale' % key)
-        if not snapshot_fresh(
-                'motion_limits',
-                float(configured_value(self, 'motion_limits_timeout_sec'))):
+        if (
+                policy.require_motion_limits
+                and not snapshot_fresh(
+                    'motion_limits',
+                    float(configured_value(
+                        self, 'motion_limits_timeout_sec')))):
             reasons.append('motion_limits data missing or stale')
         if reasons:
-            return ScanViewpointExecutorNode.record_runtime_safety_shadow(
-                self,
-                reasons, snapshot, mode, require_workflow,
-                allow_missing_obstacles, allow_stale_obstacles,
-                settled_result)
-        limits = (
-            self.latest_motion_limits if snapshot is None else
-            snapshot.arm.motion_limits.value)
-        if limits is None or not limits.valid:
-            reasons.append(
-                'controller motion limits changed after trajectory planning')
-        elif (
-                str(limits.limits_sha256)
-                != self.runtime_motion_limits_sha256):
-            rejection = self.runtime_motion_limit_rejection(limits)
-            if rejection:
-                reasons.append(rejection)
-            else:
-                previous_hash = self.runtime_motion_limits_sha256
-                self.runtime_motion_limits_sha256 = str(
-                    limits.limits_sha256)
-                self.get_logger().warn(
-                    'Controller limits changed from %s to %s; the exact '
-                    'approved waypoint path remains within the fresh limits'
-                    % (previous_hash, self.runtime_motion_limits_sha256))
+            return reasons
+        if policy.require_motion_limits:
+            limits = (
+                self.latest_motion_limits if snapshot is None else
+                snapshot.arm.motion_limits.value)
+            if limits is None or not limits.valid:
+                reasons.append(
+                    'controller motion limits changed after trajectory planning')
+            elif (
+                    str(limits.limits_sha256)
+                    != self.runtime_motion_limits_sha256):
+                rejection = self.runtime_motion_limit_rejection(limits)
+                if rejection:
+                    reasons.append(rejection)
+                else:
+                    previous_hash = self.runtime_motion_limits_sha256
+                    self.runtime_motion_limits_sha256 = str(
+                        limits.limits_sha256)
+                    self.get_logger().warn(
+                        'Controller limits changed from %s to %s; the exact '
+                        'approved waypoint path remains within the fresh limits'
+                        % (previous_hash, self.runtime_motion_limits_sha256))
         try:
             joints = (
                 self.current_joints() if snapshot is None else
                 ScanViewpointExecutorNode.current_joints(self, snapshot))
         except ValueError as error:
             reasons.append(str(error))
-            return ScanViewpointExecutorNode.record_runtime_safety_shadow(
-                self,
-                reasons, snapshot, mode, require_workflow,
-                allow_missing_obstacles, allow_stale_obstacles,
-                settled_result)
+            return reasons
         try:
             current_view = int(getattr(self, 'current_view', -1))
             recovery_end_points = getattr(
@@ -3767,38 +3497,34 @@ class ScanViewpointExecutorNode(Node):
                 obstacles))
         if allow_untracked:
             if require_settled:
-                settled_result = self.joints_settled(
+                settled = self.joints_settled(
                     settle_at_current=settle_at_current_hold)
-            if require_settled and not settled_result:
-                reasons.append(
-                    'joint feedback is not settled at the current-position hold'
-                    if settle_at_current_hold else
-                    'joint feedback is not settled for acquisition')
-        else:
-            if enforce_tracking_motion_state:
-                if require_settled:
-                    if health.lifecycle_state != 'TRACKING' or not health.camera_settled:
-                        reasons.append('tracking is not settled TRACKING')
-                    if health.prediction_only:
-                        reasons.append('tracking is prediction-only')
-                elif health.lifecycle_state not in ('TRACKING', 'DEGRADED'):
-                    reasons.append('tracking lifecycle=%s' % health.lifecycle_state)
-                if float(health.measurement_age_sec) > float(
-                        configured_value(self, 'max_tracking_measurement_age_sec')):
-                    reasons.append('tracking measurement is stale')
-                if float(health.recommended_speed_scale) < float(
-                        configured_value(self, 'min_tracking_speed_scale')):
+                if not settled:
                     reasons.append(
-                        'tracking speed scale is below the motion threshold')
+                        'joint feedback is not settled at the current-position hold'
+                        if settle_at_current_hold else
+                        'joint feedback is not settled for acquisition')
+        else:
+            if require_settled:
+                if health.lifecycle_state != 'TRACKING' or not health.camera_settled:
+                    reasons.append('tracking is not settled TRACKING')
+                if health.prediction_only:
+                    reasons.append('tracking is prediction-only')
+            elif health.lifecycle_state not in ('TRACKING', 'DEGRADED'):
+                reasons.append('tracking lifecycle=%s' % health.lifecycle_state)
+            if float(health.measurement_age_sec) > float(
+                    configured_value(self, 'max_tracking_measurement_age_sec')):
+                reasons.append('tracking measurement is stale')
+            if float(health.recommended_speed_scale) < float(
+                    configured_value(self, 'min_tracking_speed_scale')):
+                reasons.append(
+                    'tracking speed scale is below the motion threshold')
             current_allowed_speed = commanded_speed_percent(
                 float(configured_value(self, 'speed_percent')),
                 self.plan_kind,
                 float(health.recommended_speed_scale),
             )
             if (
-                    enforce_tracking_motion_state
-                    and enforce_tracking_speed_allowance
-                    and
                     self.plan_execution_speed_percent > 0.0
                     and current_allowed_speed + 1e-6
                     < self.plan_execution_speed_percent):
@@ -3806,9 +3532,7 @@ class ScanViewpointExecutorNode(Node):
                     'tracking speed allowance fell below the approved MoveJ speed; '
                     'replan at the lower speed')
             if (
-                    enforce_tracking_motion_state
-                    and enforce_target_status
-                    and target_status not in ('TRACKING', 'LOCKED')):
+                    target_status not in ('TRACKING', 'LOCKED')):
                 reasons.append('target_status=%s' % target_status)
         if require_workflow and self.param_bool('auto_capture'):
             workflow_ready = (
@@ -3816,14 +3540,11 @@ class ScanViewpointExecutorNode(Node):
                 ScanViewpointExecutorNode.workflow_ready(self, snapshot))
             if not workflow_ready:
                 reasons.append('supervised workflow is not SCAN_READY')
-        return ScanViewpointExecutorNode.record_runtime_safety_shadow(
-            self,
-            reasons, snapshot, mode, require_workflow,
-            allow_missing_obstacles, allow_stale_obstacles,
-            settled_result)
+        return reasons
 
     def runtime_motion_limit_rejection(self, limits):
-        """Accept a fresh valid limit generation for position-only SDK MoveJ.
+        """
+        Accept a fresh valid limit generation for position-only SDK MoveJ.
 
         The executor sends one joint-position target plus an aggregate speed
         percentage. It never sends Tesseract velocities, accelerations, or
@@ -3910,7 +3631,8 @@ class ScanViewpointExecutorNode(Node):
                 self, snapshot=snapshot))
 
     def capture_pose_settled(self):
-        """Gate RGB-D on a stationary arm and healthy camera clock.
+        """
+        Gate RGB-D on a stationary arm and healthy camera clock.
 
         The scan target may move and SAM tracking may temporarily reacquire at
         a viewpoint.  Neither changes the approved robot pose or whether a
@@ -4018,14 +3740,33 @@ class ScanViewpointExecutorNode(Node):
             self.current_joints() if snapshot is None else
             ScanViewpointExecutorNode.current_joints(self, snapshot),
             dtype=float)
+        measured_current = current.copy()
+        target = np.asarray(self.command_target, dtype=float)
+        previous = self.home_settle_previous_joints
+        if self.is_startup_wrist_direct():
+            # STARTUP_WRIST is explicitly a J6-only transaction. J1-J5 may
+            # relax slightly during the long powered wrist rotation; the
+            # immediately following ROUGH_HOME stage owns and proves those
+            # endpoints. Keep this stage's settle proof bound to fresh,
+            # stationary J6 feedback only.
+            selected_current = target.copy()
+            selected_current[5] = current[5]
+            current = selected_current
+            if previous is not None:
+                selected_previous = target.copy()
+                selected_previous[5] = np.asarray(
+                    previous, dtype=float)[5]
+                previous = selected_previous
         settled = home_position_sample_settled(
             current,
-            self.command_target,
-            self.home_settle_previous_joints,
+            target,
+            previous,
             float(configured_value(self, 'home_goal_tolerance_rad')),
             float(configured_value(self, 'home_motion_tolerance_rad')),
         )
-        self.home_settle_previous_joints = current
+        # Retain the complete measured pose so a stage change can never reuse
+        # a one-joint snapshot as ordinary six-joint home evidence.
+        self.home_settle_previous_joints = measured_current
         self.home_settle_last_joint_update = updated_at
         self.home_settle_last_sample_ok = bool(settled)
         return bool(settled)
@@ -4095,28 +3836,6 @@ class ScanViewpointExecutorNode(Node):
         msg.velocity = [0.0] * 6 + [speed]
         self.command_pub.publish(msg)
 
-    def record_hold_safety_shadow(self, snapshot, held, legacy_reason=''):
-        """Compare the existing hold outcome after it has remained authoritative."""
-        evaluator = getattr(self, 'safety_evaluator', None)
-        comparison_logger = getattr(
-            self, 'safety_comparison_logger', None)
-        if evaluator is None or comparison_logger is None or snapshot is None:
-            return bool(held)
-        decision = evaluator.evaluate(
-            SafetyMode.HOLD_CURRENT,
-            snapshot,
-            SafetyInputs(
-                motion_control_authorized=self.real_motion_enabled(),
-            ),
-        )
-        legacy_reasons = () if held else (str(legacy_reason),)
-        comparison = comparison_logger.record(
-            'executor.publish_hold', legacy_reasons, decision)
-        if not comparison.agreement:
-            self.get_logger().warn(
-                'SAFETY_SHADOW_DISAGREEMENT ' + comparison.to_json())
-        return bool(held)
-
     def publish_hold(self):
         telemetry_store = getattr(self, 'telemetry_store', None)
         if telemetry_store is None:
@@ -4137,16 +3856,9 @@ class ScanViewpointExecutorNode(Node):
                     snapshot.captured_at,
                     float(configured_value(self, 'home_joint_feedback_timeout_sec'))))
         if joints is None or not self.real_motion_enabled():
-            reason = (
-                'joint feedback is missing'
-                if joints is None else
-                'motion-control authority is unavailable')
-            return ScanViewpointExecutorNode.record_hold_safety_shadow(
-                self, snapshot, False, reason)
+            return False
         if not joints_fresh:
-            return ScanViewpointExecutorNode.record_hold_safety_shadow(
-                self, snapshot, False,
-                'joint feedback is missing or stale')
+            return False
         try:
             self.publish_joint_command(
                 energized_hold_target(
@@ -4155,11 +3867,8 @@ class ScanViewpointExecutorNode(Node):
                         self, snapshot)),
                 explicit_hold=True)
         except ValueError:
-            return ScanViewpointExecutorNode.record_hold_safety_shadow(
-                self, snapshot, False,
-                'joint feedback has fewer than six finite arm joints')
-        return ScanViewpointExecutorNode.record_hold_safety_shadow(
-            self, snapshot, True)
+            return False
+        return True
 
     def abort_motion(self, reason):
         blocker = abort_return_home_blocker(reason)
@@ -4189,14 +3898,10 @@ class ScanViewpointExecutorNode(Node):
             self.current_view,
             getattr(self, 'plan_collision_model_qualified', False),
         )
-        runtime = self.runtime_reasons(
+        runtime = self.runtime_reasons(runtime_gate_policy(
+            SafetyMode.RETURN_HOME,
             require_settled=True,
-            require_workflow=False,
-            allow_untracked=True,
-            allow_missing_obstacles=use_bootstrap_scene,
-            allow_stale_obstacles=use_bootstrap_scene,
-            shadow_mode=SafetyMode.RETURN_HOME,
-        )
+        ))
         if runtime:
             return False, 'fresh return-home safety gate failed: ' + '; '.join(runtime)
         tolerance = float(
@@ -4531,13 +4236,21 @@ class ScanViewpointExecutorNode(Node):
 
     def max_joint_error(self, target):
         try:
-            return float(np.max(np.abs(self.current_joints() - np.asarray(target, dtype=float))))
+            current = self.current_joints()
+            goal = np.asarray(target, dtype=float)
+            if self.is_startup_wrist_direct():
+                return float(abs(current[5] - goal[5]))
+            return float(np.max(np.abs(current - goal)))
         except ValueError:
             return math.inf
 
     def total_joint_error(self, target):
         try:
-            return joint_progress_error(self.current_joints(), target)
+            current = self.current_joints()
+            goal = np.asarray(target, dtype=float)
+            if self.is_startup_wrist_direct():
+                return float(abs(current[5] - goal[5]))
+            return joint_progress_error(current, goal)
         except ValueError:
             return math.inf
 
@@ -4607,6 +4320,13 @@ class ScanViewpointExecutorNode(Node):
             and markers == [True]
             and self.plan_returns_home
             and self.plan_capture_count == 0)
+
+    def is_startup_wrist_direct(self):
+        """Return true only for the authenticated direct STARTUP_WRIST stage."""
+        stages = getattr(self, 'plan_configured_home_stages', [])
+        return bool(
+            self.is_configured_home_direct()
+            and stages == ['STARTUP_WRIST'])
 
     def real_motion_enabled(self):
         return self.param_bool('enable_real_arm_motion')

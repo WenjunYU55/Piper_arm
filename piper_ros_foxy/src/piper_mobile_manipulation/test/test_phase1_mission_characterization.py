@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 import piper_mobile_manipulation.target_scan_mission_node as mission_node
-from piper_mobile_manipulation.mission_core import MissionPhase, MissionSession
+from piper_mobile_manipulation.mission_core import MissionPhase
 from piper_mobile_manipulation.mission_engine import CancellationToken
 from piper_mobile_manipulation.target_scan_mission_node import MissionFailure
 from piper_mobile_manipulation.target_scan_mission_node import (
@@ -68,7 +68,6 @@ def test_successful_mission_characterizes_complete_stage_and_shutdown_order(
         'phase:PREFLIGHT',
         'authority_grant',
         'arm_enable',
-        'settled_hold',
         'startup_wrist',
         'startup_rough_home',
         'target_acquisition_request',
@@ -91,31 +90,16 @@ def test_successful_mission_characterizes_complete_stage_and_shutdown_order(
         'results', 'mesh_jobs']
 
 
-def test_engine_and_frozen_phase5_pipeline_have_identical_success_trace(
+def test_mission_engine_is_the_only_production_pipeline_authority(
         mission_harness_factory, goal_handle_factory):
     engine_harness = mission_harness_factory('phase6-engine-compare')
     _goal_handle, engine_result = _run(
         engine_harness,
         lambda: goal_handle_factory('phase6-engine-compare'))
 
-    legacy_harness = mission_harness_factory('phase6-legacy-compare')
-    normalized = next(iter(legacy_harness._prevalidated_goals.values()))
-    legacy_session = MissionSession(normalized)
-    legacy_goal = goal_handle_factory('phase6-legacy-compare')
-    TargetScanMissionNode._legacy_run_pipeline(
-        legacy_harness, legacy_goal, legacy_session, [0.4, 0.0, 0.0])
-    legacy_failure = TargetScanMissionNode._legacy_safe_shutdown(
-        legacy_harness, legacy_session, normal_completion=True)
-
     assert engine_result['outcome'] == 'SUCCEEDED'
-    assert legacy_failure is None
-    assert legacy_harness.phase_trace == engine_harness.phase_trace
-    assert legacy_session.accepted_captures == engine_result['capture_count']
-    assert legacy_session.return_home_proved
-    assert legacy_session.storage_wrist_proved
-    assert legacy_session.current_hold_proved
-    assert legacy_session.disabled_proved
-    assert legacy_session.processes_stopped
+    assert not hasattr(TargetScanMissionNode, '_legacy_run_pipeline')
+    assert not hasattr(TargetScanMissionNode, '_legacy_safe_shutdown')
 
 
 def test_process_startup_order_and_environment_are_characterized(
@@ -228,14 +212,14 @@ def test_occlusion_plan_ready_remains_needs_operator_and_never_contacts_scene(
             lambda harness: harness.inject(
                 'acquisition_execution', MissionFailure(
                     'joint feedback became invalid during SDK MoveJ')),
-            'CONTROL_UNTRUSTWORTHY', 'NEEDS_OPERATOR', False,
+            'CONTROL_UNTRUSTWORTHY', 'FAILED', True,
         ),
         (
             'arm status stale while powered',
             lambda harness: harness.inject(
                 'acquisition_execution', MissionFailure(
                     'arm status is missing or stale')),
-            'CONTROL_UNTRUSTWORTHY', 'NEEDS_OPERATOR', False,
+            'CONTROL_UNTRUSTWORTHY', 'FAILED', True,
         ),
         (
             'target lost and reacquisition failed',
@@ -266,7 +250,7 @@ def test_occlusion_plan_ready_remains_needs_operator_and_never_contacts_scene(
             lambda harness: harness.inject(
                 'trajectory_execution', MissionFailure(
                     'ABORTED: trajectory waypoint did not reach target')),
-            'CONTROL_UNTRUSTWORTHY', 'NEEDS_OPERATOR', False,
+            'CONTROL_UNTRUSTWORTHY', 'FAILED', True,
         ),
         (
             'child process crash',
@@ -508,11 +492,6 @@ def test_cancel_arriving_during_process_cleanup_does_not_change_result(
             ('storage_wrist', 'motor_disable'),
         ),
         (
-            'shutdown_hold',
-            ('return_home', 'storage_wrist', 'settled_hold'),
-            ('motor_disable',),
-        ),
-        (
             'motor_disable',
             ('return_home', 'storage_wrist', 'settled_hold', 'motor_disable'),
             (),
@@ -534,6 +513,19 @@ def test_shutdown_failure_does_not_claim_unproved_later_steps(
     for event in expected_absent:
         assert event not in harness.events
     assert 'child_process_termination' not in harness.processes.events
+
+
+def test_obsolete_shutdown_hold_failure_injection_is_not_a_runtime_gate(
+        mission_harness_factory, goal_handle_factory):
+    harness = mission_harness_factory()
+    harness.inject(
+        'shutdown_hold', MissionFailure('obsolete shutdown hold failed'))
+
+    _goal_handle, result = _run(harness, goal_handle_factory)
+
+    assert result['outcome'] == 'SUCCEEDED'
+    assert result['safe_shutdown'] is True
+    assert 'motor_disable' in harness.events
 
 
 def test_cleanup_failure_occurs_after_disable_but_is_not_safe_shutdown(

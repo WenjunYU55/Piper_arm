@@ -1,6 +1,6 @@
 schema_version: 1
 document: implemented_features_bookmark
-updated_at: 2026-08-16
+updated_at: 2026-08-17
 purpose: >-
   Preserve the system capabilities that must not be forgotten during the
   core-integration rewrite. This is a feature inventory, not a declaration
@@ -28,6 +28,15 @@ status_terms:
   PARTIAL: Interfaces or policy exist, but the intended real-world behavior is not complete.
 
 active_rollback_features:
+  - id: single_owner_gripper_diagnostic
+    status: [ACTIVE, SOFTWARE_QUALIFIED]
+    summary: >-
+      A Python 3.8 direct-SDK tool provides receive-only status/monitor and
+      exact-confirmation gripper-only disable-clear, homed-only
+      measured-aperture clear-enable and homed-only motion diagnostics. Driver logging records
+      ROS enable/disable requests, J1-J6 state, exact gripper command and fresh
+      gripper enable/homing/fault feedback without changing control behavior.
+    authority: [tools/debug_piper_gripper.py, test_debug_piper_gripper.py, piper_ctrl_single_node.py, test_enable_handshake.py]
   - id: always_on_mission_coordinator
     status: [ACTIVE, PHYSICALLY_DEMONSTRATED]
     summary: >-
@@ -48,6 +57,10 @@ active_rollback_features:
     summary: >-
       The Tk GUI can submit the same typed text-label plus stamped rough-pose
       mission contract intended for the tracked robot and exposes Cancel/Home.
+      Commissioning motion starts without a command publisher and acquires one
+      only after the graph proves no other writer. Unfinished startup J6
+      retains positive-only direction authority, and the explicit no-home
+      commissioning disable sends no motion before the driver's all-six proof.
     authority: [piper_gui_native.py, RunTargetScan.action]
 
   - id: managed_stack_lifecycle
@@ -158,11 +171,26 @@ active_rollback_features:
     summary: >-
       Hash-verified schema-4 home data binds positive-only startup J6 toward the
       mission-ready angle, terminal-only pre-home, rough home, decreasing
-      storage J6, stable hold, feedback-confirmed disable and owned-child
-      cleanup. Configured home stages use the typed direct-home service rather
-      than Tesseract; the reintegrated route requires supervised physical
-      requalification.
+      storage J6, retained final position-controller target, feedback-confirmed disable and owned-child
+      cleanup. Configured home stages use ExecuteHomeStage/native MoveJ rather
+      than the Tesseract worker and accept each joint inside the explicit
+      operator-authorized 0.3-rad band for one second. The GUI exposes and
+      preserves all three configured stages; supervised physical
+      requalification remains required.
     authority: [piper_home_pose.json, home_pose.py, target_scan_mission_node.py]
+
+  - id: single_authority_failure_shutdown_and_named_runtime_gates
+    status: [ACTIVE, SOFTWARE_QUALIFIED]
+    summary: >-
+      MissionEngine is the only admitted mission/shutdown state machine. Every
+      owned controllable failure independently re-qualifies PRE_HOME,
+      ROUGH_HOME and STORAGE_WRIST from current control evidence; only current
+      motor authority loss forbids all commands. Autonomous startup and
+      terminal shutdown do not call the redundant hold service. Executor runtime evidence is selected by one
+      immutable named RuntimeGatePolicy rather than interacting booleans or a
+      duplicate shadow evaluator. Supervised physical requalification remains
+      required.
+    authority: [mission_engine.py, mission_core.py, safety_evaluator.py, scan_viewpoint_executor_node.py]
 
   - id: calibrated_l515_tf_and_robot_model
     status: [ACTIVE, PHYSICALLY_DEMONSTRATED]
@@ -194,7 +222,10 @@ later_feature_reintegration_status:
     summary: >-
       Typed ExecuteHomeStage moved STARTUP_WRIST, PRE_HOME, ROUGH_HOME and
       STORAGE_WRIST out of Tesseract and executed authenticated direct MoveJ
-      endpoints with feedback, direction, motor, limit and settle checks.
+      endpoints with feedback, direction, motor, external-clearance and settle checks; camera/tracking/workflow/obstacle freshness and Tesseract controller-limit hashes are not direct-home authority.
+      STARTUP_WRIST alone is explicitly J6-owned: J1-J5 refresh from measured
+      feedback at each command boundary, progress and settling use J6 only,
+      and no redundant hold is inserted before full-joint ROUGH_HOME.
     authority: [piper_mobile_manipulation/srv/ExecuteHomeStage.srv, scan_viewpoint_executor_node.py, target_scan_mission_node.py]
 
   - id: schema4_pre_home_waypoint
@@ -209,7 +240,11 @@ later_feature_reintegration_status:
     summary: >-
       Driver-owned startup logic represented the negative storage branch,
       allowed only positive rotation, used the qualified raw wrap bridge and
-      retained its controller-turn offset until terminal storage.
+      retained its controller-turn offset until terminal storage. Proved
+      disable and direction-trip paths reset incomplete transaction/high-water
+      state before any later commissioning enable. The archived executor-side
+      J6-only progress/settle and command-boundary refresh semantics are now
+      cleanly restored in the current branch after the August 16 E2E regression.
     authority: [piper_ctrl_single_node.py, scan_viewpoint_executor_node.py]
 
   - id: guarded_zero_capture_dataset_deletion

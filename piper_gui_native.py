@@ -102,7 +102,14 @@ def load_joint_limits():
             merged.append((name, low, high, unit))
             continue
 
-        merged.append((name, min(measured_low, measured_high), max(measured_low, measured_high), unit))
+        merged.append(
+            (
+                name,
+                min(measured_low, measured_high),
+                max(measured_low, measured_high),
+                unit,
+            )
+        )
 
     return merged, f"loaded {BOUNDS_PATH}"
 
@@ -114,12 +121,11 @@ class PiperGuiRos(Node):
         self.latest_feedback = None
         self.latest_feedback_monotonic = None
         self.latest_status = None
-        self.manual_commands_enabled = True
+        self.manual_commands_enabled = False
         self.command_lock = threading.Lock()
         self.service_callback_group = ReentrantCallbackGroup()
 
         self.joint_pub = None
-        self.enable_manual_command_publisher()
         self.feedback_sub = self.create_subscription(
             JointState, "/joint_states_single", self.feedback_callback, 10
         )
@@ -457,21 +463,22 @@ class PiperGuiApp:
         self.mission_view_model = MissionViewModel()
         self.load_selected_home()
         self.safe_disable_in_progress = False
-        self.safe_disable_waiting_for_hold = False
-        self.safe_disable_service_inflight = False
-        self.safe_disable_target = None
-        self.safe_disable_previous_feedback = None
-        self.safe_disable_settled_since = None
-        self.safe_disable_deadline = 0.0
 
+        ros_domain = os.environ.get("ROS_DOMAIN_ID", "default")
         self.status_text = tk.StringVar(
-            value=f"ROS domain {os.environ.get('ROS_DOMAIN_ID', 'default')} | {self.bounds_message}"
+            value=f"ROS domain {ros_domain} | {self.bounds_message}"
         )
         self.feedback_text = tk.StringVar(value="No feedback")
         self.command_text = tk.StringVar(value="No command sent")
         self.service_text = tk.StringVar(value="No service call")
 
         self._build()
+        self.enable_button.configure(state="disabled")
+        self.set_manual_motion_enabled(False)
+        # Commissioning motion starts locked. Resolve the ROS graph after the
+        # UI and executor are running, then create this GUI's command publisher
+        # only when no production command owner exists.
+        self.root.after(250, self._restore_manual_controls_if_unowned)
         self.root.after(100, self.drain_events)
 
     def _build(self) -> None:
@@ -492,7 +499,7 @@ class PiperGuiApp:
         self.enable_button.grid(row=0, column=1, padx=4)
         self.disable_button = ttk.Button(
             header,
-            text="Commissioning Safe Disable",
+            text="Commissioning Disable (No Home)",
             command=self.request_safe_disable,
         )
         self.disable_button.grid(row=0, column=2, padx=4)
@@ -786,7 +793,10 @@ class PiperGuiApp:
             parent,
             text=(
                 "Commissioning controls — these directly command an enabled arm "
-                "and are not part of the autonomous mission workflow."
+                "and are not part of the autonomous mission workflow. Disable "
+                "does not home the arm. If J6 is on the unfinished negative "
+                "startup branch, first send J6 toward ready zero; that command "
+                "moves only J6 in its configured positive direction."
             ),
             foreground="#8a3b12",
             wraplength=820,
@@ -801,7 +811,9 @@ class PiperGuiApp:
             var = tk.DoubleVar(value=0.0)
             self.vars.append(var)
 
-            ttk.Label(joints_frame, text=name, width=10).grid(row=index, column=0, sticky="w", pady=6)
+            ttk.Label(joints_frame, text=name, width=10).grid(
+                row=index, column=0, sticky="w", pady=6
+            )
             scale = ttk.Scale(
                 joints_frame,
                 from_=low,
@@ -822,14 +834,30 @@ class PiperGuiApp:
             spin.grid(row=index, column=2, sticky="e", pady=6)
             spin.bind("<Return>", lambda _event, i=index: self.on_joint_change(i))
             spin.bind("<FocusOut>", lambda _event, i=index: self.on_joint_change(i))
-            ttk.Label(joints_frame, text=unit, width=4).grid(row=index, column=3, sticky="w", padx=(6, 0))
+            ttk.Label(joints_frame, text=unit, width=4).grid(
+                row=index, column=3, sticky="w", padx=(6, 0)
+            )
 
         settings = ttk.Frame(parent)
         settings.grid(row=2, column=0, sticky="ew", pady=(18, 8))
         ttk.Label(settings, text="Speed").grid(row=0, column=0, sticky="w")
-        ttk.Spinbox(settings, from_=0, to=100, increment=1, textvariable=self.speed_var, width=8).grid(row=0, column=1, padx=(6, 18))
+        ttk.Spinbox(
+            settings,
+            from_=0,
+            to=100,
+            increment=1,
+            textvariable=self.speed_var,
+            width=8,
+        ).grid(row=0, column=1, padx=(6, 18))
         ttk.Label(settings, text="Grip effort").grid(row=0, column=2, sticky="w")
-        ttk.Spinbox(settings, from_=0.5, to=3.0, increment=0.1, textvariable=self.effort_var, width=8).grid(row=0, column=3, padx=(6, 18))
+        ttk.Spinbox(
+            settings,
+            from_=0.5,
+            to=3.0,
+            increment=0.1,
+            textvariable=self.effort_var,
+            width=8,
+        ).grid(row=0, column=3, padx=(6, 18))
         live_send = ttk.Checkbutton(
             settings, text="Live send", variable=self.send_live_var)
         live_send.grid(row=0, column=4, sticky="w")
@@ -841,8 +869,12 @@ class PiperGuiApp:
             actions, text="Send Joint Target", command=self.send_target)
         send_button.grid(row=0, column=0, padx=(0, 8))
         self.manual_motion_widgets.append(send_button)
-        ttk.Button(actions, text="Use Feedback", command=self.use_feedback).grid(row=0, column=1, padx=8)
-        ttk.Button(actions, text="Zero Target", command=self.zero_target).grid(row=0, column=2, padx=8)
+        ttk.Button(
+            actions, text="Use Feedback", command=self.use_feedback
+        ).grid(row=0, column=1, padx=8)
+        ttk.Button(
+            actions, text="Zero Target", command=self.zero_target
+        ).grid(row=0, column=2, padx=8)
 
         home = ttk.LabelFrame(parent, text="Commissioning: staged home profile", padding=10)
         home.grid(row=4, column=0, sticky="ew", pady=(18, 0))
@@ -855,14 +887,19 @@ class PiperGuiApp:
             home,
             text="Record Current J6 as Storage",
             command=self.use_current_feedback_as_storage,
-        ).grid(row=0, column=1)
+        ).grid(row=0, column=1, padx=(0, 8))
+        ttk.Button(
+            home,
+            text="Record Pre-Home (Shutdown Only)",
+            command=self.use_current_feedback_as_pre_home,
+        ).grid(row=0, column=2)
         ttk.Label(
             home,
             textvariable=self.home_status_var,
             foreground="#52606d",
             wraplength=760,
             justify="left",
-        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(8, 0))
 
     def _build_graphical(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
@@ -1020,18 +1057,28 @@ class PiperGuiApp:
             state="disabled" if not state.can_start else "normal")
 
     def _restore_manual_controls_if_unowned(self):
-        publishers = self.ros_node.command_publisher_names()
+        publishers = self.ros_node.command_publisher_names(
+            resolution_timeout_sec=0.5)
         if not publishers:
             self.ros_node.enable_manual_command_publisher()
             self.set_manual_motion_enabled(True)
+            self.enable_button.configure(state="normal")
+            self.disable_button.configure(state="normal")
             return
+        self.ros_node.disable_manual_command_publisher()
         self.set_manual_motion_enabled(False)
         self.enable_button.configure(state="disabled")
-        self.disable_button.configure(state="disabled")
+        # An explicit disable cannot create robot motion. Keep it available so
+        # an operator can fail-safe a stranded external controller, while the
+        # local active-mission path above still routes through Cancel/Home.
+        self.disable_button.configure(
+            state="normal" if self.mission_view_model.state.can_start
+            else "disabled")
         self.mission_status_var.set(
             self.mission_view_model.state.status
-            + '; commissioning controls remain locked while command '
-            'publishers exist: ' + ', '.join(publishers))
+            + '; commissioning motion/enable remain locked while command '
+            'publishers exist; explicit no-home Disable remains available: '
+            + ', '.join(publishers))
 
     def report_tracked_robot_homed(self):
         if not isinstance(self.last_successful_mission, dict):
@@ -1065,6 +1112,10 @@ class PiperGuiApp:
         self.home_status_var.set(
             'Rough home J1-J6: '
             + ', '.join('%.6f' % value for value in positions)
+            + '; pre-home J1-J6: '
+            + ', '.join(
+                '%.6f' % value for value in
+                payload.get('pre_home_positions_rad', ()))
             + '; ready J6 %.6f; storage J6 %.6f; staged=%s'
             % (
                 float(payload['mission_ready_joint6_rad']),
@@ -1128,6 +1179,10 @@ class PiperGuiApp:
                 float(existing['storage_joint6_rad'])
                 if existing is not None
                 and existing.get('staged_home_configured') else None)
+            existing_pre_home = (
+                list(existing['pre_home_positions_rad'])
+                if existing is not None
+                and existing.get('pre_home_configured') else None)
             save_home_pose(
                 HOME_POSE_PATH,
                 positions.tolist(),
@@ -1135,6 +1190,8 @@ class PiperGuiApp:
                 mission_ready_joint6_rad=float(positions[5]),
                 storage_joint6_rad=existing_storage,
                 staged_home_configured=existing_storage is not None,
+                pre_home_positions_rad=existing_pre_home,
+                pre_home_configured=existing_pre_home is not None,
             )
         except (OSError, TypeError, ValueError) as exc:
             self.home_status_var.set('Could not save home: %s' % exc)
@@ -1185,10 +1242,65 @@ class PiperGuiApp:
                     'mission_ready_joint6_rad'],
                 storage_joint6_rad=storage_j6,
                 staged_home_configured=True,
+                pre_home_positions_rad=profile.get(
+                    'pre_home_positions_rad'),
+                pre_home_configured=bool(profile.get(
+                    'pre_home_configured', False)),
             )
         except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
             self.home_status_var.set(
                 'Could not save storage J6: %s' % exc)
+            return
+        self.load_selected_home()
+
+    def use_current_feedback_as_pre_home(self):
+        if not self.mission_view_model.state.can_start:
+            self.home_status_var.set(
+                'Pre-home cannot change while an automatic mission is active')
+            return
+        feedback_age = (
+            math.inf if self.ros_node.latest_feedback_monotonic is None
+            else time.monotonic() - self.ros_node.latest_feedback_monotonic)
+        if (
+                self.feedback_positions is None
+                or len(self.feedback_positions) < 6
+                or feedback_age > 1.0):
+            self.home_status_var.set(
+                'Fresh six-joint feedback is required to record pre-home')
+            return
+        try:
+            pre_home = energized_hold_target(self.feedback_positions[:6])
+        except (TypeError, ValueError):
+            self.home_status_var.set(
+                'Current pre-home feedback is not six finite positions')
+            return
+        if np.any(pre_home < URDF_JOINT_LIMITS[:, 0]) or np.any(
+                pre_home > URDF_JOINT_LIMITS[:, 1]):
+            self.home_status_var.set(
+                'Current pre-home is outside planning joint limits')
+            return
+        try:
+            profile = load_home_pose(HOME_POSE_PATH)
+            if profile is None:
+                raise ValueError(
+                    'record the rough / mission-ready home first')
+            validate_home_profile_limits(profile, URDF_JOINT_LIMITS)
+            save_home_pose(
+                HOME_POSE_PATH,
+                profile['positions_rad'],
+                observed_positions=profile.get(
+                    'observed_disabled_positions_rad'),
+                mission_ready_joint6_rad=profile[
+                    'mission_ready_joint6_rad'],
+                storage_joint6_rad=profile['storage_joint6_rad'],
+                staged_home_configured=bool(profile.get(
+                    'staged_home_configured', False)),
+                pre_home_positions_rad=pre_home.tolist(),
+                pre_home_configured=True,
+            )
+        except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            self.home_status_var.set(
+                'Could not save pre-home: %s' % exc)
             return
         self.load_selected_home()
 
@@ -1202,8 +1314,17 @@ class PiperGuiApp:
                 ("Service", self.service_text),
             ]
         ):
-            ttk.Label(parent, text=label, font=("TkDefaultFont", 10, "bold")).grid(row=row * 2, column=0, sticky="w", pady=(0 if row == 0 else 14, 2))
-            ttk.Label(parent, textvariable=var, wraplength=250, justify="left").grid(row=row * 2 + 1, column=0, sticky="ew")
+            ttk.Label(
+                parent, text=label, font=("TkDefaultFont", 10, "bold")
+            ).grid(
+                row=row * 2,
+                column=0,
+                sticky="w",
+                pady=(0 if row == 0 else 14, 2),
+            )
+            ttk.Label(
+                parent, textvariable=var, wraplength=250, justify="left"
+            ).grid(row=row * 2 + 1, column=0, sticky="ew")
 
     def set_manual_motion_enabled(self, enabled: bool) -> None:
         self.send_live_var.set(False)
@@ -1231,7 +1352,7 @@ class PiperGuiApp:
         self.ros_node.publish_joint_target(self.current_positions(), speed, effort)
 
     def request_safe_disable(self) -> None:
-        """Hold the live feedback pose and prove it settled before disabling."""
+        """Request explicit commissioning disable without motion or homing."""
         if not self.mission_view_model.state.can_start:
             self.service_text.set(
                 "Disable is owned by the active production mission; use "
@@ -1239,124 +1360,15 @@ class PiperGuiApp:
             return
         if self.safe_disable_in_progress:
             self.service_text.set(
-                "Safe disable is already waiting for the current-pose hold.")
-            return
-        joints, reason = self.fresh_feedback()
-        if reason:
-            self.service_text.set("Disable blocked: " + reason)
+                "Commissioning disable is already in progress.")
             return
 
         self.safe_disable_in_progress = True
-        self.safe_disable_waiting_for_hold = False
-        self.safe_disable_service_inflight = False
-        self.safe_disable_target = energized_hold_target(joints)
-        self.safe_disable_previous_feedback = None
-        self.safe_disable_settled_since = None
-        self.safe_disable_deadline = time.monotonic() + 8.0
         self.disable_button.configure(state="disabled")
-
-        if not self.ros_node.manual_commands_enabled:
-            self._safe_disable_fail(
-                "GUI commissioning command ownership is unavailable; ensure "
-                "the production mission is terminal and retry Disable.")
-            return
-
-        positions = list(self.safe_disable_target)
-        gripper = (
-            float(self.feedback_positions[6])
-            if self.feedback_positions is not None
-            and len(self.feedback_positions) >= 7
-            else float(self.vars[6].get())
-        )
-        positions.append(gripper)
-        speed = clamp(float(self.speed_var.get()), 1.0, 5.0)
-        effort = clamp(float(self.effort_var.get()), 0.5, 3.0)
-        self.ros_node.publish_joint_target(positions, speed, effort)
-        self.command_text.set(
-            "Safe-disable current feedback target: "
-            + ", ".join("%.3f" % value for value in positions)
-            + "\nwaiting for settled feedback before Disable")
-        self._begin_safe_disable_settle()
-
-    def _begin_safe_disable_settle(self) -> None:
-        joints, reason = self.fresh_feedback()
-        if reason:
-            self._safe_disable_fail(reason)
-            return
-        # Keep the pose sampled before the hold request as the proof target.
-        # Replacing it with feedback received after the request could validate
-        # an uncommanded coasting pose. The executor independently samples and
-        # publishes its own current feedback in the same bounded transaction;
-        # any material disagreement therefore fails the target-error gate and
-        # leaves the motors enabled.
-        if self.safe_disable_target is None:
-            self.safe_disable_target = np.asarray(joints, dtype=float)
-        self.safe_disable_waiting_for_hold = False
-        self.safe_disable_previous_feedback = None
-        self.safe_disable_settled_since = None
         self.service_text.set(
-            "Safe disable: current-feedback target sent; verifying the arm "
-            "is settled before disabling.")
-        self.root.after(100, self._poll_safe_disable_settle)
-
-    def _poll_safe_disable_settle(self) -> None:
-        if (
-                not self.safe_disable_in_progress
-                or self.safe_disable_waiting_for_hold
-                or self.safe_disable_service_inflight):
-            return
-        now = time.monotonic()
-        joints, reason = self.fresh_feedback()
-        if reason:
-            if now < self.safe_disable_deadline:
-                self.root.after(100, self._poll_safe_disable_settle)
-                return
-            self._safe_disable_fail(reason)
-            return
-
-        current = np.asarray(joints, dtype=float)
-        target_error = float(np.max(np.abs(
-            current - self.safe_disable_target)))
-        motion_delta = (
-            float("inf")
-            if self.safe_disable_previous_feedback is None
-            else float(np.max(np.abs(
-                current - self.safe_disable_previous_feedback)))
-        )
-        self.safe_disable_previous_feedback = current
-        settled = target_error <= 0.025 and motion_delta <= 0.005
-        if settled:
-            if self.safe_disable_settled_since is None:
-                self.safe_disable_settled_since = now
-            elif now - self.safe_disable_settled_since >= 1.0:
-                self.safe_disable_service_inflight = True
-                self.service_text.set(
-                    "Safe disable: exact current pose is settled; requesting "
-                    "motor disable.")
-                self.ros_node.call_enable_async(False)
-                return
-        else:
-            self.safe_disable_settled_since = None
-
-        if now >= self.safe_disable_deadline:
-            self._safe_disable_fail(
-                "current-feedback hold did not settle within 8 seconds "
-                "(target error %.3f rad, latest motion %.3f rad); motors "
-                "remain enabled" % (target_error, motion_delta))
-            return
-        self.root.after(100, self._poll_safe_disable_settle)
-
-    def _safe_disable_fail(self, reason) -> None:
-        self.safe_disable_in_progress = False
-        self.safe_disable_waiting_for_hold = False
-        self.safe_disable_service_inflight = False
-        self.safe_disable_target = None
-        self.safe_disable_previous_feedback = None
-        self.safe_disable_settled_since = None
-        self.safe_disable_deadline = 0.0
-        self.disable_button.configure(state="normal")
-        self.service_text.set(
-            "Safe disable blocked: %s. Motors were not disabled." % reason)
+            "Commissioning disable requested directly. No hold target or home "
+            "motion is being commanded; support the arm if it can fall.")
+        self.ros_node.call_enable_async(False)
 
     def use_feedback(self) -> None:
         if not self.feedback_positions or len(self.feedback_positions) < 7:
@@ -1421,7 +1433,9 @@ class PiperGuiApp:
             self.preview_status_var.set(reason)
             return
         if self.preview_positions is None or len(self.preview_positions) < 6:
-            self.preview_status_var.set("No 3D preview is available; open and load the editor first.")
+            self.preview_status_var.set(
+                "No 3D preview is available; open and load the editor first."
+            )
             return
         target = np.asarray(self.preview_positions[:6], dtype=float)
         path = interpolate_joint_path(joints, target, 0.025)
@@ -1441,10 +1455,16 @@ class PiperGuiApp:
             return
         status = self.ros_node.latest_status
         if status is None or int(status.err_code) != 0:
-            self.preview_status_var.set("Arm status is missing or reports an error; motion refused.")
+            self.preview_status_var.set(
+                "Arm status is missing or reports an error; motion refused."
+            )
             return
         speed = clamp(float(self.preview_speed_var.get()), 1.0, 10.0)
-        gripper = self.feedback_positions[6] if len(self.feedback_positions) >= 7 else self.vars[6].get()
+        gripper = (
+            self.feedback_positions[6]
+            if len(self.feedback_positions) >= 7
+            else self.vars[6].get()
+        )
         positions = list(target) + [float(gripper)]
         joint_text = ", ".join(f"{value:.3f}" for value in target)
         confirmed = messagebox.askyesno(
@@ -1457,7 +1477,8 @@ class PiperGuiApp:
         if not confirmed:
             self.preview_status_var.set("3D preview move cancelled; no command sent.")
             return
-        self.ros_node.publish_joint_target(positions, speed, clamp(float(self.effort_var.get()), 0.5, 3.0))
+        effort = clamp(float(self.effort_var.get()), 0.5, 3.0)
+        self.ros_node.publish_joint_target(positions, speed, effort)
         self.preview_status_var.set(
             f"3D preview target sent at {speed:.0f}%. Monitor the live arm and feedback."
         )
@@ -1500,19 +1521,13 @@ class PiperGuiApp:
                     self.service_text.set(str(message))
                     if not enabled and self.safe_disable_in_progress:
                         self.safe_disable_in_progress = False
-                        self.safe_disable_waiting_for_hold = False
-                        self.safe_disable_service_inflight = False
-                        self.safe_disable_target = None
-                        self.safe_disable_previous_feedback = None
-                        self.safe_disable_settled_since = None
-                        self.safe_disable_deadline = 0.0
                         self.disable_button.configure(state="normal")
                         self.service_text.set(
                             str(message)
-                            + ("; exact current-feedback hold was settled "
-                               "before disable" if success else
-                               "; disable failed after the settled hold; "
-                               "motors may remain enabled"))
+                            + ("; all-six feedback-proved commissioning "
+                               "disable completed without homing" if success
+                               else "; disable failed; motors may remain "
+                               "enabled"))
                 elif name == "command_blocked":
                     self.command_text.set(str(payload))
                 elif name == "mission_client":

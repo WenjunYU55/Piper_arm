@@ -1,5 +1,13 @@
 # Phase 5 safety evaluator shadow baseline
 
+> Historical phase record, superseded 2026-08-17. The non-authoritative
+> `SafetyEvaluator` and `SafetyComparisonLogger` were removed rather than
+> promoted after live logs showed high-volume duplicate RETURN_HOME
+> disagreements. `safety_evaluator.py` now contains only `SafetyMode`,
+> `ObstacleAuthority`, immutable `RuntimeGatePolicy`, and its phase mapping.
+> `scan_viewpoint_executor_node.py` remains the one authoritative gate and
+> command owner.
+
 ## Scope and authority
 
 Phase 5 adds a pure, typed safety/readiness evaluator around existing executor

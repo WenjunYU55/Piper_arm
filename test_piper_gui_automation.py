@@ -509,7 +509,7 @@ def test_production_action_owns_enable_and_plan_invalidation():
     assert 'self.ros_node.submit_mission(request)' in automatic
 
 
-def test_disable_requires_an_acknowledged_settled_current_feedback_hold():
+def test_commissioning_disable_is_direct_but_mission_cancel_still_homes():
     source = (
         Path(__file__).resolve().parent / 'piper_gui_native.py'
     ).read_text(encoding='utf-8')
@@ -517,15 +517,12 @@ def test_disable_requires_an_acknowledged_settled_current_feedback_hold():
     safe_disable = source.split(
         'def request_safe_disable(self) -> None:', 1)[1].split(
             'def use_feedback(self) -> None:', 1)[0]
-    assert 'self.fresh_feedback()' in safe_disable
     assert 'self.ros_node.cancel_scan()' not in safe_disable
     assert 'Cancel and Home' in safe_disable
-    assert 'self.ros_node.publish_joint_target(positions, speed, effort)' in safe_disable
-    assert 'if self.safe_disable_target is None:' in safe_disable
-    assert 'target_error <= 0.025 and motion_delta <= 0.005' in safe_disable
-    assert 'now - self.safe_disable_settled_since >= 1.0' in safe_disable
+    assert 'self.ros_node.publish_joint_target' not in safe_disable
+    assert 'self.fresh_feedback()' not in safe_disable
     assert 'self.ros_node.call_enable_async(False)' in safe_disable
-    assert 'Motors were not disabled' in safe_disable
+    assert 'Commissioning disable requested directly' in safe_disable
 
     executor = (
         Path(__file__).resolve().parent

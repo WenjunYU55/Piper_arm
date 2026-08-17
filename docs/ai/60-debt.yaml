@@ -12,8 +12,40 @@ final_equivalence_audit_2026_08_15:
   checklist: docs/refactor/physical_requalification_checklist.md
   unexplained_differences: []
   safety_relevant_refactor_differences: []
-  retained_limits: [no immutable complete mission ROS bag, late terminal cancellation baseline behavior, visual replacement exhaustion retains MISSION_FAILED, target-absence human result reason says 5 rather than baseline five and changes the derived result hash, safety evaluator remains shadow-only, frozen legacy pipeline bodies await supervised trace]
+  retained_limits: [no immutable complete mission ROS bag, late terminal cancellation baseline behavior, visual replacement exhaustion retains MISSION_FAILED, target-absence human result reason says 5 rather than baseline five and changes the derived result hash, telemetry compatibility mirrors remain, 2026-08-17 shutdown/gating correction awaits supervised physical requalification]
 deferred_cleanup:
+  - id: mission_shutdown_and_runtime_gate_simplification_2026_08_17
+    status: software_implemented_physical_requalification_pending
+    issue: >-
+      The old architecture allowed the original scan failure classification to
+      veto a fresh direct-home attempt, allowed a redundant final-hold
+      acknowledgement to strand a feedback-proved homed arm powered, exposed
+      runtime_reasons through ten interacting booleans, retained two frozen
+      mission implementations and emitted 15881 identical non-authoritative
+      RETURN_HOME shadow disagreements in the latest scan log.
+    correction: >-
+      MissionEngine is now the sole mission/shutdown authority. All owned
+      failures re-qualify PRE_HOME, ROUGH_HOME and STORAGE_WRIST from current
+      control evidence unless current motor authority is actually lost. A
+      autonomous startup and terminal shutdown no longer call the redundant
+      hold service; the proved position-controller target is retained until
+      confirmed disable. Runtime gates use one immutable named policy and the unused
+      frozen/shadow implementations are removed.
+    remaining: >-
+      Repeat the supervised physical requalification checklist beginning with a
+      non-motor failure-to-home case and direct staged-home/disable. Do not
+      simulate a real motor dropout physically.
+    software_evidence_2026_08_17: >-
+      The complete piper_mobile_manipulation Python suite passes 609 tests;
+      the changed driver, GUI and gripper-diagnostic selection passes 82 tests.
+      All 23 changed Python files pass ament_flake8 and the changed production
+      files pass ament_pep257. Eleven AI YAML documents parse, git diff --check
+      passes, and the normal five-package Foxy colcon build succeeds. Registered
+      piper tests pass 60 with one copyright skip; every registered functional
+      mobile-manipulation pytest target passes. The package-wide lint targets
+      still expose 84 flake8 and 16 pep257 findings in untouched historical
+      files. Command-free core and compact Tesseract qualifications also pass.
+    required_retests: [test_mission_engine.py, test_mission_core.py, Phase 1 mission and executor characterization, test_scan_motion.py, test_safety_evaluator.py, full mobile-manipulation tests, normal build, colcon test, command-free Tesseract qualifications, supervised physical shutdown test]
   - id: phase10_conservative_cleanup_2026_08_15
     status: completed_with_documented_retention_gates
     issue: >-
@@ -23,10 +55,10 @@ deferred_cleanup:
       Other apparent duplicates remain tied to explicit compatibility, safety,
       commissioning, or subsystem ownership and were not deleted.
     next_cut: >-
-      Follow the existing item-specific gates below. In particular, collect the
-      supervised mission trace before removing frozen Phase 5 bodies, migrate
-      every consumer before removing telemetry mirrors, and do not promote or
-      delete legacy safety checks until shadow equivalence is separately reviewed.
+      Follow the existing item-specific gates below. The frozen mission bodies
+      and duplicate shadow evaluator were removed in the reviewed 2026-08-17
+      simplification. Migrate every consumer before removing telemetry mirrors,
+      and preserve the one authoritative executor gate plus MissionEngine.
     required_retests: [full Phase 1-9 characterization, normal build, colcon test, command-free Tesseract qualifications]
   - id: phase9_remaining_node_local_configuration_2026_08_14
     status: coordinator_and_executor_centralized_other_node_boundaries_deferred
@@ -50,48 +82,41 @@ deferred_cleanup:
       sequencing and typed recovery selection now live in four ROS-free
       components. The node still owns the large Tesseract ROS normalization,
       geometry/path revalidation, acquisition correlation, scan-history
-      persistence and explicit state dispatch because moving those together
-      would exceed this behavior-preserving phase and disturb safety-shadow
-      observation points.
+      persistence and explicit state dispatch. Moving those together remains a
+      high-risk change even though the obsolete safety-shadow observation
+      points no longer exist.
     next_cut: >-
       Characterize proposal normalization and acquisition-correlation data as
       immutable domain inputs, then extract them one subsystem at a time.
-      Preserve the node as the sole command/status publisher, keep Phase 5
-      safety shadow-only, and do not combine geometry authority, session
-      history or home semantics merely to reduce line count.
+      Preserve the node as the sole command/status publisher, use the named
+      RuntimeGatePolicy boundary, and do not combine geometry authority,
+      session history or home semantics merely to reduce line count.
     required_retests: [test_phase7_viewpoint_components.py, Phase 1 executor characterization, full scan_motion and mobile-manipulation suites, public contract hashes, normal build]
   - id: phase6_frozen_legacy_mission_bodies_2026_08_14
-    status: new_engine_authoritative_legacy_bodies_non_authoritative
+    status: resolved_2026_08_17_mission_engine_only
     issue: >-
-      MissionEngine now owns the production admitted mission and shutdown
-      sequence, while the former Phase 5 run_pipeline and safe_shutdown bodies
-      remain renamed as _legacy_run_pipeline and _legacy_safe_shutdown. Pure
-      engine tests and existing characterization prove software phase/outcome
-      equivalence, but no live mission phase comparison was run during this
-      software-only refactor.
+      MissionEngine owns the production admitted mission and shutdown sequence.
+      The uncalled _legacy_run_pipeline and _legacy_safe_shutdown bodies were
+      removed after reference search and characterization; public compatibility
+      delegates still route only to MissionEngine.
     next_cut: >-
-      Collect an explicitly authorized supervised mission trace and compare it
-      with the frozen Phase 1 sequence. Remove the two non-authoritative bodies
-      only in a reviewed cleanup after that evidence; keep public Python
-      compatibility delegates while downstream tests/imports require them.
-      Never allow fallback selection at runtime or maintain two authorities.
+      Keep public Python compatibility delegates while downstream tests/imports
+      require them. Never add a fallback mission implementation or a second
+      shutdown authority. Supervised physical requalification remains required
+      for the 2026-08-17 shutdown behavior correction.
     required_retests: [test_mission_engine.py, Phase 1 mission characterization, mission_core shutdown tests, full mobile-manipulation suite, public contract hashes, normal build]
   - id: phase5_safety_shadow_equivalence_2026_08_14
-    status: shadow_active_legacy_authoritative
+    status: resolved_2026_08_17_named_policy_single_authority
     issue: >-
-      The executor now names eight observed safety contexts and records typed
-      shadow decisions for proposal validation, runtime gating and hold. The
-      legacy gates still own every command and transition. Synthetic tests
-      deliberately expose the boundary where collision qualification is
-      enforced outside runtime_reasons, and HOLD_CURRENT preserves its narrow
-      feedback/command-authority helper contract.
+      The unused SafetyEvaluator and SafetyComparisonLogger duplicated the
+      authoritative executor gates and produced high-volume disagreement logs.
+      They were not used for commands or transitions and have been removed.
+      SafetyMode, ObstacleAuthority and RuntimeGatePolicy remain as a small
+      immutable declaration consumed by the single executor gate.
     next_cut: >-
-      Collect structured comparison evidence across command-free and later
-      explicitly authorized supervised runs. Resolve disagreements by locating
-      the correct trust-boundary owner, not by weakening either check. Do not
-      switch authority, remove duplicate checks, or fold coordinator preflight,
-      contact manipulation or disable into the executor without a separate
-      reviewed phase.
+      Test the authoritative policy directly. Do not reintroduce shadow
+      permission decisions, interacting boolean gate call surfaces, or fold
+      coordinator preflight, contact manipulation or disable into the executor.
     required_retests: [test_safety_evaluator.py, Phase 1 characterization, full scan_motion and mobile-manipulation suites, normal build, later supervised comparison audit before any authority switch]
   - id: phase4_remaining_process_owners_2026_08_14
     status: autonomous_mission_and_gui_separated_other_policies_deferred
@@ -140,7 +165,7 @@ deferred_cleanup:
       latest_scan_target_center until session-state ownership is refactored.
     required_retests: [test_telemetry_store.py, Phase 1 characterization, failure model, mission core, full scan_motion and mobile-manipulation suites, public ROS hashes, normal build]
   - id: startup_j6_clockwise_branch_2026_08_11
-    status: direction_contract_corrected_physical_retry_required
+    status: stale_transaction_reset_fixed_physical_retry_required
     issue: >-
       GUI task gui-sim-ef30b4cc466f488ba1331d08b6432d34 used the
       negative storage branch and moved J6 in the increasing direction during
@@ -156,13 +181,34 @@ deferred_cleanup:
       profiles remain diagnostic-only. The prior positive/decreasing repair
       and its branch-rejection runs are superseded, while their no-enable and
       child-cleanup evidence remains valid.
+      A 2026-08-16 retry exposed a separate lifecycle defect: after an
+      incomplete STARTUP_WRIST was disabled, disabled-arm relaxation was still
+      compared with the old 3.647663-rad high-water mark and repeatedly called
+      DisableArm(7), defeating later commissioning enable attempts. A proved
+      disable or direction-watchdog trip now clears the incomplete transaction,
+      wrap target and direction history; fresh coherent feedback owns re-arm.
+      E2E task gui-sim-904111b0d41b48a6bd16a10d3c29f538 then exposed a
+      partial reintegration regression in the executor: the driver preserved
+      fresh J1-J5 for the J6-only startup command, but executor progress still
+      used stale six-joint targets and blocked at the wrap bridge. The archived
+      command-boundary J1-J5 refresh, J6-only progress/settle proof and
+      no-intermediate-hold behavior are restored with focused regressions.
+      The same failed run exposed a commissioning integration gap: the GUI
+      created its command publisher before proving sole ownership, and its
+      strict current-hold settle gate could prevent /enable_srv false from
+      being called. Commissioning now starts motion-locked, acquires its
+      publisher only after an empty writer-set proof, and uses an explicitly
+      labelled no-home/no-motion direct disable. An unfinished STARTUP_WRIST
+      accepts only measured-J6 hold with J1-J5 movement or positive J6-only
+      progress toward ready zero; autonomous shutdown behavior is unchanged.
     next_cut: >-
       Inspect the J6 cable/wrist; corrected-contract focused/build/rootless
       requalification now passes. Confirm the GUI shows startup increasing to
       zero. Only after explicit authorization run a startup-only five-percent test and
-      verify J6 increases monotonically to ready with no fault; then cancel
-      before acquisition and prove decreasing negative storage, six-axis
-      disable and cleanup.
+      verify J6 increases monotonically through any required wrap bridge to
+      ready with no false J1-J5 no-progress result and no hold inserted before
+      ROUGH_HOME; then cancel before acquisition and prove decreasing negative
+      storage, six-axis disable and cleanup.
   - id: qualify_staged_home_and_contact_physical_models
     issue: >-
       The staged-home software contract and rigid pen/marker/stick evidence path
@@ -180,9 +226,21 @@ deferred_cleanup:
       outstanding. manipulation_model_qualified remains false because gripper
       TCP, finger open/closed collision states, attached-object collision and
       allowed-contact behavior have not passed staged physical validation. A
-      2026-08-16 live read showed raw gripper CAN feedback 0x2A8 continuously
-      all-zero (zero stroke/effort, disabled and not homed) while the jaws
-      could be moved manually; J7/J8 therefore remained zero in ROS/RViz.
+      2026-08-16 single-owner SDK/CAN tests at the physically closed aperture
+      showed fresh 0x2A8 at 200 Hz: -210 raw (-0.210 mm), no fault bits and
+      homing false. Exact 0x159 disable-enable-disable frames changed the J7
+      enable feedback as requested; a separate five-second observation remained
+      enabled without override, then disabled with zero effort. This rules out
+      absent CAN commands, stale J7 feedback and immediate re-disable for this
+      direct path. Near-zero effort at an unloaded, already-satisfied closed
+      target is not evidence of weak holding torque. A subsequent sole-owner
+      production-path test enabled all six arm axes, opened J7 from 0.28 to
+      9.66 mm at 0.5 N m, and held a compliant object for five seconds at
+      4.48--4.76 mm with about 1.04 N m, live enable feedback and no faults.
+      Disable proved every arm flag false and J7 disabled/zero effort. Thus
+      powered position control and holding pass; only the false homing flag and
+      absolute aperture datum remain unqualified. tools/debug_piper_gripper.py
+      provides no-zero diagnostics without commanding J1-J6.
     next_cut: >-
       With a clear supervised bench and emergency stop ready, run the exact
       saved profile at 5 percent: STARTUP_WRIST, ROUGH_HOME, cancel from a
@@ -190,9 +248,12 @@ deferred_cleanup:
       hold and six-motor disable. Confirm the real camera/cable path matches the
       intended fold and stop on unexpected contact or strain. Qualify marker
       push before pick/place. With the arm otherwise safely recovered and a
-      clear gripper, separately validate the official clear-disable then
-      enable gripper sequence and require nonzero/fresh 0x2A8 status before
-      trusting J7/J8. Validate a real observed support drop and only
+      clear gripper, preserve the proved sole-owner command boundary. Because
+      homing status is false, the general direct-SDK clear-enable and motion-test
+      remain refused. Review the manufacturer zero/configuration procedure
+      separately rather than resetting automatically. The loaded 1 N m holding
+      test already passes; do not repeat or increase force merely to obtain a
+      stiffer subjective feel. Validate a real observed support drop and only
       then consider setting manipulation_model_qualified true. Never enable
       contact execution merely to make the mission proceed.
   - id: validate_measured_nbv_and_delayed_mesh_physically
@@ -1000,7 +1061,7 @@ live_e2e_status_2026_08_06:
 
 selected_reintegration_debt_2026_08_15:
   completed_software_ports:
-    - Direct configured home now bypasses Tesseract through ExecuteHomeStage while retaining mission identity, feedback, motor, limit, installed-holder external-clearance, settle, hold and disable gates.
+    - Direct configured home bypasses the Tesseract worker through ExecuteHomeStage/native MoveJ while retaining mission identity, fresh finite feedback, motor state, installed-holder external-clearance, operator-authorized 0.3-rad per-joint home acceptance and disable proof. It does not require Tesseract motion-limit telemetry or a redundant hold-service acknowledgement.
     - Schema-v4 terminal PRE_HOME and the driver-owned positive-only J6 startup wrap bridge are active.
     - Zero-capture failed-dataset deletion is identity/path/artifact guarded.
     - Normal Tesseract output can use a densely validated direct chord or pass-through-smoothed streamed detour with exact fallback.
@@ -1014,3 +1075,26 @@ selected_reintegration_debt_2026_08_15:
     issue: Shared ambiguity-aware depth-layer selection and confidence-qualified L515 capture schema 2 are active. The first live launch exposed eager preset/global-time writes racing the expanded confidence stream and producing RS2_USB_STATUS_BUSY. Both launchers now wait for a real CameraInfo sample before reconfiguration and enable stream synchronization. A motors-disabled normal-wrapper retest passed preset 5, both global-time controls true, 95 native depth/confidence/camera-info bundles in three seconds with zero timestamp delta, and valid left-justified 4-bit RAW8 confidence. Stationary semantic-target jitter and a complete persisted schema-2 target capture remain untested.
     next_cut: Keep motors disabled and run the complete perception stack on a stationary target. Measure target jitter, confidence histograms, correlation rejection rate and schema-2 artifact/hash completeness before authorizing motion. Keep NBV 5/6 separate.
   physical_requalification: Required for every motion-affecting completed port; no hardware process was started during this work.
+
+operator_home_acceptance_and_gui_profile_repair_2026_08_16:
+  status: software_complete_physical_validation_pending
+  operator_policy: >-
+    Startup and terminal current-position holds must be explicitly published
+    and acknowledged but ordinary PiPER settling/noise must not fail a mission
+    through a 0.005-rad hold window. Configured PRE_HOME, ROUGH_HOME and
+    STORAGE_WRIST remain direct ExecuteHomeStage/native MoveJ operations and
+    never call the Tesseract worker. Each home joint uses an operator-authorized
+    0.3-rad target and successive-sample allowance for one second.
+  gui_defect_fixed: >-
+    The GUI previously exposed only rough/ready and storage-J6 recording. Both
+    record paths rewrote schema-v4 without carrying pre_home_positions_rad,
+    silently making the next mission fail preflight. The commissioning panel
+    now exposes Record Pre-Home (Shutdown Only), displays the stored pre-home,
+    and every single-stage edit preserves all other configured stages.
+  retained_gates: >-
+    Fresh finite six-joint feedback, all-six enabled/fault-free motor authority,
+    controller limits, service/command timeout and progress monitoring,
+    installed-holder external clearance, home-stage identity, feedback-confirmed
+    disable and exact child cleanup remain mandatory. The 0.3-rad value is not
+    described as sensor accuracy.
+  required_retests: [focused configuration/mission/home/GUI regressions, full mobile-manipulation suite, GUI suite, package build, no-hardware ROS graph, supervised staged-home physical test]

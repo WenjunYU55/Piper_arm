@@ -54,6 +54,46 @@ def test_startup_wrist_direction_is_proved_before_motor_enable():
         MissionEngine._handle_enable_and_hold)
 
 
+def test_configured_home_acceptance_uses_operator_authorized_point_three_rad():
+    node = SimpleNamespace(
+        require_fresh_joint_feedback=lambda: None,
+        telemetry_store=None,
+        latest_joints=SimpleNamespace(position=[0.299] * 6),
+    )
+    session = SimpleNamespace(home_positions_rad=[0.0] * 6)
+
+    assert TargetScanMissionNode.at_configured_home(node, session)
+    node.latest_joints = SimpleNamespace(position=[0.301] + [0.0] * 5)
+    assert not TargetScanMissionNode.at_configured_home(node, session)
+
+
+def test_compatibility_hold_helpers_use_acknowledgement_not_noise_window():
+    startup_source = inspect.getsource(TargetScanMissionNode.prove_current_hold)
+    shutdown_source = inspect.getsource(
+        TargetScanMissionNode.prove_current_hold_for_shutdown)
+
+    assert 'HOLD_REQUESTED' in startup_source
+    assert 'HOLD_REQUESTED' in shutdown_source
+    assert 'position-window proof' in startup_source
+    assert 'position-window proof' in shutdown_source
+    assert 'delta <= 0.005' not in startup_source
+    assert 'delta <= 0.005' not in shutdown_source
+
+    engine_startup = inspect.getsource(MissionEngine._handle_enable_and_hold)
+    engine_shutdown = inspect.getsource(MissionEngine.shutdown)
+    assert 'prove_current_hold' not in engine_startup
+    assert 'prove_shutdown_hold' not in engine_shutdown
+
+
+def test_direct_home_waits_for_fresh_feedback_not_settle_window():
+    source = inspect.getsource(
+        TargetScanMissionNode.prove_return_home_for_shutdown)
+
+    assert 'ExecuteHomeStage.Request()' in source
+    assert 'require_fresh_joint_feedback()' in source
+    assert "held feedback before direct home motion" not in source
+
+
 def test_only_transient_live_perception_blocks_retry_exact_plan_approval():
     assert retryable_plan_approval_rejection(
         'execution blocked: tracking is not settled TRACKING; '
@@ -366,6 +406,7 @@ def test_shutdown_holds_current_state_then_uses_dedicated_home_plan():
         latest_execution_at=time.monotonic() + 10.0,
         processes=SimpleNamespace(failed=lambda: {}),
         at_configured_home=lambda _session, **_kwargs: state['at_home'],
+        require_fresh_joint_feedback=lambda: None,
         wait_for_stable_joint_stream=lambda *_args: None,
     )
 
@@ -641,14 +682,10 @@ def test_link_loss_and_deadline_are_bounded():
     assert session.deadline_expired(1210.01)
 
 
-def test_disable_never_counts_as_safe_without_current_feedback_hold():
+def test_disable_never_counts_as_safe_without_verified_home():
     session = MissionSession(validate_goal_payload(goal(), now_sec=1001.0))
     session.disabled_proved = True
     session.processes_stopped = True
-    phase, reason = session.shutdown_outcome()
-    assert phase == MissionPhase.NEEDS_OPERATOR
-    assert 'current-position hold' in reason
-    session.current_hold_proved = True
     phase, reason = session.shutdown_outcome()
     assert phase == MissionPhase.NEEDS_OPERATOR
     assert 'home return' in reason
@@ -656,6 +693,7 @@ def test_disable_never_counts_as_safe_without_current_feedback_hold():
     session.storage_wrist_proved = True
     result = session.result_payload('FAILED', 'planned failure')
     assert result['safe_shutdown']
+    assert not session.current_hold_proved
     assert len(result['result_sha256']) == 64
 
 
@@ -721,8 +759,9 @@ def test_cancel_shutdown_returns_home_before_disable_and_process_stop():
         failure=RuntimeError('operator cancelled scan execution'))
 
     assert failure is None
-    assert calls[:5] == [
-        'pre_home', 'home', 'storage', 'hold', ('enable', False)]
+    assert calls[:4] == [
+        'pre_home', 'home', 'storage', ('enable', False)]
+    assert 'hold' not in calls
     assert calls[-1] == 'stop'
     assert session.disabled_proved and session.processes_stopped
 
@@ -1014,17 +1053,11 @@ def test_multiview_plan_prefix_cannot_correlate_to_full_request_id():
 
 
 def test_pipeline_waits_for_stable_multiview_readiness_before_request():
-    source = Path(
-        TargetScanMissionNode.__module__.replace('.', '/') + '.py')
-    package_source = (
-        Path(__file__).resolve().parents[1]
-        / 'piper_mobile_manipulation'
-        / source.name
-    ).read_text(encoding='utf-8')
+    package_source = inspect.getsource(MissionEngine)
     lock_wait = package_source.index(
         "'measured target lock ready; waiting for stable multiview readiness'")
     readiness_wait = package_source.index(
-        "goal_handle, session, 'multiview', 1.0, 30.0")
+        "context, 'multiview',")
     plan_request = package_source.index(
         "'requesting one correlated feature-driven view; up to %d '")
 

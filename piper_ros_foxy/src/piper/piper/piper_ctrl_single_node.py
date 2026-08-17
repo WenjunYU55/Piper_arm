@@ -37,6 +37,7 @@ JOINT6_STARTUP_CONTROLLER_LIMIT_TIMEOUT_SEC = 2.0
 PIPER_SETTING_UNCHANGED = 0x7FFF
 JOINT6_STARTUP_COMMAND_FRAME = 'piper_scan_executor_startup_wrist'
 JOINT6_HOLD_COMMAND_FRAME = 'piper_scan_executor_hold'
+JOINT6_COMMISSIONING_COMMAND_FRAME = 'piper_native_gui'
 
 
 DEFAULT_JOINT_BOUNDS = {
@@ -62,6 +63,20 @@ MOTOR_DRIVER_FAULT_FIELDS = (
     'driver_error_status',
     'stall_status',
 )
+GRIPPER_FAULT_FIELDS = (
+    'voltage_too_low',
+    'motor_overheating',
+    'driver_overcurrent',
+    'driver_overheating',
+    'sensor_status',
+    'driver_error_status',
+)
+GRIPPER_COMMAND_MODES = {
+    0x00: 'DISABLE',
+    0x01: 'ENABLE',
+    0x02: 'DISABLE_CLEAR_ERROR',
+    0x03: 'ENABLE_CLEAR_ERROR',
+}
 MAX_PROTOCOL_JOINT_SPEED_RAD_S = 3.0
 MAX_PROTOCOL_JOINT_ACCELERATION_RAD_S2 = 5.0
 JOINT_FEEDBACK_CAN_IDS = (0x2A5, 0x2A6, 0x2A7)
@@ -257,6 +272,27 @@ def startup_joint6_controller_target(
                 'startup J6 controller target %.6f is behind raw feedback %.6f'
                 % (desired_controller_target, raw))
     return desired_controller_target, waiting_for_feedback_wrap
+
+
+def reset_startup_joint6_transaction(node):
+    """
+    Clear one incomplete startup transaction after fail-closed disable.
+
+    The arm can relax after its motors are disabled.  That motion must not be
+    compared with the high-water mark from the preceding powered J6 startup,
+    otherwise the stale direction watchdog continually reissues DisableArm
+    and defeats a later commissioning enable.  The next coherent feedback
+    sample will independently re-arm the negative logical branch when startup
+    has not yet completed.
+    """
+    node._startup_joint6_active = False
+    node._startup_joint6_armed = False
+    node._startup_joint6_last_target = None
+    node._startup_joint6_last_controller_target = None
+    node._startup_joint6_direction_previous_raw = None
+    node._startup_joint6_direction_unwrapped = None
+    node._startup_joint6_direction_high_water = None
+    node._continuous_joint6_feedback = None
 
 
 def decode_joint_feedback_pair(arbitration_id, data):
@@ -473,6 +509,85 @@ def motor_driver_faults(piper):
     except (AttributeError, TypeError, ValueError):
         return None
     return tuple(faults)
+
+
+def gripper_feedback_diagnostic(piper, wall_time_fn=time.time):
+    """Return a read-only diagnostic view of the SDK's latest 0x2A8 state."""
+    try:
+        wrapper = piper.GetArmGripperMsgs()
+        state = wrapper.gripper_state
+        foc = state.foc_status
+        timestamp = float(getattr(wrapper, 'time_stamp', 0.0) or 0.0)
+        now = float(wall_time_fn())
+        faults = tuple(
+            field for field in GRIPPER_FAULT_FIELDS
+            if bool(getattr(foc, field, False)))
+        return {
+            'available': timestamp > 0.0,
+            'timestamp': timestamp,
+            'age_sec': (
+                max(0.0, now - timestamp)
+                if timestamp > 0.0 else math.inf),
+            'hz': float(getattr(wrapper, 'Hz', 0.0) or 0.0),
+            'position_raw': int(getattr(state, 'grippers_angle', 0)),
+            'effort_raw': int(getattr(state, 'grippers_effort', 0)),
+            'enabled': bool(getattr(foc, 'driver_enable_status', False)),
+            'homed': bool(getattr(foc, 'homing_status', False)),
+            'faults': faults,
+        }
+    except (AttributeError, TypeError, ValueError):
+        return {
+            'available': False,
+            'timestamp': 0.0,
+            'age_sec': math.inf,
+            'hz': 0.0,
+            'position_raw': 0,
+            'effort_raw': 0,
+            'enabled': False,
+            'homed': False,
+            'faults': (),
+        }
+
+
+def format_gripper_feedback_diagnostic(record):
+    """Format feedback without treating an SDK default object as live data."""
+    if not bool(record.get('available', False)):
+        return 'feedback=NO_FEEDBACK'
+    faults = ','.join(record.get('faults', ())) or 'none'
+    return (
+        'feedback=LIVE age=%.3fs hz=%.2f position=%d(%.3fmm) '
+        'effort=%d(%.3fNm) enabled=%s homed=%s faults=%s'
+        % (
+            float(record['age_sec']), float(record['hz']),
+            int(record['position_raw']),
+            int(record['position_raw']) * 0.001,
+            int(record['effort_raw']), int(record['effort_raw']) * 0.001,
+            bool(record['enabled']), bool(record['homed']), faults))
+
+
+def diagnostic_log(node, level, message):
+    """Log diagnostics while preserving lightweight unbound-method fixtures."""
+    try:
+        logger = node.get_logger()
+        method = getattr(logger, str(level), None)
+        if callable(method):
+            method(str(message))
+    except AttributeError:
+        pass
+
+
+def log_enable_transition_state(node, label):
+    states = motor_driver_enable_states(node.piper)
+    faults = motor_driver_faults(node.piper)
+    diagnostic_log(
+        node,
+        'info',
+        '%s main_joint_enable_states=%s main_joint_faults=%s %s'
+        % (
+            str(label), states if states is not None else 'NO_FEEDBACK',
+            faults if faults is not None else 'NO_FEEDBACK',
+            format_gripper_feedback_diagnostic(
+                gripper_feedback_diagnostic(node.piper))))
 
 
 def request_piper_enable_state(piper, enabled, timeout_sec,
@@ -831,12 +946,25 @@ class PiperRosNode(Node):
         """Avoid resending an unchanged gripper command with every arm sample."""
         signature = (
             int(angle), int(effort), int(status_code), int(set_zero))
+        sent = False
         with self._command_cache_lock:
             if signature == self._gripper_command_signature:
-                return False
-            self.piper.GripperCtrl(*signature)
-            self._gripper_command_signature = signature
-        return True
+                sent = False
+            else:
+                self.piper.GripperCtrl(*signature)
+                self._gripper_command_signature = signature
+                sent = True
+        diagnostic_log(
+            self,
+            'info' if sent else 'debug',
+            'Gripper command %s mode=%s(0x%02X) position=%d(%.3fmm) '
+            'effort=%d(%.3fNm) set_zero=0x%02X'
+            % (
+                'SENT' if sent else 'NOT_SENT_UNCHANGED',
+                GRIPPER_COMMAND_MODES.get(signature[2], 'UNKNOWN'),
+                signature[2], signature[0], signature[0] * 0.001,
+                signature[1], signature[1] * 0.001, signature[3]))
+        return sent
 
     def load_joint_bounds(self, path):
         bounds = dict(DEFAULT_JOINT_BOUNDS)
@@ -1126,6 +1254,7 @@ class PiperRosNode(Node):
                 self._disable_required = True
                 self._motor_watchdog_reason = reason
                 self.reset_command_cache()
+                reset_startup_joint6_transaction(self)
                 self.get_logger().error(
                     'Fail-closed startup direction watchdog disabled all '
                     'axes: ' + reason)
@@ -1318,6 +1447,8 @@ class PiperRosNode(Node):
             getattr(joint_data, 'header', None), 'frame_id', ''))
         startup_stage_command = command_frame == JOINT6_STARTUP_COMMAND_FRAME
         explicit_hold_command = command_frame == JOINT6_HOLD_COMMAND_FRAME
+        commissioning_command = (
+            command_frame == JOINT6_COMMISSIONING_COMMAND_FRAME)
         startup_transaction_available = bool(
             getattr(self, '_startup_joint6_active', False)
             or getattr(self, '_startup_joint6_armed', False))
@@ -1336,6 +1467,29 @@ class PiperRosNode(Node):
             and startup_transaction_available
             and explicit_hold_command
         )
+        commissioning_hold_candidate = bool(
+            not bool(getattr(self, '_startup_joint6_finished', True))
+            and startup_transaction_available
+            and commissioning_command
+            and getattr(self, '_raw_joint6_feedback', None) is not None
+            and getattr(self, '_published_joint6_feedback', None) is not None
+            and abs(
+                requested_joint_6
+                - float(self._published_joint6_feedback))
+            <= JOINT6_STARTUP_READY_TOLERANCE_RAD
+        )
+        commissioning_startup_candidate = bool(
+            not bool(getattr(self, '_startup_joint6_finished', True))
+            and startup_transaction_available
+            and commissioning_command
+            and getattr(self, '_published_joint6_feedback', None) is not None
+            and requested_joint_6 <= 1e-9
+            and requested_joint_6 > (
+                float(self._published_joint6_feedback)
+                + JOINT6_STARTUP_READY_TOLERANCE_RAD)
+        )
+        startup_motion_candidate = bool(
+            startup_stage_candidate or commissioning_startup_candidate)
         if startup_stage_command and not startup_stage_candidate:
             self.get_logger().error(
                 'Rejected STARTUP_WRIST J6 command outside the armed '
@@ -1343,14 +1497,21 @@ class PiperRosNode(Node):
             return
         if (
                 startup_transaction_available
-                and not startup_stage_candidate
-                and not startup_hold_candidate):
+                and not startup_motion_candidate
+                and not startup_hold_candidate
+                and not commissioning_hold_candidate):
+            if commissioning_command:
+                self.get_logger().error(
+                    'Rejected commissioning J6 command while STARTUP_WRIST '
+                    'is armed; hold measured J6 or command only the positive '
+                    'direction toward ready zero')
+                return
             self.get_logger().error(
                 'Rejected non-startup J6 motion while STARTUP_WRIST is armed; '
                 'only the explicit measured hold or tagged positive-direction '
                 'startup transaction is allowed')
             return
-        if startup_hold_candidate:
+        if startup_hold_candidate or commissioning_hold_candidate:
             # The executor's hold snapshot and this callback's newest driver
             # feedback are asynchronous. Never use their small discrepancy as
             # a J6 move while startup is armed: command the exact measured J6
@@ -1362,7 +1523,7 @@ class PiperRosNode(Node):
                     self._published_joint6_feedback,
                     None,
                 )
-        elif startup_stage_candidate:
+        elif startup_motion_candidate:
             try:
                 arm_joint_5, waiting_for_wrap = \
                     startup_joint6_controller_target(
@@ -1377,7 +1538,10 @@ class PiperRosNode(Node):
                 return
             if not self._startup_joint6_active:
                 self.get_logger().info(
-                    'Activated startup-only positive J6 command mode')
+                    'Activated startup-only positive J6 command mode%s'
+                    % (
+                        ' from explicit commissioning control'
+                        if commissioning_startup_candidate else ''))
             self._startup_joint6_active = True
             self._startup_joint6_last_target = requested_joint_6
             previous_controller_target = getattr(
@@ -1412,7 +1576,7 @@ class PiperRosNode(Node):
                 logical_joint_6
                 + float(getattr(
                     self, '_joint6_controller_turn_offset', 0.0)))
-        if startup_stage_candidate or startup_hold_candidate:
+        if startup_motion_candidate or startup_hold_candidate:
             measured = getattr(self, '_latest_raw_arm_positions', None)
             if (
                     measured is None
@@ -1487,8 +1651,10 @@ class PiperRosNode(Node):
 
     def enable_callback(self, enable_flag: Bool):
         """Handle a motor enable or disable topic command."""
-        self.get_logger().info(f"Received enable flag:")
-        self.get_logger().info(f"enable_flag: {enable_flag.data}")
+        self.get_logger().info(
+            'ROS enable/disable topic request received: requested_enable=%s'
+            % bool(enable_flag.data))
+        log_enable_transition_state(self, 'BEFORE topic request')
         self.reset_command_cache()
         requested_enable = bool(enable_flag.data)
         with self._enable_transition_lock:
@@ -1512,15 +1678,38 @@ class PiperRosNode(Node):
                     'Topic enable failed and rollback could not prove all six motors disabled')
         if succeeded or (requested_enable and rollback_succeeded):
             self._disable_required = False
+        if not requested_enable and succeeded:
+            reset_startup_joint6_transaction(self)
         self.__enable_flag = bool(succeeded and requested_enable)
+        log_enable_transition_state(
+            self, 'AFTER main-joint topic transition before gripper command')
+        gripper_sent = False
         if succeeded and self.gripper_exist:
-            self.send_gripper_if_changed(
+            gripper_sent = self.send_gripper_if_changed(
                 0, 1000, 0x01 if requested_enable else 0x00, 0)
+        else:
+            diagnostic_log(
+                self, 'info',
+                'Gripper command NOT_SENT transition_succeeded=%s '
+                'gripper_exist=%s' % (succeeded, self.gripper_exist))
+        if succeeded and self.gripper_exist:
+            diagnostic_log(
+                self, 'info',
+                'Topic transition gripper command sent=%s requested_enable=%s'
+                % (gripper_sent, requested_enable))
+        log_enable_transition_state(self, 'AFTER topic request')
+        self.get_logger().info(
+            'ROS enable/disable topic request completed: '
+            'requested_enable=%s succeeded=%s internal_enable_flag=%s'
+            % (requested_enable, succeeded, self.__enable_flag))
 
     def handle_enable_service(self, req, resp):
         """Handle the enable service for the robotic arm."""
-        self.get_logger().info(f"Received request: {req.enable_request}")
+        self.get_logger().info(
+            'ROS enable/disable service request received: requested_enable=%s'
+            % bool(req.enable_request))
         requested_enable = bool(req.enable_request)
+        log_enable_transition_state(self, 'BEFORE service request')
         with self._enable_transition_lock:
             self._disable_required = not requested_enable
             self._enable_transition_active = requested_enable
@@ -1546,12 +1735,25 @@ class PiperRosNode(Node):
             finally:
                 self._enable_transition_active = False
         self.reset_command_cache()
+        log_enable_transition_state(
+            self, 'AFTER main-joint service transition before gripper command')
+        gripper_sent = False
         if succeeded:
             if requested_enable:
-                self.send_gripper_if_changed(0, 1000, 0x01, 0)
+                gripper_sent = self.send_gripper_if_changed(
+                    0, 1000, 0x01, 0)
             else:
-                self.send_gripper_if_changed(0, 1000, 0x02, 0)
+                gripper_sent = self.send_gripper_if_changed(
+                    0, 1000, 0x02, 0)
+            diagnostic_log(
+                self, 'info',
+                'Service transition gripper command sent=%s '
+                'requested_enable=%s' % (gripper_sent, requested_enable))
         else:
+            diagnostic_log(
+                self, 'info',
+                'Gripper command NOT_SENT because main-joint transition '
+                'did not succeed')
             self.get_logger().error(
                 f"Timed out waiting for motors to {'enable' if requested_enable else 'disable'}"
             )
@@ -1571,8 +1773,14 @@ class PiperRosNode(Node):
         self.__enable_flag = bool(succeeded and requested_enable)
         if succeeded or (requested_enable and rollback_succeeded):
             self._disable_required = False
+        if not requested_enable and succeeded:
+            reset_startup_joint6_transaction(self)
         resp.enable_response = bool(succeeded)
-        self.get_logger().info(f"Returning response: {resp.enable_response}")
+        log_enable_transition_state(self, 'AFTER service request')
+        self.get_logger().info(
+            'ROS enable/disable service response: requested_enable=%s '
+            'enable_response=%s internal_enable_flag=%s'
+            % (requested_enable, resp.enable_response, self.__enable_flag))
         return resp
 
 

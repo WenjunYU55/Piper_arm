@@ -1,5 +1,10 @@
 # Phase 9 typed configuration boundary
 
+> Historical phase record. On 2026-08-17 the duplicate `SafetyEvaluator` and
+> its `SafetyProfile` were removed. Executor thresholds remain in the same typed
+> configuration groups; `RuntimeGatePolicy` contains only named evidence
+> categories and no numerical configuration.
+
 Phase 9 centralizes the autonomous coordinator and viewpoint executor static
 configuration without changing any ROS parameter name, default, launch/YAML
 override, unit, motion limit, safety threshold, or public interface.
@@ -27,9 +32,10 @@ The typed groups are:
   `CaptureConfig`, `SafetyConfig`, `PlanningConfig`, and `ExecutorConfig`.
 
 `MissionEngine` receives motion, capture, and workflow configuration
-explicitly. `SafetyEvaluator` continues to receive its existing immutable
-`SafetyProfile`, now constructed directly from typed executor groups. It
-remains shadow-only.
+explicitly. At the Phase 9 boundary `SafetyEvaluator` received an immutable
+`SafetyProfile`; that duplicate shadow path was removed on 2026-08-17. The
+authoritative executor still receives the same typed groups and unchanged
+values.
 
 ## State separation
 

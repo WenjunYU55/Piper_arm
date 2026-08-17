@@ -1,5 +1,9 @@
 # Phase 6 mission-engine extraction
 
+> Historical phase record. On 2026-08-17 the uncalled frozen mission bodies
+> were removed and `MissionEngine` became the only executable mission/shutdown
+> implementation. Public compatibility delegates remain and call it directly.
+
 ## Scope and authority
 
 Phase 6 separates the admitted mission workflow from ROS action mechanics.
@@ -28,8 +32,9 @@ The straightforward `_MissionNodeOperations` adapter remains in
 `target_scan_mission_node.py`. It translates engine operations to the existing
 ROS clients, telemetry helpers, process supervisor, arm calls, planner,
 perception workflow, capture evidence, and status/feedback publishers. Safety
-decisions remain with their current owners: Phase 5 `SafetyEvaluator` stays
-executor shadow-only and is not promoted by this extraction.
+decisions remain with their current owners. The later 2026-08-17 cleanup
+removed the unused duplicate shadow evaluator and retained the executor as the
+single gate/command authority through named `RuntimeGatePolicy` inputs.
 
 ## Handler structure
 
@@ -65,12 +70,11 @@ extraction.
 
 ## Legacy compatibility retained
 
-The former Phase 5 `run_pipeline` and `safe_shutdown` bodies are retained as
-`_legacy_run_pipeline` and `_legacy_safe_shutdown`. They are not called by the
-production action path. The public Python method names remain compatibility
-delegates to the new engine so existing characterization/downstream imports do
-not break. Removing the frozen bodies is deferred until later supervised
-phase-sequence observation; runtime fallback selection is not implemented.
+The former Phase 5 `run_pipeline` and `safe_shutdown` bodies were initially
+retained as uncalled frozen evidence. They were removed on 2026-08-17 after
+repository reference search and characterization proved production used only
+`MissionEngine`. The public Python method names remain compatibility delegates
+to the engine; no runtime fallback exists.
 
 ## Equivalence and tests
 

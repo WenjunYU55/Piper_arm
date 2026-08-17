@@ -4,6 +4,11 @@ from types import SimpleNamespace
 
 import pytest
 
+from piper_mobile_manipulation.safety_evaluator import (
+    ObstacleAuthority,
+    runtime_gate_policy,
+    SafetyMode,
+)
 from piper_mobile_manipulation.scan_viewpoint_executor_node import (
     MAX_RGBD_CAPTURE_READINESS_RETRIES,
     ScanViewpointExecutorNode,
@@ -33,13 +38,14 @@ class CompletedFuture:
         return self._result
 
 
-def _runtime_reasons(harness, **kwargs):
-    defaults = {
-        'require_settled': False,
-        'require_workflow': False,
-    }
-    defaults.update(kwargs)
-    return ScanViewpointExecutorNode.runtime_reasons(harness, **defaults)
+def _runtime_reasons(
+        harness, mode=SafetyMode.SCAN_APPROVAL,
+        require_settled=False,
+        obstacle_authority=ObstacleAuthority.LIVE):
+    policy = runtime_gate_policy(
+        mode, require_settled=require_settled,
+        obstacle_authority=obstacle_authority)
+    return ScanViewpointExecutorNode.runtime_reasons(harness, policy)
 
 
 @pytest.mark.parametrize(
@@ -85,12 +91,12 @@ def test_unlocked_target_blocks_new_motion_but_not_issued_segment(
     executor_runtime_harness.latest_target_status = target_state
 
     before_motion = _runtime_reasons(
-        executor_runtime_harness,
-        enforce_target_status=True,
+        executor_runtime_harness, mode=SafetyMode.SCAN_APPROVAL,
     )
     issued_segment = _runtime_reasons(
         executor_runtime_harness,
-        enforce_target_status=False,
+        mode=SafetyMode.SCAN_MOTION,
+        obstacle_authority=ObstacleAuthority.APPROVED_SNAPSHOT,
     )
 
     assert 'target_status=%s' % target_state in before_motion

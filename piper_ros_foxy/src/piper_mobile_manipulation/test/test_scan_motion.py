@@ -50,6 +50,11 @@ from piper_mobile_manipulation.scan_trajectory import (
     validate_sdk_movej_waypoint_path,
     validate_tesseract_point,
 )
+from piper_mobile_manipulation.safety_evaluator import (
+    ObstacleAuthority,
+    runtime_gate_policy,
+    SafetyMode,
+)
 from piper_mobile_manipulation.scan_viewpoint_executor_node import (
     bootstrap_abort_retrace_uses_static_scene,
     configured_home_endpoint_rejection,
@@ -159,8 +164,9 @@ def test_startup_home_approval_gate_allows_missing_obstacle_telemetry():
         is_acquisition=lambda: False,
         is_return_home=lambda: True,
         is_startup_home_static=lambda: True,
-        runtime_reasons=lambda **kwargs: (
-            captured.update(kwargs) or ['intentional test stop']),
+        runtime_reasons=lambda policy, **_kwargs: (
+            captured.update({'policy': policy})
+            or ['intentional test stop']),
     )
     request = SimpleNamespace(
         confirmation='MISSION_POLICY:' + executor.mission_sha256,
@@ -172,7 +178,10 @@ def test_startup_home_approval_gate_allows_missing_obstacle_telemetry():
     ScanViewpointExecutorNode.approve_cb(executor, request, response)
 
     assert not response.accepted
-    assert captured['allow_missing_obstacles']
+    assert captured['policy'].mode == SafetyMode.RETURN_HOME
+    assert captured['policy'].obstacle_authority == \
+        ObstacleAuthority.STATIC_BOOTSTRAP
+    assert not captured['policy'].require_motion_limits
 
 
 LINK6_FROM_CAMERA = np.asarray([
@@ -271,14 +280,15 @@ def test_inflight_multiview_uses_stale_snapshot_but_not_missing_scene():
         is_return_home=lambda: False,
         is_startup_home_static=lambda: False,
         returning_home=lambda: False,
-        runtime_reasons=lambda **kwargs: calls.append(kwargs) or [],
+        runtime_reasons=lambda policy, **_kwargs: calls.append(policy) or [],
         moving_tick=lambda: calls.append('moving'),
     )
 
     ScanViewpointExecutorNode.execution_tick(executor)
 
-    assert calls[0]['allow_stale_obstacles']
-    assert not calls[0]['allow_missing_obstacles']
+    assert calls[0].mode == SafetyMode.SCAN_MOTION
+    assert calls[0].obstacle_authority == \
+        ObstacleAuthority.APPROVED_SNAPSHOT
     assert calls[1] == 'moving'
 
 
@@ -348,8 +358,8 @@ def test_first_acquisition_cancel_retraces_without_new_obstacle_array():
         retrace_joint_targets=[home, reached],
         current_joints=lambda: reached.copy(),
         get_parameter=lambda _name: SimpleNamespace(value=0.025),
-        runtime_reasons=lambda **kwargs: (
-            calls.append(('runtime', kwargs)) or []),
+        runtime_reasons=lambda policy, **_kwargs: (
+            calls.append(('runtime', policy)) or []),
         validate_path=lambda path, boxes: (
             calls.append(('validate', path, boxes)) or []),
         obstacle_boxes=lambda: (_ for _ in ()).throw(
@@ -374,8 +384,9 @@ def test_first_acquisition_cancel_retraces_without_new_obstacle_array():
 
     assert started and blocker == ''
     runtime = next(item[1] for item in calls if item[0] == 'runtime')
-    assert runtime['allow_missing_obstacles']
-    assert runtime['allow_stale_obstacles']
+    assert runtime.mode == SafetyMode.RETURN_HOME
+    assert runtime.obstacle_authority == \
+        ObstacleAuthority.STATIC_BOOTSTRAP
     validation = next(item for item in calls if item[0] == 'validate')
     assert validation[2] == []
     assert calls[-1][0] == 'refresh'
@@ -788,7 +799,7 @@ def test_runtime_recovery_settle_proves_hold_without_losing_resume_target():
 def test_runtime_recovery_wait_requests_current_hold_settle_authority():
     calls = []
     executor = SimpleNamespace(
-        runtime_reasons=lambda **kwargs: calls.append(kwargs) or [
+        runtime_reasons=lambda policy, **_kwargs: calls.append(policy) or [
             'obstacles data missing or stale'],
         runtime_refresh_resume_state='MOVING',
         runtime_refresh_require_workflow=False,
@@ -810,7 +821,7 @@ def test_runtime_recovery_wait_requests_current_hold_settle_authority():
 
     ScanViewpointExecutorNode.waiting_for_runtime_refresh_tick(executor)
 
-    assert calls[0]['settle_at_current_hold']
+    assert calls[0].settle_at_current_hold
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
@@ -990,7 +1001,7 @@ def test_abort_return_home_only_rejects_untrusted_control_authority():
     assert abort_return_home_blocker(
         'runtime safety gate: invalid obstacle geometry is present') == ''
     assert abort_return_home_blocker(
-        'SDK MoveJ waypoint made no measurable joint progress')
+        'SDK MoveJ waypoint made no measurable joint progress') == ''
     assert abort_return_home_blocker('operator cancelled scan execution') == ''
     assert abort_return_home_blocker(
         'runtime safety gate: obstacle collision is present') == ''
@@ -1055,7 +1066,7 @@ def test_non_safety_abort_retraces_only_reached_approved_targets():
         get_parameter=lambda name: SimpleNamespace(value={
             'plan_start_tolerance_rad': 0.025,
         }[name]),
-        runtime_reasons=lambda **_kwargs: [],
+        runtime_reasons=lambda *_args, **_kwargs: [],
         validate_path=lambda path, boxes: (
             events.append(('validate', [item.copy() for item in path], boxes))
             or []),
@@ -1119,7 +1130,7 @@ def test_cancelled_acquisition_retraces_to_original_powered_home():
         get_parameter=lambda name: SimpleNamespace(value={
             'plan_start_tolerance_rad': 0.025,
         }[name]),
-        runtime_reasons=lambda **_kwargs: [],
+        runtime_reasons=lambda *_args, **_kwargs: [],
         validate_path=lambda path, _boxes: (
             events.append([item.copy() for item in path]) or []),
         obstacle_boxes=lambda: [],
@@ -1163,7 +1174,7 @@ def test_cancelled_inflight_move_first_retraces_to_last_reached_endpoint():
         retrace_joint_targets=[home, reached],
         current_joints=lambda: stopped.copy(),
         get_parameter=lambda _name: SimpleNamespace(value=0.025),
-        runtime_reasons=lambda **_kwargs: [],
+        runtime_reasons=lambda *_args, **_kwargs: [],
         validate_path=lambda path, _boxes: (
             validated.extend(item.copy() for item in path) or []),
         obstacle_boxes=lambda: [],
@@ -1849,7 +1860,7 @@ def test_dedicated_home_holds_for_transient_motion_limit_refresh():
         is_return_home=lambda: True,
         is_startup_home_static=lambda: False,
         returning_home=lambda: True,
-        runtime_reasons=lambda **_kwargs: [
+        runtime_reasons=lambda *_args, **_kwargs: [
             'motion_limits data missing or stale'],
         begin_runtime_recovery=lambda reasons: events.append(
             ('recover', reasons)),
@@ -1876,7 +1887,7 @@ def test_dedicated_home_still_aborts_nontransient_control_fault():
         is_return_home=lambda: True,
         is_startup_home_static=lambda: False,
         returning_home=lambda: True,
-        runtime_reasons=lambda **_kwargs: ['arm controller fault'],
+        runtime_reasons=lambda *_args, **_kwargs: ['arm controller fault'],
         begin_runtime_recovery=lambda reasons: events.append(
             ('recover', reasons)),
         _terminal_abort=lambda reason: events.append(('fail', reason)),
@@ -1943,17 +1954,13 @@ def test_correlated_acquisition_scene_may_age_during_its_exact_segment():
     fake.fresh = lambda key, *_args: key != 'obstacles'
 
     stale = ScanViewpointExecutorNode.runtime_reasons(
-        fake,
-        require_settled=False,
-        require_workflow=False,
-        allow_stale_obstacles=False,
-    )
+        fake, runtime_gate_policy(
+            SafetyMode.ACQUISITION_MOTION,
+            obstacle_authority=ObstacleAuthority.LIVE))
     bound_to_segment = ScanViewpointExecutorNode.runtime_reasons(
-        fake,
-        require_settled=False,
-        require_workflow=False,
-        allow_stale_obstacles=True,
-    )
+        fake, runtime_gate_policy(
+            SafetyMode.ACQUISITION_MOTION,
+            obstacle_authority=ObstacleAuthority.APPROVED_SNAPSHOT))
 
     assert 'obstacles data missing or stale' in stale
     assert bound_to_segment == []
@@ -1976,11 +1983,9 @@ def test_correlated_acquisition_scene_does_not_hide_a_blocker():
     )
 
     reasons = ScanViewpointExecutorNode.runtime_reasons(
-        fake,
-        require_settled=False,
-        require_workflow=False,
-        allow_stale_obstacles=True,
-    )
+        fake, runtime_gate_policy(
+            SafetyMode.ACQUISITION_MOTION,
+            obstacle_authority=ObstacleAuthority.APPROVED_SNAPSHOT))
 
     assert 'scene_blocked: hand' in reasons
 
@@ -1991,6 +1996,7 @@ def executor_runtime_fixture(health):
         get_parameter=lambda name: SimpleNamespace(value={
             'motion_limits_timeout_sec': 1.0,
             'joint_feedback_limit_tolerance_rad': 0.001,
+            'configured_home_feedback_limit_tolerance_rad': 0.3,
             'max_tracking_measurement_age_sec': 1.0,
             'min_tracking_speed_scale': 0.2,
             'speed_percent': 5.0,
@@ -2015,6 +2021,24 @@ def executor_runtime_fixture(health):
     )
 
 
+def test_authoritative_direct_home_gate_uses_only_live_control_evidence():
+    fake = executor_runtime_fixture(SimpleNamespace(
+        lifecycle_state='LOST',
+        camera_settled=False,
+        prediction_only=True,
+        measurement_age_sec=math.inf,
+        recommended_speed_scale=0.0,
+    ))
+    fake.fresh = lambda key, *_args: key in ('joints', 'arm_status')
+    fake.plan_kind = RETURN_HOME
+    fake.is_configured_home_direct = lambda: True
+
+    reasons = ScanViewpointExecutorNode.runtime_reasons(
+        fake, runtime_gate_policy(SafetyMode.RETURN_HOME))
+
+    assert reasons == []
+
+
 def test_tracking_scale_does_not_override_the_selected_sdk_speed():
     fake = executor_runtime_fixture(SimpleNamespace(
         lifecycle_state='TRACKING',
@@ -2025,23 +2049,17 @@ def test_tracking_scale_does_not_override_the_selected_sdk_speed():
     ))
 
     before_target = ScanViewpointExecutorNode.runtime_reasons(
-        fake,
-        require_settled=False,
-        require_workflow=False,
-        enforce_tracking_speed_allowance=True,
-    )
+        fake, runtime_gate_policy(SafetyMode.SCAN_APPROVAL))
     in_flight = ScanViewpointExecutorNode.runtime_reasons(
-        fake,
-        require_settled=False,
-        require_workflow=False,
-        enforce_tracking_speed_allowance=False,
-    )
+        fake, runtime_gate_policy(
+            SafetyMode.SCAN_MOTION,
+            obstacle_authority=ObstacleAuthority.APPROVED_SNAPSHOT))
 
     assert not any('tracking speed allowance' in reason for reason in before_target)
     assert not any('tracking speed allowance' in reason for reason in in_flight)
 
 
-def test_in_flight_speed_exception_keeps_other_tracking_gates_active():
+def test_tracking_gates_remain_at_scan_approval():
     fake = executor_runtime_fixture(SimpleNamespace(
         lifecycle_state='TRACKING',
         camera_settled=False,
@@ -2051,11 +2069,7 @@ def test_in_flight_speed_exception_keeps_other_tracking_gates_active():
     ))
 
     reasons = ScanViewpointExecutorNode.runtime_reasons(
-        fake,
-        require_settled=False,
-        require_workflow=False,
-        enforce_tracking_speed_allowance=False,
-    )
+        fake, runtime_gate_policy(SafetyMode.SCAN_APPROVAL))
 
     assert 'tracking measurement is stale' in reasons
 
@@ -2071,17 +2085,11 @@ def test_low_confidence_target_status_waits_until_post_move_settling():
     fake.latest_target_status = 'LOW_CONFIDENCE'
 
     before_target = ScanViewpointExecutorNode.runtime_reasons(
-        fake,
-        require_settled=False,
-        require_workflow=False,
-        enforce_target_status=True,
-    )
+        fake, runtime_gate_policy(SafetyMode.SCAN_APPROVAL))
     in_flight = ScanViewpointExecutorNode.runtime_reasons(
-        fake,
-        require_settled=False,
-        require_workflow=False,
-        enforce_target_status=False,
-    )
+        fake, runtime_gate_policy(
+            SafetyMode.SCAN_MOTION,
+            obstacle_authority=ObstacleAuthority.APPROVED_SNAPSHOT))
 
     assert 'target_status=LOW_CONFIDENCE' in before_target
     assert 'target_status=LOW_CONFIDENCE' not in in_flight
@@ -2098,24 +2106,18 @@ def test_fresh_reacquisition_state_may_finish_only_the_issued_target():
     fake.latest_target_status = 'LOW_CONFIDENCE'
 
     before_target = ScanViewpointExecutorNode.runtime_reasons(
-        fake,
-        require_settled=False,
-        require_workflow=False,
-        enforce_tracking_motion_state=True,
-    )
+        fake, runtime_gate_policy(SafetyMode.SCAN_APPROVAL))
     in_flight = ScanViewpointExecutorNode.runtime_reasons(
-        fake,
-        require_settled=False,
-        require_workflow=False,
-        enforce_tracking_motion_state=False,
-    )
+        fake, runtime_gate_policy(
+            SafetyMode.SCAN_MOTION,
+            obstacle_authority=ObstacleAuthority.APPROVED_SNAPSHOT))
 
     assert any('tracking lifecycle' in reason for reason in before_target)
     assert any('tracking measurement is stale' in reason for reason in before_target)
     assert in_flight == []
 
 
-def test_missing_tracking_telemetry_still_aborts_an_issued_target():
+def test_missing_tracking_telemetry_does_not_abort_an_issued_target():
     fake = executor_runtime_fixture(SimpleNamespace(
         lifecycle_state='WAITING_TO_REACQUIRE',
         camera_settled=False,
@@ -2126,13 +2128,11 @@ def test_missing_tracking_telemetry_still_aborts_an_issued_target():
     fake.fresh = lambda key, *args: key != 'tracking'
 
     reasons = ScanViewpointExecutorNode.runtime_reasons(
-        fake,
-        require_settled=False,
-        require_workflow=False,
-        enforce_tracking_motion_state=False,
-    )
+        fake, runtime_gate_policy(
+            SafetyMode.SCAN_MOTION,
+            obstacle_authority=ObstacleAuthority.APPROVED_SNAPSHOT))
 
-    assert 'tracking data missing or stale' in reasons
+    assert reasons == []
 
 
 def test_sdk_movej_waypoint_progress_is_feedback_gated_and_bounded():
@@ -2584,7 +2584,8 @@ def test_return_home_unsettled_feedback_resets_stability_window():
 def test_return_runtime_timeout_keeps_thirteen_captures_terminal():
     events = []
     executor = SimpleNamespace(
-        runtime_reasons=lambda **_kwargs: ['obstacles data missing or stale'],
+        runtime_reasons=lambda *_args, **_kwargs: [
+            'obstacles data missing or stale'],
         runtime_refresh_resume_state='MOVING',
         runtime_refresh_require_workflow=False,
         runtime_refresh_allow_missing_obstacles=False,
@@ -2614,7 +2615,7 @@ def test_dedicated_return_refresh_reuses_its_approved_obstacle_snapshot():
     calls = []
     scene = object()
     executor = SimpleNamespace(
-        runtime_reasons=lambda **kwargs: calls.append(kwargs) or [],
+        runtime_reasons=lambda policy, **_kwargs: calls.append(policy) or [],
         runtime_refresh_resume_state='',
         runtime_refresh_require_workflow=False,
         runtime_refresh_allow_missing_obstacles=False,
@@ -2636,8 +2637,10 @@ def test_dedicated_return_refresh_reuses_its_approved_obstacle_snapshot():
 
     ScanViewpointExecutorNode.waiting_for_runtime_refresh_tick(executor)
 
-    assert calls[0]['allow_stale_obstacles']
-    assert calls[0]['allow_untracked']
+    assert calls[0].mode == SafetyMode.RETURN_HOME
+    assert calls[0].obstacle_authority == \
+        ObstacleAuthority.STATIC_BOOTSTRAP
+    assert not calls[0].require_tracking
     assert calls[1] == ('MOVING', 'approved dedicated home')
 
 
@@ -2673,7 +2676,7 @@ def test_runtime_recovery_replays_preserved_correlated_heavy_result():
     }
     events = []
     executor = SimpleNamespace(
-        runtime_reasons=lambda **_kwargs: [],
+        runtime_reasons=lambda *_args, **_kwargs: [],
         runtime_refresh_resume_state='WAITING_FOR_GROUNDING_DINO',
         runtime_refresh_require_workflow=False,
         runtime_refresh_allow_missing_obstacles=False,

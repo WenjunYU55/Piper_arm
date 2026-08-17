@@ -1,5 +1,14 @@
 # Final behavioural-equivalence audit
 
+> Audit boundary notice (2026-08-17): this report describes the 2026-08-15
+> refactor revision. A later user-authorized shutdown/runtime-gate correction
+> removed the duplicate shadow evaluator and frozen mission bodies, made fresh
+> direct-home qualification independent of the original failure and Tesseract
+> motion-limit telemetry, and removed redundant autonomous startup and terminal
+> hold-service calls after configured home is proved. The earlier READY verdict does not
+> physically qualify those later changes; use the updated physical checklist
+> and treat supervised requalification as pending.
+
 > Historical note: this report describes the behavior-preserving Phase 0--10
 > refactor before the selected-feature reintegration on 2026-08-15. The branch
 > `reintegrate/selected-archived-features` intentionally adds ExecuteHomeStage,

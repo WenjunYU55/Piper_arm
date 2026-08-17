@@ -38,9 +38,9 @@ from piper_mobile_manipulation.configuration import (
 )
 from piper_mobile_manipulation.home_pose import (
     load_home_pose,
-    staged_home_targets,
+    staged_home_targets as _staged_home_targets,
     validate_home_profile_limits,
-    validate_staged_wrist_direction,
+    validate_staged_wrist_direction as _validate_staged_wrist_direction,
 )
 from piper_mobile_manipulation.failure_model import (
     as_failure,
@@ -59,21 +59,21 @@ from piper_mobile_manipulation.mission_engine import (
     ACQUISITION_SERVICE_TIMEOUT_SEC,
     CancellationToken,
     failure_code_for_reason,
-    feature_capture_decision,
+    feature_capture_decision as _feature_capture_decision,
     MAX_SCAN_QUALITY_REPLANS,
     MAX_SCAN_TARGET_DRIFT_REPLANS,
     MissionContext,
     MissionEngine,
     MissionFailure,
     PLAN_APPROVAL_TRANSIENT_TIMEOUT_SEC,
-    planning_rejection_allows_current_state_home,
+    planning_rejection_allows_current_state_home as _planning_rejection_allows_current_state_home,
     PLAN_REQUEST_QUEUE_TIMEOUT_SEC,
     PLAN_RESULT_TIMEOUT_SEC,
     retryable_plan_approval_rejection,
-    safe_view_exhaustion_after_capture,
+    safe_view_exhaustion_after_capture as _safe_view_exhaustion_after_capture,
     SCAN_VISUAL_REACQUISITION_TIMEOUT_SEC,
-    shutdown_uses_startup_home,
-    target_drift_requires_replan,
+    shutdown_uses_startup_home as _shutdown_uses_startup_home,
+    target_drift_requires_replan as _target_drift_requires_replan,
     visual_reacquisition_plan_approval_rejection,
     visual_reacquisition_plan_request_rejection,
     WORKFLOW_ASSESSMENT_TIMEOUT_SEC,
@@ -103,9 +103,6 @@ from piper_mobile_manipulation.scan_session_memory import (
     history_coverage_target_center,
     validate_history_payload,
 )
-from piper_mobile_manipulation.scan_viewpoint_executor_node import (
-    abort_return_home_blocker,
-)
 from piper_mobile_manipulation.startup_gates import (
     joint_sample_rejection,
     joint_stability_update,
@@ -125,6 +122,17 @@ from piper_mobile_manipulation.srv import (
     PrepareAcquisition,
     RequestTesseractPlan,
 )
+
+# Preserve established pure-helper imports at the ROS adapter boundary while
+# their implementations live with their single application/domain owners.
+staged_home_targets = _staged_home_targets
+validate_staged_wrist_direction = _validate_staged_wrist_direction
+feature_capture_decision = _feature_capture_decision
+planning_rejection_allows_current_state_home = (
+    _planning_rejection_allows_current_state_home)
+safe_view_exhaustion_after_capture = _safe_view_exhaustion_after_capture
+shutdown_uses_startup_home = _shutdown_uses_startup_home
+target_drift_requires_replan = _target_drift_requires_replan
 
 
 def discard_failed_zero_capture_dataset(
@@ -410,9 +418,6 @@ class _MissionNodeOperations:
 
     def stop_processes(self, _context):
         return self.node.processes.stop_all()
-
-    def abort_return_home_blocker(self, _context, failure):
-        return abort_return_home_blocker(failure)
 
     def prove_shutdown_hold(self, context):
         return self.node.prove_current_hold_for_shutdown(context.session)
@@ -1103,327 +1108,6 @@ class TargetScanMissionNode(Node):
             self, goal_handle, cancellation)
         return mission_engine_for(self, operations).run_pipeline(context)
 
-    def _legacy_run_pipeline(self, goal_handle, session, target):
-        """Frozen Phase 5 implementation retained for equivalence review."""
-        profile = self.selected_home_profile()
-        self.current_home_profile = profile
-        session.home_positions_rad = tuple(profile['positions_rad'])
-        session.pre_home_positions_rad = tuple(
-            profile.get('pre_home_positions_rad', ()))
-        session.mission_ready_joint6_rad = float(
-            profile['mission_ready_joint6_rad'])
-        session.storage_joint6_rad = float(profile['storage_joint6_rad'])
-        session.storage_positions_rad = tuple(
-            list(session.home_positions_rad[:5])
-            + [session.storage_joint6_rad])
-        self.transition(goal_handle, session, MissionPhase.STARTING,
-                        'starting PiPER-owned process groups')
-        self.start_processes(goal_handle, session)
-        self.startup_progress(
-            goal_handle, session,
-            'scan stack started; waiting for typed acquisition readiness')
-        self.wait_for(
-            goal_handle, session,
-            lambda: self.enable_client.service_is_ready(), 30.0,
-            'PiPER enable service did not become ready')
-        self.wait_for_stable_readiness(
-            goal_handle, session, 'acquisition', 2.0, 90.0)
-        self.startup_progress(
-            goal_handle, session,
-            'acquisition ready; proving final settled joint feedback')
-        self.wait_for_stable_joint_stream(
-            2.0, 15.0, 'pre-enable joint feedback', goal_handle, session)
-
-        self.transition(goal_handle, session, MissionPhase.PREFLIGHT,
-                        'validating current feedback and mission authority')
-        self.require_fresh_joint_feedback()
-        try:
-            validate_staged_wrist_direction(
-                profile, self.latest_joints.position[:6])
-        except (TypeError, ValueError) as exc:
-            raise MissionFailure(
-                'configured startup wrist direction is unsafe: %s; arm '
-                'remained disabled' % exc,
-                failure_code='CONTROL_UNTRUSTWORTHY', retryable=False)
-        if not self.param_bool('enable_real_arm_motion'):
-            raise MissionFailure(
-                'mission node is proposal-only; real arm motion was not enabled')
-        if not self.param_bool('motion_speed_profile_qualified'):
-            raise MissionFailure(
-                'configured %.1f-percent transit and %.1f-percent contact '
-                'speed profile is not physically qualified; arm remained '
-                'disabled'
-                % (
-                    configured_value(self, 'free_motion_speed_percent'),
-                    configured_value(self, 'contact_speed_percent')))
-        self.authorize_mission(session)
-        self.transition(goal_handle, session, MissionPhase.ENABLE_AND_HOLD,
-                        'enabling arm and proving current-position hold')
-        self.call_enable(True)
-        session.arm_enabled = True
-        # The enable service has already proved all six FOC flags. Allow one
-        # short publication interval for /arm_status to replace its last
-        # pre-enable sample, then continuously require all six axes enabled.
-        self.motor_enable_guard_after = time.monotonic() + 0.5
-        # Bind the first post-enable feedback immediately. Waiting for a
-        # passive stable window before commanding hold lets gravity settling
-        # continue indefinitely on some powered starts.
-        if not self.prove_current_hold(goal_handle, session):
-            raise MissionFailure(
-                'current-position hold did not settle after enable: '
-                + self.last_hold_diagnostic, True)
-
-        startup_targets = staged_home_targets(
-            profile, self.latest_joints.position[:6])
-        self.transition(
-            goal_handle, session, MissionPhase.RETURNING_HOME,
-            'rotating J6 from the measured powered start to the configured '
-            'mission-ready wrist angle')
-        if not self.prove_return_home_for_shutdown(
-                session, startup=True, goal_handle=goal_handle,
-                target_positions=startup_targets[
-                    'startup_wrist_positions_rad'],
-                home_stage='STARTUP_WRIST'):
-            raise MissionFailure(
-                'startup wrist normalization was not proved; arm remains in '
-                'a current-position hold: ' + self.last_return_home_diagnostic,
-                True, failure_code='CONTROL_UNTRUSTWORTHY', retryable=False)
-        session.startup_wrist_completed = True
-        # The first wrist stage is not the rough-home proof used by terminal
-        # shutdown. Clear it before the independently planned full home stage.
-        session.return_home_proved = False
-        self.transition(
-            goal_handle, session, MissionPhase.RETURNING_HOME,
-            'normalizing joints 1-6 to the configured rough mission home')
-        if not self.prove_return_home_for_shutdown(
-                session, startup=True, goal_handle=goal_handle,
-                target_positions=startup_targets[
-                    'rough_home_positions_rad'],
-                home_stage='ROUGH_HOME'):
-            raise MissionFailure(
-                'startup configured-home normalization was not proved; '
-                'arm remains in a current-position hold: '
-                + self.last_return_home_diagnostic, True,
-                failure_code='CONTROL_UNTRUSTWORTHY', retryable=False)
-        session.startup_home_completed = True
-
-        self.transition(goal_handle, session, MissionPhase.ROUGH_ACQUISITION,
-                        'starting closed-loop rough-target acquisition')
-        acquired = False
-        for look_index in range(5):
-            session.acquisition_attempt = look_index + 1
-            self.clear_plan_cache()
-            request_id = self.prepare_acquisition(session, target)
-            plan = self.wait_for_plan(
-                goal_handle, session, 'ROUGH_ACQUISITION', request_id,
-                workflow_config_for(self).plan_result_timeout_sec)
-            self.approve_plan(goal_handle, session, plan)
-            self.transition(
-                goal_handle, session, MissionPhase.TARGET_LOCK,
-                'settling and measuring acquisition look %d/5'
-                % (look_index + 1))
-            execution = self.wait_for_execution(
-                goal_handle, session,
-                ('ACQUIRED', 'ACQUISITION_LOOK_COMPLETE'), 180.0,
-                ('ACQUISITION_FAILED', 'ABORTED', 'INVALID'))
-            # Either terminal acquisition outcome proves that a correlated
-            # semantic obstacle scene now exists. Failures before this point
-            # retain the same static robot/floor/cable scene authority used by
-            # startup and the first acquisition segment, so a pre-inference
-            # sensor fault cannot strand an enabled arm.
-            session.perception_scene_established = True
-            if str(execution.state) == 'ACQUIRED':
-                acquired = True
-                break
-            self.transition(
-                goal_handle, session, MissionPhase.ROUGH_ACQUISITION,
-                'target absent after look %d/5; replanning once from fresh '
-                'measured arm and camera state' % (look_index + 1))
-        if not acquired:
-            raise MissionFailure(
-                'target not found after five distinct closed-loop looks',
-                failure_code='TARGET_NOT_FOUND', retryable=True)
-
-        self.transition(goal_handle, session, MissionPhase.OCCLUSION_PROBE,
-                        'assessing the measured target and occluder scene')
-        workflow = self.start_and_wait_workflow(goal_handle, session)
-        if workflow.get('state') == 'PLAN_READY':
-            readiness = self.readiness_rejection('manipulation')
-            raise MissionFailure(
-                'beneficial occluder removal is required but unavailable: '
-                + (readiness or 'contact planner is not implemented'),
-                needs_operator=True)
-
-        # ACQUIRED and the workflow diagnostic can arrive before the
-        # independently published multiview readiness generation catches up.
-        # Do not fire the one exact request into that short gap: it would be
-        # rejected immediately and look like the target was never allowed to
-        # lock.  Require a fresh stable generation before entering planning.
-        self.startup_progress(
-            goal_handle, session,
-            'measured target lock ready; waiting for stable multiview readiness')
-        self.wait_for_stable_readiness(
-            goal_handle, session, 'multiview', 1.0, 30.0)
-        quality_replans = 0
-        target_drift_replans = 0
-        execution = None
-        required = int(configured_value(self, 'required_captures'))
-        maximum = int(configured_value(self, 'maximum_captures'))
-        if required < 1 or maximum < required:
-            raise MissionFailure(
-                'capture bounds are invalid: minimum %d maximum %d'
-                % (required, maximum),
-                failure_code='MISSION_FAILED', retryable=False)
-        adaptive_completion = False
-        while True:
-            accepted = int(
-                self.latest_capture.get('captured_frame_count', 0))
-            coverage = self.current_scan_feature_coverage()
-            history_count = int(coverage.get('accepted_achieved_views', 0))
-            decision = feature_capture_decision(
-                accepted, required, maximum,
-                coverage if history_count >= accepted else {})
-            if decision == 'COMPLETE':
-                session.accepted_captures = accepted
-                adaptive_completion = True
-                self.startup_progress(
-                    goal_handle, session,
-                    'distinctive feature floors are complete after %d '
-                    'accepted views; holding for a fresh current-state home '
-                    'plan' % accepted)
-                break
-            if decision == 'EXHAUSTED':
-                raise MissionFailure(
-                    '%d-view bounded scan limit reached but distinctive '
-                    'feature coverage remained insufficient: %s'
-                    % (accepted, '; '.join(coverage.get('blockers', []))),
-                    failure_code='INSUFFICIENT_CAPTURE_QUALITY',
-                    retryable=True)
-            remaining = maximum - accepted
-            self.transition(
-                goal_handle, session, MissionPhase.VIEW_PLANNING,
-                'requesting one correlated feature-driven view; up to %d '
-                'bounded views remain (model seed floor %d)' % (
-                    remaining, required))
-            self.clear_plan_cache()
-            request_id = self.request_multiview_plan(goal_handle, session)
-            try:
-                plan = self.wait_for_plan(
-                    goal_handle, session, 'MULTIVIEW_SCAN', request_id,
-                    workflow_config_for(self).plan_result_timeout_sec)
-            except MissionFailure as exc:
-                coverage = self.current_scan_feature_coverage()
-                if not safe_view_exhaustion_after_capture(
-                        exc, accepted, coverage, required):
-                    if (
-                            as_failure(exc).has(
-                                FailureTag.EMPTY_VIEW_FRONTIER)
-                            and coverage.get('blockers')):
-                        raise MissionFailure(
-                            '%s; safe-view frontier ended before distinctive '
-                            'feature coverage was sufficient: %s'
-                            % (exc, '; '.join(coverage['blockers'])),
-                            failure_code='INSUFFICIENT_CAPTURE_QUALITY',
-                            retryable=True)
-                    raise
-                session.accepted_captures = accepted
-                adaptive_completion = True
-                self.startup_progress(
-                    goal_handle, session,
-                    'adaptive scan complete after %d accepted diverse views; '
-                    'Tesseract proved no meaningfully different collision-free '
-                    'view remains' % accepted)
-                break
-            try:
-                self.approve_plan(goal_handle, session, plan)
-            except MissionFailure as exc:
-                if (
-                        not target_drift_requires_replan(exc)
-                        or target_drift_replans
-                        >= workflow_config_for(
-                            self).max_scan_target_drift_replans):
-                    raise
-                target_drift_replans += 1
-                self.startup_progress(
-                    goal_handle, session,
-                    'measured target changed after planning; no motion was '
-                    'authorized, replanning from the fresh lock (%d/%d)'
-                    % (
-                        target_drift_replans,
-                        workflow_config_for(
-                            self).max_scan_target_drift_replans))
-                self.wait_for_stable_readiness(
-                    goal_handle, session, 'multiview', 0.5, 30.0)
-                continue
-            self.transition(goal_handle, session, MissionPhase.CAPTURING,
-                            'executing one settled quality-gated viewpoint')
-            execution = self.wait_for_execution(
-                goal_handle, session,
-                ('VIEW_COMPLETE', 'VIEW_REJECTED', 'COMPLETE'),
-                session.remaining(), ('ABORTED', 'INVALID'))
-            if str(execution.state) == 'COMPLETE':
-                break
-            session.accepted_captures = int(
-                self.latest_capture.get('captured_frame_count', 0))
-            if str(execution.state) == 'VIEW_REJECTED':
-                if quality_replans >= workflow_config_for(
-                        self).max_scan_quality_replans:
-                    raise MissionFailure(
-                        'visual replacement budget exhausted: '
-                        + str(execution.reason))
-                quality_replans += 1
-                self.startup_progress(
-                    goal_handle, session,
-                    'view rejected by fresh visual gates; executor is holding, '
-                    'excluding that pose and replanning '
-                    '(%d/%d)' % (
-                        quality_replans,
-                        workflow_config_for(self).max_scan_quality_replans))
-                self.wait_for_stable_readiness(
-                    goal_handle, session, 'multiview', 0.5, 30.0)
-                continue
-            self.startup_progress(
-                goal_handle, session,
-                'accepted view %d (minimum %d, bounded maximum %d); '
-                'replanning one next view from measured pose and achieved '
-                'feature coverage'
-                % (session.accepted_captures, required, maximum))
-            self.wait_for_stable_readiness(
-                goal_handle, session, 'multiview', 0.5, 30.0)
-        session.accepted_captures = int(
-            self.latest_capture.get('captured_frame_count', 0))
-        if adaptive_completion:
-            # Normal mission shutdown performs one fresh, correlated, direct
-            # current-state-to-home joint target. It must not reuse or reverse
-            # any prior scan endpoint sequence; collision validation is
-            # intentionally bypassed only for this dedicated home request.
-            return
-        if not required <= session.accepted_captures <= maximum:
-            raise MissionFailure(
-                'executor completed with %d captures outside the bounded '
-                '%d-%d contract'
-                % (session.accepted_captures, required, maximum))
-        if not as_failure(execution.reason).has(FailureTag.HOME_REACHED):
-            raise MissionFailure(
-                'captures completed but return-home was not proved: %s'
-                % execution.reason)
-        session.return_home_proved = True
-        self.wait_for(
-            goal_handle, session,
-            lambda: int((self.latest_scan_history or {}).get(
-                'accepted_views', 0)) >= session.accepted_captures,
-            5.0,
-            'scan history did not catch up with the final accepted capture')
-        coverage = self.current_scan_feature_coverage()
-        if not coverage.get('sufficient'):
-            raise MissionFailure(
-                '%d captures completed but distinctive feature coverage was '
-                'insufficient: %s'
-                % (
-                    session.accepted_captures,
-                    '; '.join(coverage.get('blockers', []))),
-                failure_code='INSUFFICIENT_CAPTURE_QUALITY', retryable=True)
-
     def start_processes(self, goal_handle, session):
         if not self.param_bool('manage_processes'):
             return
@@ -2073,57 +1757,18 @@ class TargetScanMissionNode(Node):
                 or not as_failure(result.message).has(
                     FailureTag.HOLD_REQUESTED)):
             return False
-        settled_since = None
-        deadline = time.monotonic() + 15.0
-        last_delta = math.inf
-        last_velocity = math.inf
-        last_current = np.asarray(initial, dtype=float)
-        while time.monotonic() < deadline:
-            self.guard(goal_handle, session)
-            if telemetry_store is None:
-                joints = self.latest_joints
-                age = time.monotonic() - self.latest_joints_at
-            else:
-                snapshot = telemetry_store.snapshot()
-                observation = snapshot.arm.joints
-                joints = None if observation is None else observation.value
-                age = (
-                    math.inf if observation is None else
-                    observation.age_at(snapshot.captured_at))
-            if joints is None or age > 1.0:
-                settled_since = None
-                time.sleep(0.05)
-                continue
-            current = np.asarray(joints.position[:6], dtype=float)
-            delta = float(np.max(np.abs(current - initial)))
-            velocities = np.asarray(joints.velocity[:6], dtype=float)
-            velocity = float(np.max(np.abs(velocities))) if velocities.size == 6 else math.inf
-            last_delta = delta
-            last_velocity = velocity
-            last_current = current
-            if delta <= 0.005:
-                settled_since = settled_since or time.monotonic()
-                if time.monotonic() - settled_since >= 1.0:
-                    session.current_hold_proved = True
-                    self.last_hold_diagnostic = (
-                        'position-settled delta=%.6f rad '
-                        '(reported velocity=%.6f rad/s is diagnostic only)'
-                        % (delta, velocity))
-                    return True
-            else:
-                settled_since = None
-            time.sleep(0.05)
+        # Enabling the controller already holds its commanded joint target.
+        # Keep one explicit current-position command so a stale controller
+        # target cannot survive across missions, but do not reject ordinary
+        # encoder/mechanical settling by trying to prove a 0.005-rad window.
+        self.guard(goal_handle, session)
+        self.require_fresh_joint_feedback()
+        session.current_hold_proved = True
         self.last_hold_diagnostic = (
-            'last delta=%.6f rad velocity=%.6f rad/s '
-            '(position limit 0.005000 rad; reported velocity is diagnostic); '
-            'initial=%s current=%s per_joint_delta=%s'
-            % (
-                last_delta, last_velocity,
-                [round(float(value), 6) for value in initial],
-                [round(float(value), 6) for value in last_current],
-                [round(float(value), 6) for value in np.abs(
-                    last_current - initial)]))
-        return False
+            'current-position hold acknowledged at %s; position-window proof '
+            'is intentionally not a mission gate'
+            % [round(float(value), 6) for value in initial])
+        return True
 
     def safe_shutdown(self, session, normal_completion, failure=None):
         """Compatibility entry point for the engine-owned terminal sequence."""
@@ -2136,191 +1781,8 @@ class TargetScanMissionNode(Node):
         return mission_engine_for(self, operations).shutdown(
             context, normal_completion=normal_completion, failure=failure)
 
-    def _legacy_safe_shutdown(
-            self, session, normal_completion, failure=None):
-        """Frozen Phase 5 shutdown retained until live shadow observation."""
-        try:
-            if session.motor_control_lost_reason:
-                # The driver watchdog owns the emergency all-axis disable.
-                # Never issue hold or home motion after any axis has dropped;
-                # only observe the resulting six-disabled proof and clean up
-                # command/perception processes.
-                deadline = time.monotonic() + 2.0
-                all_disabled = False
-                while time.monotonic() < deadline:
-                    telemetry_store = getattr(self, 'telemetry_store', None)
-                    if telemetry_store is None:
-                        status = self.latest_arm_status
-                        age = time.monotonic() - self.latest_arm_status_at
-                    else:
-                        snapshot = telemetry_store.snapshot()
-                        observation = snapshot.arm.status
-                        status = (
-                            None if observation is None else observation.value)
-                        age = (
-                            math.inf if observation is None else
-                            observation.age_at(snapshot.captured_at))
-                    if (
-                            status is not None
-                            and age <= 0.5
-                            and bool(getattr(
-                                status, 'motor_feedback_valid', False))
-                            and not any(motor_driver_states(status))):
-                        all_disabled = True
-                        break
-                    time.sleep(0.02)
-                if not all_disabled:
-                    return MissionFailure(
-                        'motor control was lost and six-disabled feedback was '
-                        'not proved; automatic home was forbidden and the '
-                        'driver remains available for operator recovery', True)
-                session.disabled_proved = True
-                session.arm_enabled = False
-                try:
-                    self.authorize_mission(session, revoke=True)
-                except MissionFailure:
-                    pass
-                self.transition(
-                    None, session, MissionPhase.STOPPING,
-                    'motor watchdog proved all six axes disabled; skipping '
-                    'automatic home and stopping mission-owned processes')
-                session.processes_stopped = self.processes.stop_all()
-                if not session.processes_stopped:
-                    return MissionFailure(
-                        'motor control was lost; all axes are disabled but one '
-                        'or more PiPER-owned processes remain alive', True)
-                return MissionFailure(
-                    'motor control was lost before configured home; no home '
-                    'command was attempted, all six motors are disabled, and '
-                    'mission-owned processes are stopped: '
-                    + session.motor_control_lost_reason, True)
-            if not session.arm_enabled:
-                session.current_hold_proved = True
-                session.pre_home_completed = True
-                session.return_home_proved = True
-                session.storage_wrist_proved = True
-                session.disabled_proved = True
-                try:
-                    self.authorize_mission(session, revoke=True)
-                except MissionFailure:
-                    pass
-                self.transition(None, session, MissionPhase.STOPPING,
-                                'stopping never-enabled PiPER process groups')
-                session.processes_stopped = self.processes.stop_all()
-                if not session.processes_stopped:
-                    return MissionFailure(
-                        'one or more PiPER-owned processes remain alive', True)
-                return None
-            if not session.pre_home_completed:
-                typed_failure = (
-                    as_failure(failure) if failure is not None else None)
-                blocker = (
-                    '' if planning_rejection_allows_current_state_home(
-                        typed_failure)
-                    else abort_return_home_blocker(typed_failure))
-                if blocker:
-                    return MissionFailure(
-                        'configured home return was not attempted because the '
-                        'failure is motion-safety-related (%s); arm remains '
-                        'enabled in a current-position hold' % blocker, True)
-                self.transition(
-                    None, session, MissionPhase.RETURNING_HOME,
-                    'cancellation/failure accepted; holding, then requesting '
-                    'the configured direct pre-home joint target with '
-                    'only the configured folded self-collision exemption; '
-                    'camera-holder floor/external clearance remains mandatory')
-                startup_home = shutdown_uses_startup_home(session)
-                pre_home_target = list(session.pre_home_positions_rad)
-                if len(pre_home_target) != 6:
-                    return MissionFailure(
-                        'pre-home target is missing; arm remains enabled in '
-                        'a current-position hold', True)
-                if not self.prove_return_home_for_shutdown(
-                        session, startup=startup_home,
-                        target_positions=pre_home_target,
-                        home_stage='PRE_HOME'):
-                    if session.motor_control_lost_reason:
-                        return self.safe_shutdown(
-                            session, normal_completion=False, failure=failure)
-                    diagnostic = str(getattr(
-                        self, 'last_return_home_diagnostic', '')).strip()
-                    return MissionFailure(
-                        'configured pre-home was not proved; arm remains '
-                        'enabled in a current-position hold'
-                        + (': ' + diagnostic if diagnostic else ''), True)
-                session.pre_home_completed = True
-            if not session.return_home_proved:
-                self.transition(
-                    None, session, MissionPhase.RETURNING_HOME,
-                    'pre-home proved; moving directly to configured rough home')
-                startup_home = shutdown_uses_startup_home(session)
-                if not self.prove_return_home_for_shutdown(
-                        session, startup=startup_home,
-                        target_positions=list(session.home_positions_rad),
-                        home_stage='ROUGH_HOME'):
-                    diagnostic = str(getattr(
-                        self, 'last_return_home_diagnostic', '')).strip()
-                    return MissionFailure(
-                        'configured rough home was not proved; arm remains '
-                        'enabled in a current-position hold'
-                        + (': ' + diagnostic if diagnostic else ''), True)
-            if not session.storage_wrist_proved:
-                self.transition(
-                    None, session, MissionPhase.RETURNING_HOME,
-                    'rough home proved; rotating J6 to the configured storage '
-                    'angle before disable')
-                storage_target = list(session.storage_positions_rad)
-                if len(storage_target) != 6:
-                    return MissionFailure(
-                        'storage wrist target is missing; arm remains enabled '
-                        'at rough home', True)
-                startup_home = shutdown_uses_startup_home(session)
-                if not self.prove_return_home_for_shutdown(
-                        session, startup=startup_home,
-                        target_positions=storage_target,
-                        home_stage='STORAGE_WRIST'):
-                    if session.motor_control_lost_reason:
-                        return self.safe_shutdown(
-                            session, normal_completion=False, failure=failure)
-                    diagnostic = str(getattr(
-                        self, 'last_return_home_diagnostic', '')).strip()
-                    return MissionFailure(
-                        'storage J6 rotation was not proved; arm remains '
-                        'enabled in a current-position hold'
-                        + (': ' + diagnostic if diagnostic else ''), True)
-                session.storage_wrist_proved = True
-            self.transition(None, session, MissionPhase.HOLDING,
-                            'proving final current-position hold')
-            if not self.prove_current_hold_for_shutdown(session):
-                if session.motor_control_lost_reason:
-                    return self.safe_shutdown(
-                        session, normal_completion=False, failure=failure)
-                return MissionFailure(
-                    'final current-position hold did not settle; arm remains enabled', True)
-            self.transition(None, session, MissionPhase.DISABLING,
-                            'disabling arm with feedback-confirmed service')
-            self.call_enable(False)
-            session.disabled_proved = True
-            session.arm_enabled = False
-            try:
-                self.authorize_mission(session, revoke=True)
-            except MissionFailure:
-                pass
-            self.transition(None, session, MissionPhase.STOPPING,
-                            'stopping PiPER-owned process groups')
-            session.processes_stopped = self.processes.stop_all()
-            if not session.processes_stopped:
-                return MissionFailure(
-                    'one or more PiPER-owned processes remain alive', True)
-            return None
-        except MissionFailure as exc:
-            if session.motor_control_lost_reason:
-                return self.safe_shutdown(
-                    session, normal_completion=False, failure=failure)
-            return MissionFailure(str(exc), True)
-
     def at_configured_home(
-            self, session, tolerance_rad=0.030, target_positions=None,
+            self, session, tolerance_rad=0.30, target_positions=None,
             home_stage=None):
         self.require_fresh_joint_feedback()
         telemetry_store = getattr(self, 'telemetry_store', None)
@@ -2411,8 +1873,7 @@ class TargetScanMissionNode(Node):
                     'executor response did not prove a hold before home: '
                     + str(result.message))
             try:
-                self.wait_for_stable_joint_stream(
-                    0.5, 15.0, 'held feedback before direct home motion')
+                self.require_fresh_joint_feedback()
             except MissionFailure as exc:
                 return fail_home(exc)
 
@@ -2499,33 +1960,14 @@ class TargetScanMissionNode(Node):
                     or not as_failure(result.message).has(
                         FailureTag.HOLD_REQUESTED)):
                 return False
-            deadline, settled_since = time.monotonic() + 15.0, None
-            while time.monotonic() < deadline:
-                self.guard_motor_control(session)
-                if telemetry_store is None:
-                    joints = self.latest_joints
-                    age = time.monotonic() - self.latest_joints_at
-                else:
-                    snapshot = telemetry_store.snapshot()
-                    observation = snapshot.arm.joints
-                    joints = (
-                        None if observation is None else observation.value)
-                    age = (
-                        math.inf if observation is None else
-                        observation.age_at(snapshot.captured_at))
-                if joints is None or age > 1.0:
-                    settled_since = None
-                else:
-                    current = np.asarray(joints.position[:6], dtype=float)
-                    delta = float(np.max(np.abs(current - initial)))
-                    if delta <= 0.005:
-                        settled_since = settled_since or time.monotonic()
-                        if time.monotonic() - settled_since >= 1.0:
-                            session.current_hold_proved = True
-                            return True
-                    else:
-                        settled_since = None
-                time.sleep(0.05)
+            self.guard_motor_control(session)
+            self.require_fresh_joint_feedback()
+            session.current_hold_proved = True
+            self.last_hold_diagnostic = (
+                'shutdown hold acknowledged at %s; position-window proof is '
+                'intentionally not a disable gate'
+                % [round(float(value), 6) for value in initial])
+            return True
         except MissionFailure:
             return False
         return False

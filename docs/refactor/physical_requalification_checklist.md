@@ -1,5 +1,13 @@
 # PiPER supervised physical requalification checklist
 
+> 2026-08-17 scope extension: this checklist must also qualify the later
+> mission-shutdown/runtime-gate simplification. In particular, prove that a
+> controllable non-motor failure cannot veto fresh staged home, that stale
+> camera/tracking/workflow/obstacle or Tesseract-limit telemetry is not direct
+> home authority, and that autonomous startup/terminal shutdown does not issue
+> a redundant hold-service request. Do not physically induce a motor fault;
+> the motor-loss no-command route is software/simulation tested only.
+
 ## Authority and stop rule
 
 This checklist is the only progression authorized by the final equivalence
@@ -170,19 +178,26 @@ the cancel route completes safely.
 This is a dedicated safety gate. Start from a reviewed collision-free pose
 reached in Stage 6 or 7.
 
-- [ ] Confirm current joints, fresh all-six motor authority, current limits,
-  home-profile hash, and no unexpected object/person in the route.
+- [ ] Confirm current joints, fresh all-six motor authority, home-profile hash,
+  holder/L515 external-clearance evidence, and no unexpected object/person in
+  the route. Record current limits diagnostically; they are not authority for
+  the native direct-home service.
 - [ ] Review the three terminal stages: current pose to terminal-only pre-home,
   then rough home, then storage J6 in the configured decreasing direction.
 - [ ] Execute at the approved low speed under emergency-stop supervision.
 - [ ] Confirm pre-home and rough-home feedback within their configured tolerances.
-- [ ] Confirm storage-J6 feedback, final current-position hold, all-six disable,
-  authority revocation, and process cleanup in that order.
+- [ ] Confirm storage-J6 feedback, retention of the final controller target,
+  all-six disable, authority revocation, and process cleanup in that order.
+- [ ] Confirm logs show no autonomous current-position hold-service request
+  between the final configured-home proof and disable.
+- [ ] Trigger one controllable perception/planning failure with motor authority
+  intact and confirm the original failure is reported but cannot block fresh
+  PRE_HOME, ROUGH_HOME, STORAGE_WRIST and disable.
 - [ ] Specifically watch J5/J6, gripper-to-J1, holder/table clearance, and any
   unexpected J6 branch/wrap behavior.
 
-Exit criterion: exact staged home, settled hold, disable, and cleanup are
-proved. Any wrong J6 direction or contact is a safety-relevant failure and
+Exit criterion: exact staged home, retained final target, disable, and cleanup are
+proved, including the non-motor failure route. Any wrong J6 direction or contact is a safety-relevant failure and
 blocks all scanning.
 
 ## 9. Short scan
