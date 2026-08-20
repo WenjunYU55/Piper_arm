@@ -84,7 +84,14 @@ def generate_launch_description():
             executable='target_landmark_node.py',
             name='target_landmark',
             output='screen',
-            parameters=[cfg('frames.yaml')],
+            # This node is diagnostic only in the production mission.  Its
+            # historical new-view refresh can fire while the eye-in-hand
+            # camera is moving and must not replace the executor/tracker's
+            # settled, motion-gated semantic refresh ownership.
+            parameters=[cfg('frames.yaml'), {
+                'request_refresh_on_new_view': False,
+                'request_refresh_on_mask_disagreement': False,
+            }],
         ),
     ]
     shutdown_handlers = [

@@ -5,6 +5,12 @@ fields, type constants, QoS compatibility, JSON keys, frame meanings, file
 formats, environment variables and process entry points listed here must remain
 compatible unless a later phase explicitly versions and migrates them.
 
+The 2026-08-20 previous-generation reconciliation is internal and additive:
+no ROS action, topic, service, QoS, parameter, TF, motion, timeout, or result
+schema changed. A processing-only stale generation is cleaned through exact
+stored handles; a live prior driver still blocks unless fresh valid feedback
+proves all six motors disabled.
+
 ## ROS actions
 
 | Name | Type | Server(s) | Contract |
@@ -274,7 +280,7 @@ default-equivalence tests freeze all 98 values.
 - `piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_quality_node.py`: `color_image_topic`, `debug`, `depth_image_topic`, `detection_topic`, `dry_run`, `edge_margin_px`, `enable_real_arm_motion`, `evaluation_interval_sec`, `mask_topic`, `max_depth_stddev_good_m`, `max_valid_depth_m`, `min_acceptable_scan_quality`, `min_good_scan_quality`, `min_mask_area_px`, `min_valid_depth_m`, `min_valid_depth_ratio`, `reachable_scan_viewpoints_topic`, `scan_capture_status_topic`, `scan_quality_debug_topic`, `scan_quality_topic`, `stale_timeout_sec`, `target_3d_topic`, `useful_scan_coverage_topic`.
 - `piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_target_acquisition_node.py`: `acquisition_camera_pitch_deg`, `acquisition_viewpoints_topic`, `base_frame`, `camera_optical_frame`, `dry_run`, `fallback_standoff_m`, `future_tolerance_sec`, `handoff_retry_sec`, `handoff_timeout_sec`, `hint_max_age_sec`, `reachable_acquisition_viewpoints_topic`, `request_acquisition_plan_service`, `scan_execution_status_topic`, `standoff_m`, `sweep_angle_deg`, `transform_timeout_sec`, `workflow_start_service`, `workflow_status_topic`.
 - `piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py`: `acquisition_fresh_frame_timeout_sec`, `acquisition_grounding_timeout_sec`, `acquisition_max_viewpoints`, `acquisition_scene_timeout_sec`, `acquisition_target_tolerance_m`, `acquisition_tracking_lock_timeout_sec`, `allow_mission_policy`, `allow_target_motion_during_scan`, `approval_confirmation`, `arm_status_topic`, `auto_capture`, `camera_holder_envelope_center_link6_m`, `camera_holder_envelope_size_m`, `camera_holder_external_clearance_m`, `camera_timestamp_health_topic`, `capture_service`, `capture_status_propagation_sec`, `capture_timeout_sec`, `closed_loop_one_view`, `configured_home_feedback_limit_tolerance_rad`, `data_timeout_sec`, `debug`, `enable_real_arm_motion`, `endpoint_position_settled_rad`, `executor_tick_rate_hz`, `finish_scan_service`, `finish_scan_timeout_sec`, `floor_z_m`, `hand_eye_calibration_path`, `heavy_refresh_request_topic`, `heavy_refresh_status_topic`, `home_goal_tolerance_rad`, `home_joint_feedback_timeout_sec`, `home_motion_tolerance_rad`, `home_settle_duration_sec`, `home_settle_timeout_sec`, `joint_bounds_path`, `joint_command_topic`, `joint_feedback_limit_tolerance_rad`, `joint_goal_tolerance_rad`, `joint_states_topic`, `joint_velocity_settled`, `link_radius_m`, `max_execution_viewpoints`, `max_target_drift_before_approval_m`, `max_tracking_measurement_age_sec`, `min_execution_viewpoints`, `min_tracking_speed_scale`, `motion_limits_change_confirmation_sec`, `motion_limits_change_minimum_samples`, `motion_limits_timeout_sec`, `motion_limits_topic`, `obstacle_topic`, `plan_max_age_sec`, `plan_start_tolerance_rad`, `plan_topic`, `reachable_viewpoints_topic`, `return_home_positions_rad`, `rgbd_capture_service`, `runtime_recovery_timeout_sec`, `runtime_refresh_timeout_sec`, `scan_session_history_topic`, `scan_target_max_boresight_deg`, `scan_target_min_distance_m`, `self_clearance_m`, `settle_duration_sec`, `settle_timeout_sec`, `speed_percent`, `status_topic`, `target_status_topic`, `tesseract_plan_topic`, `tracked_target_topic`, `tracking_health_topic`, `trajectory_command_rate_hz`, `trajectory_following_error_grace_sec`, `trajectory_following_error_rad`, `trajectory_joint_step_rad`, `waypoint_progress_epsilon_rad`, `waypoint_progress_timeout_sec`, `waypoint_reached_tolerance_rad`, `waypoint_timeout_sec`, `workflow_status_topic`.
-- `piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_planner_node.py`: `camera_info_topic`, `camera_pitch_deg`, `camera_pitch_offsets_deg`, `debug`, `desired_scan_angle_deg`, `dry_run`, `duplicate_look_tolerance_deg`, `duplicate_position_tolerance_m`, `fallback_target_topic`, `keep_object_centered`, `max_scan_radius_m`, `max_viewpoints`, `min_scan_radius_m`, `object_topic`, `planning_frame_id`, `scan_coverage_topic`, `scan_radius_m`, `scan_radius_offsets_m`, `scan_session_history_topic`, `scan_viewpoints_topic`, `session_max_views`, `target_plan_refresh_period_sec`, `target_replan_min_period_sec`, `target_replan_translation_m`, `target_status_topic`, `tracked_preference_timeout_s`, `tracked_target_topic`, `use_predicted_target_for_scan`, `viewpoint_center_angle_deg`, `viewpoint_step_deg`.
+- `piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_planner_node.py`: `camera_info_topic`, `camera_pitch_deg`, `camera_pitch_offsets_deg`, `debug`, `desired_scan_angle_deg`, `dry_run`, `duplicate_look_tolerance_deg`, `duplicate_position_tolerance_m`, `fallback_target_topic`, `keep_object_centered`, `max_scan_radius_m`, `max_viewpoints`, `min_scan_radius_m`, `minimum_useful_direction_separation_deg`, `nbv_maximum_radius_m`, `nbv_maximum_scoring_voxels`, `nbv_minimum_radius_m`, `nbv_padding_voxels`, `nbv_radius_scale`, `nbv_render_height`, `nbv_render_width`, `nbv_surface_tolerance_m`, `nbv_voxel_size_m`, `object_topic`, `planning_frame_id`, `scan_capture_status_topic`, `scan_coverage_topic`, `scan_radius_m`, `scan_radius_offsets_m`, `scan_session_history_topic`, `scan_viewpoints_topic`, `session_max_views`, `target_plan_refresh_period_sec`, `target_replan_min_period_sec`, `target_replan_translation_m`, `target_status_topic`, `tracked_preference_timeout_s`, `tracked_target_topic`, `use_predicted_target_for_scan`, `view_selection_policy`, `viewpoint_center_angle_deg`, `viewpoint_step_deg`.
 - `piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/supervised_cube_workflow_node.py`: `allow_target_motion_during_scan`, `approach_height_m`, `center_convergence_m`, `cloud_request_topic`, `cloud_status_topic`, `cloud_topic`, `data_timeout_sec`, `drop_obstacle_clearance_m`, `drop_search_radius_m`, `drop_support_max_stddev_m`, `drop_support_min_points`, `drop_support_radius_m`, `drop_target_clearance_m`, `enforce_static_workspace`, `first_push_distance_m`, `heavy_refresh_request_topic`, `heavy_refresh_status_topic`, `landmark_status_topic`, `landmark_topic`, `later_push_distance_m`, `marker_topic`, `max_contact_actions`, `max_grasp_width_m`, `max_tracking_measurement_age_sec`, `max_views`, `min_quality_score`, `min_views`, `movable_whitelist`, `obstacle_displacement_m`, `obstacle_topic`, `occlusion_probe_timeout_sec`, `occlusion_status_topic`, `plan_topic`, `pre_push_offset_m`, `push_distance_m`, `request_optional_cloud_refinement`, `require_observed_drop_support`, `scan_quality_topic`, `scene_cloud_topic`, `status_topic`, `target_clearance_m`, `target_model_topic`, `target_motion_abort_m`, `target_status_topic`, `target_surface_measurement_uncertainty_m`, `tracked_target_topic`, `tracking_health_topic`, `workspace_x_max`, `workspace_x_min`, `workspace_y_max`, `workspace_y_min`, `workspace_z_max`, `workspace_z_min`.
 - `piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_cloud_node.py`: `accumulate_live_masks`, `camera_info_topic`, `cloud_topic`, `color_topic`, `depth_max_m`, `depth_min_m`, `depth_topic`, `frame_cache_size`, `heavy_request_topic`, `heavy_status_topic`, `mask_erode_px`, `mask_max_age_sec`, `mask_topic`, `max_voxels`, `output_dir`, `pixel_stride`, `publish_period_sec`, `refined_capture_retry_sec`, `refined_capture_timeout_sec`, `refined_mask_topic`, `refined_match_tolerance_sec`, `request_topic`, `require_transform`, `scene_accumulate_period_sec`, `scene_cloud_topic`, `scene_max_voxels`, `scene_pixel_stride`, `scene_voxel_size_m`, `status_topic`, `target_frame`, `voxel_size_m`.
 - `piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_error_node.py`: `desired_distance_m`, `distance_tolerance_m`, `error_topic`, `position_tolerance_m`, `tracked_topic`.
@@ -289,6 +295,28 @@ default-equivalence tests freeze all 98 values.
 
 
 ## Parameter compatibility
+
+The 2026-08-20 global-NBV repair keeps
+`closed_loop_min_view_step_deg` and `closed_loop_max_view_step_deg` declared for
+launch/YAML compatibility, but authoritative `voxel_nbv` no longer uses them
+as a movement frontier. `minimum_useful_direction_separation_deg` is the
+accepted-view redundancy threshold. `closed_loop_candidate_limit` is 12 and
+`closed_loop_max_aim_offset_deg` is 5; the latter binds only the one fallback
+attempt after exact target aim fails. No ROS message or service schema changed.
+
+Post-baseline additive NBV audit interfaces (2026-08-17) are
+`/piper/tesseract_view_generation` and
+`/piper/tesseract_plan_provenance`, both `std_msgs/String` JSON. The first is
+reliable/transient-local and is emitted only after the Tesseract bridge caches
+an exact session/accepted-count generation. The second is reliable/volatile
+and binds the selected policy, generation, candidate ID, rank and predicted
+gain to `plan_id`; capture frame metadata persists that binding. Existing ROS
+actions, services, messages and topics were not renamed or changed.
+
+The additive parameter names are `view_generation_receipt_topic` and
+`plan_provenance_topic` on `bridge_node.py`, and `plan_provenance_topic` on
+`scan_capture_node.py`. Their deployed defaults are recorded in the matching
+YAML files.
 
 All declared parameter names are external configuration interfaces. The full
 source inventory is the 34 node files containing 424 `declare_parameter`

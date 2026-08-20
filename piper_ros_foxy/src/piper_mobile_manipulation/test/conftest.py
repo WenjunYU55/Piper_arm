@@ -187,6 +187,14 @@ class FakeProcesses:
         self.events.append('child_process_termination')
         return bool(self.cleanup_succeeds)
 
+    def shutdown(self, names=None):
+        selected = tuple(self.live_generation if names is None else names)
+        self.events.append(('selected_process_termination', selected))
+        remaining = () if self.cleanup_succeeds else selected
+        return SimpleNamespace(
+            complete=not remaining,
+            still_running=remaining)
+
 
 class MissionCharacterizationHarness:
     """Run production orchestration against deterministic subsystem fakes."""
@@ -453,6 +461,12 @@ class MissionCharacterizationHarness:
         self.maybe_fail('planning_request', session)
         return 'multiview-request-%d' % (
             int(self.latest_capture['captured_frame_count']) + 1)
+
+    def wait_for_view_generation(
+            self, _goal_handle, _session, accepted_views, _timeout):
+        assert int(accepted_views) == int(
+            self.latest_capture['captured_frame_count'])
+        self.events.append('view_generation')
 
     def current_scan_feature_coverage(self):
         accepted = int(self.latest_capture['captured_frame_count'])

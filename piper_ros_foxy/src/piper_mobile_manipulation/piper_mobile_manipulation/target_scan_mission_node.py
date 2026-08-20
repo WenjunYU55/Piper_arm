@@ -70,6 +70,7 @@ from piper_mobile_manipulation.mission_engine import (
     PLAN_REQUEST_QUEUE_TIMEOUT_SEC,
     PLAN_RESULT_TIMEOUT_SEC,
     retryable_plan_approval_rejection,
+    runtime_freshness_plan_request_rejection,
     safe_view_exhaustion_after_capture as _safe_view_exhaustion_after_capture,
     SCAN_VISUAL_REACQUISITION_TIMEOUT_SEC,
     shutdown_uses_startup_home as _shutdown_uses_startup_home,
@@ -114,6 +115,9 @@ from piper_mobile_manipulation.surface_coverage import (
     persisted_achieved_history,
 )
 from piper_mobile_manipulation.telemetry_store import TelemetryStore
+from piper_mobile_manipulation.view_generation import (
+    generation_matches_expected,
+)
 from piper_mobile_manipulation.srv import (
     ApproveScanExecution,
     AuthorizeMission,
@@ -133,6 +137,22 @@ planning_rejection_allows_current_state_home = (
 safe_view_exhaustion_after_capture = _safe_view_exhaustion_after_capture
 shutdown_uses_startup_home = _shutdown_uses_startup_home
 target_drift_requires_replan = _target_drift_requires_replan
+
+
+NON_COMMAND_PROCESS_GROUPS = (
+    'vision',
+    'hand_eye',
+    'tesseract_worker',
+)
+
+
+def previous_generation_cleanup_targets(
+        live_processes, all_motors_disabled):
+    """Select exact stale handles that are safe to stop before admission."""
+    live = tuple(dict.fromkeys(str(name) for name in live_processes))
+    if 'driver' in live and not bool(all_motors_disabled):
+        return ()
+    return live
 
 
 def discard_failed_zero_capture_dataset(
@@ -258,6 +278,32 @@ class _MissionNodeOperations:
         return getattr(self.node, '_active_engine_session', None)
 
     def begin_process_generation(self, _context):
+        live = self.node.processes.begin_generation()
+        if not live:
+            return []
+        cleanup_targets = previous_generation_cleanup_targets(
+            live, self.node.fresh_all_motors_disabled())
+        if not cleanup_targets:
+            self.node.get_logger().error(
+                'retaining previous process generation because its driver is '
+                'live and fresh six-disabled feedback is not proved: %s'
+                % ', '.join(live))
+            return live
+        self.node.get_logger().warn(
+            'cleaning exact previous-generation process handles before new '
+            'mission admission: %s' % ', '.join(cleanup_targets))
+        try:
+            report = self.node.processes.shutdown(cleanup_targets)
+        except Exception as error:
+            self.node.get_logger().error(
+                'previous-generation cleanup raised %s: %s'
+                % (type(error).__name__, error))
+            return live
+        if not report.complete:
+            self.node.get_logger().error(
+                'previous-generation cleanup remains incomplete: %s'
+                % ', '.join(report.still_running))
+            return list(report.still_running)
         return self.node.processes.begin_generation()
 
     def snapshot_target(self, _context):
@@ -382,6 +428,10 @@ class _MissionNodeOperations:
         return self.node.request_multiview_plan(
             self.goal_handle, context.session)
 
+    def wait_for_view_generation(self, context, accepted_views, timeout):
+        return self.node.wait_for_view_generation(
+            self.goal_handle, context.session, accepted_views, timeout)
+
     def remaining_time(self, context):
         return context.session.remaining()
 
@@ -418,6 +468,16 @@ class _MissionNodeOperations:
 
     def stop_processes(self, _context):
         return self.node.processes.stop_all()
+
+    def stop_processing_processes(self, _context):
+        try:
+            report = self.node.processes.shutdown(NON_COMMAND_PROCESS_GROUPS)
+        except Exception as error:
+            self.node.get_logger().error(
+                'non-command process cleanup raised %s: %s'
+                % (type(error).__name__, error))
+            return False
+        return report.complete
 
     def prove_shutdown_hold(self, context):
         return self.node.prove_current_hold_for_shutdown(context.session)
@@ -509,6 +569,9 @@ class TargetScanMissionNode(Node):
         self.latest_camera_health_at = 0.0
         self.latest_scan_history = None
         self.latest_scan_history_at = 0.0
+        self.latest_view_generation = None
+        self.latest_view_generation_at = 0.0
+        self.view_generation_barrier_at = 0.0
         self.latest_scan_target_center = None
         self.last_scan_feature_coverage = {}
         self.current_home_profile = None
@@ -530,6 +593,9 @@ class TargetScanMissionNode(Node):
         self.create_subscription(
             String, '/piper/scan_session_history', self.scan_history_cb,
             latched)
+        self.create_subscription(
+            String, '/piper/tesseract_view_generation',
+            self.view_generation_cb, latched)
         self.create_subscription(
             JointState, '/joint_states_single', self.joint_cb, 10)
         self.create_subscription(
@@ -604,6 +670,25 @@ class TargetScanMissionNode(Node):
             self.get_logger().warn(
                 'coordinator shutdown requested; cancelling any active '
                 'mission through home, hold, disable, and child cleanup')
+
+    def fresh_all_motors_disabled(self, maximum_age_sec=0.5):
+        """Return exact fresh feedback proof that every arm motor is off."""
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        if telemetry_store is None:
+            status = self.latest_arm_status
+            age = time.monotonic() - self.latest_arm_status_at
+        else:
+            snapshot = telemetry_store.snapshot()
+            observation = snapshot.arm.status
+            status = None if observation is None else observation.value
+            age = (
+                math.inf if observation is None else
+                observation.age_at(snapshot.captured_at))
+        return bool(
+            status is not None
+            and age <= float(maximum_age_sec)
+            and bool(getattr(status, 'motor_feedback_valid', False))
+            and not any(motor_driver_states(status)))
 
     def poll_process_shutdown(self):
         """Stop ROS only after the active mission and owned children finish."""
@@ -706,6 +791,43 @@ class TargetScanMissionNode(Node):
             self.latest_scan_history_at = received_at
             self.telemetry_store.update_scan_history(
                 payload, received_at=received_at)
+
+    def view_generation_cb(self, msg):
+        try:
+            payload = json.loads(msg.data)
+        except (json.JSONDecodeError, TypeError):
+            return
+        if not isinstance(payload, dict):
+            return
+        received_at = time.monotonic()
+        with self._lock:
+            self.latest_view_generation = payload
+            self.latest_view_generation_at = received_at
+
+    def wait_for_view_generation(
+            self, goal_handle, session, accepted_views, timeout):
+        """Wait until the bridge has cached this scan's exact generation."""
+        last_reason = 'view generation receipt has not arrived'
+        deadline = time.monotonic() + max(0.0, float(timeout))
+        while time.monotonic() < deadline:
+            self.guard(goal_handle, session)
+            with self._lock:
+                receipt = self.latest_view_generation
+                received_at = self.latest_view_generation_at
+                barrier = self.view_generation_barrier_at
+                history = self.latest_scan_history
+            if receipt is None or received_at <= barrier:
+                last_reason = (
+                    'waiting for a bridge receipt newer than the plan barrier')
+            else:
+                last_reason = generation_matches_expected(
+                    receipt, history, accepted_views)
+                if not last_reason:
+                    return
+            time.sleep(0.05)
+        raise MissionFailure(
+            'view planner generation did not become ready: %s' % last_reason,
+            failure_code='NO_REACHABLE_PLAN', retryable=True)
 
     def current_scan_feature_coverage(self):
         telemetry_store = getattr(self, 'telemetry_store', None)
@@ -1488,6 +1610,7 @@ class TargetScanMissionNode(Node):
             time.monotonic()
             + workflow_config_for(self).plan_request_queue_timeout_sec)
         visual_deadline = None
+        runtime_refresh_reported = False
         while time.monotonic() < (
                 visual_deadline if visual_deadline is not None
                 else queue_deadline):
@@ -1530,6 +1653,19 @@ class TargetScanMissionNode(Node):
                     'measured target lock did not recover before command-free '
                     'scan planning: %s' % result.message,
                     failure_code='TARGET_NOT_FOUND', retryable=True)
+            if runtime_freshness_plan_request_rejection(result.message):
+                # The bridge has not queued a worker request, so no trajectory
+                # can exist or move. Reuse the bounded queue window while the
+                # authoritative freshness gate awaits its next valid sample.
+                if not runtime_refresh_reported:
+                    runtime_refresh_reported = True
+                    self.startup_progress(
+                        goal_handle, session,
+                        'runtime telemetry dipped before scan planning; '
+                        'holding without motion for one fresh snapshot')
+                self.guard(goal_handle, session)
+                time.sleep(0.1)
+                continue
             raise MissionFailure(str(result.message))
         if visual_deadline is not None:
             raise MissionFailure(
@@ -2164,6 +2300,7 @@ class TargetScanMissionNode(Node):
         with self._lock:
             self.latest_plan = None
             self.latest_plan_at = 0.0
+            self.view_generation_barrier_at = time.monotonic()
             telemetry_store = getattr(self, 'telemetry_store', None)
             if telemetry_store is not None:
                 telemetry_store.clear_plan()
@@ -2181,6 +2318,9 @@ class TargetScanMissionNode(Node):
             self.latest_capture_at = 0.0
             self.latest_scan_history = None
             self.latest_scan_history_at = 0.0
+            self.latest_view_generation = None
+            self.latest_view_generation_at = 0.0
+            self.view_generation_barrier_at = 0.0
             self.latest_scan_target_center = None
             self.last_scan_feature_coverage = {}
             telemetry_store = getattr(self, 'telemetry_store', None)

@@ -7,6 +7,7 @@ from piper_tesseract_foxy.contract import ContractError
 from piper_tesseract_foxy.worker import (
     attached_box_floor_clearance_rejection,
     camera_transform_path_rejection,
+    CandidatePlanningError,
     planning_budgets_for_request,
     quiesce_bootstrap_recovery_prefix,
     reverse_sdk_movej_points,
@@ -36,6 +37,81 @@ def test_worker_camera_path_accepts_compact_visible_route():
     assert camera_transform_path_rejection(
         [optical_transform(0.0), optical_transform(19.5)],
         [0.0, 0.0, 1.0]) == ''
+
+
+def test_worker_exhausts_exact_aim_before_one_fallback():
+    calls = []
+    fallback = [0.996194698, 0.087155743, 0.0]
+
+    def plan_candidate(_start, candidate, *_args):
+        calls.append(list(candidate['look_direction']))
+        if len(calls) == 1:
+            raise ContractError('synthetic exact-aim IK failure')
+        return 0.0, [
+            {'positions_rad': [0.0] * 6},
+            {'positions_rad': [0.1] * 6},
+        ], {'minimum_clearance_m': 0.1,
+            'limiting_link_pair': 'none/none'}
+
+    backend = SimpleNamespace(
+        plan_candidate=plan_candidate,
+        last_planning_diagnostics={
+            'exact_aim_attempts': 0,
+            'fallback_aim_attempts': 0,
+            'failure_stage_counts': {},
+        },
+    )
+    candidate = {
+        'id': 1,
+        'look_direction': [1.0, 0.0, 0.0],
+        'fallback_look_directions': [fallback],
+    }
+
+    selected, _roll, _points, _validation, fallback_used, offset = \
+        TesseractBackend.plan_candidate_aims(
+            backend, [0.0] * 6, candidate, [0.0], 0.05,
+            [[-1.0, 1.0]] * 6, 0.03)
+
+    assert calls[0] == candidate['look_direction']
+    assert calls[1] == fallback
+    assert fallback_used
+    assert offset == pytest.approx(5.0, abs=1e-5)
+    assert selected['aim_attempt_diagnostics']['attempted'] == [
+        'exact', 'fallback']
+    assert backend.last_planning_diagnostics['exact_aim_attempts'] == 1
+    assert backend.last_planning_diagnostics['fallback_aim_attempts'] == 1
+
+
+def test_exhausted_candidate_retains_typed_exact_and_fallback_evidence():
+    def plan_candidate(_start, _candidate, *_args):
+        raise CandidatePlanningError(
+            'IK_FAILURE', 'synthetic unreachable target-facing pose')
+
+    backend = SimpleNamespace(
+        plan_candidate=plan_candidate,
+        last_planning_diagnostics={
+            'exact_aim_attempts': 0,
+            'fallback_aim_attempts': 0,
+            'failure_stage_counts': {},
+        },
+    )
+    candidate = {
+        'id': 1,
+        'look_direction': [1.0, 0.0, 0.0],
+        'fallback_look_directions': [[0.996194698, 0.087155743, 0.0]],
+    }
+
+    with pytest.raises(CandidatePlanningError) as caught:
+        TesseractBackend.plan_candidate_aims(
+            backend, [0.0] * 6, candidate, [0.0], 0.05,
+            [[-1.0, 1.0]] * 6, 0.03)
+
+    assert caught.value.stage == 'AIM_VARIANTS_EXHAUSTED'
+    assert [item['aim'] for item in caught.value.evidence] == [
+        'exact', 'fallback']
+    assert all(
+        item['stage'] == 'IK_FAILURE'
+        for item in caught.value.evidence)
 
 
 def test_worker_attached_holder_box_rejects_floor_grazing_transform():
@@ -535,6 +611,38 @@ def test_worker_planning_budget_expires_before_bridge_timeout(monkeypatch):
 
     with pytest.raises(ContractError, match='before the bridge 180-second timeout'):
         TesseractBackend.plan(backend, request)
+
+
+def test_first_request_uses_preloaded_clean_scene_then_rebuilds(monkeypatch):
+    first_robot = object()
+    second_robot = object()
+    loads = []
+    collections = []
+    backend = TesseractBackend.__new__(TesseractBackend)
+    backend.robot = first_robot
+    backend.urdf_path = '/model/piper.urdf'
+    backend.srdf_path = '/model/piper.srdf'
+    backend._preloaded_scene_unused = True
+    backend.api = {
+        'Robot': SimpleNamespace(
+            from_files=lambda urdf, srdf: (
+                loads.append((urdf, srdf)) or second_robot)),
+    }
+    monkeypatch.setattr(
+        worker_module.gc, 'collect', lambda: collections.append(True))
+
+    backend.reset_scene()
+
+    assert backend.robot is first_robot
+    assert not backend._preloaded_scene_unused
+    assert loads == []
+    assert collections == []
+
+    backend.reset_scene()
+
+    assert backend.robot is second_robot
+    assert loads == [('/model/piper.urdf', '/model/piper.srdf')]
+    assert collections == [True]
 
 
 def test_automatic_one_view_replan_has_a_tight_bounded_budget():

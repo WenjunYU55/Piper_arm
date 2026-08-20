@@ -65,6 +65,36 @@ def viewpoint_is_duplicate(
     return False
 
 
+def viewpoint_direction_is_redundant(
+        viewpoint, accepted_entries, target_center,
+        minimum_separation_deg=6.0):
+    """Reject an already-observed target-to-camera direction, not travel."""
+    threshold = max(0.0, float(minimum_separation_deg))
+    if threshold <= 0.0 or not accepted_entries:
+        return False
+    current_center = vector3(target_center, 'current target center')
+    camera = vector3(
+        viewpoint.get('desired_camera_position'), 'camera position')
+    candidate_direction = camera - current_center
+    if float(np.linalg.norm(candidate_direction)) <= 1e-9:
+        return True
+    for entry in accepted_entries:
+        try:
+            previous_camera = history_vector3(
+                entry, 'actual_camera_position', 'desired_camera_position',
+                'accepted camera position')
+            previous_center = vector3(
+                entry.get('target_estimate_used', target_center),
+                'accepted target estimate')
+        except (TypeError, ValueError):
+            continue
+        previous_direction = previous_camera - previous_center
+        if angular_separation_deg(
+                candidate_direction, previous_direction) < threshold - 1e-9:
+            return True
+    return False
+
+
 def diversity_distance(viewpoint, references):
     """Score a view by its closest combined position/direction separation."""
     if not references:
@@ -213,7 +243,8 @@ def feature_coverage_priority(
 def feature_coverage_progress(
         viewpoint, accepted_entries, target_center, objective,
         lateral_tolerance=0.02):
-    """Measure non-regression against achieved history for one objective.
+    """
+    Measure non-regression against achieved history for one objective.
 
     Positive values advance the active feature floor.  Zero permits a useful
     radius/elevation configuration change without surrendering already
@@ -337,7 +368,9 @@ def achieved_feature_coverage(
 
 def filter_and_order_viewpoints(
         viewpoints, entries, position_tolerance_m=0.012,
-        look_tolerance_deg=2.0, accepted_entries=None, target_center=None):
+        look_tolerance_deg=2.0, accepted_entries=None, target_center=None,
+        minimum_direction_separation_deg=0.0,
+        direction_target_center=None):
     """
     Remove viewpoints already captured in this session.
 
@@ -348,14 +381,22 @@ def filter_and_order_viewpoints(
     here and again in the bridge made the live arm alternate between the two
     ends of one orbit sector.
     """
-    remaining = [
-        item for item in viewpoints
-        if not viewpoint_is_duplicate(
-            item, entries, position_tolerance_m, look_tolerance_deg)
-    ]
+    accepted_entries = entries if accepted_entries is None else accepted_entries
+    remaining = []
+    for item in viewpoints:
+        if viewpoint_is_duplicate(
+                item, entries, position_tolerance_m, look_tolerance_deg):
+            continue
+        if (
+                (direction_target_center is not None or target_center is not None)
+                and viewpoint_direction_is_redundant(
+                    item, accepted_entries,
+                    direction_target_center
+                    if direction_target_center is not None else target_center,
+                    minimum_direction_separation_deg)):
+            continue
+        remaining.append(item)
     if target_center is None:
-        accepted_entries = entries if accepted_entries is None else accepted_entries
-    elif accepted_entries is None:
         accepted_entries = entries
     if not entries and target_center is None:
         return remaining
@@ -413,6 +454,21 @@ def validate_history_payload(payload, maximum_views):
     for entry in rejected_entries:
         vector3(entry.get('desired_camera_position'), 'rejected camera position')
         vector3(entry.get('desired_look_at_direction'), 'rejected look direction')
+    latest_achieved = payload.get('latest_achieved_camera')
+    if latest_achieved is not None:
+        if not isinstance(latest_achieved, dict):
+            raise ValueError('latest achieved camera is not an object')
+        camera = vector3(
+            latest_achieved.get('camera_position'),
+            'latest achieved camera position')
+        look = vector3(
+            latest_achieved.get('look_direction'),
+            'latest achieved camera look direction')
+        latest_achieved = dict(latest_achieved)
+        latest_achieved['camera_position'] = dict(zip(
+            ('x', 'y', 'z'), (float(value) for value in camera)))
+        latest_achieved['look_direction'] = dict(zip(
+            ('x', 'y', 'z'), (float(value) for value in look)))
     return {
         'session_id': session_id,
         'accepted_views': accepted,
@@ -422,6 +478,7 @@ def validate_history_payload(payload, maximum_views):
         'entries': list(entries) + list(rejected_entries),
         'accepted_entries': list(entries),
         'rejected_entries': list(rejected_entries),
+        'latest_achieved_camera': latest_achieved,
         # This measured center is frozen once per scan session.  Live target
         # measurements still place each new candidate, but achieved coverage
         # must be compared in one immutable frame so tracker noise cannot make

@@ -7,7 +7,10 @@ from typing import Optional, Tuple
 
 import numpy as np
 
-from piper_mobile_manipulation.failure_model import Failure, FailureCode
+from piper_mobile_manipulation.failure_model import (
+    Failure,
+    FailureCode,
+)
 from piper_mobile_manipulation.scan_motion import approval_rejection_reason
 
 
@@ -209,7 +212,8 @@ class PlanAuthorizer:
     """Evaluate exact plan ownership without ROS or mutable node state."""
 
     @staticmethod
-    def planner_result(valid: bool, reason: str) -> PlanAuthorizationDecision:
+    def planner_result(
+            valid: bool, reason: str) -> PlanAuthorizationDecision:
         """Classify a command-free planner result before plan loading."""
         if bool(valid):
             return PlanAuthorizationDecision(

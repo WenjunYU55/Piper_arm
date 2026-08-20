@@ -99,6 +99,8 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_obstacle_geometry test/test_obstacle_geometry.py)
   ament_add_pytest_test(test_target_landmark_geometry test/test_target_landmark_geometry.py)
   ament_add_pytest_test(test_supervised_workflow test/test_supervised_workflow.py)
+  ament_add_pytest_test(
+    test_heavy_refresh_bridge test/test_heavy_refresh_bridge.py)
   ament_add_pytest_test(test_tracking_recovery test/test_tracking_recovery.py)
   ament_add_pytest_test(test_depth_to_3d test/test_depth_to_3d.py)
   ament_add_pytest_test(test_mask_reprojection test/test_mask_reprojection.py)
@@ -138,6 +140,10 @@ if(BUILD_TESTING)
   ament_add_pytest_test(
     test_phase7_viewpoint_components
     test/test_phase7_viewpoint_components.py)
+  ament_add_pytest_test(test_nbv_coverage test/test_nbv_coverage.py)
+  ament_add_pytest_test(
+    test_nbv_regression_replay test/test_nbv_regression_replay.py)
+  ament_add_pytest_test(test_view_generation test/test_view_generation.py)
   ament_add_pytest_test(test_configuration test/test_configuration.py)
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)

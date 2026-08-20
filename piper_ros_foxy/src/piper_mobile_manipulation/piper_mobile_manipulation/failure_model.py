@@ -32,7 +32,11 @@ class FailureTag(str, Enum):
     EMPTY_VIEW_FRONTIER = 'EMPTY_VIEW_FRONTIER'
     PLAN_REJECTION_HOME_ALLOWED = 'PLAN_REJECTION_HOME_ALLOWED'
     CAPTURE_RETRY_SAME_VIEW = 'CAPTURE_RETRY_SAME_VIEW'
+    CAPTURE_REFRESH_SAME_VIEW = 'CAPTURE_REFRESH_SAME_VIEW'
     CAPTURE_REJECT_VIEW = 'CAPTURE_REJECT_VIEW'
+    NO_POSITIVE_INFORMATION = 'NO_POSITIVE_INFORMATION'
+    TESSERACT_EXHAUSTED = 'TESSERACT_EXHAUSTED'
+    FINAL_AIM_EXCEEDED = 'FINAL_AIM_EXCEEDED'
     TERMINAL_HOME_REACHED = 'TERMINAL_HOME_REACHED'
     HOME_REACHED = 'HOME_REACHED'
     REQUEST_ALREADY_PENDING = 'REQUEST_ALREADY_PENDING'
@@ -168,12 +172,18 @@ def legacy_failure_adapter(
             marker in lowered for marker in (
                 'tracking is not settled tracking',
                 'tracking is prediction-only',
-                'tracking measurement is stale')):
+                'tracking measurement is stale',
+                'target_status=low_confidence',
+                'target_status=lost',
+                'target_status=searching')):
         tags.add(FailureTag.PLAN_REQUEST_VISUAL_REACQUISITION)
     if (
             lowered.startswith('target moved ')
             and ' after planning; refresh the plan' in lowered):
         tags.add(FailureTag.TARGET_DRIFT_REPLAN)
+    if lowered.startswith('target_drift_replan:'):
+        tags.add(FailureTag.TARGET_DRIFT_REPLAN)
+        tags.add(FailureTag.CAPTURE_REJECT_VIEW)
 
     empty_view_frontier = (
         'only 0 viewpoints planned; require at least 1 of 1' in lowered)
@@ -184,6 +194,13 @@ def legacy_failure_adapter(
             and empty_view_frontier
             and 'no finite bounded collision-free ik goal for any roll'
             in lowered):
+        tags.add(FailureTag.SAFE_VIEW_EXHAUSTED)
+    if 'no_positive_information_candidate' in lowered:
+        tags.add(FailureTag.NO_POSITIVE_INFORMATION)
+        tags.add(FailureTag.EMPTY_VIEW_FRONTIER)
+        tags.add(FailureTag.SAFE_VIEW_EXHAUSTED)
+    if 'tesseract_exhausted' in lowered:
+        tags.add(FailureTag.TESSERACT_EXHAUSTED)
         tags.add(FailureTag.SAFE_VIEW_EXHAUSTED)
     if (
             (
@@ -200,6 +217,10 @@ def legacy_failure_adapter(
         (
             'timestamped camera transform is unavailable' in lowered
             and 'extrapolation into the future' in lowered)
+        or lowered == 'missing scan execution status'
+        or lowered.startswith('scan execution is not multiview_scan')
+        or lowered.startswith(
+            'executor is not at an accepted settled capture')
         or 'quality_rejected: scan quality is missing' in lowered
         or 'quality_rejected: scan quality is stale' in lowered
         or 'occlusion_rejected: occlusion evidence is missing' in lowered
@@ -229,12 +250,20 @@ def legacy_failure_adapter(
         or lowered == 'rgb and native depth timestamps are not synchronized')
     if capture_retry:
         tags.add(FailureTag.CAPTURE_RETRY_SAME_VIEW)
+    refreshable_visual_rejection = (
+        lowered.startswith('quality_rejected:')
+        or lowered == 'target_3d invalid'
+        or lowered.startswith('depth_quality_rejected:')
+    )
+    if not capture_retry and refreshable_visual_rejection:
+        tags.add(FailureTag.CAPTURE_REFRESH_SAME_VIEW)
     if not capture_retry and (
-            lowered.startswith('quality_rejected:')
+            refreshable_visual_rejection
             or lowered.startswith(
-                'occlusion_rejected: settled target view is ')
-            or lowered == 'target_3d invalid'
-            or lowered.startswith('depth_quality_rejected:')):
+                'occlusion_rejected: settled target view is ')):
+        tags.add(FailureTag.CAPTURE_REJECT_VIEW)
+    if lowered.startswith('final_aim_exceeded:'):
+        tags.add(FailureTag.FINAL_AIM_EXCEEDED)
         tags.add(FailureTag.CAPTURE_REJECT_VIEW)
 
     if 'home reached' in lowered:
@@ -255,6 +284,8 @@ def legacy_failure_adapter(
         tags.add(FailureTag.GUI_RETURN_HOME_RETRY)
     if (
             lowered.endswith('data missing or stale')
+            or lowered.endswith(
+                'controller motion limits are missing or stale')
             or lowered.startswith('camera timestamp ')):
         tags.add(FailureTag.RUNTIME_FRESHNESS_GAP)
     if lowered.startswith((

@@ -69,6 +69,44 @@ def primary_depth_component(
     return selected, float(report['selected_depth_m'])
 
 
+def median_component_camera_point(depth_m, support, camera_matrix):
+    """
+    Return the robust 3-D centre of one qualified visible component.
+
+    The previous implementation selected a robust Z value but projected it
+    through the 2-D detector centre.  A slightly asymmetric SAM mask could
+    therefore move X/Y independently of the depth samples that had actually
+    passed qualification.  Use the same qualified pixels for all three axes.
+    This remains a visible-surface centroid, not a fitted cube centre.
+    """
+    depth = np.asarray(depth_m, dtype=np.float64)
+    selected = np.asarray(support, dtype=bool)
+    intrinsic = np.asarray(camera_matrix, dtype=np.float64).reshape(-1)
+    if depth.ndim != 2 or selected.shape != depth.shape:
+        raise ValueError('qualified depth and support must be matching 2D arrays')
+    if intrinsic.size != 9 or not np.all(np.isfinite(intrinsic)):
+        raise ValueError('camera matrix must contain nine finite values')
+    fx, fy, cx, cy = (
+        float(intrinsic[0]), float(intrinsic[4]),
+        float(intrinsic[2]), float(intrinsic[5]))
+    if fx <= 0.0 or fy <= 0.0:
+        raise ValueError('camera focal lengths must be positive')
+    rows, columns = np.nonzero(
+        selected & np.isfinite(depth) & (depth > 0.0))
+    if rows.size == 0:
+        raise ValueError('qualified target component is empty')
+    z = depth[rows, columns]
+    points = np.column_stack((
+        (columns.astype(np.float64) - cx) * z / fx,
+        (rows.astype(np.float64) - cy) * z / fy,
+        z,
+    ))
+    point = np.median(points, axis=0)
+    if point.shape != (3,) or not np.all(np.isfinite(point)):
+        raise ValueError('qualified target component centroid is non-finite')
+    return point
+
+
 class DepthTo3DNode(Node):
     def __init__(self):
         super().__init__('depth_to_3d_node')
@@ -109,7 +147,6 @@ class DepthTo3DNode(Node):
         self.bridge = CvBridge()
         self.latest_mask_msg = None
         self.previous_depth = None
-        self.previous_point = None
         self.pending_jump_depth = None
         self.pending_jump_count = 0
         self.refresh_runtime_params()
@@ -121,10 +158,12 @@ class DepthTo3DNode(Node):
             self, Detection2D, self.get_parameter('detection_topic').value, qos_profile=10
         )
         self.depth_sub = Subscriber(
-            self, Image, self.get_parameter('depth_topic').value, qos_profile=qos_profile_sensor_data
+            self, Image, self.get_parameter('depth_topic').value,
+            qos_profile=qos_profile_sensor_data
         )
         self.info_sub = Subscriber(
-            self, CameraInfo, self.get_parameter('camera_info_topic').value, qos_profile=qos_profile_sensor_data
+            self, CameraInfo, self.get_parameter('camera_info_topic').value,
+            qos_profile=qos_profile_sensor_data
         )
         self.mask_sub = self.create_subscription(
             Image,
@@ -156,7 +195,6 @@ class DepthTo3DNode(Node):
         out.detection_height = float(detection_msg.height)
         if not detection_msg.valid:
             self.previous_depth = None
-            self.previous_point = None
             self.pending_jump_depth = None
             self.pending_jump_count = 0
             out.valid = False
@@ -178,7 +216,9 @@ class DepthTo3DNode(Node):
         if u < 0 or u >= w or v < 0 or v >= h:
             out.valid = False
             self.pub.publish(out)
-            self.get_logger().warn('Detection rejected outside depth image u=%d v=%d size=%dx%d' % (u, v, w, h))
+            self.get_logger().warn(
+                'Detection rejected outside depth image u=%d v=%d size=%dx%d'
+                % (u, v, w, h))
             return
 
         mask = self.mask_for_depth(depth_msg, w, h)
@@ -186,7 +226,9 @@ class DepthTo3DNode(Node):
             x0, x1, y0, y1 = self.bbox_bounds(detection_msg, u, v, w, h)
             roi_mask = mask[y0:y1, x0:x1] > 0
             crop = depth_m[y0:y1, x0:x1]
-            valid = roi_mask & np.isfinite(crop) & (crop > self.depth_min) & (crop < self.depth_max)
+            valid = (
+                roi_mask & np.isfinite(crop)
+                & (crop > self.depth_min) & (crop < self.depth_max))
             out.depth_source = 'mask'
         else:
             x0, x1, y0, y1 = self.depth_roi(detection_msg, u, v, w, h)
@@ -273,7 +315,7 @@ class DepthTo3DNode(Node):
         else:
             percentile = float(np.clip(self.depth_percentile, 0.0, 100.0))
             z = float(np.percentile(valid_depths, percentile))
-        accept_depth, self.pending_jump_depth, self.pending_jump_count, resynced = \
+        accept_depth, self.pending_jump_depth, self.pending_jump_count, _resynced = \
             depth_jump_reacquisition(
                 self.previous_depth,
                 z,
@@ -299,40 +341,35 @@ class DepthTo3DNode(Node):
                 warn=True,
             )
             return
-        if resynced:
-            # Camera-frame smoothing must not blend a newly accepted viewpoint
-            # with the stale pre-motion point.
-            self.previous_point = None
-        fx = float(camera_info.k[0])
-        fy = float(camera_info.k[4])
-        cx = float(camera_info.k[2])
-        cy = float(camera_info.k[5])
-        if fx == 0.0 or fy == 0.0 or math.isnan(z):
+        try:
+            new_point = median_component_camera_point(
+                crop, valid, [
+                    float(camera_info.k[0]), 0.0,
+                    float(camera_info.k[2]) - float(x0),
+                    0.0, float(camera_info.k[4]),
+                    float(camera_info.k[5]) - float(y0),
+                    0.0, 0.0, 1.0,
+                ])
+        except (TypeError, ValueError) as exc:
             out.valid = False
             self.pub.publish(out)
+            self.log_debug(
+                'Depth rejected qualified component geometry: %s' % exc,
+                warn=True)
             return
-
-        new_point = np.array(
-            [
-                (detection_msg.u - cx) * z / fx,
-                (detection_msg.v - cy) * z / fy,
-                z,
-            ],
-            dtype=np.float64,
-        )
-        if self.previous_point is not None:
-            alpha = float(np.clip(self.smoothing_alpha, 0.0, 1.0))
-            filtered_point = alpha * new_point + (1.0 - alpha) * self.previous_point
-        else:
-            filtered_point = new_point
-        self.previous_point = filtered_point
+        # Do not average camera-frame coordinates across eye-in-hand motion.
+        # The timestamped base-frame Kalman tracker is the sole temporal
+        # estimator; blending here would mix coordinates expressed at
+        # different camera poses and create an artificial target displacement.
+        filtered_point = new_point
         self.previous_depth = z
 
         out.point.x = float(filtered_point[0])
         out.point.y = float(filtered_point[1])
         out.point.z = float(filtered_point[2])
         out.depth = float(filtered_point[2])
-        out.measurement_confidence = self.measurement_confidence(detection_msg.confidence, valid_count, depth_stddev)
+        out.measurement_confidence = self.measurement_confidence(
+            detection_msg.confidence, valid_count, depth_stddev)
         out.valid = True
         self.pub.publish(out)
         self.log_debug(
@@ -429,10 +466,14 @@ class DepthTo3DNode(Node):
         return arr.astype(np.float32)
 
     def measurement_confidence(self, detection_confidence, valid_count, depth_stddev):
-        return float(np.clip(detection_confidence, 0.0, 1.0) * self.depth_confidence(valid_count, depth_stddev))
+        return float(
+            np.clip(detection_confidence, 0.0, 1.0)
+            * self.depth_confidence(valid_count, depth_stddev))
 
     def depth_confidence(self, valid_count, depth_stddev):
-        pixel_quality = float(np.clip(valid_count / float(max(self.min_valid_depth_pixels * 2, 1)), 0.0, 1.0))
+        pixel_quality = float(np.clip(
+            valid_count / float(max(self.min_valid_depth_pixels * 2, 1)),
+            0.0, 1.0))
         std_quality = 1.0
         if self.confidence_depth_stddev > 0.0:
             std_ratio = max(float(depth_stddev), 0.0) / self.confidence_depth_stddev
@@ -459,7 +500,6 @@ class DepthTo3DNode(Node):
             float(self.get_parameter(
                 'depth_jump_reacquire_tolerance_m').value),
         )
-        self.smoothing_alpha = float(self.get_parameter('smoothing_alpha').value)
         self.use_mask_depth = bool(self.get_parameter('use_mask_depth').value)
         self.mask_max_age_s = float(self.get_parameter('mask_max_age_s').value)
         self.mask_erode_px = max(0, int(self.get_parameter('mask_erode_px').value))

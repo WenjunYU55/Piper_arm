@@ -1,6 +1,32 @@
 schema_version: 1
 document: mission_goal_and_delivery_roadmap
-last_reviewed: '2026-08-17'
+last_reviewed: '2026-08-20'
+global_nbv_target_aim_repair_2026_08_20:
+  milestone: M5 feature-diverse measured NBV capture
+  software_status: Global cumulative-information candidate selection, actual-achieved-pose rejection recovery, exact-first five-degree aim, one-shot heavy capture refresh and base_link-only temporal target estimation are implemented without motion, home, shutdown, collision or public ROS changes.
+  regression_status: Recorded scan_20260820_142919 now deterministically exposes its old 13.424-degree target aim error and fails the repaired five-degree capture gate. A synthetic 70-degree high-gain view beats a 20-degree low-gain view, proving no 30-degree production frontier remains.
+  qualification_status: >-
+    Current focused gates pass: 669 mobile functional tests, 115 Tesseract
+    tests, affected package builds, AI YAML parsing and both command-free
+    rootless qualifications. Supervised runs prove seed capture, true
+    generation-one voxel_nbv selection/execution, strict five-degree rejection,
+    and safe staged shutdown. Complete feature-diverse acceptance remains
+    blocked by target-lock instability, which the operator deferred.
+post_startup_joint6_range_update_2026_08_20:
+  milestone: M1 safe startup and executable scan motion
+  incident_result: Startup and target acquisition passed, but the first scan waypoint exposed that the retained +360-degree controller turn plus a positive logical J6 target exceeded the 365-degree raw controller bound.
+  software_status: Driver correction is complete; 60 focused J6 tests, 62 full piper tests with one skip, 643 mobile functional tests, 106 Tesseract tests, the five-package build and both rootless qualifications pass. Logical motion, planning, speed, startup direction and terminal storage are unchanged.
+  qualification_status: Not physically qualified. Software/build gates and a supervised low-speed positive-J6 waypoint with complete storage and disable are required before another E2E.
+previous_generation_reconciliation_2026_08_20:
+  milestone: M1 safe terminal behavior and repeatable mission admission
+  software_status: Exact non-command terminal cleanup and fresh-six-disabled prior-generation reconciliation are implemented; 748 mobile/Tesseract tests, 127 repository regressions with one hardware skip, changed-file lint, five-package build and serial command-free rootless core/compact qualification pass.
+  qualification_status: Software-only. No live process was signalled and no motor action was performed in this change.
+  acceptance: A processing-only stale generation no longer blocks the next mission; a live driver remains blocked until fresh valid feedback proves all six disabled; incomplete bounded cleanup still returns NEEDS_OPERATOR.
+voxel_nbv_handoff_update_2026_08_17:
+  milestone: M5 feature-diverse measured NBV capture
+  incident_result: The first authoritative run made two captures; it was not a valid NBV completion result because the mission raced generation-two computation and requested the bridge while only an expired prior snapshot existed.
+  software_status: Exact generation synchronization, diverse-direction shortlist membership and durable selected-plan/capture provenance are implemented; 741 mobile-manipulation/Tesseract tests, 127 repository regressions with one hardware-dependent skip, changed-file lint, the five-package ROS build and command-free rootless Tesseract qualification pass.
+  qualification_status: Not physically qualified. The next supervised E2E must prove more than two captures, second-and-later voxel_nbv provenance, meaningful achieved-direction/feature growth, normal staged home, disable and child cleanup.
 authority:
   purpose: >-
     This is the durable source of truth for the product goal, milestone order,
@@ -273,3 +299,10 @@ roadmap_update_protocol:
   - Put detailed defect histories and deferred cleanup in 60-debt.yaml; keep this file concise enough to answer what the goal is, what remains and what happens next.
   - A milestone may move to complete only when its exit criteria are met on the current implementation and configuration.
   - If code and roadmap disagree, code plus current test evidence describe behavior, but the task is not finished until this roadmap and every affected architecture document are corrected.
+
+nbv_update_2026_08_17:
+  milestone: M5 feature-diverse measured NBV capture
+  status: authoritative_software_selected_supervised_E2E_pending
+  completed_software: [accepted-capture voxel evidence, closed-loop information ranking, unique-direction-first fallback ordering, captured-generation replay, delayed capture authorization retry]
+  unchanged_exit_criteria: A current physical mission must still prove adaptive 8-to-24 GOOD/CLEAR captures, useful reachable face coverage, measured convergence, home, disable and cleanup.
+  next_execution_order: [operator-supervised authoritative voxel_nbv E2E, inspect logs and dataset, correct any defect command-free first, repeat staged mission only after evidence review]

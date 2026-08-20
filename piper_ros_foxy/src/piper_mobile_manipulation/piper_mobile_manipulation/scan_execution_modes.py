@@ -194,6 +194,8 @@ def heavy_refresh_status_action(payload, request_id, minimum_image_stamp_ns):
         return 'ignore', 'status belongs to another request', None
     if state == 'request_ignored_busy':
         return 'busy', 'heavy worker is busy', None
+    if state == 'waiting_for_worker':
+        return 'waiting_for_worker', 'heavy worker is busy', None
     if state in ('waiting_for_fresh_image', 'waiting_for_image'):
         return 'waiting_for_frame', '', None
     if state == 'queued':

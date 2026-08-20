@@ -88,7 +88,7 @@ LEGACY_EXECUTOR_DEFAULTS = {
     'waypoint_timeout_sec': 90.0,
     'waypoint_progress_timeout_sec': 20.0,
     'joint_velocity_settled': 0.20,
-    'endpoint_position_settled_rad': 0.005,
+    'endpoint_position_settled_rad': 0.007,
     'home_goal_tolerance_rad': 0.30,
     'home_motion_tolerance_rad': 0.30,
     'home_joint_feedback_timeout_sec': 1.0,

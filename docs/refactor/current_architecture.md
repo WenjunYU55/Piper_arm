@@ -163,6 +163,12 @@ datasheet/factory mechanical registration. Its contract is
 
 ## Mission state model
 
+As of 2026-08-20, a terminal operator-recovery result revokes mission
+authorization and releases the exact non-command perception/planning groups.
+It retains a possibly powered driver and scan executor. A later admission can
+reconcile the supervisor's exact previous handles only when the driver is
+absent or fresh typed feedback proves all six motors disabled.
+
 `mission_core.MissionPhase` defines:
 
 `LISTENING -> QUEUED -> GOAL_LATCHED -> STARTING -> PREFLIGHT ->
@@ -250,23 +256,27 @@ The automatic path is closed-loop next-best-view, one view per transaction:
 
 1. The planner generates target-centered candidates over the configured
    azimuth, pitch and distance region around the latest measured target.
-2. The bridge constrains the next candidate to a 6--30 degree local direction
-   frontier, caps the exact candidate list at 36, excludes accepted
-   position/look duplicates, and asks Tesseract for finite bounded IK and a
-   collision-free route.
-3. Coverage ranking is measured in a frozen first-lock object frame and gives
-   hard priority to missing Y sides, azimuth/elevation span, then remaining
-   novel directions. Travel cost is subordinate to coverage/safety.
+2. Authoritative voxel NBV scores the complete configured candidate region
+   against cumulative accepted voxel coverage. A six-degree threshold rejects
+   directions redundant with accepted views; it is not a maximum movement.
+3. The bridge preserves information order, reserves direction diversity and
+   sends at most 12 candidates to Tesseract. Every candidate uses exact current
+   target aim first, with one optional hash-bound fallback no more than five
+   degrees away only after exact-aim alternatives fail.
 4. The executor revalidates hashes, plan age, start state, target drift,
    tracking, camera clock, joints, all-six motor state, controller limits,
    obstacle geometry, target visibility and dense path safety before motion.
 5. It streams time-indexed MoveJ position targets at 20 Hz without stopping at
    every Tesseract vertex, settles, requests fresh perception, then calls the
    RGB-D capture service.
-6. Capture is accepted only if synchronized data, TF, valid target/mask/depth,
+6. After settling, actual achieved camera FK is recorded independently of
+   capture acceptance and final target aim must be within five degrees. Capture
+   is accepted only if synchronized data, TF, valid target/mask/depth,
    `GOOD` score >= 0.65 and `CLEAR` occlusion all correlate with the settled
-   view. The achieved camera position/look is recorded only after persistence.
-7. A fresh visual rejection holds and excludes the pose; the mission replans
+   view. Only persistence adds accepted coverage or reconstruction geometry.
+7. A transient fresh visual rejection holds for exactly one correlated heavy
+   refresh. Persistent rejection excludes the achieved pose and replans from
+   its actual FK; the mission replans
    up to eight replacement views. Transport/liveness gaps receive up to ten
    bounded in-pose capture-readiness retries in the executor and do not consume
    the visual replacement budget.
@@ -275,7 +285,7 @@ The adaptive scan seeds at eight captures and never exceeds 24. Completion
 requires measured feature coverage: at least two accepted views on each
 reachable Y side, 120 degrees of azimuth, 25 degrees of elevation, and three
 consecutive surface gains no greater than 0.02. A zero-view Tesseract result is
-accepted as frontier exhaustion only after the seed floor and sufficient
+accepted as information or feasibility exhaustion only after the seed floor and sufficient
 coverage are already proved. Otherwise it is retryable insufficient quality.
 
 ### Cancellation, failure and shutdown

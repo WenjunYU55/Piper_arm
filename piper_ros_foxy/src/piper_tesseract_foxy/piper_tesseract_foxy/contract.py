@@ -10,7 +10,11 @@ import re
 import time
 
 
+# The aim provenance fields are additive.  Retain schema 5 so a bridge and
+# worker can be rolled independently without turning the repair into a flag
+# day for the private transport contract.
 SCHEMA_VERSION = 5
+MAX_FINAL_AIM_OFFSET_DEG = 5.0
 JOINT_NAMES = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
 TIMING_POLICY = 'tesseract_stream_v3'
 COMMAND_RATE_HZ = 20.0
@@ -93,6 +97,19 @@ def finite_vector(value, length, label):
             raise ContractError('%s contains a non-finite value' % label)
         result.append(number)
     return result
+
+
+def angular_separation_deg(first, second):
+    """Return a finite angular separation for two validated directions."""
+    left = finite_vector(first, 3, 'first direction')
+    right = finite_vector(second, 3, 'second direction')
+    left_norm = math.sqrt(sum(value * value for value in left))
+    right_norm = math.sqrt(sum(value * value for value in right))
+    if min(left_norm, right_norm) <= 1e-12:
+        raise ContractError('aim direction must be non-zero')
+    cosine = sum(a * b for a, b in zip(left, right)) / (
+        left_norm * right_norm)
+    return math.degrees(math.acos(max(-1.0, min(1.0, cosine))))
 
 
 def require_sha256(value, label):
@@ -242,6 +259,24 @@ def validate_request(payload, now_ns=None):
             candidate.get('look_direction'), 3, 'candidate look_direction')
         if sum(value * value for value in direction) <= 1e-12:
             raise ContractError('candidate look_direction must be non-zero')
+        fallbacks = candidate.get('fallback_look_directions', [])
+        if not isinstance(fallbacks, list) or len(fallbacks) > 1:
+            raise ContractError(
+                'candidate fallback_look_directions must contain at most one direction')
+        maximum_aim_offset = float(candidate.get(
+            'maximum_final_aim_offset_deg', 0.0))
+        if (
+                not math.isfinite(maximum_aim_offset)
+                or maximum_aim_offset < 0.0
+                or maximum_aim_offset > MAX_FINAL_AIM_OFFSET_DEG):
+            raise ContractError('candidate maximum final aim offset is invalid')
+        if fallbacks and plan_kind != 'MULTIVIEW_SCAN':
+            raise ContractError('aim fallback is MULTIVIEW_SCAN-only')
+        for fallback in fallbacks:
+            offset = angular_separation_deg(direction, fallback)
+            if offset > maximum_aim_offset + 1e-9:
+                raise ContractError(
+                    'candidate fallback exceeds maximum final aim offset')
         required_first = candidate.get('required_first', False)
         if not isinstance(required_first, bool):
             raise ContractError('candidate required_first must be boolean')
@@ -790,11 +825,35 @@ def validate_response(payload, request=None):
             int(item['id']): item for item in request['scene']['candidate_views']}
         for viewpoint in selected:
             candidate = candidates.get(int(viewpoint['id']))
+            allowed_looks = (
+                [candidate['look_direction']]
+                + list(candidate.get('fallback_look_directions', []))
+                if candidate is not None else [])
             if candidate is None \
                     or viewpoint['camera_position_m'] != candidate['camera_position_m'] \
-                    or viewpoint['look_direction'] != candidate['look_direction']:
+                    or viewpoint['look_direction'] not in allowed_looks:
                 raise ContractError(
                     'response selected viewpoint does not match request')
+            nominal = candidate['look_direction']
+            reported_nominal = viewpoint.get(
+                'nominal_look_direction', nominal)
+            if reported_nominal != nominal:
+                raise ContractError(
+                    'response selected viewpoint nominal aim does not match request')
+            expected_offset = angular_separation_deg(
+                nominal, viewpoint['look_direction'])
+            reported_offset = viewpoint.get(
+                'aim_offset_deg', 0.0 if expected_offset <= 1e-6 else None)
+            if reported_offset is None or abs(
+                    float(reported_offset) - expected_offset) > 1e-6:
+                raise ContractError(
+                    'response selected viewpoint aim offset does not match request')
+            expected_fallback = bool(expected_offset > 1e-6)
+            reported_fallback = viewpoint.get(
+                'aim_fallback_used', False if not expected_fallback else None)
+            if reported_fallback is not expected_fallback:
+                raise ContractError(
+                    'response selected viewpoint fallback marker is invalid')
         expected_binding = {
             'request_sha256': request['request_sha256'],
             'plan_kind': request['plan_kind'],

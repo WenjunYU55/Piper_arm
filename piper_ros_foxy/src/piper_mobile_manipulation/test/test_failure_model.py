@@ -23,6 +23,7 @@ from piper_mobile_manipulation.target_scan_mission_node import (
     MissionFailure,
     planning_rejection_allows_current_state_home,
     retryable_plan_approval_rejection,
+    runtime_freshness_plan_request_rejection,
     target_drift_requires_replan,
     visual_reacquisition_plan_approval_rejection,
     visual_reacquisition_plan_request_rejection,
@@ -72,6 +73,10 @@ def test_explicit_failure_code_overrides_legacy_detail_classification():
     (
         FailureTag.PLAN_REQUEST_VISUAL_REACQUISITION,
         visual_reacquisition_plan_request_rejection,
+    ),
+    (
+        FailureTag.RUNTIME_FRESHNESS_GAP,
+        runtime_freshness_plan_request_rejection,
     ),
     (FailureTag.TARGET_DRIFT_REPLAN, target_drift_requires_replan),
     (
@@ -215,6 +220,15 @@ def test_failure_is_immutable_and_with_detail_preserves_machine_fields():
     ),
     (
         'quality_rejected: scan quality is stale',
+        FailureTag.CAPTURE_RETRY_SAME_VIEW,
+    ),
+    (
+        'executor is not at an accepted settled capture',
+        FailureTag.CAPTURE_RETRY_SAME_VIEW,
+    ),
+    (
+        'executor is not at an accepted settled capture '
+        '(cached mode=MULTIVIEW_SCAN state=SETTLING)',
         FailureTag.CAPTURE_RETRY_SAME_VIEW,
     ),
     (

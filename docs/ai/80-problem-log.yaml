@@ -1,6 +1,46 @@
 schema_version: 1
 document: consolidated_problem_and_incident_log
-last_reviewed: '2026-08-17'
+last_reviewed: '2026-08-20'
+stale_target_aim_and_local_nbv_frontier_2026_08_20:
+  state: software_fixed_physical_validation_pending
+  dataset: datasets/active_scan/scan_20260820_142919
+  symptoms: [camera completed an old requested orientation but was not aimed at the cube, local movement frontier made voxel NBV resemble legacy orbiting, rejected view could leave planner travel anchored at the previous accepted camera, transient visual rejection had no single correlated heavy-refresh handoff]
+  evidence: The capture transform optical axis differs from the selected look by only 0.037 degrees but differs from the synchronized qualified target direction by 13.424 degrees. Therefore Tesseract did not miss the old requested orientation; the target geometry supplied to planning was stale or biased.
+  code_causes: [depth_to_3d averaged coordinates in the moving camera frame before timestamped base-frame transform, bridge limited selection to 6-to-30 degrees then 30-to-45 recovery and eagerly biased aim up to 12 degrees, accepted history was overloaded as physical current pose, capture layers did not own one explicit refresh-before-reject transition]
+  correction: [same qualified component supplies X/Y/Z, no camera-frame temporal average, existing base_link Kalman remains sole estimator, global cumulative voxel gain over configured region, twelve-candidate Tesseract shortlist, exact aim first and one fallback at most five degrees, settled FK recorded independently of capture acceptance, one correlated heavy refresh then replan]
+  software_evidence: [660 mobile functional tests pass with 622 registered colcon targets, 110 Tesseract tests pass, 101 repository regressions pass with one hardware skip, five-package build passes, rootless core PASS, rootless compact PASS, changed-file lint passes]
+  physical_action_during_fix: none
+  remaining: Supervised low-speed one-view then three-view then full-E2E qualification.
+post_startup_positive_j6_limit_incident_2026_08_20:
+  state: software_fixed_physical_validation_pending
+  task_id: gui-sim-a09aa6ae47f44c88a458d142a80c2289
+  symptom: The mission passed startup, rough acquisition and multiview planning, then the first scan MoveJ timed out with J1-J5 at target and J6 2.400392 rad away. The public result classified the downstream execution failure as NO_REACHABLE_PLAN and made zero captures.
+  root_cause: The driver retained the necessary +2pi controller turn after positive-only startup but qualified only a 365-degree positive raw limit. Logical J6 2.483482 rad mapped to raw 8.766667 rad or 502.293 degrees and therefore made no progress from the approximately 364.761-degree current raw coordinate.
+  correction: Require and prove 540-degree raw coverage, configure 545 degrees for margin, retain logical [-pi,+pi], and add a pre-transmission overflow rejection plus positive-target regression.
+  containment: Shutdown completed PRE_HOME, STORAGE_WRIST, all-six disable and owned-child cleanup; the guarded zero-capture directory was removed.
+  remaining: Run a supervised low-speed positive-J6 physical smoke before full E2E.
+  software_evidence: [60 focused J6 tests pass, 62 full piper tests pass with one skip, 643 mobile functional tests pass, 106 Tesseract tests pass, five-package build passes, rootless core PASS, rootless compact PASS]
+nbv_bridge_debug_crash_2026_08_20:
+  state: physical_validation_pending
+  task_id: gui-sim-6e0cbcd372594740a38c824a6301f43e
+  symptom: Startup wrist and rough-acquisition planning succeeded, but approval timed out; shutdown then lacked the direct-home executor and returned NEEDS_OPERATOR with CONTROL_UNTRUSTWORTHY and zero captures.
+  root_cause: Two new NBV receipt/provenance debug branches called TesseractPlanBridge.param_bool although that bridge did not define the adapter. Debug was enabled, so the first valid acquisition plan caused AttributeError, the critical-child launch policy stopped the whole scan stack, and command/home authority was genuinely unavailable.
+  correction: Add the bridge-local shared boolean parameter adapter and a regression that caches and logs a valid voxel-NBV generation with debug enabled. Do not change acquisition, planning, safety, motion or shutdown thresholds.
+  evidence: [34 focused bridge tests, 106 full Tesseract tests, 643 full mobile tests, 23 GUI tests, five-package build, command-free rootless core PASS, command-free rootless compact PASS]
+  remaining: Run a supervised E2E from the physical requalification checklist; software tests cannot prove the live ROS critical-child sequence.
+previous_generation_ownership_incident_2026_08_20:
+  state: software_fixed_retest_pending
+  symptom: GUI reported lost ownership because a previous mission generation still had live process groups.
+  evidence_limit: Runtime directories and processes were absent during inspection, so the exact survivor names from that physical run could not be recovered; the failure string can only originate from ProcessSupervisor.begin_generation returning its own still-live handles.
+  code_cause: MissionEngine could return early on unproved terminal home or disable without releasing non-command processing groups, and admission had no safe reconciliation branch.
+  fix: Revoke authorization and release exact non-command groups on operator-recovery; on later admission clean exact prior handles only if driver is absent or fresh all-six-disabled feedback is proved.
+  physical_action_during_fix: none
+voxel_nbv_generation_race_2026_08_17:
+  category: integration_and_view_selection
+  symptom: GUI mission gui-sim-25a675652af94bada5674f130c967d4a captured two nearby views and then failed with planning blocked scan data is missing or stale.
+  root_cause: The planner synchronously rebuilt/scored generation two for about 12 seconds. MissionEngine requested the next plan immediately after VIEW_COMPLETE, while bridge_node correctly rejected its greater-than-one-second generation-one snapshot. Candidate attempts were not durably labelled, and the bounded rank-prefix shortlist could omit other directional leaders when high-rank poses were infeasible.
+  correction: Add session/count generation identity, post-barrier bridge receipt, no-motion bounded wait, explicit voxel_nbv_seed, direction-bin leader reservation, worker metadata propagation, plan provenance topic and exact frame-metadata correlation.
+  status: Software tests/build pass; supervised physical retest pending. Do not describe the incident run as proof that voxel ranking itself matched legacy.
 purpose: >-
   Durable, concise index of the material hardware, software, integration and
   operational problems encountered while building the PiPER target-scanning
@@ -491,3 +531,43 @@ required_update_links:
     - Update detailed debt or remove obsolete next_cut language in docs/ai/60-debt.yaml.
     - Update contracts, flows and guardrails when behavior or required retests change.
     - Preserve superseded incidents and rollback warnings.
+
+latest_nbv_incidents_2026_08_17:
+  - id: tesseract_ready_before_first_robot_scene
+    symptom: The 2026-08-20 scan_20260820_204529 locked the target but its seed request exhausted the 45-second automatic plan budget before starting candidate one.
+    root_cause: Worker readiness proved Python/backend import only. The first Robot.from_files call occurred in reset_scene after the request deadline started, so native model initialization consumed the candidate budget.
+    correction: Construct one clean unused Robot scene in TesseractBackend initialization before worker-ready is published. Consume it for request one, then preserve the existing discard/rebuild isolation for every later request.
+    evidence: [task gui-sim-7d34364727c9405eb5d16e9b32f48db4 pre-fix, scan_20260820_204529 removed as zero capture, candidate_attempts zero, task gui-sim-3eb814caa9204bfd884343f02a94323e post-fix seed view 412 and capture one, safe pre-home rough-home storage disable cleanup]
+  - id: rejected_nbv_bypassed_existing_reacquisition_owner
+    symptom: The 2026-08-20 scan_20260820_203704 committed a seed capture and executed true voxel_nbv generation one, but after strict final-aim rejection it failed with tracking LOST instead of requesting a replacement view.
+    root_cause: MissionEngine inserted a generic 30-second stable-readiness wait before the next command-free plan request. That duplicated the request/approval adapter's bounded visual-reacquisition ownership and expired as autonomous heavy recovery became eligible.
+    correction: Re-enter command-free view generation/request directly after accepted, rejected and target-drift outcomes. The request/approval adapter handles typed visual reacquisition, and unchanged approval gates remain mandatory before motion.
+    evidence: [task gui-sim-96d1a39dff6e4603af626e043d392e06 pre-fix, scan_20260820_203704, seed capture committed with 58 voxels, generation-one selected view 164 predicted_unknown 898 novel_surface 50, strict rejection at 5.037 degrees, task gui-sim-3eb814caa9204bfd884343f02a94323e post-fix entered bounded command-free reacquisition and failed TARGET_NOT_FOUND only after its authority expired, safe pre-home rough-home storage disable cleanup]
+  - id: endpoint_settle_window_below_powered_feedback_step
+    symptom: Multiple runs, including the 2026-08-20 scan_20260820_185457 attempt, reached the first rough-acquisition endpoint inside 0.0011 rad of its command but timed out after 15 seconds without a continuous settle proof.
+    root_cause: Powered J4 feedback alternated between two values 0.006227508 rad apart near zero. Both were inside the unchanged 0.025-rad endpoint tolerance, but the 0.005-rad anchor reset 395 times and its longest window was only 0.484 seconds.
+    correction: Set only endpoint_position_settled_rad to 0.007 rad, narrowly above the measured discrete feedback step, and retain the 0.025-rad endpoint, all motion, home, collision and safety-authority checks. Add a regression that rejects motion at 0.0071 rad.
+    evidence: [scan_20260820_185457 empty folder removed after safe shutdown, settle max_target_error 0.001067109 rad, anchor step 0.006227508 rad, resets 395, earlier same failure scans 20260820_175832 and 20260820_181130]
+  - id: diagnostic_landmark_changed_semantic_scene_during_scan_motion
+    symptom: The supervised scan beginning at scan_20260820_184910 acquired a stable target and started its first scan trajectory, then aborted at zero captures with invalid obstacle geometry.
+    root_cause: During the already authorized moving segment, diagnostic target_landmark crossed its twelve-degree update threshold and sent a new_viewpoint heavy request. That non-settled image produced one unsafe unknown depth foreground object; live obstacle projection later became invalid and the runtime gate correctly stopped motion. The node documented as diagnostic was therefore changing production semantic and obstacle authority.
+    correction: Keep the existing obstacle abort gate unchanged. In production gpu_geometry launch, set the target_landmark node's existing new-view and mask-disagreement refresh switches false; motion-gated SAM2 recovery and settled acquisition/workflow/capture requests remain authoritative.
+    evidence: [task gui-sim-3fc3c4e3d3f04948bb45d9879afa7f0e, executor MOVING at 1787248219.666, heavy request landmark_1787248223038 reason new_viewpoint image stamp 1787248222.950, heavy result obstacle_count 1 label unknown depth foreground, runtime abort at 1787248226.690, zero-capture dataset removed, safe staged home and disable proved]
+  - id: capture_refresh_busy_misclassified_as_worker_failure
+    symptom: The supervised scan_20260820_183948 reached and settled at its first voxel-NBV view, but transient visual capture recovery aborted immediately with heavy worker is busy.
+    root_cause: The heavy-refresh bridge enforced one worker job at a time but discarded a correlated request received while busy. Executor-side idle/republish handling did not reliably observe the brief idle transition after an autonomous SAM2 job, so the held capture timed out without its requested refresh.
+    correction: Retain the one correlated pending request in heavy_refresh_bridge_node.py, report waiting_for_worker, and enqueue it exactly once when the worker is idle and a qualifying fresh frame exists. Keep the executor stationary and bounded by the unchanged capture timeout; do not add a second perception job or retry layer.
+    evidence: [scan_20260820_183948, first seed capture accepted, first voxel-NBV id 162 reached and settled, safe PRE_HOME to ROUGH_HOME to STORAGE_WRIST shutdown completed]
+  - id: physical_nbv_collapsed_to_same_azimuth_after_ik_failures
+    symptom: The 2026-08-20 supervised scan accepted three voxel_nbv captures but achieved only 2.63 degrees azimuth span while changing elevation by 29.71 degrees; the fourth settled capture refresh then aborted on transient invalid obstacle geometry.
+    root_cause: Replay proved the highest-ranked candidates were 30-52 degrees from accepted coverage, but most were steep elevations that Tesseract rejected. The shortlist reserved its remaining slots for globally nearest-camera fallbacks, so feasibility collapsed to the current azimuth. During the stationary one-refresh hold, the global runtime gate also treated the refresh's transient obstacle rebuild as if a new motion were being commanded.
+    correction: Keep the information-ranked direction leaders but use reserved fallback slots for comfortable elevation/radius alternatives in those same lateral sectors. Persist typed per-candidate Tesseract failure evidence. Treat WAITING_FOR_CAPTURE_REFRESH as a stationary capture hold using its approval-time scene, while preserving fresh valid obstacle gating before every later plan approval or motion.
+    evidence: [scan_20260820_181639, accepted views 3, azimuth span 2.6279 degrees, elevation span 29.7106 degrees, software replay shows generation-one top candidates up to 51.8 degrees novel direction, 663 mobile tests pass, 114 Tesseract tests pass]
+  - id: heuristic_selector_repeated_same_sector
+    symptom: Accepted captures could cluster around one orbit sector even though the system was described as NBV.
+    root_cause: Measured surface evidence was used mainly for completion while staged geometric feature scores and local fallback ordering selected the next view.
+    correction: Added a schema-2 voxel evidence model and information-first unique-direction ranking. The operator selected authoritative voxel_nbv on 2026-08-17 for the next supervised E2E; physical qualification remains pending.
+  - id: settled_capture_status_delivery_race
+    symptom: A safely reached and settling/settled view could receive executor-is-not-at-an-accepted-settled-capture and abort as insufficient quality.
+    root_cause: The capture service observed its asynchronous execution-status cache before the accepted settled update and the legacy adapter did not classify that exact state rejection as readiness.
+    correction: Missing, wrong-mode and not-yet-accepted-settled status now take the existing bounded same-view readiness retry while preserving the existing Trigger response wording.

@@ -8,6 +8,8 @@
     camera_timestamp_health_topic: "/piper/camera_timestamp_health"
     obstacle_topic: "/piper/obstacle_instances_3d"
     plan_topic: "/piper/tesseract_plan"
+    view_generation_receipt_topic: "/piper/tesseract_view_generation"
+    plan_provenance_topic: "/piper/tesseract_plan_provenance"
     status_topic: "/piper/tesseract_plan_status"
     readiness_topic: "/piper/tesseract_readiness"
     data_timeout_sec: 1.0
@@ -38,30 +40,18 @@
     # Must remain false until gripper TCP/open/closed/attached-object/contact
     # collision qualification has been completed on the installed hardware.
     manipulation_model_qualified: false
-    # Automatic scanning may advance only one compact target-centred viewing
-    # direction before measuring and replanning from achieved FK.
-    # A 20-degree frontier stranded one-view replanning at the edge of an
-    # already-captured sector. Do not spend a capture on less than eight
-    # degrees of target-to-camera direction change; the 15-degree candidate
-    # grid still supplies compact reachable steps.
-    # At normal elevation, measured FK may land between fixed 15-degree grid
-    # samples; the next grid pose can then be about seven target-ray degrees
-    # away. Keep that visually distinct neighbor eligible.
+    # Retained parameter names for launch/override compatibility. They no
+    # longer bound automatic NBV motion; accepted-view redundancy is owned by
+    # the scan planner and Tesseract sees a global information-first shortlist.
     closed_loop_min_view_step_deg: 6.0
-    # Forty-five degrees is still one compact
-    # observation/replan step, while allowing movement between face/axis
-    # directions. Dense optical-cone, standoff and collision checks remain.
-    # Close targets advance one measured view at a time; a 30-degree frontier
-    # keeps SAM tracking inside a compact replan while still crossing the
-    # target-facing hemisphere over multiple accepted captures.
     closed_loop_max_view_step_deg: 30.0
     # The bounded shortlist alternates highest-new-coverage candidates with
     # compact fallbacks that advance toward that same missing-feature goal,
     # so diversity cannot prune every reachable stepping stone or reverse it.
-    closed_loop_candidate_limit: 36
-    # Camera position supplies feature coverage. Preserve the achieved safe
-    # optical direction by up to 12 degrees instead of forcing every close
-    # candidate to an exact target-centred wrist pose. The executor still
-    # independently enforces its denser 20-degree target visibility cone.
-    closed_loop_max_aim_offset_deg: 12.0
+    # Only the highest-ranked global NBVs reach expensive IK/path planning.
+    closed_loop_candidate_limit: 12
+    # Exact target-facing orientation is attempted first across roll/IK
+    # alternatives. One hash-bound fallback may deviate by at most five
+    # degrees. The independent dense 20-degree path-visibility cone remains.
+    closed_loop_max_aim_offset_deg: 5.0
     debug: true

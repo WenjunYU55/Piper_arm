@@ -21,6 +21,7 @@ from scipy.spatial.transform import Rotation
 import yaml
 
 from piper_tesseract_foxy.contract import (
+    angular_separation_deg,
     attach_digest,
     ContractError,
     JOINT_NAMES,
@@ -65,6 +66,19 @@ def planning_budgets_for_request(request):
 
 class BackendUnavailable(RuntimeError):
     pass
+
+
+class CandidatePlanningError(ContractError):
+    """Typed diagnostic stage for one candidate feasibility failure."""
+
+    def __init__(self, stage, detail, evidence=None):
+        super().__init__(str(detail))
+        self.stage = str(stage)
+        self.evidence = tuple(dict(item) for item in (evidence or ()))
+
+
+class CandidateExhausted(ContractError):
+    """Informative candidates existed, but none met Tesseract feasibility."""
 
 
 def look_at_quaternion(look_direction, roll):
@@ -416,7 +430,8 @@ def sdk_movej_waypoint_trajectory(
         mandatory_waypoints=(),
         bootstrap_start_limit_tolerance_rad=0.0,
 ):
-    """Turn the exact Tesseract path into 20 Hz MoveJ position targets.
+    """
+    Turn the exact Tesseract path into 20 Hz MoveJ position targets.
 
     Tesseract supplies collision-free geometry; its ISP derivatives are not
     commands accepted by the PiPER interface. Each source segment is therefore
@@ -600,7 +615,13 @@ class TesseractBackend:
         self.srdf_path = str(Path(srdf_path).resolve())
         with open(manifest_path, 'r', encoding='utf-8') as stream:
             self.manifest = yaml.safe_load(stream)
-        self.robot = None
+        # Model construction is part of worker readiness, not the first
+        # post-enable planning budget. The first request receives this clean,
+        # unused scene; every later request still rebuilds a clean scene so
+        # request-local collision objects cannot leak between plans.
+        self.robot = self.api['Robot'].from_files(
+            self.urdf_path, self.srdf_path)
+        self._preloaded_scene_unused = True
 
     def collision_policy(self):
         default = float(self.manifest.get('hardware_clearance_margin_m', -1.0))
@@ -1088,6 +1109,9 @@ class TesseractBackend:
 
     def reset_scene(self):
         """Create a clean environment so request-local obstacles cannot leak."""
+        if bool(getattr(self, '_preloaded_scene_unused', False)):
+            self._preloaded_scene_unused = False
+            return
         # The nanobind Robot owns native Bullet/OMPL resources.  Drop the old
         # environment before loading the next request-local scene so repeated
         # qualification/planning does not retain every decomposed collision
@@ -1168,7 +1192,8 @@ class TesseractBackend:
         return profiles
 
     def configured_home_direct_policy(self, request):
-        """Return the explicitly configured collision-bypass home stage.
+        """
+        Return the explicitly configured collision-bypass home stage.
 
         The operator-selected resting fold intentionally nests the camera and
         cable beside the base.  That makes it impossible to represent with the
@@ -1430,7 +1455,9 @@ class TesseractBackend:
                 ))
         ranked.sort(key=lambda item: (item[0], item[1]))
         if not ranked:
-            raise ContractError('no finite bounded collision-free IK goal for any roll')
+            raise CandidatePlanningError(
+                'IK_FAILURE',
+                'no finite bounded collision-free IK goal for any roll')
         failures = []
         for _, _, roll, goal in ranked[:4]:
             self.ensure_planning_time(
@@ -1458,12 +1485,74 @@ class TesseractBackend:
                     rejection = camera_transform_path_rejection(
                         transforms, visibility_target)
                     if rejection:
-                        raise ContractError(rejection)
+                        raise CandidatePlanningError(
+                            'VISIBILITY_FAILURE', rejection)
                 return roll, points, validation
             except (ContractError, RuntimeError, ValueError) as error:
                 failures.append('roll %.3f: %s' % (roll, error))
-        raise ContractError('all %d shortlisted roll/IK goals failed planning: %s' % (
-            min(len(ranked), 4), failures[0] if failures else 'unknown failure'))
+        raise CandidatePlanningError(
+            'PATH_FAILURE',
+            'all %d shortlisted roll/IK goals failed planning: %s' % (
+                min(len(ranked), 4),
+                failures[0] if failures else 'unknown failure'))
+
+    def plan_candidate_aims(
+            self, start, candidate, rolls, maximum_step,
+            position_limits, joint_margin, bootstrap_recovery=None,
+            visibility_target=None):
+        """Exhaust exact target aim before one contract-bound fallback."""
+        nominal = list(candidate['look_direction'])
+        variants = [nominal] + list(
+            candidate.get('fallback_look_directions', []))
+        failures = []
+        attempted = []
+        diagnostics = getattr(self, 'last_planning_diagnostics', None)
+        for variant_index, look_direction in enumerate(variants):
+            attempt = dict(candidate)
+            attempt['look_direction'] = list(look_direction)
+            variant_name = 'exact' if variant_index == 0 else 'fallback'
+            attempted.append(variant_name)
+            if isinstance(diagnostics, dict):
+                key = '%s_aim_attempts' % variant_name
+                diagnostics[key] = int(diagnostics.get(key, 0)) + 1
+            try:
+                arguments = (
+                    start, attempt, rolls, maximum_step,
+                    position_limits, joint_margin, bootstrap_recovery)
+                if visibility_target is None:
+                    roll, points, validation = self.plan_candidate(*arguments)
+                else:
+                    roll, points, validation = self.plan_candidate(
+                        *arguments, visibility_target)
+                offset = angular_separation_deg(nominal, look_direction)
+                attempt['aim_attempt_diagnostics'] = {
+                    'attempted': list(attempted),
+                    'selected': variant_name,
+                    'failures': list(failures),
+                }
+                return (
+                    attempt, roll, points, validation,
+                    bool(variant_index > 0), float(offset))
+            except (ContractError, RuntimeError, ValueError) as error:
+                stage = str(getattr(error, 'stage', 'PLANNING_FAILURE'))
+                failure = {
+                    'aim': variant_name,
+                    'stage': stage,
+                    'detail': str(error),
+                }
+                failures.append(failure)
+                if isinstance(diagnostics, dict):
+                    counts = diagnostics.setdefault('failure_stage_counts', {})
+                    counts[stage] = int(counts.get(stage, 0)) + 1
+        raise CandidatePlanningError(
+            'AIM_VARIANTS_EXHAUSTED',
+            'all target-aim variants failed: %s' % (
+                '; '.join(
+                    '%s %s: %s' % (
+                        item['aim'], item['stage'], item['detail'])
+                    for item in failures)
+                if failures else 'no aim variants'),
+            evidence=failures)
 
     def plan_segment_to_joint_goal(
             self, start, goal, maximum_step, bootstrap_recovery=None,
@@ -1673,6 +1762,7 @@ class TesseractBackend:
                     'bootstrap_start_contacts':
                         bootstrap_recovery['bootstrap_start_contacts'],
                 })
+
         def visibility_rejection(candidate_points):
             if visibility_target is None:
                 return ''
@@ -1990,6 +2080,15 @@ class TesseractBackend:
         self.segment_planning_budget_sec = segment_budget
         planning_deadline = time.monotonic() + planning_budget
         self.planning_deadline_monotonic = planning_deadline
+        self.last_planning_diagnostics = {
+            'shortlisted_candidates': len(
+                request.get('scene', {}).get('candidate_views', [])),
+            'candidate_attempts': 0,
+            'exact_aim_attempts': 0,
+            'fallback_aim_attempts': 0,
+            'failure_stage_counts': {},
+            'candidate_failures': [],
+        }
         self.reset_scene()
         self.add_obstacles(request['scene'].get('obstacles', []))
         self.execution_speed_percent = float(
@@ -2098,18 +2197,41 @@ class TesseractBackend:
                 TesseractBackend.ensure_planning_time(
                     self, 'before centered rough-coordinate candidate')
                 try:
-                    accepted = self.plan_candidate(
+                    self.last_planning_diagnostics['candidate_attempts'] += 1
+                    accepted = TesseractBackend.plan_candidate_aims(
+                        self,
                         current, candidate, rolls, maximum_step,
                         position_limits, joint_margin, bootstrap_recovery)
                 except (ContractError, RuntimeError, ValueError) as error:
                     failures[int(candidate['id'])] = str(error)
                     continue
-                roll, points, validation = accepted
+                (selected_candidate, roll, points, validation,
+                 aim_fallback_used, aim_offset_deg) = accepted
                 selected.append({
                     'id': int(candidate['id']),
                     'camera_position_m': candidate['camera_position_m'],
-                    'look_direction': candidate['look_direction'],
+                    'look_direction': selected_candidate['look_direction'],
+                    'nominal_look_direction': candidate['look_direction'],
+                    'aim_fallback_used': bool(aim_fallback_used),
+                    'aim_offset_deg': float(aim_offset_deg),
+                    'aim_attempt_diagnostics': selected_candidate.get(
+                        'aim_attempt_diagnostics', {}),
                     'roll_rad': roll,
+                    **{
+                        key: candidate[key]
+                        for key in (
+                            'view_selection_policy',
+                            'view_selection_requested_policy',
+                            'view_selection_generation',
+                            'view_selection_session_id',
+                            'nbv_rank',
+                            'nbv_positive_information_gain',
+                            'nbv_predicted_unknown_pixels',
+                            'nbv_novel_surface_pixels',
+                            'coverage_score',
+                        )
+                        if key in candidate
+                    },
                 })
                 segments.append({
                     'from_viewpoint': -1,
@@ -2142,26 +2264,68 @@ class TesseractBackend:
                 TesseractBackend.ensure_planning_time(
                     self, 'before starting a viewpoint candidate')
                 try:
-                    if visibility_target is None:
-                        accepted = self.plan_candidate(
-                            current, candidate, rolls, maximum_step,
-                            position_limits, joint_margin, bootstrap_recovery)
-                    else:
-                        accepted = self.plan_candidate(
-                            current, candidate, rolls, maximum_step,
-                            position_limits, joint_margin, bootstrap_recovery,
-                            visibility_target)
+                    self.last_planning_diagnostics['candidate_attempts'] += 1
+                    accepted = TesseractBackend.plan_candidate_aims(
+                        self,
+                        current, candidate, rolls, maximum_step,
+                        position_limits, joint_margin, bootstrap_recovery,
+                        visibility_target)
                 except (ContractError, RuntimeError, ValueError) as error:
                     failures[int(candidate['id'])] = str(error)
+                    diagnostics = self.last_planning_diagnostics
+                    if len(diagnostics['candidate_failures']) < len(
+                            request['scene']['candidate_views']):
+                        diagnostics['candidate_failures'].append({
+                            'id': int(candidate['id']),
+                            'nbv_rank': int(candidate.get('nbv_rank', 0)),
+                            'camera_position_m': list(
+                                candidate['camera_position_m']),
+                            'stage': str(getattr(
+                                error, 'stage', 'PLANNING_FAILURE')),
+                            'aim_failures': [dict(item) for item in getattr(
+                                error, 'evidence', ())],
+                            'detail': str(error),
+                        })
                     next_pending.append(candidate)
                     continue
-                roll, points, validation = accepted
+                (selected_candidate, roll, points, validation,
+                 aim_fallback_used, aim_offset_deg) = accepted
                 selected.append({
                     'id': int(candidate['id']),
                     'camera_position_m': candidate['camera_position_m'],
-                    'look_direction': candidate['look_direction'],
+                    'look_direction': selected_candidate['look_direction'],
+                    'nominal_look_direction': candidate['look_direction'],
+                    'aim_fallback_used': bool(aim_fallback_used),
+                    'aim_offset_deg': float(aim_offset_deg),
+                    'aim_attempt_diagnostics': selected_candidate.get(
+                        'aim_attempt_diagnostics', {}),
                     'roll_rad': roll,
+                    **{
+                        key: candidate[key]
+                        for key in (
+                            'view_selection_policy',
+                            'view_selection_requested_policy',
+                            'view_selection_generation',
+                            'view_selection_session_id',
+                            'nbv_rank',
+                            'nbv_positive_information_gain',
+                            'nbv_predicted_unknown_pixels',
+                            'nbv_novel_surface_pixels',
+                            'nbv_projected_object_pixels',
+                            'nbv_direction_novelty_deg',
+                            'nbv_camera_travel_m',
+                            'coverage_score',
+                        )
+                        if key in candidate
+                    },
                 })
+                self.last_planning_diagnostics['selected_candidate'] = {
+                    'id': int(candidate['id']),
+                    'nbv_rank': int(candidate.get('nbv_rank', 0)),
+                    'camera_position_m': list(candidate['camera_position_m']),
+                    'aim_fallback_used': bool(aim_fallback_used),
+                    'aim_offset_deg': float(aim_offset_deg),
+                }
                 segments.append({
                     'from_viewpoint': (
                         -1 if len(selected) == 1
@@ -2180,7 +2344,7 @@ class TesseractBackend:
             if not progress:
                 break
         if len(selected) < minimum_views:
-            raise ContractError(
+            raise CandidateExhausted(
                 'only %d viewpoints planned; require at least %d of %d (%s)' % (
                     len(selected), minimum_views, maximum_views,
                     '; '.join(
@@ -2319,6 +2483,8 @@ class Worker:
                 'segments': segments,
                 'trajectory_binding': binding,
                 'trajectory_sha256': trajectory_digest(segments, binding),
+                'planning_diagnostics': dict(
+                    getattr(self.backend, 'last_planning_diagnostics', {})),
             }
         except (
                 BackendUnavailable, ContractError, KeyError, OSError,
@@ -2334,9 +2500,13 @@ class Worker:
                 'backend_version': getattr(self.backend, 'version', 'unavailable'),
                 'rejection_codes': [
                     'BACKEND_UNAVAILABLE' if isinstance(error, BackendUnavailable)
+                    else 'TESSERACT_EXHAUSTED'
+                    if isinstance(error, CandidateExhausted)
                     else 'PLANNING_FAILED'
                 ],
                 'diagnostic': str(error),
+                'planning_diagnostics': dict(getattr(
+                    self.backend, 'last_planning_diagnostics', {})),
             }
         response = attach_digest(response, 'response_sha256')
         self.spool.write('responses', request_id, response)

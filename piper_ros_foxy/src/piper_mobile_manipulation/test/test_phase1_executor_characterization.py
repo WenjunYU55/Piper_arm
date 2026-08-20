@@ -2,6 +2,7 @@
 
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 from piper_mobile_manipulation.safety_evaluator import (
@@ -177,6 +178,11 @@ def _capture_harness(message, attempts=1):
         current_path_velocities=[object()],
         current_path_accelerations=[object()],
         current_path_times=[1.0],
+        capture_heavy_refresh_request_id='',
+        request_capture_heavy_refresh=lambda reason: events.append(
+            ('refresh', reason)),
+        reject_achieved_capture_view=lambda reason: events.append(
+            ('reject_achieved', reason)),
         publish_hold=lambda: events.append('hold') or True,
         publish_status=lambda: events.append('status'),
         set_state=lambda state, reason: events.append(
@@ -210,16 +216,21 @@ def test_retry_budget_exhaustion_aborts_instead_of_moving():
     )]
 
 
-def test_fresh_visual_capture_rejection_records_pose_and_holds():
+def test_fresh_visual_capture_rejection_requests_one_heavy_refresh():
     harness, events = _capture_harness('target_3d invalid')
 
     ScanViewpointExecutorNode.capturing_rgbd_tick(harness)
 
-    assert events[0] == ('record_rejected', 'target_3d invalid')
-    assert events[1] == 'hold'
-    assert events[2][0:2] == ('state', 'VIEW_REJECTED')
-    assert harness.command_target is None
-    assert harness.current_path == []
+    assert events == [('refresh', 'target_3d invalid')]
+
+
+def test_persistent_visual_rejection_replans_without_second_refresh():
+    harness, events = _capture_harness('target_3d invalid')
+    harness.capture_heavy_refresh_request_id = 'already-used'
+
+    ScanViewpointExecutorNode.capturing_rgbd_tick(harness)
+
+    assert events == [('reject_achieved', 'target_3d invalid')]
 
 
 def test_capture_transport_failure_aborts_without_recording_acceptance():
@@ -252,6 +263,83 @@ def test_successful_rgbd_capture_advances_to_workflow_acceptance():
     assert events[1][0:2] == ('state', 'CAPTURING')
 
 
+def _achieved_view_harness(look_angle_deg=0.0):
+    angle = np.deg2rad(float(look_angle_deg))
+    transform = np.eye(4)
+    transform[:3, 2] = [np.sin(angle), 0.0, np.cos(angle)]
+    transform[:3, 3] = [0.1, 0.0, 0.2]
+    events = []
+    return SimpleNamespace(
+        plan_kind='MULTIVIEW_SCAN',
+        plan_id='plan-a',
+        current_view=0,
+        plan_viewpoints=[{
+            'index': 4,
+            'desired_camera_position': {'x': 0.1, 'y': 0.0, 'z': 0.2},
+            'desired_look_at_direction': {'x': 0.0, 'y': 0.0, 'z': 1.0},
+        }],
+        plan_target_center=np.asarray([0.1, 0.0, 0.6]),
+        latest_tracked_target=None,
+        fresh=lambda _key: False,
+        get_parameter=lambda name: SimpleNamespace(value={
+            'max_target_drift_before_approval_m': 0.015,
+        }[name]),
+        kinematics=SimpleNamespace(
+            camera_transform=lambda _joints: transform),
+        current_joints=lambda: np.asarray([0.1] * 6),
+        now=lambda: 12.5,
+        latest_achieved_scan_view=None,
+        publish_scan_history=lambda: events.append('history'),
+        abort_motion=lambda reason: events.append(('abort', reason)),
+    ), events
+
+
+def test_settled_fk_is_recorded_even_before_capture_acceptance():
+    harness, events = _achieved_view_harness()
+
+    assert ScanViewpointExecutorNode.record_latest_achieved_scan_view(harness)
+
+    achieved = harness.latest_achieved_scan_view
+    assert achieved['viewpoint_index'] == 4
+    assert achieved['camera_position'] == pytest.approx(
+        {'x': 0.1, 'y': 0.0, 'z': 0.2})
+    assert achieved['look_direction'] == pytest.approx(
+        {'x': 0.0, 'y': 0.0, 'z': 1.0})
+    assert achieved['joint_positions_rad'] == pytest.approx([0.1] * 6)
+    assert events == ['history']
+
+
+def test_final_capture_aim_accepts_exact_and_rejects_more_than_five_degrees():
+    exact, _events = _achieved_view_harness(0.0)
+    assert ScanViewpointExecutorNode.record_latest_achieved_scan_view(exact)
+    assert ScanViewpointExecutorNode.final_capture_aim_rejection(exact) == ''
+
+    off_axis, _events = _achieved_view_harness(6.0)
+    assert ScanViewpointExecutorNode.record_latest_achieved_scan_view(off_axis)
+    rejection = ScanViewpointExecutorNode.final_capture_aim_rejection(
+        off_axis)
+    assert rejection.startswith('FINAL_AIM_EXCEEDED:')
+    assert off_axis.latest_achieved_scan_view[
+        'final_aim_error_deg'] == pytest.approx(6.0)
+
+
+def test_post_motion_target_drift_rejects_capture_and_requests_closed_loop_replan():
+    harness, _events = _achieved_view_harness(0.0)
+    harness.latest_tracked_target = SimpleNamespace(
+        valid=True,
+        header=SimpleNamespace(frame_id='base_link'),
+        position=SimpleNamespace(x=0.13, y=0.0, z=0.6),
+    )
+    harness.fresh = lambda key: key == 'tracked_target'
+    assert ScanViewpointExecutorNode.record_latest_achieved_scan_view(harness)
+
+    rejection = ScanViewpointExecutorNode.final_capture_aim_rejection(harness)
+
+    assert rejection.startswith('TARGET_DRIFT_REPLAN:')
+    assert harness.latest_achieved_scan_view[
+        'target_estimate_drift_m'] == pytest.approx(0.03)
+
+
 @pytest.mark.parametrize(
     'error,elapsed,progress,expected', [
         (0.005, 1.0, 1.0, 'advance'),
@@ -280,6 +368,7 @@ def test_trajectory_feedback_terminal_decisions_are_characterized(
     'CAPTURING',
     'CAPTURING_RGBD',
     'WAIT_CAPTURE',
+    'WAITING_FOR_CAPTURE_REFRESH',
 ])
 def test_cancel_during_executor_active_states_holds_then_aborts(state):
     events = []

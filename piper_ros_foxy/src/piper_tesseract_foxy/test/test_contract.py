@@ -205,6 +205,49 @@ def rehash_response(response):
     return attach_digest(response, 'response_sha256')
 
 
+def test_fallback_response_requires_hash_bound_bounded_aim_provenance():
+    request = request_fixture('MULTIVIEW_SCAN')
+    candidate = request['scene']['candidate_views'][0]
+    fallback = [
+        math.cos(math.radians(5.0)),
+        math.sin(math.radians(5.0)),
+        0.0,
+    ]
+    candidate['look_direction'] = [1.0, 0.0, 0.0]
+    candidate['fallback_look_directions'] = [fallback]
+    candidate['maximum_final_aim_offset_deg'] = 5.0
+    request = attach_digest(request, 'request_sha256')
+    assert validate_request(request) is request
+
+    response = response_fixture(request)
+    selected = response['selected_viewpoints'][0]
+    selected['look_direction'] = fallback
+    selected['nominal_look_direction'] = candidate['look_direction']
+    selected['aim_fallback_used'] = True
+    selected['aim_offset_deg'] = 5.0
+    response = rehash_response(response)
+    assert validate_response(response, request) is response
+
+    malformed = copy.deepcopy(response)
+    malformed['selected_viewpoints'][0].pop('aim_fallback_used')
+    malformed = rehash_response(malformed)
+    with pytest.raises(ContractError, match='fallback marker'):
+        validate_response(malformed, request)
+
+
+def test_request_rejects_fallback_beyond_five_degrees():
+    request = request_fixture('MULTIVIEW_SCAN')
+    candidate = request['scene']['candidate_views'][0]
+    candidate['look_direction'] = [1.0, 0.0, 0.0]
+    candidate['fallback_look_directions'] = [
+        [math.cos(math.radians(6.0)), math.sin(math.radians(6.0)), 0.0]]
+    candidate['maximum_final_aim_offset_deg'] = 5.0
+    request = attach_digest(request, 'request_sha256')
+
+    with pytest.raises(ContractError, match='fallback exceeds'):
+        validate_request(request)
+
+
 def test_request_and_response_hashes_are_fail_closed():
     request = request_fixture()
     assert validate_request(request) is request

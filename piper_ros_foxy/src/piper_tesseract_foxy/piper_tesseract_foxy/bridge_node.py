@@ -34,6 +34,7 @@ from piper_mobile_manipulation.scan_motion import (
 from piper_mobile_manipulation.scan_execution_modes import (
     commanded_speed_percent,
 )
+from piper_mobile_manipulation.view_generation import parse_view_generation
 from piper_mobile_manipulation.motion_limit_stability import MotionLimitStability
 from piper_mobile_manipulation.srv import RequestTesseractPlan
 
@@ -175,6 +176,38 @@ def relax_closed_loop_candidate_aims(
     return relaxed
 
 
+def exact_target_aim_candidates(
+        candidates, target_center, current_look_direction,
+        maximum_fallback_offset_deg):
+    """Bind exact target aim and at most one bounded fallback per candidate."""
+    center = np.asarray(target_center, dtype=float)
+    if center.shape != (3,) or not np.all(np.isfinite(center)):
+        raise ValueError('target-centred aim requires a finite target center')
+    result = []
+    for item in candidates:
+        candidate = dict(item)
+        position = np.asarray(candidate.get('camera_position_m'), dtype=float)
+        if position.shape != (3,) or not np.all(np.isfinite(position)):
+            raise ValueError('target-centred aim requires a finite camera position')
+        nominal = center - position
+        norm = float(np.linalg.norm(nominal))
+        if norm <= 1e-9:
+            raise ValueError('target-centred aim camera coincides with target')
+        nominal /= norm
+        fallback = np.asarray(bounded_current_look_direction(
+            nominal, current_look_direction,
+            maximum_fallback_offset_deg), dtype=float)
+        cosine = float(np.clip(np.dot(nominal, fallback), -1.0, 1.0))
+        offset = math.degrees(math.acos(cosine))
+        candidate['look_direction'] = nominal.tolist()
+        candidate['fallback_look_directions'] = (
+            [fallback.tolist()] if offset > 1e-6 else [])
+        candidate['maximum_final_aim_offset_deg'] = float(
+            maximum_fallback_offset_deg)
+        result.append(candidate)
+    return result
+
+
 def balanced_closed_loop_candidates(
         candidates, start_camera_position, candidate_limit,
         compact_first=False, meaningful_progress=0.03):
@@ -277,6 +310,162 @@ def balanced_closed_loop_candidates(
             + [item for item in selected if int(item['id']) not in advancing_ids]
         )
     return selected
+
+
+def bounded_nbv_candidates(
+        candidates, start_camera_position, target_center, candidate_limit,
+        leader_fraction=2.0 / 3.0, direction_bin_deg=15.0):
+    """
+    Bound an information-first shortlist while retaining direction spread.
+
+    The voxel planner has already compared every candidate using measured
+    coverage. Tesseract still needs a bounded number of IK attempts. Selecting
+    a plain rank prefix can fill that budget with different radii from one
+    direction and hide the best candidate from every other visible face.
+    Choose the best-ranked member of distinct azimuth/elevation bins first.
+    Use the reserved fallback slots for more comfortable poses in those same
+    informative azimuth sectors before retaining a generic nearby fallback.
+    This keeps a steep high-gain direction from collapsing back to the current
+    azimuth merely because its first elevation has no feasible IK solution.
+    The final attempt order remains NBV rank, so Tesseract still executes the
+    highest-information feasible member.
+    """
+    start = np.asarray(start_camera_position, dtype=float)
+    center = np.asarray(target_center, dtype=float)
+    if start.shape != (3,) or not np.all(np.isfinite(start)):
+        raise ValueError('NBV camera start is invalid')
+    if center.shape != (3,) or not np.all(np.isfinite(center)):
+        raise ValueError('NBV target center is invalid')
+    limit = max(1, int(candidate_limit))
+    fraction = float(leader_fraction)
+    bin_width = float(direction_bin_deg)
+    if not math.isfinite(fraction) or fraction <= 0.0 or fraction > 1.0:
+        raise ValueError('NBV leader fraction is invalid')
+    if not math.isfinite(bin_width) or bin_width <= 0.0 or bin_width > 90.0:
+        raise ValueError('NBV direction bin size is invalid')
+    ordered = sorted(
+        (dict(item) for item in candidates),
+        key=lambda item: (
+            int(item.get('nbv_rank', 2 ** 31 - 1)),
+            -float(item.get('coverage_score', 0.0)),
+            int(item['id']),
+        ),
+    )
+    target_count = min(limit, len(ordered))
+    leader_count = min(
+        target_count, max(1, int(math.ceil(target_count * fraction))))
+    def direction_angles(item):
+        position = np.asarray(item.get('camera_position_m'), dtype=float)
+        if position.shape != (3,) or not np.all(np.isfinite(position)):
+            return None
+        direction = position - center
+        norm = float(np.linalg.norm(direction))
+        if norm <= 1e-9:
+            return None
+        direction /= norm
+        return (
+            math.degrees(math.atan2(direction[1], direction[0])),
+            math.degrees(math.asin(float(np.clip(
+                direction[2], -1.0, 1.0)))),
+        )
+
+    start_direction = start - center
+    start_direction_norm = float(np.linalg.norm(start_direction))
+    start_elevation = 0.0
+    if start_direction_norm > 1e-9:
+        start_direction /= start_direction_norm
+        start_elevation = math.degrees(math.asin(float(np.clip(
+            start_direction[2], -1.0, 1.0))))
+
+    selected = []
+    direction_bins = set()
+    for item in ordered:
+        angles = direction_angles(item)
+        if angles is None:
+            continue
+        azimuth, elevation = angles
+        direction_bin = (
+            int(math.floor((azimuth + 180.0) / bin_width)),
+            int(math.floor((elevation + 90.0) / bin_width)),
+        )
+        if direction_bin in direction_bins:
+            continue
+        selected.append(item)
+        direction_bins.add(direction_bin)
+        if len(selected) >= leader_count:
+            break
+    if len(selected) < leader_count:
+        selected_ids = {int(item['id']) for item in selected}
+        selected.extend(
+            item for item in ordered
+            if int(item['id']) not in selected_ids
+        )
+        selected = selected[:leader_count]
+    selected_ids = {int(item['id']) for item in selected}
+    fallback_slots = target_count - len(selected)
+    sector_fallbacks = []
+    sector_fallback_ids = set()
+    for leader in selected:
+        if len(sector_fallbacks) >= fallback_slots:
+            break
+        leader_angles = direction_angles(leader)
+        if leader_angles is None:
+            continue
+        leader_azimuth, leader_elevation = leader_angles
+        leader_azimuth_bin = int(math.floor(
+            (leader_azimuth + 180.0) / bin_width))
+        alternatives = []
+        for item in ordered:
+            item_id = int(item['id'])
+            if item_id in selected_ids or item_id in sector_fallback_ids:
+                continue
+            angles = direction_angles(item)
+            if angles is None:
+                continue
+            azimuth, elevation = angles
+            if int(math.floor(
+                    (azimuth + 180.0) / bin_width)) != leader_azimuth_bin:
+                continue
+            elevation_change = abs(elevation - leader_elevation)
+            alternatives.append((
+                # Prefer a genuinely different camera elevation over only a
+                # radial duplicate of the failed pose.
+                0 if elevation_change >= 5.0 else 1,
+                abs(elevation - start_elevation),
+                abs(azimuth - leader_azimuth),
+                float(np.linalg.norm(
+                    np.asarray(item['camera_position_m'], dtype=float)
+                    - start)),
+                int(item.get('nbv_rank', 2 ** 31 - 1)),
+                item_id,
+                item,
+            ))
+        if not alternatives:
+            continue
+        fallback_item = min(alternatives)[-1]
+        sector_fallbacks.append(fallback_item)
+        sector_fallback_ids.add(int(fallback_item['id']))
+
+    selected.extend(sector_fallbacks)
+    selected_ids = {int(item['id']) for item in selected}
+    fallbacks = sorted(
+        (item for item in ordered if int(item['id']) not in selected_ids),
+        key=lambda item: (
+            float(np.linalg.norm(
+                np.asarray(item['camera_position_m'], dtype=float) - start)),
+            int(item.get('nbv_rank', 2 ** 31 - 1)),
+            int(item['id']),
+        ),
+    )
+    selected.extend(fallbacks[:target_count - len(selected)])
+    return sorted(
+        selected,
+        key=lambda item: (
+            int(item.get('nbv_rank', 2 ** 31 - 1)),
+            -float(item.get('coverage_score', 0.0)),
+            int(item['id']),
+        ),
+    )
 
 
 def select_diverse_smooth_view_path(
@@ -407,6 +596,9 @@ class TesseractPlanBridge(Node):
             'camera_timestamp_health_topic': '/piper/camera_timestamp_health',
             'obstacle_topic': '/piper/obstacle_instances_3d',
             'plan_topic': '/piper/tesseract_plan',
+            'view_generation_receipt_topic':
+                '/piper/tesseract_view_generation',
+            'plan_provenance_topic': '/piper/tesseract_plan_provenance',
             'status_topic': '/piper/tesseract_plan_status',
             'readiness_topic': '/piper/tesseract_readiness',
             'spool_root': '/tmp/piper_tesseract_plans',
@@ -442,10 +634,10 @@ class TesseractPlanBridge(Node):
             # independent pose/look duplicate gate still rejects repeats.
             'closed_loop_min_view_step_deg': 6.0,
             'closed_loop_max_view_step_deg': 30.0,
-            'closed_loop_candidate_limit': 36,
+            'closed_loop_candidate_limit': 12,
             # Preserve a comfortable achieved wrist aim when the target stays
             # within this strict subset of the executor's 20-degree cone.
-            'closed_loop_max_aim_offset_deg': 12.0,
+            'closed_loop_max_aim_offset_deg': 5.0,
             'manipulation_model_qualified': False,
             'debug': True,
         }
@@ -494,6 +686,17 @@ class TesseractPlanBridge(Node):
         )
         self.plan_pub = self.create_publisher(
             TesseractPlan, self.get_parameter('plan_topic').value, self.plan_qos)
+        self.view_generation_pub = self.create_publisher(
+            String,
+            self.get_parameter('view_generation_receipt_topic').value,
+            self.plan_qos)
+        self.plan_provenance_pub = self.create_publisher(
+            String, self.get_parameter('plan_provenance_topic').value,
+            QoSProfile(
+                depth=10,
+                reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.VOLATILE,
+            ))
         self.status_pub = self.create_publisher(
             TesseractPlanStatus, self.get_parameter('status_topic').value, 10)
         self.readiness_pub = self.create_publisher(
@@ -566,6 +769,13 @@ class TesseractPlanBridge(Node):
     def parameter_path(self, name):
         return Path(str(self.get_parameter(name).value)).resolve()
 
+    def param_bool(self, name):
+        """Return one declared ROS parameter using the shared bool contract."""
+        value = self.get_parameter(name).value
+        if isinstance(value, str):
+            return value.lower() in ('1', 'true', 'yes', 'on')
+        return bool(value)
+
     @staticmethod
     def read_boot_id():
         try:
@@ -602,6 +812,27 @@ class TesseractPlanBridge(Node):
             else:
                 self.latest_scan = value
             self.mark(key)
+            if not acquisition:
+                try:
+                    generation = parse_view_generation(value)
+                except (TypeError, ValueError):
+                    return
+                receipt = String()
+                receipt.data = json.dumps({
+                    'bridge_received_at_ns': time.time_ns(),
+                    'view_generation': generation.to_dict(),
+                }, sort_keys=True)
+                self.view_generation_pub.publish(receipt)
+                if self.param_bool('debug'):
+                    self.get_logger().info(
+                        'cached view generation session=%s accepted=%d '
+                        'policy=%s ready=%s candidates=%d'
+                        % (
+                            generation.session_id,
+                            generation.accepted_views,
+                            generation.policy,
+                            generation.ready,
+                            generation.candidate_viewpoints))
 
     def joint_cb(self, msg):
         self.latest_joints = msg
@@ -749,6 +980,34 @@ class TesseractPlanBridge(Node):
                 reasons.append('scan session has no valid remaining viewpoints')
             if remaining != maximum - accepted:
                 reasons.append('scan session remaining count is inconsistent')
+            selection_failure = str(
+                scan.get('selection_failure_code', '')
+                if isinstance(scan, dict) else '').strip()
+            if selection_failure:
+                reasons.append(selection_failure)
+            elif not (
+                    isinstance(scan, dict)
+                    and scan.get('viewpoints', [])):
+                reasons.append('NO_PREQUALIFIED_VIEWPOINT_CANDIDATE')
+            elif not any(
+                    isinstance(item, dict)
+                    and item.get(
+                        'prequalified', item.get('reachable')) is True
+                    and item.get('safe') is True
+                    for item in scan.get('viewpoints', [])):
+                # Preserve the reason supplied by the command-free
+                # prequalification stage.  In particular, a transient target
+                # status dip must enter the mission's existing bounded visual
+                # reacquisition hold instead of being flattened later into the
+                # misleading "only 0 safe candidates" request-build error.
+                target_status = str(
+                    scan.get('filter', {}).get('target_status', '')
+                    if isinstance(scan.get('filter'), dict) else '').strip()
+                if target_status in (
+                        'LOW_CONFIDENCE', 'LOST', 'SEARCHING'):
+                    reasons.append('target_status=' + target_status)
+                else:
+                    reasons.append('NO_PREQUALIFIED_VIEWPOINT_CANDIDATE')
         return list(dict.fromkeys(reasons))
 
     def request_plan_cb(self, request, response):
@@ -779,7 +1038,11 @@ class TesseractPlanBridge(Node):
             response.accepted = False
             response.request_id = ''
             response.message = 'planning blocked: ' + '; '.join(reasons)
-            self.set_status('SNAPSHOT_BLOCKED', response.message)
+            state = (
+                'NO_POSITIVE_INFORMATION_CANDIDATE'
+                if 'NO_POSITIVE_INFORMATION_CANDIDATE' in reasons
+                else 'SNAPSHOT_BLOCKED')
+            self.set_status(state, response.message)
             return response
         try:
             home_stage = str(getattr(request, 'home_stage', '')).strip()
@@ -845,7 +1108,8 @@ class TesseractPlanBridge(Node):
         provenance = self.target_provenance(scan, plan_kind)
         candidates = []
         for item in ([] if plan_kind == 'RETURN_HOME' else scan.get('viewpoints', [])):
-            if not isinstance(item, dict) or item.get('reachable') is not True \
+            if not isinstance(item, dict) or item.get(
+                    'prequalified', item.get('reachable')) is not True \
                     or item.get('safe') is not True:
                 continue
             candidates.append({
@@ -863,6 +1127,28 @@ class TesseractPlanBridge(Node):
                     item.get('coverage_objective', '')),
                 'coverage_progress_score': float(
                     item.get('coverage_progress_score', 0.0)),
+                'view_selection_policy': str(
+                    item.get('view_selection_policy', 'legacy')),
+                'view_selection_requested_policy': str(item.get(
+                    'view_selection_requested_policy',
+                    item.get('view_selection_policy', 'legacy'))),
+                'view_selection_generation': int(
+                    item.get('view_selection_generation', 0)),
+                'view_selection_session_id': str(
+                    item.get('view_selection_session_id', '')),
+                'nbv_rank': int(item.get('nbv_rank', 0)),
+                'nbv_positive_information_gain': bool(
+                    item.get('nbv_positive_information_gain', False)),
+                'nbv_predicted_unknown_pixels': int(
+                    item.get('nbv_predicted_unknown_pixels', 0)),
+                'nbv_novel_surface_pixels': int(
+                    item.get('nbv_novel_surface_pixels', 0)),
+                'nbv_projected_object_pixels': int(
+                    item.get('nbv_projected_object_pixels', 0)),
+                'nbv_direction_novelty_deg': float(
+                    item.get('nbv_direction_novelty_deg', 0.0)),
+                'nbv_camera_travel_m': float(
+                    item.get('nbv_camera_travel_m', 0.0)),
             })
         configured_maximum = max(
             1, int(self.get_parameter('max_execution_viewpoints').value))
@@ -903,38 +1189,25 @@ class TesseractPlanBridge(Node):
             current_camera_transform = self.kinematics.camera_transform(joints)
             current_camera = current_camera_transform[:3, 3]
             current_look = current_camera_transform[:3, 2]
-            if closed_loop_one_view:
-                candidates = local_view_frontier_candidates(
-                    candidates,
-                    current_camera,
-                    center,
-                    self.get_parameter(
-                        'closed_loop_max_view_step_deg').value,
-                    self.get_parameter(
-                        'closed_loop_min_view_step_deg').value,
-                )
-                if not candidates:
-                    raise ContractError(
-                        'no meaningfully distinct safe scan candidate lies '
-                        'within the %.1f-%.1f-degree closed-loop view frontier'
-                        % (
-                            float(self.get_parameter(
-                                'closed_loop_min_view_step_deg').value),
-                            float(self.get_parameter(
-                                'closed_loop_max_view_step_deg').value)))
             candidate_limit = (
-                max(
-                    20,
-                    int(self.get_parameter(
-                        'closed_loop_candidate_limit').value))
+                max(1, int(self.get_parameter(
+                    'closed_loop_candidate_limit').value))
                 if closed_loop_one_view
                 else max(20, maximum * 4, maximum))
             if closed_loop_one_view:
-                candidates = balanced_closed_loop_candidates(
-                    candidates, current_camera, candidate_limit,
-                    compact_first=(accepted_views == 0))
-                candidates = relax_closed_loop_candidate_aims(
+                authoritative_nbv = bool(candidates) and all(
+                    item.get('view_selection_policy') == 'voxel_nbv'
+                    for item in candidates)
+                if authoritative_nbv:
+                    candidates = bounded_nbv_candidates(
+                        candidates, current_camera, center, candidate_limit)
+                else:
+                    candidates = balanced_closed_loop_candidates(
+                        candidates, current_camera, candidate_limit,
+                        compact_first=(accepted_views == 0))
+                candidates = exact_target_aim_candidates(
                     candidates,
+                    center,
                     current_look,
                     self.get_parameter(
                         'closed_loop_max_aim_offset_deg').value,
@@ -1338,7 +1611,58 @@ class TesseractPlanBridge(Node):
             }
             msg.bootstrap_recovery_evidence_json.append(
                 json.dumps(evidence, sort_keys=True, separators=(',', ':')))
+        provenance = String()
+        provenance.data = json.dumps({
+            'schema_version': 1,
+            'plan_id': str(payload['plan_id']),
+            'request_id': str(payload['request_id']),
+            'request_sha256': str(payload['request_sha256']),
+            'plan_kind': str(payload['plan_kind']),
+            'selected_viewpoints': [
+                {
+                    key: selected[key]
+                    for key in (
+                        'id',
+                        'camera_position_m',
+                        'look_direction',
+                        'nominal_look_direction',
+                        'aim_fallback_used',
+                        'aim_offset_deg',
+                        'aim_attempt_diagnostics',
+                        'view_selection_policy',
+                        'view_selection_requested_policy',
+                        'view_selection_generation',
+                        'view_selection_session_id',
+                        'nbv_rank',
+                        'nbv_positive_information_gain',
+                        'nbv_predicted_unknown_pixels',
+                        'nbv_novel_surface_pixels',
+                        'nbv_projected_object_pixels',
+                        'nbv_direction_novelty_deg',
+                        'nbv_camera_travel_m',
+                        'coverage_score',
+                    )
+                    if key in selected
+                }
+                for selected in payload['selected_viewpoints']
+            ],
+            'candidate_diagnostics': payload.get(
+                'planning_diagnostics', {}),
+        }, sort_keys=True)
+        self.plan_provenance_pub.publish(provenance)
         self.plan_pub.publish(msg)
+        if self.param_bool('debug') and payload['selected_viewpoints']:
+            selected = payload['selected_viewpoints'][0]
+            self.get_logger().info(
+                'published plan=%s selected_view=%s policy=%s generation=%s '
+                'nbv_rank=%s predicted_unknown=%s novel_surface=%s'
+                % (
+                    payload['plan_id'], selected.get('id', ''),
+                    selected.get('view_selection_policy', 'legacy'),
+                    selected.get('view_selection_generation', 0),
+                    selected.get('nbv_rank', 0),
+                    selected.get('nbv_predicted_unknown_pixels', 0),
+                    selected.get('nbv_novel_surface_pixels', 0)))
         self.set_status('PROPOSAL_READY', msg.reason, payload['request_id'])
 
     def publish_rejection(self, request_id, code, reason):

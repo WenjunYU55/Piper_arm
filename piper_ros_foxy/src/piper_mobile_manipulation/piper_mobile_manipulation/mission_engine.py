@@ -145,6 +145,11 @@ def visual_reacquisition_plan_request_rejection(reason):
         FailureTag.PLAN_REQUEST_VISUAL_REACQUISITION)
 
 
+def runtime_freshness_plan_request_rejection(reason):
+    """Recognize a command-free planning snapshot with transient telemetry."""
+    return as_failure(reason).has(FailureTag.RUNTIME_FRESHNESS_GAP)
+
+
 def shutdown_uses_startup_home(session):
     """Use static home authority only before perception owns a scene."""
     return bool(
@@ -534,6 +539,9 @@ class MissionEngine:
                 'bounded views remain (model seed floor %d)'
                 % (remaining, required))
             self.operations.clear_plan_cache(context)
+            self.operations.wait_for_view_generation(
+                context, accepted,
+                self.workflow_config.plan_result_timeout_sec)
             request_id = self.operations.request_multiview_plan(context)
             try:
                 plan = self.operations.wait_for_plan(
@@ -576,10 +584,10 @@ class MissionEngine:
                     'authorized, replanning from the fresh lock (%d/%d)'
                     % (target_drift_replans,
                        self.workflow_config.max_scan_target_drift_replans))
-                self.operations.wait_for_stable_readiness(
-                    context, 'multiview',
-                    self.workflow_config.replan_readiness_stable_sec,
-                    self.workflow_config.multiview_readiness_timeout_sec)
+                # The next loop is command-free until plan approval. Let the
+                # plan-request adapter own its existing bounded visual
+                # reacquisition path instead of failing first in a duplicate
+                # generic readiness wait.
                 continue
             self._transition(
                 context, MissionPhase.CAPTURING,
@@ -605,10 +613,9 @@ class MissionEngine:
                     'excluding that pose and replanning (%d/%d)'
                     % (quality_replans,
                        self.workflow_config.max_scan_quality_replans))
-                self.operations.wait_for_stable_readiness(
-                    context, 'multiview',
-                    self.workflow_config.replan_readiness_stable_sec,
-                    self.workflow_config.multiview_readiness_timeout_sec)
+                # Re-enter the command-free plan request. Its typed visual
+                # rejection path waits for the existing bounded SAM2/heavy
+                # reacquisition before any proposal can be approved.
                 continue
             self.operations.progress(
                 context,
@@ -616,10 +623,9 @@ class MissionEngine:
                 'replanning one next view from measured pose and achieved '
                 'feature coverage'
                 % (session.accepted_captures, required, maximum))
-            self.operations.wait_for_stable_readiness(
-                context, 'multiview',
-                self.workflow_config.replan_readiness_stable_sec,
-                self.workflow_config.multiview_readiness_timeout_sec)
+            # Planning is command-free and the request/approval boundaries
+            # already own visual reacquisition plus every motion-safety gate.
+            # Avoid a second readiness owner between accepted NBV iterations.
         session.accepted_captures = self.operations.capture_count(context)
         if adaptive_completion:
             return
@@ -652,10 +658,12 @@ class MissionEngine:
                 if not self.operations.wait_for_all_motors_disabled(
                         context,
                         self.workflow_config.motor_disabled_proof_timeout_sec):
-                    return MissionFailure(
-                        'motor control was lost and six-disabled feedback was '
-                        'not proved; automatic home was forbidden and the '
-                        'driver remains available for operator recovery', True)
+                    return self._retain_command_owner_for_recovery(
+                        context, MissionFailure(
+                            'motor control was lost and six-disabled feedback '
+                            'was not proved; automatic home was forbidden and '
+                            'the driver remains available for operator '
+                            'recovery', True))
                 session.disabled_proved = True
                 session.arm_enabled = False
                 self._revoke_ignoring_failure(context)
@@ -666,9 +674,11 @@ class MissionEngine:
                 session.processes_stopped = self.operations.stop_processes(
                     context)
                 if not session.processes_stopped:
-                    return MissionFailure(
-                        'motor control was lost; all axes are disabled but one '
-                        'or more PiPER-owned processes remain alive', True)
+                    return self._retain_command_owner_for_recovery(
+                        context, MissionFailure(
+                            'motor control was lost; all axes are disabled but '
+                            'one or more PiPER-owned processes remain alive',
+                            True))
                 return MissionFailure(
                     'motor control was lost before configured home; no home '
                     'command was attempted, all six motors are disabled, and '
@@ -687,8 +697,10 @@ class MissionEngine:
                 session.processes_stopped = self.operations.stop_processes(
                     context)
                 if not session.processes_stopped:
-                    return MissionFailure(
-                        'one or more PiPER-owned processes remain alive', True)
+                    return self._retain_command_owner_for_recovery(
+                        context, MissionFailure(
+                            'one or more PiPER-owned processes remain alive',
+                            True))
                 return None
             if not session.pre_home_completed:
                 # The failure that ended scanning is not authority for the
@@ -705,9 +717,10 @@ class MissionEngine:
                 startup_home = shutdown_uses_startup_home(session)
                 pre_home_target = list(session.pre_home_positions_rad)
                 if len(pre_home_target) != 6:
-                    return MissionFailure(
-                        'pre-home target is missing; arm remains enabled in '
-                        'a current-position hold', True)
+                    return self._retain_command_owner_for_recovery(
+                        context, MissionFailure(
+                            'pre-home target is missing; arm remains enabled '
+                            'in a current-position hold', True))
                 if not self.operations.prove_home(
                         context, startup=startup_home,
                         target_positions=pre_home_target,
@@ -717,10 +730,11 @@ class MissionEngine:
                             context, normal_completion=False, failure=failure)
                     diagnostic = self.operations.return_home_diagnostic(
                         context).strip()
-                    return MissionFailure(
-                        'configured pre-home was not proved; arm remains '
-                        'enabled in a current-position hold'
-                        + (': ' + diagnostic if diagnostic else ''), True)
+                    return self._retain_command_owner_for_recovery(
+                        context, MissionFailure(
+                            'configured pre-home was not proved; arm remains '
+                            'enabled in a current-position hold'
+                            + (': ' + diagnostic if diagnostic else ''), True))
                 session.pre_home_completed = True
             if not session.return_home_proved:
                 self._transition(
@@ -736,10 +750,11 @@ class MissionEngine:
                             context, normal_completion=False, failure=failure)
                     diagnostic = self.operations.return_home_diagnostic(
                         context).strip()
-                    return MissionFailure(
-                        'configured rough home was not proved; arm remains '
-                        'enabled in a current-position hold'
-                        + (': ' + diagnostic if diagnostic else ''), True)
+                    return self._retain_command_owner_for_recovery(
+                        context, MissionFailure(
+                            'configured rough home was not proved; arm remains '
+                            'enabled in a current-position hold'
+                            + (': ' + diagnostic if diagnostic else ''), True))
             if not session.storage_wrist_proved:
                 self._transition(
                     context, MissionPhase.RETURNING_HOME,
@@ -747,9 +762,10 @@ class MissionEngine:
                     'angle before disable')
                 storage_target = list(session.storage_positions_rad)
                 if len(storage_target) != 6:
-                    return MissionFailure(
-                        'storage wrist target is missing; arm remains enabled '
-                        'at rough home', True)
+                    return self._retain_command_owner_for_recovery(
+                        context, MissionFailure(
+                            'storage wrist target is missing; arm remains '
+                            'enabled at rough home', True))
                 startup_home = shutdown_uses_startup_home(session)
                 if not self.operations.prove_home(
                         context, startup=startup_home,
@@ -760,10 +776,11 @@ class MissionEngine:
                             context, normal_completion=False, failure=failure)
                     diagnostic = self.operations.return_home_diagnostic(
                         context).strip()
-                    return MissionFailure(
-                        'storage J6 rotation was not proved; arm remains '
-                        'enabled in a current-position hold'
-                        + (': ' + diagnostic if diagnostic else ''), True)
+                    return self._retain_command_owner_for_recovery(
+                        context, MissionFailure(
+                            'storage J6 rotation was not proved; arm remains '
+                            'enabled in a current-position hold'
+                            + (': ' + diagnostic if diagnostic else ''), True))
                 session.storage_wrist_proved = True
             self._transition(
                 context, MissionPhase.HOLDING,
@@ -785,14 +802,44 @@ class MissionEngine:
                 'stopping PiPER-owned process groups')
             session.processes_stopped = self.operations.stop_processes(context)
             if not session.processes_stopped:
-                return MissionFailure(
-                    'one or more PiPER-owned processes remain alive', True)
+                return self._retain_command_owner_for_recovery(
+                    context, MissionFailure(
+                        'one or more PiPER-owned processes remain alive', True))
             return None
         except MissionFailure as exc:
             if session.motor_control_lost_reason:
                 return self.shutdown(
                     context, normal_completion=False, failure=failure)
-            return MissionFailure(str(exc), True)
+            return self._retain_command_owner_for_recovery(context, exc)
+
+    def _retain_command_owner_for_recovery(self, context, failure):
+        """Release perception while preserving a possibly powered owner."""
+        operator_failure = MissionFailure(
+            str(failure),
+            needs_operator=True,
+            outcome=failure.outcome,
+            failure_code=failure.failure_code,
+            retryable=failure.retryable)
+        if not context.owns_process_generation:
+            return operator_failure
+        self._revoke_ignoring_failure(context)
+        if (
+                not context.phase_sequence
+                or context.phase_sequence[-1] != MissionPhase.STOPPING.value):
+            self._transition(
+                context, MissionPhase.STOPPING,
+                'operator recovery required; revoking mission authority and '
+                'stopping non-command processing groups while retaining any '
+                'live arm command owner')
+        processing_stopped = self.operations.stop_processing_processes(context)
+        if processing_stopped:
+            return operator_failure
+        return MissionFailure(
+            '%s; one or more non-command processing groups also remain alive'
+            % operator_failure,
+            needs_operator=True,
+            failure_code='CONTROL_UNTRUSTWORTHY',
+            retryable=False)
 
     def _revoke_ignoring_failure(self, context):
         try:

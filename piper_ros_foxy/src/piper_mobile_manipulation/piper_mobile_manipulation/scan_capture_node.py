@@ -34,6 +34,39 @@ from piper_mobile_manipulation.scan_capture import (
     synchronized_bundle_rejection,
 )
 
+
+def capture_view_selection_provenance(plan_provenance, execution):
+    """Resolve one executing plan/view to immutable planner provenance."""
+    plan_id = str(execution.get('plan_id', ''))
+    if not plan_id:
+        return {'available': False, 'reason': 'execution plan ID is missing'}
+    if not isinstance(plan_provenance, dict):
+        return {'available': False, 'reason': 'plan provenance is unavailable'}
+    if str(plan_provenance.get('plan_id', '')) != plan_id:
+        return {'available': False, 'reason': 'plan provenance ID mismatch'}
+    selected = plan_provenance.get('selected_viewpoints')
+    if not isinstance(selected, list) or not selected:
+        return {'available': False, 'reason': 'selected viewpoint is missing'}
+    try:
+        current_view = int(execution.get('current_view', 0))
+    except (TypeError, ValueError):
+        return {'available': False, 'reason': 'execution view index is invalid'}
+    index = max(0, current_view - 1)
+    if index >= len(selected) or not isinstance(selected[index], dict):
+        return {'available': False, 'reason': 'execution view has no provenance'}
+    result = {
+        'available': True,
+        'plan_id': plan_id,
+        'request_id': str(plan_provenance.get('request_id', '')),
+        'request_sha256': str(plan_provenance.get('request_sha256', '')),
+        **dict(selected[index]),
+    }
+    candidate_diagnostics = plan_provenance.get('candidate_diagnostics')
+    if isinstance(candidate_diagnostics, dict):
+        result['candidate_diagnostics'] = dict(candidate_diagnostics)
+    return result
+
+
 try:
     import yaml
 except ImportError:
@@ -55,7 +88,9 @@ class ScanCaptureNode(Node):
         self.declare_parameter('mask_topic', '/piper/sam2_target_mask')
         self.declare_parameter('target_3d_topic', '/piper/target_3d')
         self.declare_parameter('scan_viewpoints_topic', '/piper/scan_viewpoints')
-        self.declare_parameter('reachable_scan_viewpoints_topic', '/piper/reachable_scan_viewpoints')
+        self.declare_parameter(
+            'reachable_scan_viewpoints_topic',
+            '/piper/reachable_scan_viewpoints')
         self.declare_parameter('scan_coverage_topic', '/piper/scan_coverage')
         self.declare_parameter('scan_quality_topic', '/piper/scan_quality')
         self.declare_parameter('occlusion_status_topic', '/piper/occlusion_status')
@@ -63,6 +98,8 @@ class ScanCaptureNode(Node):
         self.declare_parameter('scan_summary_topic', '/piper/scan_summary')
         self.declare_parameter(
             'scan_execution_status_topic', '/piper/scan_execution_status')
+        self.declare_parameter(
+            'plan_provenance_topic', '/piper/tesseract_plan_provenance')
         self.declare_parameter('joint_state_topic', '/joint_states_single')
         self.declare_parameter('base_frame', 'base_link')
         self.declare_parameter(
@@ -109,6 +146,7 @@ class ScanCaptureNode(Node):
         self.latest_target = None
         self.latest_joint_state = None
         self.latest_execution_status = None
+        self.plan_provenance_by_id = {}
         self.latest_camera_transform = None
         self.latest_color_from_depth_transform = None
         self.color_bundle_cache = deque(maxlen=max(
@@ -239,6 +277,12 @@ class ScanCaptureNode(Node):
         ))
         self._retained_subscriptions.append(self.create_subscription(
             String,
+            self.get_parameter('plan_provenance_topic').value,
+            self.plan_provenance_cb,
+            10,
+        ))
+        self._retained_subscriptions.append(self.create_subscription(
+            String,
             self.get_parameter('scan_viewpoints_topic').value,
             self.scan_viewpoints_cb,
             10,
@@ -302,6 +346,25 @@ class ScanCaptureNode(Node):
 
     def execution_status_cb(self, msg):
         self.latest_execution_status = msg
+
+    def plan_provenance_cb(self, msg):
+        payload = self.parse_json_msg(msg)
+        if not isinstance(payload, dict):
+            return
+        try:
+            schema_version = int(payload.get('schema_version', 0))
+        except (TypeError, ValueError):
+            return
+        if schema_version != 1:
+            return
+        plan_id = str(payload.get('plan_id', '')).strip()
+        selected = payload.get('selected_viewpoints')
+        if not plan_id or not isinstance(selected, list):
+            return
+        self.plan_provenance_by_id[plan_id] = payload
+        while len(self.plan_provenance_by_id) > 64:
+            del self.plan_provenance_by_id[next(iter(
+                self.plan_provenance_by_id))]
 
     def scan_viewpoints_cb(self, msg):
         self.latest_scan_viewpoints = self.parse_json_msg(msg)
@@ -661,6 +724,9 @@ class ScanCaptureNode(Node):
         occlusion = self.occlusion_metadata()
         execution = self.execution_status_metadata(
             self.latest_execution_status)
+        view_selection = capture_view_selection_provenance(
+            self.plan_provenance_by_id.get(execution.get('plan_id', '')),
+            execution)
         return {
             'capture_schema_version': 2,
             'frame_index': int(index),
@@ -774,6 +840,7 @@ class ScanCaptureNode(Node):
             'metadata_file_path': paths['metadata'],
             'joint_state': self.joint_state_metadata(self.latest_joint_state),
             'scan_execution': execution,
+            'view_selection': view_selection,
         }
 
     def publish_status(self, state, reason, frame_index=None):
@@ -849,7 +916,9 @@ class ScanCaptureNode(Node):
         payload = self.latest_reachable_scan_viewpoints
         if isinstance(payload, dict):
             filter_info = payload.get('filter')
-            if isinstance(filter_info, dict) and filter_info.get('reachable_viewpoints') is not None:
+            if (
+                    isinstance(filter_info, dict)
+                    and filter_info.get('reachable_viewpoints') is not None):
                 return int(filter_info.get('reachable_viewpoints'))
             viewpoints = payload.get('viewpoints')
             if isinstance(viewpoints, list):
@@ -857,7 +926,9 @@ class ScanCaptureNode(Node):
         return 0
 
     def scan_coverage_target(self):
-        payload = self.latest_scan_coverage if isinstance(self.latest_scan_coverage, dict) else None
+        payload = (
+            self.latest_scan_coverage
+            if isinstance(self.latest_scan_coverage, dict) else None)
         if payload is None and isinstance(self.latest_scan_viewpoints, dict):
             payload = self.latest_scan_viewpoints
         if payload is None:
@@ -870,16 +941,18 @@ class ScanCaptureNode(Node):
         if isinstance(viewpoints, list):
             angles = []
             for viewpoint in viewpoints:
-                if isinstance(viewpoint, dict) and viewpoint.get('viewpoint_angle_deg') is not None:
+                if (
+                        isinstance(viewpoint, dict)
+                        and viewpoint.get('viewpoint_angle_deg') is not None):
                     angles.append(float(viewpoint.get('viewpoint_angle_deg')))
             if len(angles) >= 2:
                 return float(max(angles) - min(angles))
         return 0.0
 
     def planned_coverage_deg(self):
-        return self.scan_coverage_from_payload(self.latest_scan_coverage) or self.scan_coverage_from_payload(
-            self.latest_scan_viewpoints
-        )
+        return (
+            self.scan_coverage_from_payload(self.latest_scan_coverage)
+            or self.scan_coverage_from_payload(self.latest_scan_viewpoints))
 
     def reachable_coverage_deg(self):
         return self.scan_coverage_from_payload(self.latest_reachable_scan_viewpoints)
@@ -901,7 +974,9 @@ class ScanCaptureNode(Node):
     def scan_coverage_from_payload(self, payload):
         if not isinstance(payload, dict):
             return None
-        for key in ('planned_scan_angle_deg', 'requested_scan_angle_deg', 'reachable_coverage_deg'):
+        for key in (
+                'planned_scan_angle_deg', 'requested_scan_angle_deg',
+                'reachable_coverage_deg'):
             value = payload.get(key)
             if value is not None:
                 return float(value)
@@ -928,7 +1003,8 @@ class ScanCaptureNode(Node):
         return {
             'scan_quality_available': True,
             'scan_quality_score': float(payload.get('quality_score', payload.get('score', 0.0))),
-            'scan_quality_label': str(payload.get('quality_label', payload.get('status', 'INVALID'))),
+            'scan_quality_label': str(payload.get(
+                'quality_label', payload.get('status', 'INVALID'))),
             'mask_area_px': int(payload.get('mask_area_px', 0)),
             'valid_depth_ratio': float(payload.get('valid_depth_ratio', 0.0)),
             'depth_mean_m': float(payload.get('depth_mean_m', 0.0)),
@@ -961,7 +1037,9 @@ class ScanCaptureNode(Node):
             self.quality_counts[label] += 1
 
     def occlusion_metadata(self):
-        payload = self.latest_occlusion_status if isinstance(self.latest_occlusion_status, dict) else None
+        payload = (
+            self.latest_occlusion_status
+            if isinstance(self.latest_occlusion_status, dict) else None)
         if payload is None:
             return self.empty_occlusion_metadata()
         return {
@@ -1152,7 +1230,8 @@ class ScanCaptureNode(Node):
             'mask': self.get_parameter('mask_topic').value,
             'target_3d': self.get_parameter('target_3d_topic').value,
             'scan_viewpoints': self.get_parameter('scan_viewpoints_topic').value,
-            'reachable_scan_viewpoints': self.get_parameter('reachable_scan_viewpoints_topic').value,
+            'reachable_scan_viewpoints': self.get_parameter(
+                'reachable_scan_viewpoints_topic').value,
             'scan_coverage': self.get_parameter('scan_coverage_topic').value,
             'scan_quality': self.get_parameter('scan_quality_topic').value,
             'occlusion_status': self.get_parameter('occlusion_status_topic').value,
@@ -1160,6 +1239,8 @@ class ScanCaptureNode(Node):
             'scan_summary': self.get_parameter('scan_summary_topic').value,
             'scan_execution_status': self.get_parameter(
                 'scan_execution_status_topic').value,
+            'plan_provenance': self.get_parameter(
+                'plan_provenance_topic').value,
             'joint_state': self.get_parameter('joint_state_topic').value,
             'camera_transform': '%s -> %s' % (
                 self.get_parameter('base_frame').value,

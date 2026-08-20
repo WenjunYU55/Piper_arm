@@ -1,5 +1,13 @@
 # Final refactor architecture
 
+> 2026-08-20 NBV repair: target measurement remains owned by
+> `depth_to_3d_node.py` and timestamped base-frame estimation by
+> `target_tracker_node.py`; `nbv_coverage.py` owns cumulative accepted coverage
+> and information ranking; the Tesseract bridge/worker own bounded exact-aim
+> feasibility; the executor owns achieved physical pose and retry handoff; the
+> capture node alone validates persistence. Accepted reconstruction stays fixed
+> in `base_link`. These remain separate owners rather than a new manager.
+
 > 2026-08-17 update: the later integration simplification made
 > `MissionEngine` the sole mission/shutdown authority, removed the uncalled
 > frozen mission bodies, and replaced the duplicate shadow evaluator with the
@@ -131,6 +139,15 @@ preview child, camera wrapper manifest, Tesseract singleton lock, gateway
 reconstruction subprocess, and persistent gateway/coordinator/RViz processes
 remain with their distinct owners; merging them would change lifecycle policy.
 
+If operator recovery is required before home or disable is proved,
+`MissionEngine` revokes mission authorization and releases only the exact
+non-command vision, hand-eye, and Tesseract-worker groups. The driver and scan
+executor remain available for powered recovery. Before another mission is
+admitted, the ROS adapter may retry cleanup of the supervisor's exact previous
+handles when no driver remains, or when fresh typed feedback proves all six
+motors disabled. It never adopts a process by name or infers disable from stale
+state.
+
 ### Telemetry ownership
 
 ROS callbacks write observations and original receipt/source timestamps to a
@@ -138,6 +155,18 @@ node-local `TelemetryStore`. A decision takes one immutable snapshot and uses
 the unchanged freshness rules against that snapshot. Plans, command targets,
 retry counters, process ownership, capture history, and shutdown proofs are
 derived/session state and do not belong in telemetry.
+
+### Closed-loop view-generation ownership
+
+`nbv_coverage.py` owns measured voxel evidence and information scoring;
+`view_generation.py` owns immutable session/accepted-count generation
+identity. The viewpoint planner publishes a labelled generation, the existing
+preliminary filter preserves it, and the Tesseract bridge emits a receipt only
+after caching it. MissionEngine waits for a post-barrier matching receipt
+before requesting one plan. The bridge bounds membership across distinct view
+directions; the worker remains the sole IK/collision feasibility authority and
+tries candidates in NBV-rank order. `scan_capture_node.py` persists selected
+policy/rank/gain only through exact `plan_id` correlation.
 
 ### GUI ownership
 

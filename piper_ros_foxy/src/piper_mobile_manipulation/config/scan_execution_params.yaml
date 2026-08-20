@@ -51,7 +51,11 @@
     joint_velocity_settled: 0.20
     # Acquisition and capture endpoints must remain inside this position
     # window for settle_duration_sec after reaching joint_goal_tolerance_rad.
-    endpoint_position_settled_rad: 0.005
+    # Live PiPER J4 feedback near zero alternates between two powered encoder
+    # states 0.006227508 rad apart.  Keep this just above that measured step so
+    # a stationary endpoint can settle; the independent 0.025 rad commanded
+    # endpoint tolerance remains unchanged.
+    endpoint_position_settled_rad: 0.007
     # Final home proof mirrors the GUI safe-disable transaction: the approved
     # target must be met and successive fresh positions must remain still.
     # This avoids false failures from PiPER's noisy instantaneous speed field.

@@ -21,6 +21,7 @@ class CaptureAction(str, Enum):
     READY = 'ready'
     ACCEPT = 'accept'
     RETRY_SAME_VIEW = 'retry_same_view'
+    REFRESH_SAME_VIEW = 'refresh_same_view'
     REPLAN_VIEW = 'replan_view'
     ABORT = 'abort'
 
@@ -73,7 +74,8 @@ class CaptureCoordinator:
             return CaptureDecision(CaptureAction.PUBLISH_AUTHORIZATION)
         return CaptureDecision(CaptureAction.REQUEST_CAPTURE)
 
-    def classify_result(self, success, failure, attempts):
+    def classify_result(
+            self, success, failure, attempts, heavy_refresh_used=False):
         """Classify a typed service result using the existing retry bound."""
         if bool(success):
             return CaptureDecision(CaptureAction.ACCEPT)
@@ -84,6 +86,10 @@ class CaptureCoordinator:
                 failure.has(FailureTag.CAPTURE_RETRY_SAME_VIEW)
                 and int(attempts) < self.maximum_readiness_retries):
             return CaptureDecision(CaptureAction.RETRY_SAME_VIEW, failure)
+        if (
+                failure.has(FailureTag.CAPTURE_REFRESH_SAME_VIEW)
+                and not bool(heavy_refresh_used)):
+            return CaptureDecision(CaptureAction.REFRESH_SAME_VIEW, failure)
         if failure.has(FailureTag.CAPTURE_REJECT_VIEW):
             return CaptureDecision(CaptureAction.REPLAN_VIEW, failure)
         return CaptureDecision(CaptureAction.ABORT, failure)

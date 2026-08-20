@@ -10,12 +10,18 @@ from sensor_msgs.msg import CameraInfo
 from std_msgs.msg import String
 
 from piper_mobile_manipulation.msg import Target3D, TrackedTarget
+from piper_mobile_manipulation.nbv_coverage import (
+    ObjectCoverageModel,
+    rank_next_best_views,
+    VoxelCoverageConfig,
+)
 from piper_mobile_manipulation.scan_motion import orbit_camera_view
 from piper_mobile_manipulation.scan_session_memory import (
     filter_and_order_viewpoints,
     history_coverage_target_center,
     validate_history_payload,
 )
+from piper_mobile_manipulation.view_generation import make_view_generation
 
 
 def build_viewpoint_angles(center_deg, desired_deg, step_deg, max_viewpoints):
@@ -76,7 +82,8 @@ def viewpoint_refresh_required(elapsed_sec, refresh_period_sec):
 
 
 def target_frame_rejection_reason(frame_id, planning_frame_id='base_link'):
-    """Reject target coordinates that are not already in the planning frame.
+    """
+    Reject target coordinates that are not already in the planning frame.
 
     ``/piper/target_3d`` is normally a camera-optical-frame measurement while
     ``/piper/tracked_target`` is expressed in ``base_link``. Treating the raw
@@ -105,6 +112,8 @@ class ScanViewpointPlannerNode(Node):
         self.declare_parameter('scan_coverage_topic', '/piper/scan_coverage')
         self.declare_parameter(
             'scan_session_history_topic', '/piper/scan_session_history')
+        self.declare_parameter(
+            'scan_capture_status_topic', '/piper/scan_capture_status')
         self.declare_parameter('planning_frame_id', 'base_link')
 
         self.declare_parameter('desired_scan_angle_deg', 250)
@@ -125,9 +134,21 @@ class ScanViewpointPlannerNode(Node):
         self.declare_parameter('session_max_views', 13)
         self.declare_parameter('duplicate_position_tolerance_m', 0.012)
         self.declare_parameter('duplicate_look_tolerance_deg', 2.0)
+        self.declare_parameter(
+            'minimum_useful_direction_separation_deg', 6.0)
         self.declare_parameter('target_replan_translation_m', 0.01)
         self.declare_parameter('target_replan_min_period_sec', 0.5)
         self.declare_parameter('target_plan_refresh_period_sec', 0.5)
+        self.declare_parameter('view_selection_policy', 'voxel_nbv_shadow')
+        self.declare_parameter('nbv_voxel_size_m', 0.005)
+        self.declare_parameter('nbv_minimum_radius_m', 0.030)
+        self.declare_parameter('nbv_maximum_radius_m', 0.250)
+        self.declare_parameter('nbv_radius_scale', 2.0)
+        self.declare_parameter('nbv_padding_voxels', 2)
+        self.declare_parameter('nbv_surface_tolerance_m', 0.007)
+        self.declare_parameter('nbv_render_width', 64)
+        self.declare_parameter('nbv_render_height', 48)
+        self.declare_parameter('nbv_maximum_scoring_voxels', 20000)
 
         self.target_status = 'UNKNOWN'
         self.latest_camera_info = None
@@ -137,6 +158,31 @@ class ScanViewpointPlannerNode(Node):
         self.last_planned_history_signature = None
         self.last_plan_monotonic = 0.0
         self.last_frame_warning_monotonic = 0.0
+        self.latest_capture_status = None
+        self.nbv_scan_dir = ''
+        self.nbv_model_error = 'no accepted capture is available'
+        self.nbv_ranking_cache_key = None
+        self.nbv_ranking_cache = None
+        self.coverage_model = ObjectCoverageModel(VoxelCoverageConfig(
+            voxel_size_m=float(
+                self.get_parameter('nbv_voxel_size_m').value),
+            minimum_radius_m=float(
+                self.get_parameter('nbv_minimum_radius_m').value),
+            maximum_radius_m=float(
+                self.get_parameter('nbv_maximum_radius_m').value),
+            radius_scale=float(
+                self.get_parameter('nbv_radius_scale').value),
+            padding_voxels=int(
+                self.get_parameter('nbv_padding_voxels').value),
+            surface_tolerance_m=float(
+                self.get_parameter('nbv_surface_tolerance_m').value),
+            render_width=int(
+                self.get_parameter('nbv_render_width').value),
+            render_height=int(
+                self.get_parameter('nbv_render_height').value),
+            maximum_scoring_voxels=int(
+                self.get_parameter('nbv_maximum_scoring_voxels').value),
+        ))
         self.pub_viewpoints = self.create_publisher(
             String, self.get_parameter('scan_viewpoints_topic').value, 10
         )
@@ -185,6 +231,12 @@ class ScanViewpointPlannerNode(Node):
             self.history_cb,
             history_qos,
         )
+        self.capture_status_sub = self.create_subscription(
+            String,
+            self.get_parameter('scan_capture_status_topic').value,
+            self.capture_status_cb,
+            10,
+        )
         self.get_logger().warn(
             'Scan viewpoint planner is dry-run only; it does not publish '
             '/piper/servo_cmd or move the arm.'
@@ -201,9 +253,180 @@ class ScanViewpointPlannerNode(Node):
             payload = json.loads(msg.data)
             self.latest_history = validate_history_payload(
                 payload, self.get_parameter('session_max_views').value)
+            self.refresh_coverage_model()
         except (TypeError, ValueError, json.JSONDecodeError) as error:
             self.latest_history = None
             self.get_logger().warn('Ignoring invalid scan session history: %s' % error)
+
+    def capture_status_cb(self, msg):
+        try:
+            payload = json.loads(msg.data)
+        except (TypeError, json.JSONDecodeError):
+            return
+        if not isinstance(payload, dict):
+            return
+        self.latest_capture_status = payload
+        self.refresh_coverage_model()
+
+    def selection_policy(self):
+        policy = str(self.get_parameter('view_selection_policy').value).strip()
+        if policy not in ('legacy', 'voxel_nbv_shadow', 'voxel_nbv'):
+            raise ValueError('unsupported view_selection_policy %s' % policy)
+        return policy
+
+    def refresh_coverage_model(self):
+        try:
+            policy = self.selection_policy()
+        except ValueError as error:
+            self.nbv_model_error = str(error)
+            return False
+        if policy == 'legacy':
+            self.nbv_model_error = 'legacy selection policy does not build NBV'
+            return False
+        history = self.latest_history or {}
+        accepted = int(history.get('accepted_views', 0))
+        session_id = str(history.get('session_id', ''))
+        if accepted <= 0:
+            self.coverage_model.reset(session_id)
+            self.nbv_scan_dir = ''
+            self.nbv_model_error = 'waiting for the first accepted capture'
+            return False
+        status = self.latest_capture_status or {}
+        captured = int(status.get(
+            'captured_frame_count', status.get('frames_captured', 0)))
+        scan_dir = str(status.get('scan_dir', ''))
+        center = history_coverage_target_center(history, None)
+        if not session_id or center is None or not scan_dir:
+            self.nbv_model_error = (
+                'NBV session, target center, or scan path is missing')
+            return False
+        if captured < accepted:
+            self.nbv_model_error = (
+                'NBV capture generation is catching up (%d/%d)'
+                % (captured, accepted))
+            return False
+        if (
+                self.coverage_model.session_id == session_id
+                and self.coverage_model.generation == accepted
+                and self.nbv_scan_dir == scan_dir):
+            self.nbv_model_error = ''
+            return True
+        try:
+            self.coverage_model.rebuild_from_scan(
+                scan_dir, accepted, center, session_id)
+        except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) \
+                as error:
+            self.nbv_model_error = 'NBV coverage update failed: %s' % error
+            return False
+        self.nbv_scan_dir = scan_dir
+        self.nbv_model_error = ''
+        return True
+
+    @staticmethod
+    def current_achieved_camera(history):
+        latest = history.get('latest_achieved_camera')
+        if isinstance(latest, dict):
+            value = latest.get('camera_position')
+            if isinstance(value, dict):
+                try:
+                    position = [float(value[axis]) for axis in ('x', 'y', 'z')]
+                except (KeyError, TypeError, ValueError):
+                    position = []
+                if len(position) == 3 and all(
+                        math.isfinite(item) for item in position):
+                    return position
+        entries = history.get('accepted_entries', [])
+        if not entries:
+            return None
+        entry = entries[-1]
+        value = entry.get(
+            'actual_camera_position', entry.get('desired_camera_position'))
+        if not isinstance(value, dict):
+            return None
+        try:
+            position = [float(value[axis]) for axis in ('x', 'y', 'z')]
+        except (KeyError, TypeError, ValueError):
+            return None
+        if not all(math.isfinite(item) for item in position):
+            return None
+        return position
+
+    def apply_view_selection(self, viewpoints, history):
+        policy = self.selection_policy()
+        accepted = int(history.get('accepted_views', 0))
+        session_id = str(history.get('session_id', ''))
+        if policy == 'legacy' or accepted <= 0:
+            effective = (
+                'voxel_nbv_seed'
+                if policy == 'voxel_nbv' and accepted <= 0 else policy)
+            return [dict(
+                item,
+                view_selection_policy=effective,
+                view_selection_requested_policy=policy,
+                view_selection_generation=accepted,
+                view_selection_session_id=session_id,
+            ) for item in viewpoints]
+        ready = self.refresh_coverage_model()
+        if not ready:
+            if policy == 'voxel_nbv':
+                return None
+            return [dict(item, nbv_shadow_status=self.nbv_model_error)
+                    for item in viewpoints]
+        snapshot = self.coverage_model.snapshot()
+        current_camera = self.current_achieved_camera(history)
+        candidate_geometry = tuple(
+            (
+                int(item.get('index', -1)),
+                round(float(item['desired_camera_position']['x']), 8),
+                round(float(item['desired_camera_position']['y']), 8),
+                round(float(item['desired_camera_position']['z']), 8),
+            )
+            for item in viewpoints)
+        cache_key = (
+            snapshot.session_id,
+            snapshot.generation,
+            tuple(current_camera or ()),
+            candidate_geometry,
+        )
+        if cache_key == self.nbv_ranking_cache_key:
+            ranked = [dict(item) for item in self.nbv_ranking_cache]
+        else:
+            ranked = rank_next_best_views(
+                snapshot, viewpoints, current_camera)
+            self.nbv_ranking_cache_key = cache_key
+            self.nbv_ranking_cache = [dict(item) for item in ranked]
+        ranked_by_index = {
+            int(item.get('index', -1)): item for item in ranked}
+        if policy == 'voxel_nbv_shadow':
+            result = []
+            for item in viewpoints:
+                candidate = dict(item)
+                scored = ranked_by_index.get(int(item.get('index', -1)), {})
+                for key, value in scored.items():
+                    if key.startswith('nbv_'):
+                        candidate[key] = value
+                candidate['nbv_shadow_status'] = 'ready'
+                candidate['view_selection_policy'] = policy
+                candidate['view_selection_requested_policy'] = policy
+                candidate['view_selection_generation'] = accepted
+                candidate['view_selection_session_id'] = session_id
+                result.append(candidate)
+            return result
+        positive = [
+            dict(item) for item in ranked
+            if bool(item.get('nbv_positive_information_gain'))]
+        for item in positive:
+            item['legacy_expected_new_coverage_score'] = float(
+                item.get('expected_new_coverage_score', 0.0))
+            item['expected_new_coverage_score'] = float(
+                item['nbv_rank_score'])
+            item['view_selection_policy'] = policy
+            item['view_selection_requested_policy'] = policy
+            item['view_selection_generation'] = accepted
+            item['view_selection_session_id'] = session_id
+            item.pop('coverage_objective', None)
+            item.pop('coverage_progress_score', None)
+        return positive
 
     def target_cb(self, msg, source):
         if not msg.valid:
@@ -256,6 +479,10 @@ class ScanViewpointPlannerNode(Node):
             self.get_parameter('target_plan_refresh_period_sec').value)
         if not replan_required and not refresh_required:
             return
+        if not replan_required and self.last_planned_center is not None:
+            # A freshness-only publication must preserve the exact previously
+            # planned geometry; sub-threshold tracker noise is not a replan.
+            center = dict(self.last_planned_center)
         angles = self.viewpoint_angles()
         radius = self.scan_radius()
         viewpoints = []
@@ -278,6 +505,7 @@ class ScanViewpointPlannerNode(Node):
                         pitch_deg)
                     viewpoints.append(viewpoint)
                     index += 1
+        generated_candidate_count = len(viewpoints)
         viewpoints = filter_and_order_viewpoints(
             viewpoints,
             history['entries'],
@@ -285,7 +513,34 @@ class ScanViewpointPlannerNode(Node):
             self.get_parameter('duplicate_look_tolerance_deg').value,
             accepted_entries=history.get('accepted_entries', []),
             target_center=history_coverage_target_center(history, center),
+            minimum_direction_separation_deg=self.get_parameter(
+                'minimum_useful_direction_separation_deg').value,
+            direction_target_center=center,
         )
+        nonduplicate_candidate_count = len(viewpoints)
+        selected_viewpoints = self.apply_view_selection(viewpoints, history)
+        selection_ready = selected_viewpoints is not None
+        if not selection_ready:
+            now = time.monotonic()
+            if now - self.last_frame_warning_monotonic >= 5.0:
+                self.get_logger().warn(
+                    'Withholding authoritative NBV candidates: %s'
+                    % self.nbv_model_error)
+                self.last_frame_warning_monotonic = now
+            viewpoints = []
+        else:
+            viewpoints = selected_viewpoints
+        positive_information_count = int(sum(
+            bool(item.get('nbv_positive_information_gain', True))
+            for item in viewpoints))
+        selection_failure_code = (
+            'NO_POSITIVE_INFORMATION_CANDIDATE'
+            if (
+                self.selection_policy() == 'voxel_nbv'
+                and int(history.get('accepted_views', 0)) > 0
+                and selection_ready
+                and not viewpoints)
+            else '')
         remaining = max(
             0, int(history['max_views']) - int(history['accepted_views']))
         # Keep extra collision/workspace-qualified candidates as fallbacks.
@@ -302,6 +557,37 @@ class ScanViewpointPlannerNode(Node):
             'nanosec': int(msg.header.stamp.nanosec),
         }
         camera_info = self.camera_info_summary()
+        nbv_model_ready = bool(
+            not self.nbv_model_error
+            and self.coverage_model.session_id == history['session_id']
+            and self.coverage_model.generation
+            == int(history['accepted_views'])
+            and int(history['accepted_views']) > 0)
+        nbv_snapshot = (
+            self.coverage_model.snapshot() if nbv_model_ready else None)
+        requested_policy = self.selection_policy()
+        effective_policy = (
+            'voxel_nbv_seed'
+            if requested_policy == 'voxel_nbv'
+            and int(history['accepted_views']) == 0
+            else requested_policy)
+        view_generation = None
+        if str(history['session_id']).strip():
+            generation_reason = ''
+            if effective_policy == 'voxel_nbv_seed':
+                generation_reason = (
+                    'first accepted observation seeds measured voxel coverage')
+            elif not selection_ready:
+                generation_reason = self.nbv_model_error
+            view_generation = make_view_generation(
+                history['session_id'],
+                int(history['accepted_views']),
+                effective_policy,
+                int(history['accepted_views']),
+                selection_ready,
+                len(viewpoints),
+                generation_reason,
+            ).to_dict()
 
         view_msg = String()
         view_msg.data = json.dumps(
@@ -324,6 +610,8 @@ class ScanViewpointPlannerNode(Node):
                 },
                 'remaining_viewpoints': int(remaining),
                 'viewpoints': viewpoints,
+                'view_generation': view_generation,
+                'selection_failure_code': selection_failure_code,
             },
             sort_keys=True,
         )
@@ -341,10 +629,37 @@ class ScanViewpointPlannerNode(Node):
                 'planned_scan_angle_deg': achieved_dry_run_coverage,
                 'viewpoint_step_deg': float(self.get_parameter('viewpoint_step_deg').value),
                 'candidate_viewpoints': len(viewpoints),
+                'scan_session_id': str(history['session_id']),
                 'session_accepted_views': int(history['accepted_views']),
                 'session_remaining_views': int(remaining),
                 'reachable_viewpoints': 0,
                 'safe_viewpoints': 0,
+                'view_selection_policy': self.selection_policy(),
+                'effective_view_selection_policy': effective_policy,
+                'view_generation': view_generation,
+                'nbv_model_generation': int(self.coverage_model.generation),
+                'nbv_model_ready': nbv_model_ready,
+                'nbv_model_reason': self.nbv_model_error,
+                'nbv_unknown_voxels': (
+                    nbv_snapshot.unknown_voxels
+                    if nbv_snapshot is not None else 0),
+                'nbv_surface_voxels': (
+                    nbv_snapshot.surface_voxels
+                    if nbv_snapshot is not None else 0),
+                'nbv_top_candidate_index': (
+                    int(viewpoints[0].get('index', -1)) if viewpoints else -1),
+                'nbv_top_predicted_unknown_pixels': (
+                    int(viewpoints[0].get(
+                        'nbv_predicted_unknown_pixels', 0))
+                    if viewpoints else 0),
+                'selection_failure_code': selection_failure_code,
+                'generated_candidates': int(generated_candidate_count),
+                'duplicate_rejected_candidates': int(
+                    generated_candidate_count - nonduplicate_candidate_count),
+                'information_scored_candidates': int(
+                    nonduplicate_candidate_count),
+                'positive_information_candidates': int(
+                    positive_information_count),
                 'note': (
                     'reachability and safety are intentionally false until a later '
                     'dry-run evaluator is added'),
@@ -358,9 +673,13 @@ class ScanViewpointPlannerNode(Node):
 
         if self.param_bool('debug'):
             self.get_logger().info(
-                'planned %d dry-run scan viewpoints around target from %s '
+                'planned generation session=%s accepted=%d policy=%s '
+                'ready=%s candidates=%d around target from %s '
                 'coverage=%.1fdeg radius=%.2fm'
-                % (len(viewpoints), source, achieved_dry_run_coverage, radius)
+                % (
+                    history['session_id'], int(history['accepted_views']),
+                    effective_policy, selection_ready, len(viewpoints), source,
+                    achieved_dry_run_coverage, radius)
             )
 
     def tracked_target_cb(self, msg):

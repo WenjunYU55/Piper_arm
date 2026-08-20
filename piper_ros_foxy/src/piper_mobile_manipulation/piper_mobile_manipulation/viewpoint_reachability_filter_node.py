@@ -171,6 +171,9 @@ class ViewpointReachabilityFilterNode(Node):
             result = dict(viewpoint)
             reasons = self.reject_reasons(result, plan_kind)
             accepted = len(reasons) == 0
+            result['prequalified'] = bool(accepted)
+            # Compatibility aliases consumed by the unchanged bridge and
+            # capture diagnostics.  This stage has not run IK or Tesseract.
             result['reachable'] = bool(accepted)
             result['safe'] = bool(accepted)
             result['reject_reasons'] = reasons
@@ -189,8 +192,10 @@ class ViewpointReachabilityFilterNode(Node):
                 else 'dynamic_kinematics_deferred_to_tesseract'),
             'input_viewpoints': len(viewpoints),
             'output_viewpoints': len(filtered),
+            'prequalified_viewpoints': reachable_count,
             'reachable_viewpoints': reachable_count,
             'safe_viewpoints': safe_count,
+            'reachable_field_semantics': 'prequalified_compatibility_alias',
             'arm_status': self.arm_status_summary(),
             'target_status': self.target_status,
             'dry_run_config_loaded': self.param_bool('dry_run'),
@@ -203,8 +208,8 @@ class ViewpointReachabilityFilterNode(Node):
 
         if self.param_bool('debug'):
             self.get_logger().info(
-                'filtered %s viewpoints: %d/%d reachable safe=%d'
-                % (plan_kind, reachable_count, len(filtered), safe_count)
+                'prequalified %s viewpoints: %d/%d (Tesseract feasibility pending)'
+                % (plan_kind, reachable_count, len(filtered))
             )
 
     def reject_reasons(self, viewpoint, plan_kind='MULTIVIEW_SCAN'):
@@ -280,8 +285,11 @@ class ViewpointReachabilityFilterNode(Node):
                 'dry_run': True,
                 'filter': {
                     'node': 'viewpoint_reachability_filter_node',
+                    'prequalified_viewpoints': 0,
                     'reachable_viewpoints': 0,
                     'safe_viewpoints': 0,
+                    'reachable_field_semantics': (
+                        'prequalified_compatibility_alias'),
                     'reject_reasons': [reason],
                     'dry_run_config_loaded': self.param_bool('dry_run'),
                 },

@@ -1,3 +1,4 @@
+import json
 import math
 from types import SimpleNamespace
 
@@ -6,7 +7,9 @@ import pytest
 
 from piper_tesseract_foxy.bridge_node import (
     balanced_closed_loop_candidates,
+    bounded_nbv_candidates,
     bounded_current_look_direction,
+    exact_target_aim_candidates,
     local_view_frontier_candidates,
     maximize_successive_view_distance,
     obstacle_scene_rejection_reason,
@@ -15,6 +18,62 @@ from piper_tesseract_foxy.bridge_node import (
     TesseractPlanBridge,
 )
 from piper_mobile_manipulation.motion_limit_stability import MotionLimitStability
+
+
+class _Recorder:
+    def __init__(self):
+        self.messages = []
+
+    def publish(self, message):
+        self.messages.append(message)
+
+
+class _Logger:
+    def __init__(self):
+        self.messages = []
+
+    def info(self, message):
+        self.messages.append(message)
+
+
+def test_bridge_caches_and_logs_view_generation_with_debug_enabled():
+    """The generation receipt path must not crash after a valid plan update."""
+    bridge = object.__new__(TesseractPlanBridge)
+    bridge.latest_scan = None
+    bridge.latest_acquisition_scan = None
+    bridge.updated = {}
+    bridge.view_generation_pub = _Recorder()
+    logger = _Logger()
+    bridge.get_logger = lambda: logger
+    bridge.get_parameter = lambda name: SimpleNamespace(
+        value=True if name == 'debug' else None)
+    bridge.now = lambda: 12.5
+    payload = {
+        'view_generation': {
+            'schema_version': 1,
+            'session_id': 'scan-session',
+            'accepted_views': 2,
+            'policy': 'voxel_nbv',
+            'generation': 2,
+            'ready': True,
+            'candidate_viewpoints': 18,
+            'reason': '',
+        },
+    }
+
+    bridge.store_scan(
+        SimpleNamespace(data=json.dumps(payload)), 'scan', acquisition=False)
+
+    assert bridge.latest_scan == payload
+    assert bridge.updated == {'scan': 12.5}
+    assert len(bridge.view_generation_pub.messages) == 1
+    receipt = json.loads(bridge.view_generation_pub.messages[0].data)
+    assert receipt['view_generation']['session_id'] == 'scan-session'
+    assert receipt['view_generation']['accepted_views'] == 2
+    assert logger.messages == [
+        'cached view generation session=scan-session accepted=2 '
+        'policy=voxel_nbv ready=True candidates=18',
+    ]
 
 
 def test_multiview_candidates_follow_smooth_camera_route():
@@ -212,6 +271,28 @@ def test_closed_loop_aim_relaxation_preserves_candidate_membership():
     assert candidates[0]['look_direction'] == [1.0, 0.0, 0.0]
 
 
+def test_exact_target_aim_is_primary_and_fallback_is_bounded_to_five_degrees():
+    target = [0.4, 0.0, 0.0]
+    candidate = {
+        'id': 7,
+        'camera_position_m': [0.1, 0.0, 0.2],
+        'look_direction': [0.0, 1.0, 0.0],
+    }
+    exact = np.asarray(target) - np.asarray(candidate['camera_position_m'])
+    exact /= np.linalg.norm(exact)
+    current = [0.0, 0.0, 1.0]
+
+    bound = exact_target_aim_candidates(
+        [candidate], target, current, 5.0)[0]
+
+    assert bound['look_direction'] == pytest.approx(exact)
+    assert len(bound['fallback_look_directions']) == 1
+    offset = math.degrees(math.acos(float(np.clip(np.dot(
+        exact, bound['fallback_look_directions'][0]), -1.0, 1.0))))
+    assert offset == pytest.approx(5.0)
+    assert bound['maximum_final_aim_offset_deg'] == 5.0
+
+
 def test_closed_loop_shortlist_interleaves_coverage_and_nearby_fallbacks():
     candidates = [
         {
@@ -235,6 +316,101 @@ def test_closed_loop_shortlist_interleaves_coverage_and_nearby_fallbacks():
 
     assert [item['id'] for item in selected] == [10, 11, 12, 13]
     assert len({item['id'] for item in selected}) == len(selected)
+
+
+def test_nbv_shortlist_keeps_information_leaders_and_local_ik_fallbacks():
+    candidates = [
+        {
+            'id': item_id,
+            'camera_position_m': [distance, 0.0, 0.0],
+            'coverage_score': float(20 - rank),
+            'nbv_rank': rank,
+        }
+        for item_id, rank, distance in (
+            (10, 1, 0.80), (11, 2, 0.70), (12, 3, 0.60),
+            (13, 4, 0.50), (14, 5, 0.40), (15, 6, 0.30),
+            (16, 7, 0.20), (17, 8, 0.01),
+        )
+    ]
+
+    selected = bounded_nbv_candidates(
+        candidates, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 4,
+        leader_fraction=0.75)
+
+    assert [item['id'] for item in selected] == [10, 11, 12, 17]
+    assert [item['nbv_rank'] for item in selected] == [1, 2, 3, 8]
+
+
+def test_nbv_shortlist_rejects_invalid_policy_fraction():
+    with pytest.raises(ValueError, match='leader fraction'):
+        bounded_nbv_candidates(
+            [{'id': 1, 'camera_position_m': [0.1, 0.0, 0.0]}],
+            [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 1,
+            leader_fraction=0.0)
+
+
+def test_nbv_shortlist_reserves_leaders_from_distinct_view_directions():
+    candidates = [
+        {
+            'id': rank,
+            'camera_position_m': [0.30 + rank * 0.01, 0.0, 0.0],
+            'coverage_score': float(100 - rank),
+            'nbv_rank': rank,
+        }
+        for rank in range(1, 9)
+    ]
+    candidates.extend([
+        {
+            'id': 9,
+            'camera_position_m': [0.30, 0.18, 0.0],
+            'coverage_score': 91.0,
+            'nbv_rank': 9,
+        },
+        {
+            'id': 10,
+            'camera_position_m': [0.30, 0.0, 0.18],
+            'coverage_score': 90.0,
+            'nbv_rank': 10,
+        },
+    ])
+
+    selected = bounded_nbv_candidates(
+        candidates, [0.25, 0.0, 0.0], [0.0, 0.0, 0.0], 4,
+        leader_fraction=0.75)
+
+    assert 9 in [item['id'] for item in selected]
+    assert 10 in [item['id'] for item in selected]
+    assert [item['nbv_rank'] for item in selected] == sorted(
+        item['nbv_rank'] for item in selected)
+
+
+def test_nbv_shortlist_pairs_informative_azimuths_with_elevation_ik_escapes():
+    def position(azimuth_deg, elevation_deg, radius=0.30):
+        azimuth = np.deg2rad(float(azimuth_deg))
+        elevation = np.deg2rad(float(elevation_deg))
+        return [
+            radius * np.cos(elevation) * np.cos(azimuth),
+            radius * np.cos(elevation) * np.sin(azimuth),
+            radius * np.sin(elevation),
+        ]
+
+    candidates = [
+        {'id': 1, 'camera_position_m': position(90, 75), 'nbv_rank': 1},
+        {'id': 2, 'camera_position_m': position(120, 75), 'nbv_rank': 2},
+        # These retain the leaders' lateral sectors but offer a much less
+        # wrist-down elevation for Tesseract.
+        {'id': 10, 'camera_position_m': position(90, 40), 'nbv_rank': 20},
+        {'id': 11, 'camera_position_m': position(120, 40), 'nbv_rank': 21},
+        # A generic pose nearest the current camera must not consume both
+        # reserved escape slots and erase the informative lateral directions.
+        {'id': 99, 'camera_position_m': position(0, 40), 'nbv_rank': 99},
+    ]
+
+    selected = bounded_nbv_candidates(
+        candidates, position(0, 40), [0.0, 0.0, 0.0], 4,
+        leader_fraction=0.5)
+
+    assert [item['id'] for item in selected] == [1, 2, 10, 11]
 
 
 def test_closed_loop_shortlist_keeps_proven_local_fallback_under_diversity_bias():
@@ -655,3 +831,72 @@ def test_normal_snapshot_still_requires_tracking():
         bridge, 'MULTIVIEW_SCAN')
 
     assert 'tracking is not settled TRACKING' in reasons
+
+
+def test_zero_prequalified_views_preserve_transient_target_status_reason():
+    bridge = snapshot_bridge()
+    bridge.latest_scan = {
+        'dry_run': True,
+        'scan_session': {
+            'session_id': 'session-a',
+            'accepted_views': 1,
+            'max_views': 13,
+        },
+        'remaining_viewpoints': 12,
+        'filter': {
+            'prequalified_viewpoints': 0,
+            'target_status': 'LOW_CONFIDENCE',
+        },
+        'viewpoints': [{
+            'prequalified': False,
+            'reachable': False,
+            'safe': False,
+            'reject_reasons': ['target_status=LOW_CONFIDENCE'],
+        }],
+    }
+    bridge.latest_tracking = SimpleNamespace(
+        lifecycle_state='TRACKING',
+        camera_settled=True,
+        prediction_only=False,
+        measurement_age_sec=0.1,
+    )
+
+    reasons = TesseractPlanBridge.snapshot_reasons(
+        bridge, 'MULTIVIEW_SCAN')
+
+    assert 'target_status=LOW_CONFIDENCE' in reasons
+    assert 'NO_PREQUALIFIED_VIEWPOINT_CANDIDATE' not in reasons
+
+
+def test_zero_prequalified_views_without_visual_reason_fail_as_no_candidate():
+    bridge = snapshot_bridge()
+    bridge.latest_scan = {
+        'dry_run': True,
+        'scan_session': {
+            'session_id': 'session-a',
+            'accepted_views': 1,
+            'max_views': 13,
+        },
+        'remaining_viewpoints': 12,
+        'filter': {
+            'prequalified_viewpoints': 0,
+            'target_status': 'LOCKED',
+        },
+        'viewpoints': [{
+            'prequalified': False,
+            'reachable': False,
+            'safe': False,
+            'reject_reasons': ['camera-object distance too close'],
+        }],
+    }
+    bridge.latest_tracking = SimpleNamespace(
+        lifecycle_state='TRACKING',
+        camera_settled=True,
+        prediction_only=False,
+        measurement_age_sec=0.1,
+    )
+
+    reasons = TesseractPlanBridge.snapshot_reasons(
+        bridge, 'MULTIVIEW_SCAN')
+
+    assert 'NO_PREQUALIFIED_VIEWPOINT_CANDIDATE' in reasons

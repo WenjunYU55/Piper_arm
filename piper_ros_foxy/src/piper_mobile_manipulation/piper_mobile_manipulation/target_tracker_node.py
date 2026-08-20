@@ -16,6 +16,16 @@ from piper_mobile_manipulation.msg import Target3D, TrackedTarget
 from piper_mobile_manipulation.utils.kalman_filter import ConstantVelocityKalmanFilter
 
 
+def finite_target_measurement(measurement):
+    """Return whether one transformed 3-D observation is safe to filter."""
+    try:
+        return bool(
+            len(measurement) == 3
+            and all(math.isfinite(float(value)) for value in measurement))
+    except (TypeError, ValueError):
+        return False
+
+
 class TargetTrackerNode(Node):
     def __init__(self):
         super().__init__('target_tracker_node')
@@ -116,6 +126,11 @@ class TargetTrackerNode(Node):
 
         measurement = self.measurement_in_output_frame(msg)
         if measurement is None:
+            self.publish_invalid(out)
+            return
+        if not finite_target_measurement(measurement):
+            self.get_logger().warn(
+                'Target3D rejected because transformed measurement is non-finite')
             self.publish_invalid(out)
             return
         if self.last_time is None:

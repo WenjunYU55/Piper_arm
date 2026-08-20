@@ -31,8 +31,13 @@ JOINT6_STARTUP_WRAP_TARGET_RAD = 3.2
 JOINT6_STARTUP_WRAP_SETTLE_TOLERANCE_RAD = 0.005
 MOTOR_WATCHDOG_STARTUP_GRACE_SEC = 0.5
 JOINT6_STARTUP_DIRECTION_TRIP_RAD = 0.01
-JOINT6_STARTUP_CONTROLLER_MAX_DEG = 365.0
-JOINT6_STARTUP_CONTROLLER_REQUIRED_DEG = 360.0
+# Positive-only startup finishes on the controller's raw +360-degree turn.
+# Normal ROS motion must still retain the complete logical [-180, +180]
+# interval on that same turn, so the controller coordinate must extend through
+# raw +540 degrees.  Keep a five-degree controller-side convergence margin;
+# the driver's ordinary logical bound remains exactly [-pi, +pi].
+JOINT6_STARTUP_CONTROLLER_MAX_DEG = 545.0
+JOINT6_STARTUP_CONTROLLER_REQUIRED_DEG = 540.0
 JOINT6_STARTUP_CONTROLLER_LIMIT_TIMEOUT_SEC = 2.0
 PIPER_SETTING_UNCHANGED = 0x7FFF
 JOINT6_STARTUP_COMMAND_FRAME = 'piper_scan_executor_startup_wrist'
@@ -636,9 +641,11 @@ def qualify_startup_joint6_controller_limit(
     A logical startup position as low as -240 degrees is represented on the
     controller's positive multi-turn branch. Returning to logical zero while
     moving only in the positive direction therefore reaches raw +360 degrees.
-    The controller gets a small convergence margin; its negative limit and
-    maximum speed remain unchanged. Ordinary logical J6 commands remain
-    bounded to [-pi, +pi] by this driver.
+    The retained turn offset maps the ordinary logical +pi endpoint to raw
+    +540 degrees, so qualification must cover that complete powered-session
+    interval rather than startup zero alone. The controller gets a small
+    convergence margin; its negative limit and maximum speed remain unchanged.
+    Ordinary logical J6 commands remain bounded to [-pi, +pi] by this driver.
     """
     configured = float(configured_max_deg)
     required = float(required_max_deg)
@@ -1576,6 +1583,20 @@ class PiperRosNode(Node):
                 logical_joint_6
                 + float(getattr(
                     self, '_joint6_controller_turn_offset', 0.0)))
+            controller_max_rad = math.radians(float(getattr(
+                self,
+                'startup_joint6_controller_max_deg',
+                JOINT6_STARTUP_CONTROLLER_MAX_DEG,
+            )))
+            if arm_joint_5 > controller_max_rad + 1e-9:
+                self.get_logger().error(
+                    'Rejected J6 controller target %.6f rad above the '
+                    'qualified %.1f-deg positive limit'
+                    % (
+                        arm_joint_5,
+                        math.degrees(controller_max_rad),
+                    ))
+                return
         if startup_motion_candidate or startup_hold_candidate:
             measured = getattr(self, '_latest_raw_arm_positions', None)
             if (

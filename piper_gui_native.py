@@ -24,6 +24,14 @@ from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 from piper_gui.app import run_gui
 from piper_gui.ros_client import MissionActionClient, MissionClientEvent
+from piper_gui.scan_policy import (
+    POLICY_LABELS,
+    SELECTABLE_POLICIES,
+    VOXEL_NBV_POLICY,
+    default_scan_policy_path,
+    read_scan_policy,
+    write_scan_policy,
+)
 from piper_gui.view_model import MissionViewModel
 from reconstruction.gui_support import (
     list_scan_datasets,
@@ -436,6 +444,18 @@ class PiperGuiApp:
             tk.StringVar(value=""),
         ]
         self.mission_label_var = tk.StringVar(value="green cube")
+        self.scan_policy_path = default_scan_policy_path(PROJECT_ROOT)
+        try:
+            saved_policy = read_scan_policy(self.scan_policy_path)
+            policy_status = (
+                "Saved for the next scan stack: %s"
+                % POLICY_LABELS[saved_policy])
+        except (OSError, ValueError) as exc:
+            saved_policy = VOXEL_NBV_POLICY
+            policy_status = (
+                "Planner policy configuration unavailable: %s" % exc)
+        self.scan_policy_var = tk.StringVar(value=POLICY_LABELS[saved_policy])
+        self.scan_policy_status_var = tk.StringVar(value=policy_status)
         self.mission_status_var = tk.StringVar(value="Autonomous mission idle")
         self.mesh_status_var = tk.StringVar(
             value="Mesh reconstruction is waiting for a completed scan")
@@ -588,8 +608,44 @@ class PiperGuiApp:
         ).grid(row=2, column=2, columnspan=4, sticky="w", padx=(10, 0),
                pady=(10, 0))
 
+        policy = ttk.LabelFrame(
+            parent, text="Viewpoint policy for next mission", padding=12)
+        policy.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        self.scan_policy_combo = ttk.Combobox(
+            policy,
+            textvariable=self.scan_policy_var,
+            values=tuple(POLICY_LABELS[item] for item in SELECTABLE_POLICIES),
+            state="readonly",
+            width=34,
+        )
+        self.scan_policy_combo.grid(row=0, column=0, sticky="w")
+        self.scan_policy_apply_button = ttk.Button(
+            policy,
+            text="Apply for Next Mission",
+            command=self.apply_scan_policy,
+        )
+        self.scan_policy_apply_button.grid(row=0, column=1, padx=(8, 0))
+        ttk.Label(
+            policy,
+            textvariable=self.scan_policy_status_var,
+            foreground="#52606d",
+            wraplength=760,
+            justify="left",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        ttk.Label(
+            policy,
+            text=(
+                "This changes only the saved planner parameter. The mission "
+                "server starts a fresh scan stack for each mission; it does "
+                "not change a stack that is already running."
+            ),
+            foreground="#52606d",
+            wraplength=760,
+            justify="left",
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
+
         controls = ttk.Frame(parent)
-        controls.grid(row=3, column=0, sticky="w", pady=(18, 10))
+        controls.grid(row=4, column=0, sticky="w", pady=(18, 10))
         self.mission_start_button = ttk.Button(
             controls,
             text="Start Complete Automated Scan",
@@ -612,7 +668,7 @@ class PiperGuiApp:
         self.report_base_home_button.grid(row=0, column=2, padx=(8, 0))
 
         status = ttk.LabelFrame(parent, text="Mission status", padding=12)
-        status.grid(row=4, column=0, sticky="ew", pady=(6, 0))
+        status.grid(row=5, column=0, sticky="ew", pady=(6, 0))
         status.columnconfigure(0, weight=1)
         ttk.Label(
             status,
@@ -640,7 +696,7 @@ class PiperGuiApp:
             foreground="#8a3b12",
             wraplength=820,
             justify="left",
-        ).grid(row=5, column=0, sticky="ew", pady=(18, 0))
+        ).grid(row=6, column=0, sticky="ew", pady=(18, 0))
 
         ttk.Label(
             parent,
@@ -654,7 +710,7 @@ class PiperGuiApp:
             foreground="#52606d",
             wraplength=820,
             justify="left",
-        ).grid(row=6, column=0, sticky="ew", pady=(12, 0))
+        ).grid(row=7, column=0, sticky="ew", pady=(12, 0))
 
     def _build_reconstruction(self, parent: ttk.Frame) -> None:
         """Build command-free, offline TSDF/GICP validation controls."""
@@ -1039,6 +1095,28 @@ class PiperGuiApp:
             self._restore_manual_controls_if_unowned()
             self._render_mission_state()
 
+    def apply_scan_policy(self):
+        if not self.mission_view_model.state.can_start:
+            self.scan_policy_status_var.set(
+                "Policy was not changed: wait for the active mission to finish.")
+            return
+        selected_label = self.scan_policy_var.get()
+        label_to_policy = {
+            label: policy for policy, label in POLICY_LABELS.items()}
+        selected_policy = label_to_policy.get(selected_label)
+        if selected_policy is None:
+            self.scan_policy_status_var.set(
+                "Policy was not changed: invalid selection.")
+            return
+        try:
+            write_scan_policy(self.scan_policy_path, selected_policy)
+        except (OSError, ValueError) as exc:
+            self.scan_policy_status_var.set(
+                "Policy was not changed: %s" % exc)
+            return
+        self.scan_policy_status_var.set(
+            "Saved for the next scan stack: %s" % selected_label)
+
     def cancel_automated_scan(self):
         if self.ros_node.cancel_mission():
             self.mission_view_model.cancellation_requested()
@@ -1055,6 +1133,10 @@ class PiperGuiApp:
             state="disabled" if not state.can_start else "normal")
         self.enable_button.configure(
             state="disabled" if not state.can_start else "normal")
+        self.scan_policy_combo.configure(
+            state="readonly" if state.can_start else "disabled")
+        self.scan_policy_apply_button.configure(
+            state="normal" if state.can_start else "disabled")
 
     def _restore_manual_controls_if_unowned(self):
         publishers = self.ros_node.command_publisher_names(

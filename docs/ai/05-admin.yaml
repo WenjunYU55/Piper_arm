@@ -1,5 +1,42 @@
 schema_version: 1
 document: maintenance_routing
+tesseract_timeout_before_candidate_one_2026_08_20:
+  inspect: [worker startup duration and worker_health generation, worker.py TesseractBackend initialization and reset_scene, response planning_diagnostics candidate_attempts]
+  rule: worker_ready means Robot.from_files has succeeded and one clean unused planning scene exists. candidate_attempts zero with budget expiry indicates readiness/model-load regression; do not increase planning budgets to hide first-use initialization.
+post_view_tracking_lost_2026_08_20:
+  inspect: [mission_engine.py VIEW_COMPLETE VIEW_REJECTED and target-drift branches, target_scan_mission_node.py request_multiview_plan and approve_plan, /piper/tracking_health, /piper/tesseract_view_generation]
+  rule: Initial scan admission still requires stable multiview readiness. Between views, do not add a second generic readiness owner; re-enter the command-free request path, which owns bounded visual reacquisition, then require the unchanged full plan approval before motion.
+capture_refresh_waits_then_times_out_2026_08_20:
+  inspect: [/piper/heavy_refresh_status request_id and state, heavy_refresh_bridge_node.py pending_request, scan_viewpoint_executor WAITING_FOR_CAPTURE_REFRESH, heavy worker request processing and response directories]
+  rule: A correlated request arriving while the single-flight worker is busy is retained by the bridge and reported as waiting_for_worker, then queued once when idle and a qualifying fresh frame exists. Do not add another executor retry loop or start a second worker.
+global_nbv_or_final_aim_failure_2026_08_20:
+  inspect: [/piper/scan_session_history latest_achieved_camera, /piper/scan_coverage stage-local candidate counts and selection_failure_code, /piper/reachable_scan_viewpoints prequalified fields, /piper/tesseract_plan_status, /piper/tesseract_plan_provenance worker attempt diagnostics, frame metadata view_selection and camera_transform, tools/replay_nbv_coverage.py]
+  rule: Generated and prequalified are not Tesseract-reachable. Distinguish NO_POSITIVE_INFORMATION_CANDIDATE from TESSERACT_EXHAUSTED. For authoritative voxel_nbv, rank the complete configured region and shortlist twelve; reserved fallback slots must offer comfortable elevation/radius alternatives in the informative leaders' lateral sectors rather than collapse to the current azimuth. Try exact target aim first and allow only one fallback at or below five degrees. A rejected capture updates latest achieved physical FK but never coverage.
+  ownership_note: Capture status reports acceptance and its human-readable reason. The capture coordinator and executor alone decide one-refresh retry versus view rejection; capture status does not prescribe recovery policy.
+  replay: "python3 tools/replay_nbv_coverage.py datasets/active_scan/scan_20260820_142919 --json"
+target_estimate_moves_with_stationary_object_2026_08_20:
+  inspect: [depth_to_3d_node.py qualified component support, target_tracker_node.py timestamped base_link transform and Kalman state, Target3D measurement_confidence, tracking_params.yaml camera-space gate setting, capture-time synchronized_target_3d]
+  rule: Never smooth eye-in-hand coordinates in the moving camera frame. Use only finite confidence/depth-qualified component measurements, transform at their source timestamp, reject isolated base-frame jumps and filter in base_link. Do not use a Kalman filter to conceal repeatable view-dependent geometric bias.
+post_startup_positive_j6_no_progress_2026_08_20:
+  symptom: Acquisition or scan plan starts after successful STARTUP_WRIST, J1-J5 reach the waypoint, J6 remains near logical zero, and SDK MoveJ reports no measurable progress by approximately the requested positive J6 delta.
+  inspect: [mission result current and target joint arrays, driver retained controller-turn offset, queried J6 positive controller limit, piper_ctrl_single_node.py normal J6 mapping]
+  known_incident: gui-sim-a09aa6ae47f44c88a458d142a80c2289 mapped logical 2.483482 rad through a retained +2pi turn to raw 502.293 degrees while the controller limit was only 365 degrees.
+  rule: Preserve logical [-pi,+pi], positive-only startup and decreasing storage. Qualify raw +540 degrees or greater before enable, reject any mapped target beyond the proved controller bound, and never work around this in Tesseract or NBV.
+rough_acquisition_bridge_exit_2026_08_20:
+  symptom: Rough acquisition produces reachable candidates and PROPOSAL_READY, then mission approval times out and the result becomes CONTROL_UNTRUSTWORTHY because the home service is unavailable.
+  inspect: [scan_stack.log critical-child traceback, tesseract_plan_bridge process return code, /piper/tesseract_plan_status, /scan_viewpoint_executor/approve availability, bridge_node.py debug parameter access]
+  known_incident: gui-sim-6e0cbcd372594740a38c824a6301f43e crashed bridge_node.py on undefined param_bool after publishing a valid rough-acquisition plan.
+  rule: Do not remove the critical-child shutdown or weaken control-authority classification. Repair the initiating bridge exception and require the full bridge/mobile suites, five-package build and both command-free rootless qualifications before supervised E2E.
+previous_generation_ownership_2026_08_20:
+  symptom: GUI reports that the previous mission still owns live process groups.
+  inspect: [process health in the durable action result, ProcessSupervisor exact live names, whether driver is among survivors, fresh PiperStatusMsg motor_feedback_valid, all six driver_enable_status flags, prior terminal home and disable proof]
+  route: [mission_engine.py operator-recovery cleanup policy, target_scan_mission_node.py admission reconciliation, process_supervisor.py exact-handle signalling mechanics]
+  rule: Never use pkill or adopt a process by name. Processing-only exact handles may be stopped. An exact prior driver handle may be stopped before a new mission only after fresh all-six-disabled feedback; otherwise retain it and require operator recovery.
+voxel_nbv_generation_diagnostics_2026_08_17:
+  inspect: [/piper/scan_session_history, /piper/reachable_scan_viewpoints, /piper/tesseract_view_generation, /piper/tesseract_plan_provenance, /piper/tesseract_plan_status, scan_viewpoint_planner_node.py, viewpoint_reachability_filter_node.py, piper_tesseract_foxy/bridge_node.py, target_scan_mission_node.py, scan_capture_node.py]
+  expected: Before every MULTIVIEW_SCAN request, tesseract_view_generation must be newer than the mission plan barrier and must match the current scan session plus accepted-view count. Generation zero under requested voxel_nbv is explicitly voxel_nbv_seed; generations one and later must be voxel_nbv and model-ready.
+  capture_audit: Read frames/*_metadata.yaml view_selection. available=true must bind plan_id, view_selection_session_id, view_selection_generation, view_selection_policy, nbv_rank and gain fields for a voxel-NBV capture. candidate_diagnostics records shortlisted failures and the selected pose so an information-ranking problem can be distinguished from Tesseract feasibility exhaustion.
+  never_do: Do not widen data_timeout_sec, add sleeps, reuse a previous-session receipt, or treat preliminary reachability-filter acceptance as IK/collision proof to hide generation races.
 where_to_start:
   whole_system_handoff: SYSTEM_HANDOFF.md
   implemented_features_and_rewrite_bookmark: docs/ai/90-implemented-features-bookmark.yaml
@@ -25,6 +62,7 @@ where_to_start:
   mission_or_executor_parameter_defaults: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/configuration.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_configuration.py]
   staged_home_profile_hold_or_gui_recording: [piper_home_pose.json, piper_ros_foxy/src/piper_mobile_manipulation/config/scan_execution_params.yaml, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/home_pose.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission_engine.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_scan_mission_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py, piper_gui_native.py]
   gui_action_view_state_or_transport: [piper_gui/view_model.py, piper_gui/ros_client.py, piper_gui_native.py, test_piper_gui_phase8.py]
+  gui_saved_viewpoint_policy_selection: [piper_gui/scan_policy.py, piper_gui_native.py, piper_ros_foxy/src/piper_mobile_manipulation/config/scan_planning_params.yaml, test_piper_gui_scan_policy.py]
   viewpoint_plan_authorization: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/plan_authorizer.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_phase7_viewpoint_components.py]
   viewpoint_trajectory_monitoring: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/trajectory_runner.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_phase7_viewpoint_components.py]
   viewpoint_capture_or_recovery: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/capture_coordinator.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/executor_recovery.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/failure_model.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_phase7_viewpoint_components.py]
@@ -86,7 +124,7 @@ symptom_routing:
     note: A real post-motion depth step must not latch permanently to the old view. The projector rejects isolated jumps but re-anchors after the configured number of mutually consistent samples; max_depth_jump_m less than or equal to zero disables the jump gate.
   cube_visible_but_workflow_not_ready:
     inspect: [/piper/sam2_detection_2d, /piper/tracked_target, /piper/tracking_health, /piper/target_status, /supervised_cube_workflow/diagnostic_state, /piper/target_landmark_status, /piper/obstacle_instances_3d]
-    note: Require the diagnostic measured_lock_ready=true from a fresh valid stable base_link TrackedTarget, TrackingHealth TRACKING/camera_settled/nonprediction, exact LOCKED status, a fresh obstacle array, and SCAN_READY. target_landmark is diagnostic and must not independently block Step 4.
+    note: Require the diagnostic measured_lock_ready=true from a fresh valid stable base_link TrackedTarget, TrackingHealth TRACKING/camera_settled/nonprediction, exact LOCKED status, a fresh obstacle array, and SCAN_READY. target_landmark is diagnostic, must not independently block Step 4, and is launched with both autonomous heavy-refresh request switches disabled.
   accepted_capture_not_modeled:
     inspect: [/piper/target_cloud, /piper/target_cloud_status, /supervised_cube_workflow/diagnostic_state, supervised_cube_workflow_node.py, target_cloud_node.py]
     note: /piper/target_cloud is best-effort sensor QoS and the workflow subscription must match it. The workflow caches a capture cloud while WAIT_CAPTURE and processes it after the matching accumulating/full_resolution_refinement acceptance, regardless of message order.
@@ -122,10 +160,10 @@ symptom_routing:
       to apply request-bound OMPL seed 42 before constructing planners, and the
       detour qualification returned identical PASS output twice. For automatic
       close-range views, distinguish an unusable exact target-centred wrist pose
-      from an unusable camera position: the bridge may preserve the measured
-      optical direction only inside the configured 12-degree target cone before
-      the exact request is hashed. Tesseract and the executor must still validate
-      that exact relaxed pose/path. Approval still fails closed for false or
+      from an unusable camera position: the worker must exhaust exact-aim
+      roll/IK/path alternatives before trying the single hash-bound fallback,
+      which cannot exceed five degrees. Tesseract and the executor must still validate
+      that exact selected pose/path and the executor enforces a five-degree settled final aim. Approval still fails closed for false or
       mismatched qualification, seed mismatch, or any stale/hash/health error.
   tesseract_snapshot_or_reachability_stale:
     inspect: [/arm_status, /joint_states_single, /piper/reachable_scan_viewpoints, /piper/tesseract_readiness, /piper/tesseract_plan_status, worker_health.json, viewpoint_reachability_filter_node.py, piper_tesseract_foxy/bridge_node.py, supervised_viewpoint_execution.launch.py, ROS_DOMAIN_ID, ROS_LOCALHOST_ONLY]
@@ -188,10 +226,13 @@ symptom_routing:
       interval, dropped samples and following-error fields after each segment.
   arm_reaches_pose_but_never_settles:
     inspect: [/joint_states_single, /piper/scan_execution_status, scan_viewpoint_executor_node.py, target_scan_mission_node.py, scan_execution_params.yaml]
-    note: Use an application-level subscriber to compare measured position deltas with SDK velocity. PiPER instantaneous velocity can spike while positions remain stationary and is diagnostic only. Normal acquisition/scan endpoint proof requires target error at most 0.025 rad plus a continuous 0.005 rad position-anchor window. Configured PRE_HOME/ROUGH_HOME/STORAGE_WRIST bypass the Tesseract worker and use the operator-authorized 0.30-rad per-joint target and successive-sample bands for one second. Startup/final current-position holds require command acknowledgement plus fresh finite feedback and trusted motors, not a second 0.005-rad settle window.
+    note: Use an application-level subscriber to compare measured position deltas with SDK velocity. PiPER instantaneous velocity can spike while positions remain stationary and is diagnostic only. Normal acquisition/scan endpoint proof requires target error at most 0.025 rad plus a continuous 0.007 rad position-anchor window; this is narrowly above the observed 0.006227508-rad powered J4 feedback step. Configured PRE_HOME/ROUGH_HOME/STORAGE_WRIST bypass the Tesseract worker and use the operator-authorized 0.30-rad per-joint target and successive-sample bands for one second. Startup/final current-position holds require command acknowledgement plus fresh finite feedback and trusted motors, not a second scan-endpoint settle window.
   gui_automatic_scan_will_not_start:
     inspect: [piper_gui_native.py, piper_gui/ros_client.py, piper_gui/view_model.py, /piper/run_target_scan, run_target_scan_mission.sh, target_scan_mission_node.py]
     note: Phase 8 submits only the production action. Verify the singleton mission listener/action server, goal acceptance and typed result. Do not start a worker/scan stack from the GUI or restore the retired Step 1-5 service clients.
+  gui_viewpoint_policy_did_not_change:
+    inspect: [piper_gui/scan_policy.py, piper_gui_native.py, piper_ros_foxy/src/piper_mobile_manipulation/config/scan_planning_params.yaml, piper_ros_foxy/src/piper_mobile_manipulation/launch/supervised_viewpoint_execution.launch.py]
+    note: Apply is intentionally disabled during an active mission. The control atomically saves only view_selection_policy for the next mission-owned scan-stack launch; it cannot mutate an already-running planner. The two operator choices are legacy and voxel_nbv, while voxel_nbv_shadow remains a command-line/config diagnostic mode.
   acquisition_failure_does_not_reach_configured_home:
     inspect: [target_scan_mission_node.py, scan_viewpoint_executor_node.py, home_pose.py, /scan_viewpoint_executor/execute_home_stage, /piper/scan_execution_status, /joint_states_single]
     note: A reverse of ROUGH_ACQUISITION proves only plan start and is never used by automatic recovery. The current path uses /scan_viewpoint_executor/hold to stop at measured feedback, then executes PRE_HOME, ROUGH_HOME and STORAGE_WRIST through the mission-authorized direct service, verifies each configured endpoint, holds, disables and cleans up. Tesseract is not part of configured-home planning.
@@ -227,7 +268,7 @@ generated_or_external:
 post_live_scan_routing_2026_08_04:
   target_leaves_frame_during_scan_move:
     inspect: [tesseract_plan_bridge closed_loop_min_view_step_deg, closed_loop_max_view_step_deg and closed_loop_max_aim_offset_deg, scan_session_memory.py feature_coverage_priority, scan_motion.py camera_target_path_reasons, scan_viewpoint_executor_node.py prepare_current_view, achieved /piper/scan_session_history, calibrated camera FK]
-    rule: Coverage ranking is subordinate to the 6-to-30-degree local target-centred position frontier. The 7.5-degree azimuth grid provides a compact continuity successor when achieved FK falls between samples, while the six-degree floor and separate pose/look duplicate gate reject near-repeats. The first transaction tries the closest non-regressing candidate before its ambitious leader, then later transactions restore coverage-first interleaving. The achieved-pose scorer finishes whichever missing Y side the latest accepted FK is already approaching, crosses once to finish the opposite side, then completes azimuth-span and elevation-span goals. Each candidate carries an objective-specific margin against the latest accepted pose for side traversal and accepted history for span goals. For a side goal, normalized lateral exposure may regress by at most 0.02 for measurement tolerance; for span goals, achieved span may not shrink. This permits radius/elevation configuration changes near the same side while excluding genuine orbit reversal. Before request hashing, the bridge may keep the achieved optical direction or spherically move toward it only while the resulting exact look remains within 12 degrees of the target-centred nominal. The dense SDK interpolation must independently retain positive-optical-Z boresight within 20 degrees and at least 0.22 m target distance before any command. Neither frontier nor aim relaxation widens that safety limit.
+    rule: Authoritative voxel_nbv scores all candidates in the configured target-centric region against cumulative accepted voxel coverage. Six degrees is only accepted-view redundancy, not a maximum movement. The bridge shortlists twelve in information order with direction diversity; Tesseract exhausts exact target aim before one optional five-degree fallback. Dense SDK interpolation independently retains positive-optical-Z boresight within 20 degrees and at least 0.22 m target distance, and the settled capture aim must be no more than five degrees. Use latest achieved FK, including a rejected view, as the next physical start while accepted history alone owns coverage.
   target_status_dips_between_scan_views:
     inspect: [/piper/tracked_target, /piper/target_status, /piper/tracking_health, /piper/heavy_refresh_status, /piper/scan_execution_status, target_scan_mission_node.py request_multiview_plan and approve_plan]
     rule: Before spooling a plan, a snapshot rejected only because tracking is unsettled, prediction-only or stale remains command-free and may retry fresh snapshots for up to 30 seconds. After a proposal exists, LOW_CONFIDENCE, LOST, or SEARCHING may use the same bounded automatic visual-reacquisition window while approval repeats every live gate. Changed target center triggers a fresh-plan rejection. Never classify collision, path visibility, scene, control, hash, camera, controller, or worker failures as visual reacquisition.
@@ -270,10 +311,10 @@ maintenance_routing_2026_08_04:
     note: accepted_views counts only persisted records; accepted/rejected entries both exclude duplicates. Automatic mission requests contain exactly one view and rank by new coverage from achieved FK pose/look; manual batch requests still contain every remaining view. The mission permits at most eight visual replacements. Automatic mode uses eight views only as a model-seed floor and may continue to 24 until achieved side/span floors and three-view measured surface convergence pass. A correlated zero-view result may complete only at eight or more after every feature and convergence floor is already proved and every remaining distinct candidate explicitly lacks finite bounded collision-free IK; all other planning failures remain failures and still enter fresh current-state home cleanup.
   automatic_feature_budget_exhausted:
     inspect: [target_scan_mission_node.py, mission_core.py, scan_session_memory.py, bridge_node.py, /piper/scan_session_history, /piper/scan_capture_status]
-    note: At 8-23 captures the coordinator stops only when achieved history in the frozen measured coverage frame proves two views per Y side, 120-degree azimuth, 25-degree elevation and three consecutive measured novel-surface gains at or below 0.02. Otherwise it requests one more view. At 24, missing floors are INSUFFICIENT_CAPTURE_QUALITY. For later feature goals, construct the bounded 36-candidate membership by interleaving coverage leaders with nearest-current compact alternatives, then stable-partition that same membership so candidates with at least 0.03 normalized side advance after tolerance or 2 degrees of span gain are attempted before near-zero-progress nonregressing fallbacks. Never replace the compact members merely to fill a progress quota. Manual batch mode remains separately confirmed exact-13.
+    note: At 8-23 captures the coordinator stops only when achieved history in the frozen measured coverage frame proves two views per Y side, 120-degree azimuth, 25-degree elevation and three consecutive measured novel-surface gains at or below 0.02. Otherwise it requests one more view. At 24, missing floors are INSUFFICIENT_CAPTURE_QUALITY. For later voxel-NBV goals, rank cumulative marginal information globally and send at most twelve direction-diverse candidates to Tesseract; motion cost is secondary. Manual batch mode remains separately confirmed exact-13.
   adaptive_frontier_exhausted_before_feature_completion:
     inspect: [/piper/scan_session_history, /piper/tesseract_plan_status, target_scan_mission_node.py, scan_session_memory.py, piper_tesseract_foxy/bridge_node.py, persisted capture camera poses and measured surface-gain sequence]
-    note: Task gui-sim-e9629c41e1224425b5adb0454b61ee3f persisted 15 GOOD/CLEAR captures and two views on each Y side, then returned NO_REACHABLE_PLAN because no distinct safe candidate remained inside the 6-30-degree closed-loop frontier while azimuth was only 65.30/120 degrees and measured surface had not converged. Preserve the safety frontier and completion thresholds. Audit why candidate membership/ranking exhausted locally instead of treating speed or shutdown as the cause; the same run physically accepted v3 timing at 20 percent and completed safe staged shutdown.
+    note: Historical task gui-sim-e9629c41e1224425b5adb0454b61ee3f exhausted the retired 6-to-30-degree frontier at 65.30/120 degrees azimuth. Current voxel_nbv has no local movement frontier; inspect NO_POSITIVE_INFORMATION_CANDIDATE separately from TESSERACT_EXHAUSTED and retain the existing completion thresholds. The historical run still physically accepted v3 timing at 20 percent and completed safe staged shutdown.
   nbv_target_center_jumps_to_camera_coordinates:
     inspect: [scan_viewpoint_planner_node.py target_frame_rejection_reason, scan_planning_params.yaml planning_frame_id, /piper/tracked_target, /piper/target_3d, /piper/scan_viewpoints, target_tracker_node.py]
     note: /piper/target_3d is normally camera_color_optical_frame while multiview candidates are base_link. The planner must accept a centre only when header.frame_id exactly equals planning_frame_id=base_link. During a tracker gap it waits for transformed measured tracking and must not use the raw optical point as a coordinate fallback. Reproduce with alternating base_link tracked-target and camera-optical raw-target callbacks and verify every emitted scan header/centre remains base_link.
@@ -331,11 +372,12 @@ maintenance_routing_2026_08_06:
       workflow session or finalized session resets it. Seven -15:-10:-75-degree
       elevations and six 0.30:0.03:0.45 m distances are deterministic samples
       of a flexible camera region. After bounded shortlist selection, each
-      exact request look may preserve the achieved safe optical direction by
-      no more than 12 degrees from its target-centred nominal. This changes
-      neither camera-position coverage nor collision authority: the exact
-      relaxed pose remains hash-bound, Tesseract-qualified and executor
-      visibility-checked, and the worker shortlist remains bounded at 36.
+      canonical request must try exact target-centred aim first. One fallback
+      may preserve a small amount of achieved optical direction but must remain
+      within five degrees. This changes neither camera-position coverage nor
+      collision authority: the selected pose remains hash-bound,
+      Tesseract-qualified and executor visibility-checked, and the worker
+      shortlist remains bounded at twelve.
   multiview_scan_data_stale_while_target_is_stable:
     inspect: [scan_viewpoint_planner_node.py viewpoint_refresh_required, scan_planning_params.yaml target_plan_refresh_period_sec, /piper/scan_viewpoints, /piper/reachable_scan_viewpoints, viewpoint_reachability_filter_node.py, piper_tesseract_foxy/bridge_node.py data_timeout_sec, /piper/tesseract_readiness]
     rule: A stable measured cube must not suppress liveness publication. Rebuild and republish deterministic candidates from a fresh valid TrackedTarget at 0.5-second intervals, below the bridge's 1.0-second freshness limit. Do not make stale data authoritative by widening the bridge timeout independently.
@@ -363,3 +405,12 @@ maintenance_routing_2026_08_06:
   multiple_targets_run_in_arrival_order_or_overlap:
     inspect: [target_scan_gateway_node.py admitted_tasks, target_scan_mission_node.py poll_mission_queue, mission spool goals/status/results/heartbeat, max_pending_missions, mission_queue_coalesce_sec]
     rule: The gateway must snapshot every target at admission and accept at most eight outstanding actions. The local owner waits one second for near-simultaneous arrivals, selects nearest base-frame distance with arrival ties, and permits one active process generation only. Never reorder an already executing mission, reuse its transient capture/coverage state, or start a successor before its safe terminal result. A queued cancel ends only that queued task without touching the active arm mission.
+  live_voxel_nbv_selection:
+    inspect: [nbv_coverage.py, scan_viewpoint_planner_node.py, scan_planning_params.yaml, piper_tesseract_foxy/bridge_node.py, /piper/scan_session_history, /piper/scan_capture_status, /piper/scan_coverage]
+    rule: view_selection_policy=voxel_nbv ranks only positive-information candidates over the complete configured scan region. The bridge shortlists twelve, enforces exact-first target aim with at most one five-degree fallback, and leaves IK/collision/path/visibility feasibility to Tesseract. Treat any future supervised run as qualification evidence, not prior proof.
+  capture_rejected_while_executor_is_settling:
+    inspect: [scan_capture_node.py cached execution mode/state, failure_model.py CAPTURE_RETRY_SAME_VIEW, capture_coordinator.py]
+    rule: Missing or delayed accepted-settled status is a bounded same-view readiness retry, not capture-quality evidence and not a reason to discard the achieved view.
+
+nbv_maintenance_commands:
+  nbv_recorded_replay: "python3 tools/replay_nbv_coverage.py datasets/active_scan/<scan_dir>"

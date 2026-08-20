@@ -1,5 +1,40 @@
 schema_version: 1
 document: runtime_flows
+tesseract_first_request_readiness_flow_2026_08_20:
+  sequence: [mission starts isolated networkless worker, backend loads qualified model files, one clean Robot scene is constructed, ready heartbeat is published, scan stack starts, first request begins with the unused clean scene and its full unchanged candidate budget]
+  failure: Model construction failure or startup timeout occurs before arm enable and routes through normal no-motion cleanup.
+  physical_result: Task gui-sim-3eb814caa9204bfd884343f02a94323e passed model readiness, seed planning and seed capture; task gui-sim-7d34364727c9405eb5d16e9b32f48db4 is the pre-fix candidate-zero comparison.
+post_view_reacquisition_flow_2026_08_20:
+  trigger: An accepted view, rejected achieved view, or stale target-drift proposal requires another NBV while tracking is temporarily not settled.
+  sequence: [hold with no command, preserve achieved physical FK and accepted-only coverage, wait for exact coverage generation, submit command-free plan request, on typed visual refusal use the existing bounded SAM2/heavy reacquisition loop, build a fresh plan from recovered measurement, repeat full approval, move only after approval]
+  failure: If measured lock does not recover within the existing bound, fail retryably and use normal staged home hold disable cleanup.
+  physical_result: Task gui-sim-3eb814caa9204bfd884343f02a94323e exercised this exact failure route after one accepted capture and returned retryable TARGET_NOT_FOUND with safe_shutdown=true.
+global_voxel_nbv_repair_flow_2026_08_20:
+  sequence: [accepted capture commits immutable base_link artifacts, coverage rebuilds at exact accepted generation, full configured candidate region is sampled, accepted-direction duplicates below six degrees are removed, marginal unknown and novel-surface gain is scored against cumulative accepted coverage, positive candidates are information-ranked with motion cost only a tie-break, at most twelve direction-diverse candidates are shortlisted with reserved comfortable elevation/radius IK escapes in the information leaders' lateral sectors, exact target-facing aim is attempted first through roll and IK alternatives, one at-most-five-degree fallback is allowed only after exact aim fails, first Tesseract-feasible view executes, actual settled FK is recorded, final aim and target drift are checked, capture validates, commit and repeat or reject and replan from actual FK]
+  physical_state: latest_achieved_camera changes after every settled candidate, including a rejected observation. Accepted entries and voxel coverage change only after durable capture commit.
+  transient_capture_recovery: [hold achieved pose, retain the approval-time scene while the stationary heavy refresh temporarily rebuilds obstacle geometry, issue one request-ID/minimum-stamp-correlated heavy refresh, if the serialized worker is busy retain the request in the bridge and enqueue it exactly once after idle and fresh-frame gates pass, if target becomes valid retry the same capture once, if still invalid append rejection and request a new NBV, require fresh valid obstacle geometry again before any later plan approval or motion, worker failure or the existing capture timeout aborts through mission shutdown]
+  semantic_refresh_ownership: [motion-gated SAM2 tracker recovery, settled acquisition request, settled workflow occlusion probe, settled capture revalidation; diagnostic target_landmark autonomous refresh disabled in production]
+  target_estimator: Qualified component pixels define camera-frame X/Y/Z without camera-frame temporal averaging. The existing timestamped base_link Kalman tracker applies confidence scaling, ordering, finite-value and implausible-jump gates and is restarted with the mission process generation.
+  replay_evidence: scan_20260820_142919 achieved the old selected direction within 0.037 degrees but had 13.424 degrees error to synchronized capture-time target depth. The new five-degree final gate would reject it and preserve its achieved FK for replanning.
+  manual_smoke_checks: [software tests and recorded replay first, inspect generated/prequalified/positive/shortlisted counts, require exact aim attempt before fallback, require fallback and accepted final aim no more than five degrees, reject a view and prove latest achieved FK changes while accepted count does not, verify NO_POSITIVE_INFORMATION_CANDIDATE differs from TESSERACT_EXHAUSTED, only then one supervised low-speed viewpoint]
+post_startup_full_j6_range_flow_2026_08_20:
+  trigger: A mission starts from negative storage and later requests an ordinary acquisition or scan pose with positive logical J6.
+  sequence: [set raw positive limit to 545 degrees without changing speed or negative limit, query motor 6 limit feedback, require at least 540 degrees, enable, execute positive-only STARTUP_WRIST to logical zero on raw +360-degree turn, retain +2pi offset, map normal logical target on the same raw turn, transmit only when within the qualified raw limit]
+  failure_modes: [SDK limit API unavailable, limit readback below 540 degrees, nonfinite mapping, mapped target above configured qualified boundary, motor fault or authority loss]
+  manual_smoke_checks: [software tests and build first, read back J6 controller limit with motors disabled, supervised low-speed startup, request one collision-qualified positive-J6 waypoint, verify raw command remains below 545 degrees and logical feedback follows the planned positive delta, cancel and prove decreasing storage plus disable]
+previous_generation_reconciliation_2026_08_20:
+  trigger: Mission shutdown returns NEEDS_OPERATOR while its ProcessSupervisor still reports live exact handles.
+  terminal_sequence: [revoke executor mission authorization, publish one STOPPING transition if not already stopping, signal only vision hand_eye and tesseract_worker in reverse owned order, retain driver and scan_stack for powered operator recovery, report processes_stopped false]
+  later_admission_sequence: [begin_generation reports exact survivors, determine fresh all-six-disabled proof, refuse all signalling when driver is live without proof, otherwise retry bounded shutdown on exactly those stored handles, begin only after no live leader remains]
+  failure_modes: [stale or invalid arm status with live driver, any enabled motor flag, survivor after SIGTERM, process group disappearance, processing cleanup incomplete]
+  manual_smoke_checks: [with fake processes prove processing-only cleanup, prove enabled or stale driver is never signalled, prove disabled driver cleanup, verify no new mission process starts before reconciliation succeeds]
+voxel_nbv_one_observation_replan_flow_2026_08_17:
+  trigger: MissionEngine needs one further view after evaluating achieved feature coverage.
+  sequence: [clear prior plan and record generation barrier, wait for planner to rebuild/rank from exact accepted artifacts, preliminary filter republishes labelled prequalified candidates, bridge caches candidates then publishes matching receipt, mission verifies post-barrier session/count/generation readiness, request one fresh Tesseract plan, bridge shortlists at most twelve global information-ranked candidates, worker tests exact aim first then an optional five-degree fallback and selects the first feasible candidate, bridge publishes plan plus plan_id provenance, executor approves/executes one view, executor records actual settled FK, capture persists exact provenance, executor publishes accepted history and VIEW_COMPLETE, repeat]
+  first_view: accepted_views zero is a deterministic voxel_nbv_seed view because no measured model exists yet.
+  generation_failure: Missing, stale, wrong-session, wrong-count or rebuilding receipts cause bounded no-motion waiting. Cancellation, deadline and motor-control loss still interrupt through existing guards. Timeout enters the ordinary failure-to-home shutdown path.
+  zero_information_or_no_ik: A completed empty generation proceeds to the existing explicit no-view/no-reachable-plan result; no synthetic viewpoint or duplicate capture is authorized.
+  manual_smoke_checks: [echo scan history and tesseract view generation before each plan request, verify session/count/generation equality, inspect bridge log selected policy/rank/gain, inspect each accepted frame view_selection, confirm second and later views report voxel_nbv not voxel_nbv_seed, review achieved azimuth/elevation and both Y sides after shutdown]
 mission_failure_shutdown_flow_2026_08_17:
   entry: Every failure or cancellation after the mission owns its process generation enters MissionEngine.shutdown exactly once.
   normal_control_sequence: [revoke scan authority as needed, request PRE_HOME from current feedback when not already complete, prove PRE_HOME, request and prove ROUGH_HOME, request and prove STORAGE_WRIST, retain the final position-controller target, request all-six disable and prove service result, revoke mission authorization, stop owned process groups]
@@ -168,6 +203,7 @@ flows:
   gui_production_action_client:
     sequence:
       - Operator enters a base_link rough XYZ and target label in Automatic Scan.
+      - Before submission, the operator may explicitly save either legacy or voxel_nbv as view_selection_policy for the next mission. This is a configuration-only action disabled during an active mission; it neither submits a goal nor changes a running planner.
       - MissionViewModel validates only finite input/presentation lifecycle; PiperGuiRos maps the unchanged SCAN_3D goal to /piper/run_target_scan.
       - The production mission action owns startup, readiness, enable, acquisition, occlusion, planning, capture, retry/replan, terminal home, hold, disable and child cleanup.
       - GUI feedback and durable result fields are displayed without parsing their human-readable text for decisions.
@@ -176,14 +212,14 @@ flows:
       - Manual command publishing, home-profile recording, explicit Commissioning Disable (No Home), and 3D preview/mirroring are separately labelled commissioning. Motion and enable require sole command-topic ownership; the no-motion disable remains available when no local action is active.
       - Heavy refresh, tracking, workflow, capture and Tesseract readiness remain read-only diagnostic displays and never authorize GUI motion.
     failure_modes: [action server unavailable, goal rejected, action transport/result failure, production failure result, production cancellation result, commissioning command publisher still present after terminal result]
-    manual_smoke_checks: [GUI import and fake-root bootstrap, submit one command-free unavailable-server request, verify no PrepareAcquisition/RequestTesseractPlan/workflow/approval/cancel service clients exist, verify no worker or scan-stack child starts, verify feedback/result fields display unchanged, verify cancel uses the action handle, verify commissioning controls lock until terminal result, verify Diagnostics updates without state transition, verify preview-only child remains independently closable]
+    manual_smoke_checks: [GUI import and fake-root bootstrap, switch the saved policy legacy to voxel_nbv and back with no ROS nodes running and verify only view_selection_policy changes, verify policy Apply is disabled during an active mission, submit one command-free unavailable-server request, verify no PrepareAcquisition/RequestTesseractPlan/workflow/approval/cancel service clients exist, verify no worker or scan-stack child starts, verify feedback/result fields display unchanged, verify cancel uses the action handle, verify commissioning controls lock until terminal result, verify Diagnostics updates without state transition, verify preview-only child remains independently closable]
   supervised_viewpoint_execution:
     sequence:
       - Executor consumes only base_link, dry-run, reachable-and-safe viewpoint proposals after fresh healthy arm/tracking/obstacle inputs exist.
       - The viewpoint planner consumes only a target whose header frame exactly equals planning_frame_id=base_link. If measured tracking pauses, it holds the last valid candidate generation and waits for a new base_link TrackedTarget; it never interprets raw camera_color_optical_frame /piper/target_3d coordinates as base_link.
       - The former fixed-J6 J1-J5 numerical IK backend and helper were removed on 2026-07-24. Tesseract is mandatory; no scan-planning code path may hold J6.
       - J6 was operator-confirmed fully safe on 2026-07-17. The command-free bridge freezes a healthy scene and all-six-joint start state into a canonical hashed spool request. Valid unsafe/non-movable instances are included as collision boxes; invalid geometry blocks the snapshot. The isolated CPU worker treats J1-J6 equally; no J6 lock or special cost is permitted.
-      - Current geometry emits up to 1050 candidates across twenty-five 7.5-degree azimuth samples over the target-facing 90-270-degree hemisphere, seven camera pitches from -15 through -75 degrees in ten-degree steps, and six distance samples from 0.30 through 0.45 m in 0.03 m steps. Manual batch planning must select exactly thirteen collision-valid viewpoints. Automatic closed-loop planning requests one from a 6-to-30-degree meaningful current-view frontier and supplies at most 36 exact alternatives. Its first transaction tries compact progressing geometry before the ambitious leader; after one accepted view the shortlist returns to coverage-first interleaving. The denser azimuth grid supplies a roughly 6-8-degree continuity successor when achieved FK falls between samples; the six-degree meaningful floor and duplicate pose/look rejection remain separate. Achieved accepted FK is classified around one frozen first-measured session center, finishes two views on the already approached Y side, crosses once to finish two on the opposite side, extends azimuth/elevation span, then seeks residual diversity. Fresh measured tracking still places every new candidate. Before compact/ambitious interleaving, the bridge rejects candidates whose latest-pose side margin regresses by more than 0.02 normalized exposure or whose projected span gain is negative. Useful radius/elevation configuration changes and the deliberate one-way side switch remain eligible without permitting an accidental reversal within either stage. A lower-count zero-view result is completion only after achieved FK proves at least nine views, two per Y side, 120-degree azimuth span and 25-degree elevation span; otherwise it is insufficient feature coverage.
+      - Current geometry emits up to 1050 candidates across twenty-five 7.5-degree azimuth samples over the target-facing 90-270-degree hemisphere, seven camera pitches from -15 through -75 degrees in ten-degree steps, and six distance samples from 0.30 through 0.45 m in 0.03 m steps. Manual batch planning must select exactly thirteen collision-valid viewpoints. Automatic authoritative voxel_nbv scores the full configured region, rejects accepted viewing directions within the six-degree redundancy floor, and sends at most twelve information-ranked direction-diverse candidates to Tesseract. No maximum angular move from current FK exists. The fixed first-accepted center owns historical voxel geometry; fresh filtered tracking owns candidate placement, exact target aim and drift checks. A lower-count zero-view result is completion only after achieved feature and convergence floors are satisfied; otherwise it is insufficient feature coverage.
       - Explicit multi-seed IK/roll filtering feeds RRTConnect OMPL. The worker applies canonical request seed 42 before any planner is constructed and rejects a mismatched request seed. ISP times the raw path, which is densified and discretely revalidated. The removed high-level OMPL/TrajOpt/ISP route is not the current implementation.
       - The bridge revalidates the bound worker response and publishes exact typed trajectories with reliable transient-local depth-1 QoS. Executor approval binds plan_id plus trajectory_sha256 and rejects Tesseract motion unless collision_model_qualified is true. The checked-in model was initially qualified on 2026-07-23, requalified with identical seed-42 output on 2026-07-24, requalified for exact all-zero acquisition egress with named positive compact-pair margins on 2026-07-25, and completed supervised five-view hardware acceptance on 2026-07-24.
       - Proposal-only mode publishes typed ScanExecutionPlan/Status and has no /joint_ctrl_single publisher.
@@ -196,7 +232,7 @@ flows:
         hash-bound Tesseract position samples at 20 Hz without waiting at each
         intermediate sample. Feedback must remain within 0.30 rad of the latest
         scheduled target; only the final target waits for 0.025 rad convergence
-        and the 0.005 rad settle window. If executor timing misses more than one
+        and the 0.007 rad settle window. If executor timing misses more than one
         sample it holds/aborts instead of bursting commands or shortcutting a
         collision-qualified corner. Dedicated configured-home stages keep their
         direct two-point feedback-gated behavior. After all
@@ -394,6 +430,7 @@ current_state_terminal_home_2026_08_06:
   failure_mode: If the direct qualified route or control/scene evidence is unavailable, the arm remains enabled in current-position hold for operator intervention; no blind straight-home command is allowed. The exact transient invalid-obstacle-geometry runtime abort may reach this sequence only by obtaining a new valid scene snapshot; the original invalid sample never authorizes motion.
   manual_smoke_checks: [cancel after a nonhome scan view, verify no prior viewpoint is revisited, verify one fresh RETURN_HOME request starts at current feedback, verify configured home then hold and six disabled flags]
 adaptive_safe_view_exhaustion_e2e_2026_08_06:
+  status: historical_frontier_flow_superseded_by_global_voxel_nbv_2026_08_20
   trigger: The real GUI mission at rough [0.4,0,0] accepted seven GOOD/CLEAR records, after which the correlated one-view request reported zero planned viewpoints because every remaining distinct candidate lacked finite bounded collision-free IK for every sampled roll.
   observed_defect: The loaded coordinator interpreted the word collision in the planning diagnostic as an active motion-safety fault, skipped its independent home request, and left the arm enabled in a measured hold.
   recovery_evidence: A fresh correlated zero-capture RETURN_HOME plan started from that measured hold, reached configured home without revisiting scan endpoints, settled, and feedback-disabled. After exact child-group shutdown, direct CAN reported [false,false,false,false,false,false], CAN_CTRL, NORMAL, target reached and err_code 0.
@@ -459,6 +496,7 @@ command_free_plan_snapshot_reacquisition_2026_08_06:
   fail_closed_boundary: Collision, path, obstacle scene, camera timestamp, controller, hash, worker, malformed response, pending timeout and every unnamed reason remain immediate failures. No request enters the worker spool and no plan can be approved during the wait.
   manual_smoke_checks: [force one empty SAM2 target mask before plan spooling, verify zero arm command and zero capture, restore measured tracking inside 30 seconds, require a fresh correlated plan request, then continue the one-view scan]
 bounded_current_look_scan_aim_2026_08_06:
+  status: historical_aim_flow_superseded_by_exact_first_five_degree_fallback_2026_08_20
   trigger: GUI scan scan_20260806_220358 accepted seven GOOD/CLEAR records and safely homed/disabled, but all achieved views remained before the strict -Y face threshold and all 36 next exact target-centred poses failed finite bounded IK at link2/link5.
   sequence:
     - Generate and feature-rank the unchanged 1050 camera positions around the fresh measured cube.
@@ -624,3 +662,22 @@ commissioning_control_flow_2026_08_16:
     - It publishes no JointState and commands no hold or home.
     - It warns the operator to support an arm that can fall, calls /enable_srv false, and reports success only from the driver's all-six feedback proof.
   autonomous_boundary: Production Cancel/Home still holds, executes PRE_HOME then ROUGH_HOME then STORAGE_WRIST, holds, disables and cleans up. Commissioning disable must never replace that normal mission route.
+
+live_voxel_nbv_flow_2026_08_17:
+  current_operator_authorization: The operator explicitly requested voxel_nbv become authoritative for their next supervised E2E. The prior motors-disabled shadow and isolated one-view stages remain recommended checks but were not claimed as completed.
+  sequence:
+    - Use the established compact first view because no measured model exists yet.
+    - Commit one GOOD/CLEAR schema-2 RGB-D/mask capture and accepted achieved pose.
+    - Wait until capture status, history generation, session identity and manifest agree.
+    - Rebuild immutable object-centric free, unknown and observed-surface voxel evidence around the frozen measured target center.
+    - Score each unique candidate viewing direction by raycast information; retain distance variants only as IK fallbacks.
+    - In shadow mode publish diagnostics but preserve the established selector.
+    - In authoritative mode discard zero-information candidates, rank the entire configured region, then let the bridge submit at most twelve information-first direction-diverse candidates to Tesseract without a local angular frontier.
+    - Execute and validate exactly one view, capture, update measured coverage and replan.
+    - Stop only through the established useful-face/measured-convergence rule or safe exhaustion, then use the unchanged terminal home/disable/cleanup route.
+  manual_smoke_checks:
+    - Replay a current schema-2 scan with tools/replay_nbv_coverage.py and prove generation count plus monotonically non-increasing unknown voxels.
+    - With motors disabled and voxel_nbv_shadow, compare legacy first candidate with nbv_top_candidate_index and confirm no joint-command publisher is introduced.
+    - Inspect successive accepted generations for a changed top direction after newly observed evidence.
+    - Before voxel_nbv motion, prove every selected candidate belongs to the configured scan region, exact aim is attempted first, fallback is no more than five degrees and Tesseract supplies collision/path/visibility qualification.
+    - Run one supervised low-speed single-view transaction before any complete scan.

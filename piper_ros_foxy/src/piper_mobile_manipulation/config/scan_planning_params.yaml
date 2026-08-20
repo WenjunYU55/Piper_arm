@@ -36,6 +36,9 @@
     # azimuth span, then elevation span before residual pose diversity.
     duplicate_position_tolerance_m: 0.012
     duplicate_look_tolerance_deg: 2.0
+    # This is accepted-view redundancy only. It is not a maximum transition
+    # angle and cannot prevent a globally informative 60/80-degree NBV.
+    minimum_useful_direction_separation_deg: 6.0
 
     min_reach_m: 0.20
     max_reach_m: 0.75
@@ -74,6 +77,23 @@
     # from each still-valid tracked-target observation before it can expire,
     # even when target displacement is below the meaningful-replan threshold.
     target_plan_refresh_period_sec: 0.50
+
+    # Genuine information-gain NBV owns candidate ordering. This is awaiting
+    # its first operator-supervised physical E2E qualification; Tesseract and
+    # every existing execution/runtime safety gate remain authoritative.
+    view_selection_policy: "voxel_nbv"
+    scan_capture_status_topic: "/piper/scan_capture_status"
+    nbv_voxel_size_m: 0.005
+    nbv_minimum_radius_m: 0.030
+    nbv_maximum_radius_m: 0.250
+    nbv_radius_scale: 2.0
+    nbv_padding_voxels: 2
+    nbv_surface_tolerance_m: 0.007
+    nbv_render_width: 64
+    nbv_render_height: 48
+    # Full voxel evidence is retained; candidate raycasts use this bounded,
+    # deterministic planning sample so a noisy large mask cannot stall ROS.
+    nbv_maximum_scoring_voxels: 20000
 
     # A typed /scan_target_acquisition/prepare call atomically binds the session
     # ID and rough base_link coordinate. The guarded executor still requires

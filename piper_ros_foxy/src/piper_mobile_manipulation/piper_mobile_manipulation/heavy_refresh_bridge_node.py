@@ -114,13 +114,7 @@ class HeavyRefreshBridgeNode(Node):
             self.latest_depth_msg = depth_msg
             self.latest_camera_info = info_msg
             self.latest_color_time = time.monotonic()
-            if (
-                    self.pending_request is not None
-                    and image_satisfies_request(
-                        self.pending_request, color_msg.header.stamp)):
-                request = self.pending_request
-                self.pending_request = None
-                self.enqueue_request(request)
+            self.try_enqueue_pending_request()
         except Exception as exc:
             self.get_logger().warn('Synchronized RGB-D conversion failed: %s' % exc)
 
@@ -175,13 +169,39 @@ class HeavyRefreshBridgeNode(Node):
                 min_image_stamp=request.get('min_image_stamp'),
             )
             return
+        if self.worker_busy():
+            self.pending_request = request
+            self.publish_status(
+                'waiting_for_worker', request_id=request_id,
+                reason=request.get('reason', ''),
+            )
+            return
         self.enqueue_request(request)
+
+    def try_enqueue_pending_request(self):
+        """Queue the retained request once its frame and worker are ready."""
+        request = self.pending_request
+        if request is None or self.worker_busy():
+            return False
+        if self.latest_color is None or self.latest_color_msg is None:
+            return False
+        age = time.monotonic() - self.latest_color_time
+        if age > float(self.get_parameter('max_image_age_sec').value):
+            return False
+        if not image_satisfies_request(
+                request, self.latest_color_msg.header.stamp):
+            return False
+        self.pending_request = None
+        self.enqueue_request(request)
+        return True
 
     def enqueue_request(self, request):
         request_id = request.get('request_id', 'unknown')
         if self.worker_busy():
+            if self.pending_request is None:
+                self.pending_request = request
             self.publish_status(
-                'request_ignored_busy', request_id=request_id,
+                'waiting_for_worker', request_id=request_id,
                 reason=request.get('reason', ''),
             )
             return
@@ -339,6 +359,7 @@ class HeavyRefreshBridgeNode(Node):
                 os.replace(str(response), str(destination))
             except Exception as exc:
                 self.get_logger().error('Failed to consume %s: %s' % (response, exc))
+        self.try_enqueue_pending_request()
 
     def request_manifest(self, job_id):
         for path in (

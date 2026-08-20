@@ -1,8 +1,17 @@
 import numpy as np
+import pytest
 
 from piper_mobile_manipulation.depth_to_3d_node import (
     depth_jump_reacquisition,
+    median_component_camera_point,
     primary_depth_component,
+)
+from piper_mobile_manipulation.target_tracker_node import (
+    finite_target_measurement,
+    TargetTrackerNode,
+)
+from piper_mobile_manipulation.utils.kalman_filter import (
+    ConstantVelocityKalmanFilter,
 )
 from piper_mobile_manipulation.utils.target_depth import (
     select_target_depth_component,
@@ -116,3 +125,82 @@ def test_ambiguous_depth_layers_fail_closed():
         select_target_depth_component(
             support, depth, center_u=9.5, center_v=9.5,
             minimum_points=20, ambiguity_margin=0.25)
+
+
+def test_component_point_uses_only_the_depth_qualified_support():
+    depth = np.full((5, 7), 0.80, dtype=float)
+    depth[1:4, 1:4] = 0.40
+    support = np.zeros_like(depth, dtype=bool)
+    support[1:4, 1:4] = True
+    intrinsic = [100.0, 0.0, 3.0, 0.0, 100.0, 2.0, 0.0, 0.0, 1.0]
+
+    point = median_component_camera_point(depth, support, intrinsic)
+
+    assert point == pytest.approx([-0.004, 0.0, 0.40])
+
+
+@pytest.mark.parametrize('measurement', [
+    [float('nan'), 0.0, 0.4],
+    [0.0, float('inf'), 0.4],
+    [0.0, 0.4],
+    None,
+])
+def test_nonfinite_or_malformed_target_measurements_fail_closed(measurement):
+    assert not finite_target_measurement(measurement)
+
+
+def test_finite_target_measurement_is_accepted_for_filtering():
+    assert finite_target_measurement([0.4, 0.0, 0.1])
+
+
+def tracker_gate(last_measurement=None):
+    return type('TrackerGate', (), {
+        'min_confidence': 0.4,
+        'use_camera_space_gates': False,
+        'last_depth': None,
+        'depth_gate_m': 0.15,
+        'last_source_u': None,
+        'last_source_v': None,
+        'max_pixel_jump': 80.0,
+        'last_measurement': last_measurement,
+        'max_3d_jump': 0.10,
+        'max_target_speed': 1.0,
+        'last_area': None,
+        'min_area_ratio': 0.5,
+        'max_area_ratio': 2.0,
+        'detection_area': TargetTrackerNode.detection_area,
+    })()
+
+
+def target_message():
+    return type('TargetMessage', (), {
+        'depth': 0.4,
+        'source_u': 320.0,
+        'source_v': 240.0,
+        'detection_width': 60.0,
+        'detection_height': 60.0,
+    })()
+
+
+def test_base_frame_target_gate_rejects_an_implausible_single_frame_jump():
+    tracker = tracker_gate(last_measurement=[0.40, 0.0, 0.05])
+
+    reason = TargetTrackerNode.gate_measurement(
+        tracker, target_message(), [0.65, 0.0, 0.05],
+        confidence=0.9, elapsed_s=0.02)
+
+    assert reason.startswith('3d jump')
+
+
+def test_base_frame_filter_smooths_qualified_measurement_jitter_and_resets():
+    estimator = ConstantVelocityKalmanFilter(
+        process_noise=0.01, measurement_noise=0.04)
+    first = estimator.step([0.40, 0.0, 0.05], 0.033)
+    second = estimator.step([0.42, 0.0, 0.05], 0.033)
+
+    assert first[0] == pytest.approx(0.40)
+    assert 0.40 < second[0] < 0.42
+    estimator.reset()
+    assert not estimator.initialized
+    restarted = estimator.step([0.50, 0.0, 0.05], 0.033)
+    assert restarted[0] == pytest.approx(0.50)

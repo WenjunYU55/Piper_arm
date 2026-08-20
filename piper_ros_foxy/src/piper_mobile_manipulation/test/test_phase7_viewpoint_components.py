@@ -14,6 +14,7 @@ from piper_mobile_manipulation.executor_recovery import (
     RecoveryPolicy,
 )
 from piper_mobile_manipulation.failure_model import (
+    as_failure,
     Failure,
     FailureCode,
     FailureTag,
@@ -175,6 +176,11 @@ def test_capture_success_retry_and_failure():
         FailureCode.INSUFFICIENT_CAPTURE_QUALITY,
         FailureTag.CAPTURE_REJECT_VIEW,
     )
+    refreshable = failure(
+        FailureCode.INSUFFICIENT_CAPTURE_QUALITY,
+        FailureTag.CAPTURE_REFRESH_SAME_VIEW,
+        FailureTag.CAPTURE_REJECT_VIEW,
+    )
     fatal = failure(FailureCode.CONTROL_UNTRUSTWORTHY)
     assert coordinator.classify_result(
         True, None, 1).action is CaptureAction.ACCEPT
@@ -182,6 +188,11 @@ def test_capture_success_retry_and_failure():
         False, retry, 9).action is CaptureAction.RETRY_SAME_VIEW
     assert coordinator.classify_result(
         False, retry, 10).action is CaptureAction.ABORT
+    assert coordinator.classify_result(
+        False, refreshable, 1, False).action is (
+            CaptureAction.REFRESH_SAME_VIEW)
+    assert coordinator.classify_result(
+        False, refreshable, 1, True).action is CaptureAction.REPLAN_VIEW
     assert coordinator.classify_result(
         False, rejected, 1).action is CaptureAction.REPLAN_VIEW
     assert coordinator.classify_result(
@@ -196,6 +207,17 @@ def test_capture_handoff_preserves_status_propagation_order():
         False, 0.25, 0.25).action is CaptureAction.REQUEST_CAPTURE
     assert CaptureCoordinator.handoff(
         True, 10.0, 0.25).action is CaptureAction.WAIT_RESPONSE
+
+
+def test_stale_capture_authorization_retries_the_same_settled_view():
+    """A delayed status subscription must not abort an otherwise valid view."""
+    coordinator = CaptureCoordinator(maximum_readiness_retries=10)
+    delayed = as_failure(
+        'executor is not at an accepted settled capture')
+
+    assert delayed.has(FailureTag.CAPTURE_RETRY_SAME_VIEW)
+    assert coordinator.classify_result(
+        False, delayed, 1).action is CaptureAction.RETRY_SAME_VIEW
 
 
 def test_capture_settle_requires_one_continuous_window():

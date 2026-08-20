@@ -6,6 +6,12 @@ evaluation point and failure behavior. Node defaults can differ from launch
 YAML overrides; the deployed `supervised_viewpoint_execution`/GPU launch path
 and the files named below are authoritative for that composition.
 
+Previous-generation cleanup may signal only exact handles retained by the same
+`ProcessSupervisor`. Non-command groups may be released after mission authority
+is revoked. A live driver may be released before a later mission only when
+fresh typed status proves all six motor flags false; otherwise admission remains
+blocked and no process or arm command is started.
+
 ## Non-negotiable behavioral invariants
 
 1. There is exactly one live arm command publisher. Autonomous execution
@@ -128,7 +134,7 @@ and the files named below are authoritative for that composition.
 | Joint/waypoint goal tolerance | `0.025 rad` |
 | Progress epsilon/timeout | `0.001 rad / 20 s` |
 | Waypoint timeout | `90 s` |
-| Endpoint settled window | `0.005 rad` for `1.5 s`, timeout `15 s` |
+| Endpoint settled window | `0.007 rad` for `1.5 s`, timeout `15 s` (qualified above the observed `0.006227508 rad` powered J4 feedback step) |
 | Diagnostic velocity-settled value | `0.20 rad/s` | Retained for compatibility; position stability is authoritative |
 | Home goal/motion tolerance | `0.030 rad / 0.005 rad` |
 | Home feedback gap/settle/timeout | `1.0 s / 1.0 s / 30 s` |
@@ -168,9 +174,10 @@ constants to normalize or recompute.
 | Candidate azimuth region | `180 deg` centered at `180 deg`, `7.5 deg` grid |
 | Candidate radius | base `0.30 m`; offsets `0, .03, .06, .09, .12, .15 m`; diagnostic max `0.80 m` |
 | Candidate pitch | base `-50 deg`; offsets `+35,+25,+15,+5,-5,-15,-25 deg` |
-| Generated candidate cap | `25` azimuth samples before pitch/radius expansion; automatic bridge shortlist `36` |
-| Local automatic frontier | `6..30 deg` from achieved camera direction |
-| Aim relaxation | maximum `12 deg` from target-centered nominal |
+| Generated candidate cap | `25` azimuth samples before pitch/radius expansion; automatic bridge shortlist `12` |
+| Automatic movement frontier | none; the complete configured scan region is information-ranked |
+| Accepted direction redundancy | minimum useful separation `6 deg` |
+| Final capture aim | exact target aim first; one fallback at most `5 deg`; settled final gate `5 deg` |
 | Duplicate pose/look | `0.012 m` and `2 deg`, both must be close |
 | Target plan translation/min period/refresh | `0.01 m / 0.50 s / 0.50 s` |
 | Coverage Y-side definition | normalized lateral fraction `>= +0.35` or `<= -0.35` |

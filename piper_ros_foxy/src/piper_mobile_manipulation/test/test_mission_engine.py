@@ -284,6 +284,10 @@ class FakeMissionOperations:
         self.plan_requests += 1
         return 'view-%d' % self.plan_requests
 
+    def wait_for_view_generation(self, context, accepted_views, _timeout):
+        assert accepted_views == self._capture_count(context)
+        self._record('view_generation', context)
+
     @staticmethod
     def remaining_time(context):
         return context.session.remaining(now=1.0)
@@ -299,6 +303,10 @@ class FakeMissionOperations:
         self._record('stopping', context, cancellable=False)
         if self.terminal_cancel_stage == 'stopping':
             context.cancellation.cancel('cancel during stopping')
+        return True
+
+    def stop_processing_processes(self, context):
+        self._record('processing_stop', context, cancellable=False)
         return True
 
     @staticmethod
@@ -334,6 +342,9 @@ def test_successful_engine_matches_frozen_legacy_phase_sequence():
     assert context.session.storage_wrist_proved
     assert context.session.disabled_proved
     assert context.session.processes_stopped
+    assert operations.events.count('view_generation') == 8
+    assert operations.events.index('view_generation') < \
+        operations.events.index('view_planning')
 
 
 @pytest.mark.parametrize('stage', [
@@ -344,6 +355,7 @@ def test_successful_engine_matches_frozen_legacy_phase_sequence():
     'acquisition',
     'target_lock',
     'occlusion',
+    'view_generation',
     'view_planning',
     'capture',
 ])
@@ -435,6 +447,7 @@ def test_confirmed_motor_authority_loss_remains_the_only_no_home_path():
     'acquisition',
     'target_lock',
     'occlusion',
+    'view_generation',
     'view_planning',
     'capture',
 ])
@@ -479,6 +492,21 @@ def test_each_terminal_failure_retains_needs_operator_policy(stage):
     if stage in ('pre_home', 'return_home', 'storage_wrist'):
         assert context.session.arm_enabled
         assert not context.session.disabled_proved
+        assert 'processing_stop' in operations.events
+        assert not context.session.processes_stopped
+
+
+def test_failed_home_releases_processing_but_retains_command_owner():
+    operations = FakeMissionOperations()
+    operations.failure_stage = 'pre_home'
+
+    operations, context, result = _execute(operations)
+
+    assert result.outcome == 'NEEDS_OPERATOR'
+    assert operations.events.count('processing_stop') == 1
+    assert 'disable' not in operations.events
+    assert context.session.arm_enabled
+    assert not context.session.processes_stopped
 
 
 def test_deadline_expiry_uses_failure_shutdown_path():
@@ -508,9 +536,10 @@ def test_visual_rejection_retries_with_a_new_view():
     assert result.succeeded
     assert operations.plan_requests == 9
     assert context.session.accepted_captures == 8
+    assert operations.events.count('multiview_readiness') == 1
 
 
-def test_target_drift_reacquires_readiness_and_replans_without_capture():
+def test_target_drift_replans_through_command_free_request_without_capture():
     operations = FakeMissionOperations()
     operations.target_drift_once = True
 
@@ -519,7 +548,7 @@ def test_target_drift_reacquires_readiness_and_replans_without_capture():
     assert result.succeeded
     assert operations.plan_requests == 9
     assert context.session.accepted_captures == 8
-    assert operations.events.count('multiview_readiness') >= 2
+    assert operations.events.count('multiview_readiness') == 1
 
 
 def test_acquisition_replans_from_two_absent_looks_then_locks():

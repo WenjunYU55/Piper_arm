@@ -743,6 +743,29 @@ def test_endpoint_settle_uses_target_bounded_position_window_not_speed_spikes():
     assert reset is None
 
 
+def test_endpoint_settle_accepts_measured_piper_j4_feedback_step_only():
+    target = np.asarray([0.0, 0.0, 0.0, -0.0052, 0.9, 0.0])
+    first = target.copy()
+    first[3] = -0.006227508
+    second = first.copy()
+    second[3] = 0.0
+
+    settled, anchor = target_position_window_sample_settled(
+        first, target, None, 0.025, 0.007)
+    assert not settled
+    settled, retained = target_position_window_sample_settled(
+        second, target, anchor, 0.025, 0.007)
+    assert settled
+    assert np.allclose(retained, anchor)
+
+    larger_motion = first.copy()
+    larger_motion[3] += 0.0071
+    settled, reset = target_position_window_sample_settled(
+        larger_motion, target, anchor, 0.025, 0.007)
+    assert not settled
+    assert np.allclose(reset, larger_motion)
+
+
 def test_plan_approval_settle_anchors_to_current_pose_before_endpoint_exists():
     current = np.asarray([0.1, 0.2, -0.3, 0.4, -0.5, 0.6])
     executor = SimpleNamespace(
@@ -1932,7 +1955,9 @@ def test_rgbd_capture_handoff_publishes_authorization_before_one_request():
 
 
 def test_multiview_obstacle_gap_waits_only_while_arm_is_stationary():
-    for state in ('SETTLING', 'CAPTURING', 'CAPTURING_RGBD', 'WAIT_CAPTURE'):
+    for state in (
+            'SETTLING', 'CAPTURING', 'CAPTURING_RGBD', 'WAIT_CAPTURE',
+            'WAITING_FOR_CAPTURE_REFRESH'):
         assert missing_obstacles_can_wait('MULTIVIEW_SCAN', 2, state)
     assert not missing_obstacles_can_wait('MULTIVIEW_SCAN', 2, 'MOVING')
     assert not missing_obstacles_can_wait(
@@ -1940,6 +1965,51 @@ def test_multiview_obstacle_gap_waits_only_while_arm_is_stationary():
     assert missing_obstacles_can_wait(
         ROUGH_ACQUISITION, 3, 'MOVING',
         bootstrap_abort_retrace=True)
+
+
+def test_capture_heavy_refresh_waits_for_idle_and_retries_only_once():
+    events = []
+    executor = SimpleNamespace(
+        state='WAITING_FOR_CAPTURE_REFRESH',
+        capture_heavy_refresh_request_id='scan-view-2-refresh',
+        capture_heavy_refresh_min_image_stamp_ns=10_000_000_000,
+        capture_heavy_refresh_publish_attempts=1,
+        capture_heavy_refresh_waiting_for_worker=False,
+        capture_rejection_reason='target depth invalid',
+        set_state=lambda state, reason: events.append(
+            ('state', state, reason)),
+        publish_capture_heavy_refresh=lambda: (
+            setattr(
+                executor, 'capture_heavy_refresh_publish_attempts',
+                executor.capture_heavy_refresh_publish_attempts + 1),
+            events.append(('publish',))),
+        abort_motion=lambda reason: events.append(('abort', reason)),
+        reject_achieved_capture_view=lambda reason: events.append(
+            ('reject', reason)),
+    )
+
+    busy = SimpleNamespace(data=json.dumps({
+        'state': 'request_ignored_busy',
+        'request_id': executor.capture_heavy_refresh_request_id,
+    }))
+    idle = SimpleNamespace(data=json.dumps({'state': 'idle'}))
+
+    ScanViewpointExecutorNode.heavy_refresh_status_cb(executor, busy)
+
+    assert executor.capture_heavy_refresh_waiting_for_worker
+    assert events[0][0] == 'state'
+    assert not any(event[0] == 'abort' for event in events)
+
+    ScanViewpointExecutorNode.heavy_refresh_status_cb(executor, idle)
+
+    assert not executor.capture_heavy_refresh_waiting_for_worker
+    assert executor.capture_heavy_refresh_publish_attempts == 2
+    assert events[-1] == ('publish',)
+
+    ScanViewpointExecutorNode.heavy_refresh_status_cb(executor, busy)
+
+    assert events[-1][0] == 'abort'
+    assert 'one bounded retry' in events[-1][1]
 
 
 def test_correlated_acquisition_scene_may_age_during_its_exact_segment():
@@ -2436,13 +2506,25 @@ def test_quality_rejected_view_is_recorded_for_replan_exclusion():
             'desired_camera_position': {'x': 0.3, 'y': 0.1, 'z': 0.2},
             'desired_look_at_direction': {'x': -1.0, 'y': 0.0, 'z': 0.0},
         }],
+        plan_target_center=np.asarray([0.4, 0.0, 0.04]),
         scan_rejections=[],
+        latest_achieved_scan_view={
+            'plan_id': 'plan-a',
+            'viewpoint_index': 7,
+            'camera_position': {'x': 0.31, 'y': 0.09, 'z': 0.21},
+            'look_direction': {'x': -0.99, 'y': 0.01, 'z': 0.0},
+            'joint_positions_rad': [0.0] * 6,
+            'achieved_at_sec': 12.0,
+            'target_estimate_at_capture': {'x': 0.4, 'y': 0.0, 'z': 0.04},
+        },
+        latest_achieved_matches_current_view=lambda: True,
         publish_scan_history=lambda: published.append(True),
     )
 
     assert ScanViewpointExecutorNode.record_rejected_view(
         executor, 'QUALITY_REJECTED: poor focus')
     assert executor.scan_rejections[0]['viewpoint_index'] == 7
+    assert executor.scan_rejections[0]['actual_camera_position']['x'] == 0.31
     assert 'poor focus' in executor.scan_rejections[0]['reason']
     assert published == [True]
 

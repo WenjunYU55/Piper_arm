@@ -1,6 +1,47 @@
 schema_version: 1
 document: implemented_features_bookmark
-updated_at: 2026-08-17
+updated_at: 2026-08-20
+global_nbv_target_aim_capture_recovery_2026_08_20:
+  status: implemented_partial_physical_loop_verified_complete_scan_pending
+  capabilities:
+    - Cumulative accepted voxel coverage ranks the complete configured scan region; the retired 6-to-30 and 30-to-45 degree movement frontiers have no production authority.
+    - Information gain outranks motion cost, a six-degree accepted-view threshold rejects redundancy, and only twelve information-ranked direction-diverse candidates reach Tesseract.
+    - Exact current-target aim is tried first through roll and IK alternatives. At most one canonical fallback within five degrees is allowed and provenance is validated.
+    - Every settled commanded viewpoint stores actual FK independently of capture acceptance. Rejected views change next motion start but not accepted coverage or reconstruction.
+    - One request-correlated heavy refresh handles transient fresh visual capture rejection before a persistent rejection requests a new NBV.
+    - Qualified component depth produces coherent camera X/Y/Z, temporal filtering happens only after timestamped transformation into base_link, and immutable accepted reconstruction remains separate from current target estimation.
+  replay: scan_20260820_142919 old 13.424-degree final target error is detected and rejected by the five-degree gate; selected-to-achieved error was only 0.037 degrees.
+  authority: [depth_to_3d_node.py, target_tracker_node.py, nbv_coverage.py, scan_viewpoint_planner_node.py, viewpoint_reachability_filter_node.py, piper_tesseract_foxy/bridge_node.py, piper_tesseract_foxy/contract.py, piper_tesseract_foxy/worker.py, scan_viewpoint_executor_node.py, capture_coordinator.py, scan_capture_node.py]
+  software_evidence: [669 mobile functional tests pass, 115 Tesseract tests pass, affected ROS packages build, rootless Tesseract core and compact qualifications pass, AI YAML parsing passes]
+  physical_evidence: [seed capture committed, true voxel_nbv generation one selected view 164 with predicted_unknown 898 and novel_surface 50, strict 5.037-degree final-aim rejection preserved safety, command-free post-view reacquisition route exercised, every terminal run proved staged home storage disable and exact child cleanup]
+  remaining: Complete diverse scan is not yet qualified because the live target lock becomes unstable between views; estimator and tracking repair is explicitly deferred.
+post_startup_full_logical_j6_range_2026_08_20:
+  status: implemented_software_verified_physical_retest_pending
+  capabilities:
+    - Positive-only startup retains its raw +360-degree turn and never commands the unsafe raw-zero unwind.
+    - The controller qualification covers the complete later logical [-pi,+pi] scan range through raw +540 degrees, with a 545-degree configured margin.
+    - A post-startup positive logical J6 target is regression-tested, while an unqualified raw overflow is rejected before CAN transmission.
+  authority: [piper_ctrl_single_node.py, test_enable_handshake.py, test_joint_feedback_continuity.py]
+  software_evidence: [60 focused J6 tests pass, 62 full piper tests pass with one skip, 643 mobile functional tests pass, 106 Tesseract tests pass, five ROS packages build, rootless core and compact qualifications pass]
+previous_generation_reconciliation_2026_08_20:
+  status: implemented_software_verified_physical_lifecycle_retest_pending
+  capabilities:
+    - Operator-recovery releases exact non-command processing groups without stopping a possibly powered driver or scan executor.
+    - A later admission automatically reaps processing-only exact survivors.
+    - A prior driver generation is reaped only after fresh typed all-six-disabled proof.
+    - Cleanup failure or unproved powered ownership remains fail-closed and starts no new process generation.
+  authority: [mission_engine.py, target_scan_mission_node.py, process_supervisor.py]
+  software_evidence: [748 mobile-manipulation and Tesseract tests pass, 127 repository regressions pass with one hardware skip, changed-file flake8 passes, five ROS packages build, rootless core and compact qualifications pass]
+voxel_nbv_generation_synchronization_2026_08_17:
+  status: implemented_software_verified_physical_retest_pending
+  capabilities:
+    - Exact session and accepted-capture generation follows every planner candidate set through the preliminary filter into the Tesseract bridge.
+    - MissionEngine waits for a bridge-cached post-barrier generation instead of requesting against expired scan data.
+    - First view is explicitly voxel_nbv_seed; later authoritative generations use measured schema-2 voxel evidence.
+    - Bounded Tesseract shortlists reserve top information candidates from distinct azimuth/elevation bins and retain local IK alternatives.
+    - Selected policy, generation, rank and predicted gain follow the worker response to a plan provenance topic and exact per-frame metadata.
+  authority: [view_generation.py, nbv_coverage.py, scan_viewpoint_planner_node.py, viewpoint_reachability_filter_node.py, piper_tesseract_foxy/bridge_node.py, piper_tesseract_foxy/worker.py, mission_engine.py, target_scan_mission_node.py, scan_capture_node.py]
+  software_evidence: [741 mobile-manipulation and Tesseract tests pass, 127 repository regression tests pass and one hardware-dependent test skips, 11 changed Python files pass ament_flake8, five ROS packages build, rootless Tesseract core and compact qualification pass]
 purpose: >-
   Preserve the system capabilities that must not be forgotten during the
   core-integration rewrite. This is a feature inventory, not a declaration
@@ -337,3 +378,11 @@ selected_reintegration_2026_08_15:
   active_features: [direct_configured_home_without_tesseract, schema4_pre_home_waypoint, startup_j6_positive_only_wrap_bridge, guarded_zero_capture_dataset_deletion, smooth_direct_movej_or_streamed_detour, pass_through_stream_smoothing, tsdf_bounded_gicp_and_gui_validation, shared_depth_layer_selector, confidence_qualified_capture_schema2]
   deferred_features: [reachable_full_sphere_nbv_v2, nbv_planning_budget_recovery]
   physical_status: No physical command was executed during reintegration. Every motion-affecting feature requires the staged supervised checklist before use.
+
+live_voxel_nbv_2026_08_17:
+  state: authoritative_selected_awaiting_supervised_E2E
+  replaces_deferred_item: reachable_full_sphere_nbv_v2
+  implemented: [schema2 voxel evidence, immutable coverage snapshot, visible unknown raycast, novel surface direction score, information-before-travel ordering, unique-direction-first radius fallbacks, recorded replay]
+  default_policy: voxel_nbv
+  authority_files: [nbv_coverage.py, scan_viewpoint_planner_node.py, piper_tesseract_foxy/bridge_node.py]
+  physical_status: Not yet qualified. The operator explicitly selected authoritative voxel_nbv for the next supervised E2E on 2026-08-17; its outcome must be reviewed before qualification is claimed.

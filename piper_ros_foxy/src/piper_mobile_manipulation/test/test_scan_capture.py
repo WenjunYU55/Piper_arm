@@ -15,7 +15,10 @@ from piper_mobile_manipulation.scan_capture import (
     rigid_transform_matrix,
     synchronized_bundle_rejection,
 )
-from piper_mobile_manipulation.scan_capture_node import ScanCaptureNode
+from piper_mobile_manipulation.scan_capture_node import (
+    capture_view_selection_provenance,
+    ScanCaptureNode,
+)
 
 
 def message(seconds):
@@ -198,3 +201,47 @@ def test_execution_metadata_preserves_physical_capture_provenance():
     assert metadata['dry_run'] is False
     assert metadata['real_arm_motion'] is True
     assert metadata['approval_required'] is False
+
+
+def test_capture_resolves_exact_nbv_policy_rank_and_gain_from_plan_id():
+    provenance = {
+        'schema_version': 1,
+        'plan_id': 'physical-plan',
+        'request_id': 'request-2',
+        'request_sha256': 'a' * 64,
+        'candidate_diagnostics': {
+            'candidate_attempts': 3,
+            'candidate_failures': [
+                {'id': 2, 'stage': 'AIM_VARIANTS_EXHAUSTED'}],
+        },
+        'selected_viewpoints': [{
+            'id': 41,
+            'view_selection_policy': 'voxel_nbv',
+            'view_selection_generation': 2,
+            'view_selection_session_id': 'scan-a',
+            'nbv_rank': 7,
+            'nbv_predicted_unknown_pixels': 318,
+            'nbv_novel_surface_pixels': 22,
+        }],
+    }
+
+    result = capture_view_selection_provenance(
+        provenance, {'plan_id': 'physical-plan', 'current_view': 1})
+
+    assert result == {
+        'available': True,
+        'plan_id': 'physical-plan',
+        'request_id': 'request-2',
+        'request_sha256': 'a' * 64,
+        **provenance['selected_viewpoints'][0],
+        'candidate_diagnostics': provenance['candidate_diagnostics'],
+    }
+
+
+def test_capture_never_attaches_provenance_from_a_different_plan():
+    result = capture_view_selection_provenance(
+        {'plan_id': 'old-plan', 'selected_viewpoints': [{'id': 1}]},
+        {'plan_id': 'new-plan', 'current_view': 1})
+
+    assert result['available'] is False
+    assert result['reason'] == 'plan provenance ID mismatch'

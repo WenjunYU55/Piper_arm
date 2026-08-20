@@ -11,6 +11,8 @@ from piper.piper_ctrl_single_node import (
     format_gripper_feedback_diagnostic,
     gripper_feedback_diagnostic,
     JOINT6_LIMIT_RAD,
+    JOINT6_STARTUP_CONTROLLER_MAX_DEG,
+    JOINT6_STARTUP_CONTROLLER_REQUIRED_DEG,
     motor_driver_faults,
     motion_limits_sha256,
     PiperRosNode,
@@ -69,9 +71,17 @@ def test_positive_only_startup_controller_limit_is_set_and_proved():
     piper = FakeControllerLimitPiper()
     succeeded, reason = qualify_startup_joint6_controller_limit(piper)
     assert succeeded is True
-    assert '365.0 deg' in reason
-    assert piper.set_calls == [(6, 3650, 0x7FFF, 0x7FFF)]
+    assert '545.0 deg' in reason
+    assert piper.set_calls == [(6, 5450, 0x7FFF, 0x7FFF)]
     assert piper.query_calls == [(6, 0x01)]
+
+
+def test_controller_limit_covers_full_logical_range_after_startup_turn():
+    assert JOINT6_STARTUP_CONTROLLER_REQUIRED_DEG == 540.0
+    assert JOINT6_STARTUP_CONTROLLER_MAX_DEG > \
+        JOINT6_STARTUP_CONTROLLER_REQUIRED_DEG
+    assert math.degrees(2.0 * math.pi + JOINT6_LIMIT_RAD) == \
+        JOINT6_STARTUP_CONTROLLER_REQUIRED_DEG
 
 
 def test_positive_only_startup_controller_limit_fails_closed_at_310_deg():
@@ -985,6 +995,8 @@ def test_normal_joint6_command_retains_completed_startup_turn_offset():
             self._startup_joint6_armed = False
             self._startup_joint6_active = False
             self._joint6_controller_turn_offset = 2.0 * math.pi
+            self.startup_joint6_controller_max_deg = \
+                JOINT6_STARTUP_CONTROLLER_MAX_DEG
             self.logger = SimpleNamespace(
                 debug=lambda *_args: None,
                 info=lambda *_args: None,
@@ -1017,6 +1029,65 @@ def test_normal_joint6_command_retains_completed_startup_turn_offset():
     assert storage_raw == round(
         (2.0 * math.pi - 3.139536232) * 57324.840764)
     assert storage_raw < ready_raw
+
+    command.position[-1] = 2.483481659203857
+    PiperRosNode.joint_callback(node, command)
+    positive_scan_raw = node.piper.joint_commands[-1][5]
+    assert positive_scan_raw == round(
+        (2.0 * math.pi + 2.483481659203857) * 57324.840764)
+    assert positive_scan_raw < round(
+        math.radians(JOINT6_STARTUP_CONTROLLER_MAX_DEG) * 57324.840764)
+
+    command.position[-1] = math.pi
+    PiperRosNode.joint_callback(node, command)
+    positive_endpoint_raw = node.piper.joint_commands[-1][5]
+    assert positive_endpoint_raw == round(3.0 * math.pi * 57324.840764)
+
+
+def test_normal_joint6_command_rejects_unqualified_controller_coordinate():
+    class ReadyNode(FakeCommandNode):
+        enforce_joint_bound = PiperRosNode.enforce_joint_bound
+        get_joint_value = PiperRosNode.get_joint_value
+        get_joint_velocity = PiperRosNode.get_joint_velocity
+        get_joint_effort = PiperRosNode.get_joint_effort
+        send_motion_ctrl_2_if_changed = PiperRosNode.send_motion_ctrl_2_if_changed
+        send_gripper_if_changed = PiperRosNode.send_gripper_if_changed
+
+        def __init__(self):
+            super().__init__()
+            self.joint_bounds = dict(DEFAULT_JOINT_BOUNDS)
+            self.gripper_exist = False
+            self._startup_joint6_finished = True
+            self._startup_joint6_armed = False
+            self._startup_joint6_active = False
+            self._joint6_controller_turn_offset = 2.0 * math.pi
+            self.startup_joint6_controller_max_deg = 365.0
+            self.errors = []
+            self.logger = SimpleNamespace(
+                debug=lambda *_args: None,
+                info=lambda *_args: None,
+                warn=lambda *_args: None,
+                error=self.errors.append,
+            )
+
+        def GetEnableFlag(self):
+            return True
+
+        def get_logger(self):
+            return self.logger
+
+    node = ReadyNode()
+    command = SimpleNamespace(
+        header=SimpleNamespace(frame_id='piper_scan_executor_sdk_movej'),
+        name=['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6'],
+        position=[0.0, 0.0, 0.0, 0.0, 0.4, 2.483481659203857],
+        velocity=[0.0] * 6,
+        effort=[],
+    )
+
+    PiperRosNode.joint_callback(node, command)
+    assert node.piper.joint_commands == []
+    assert 'above the qualified 365.0-deg positive limit' in node.errors[-1]
 
 
 def test_controller_motion_limits_are_typed_converted_and_hash_bound():

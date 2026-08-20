@@ -28,6 +28,7 @@ from piper_mobile_manipulation.target_scan_mission_node import (
     MissionFailure,
     planning_rejection_allows_current_state_home,
     retryable_plan_approval_rejection,
+    runtime_freshness_plan_request_rejection,
     shutdown_uses_startup_home,
     safe_view_exhaustion_after_capture,
     target_drift_requires_replan,
@@ -133,10 +134,25 @@ def test_only_visual_tracking_snapshot_blocks_retry_plan_request():
     assert visual_reacquisition_plan_request_rejection(
         'planning blocked: tracking is prediction-only; '
         'tracking measurement is stale')
+    assert visual_reacquisition_plan_request_rejection(
+        'planning blocked: target_status=LOW_CONFIDENCE')
+    assert visual_reacquisition_plan_request_rejection(
+        'planning blocked: target_status=LOST')
     assert not visual_reacquisition_plan_request_rejection(
         'planning blocked: collision scene is stale')
     assert not visual_reacquisition_plan_request_rejection(
         'Tesseract proposal rejected: PLANNING_FAILED')
+
+
+def test_only_transient_snapshot_freshness_retries_plan_request():
+    assert runtime_freshness_plan_request_rejection(
+        'planning blocked: controller motion limits are missing or stale')
+    assert runtime_freshness_plan_request_rejection(
+        'planning blocked: obstacles data missing or stale')
+    assert not runtime_freshness_plan_request_rejection(
+        'planning blocked: controller motion limits are invalid: no message')
+    assert not runtime_freshness_plan_request_rejection(
+        'planning blocked: controller motion-limit payload is malformed')
 
 
 def test_multiview_request_holds_then_snapshots_after_measured_lock_recovers(
@@ -165,6 +181,36 @@ def test_multiview_request_holds_then_snapshots_after_measured_lock_recovers(
     assert progress == [
         'target confidence dipped before scan planning; holding without motion '
         'while perception reacquires a measured lock']
+
+
+def test_multiview_request_holds_then_retries_after_runtime_refresh(
+        monkeypatch):
+    responses = [
+        SimpleNamespace(
+            accepted=False, request_id='',
+            message=(
+                'planning blocked: controller motion limits are missing or '
+                'stale')),
+        SimpleNamespace(
+            accepted=True, request_id='fresh-plan', message='queued'),
+    ]
+    progress = []
+    fake = SimpleNamespace(
+        plan_client=object(),
+        call_service=lambda *_args, **_kwargs: responses.pop(0),
+        startup_progress=lambda *_args: progress.append(_args[-1]),
+        guard=lambda *_args: None,
+    )
+    monkeypatch.setattr(mission_node.time, 'sleep', lambda _seconds: None)
+
+    request_id = TargetScanMissionNode.request_multiview_plan(
+        fake, object(), object())
+
+    assert request_id == 'fresh-plan'
+    assert not responses
+    assert progress == [
+        'runtime telemetry dipped before scan planning; holding without motion '
+        'for one fresh snapshot']
 
 
 def test_multiview_approval_holds_then_accepts_after_measured_lock_recovers(

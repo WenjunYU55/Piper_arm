@@ -2,6 +2,12 @@
 
 ## Scope
 
+The 2026-08-20 mission policy uses the existing selected-name shutdown API to
+release non-command groups during operator recovery. Before readmission, it may
+retry the bounded shutdown of exact retained handles when no driver is live or
+fresh feedback proves all six motors disabled. `ProcessSupervisor` itself still
+does not discover, classify, or adopt processes.
+
 Phase 4 extracts autonomous mission child-process mechanics from
 `target_scan_mission_node.py` into the pure-Python
 `piper_mobile_manipulation/process_supervisor.py` module. It does not change

@@ -10,7 +10,9 @@ from piper_mobile_manipulation.mission_core import MissionPhase
 from piper_mobile_manipulation.mission_engine import CancellationToken
 from piper_mobile_manipulation.target_scan_mission_node import MissionFailure
 from piper_mobile_manipulation.target_scan_mission_node import (
+    _MissionNodeOperations,
     TargetScanMissionNode,
+    previous_generation_cleanup_targets,
 )
 
 
@@ -31,6 +33,98 @@ def _cancel_failure(goal_handle, reason):
         )
 
     return cancel
+
+
+def test_previous_processing_only_generation_is_safe_to_reap():
+    live = ('vision', 'hand_eye', 'tesseract_worker', 'scan_stack')
+
+    assert previous_generation_cleanup_targets(live, False) == live
+
+
+def test_previous_live_driver_requires_fresh_six_disabled_proof():
+    live = ('driver', 'vision', 'scan_stack')
+
+    assert previous_generation_cleanup_targets(live, False) == ()
+    assert previous_generation_cleanup_targets(live, True) == live
+
+
+class _GenerationLogger:
+    def warn(self, _message):
+        pass
+
+    def error(self, _message):
+        pass
+
+
+class _PreviousGenerationProcesses:
+    def __init__(self, live, cleanup_complete=True, cleanup_error=None):
+        self.live = tuple(live)
+        self.cleanup_complete = bool(cleanup_complete)
+        self.cleanup_error = cleanup_error
+        self.shutdown_calls = []
+
+    def begin_generation(self):
+        return list(self.live)
+
+    def shutdown(self, names):
+        selected = tuple(names)
+        self.shutdown_calls.append(selected)
+        if self.cleanup_error is not None:
+            raise self.cleanup_error
+        remaining = () if self.cleanup_complete else selected
+        if self.cleanup_complete:
+            self.live = ()
+        return SimpleNamespace(
+            complete=not remaining,
+            still_running=remaining)
+
+
+def _generation_operations(
+        live, all_disabled, cleanup_complete=True, cleanup_error=None):
+    processes = _PreviousGenerationProcesses(
+        live, cleanup_complete, cleanup_error)
+    node = SimpleNamespace(
+        processes=processes,
+        fresh_all_motors_disabled=lambda: bool(all_disabled),
+        get_logger=lambda: _GenerationLogger(),
+    )
+    operations = _MissionNodeOperations(
+        node, goal_handle=None, cancellation=CancellationToken())
+    return operations, processes
+
+
+def test_admission_reaps_exact_previous_processing_handles():
+    live = ('vision', 'hand_eye', 'tesseract_worker', 'scan_stack')
+    operations, processes = _generation_operations(live, False)
+
+    assert operations.begin_process_generation(None) == []
+    assert processes.shutdown_calls == [live]
+
+
+def test_admission_does_not_signal_live_unproved_driver_generation():
+    live = ('driver', 'vision', 'scan_stack')
+    operations, processes = _generation_operations(live, False)
+
+    assert operations.begin_process_generation(None) == list(live)
+    assert processes.shutdown_calls == []
+
+
+def test_admission_reaps_disabled_driver_generation_and_reports_survivors():
+    live = ('driver', 'vision', 'scan_stack')
+    operations, processes = _generation_operations(
+        live, True, cleanup_complete=False)
+
+    assert operations.begin_process_generation(None) == list(live)
+    assert processes.shutdown_calls == [live]
+
+
+def test_admission_cleanup_exception_still_blocks_new_generation():
+    live = ('vision', 'scan_stack')
+    operations, processes = _generation_operations(
+        live, False, cleanup_error=PermissionError('signal denied'))
+
+    assert operations.begin_process_generation(None) == list(live)
+    assert processes.shutdown_calls == [live]
 
 
 def test_successful_mission_characterizes_complete_stage_and_shutdown_order(

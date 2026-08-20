@@ -1,5 +1,63 @@
 schema_version: 1
 document: ai_context_index
+tesseract_model_readiness_repair_2026_08_20:
+  symptom: A seed plan exhausted the automatic 45-second budget before candidate one because first-use Robot.from_files model construction occurred inside the post-enable request budget.
+  correction: The isolated Tesseract backend constructs one clean unused robot scene before publishing worker-ready. The first request consumes that scene; every later request still rebuilds a clean request-local scene.
+  unchanged: [45-second automatic plan budget, three-second segment budget, 180-second bridge timeout, collision model, candidates, motion and public interfaces]
+  physical_evidence: GUI task gui-sim-3eb814caa9204bfd884343f02a94323e loaded the worker model before readiness, planned and executed seed view 412, and committed capture one. The earlier candidate-zero timeout did not recur.
+post_view_reacquisition_routing_2026_08_20:
+  symptom: A true generation-one voxel NBV was rejected by the strict final-aim gate, then the mission exhausted a duplicate generic readiness wait while tracking was LOST instead of reaching the existing command-free plan-request reacquisition path.
+  correction: After accepted, visually rejected, or target-drifted views, MissionEngine directly re-enters the command-free planning loop. The existing request/approval adapters remain the sole bounded visual-reacquisition owners, and no motion occurs before normal approval safety gates.
+  unchanged: [initial multiview readiness proof, visual reacquisition timeout, approval gates, target and obstacle safety, motion, shutdown]
+  physical_evidence: After capture one in task gui-sim-3eb814caa9204bfd884343f02a94323e, tracking dipped and the mission entered the command-free typed reacquisition route. It failed only after that authoritative bound with TARGET_NOT_FOUND, then proved safe staged shutdown.
+capture_refresh_single_flight_repair_2026_08_20:
+  symptom: A settled capture revalidation request was discarded when an autonomous SAM2/GroundingDINO job already occupied the single-flight worker, causing capture timeout before any seed capture could commit.
+  correction: heavy_refresh_bridge_node.py retains the one correlated pending request and queues it exactly once when the worker and a qualifying fresh frame are available. The executor treats waiting_for_worker as nonterminal and remains bounded by the existing capture timeout.
+  unchanged: [public ROS interfaces, worker concurrency, capture retry count, capture timeout, motion, home, disable, perception algorithms]
+post_implementation_scope_audit_2026_08_20:
+  result: The global NBV repair retains the requested behavior without a new manager, state store, ROS interface, worker, estimator, coverage implementation or configuration system. The existing component owners remain authoritative.
+  simplification: Removed capture-layer recovery recommendations, planner-wide counters copied through the Tesseract request, discarded PlanAuthorizer failure tags, duplicate heavy-refresh state, unused camera-planning state and unused rejected-view joint snapshots. Stage-local diagnostics and every observed-bug regression remain.
+  boundaries: {target_estimate: target_tracker_node.py, accepted_coverage_and_gain: nbv_coverage.py plus scan_viewpoint_planner_node.py, motion_feasibility: piper_tesseract_foxy/worker.py, capture_acceptance: scan_capture_node.py, capture_recovery: capture_coordinator.py plus scan_viewpoint_executor_node.py, achieved_physical_pose: scan_viewpoint_executor_node.py}
+  interface_change: none
+global_nbv_target_aim_repair_2026_08_20:
+  goal: Restore a genuinely global one-capture/one-coverage-update/one-NBV-decision loop without coupling target estimation, information gain, Tesseract feasibility or capture recovery.
+  correction: The planner ranks the complete configured target-centric region against cumulative committed voxel coverage; the bridge shortlists twelve information-ranked candidates without the former 6-to-30/30-to-45-degree movement frontier; Tesseract tries exact target aim first and at most one hash-bound fallback within five degrees; the executor records settled FK even when capture is rejected and performs exactly one correlated heavy refresh for a transient visual rejection.
+  target_estimation: Qualified component pixels now determine camera X/Y/Z together, camera-frame EMA across eye-in-hand motion is removed, and the existing timestamped base_link constant-velocity Kalman tracker remains the sole filtered target estimate with confidence, ordering and jump gates.
+  reconstruction_boundary: Accepted capture geometry remains fixed at its capture-time base_link transform. A changing filtered target estimate affects only future candidate position, target-facing aim and drift validation.
+  regression: Recorded scan_20260820_142919 proves the old arm achieved its requested orientation within 0.04 degrees but that request missed the capture-time qualified target by 13.424 degrees. The repaired five-degree final gate rejects that observation and replans from its actual achieved FK.
+  software_validation: [660 mobile functional tests pass of which 622 are registered colcon targets including the recorded replay, 110 Tesseract tests pass, 101 repository GUI/reconstruction/calibration tests pass with one hardware-dependent skip, all five ROS packages build, command-free rootless Tesseract core PASS, command-free rootless Tesseract compact PASS, 16 changed Python files pass flake8, all changed production Python files pass pep257, 11 AI YAML files parse, git diff check passes]
+  known_nonfunctional_test_debt: Full mobile colcon test remains red only in package-wide flake8 and pep257 targets with 68 and 14 historical findings outside this repair; all 622 registered functional tests pass.
+  physical_status: Supervised runs prove startup, seed capture, generation-one voxel_nbv selection/execution, strict final-aim rejection, command-free post-view reacquisition routing, and safe terminal home/storage/disable/cleanup. Complete feature-diverse scan acceptance remains blocked by target-tracking instability and is not claimed.
+post_startup_joint6_range_repair_2026_08_20:
+  symptom: GUI mission gui-sim-a09aa6ae47f44c88a458d142a80c2289 completed STARTUP_WRIST, ROUGH_HOME and rough target acquisition, then the first multiview MoveJ made no measurable progress because J6 remained at logical 0.083090 rad while the accepted plan requested 2.483482 rad.
+  cause: Positive-only startup correctly retained a raw +2pi controller turn, but controller qualification stopped at 365 degrees. Adding the retained turn to the valid logical scan target produced raw 502.293 degrees, above that limit; the driver test suite covered ready zero and negative storage but not a positive post-startup scan target.
+  correction: Qualify and prove a 545-degree positive controller limit, which covers the retained 360-degree turn plus the complete ordinary logical +180-degree endpoint with five degrees margin. Logical J6 remains exactly [-pi,+pi], startup remains positive-only, storage remains decreasing, and commands above the qualified raw boundary now fail before CAN transmission.
+  validation: [60 focused J6 tests pass, 62 full piper tests pass with one copyright skip, 643 mobile functional tests pass, 106 Tesseract tests pass, five-package Foxy build passes, rootless core PASS, rootless compact PASS, 11 AI YAML files parse]
+  physical_status: Software-only correction; no arm, CAN or camera command was issued. A supervised low-speed positive-J6 waypoint and terminal storage/disable are still required before full E2E.
+nbv_bridge_debug_crash_repair_2026_08_20:
+  symptom: GUI mission gui-sim-6e0cbcd372594740a38c824a6301f43e reached a valid rough-acquisition proposal, then timed out approving it and reported CONTROL_UNTRUSTWORTHY after the home executor disappeared.
+  cause: The NBV generation/provenance integration called an undefined TesseractPlanBridge.param_bool method from two debug-only paths. With debug true, the bridge crashed after publishing the valid plan; launch correctly treated that critical-child exit as authority loss and stopped the scan stack.
+  correction: TesseractPlanBridge now implements the same ROS boolean-parameter adapter used by the other production nodes. A regression executes the generation receipt and debug log path that previously raised AttributeError.
+  validation: [34 focused bridge tests pass, 106 complete Tesseract tests pass, 643 complete mobile-manipulation tests pass, 23 GUI policy/client tests pass, five-package Foxy build passes, rootless core PASS, rootless compact PASS]
+  physical_status: Software-only repair; all nodes and all six motors remain off. A supervised E2E is still required.
+previous_generation_reconciliation_2026_08_20:
+  symptom: A later GUI goal failed CONTROL_UNTRUSTWORTHY because the in-process supervisor still had live handles owned by the preceding mission generation.
+  cause: Terminal home or disable proof could return NEEDS_OPERATOR before non-command perception/planning groups were released; the next admission treated every survivor identically.
+  correction: Terminal operator-recovery now revokes mission authorization and stops only exact mission-owned vision, hand_eye and tesseract_worker groups. A later admission may retry cleanup of exact stored prior-generation handles when no driver is live, or when fresh typed feedback proves all six motors disabled. A live driver without that proof remains a hard stop.
+  physical_status: Software-only; no process was signalled and no arm command was issued during implementation.
+voxel_nbv_generation_handoff_2026_08_17:
+  goal: Prevent a closed-loop mission from requesting Tesseract against the previous accepted-capture generation and retain diverse feasible directions when top-ranked poses fail IK.
+  incident: GUI mission gui-sim-25a675652af94bada5674f130c967d4a made two accepted captures, then failed NO_REACHABLE_PLAN because voxel rebuild/ranking took about 12 seconds while the bridge correctly expired its one-second old scan snapshot.
+  solution: The planner labels every output with immutable session/policy/generation readiness; the reachability filter preserves it; the bridge publishes a receipt only after caching that exact generation; MissionEngine waits for a post-barrier matching receipt before requesting a plan. Tesseract freshness remains unchanged.
+  diversity: The bounded authoritative-NBV shortlist reserves information leaders from distinct 15-degree azimuth/elevation bins, retains nearby IK alternatives, and remains sorted by NBV rank so the worker selects the highest-information feasible view.
+  provenance: /piper/tesseract_plan_provenance binds the selected policy, accepted-view generation, candidate ID, NBV rank and predicted gain to plan_id; scan_capture_node persists that exact binding in each frame metadata file.
+  physical_status: Software verified only after the incident; a new supervised E2E is required.
+gui_viewpoint_policy_selector_2026_08_17:
+  goal: Let the operator select the existing legacy or voxel-NBV viewpoint policy without duplicating planner logic in the GUI.
+  boundary: piper_gui_native.py changes only view_selection_policy in the source scan_planning_params.yaml through piper_gui/scan_policy.py. MissionEngine still owns startup and starts a fresh scan stack which reads that parameter; the GUI does not change a running stack, action schema, planning, safety, retry, motion, or shutdown behavior.
+  selectable_policies: [legacy, voxel_nbv]
+  current_saved_policy: voxel_nbv
+  validation: [test_piper_gui_scan_policy.py, test_piper_gui_phase8.py]
 current_change_2026_08_17:
   goal: Simplify mission shutdown and executor runtime gates without changing public ROS, numerical motion, perception, TF/calibration or scan-trajectory contracts.
   authoritative_files: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission_engine.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/safety_evaluator.py]
@@ -1144,3 +1202,10 @@ commissioning_control_reintegration_2026_08_16: >-
   command and directly requests the driver's all-six feedback-proved disable.
   Autonomous Cancel/Home and terminal homing are unchanged. Software-only
   regression/build qualification is required before restarting the stack.
+
+live_voxel_nbv_2026_08_17:
+  status: authoritative_software_awaiting_supervised_E2E
+  owner: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/nbv_coverage.py
+  integration: [scan_viewpoint_planner_node.py, piper_tesseract_foxy/bridge_node.py]
+  summary: Accepted schema-2 RGB-D/mask artifacts rebuild a session-scoped object voxel model. Candidate viewing directions are raycast and ranked by visible unknown evidence, novel known-surface direction, projected support, direction novelty and only then travel. Radius variants remain bounded IK fallbacks. On 2026-08-17 the operator explicitly selected authoritative voxel_nbv for the next supervised E2E; this selection is not yet physical qualification.
+  replay: tools/replay_nbv_coverage.py

@@ -114,10 +114,12 @@ ACTIVE_STATES = {
     'WAITING_FOR_RUNTIME_REFRESH',
     'MOVING', 'SETTLING', 'SETTLING_HOME',
     'CAPTURING', 'CAPTURING_RGBD', 'WAIT_CAPTURE',
+    'WAITING_FOR_CAPTURE_REFRESH',
     'WAITING_FOR_FRESH_FRAME', 'WAITING_FOR_GROUNDING_DINO',
     'WAITING_FOR_TRACKING_LOCK', 'WAITING_FOR_OBSTACLE_SCENE',
 }
 MAX_RGBD_CAPTURE_READINESS_RETRIES = 10
+MAX_FINAL_CAPTURE_AIM_ERROR_DEG = 5.0
 
 
 def sdk_command_path(path, velocities, accelerations, times, execution_mode,
@@ -373,7 +375,8 @@ def missing_obstacles_can_wait(
     return (
         plan_kind == MULTIVIEW_SCAN
         and state in (
-            'SETTLING', 'CAPTURING', 'CAPTURING_RGBD', 'WAIT_CAPTURE'))
+            'SETTLING', 'CAPTURING', 'CAPTURING_RGBD', 'WAIT_CAPTURE',
+            'WAITING_FOR_CAPTURE_REFRESH'))
 
 
 class ScanViewpointExecutorNode(Node):
@@ -417,6 +420,7 @@ class ScanViewpointExecutorNode(Node):
         self.scan_session_id = ''
         self.scan_history = []
         self.scan_rejections = []
+        self.latest_achieved_scan_view = None
         self.scan_coverage_target_center = None
         self.updated = {}
         self.state = 'IDLE'
@@ -485,6 +489,10 @@ class ScanViewpointExecutorNode(Node):
         self.settle_position_anchor = None
         self.settle_last_joint_update = -1e9
         self.settle_last_sample_ok = False
+        self.settle_diagnostic = 'settle proof has not sampled joint feedback'
+        self.settle_reset_count = 0
+        self.settle_longest_window_sec = 0.0
+        self.settle_last_reset_reason = ''
         self.home_settle_previous_joints = None
         self.home_settle_last_joint_update = -1e9
         self.home_settle_last_sample_ok = False
@@ -492,6 +500,12 @@ class ScanViewpointExecutorNode(Node):
         self.capture_future = None
         self.rgbd_capture_future = None
         self.rgbd_capture_attempts = 0
+        self.capture_heavy_refresh_started = None
+        self.capture_heavy_refresh_request_id = ''
+        self.capture_heavy_refresh_min_image_stamp_ns = 0
+        self.capture_heavy_refresh_publish_attempts = 0
+        self.capture_heavy_refresh_waiting_for_worker = False
+        self.capture_rejection_reason = ''
         self.finish_scan_future = None
         self.return_home_warning = ''
         self.abort_return_in_progress = False
@@ -1347,6 +1361,7 @@ class ScanViewpointExecutorNode(Node):
             self.scan_session_id = session_id
             self.scan_history = []
             self.scan_rejections = []
+            self.latest_achieved_scan_view = None
             self.scan_coverage_target_center = None
             self.publish_scan_history()
 
@@ -1355,6 +1370,57 @@ class ScanViewpointExecutorNode(Node):
             payload = json.loads(msg.data)
         except (TypeError, json.JSONDecodeError):
             return
+        if self.state == 'WAITING_FOR_CAPTURE_REFRESH':
+            if not self.capture_heavy_refresh_request_id:
+                return
+            action, reason, _image_stamp_ns = heavy_refresh_status_action(
+                payload,
+                self.capture_heavy_refresh_request_id,
+                self.capture_heavy_refresh_min_image_stamp_ns,
+            )
+            if action == 'idle':
+                if self.capture_heavy_refresh_waiting_for_worker:
+                    if self.capture_heavy_refresh_publish_attempts >= 2:
+                        self.abort_motion(
+                            'capture heavy worker stayed busy after one '
+                            'bounded retry')
+                        return
+                    self.capture_heavy_refresh_waiting_for_worker = False
+                    self.publish_capture_heavy_refresh()
+                return
+            if action in (
+                    'ignore', 'waiting_for_frame', 'waiting_for_worker',
+                    'queued'):
+                self.capture_heavy_refresh_waiting_for_worker = False
+                return
+            if action == 'detected':
+                self.rgbd_capture_future = None
+                self.set_state(
+                    'CAPTURING_RGBD',
+                    'matching heavy refresh found the target; validating '
+                    'the same achieved viewpoint again')
+                return
+            if action in ('not_found', 'not_found_clear'):
+                self.reject_achieved_capture_view(
+                    self.capture_rejection_reason or reason)
+                return
+            if action == 'busy':
+                if self.capture_heavy_refresh_publish_attempts >= 2:
+                    self.abort_motion(
+                        'capture heavy worker stayed busy after one bounded '
+                        'retry')
+                    return
+                self.capture_heavy_refresh_waiting_for_worker = True
+                self.set_state(
+                    'WAITING_FOR_CAPTURE_REFRESH',
+                    'heavy perception worker is busy; holding the achieved '
+                    'pose for one bounded refresh retry')
+                return
+            if action == 'abort':
+                self.abort_motion(
+                    'capture heavy perception refresh failed: ' + reason)
+            return
+
         acquisition_wait_states = (
             'WAITING_FOR_FRESH_FRAME',
             'WAITING_FOR_GROUNDING_DINO',
@@ -1413,6 +1479,12 @@ class ScanViewpointExecutorNode(Node):
             self.set_state(
                 'WAITING_FOR_FRESH_FRAME',
                 'waiting for a new camera frame captured after this settled look')
+            return
+        if action == 'waiting_for_worker':
+            self.set_state(
+                'WAITING_FOR_FRESH_FRAME',
+                'GroundingDINO worker is busy; the correlated request is '
+                'retained until it becomes available')
             return
         if action == 'queued':
             self.acquisition_job_image_stamp_ns = int(image_stamp_ns)
@@ -1943,7 +2015,7 @@ class ScanViewpointExecutorNode(Node):
             if self.is_acquisition() else
             SafetyMode.SCAN_CAPTURE if self.state in (
                 'SETTLING', 'CAPTURING', 'CAPTURING_RGBD',
-                'WAIT_CAPTURE') else
+                'WAIT_CAPTURE', 'WAITING_FOR_CAPTURE_REFRESH') else
             SafetyMode.SCAN_MOTION)
         static_scene = bool(
             missing_obstacles_can_wait(
@@ -2000,6 +2072,8 @@ class ScanViewpointExecutorNode(Node):
             self.capturing_rgbd_tick()
         elif self.state == 'WAIT_CAPTURE':
             self.wait_capture_tick()
+        elif self.state == 'WAITING_FOR_CAPTURE_REFRESH':
+            self.waiting_for_capture_refresh_tick()
         elif self.state == 'WAITING_FOR_FRESH_FRAME':
             self.waiting_for_fresh_frame_tick()
         elif self.state == 'WAITING_FOR_GROUNDING_DINO':
@@ -2261,6 +2335,9 @@ class ScanViewpointExecutorNode(Node):
             self.settle_started = None
             self.settle_position_anchor = None
             self.settle_last_sample_ok = False
+            self.settle_reset_count = 0
+            self.settle_longest_window_sec = 0.0
+            self.settle_last_reset_reason = ''
             self.set_state(
                 'SETTLING',
                 'acquisition look reached; waiting for arm and camera to settle'
@@ -2408,12 +2485,35 @@ class ScanViewpointExecutorNode(Node):
             configured_value(self, 'settle_timeout_sec'),
         )
         if settle_decision.action is CaptureAction.ABORT:
+            current_window = (
+                0.0 if self.settle_started is None else
+                max(0.0, now - float(self.settle_started)))
+            self.get_logger().error(
+                'Settle proof diagnostic: %s; resets=%d; '
+                'longest_window=%.3fs; current_window=%.3fs; '
+                'last_reset=%s'
+                % (
+                    str(getattr(
+                        self, 'settle_diagnostic', 'unavailable')),
+                    int(getattr(self, 'settle_reset_count', 0)),
+                    float(getattr(self, 'settle_longest_window_sec', 0.0)),
+                    current_window,
+                    str(getattr(
+                        self, 'settle_last_reset_reason', 'unavailable')),
+                ))
             self.abort_motion(
                 'arm/camera did not settle before acquisition refresh'
                 if self.is_acquisition()
                 else 'arm/camera did not settle before timeout')
             return
         if settle_decision.reset_settle_window:
+            if self.settle_started is not None:
+                self.settle_longest_window_sec = max(
+                    float(self.settle_longest_window_sec),
+                    max(0.0, now - float(self.settle_started)),
+                )
+            self.settle_reset_count += 1
+            self.settle_last_reset_reason = str(self.settle_diagnostic)
             self.settle_started = None
             return
         if settle_decision.action is CaptureAction.START_SETTLE_WINDOW:
@@ -2423,6 +2523,14 @@ class ScanViewpointExecutorNode(Node):
             return
         if self.is_acquisition():
             self.request_acquisition_refresh()
+            return
+        if (
+                not self.latest_achieved_matches_current_view()
+                and not self.record_latest_achieved_scan_view()):
+            return
+        aim_rejection = self.final_capture_aim_rejection()
+        if aim_rejection:
+            self.reject_achieved_capture_view(aim_rejection)
             return
         if not self.param_bool('auto_capture'):
             self.advance_view()
@@ -2447,6 +2555,12 @@ class ScanViewpointExecutorNode(Node):
             'settled viewpoint reached; saving synchronized RGB-D record')
         self.rgbd_capture_future = None
         self.rgbd_capture_attempts = 0
+        self.capture_heavy_refresh_started = None
+        self.capture_heavy_refresh_request_id = ''
+        self.capture_heavy_refresh_min_image_stamp_ns = 0
+        self.capture_heavy_refresh_publish_attempts = 0
+        self.capture_heavy_refresh_waiting_for_worker = False
+        self.capture_rejection_reason = ''
         self.finish_scan_future = None
 
     def request_acquisition_refresh(self):
@@ -2704,7 +2818,8 @@ class ScanViewpointExecutorNode(Node):
             message = result.message if result is not None else 'empty service response'
             failure = as_failure(message)
             capture_decision = coordinator.classify_result(
-                False, failure, self.rgbd_capture_attempts)
+                False, failure, self.rgbd_capture_attempts,
+                bool(self.capture_heavy_refresh_request_id))
             if capture_decision.action is CaptureAction.RETRY_SAME_VIEW:
                 self.rgbd_capture_future = None
                 self.set_state(
@@ -2712,19 +2827,11 @@ class ScanViewpointExecutorNode(Node):
                     'capture evidence is still catching up with the settled '
                     'frame; retrying the same viewpoint without moving')
                 return
+            if capture_decision.action is CaptureAction.REFRESH_SAME_VIEW:
+                self.request_capture_heavy_refresh(message)
+                return
             if capture_decision.action is CaptureAction.REPLAN_VIEW:
-                self.record_rejected_view(message)
-                self.command_target = None
-                self.current_path = []
-                self.current_path_velocities = []
-                self.current_path_accelerations = []
-                self.current_path_times = []
-                self.publish_hold()
-                self.set_state(
-                    'VIEW_REJECTED',
-                    'RGB-D viewpoint rejected by fresh visual evidence: %s; '
-                    'holding for measured-coverage replacement planning'
-                    % message)
+                self.reject_achieved_capture_view(message)
                 return
             self.abort_motion('RGB-D viewpoint capture was rejected: %s' % message)
             return
@@ -2735,6 +2842,67 @@ class ScanViewpointExecutorNode(Node):
         self.set_state(
             'CAPTURING',
             'RGB-D viewpoint saved; recording viewpoint acceptance')
+
+    def request_capture_heavy_refresh(self, reason):
+        """Request one request-correlated semantic refresh without moving."""
+        if self.capture_heavy_refresh_request_id:
+            self.reject_achieved_capture_view(reason)
+            return
+        self.capture_heavy_refresh_started = self.now()
+        self.capture_rejection_reason = str(reason)
+        stamp = self.get_clock().now().to_msg()
+        self.capture_heavy_refresh_min_image_stamp_ns = (
+            int(stamp.sec) * 1000000000 + int(stamp.nanosec))
+        self.capture_heavy_refresh_request_id = (
+            '%s-capture-%d-refresh' % (self.plan_id, self.current_view))
+        self.capture_heavy_refresh_publish_attempts = 0
+        self.capture_heavy_refresh_waiting_for_worker = False
+        self.publish_capture_heavy_refresh()
+        self.publish_hold()
+        self.set_state(
+            'WAITING_FOR_CAPTURE_REFRESH',
+            'fresh visual capture evidence was invalid; holding the achieved '
+            'pose for one correlated heavy perception refresh')
+
+    def publish_capture_heavy_refresh(self):
+        """Publish the current correlated capture refresh request."""
+        self.capture_heavy_refresh_publish_attempts += 1
+        seconds, nanoseconds = divmod(
+            int(self.capture_heavy_refresh_min_image_stamp_ns), 1000000000)
+        request = String()
+        request.data = json.dumps({
+            'request_id': self.capture_heavy_refresh_request_id,
+            'reason': 'settled_scan_capture_revalidation',
+            'min_image_stamp': {
+                'sec': int(seconds),
+                'nanosec': int(nanoseconds),
+            },
+        }, sort_keys=True)
+        self.heavy_refresh_pub.publish(request)
+
+    def waiting_for_capture_refresh_tick(self):
+        """Bound the single capture refresh by the existing capture timeout."""
+        if self.capture_heavy_refresh_started is None:
+            self.abort_motion('capture heavy refresh timing is missing')
+            return
+        if self.now() - self.capture_heavy_refresh_started > float(
+                configured_value(self, 'capture_timeout_sec')):
+            self.abort_motion('capture heavy perception refresh timed out')
+
+    def reject_achieved_capture_view(self, reason):
+        """Reject one achieved observation and hand a clean replan result up."""
+        if not self.record_rejected_view(reason):
+            return
+        self.command_target = None
+        self.current_path = []
+        self.current_path_velocities = []
+        self.current_path_accelerations = []
+        self.current_path_times = []
+        self.publish_hold()
+        self.set_state(
+            'VIEW_REJECTED',
+            'RGB-D viewpoint rejected after settled visual validation: %s; '
+            'holding for a new NBV plan' % reason)
 
     def wait_capture_tick(self):
         if self.now() - self.state_started > float(
@@ -2772,22 +2940,17 @@ class ScanViewpointExecutorNode(Node):
             self.abort_motion('accepted viewpoint is missing from the approved plan')
             return False
         viewpoint = self.plan_viewpoints[self.current_view]
-        try:
-            joints = [float(value) for value in self.current_joints()]
-            achieved_transform = self.kinematics.camera_transform(joints)
-            achieved_camera = np.asarray(
-                achieved_transform[:3, 3], dtype=float)
-            achieved_look = np.asarray(
-                achieved_transform[:3, :3], dtype=float).dot(
-                    np.asarray([0.0, 0.0, 1.0], dtype=float))
-            achieved_look /= np.linalg.norm(achieved_look)
-        except ValueError as error:
-            self.abort_motion('cannot record accepted viewpoint: %s' % error)
+        if (
+                not self.latest_achieved_matches_current_view()
+                and not self.record_latest_achieved_scan_view()):
             return False
-        actual_camera = dict(zip(
-            ('x', 'y', 'z'), (float(value) for value in achieved_camera)))
-        actual_look = dict(zip(
-            ('x', 'y', 'z'), (float(value) for value in achieved_look)))
+        achieved = dict(self.latest_achieved_scan_view)
+        joints = list(achieved['joint_positions_rad'])
+        actual_camera = dict(achieved['camera_position'])
+        actual_look = dict(achieved['look_direction'])
+        planning_target = dict(zip(
+            ('x', 'y', 'z'),
+            (float(value) for value in self.plan_target_center)))
         self.scan_history.append({
             'accepted_view': int(accepted_views),
             'plan_id': self.plan_id,
@@ -2804,6 +2967,8 @@ class ScanViewpointExecutorNode(Node):
             'proposed_look_at_direction': dict(
                 viewpoint.get('desired_look_at_direction', {})),
             'joint_positions_rad': joints,
+            'achieved_at_sec': float(achieved['achieved_at_sec']),
+            'target_estimate_used': planning_target,
         })
         self.publish_scan_history()
         return True
@@ -2815,19 +2980,145 @@ class ScanViewpointExecutorNode(Node):
                 or self.current_view >= len(self.plan_viewpoints)):
             return False
         viewpoint = self.plan_viewpoints[self.current_view]
+        if (
+                not self.latest_achieved_matches_current_view()
+                and not self.record_latest_achieved_scan_view()):
+            return False
+        achieved = dict(self.latest_achieved_scan_view)
+        actual_camera = dict(achieved['camera_position'])
+        actual_look = dict(achieved['look_direction'])
+        planning_target = dict(zip(
+            ('x', 'y', 'z'),
+            (float(value) for value in self.plan_target_center)))
         self.scan_rejections.append({
             'rejected_view': len(self.scan_rejections) + 1,
             'plan_id': self.plan_id,
             'viewpoint_index': int(
                 viewpoint.get('index', self.current_view)),
-            'desired_camera_position': dict(
+            'desired_camera_position': actual_camera,
+            'desired_look_at_direction': actual_look,
+            'actual_camera_position': actual_camera,
+            'actual_look_at_direction': actual_look,
+            'proposed_camera_position': dict(
                 viewpoint.get('desired_camera_position', {})),
-            'desired_look_at_direction': dict(
+            'proposed_look_at_direction': dict(
                 viewpoint.get('desired_look_at_direction', {})),
+            'achieved_at_sec': float(achieved['achieved_at_sec']),
+            'target_estimate_used': planning_target,
             'reason': str(reason),
         })
         self.publish_scan_history()
         return True
+
+    def record_latest_achieved_scan_view(self):
+        """Snapshot settled FK independently of capture acceptance."""
+        if self.plan_kind != MULTIVIEW_SCAN:
+            return True
+        if self.current_view >= len(self.plan_viewpoints):
+            self.abort_motion('achieved viewpoint is missing from the approved plan')
+            return False
+        try:
+            joints = [float(value) for value in self.current_joints()]
+            achieved_transform = self.kinematics.camera_transform(joints)
+            achieved_camera = np.asarray(
+                achieved_transform[:3, 3], dtype=float)
+            achieved_look = np.asarray(
+                achieved_transform[:3, :3], dtype=float).dot(
+                    np.asarray([0.0, 0.0, 1.0], dtype=float))
+            achieved_look /= np.linalg.norm(achieved_look)
+            if (
+                    achieved_camera.shape != (3,)
+                    or achieved_look.shape != (3,)
+                    or not np.all(np.isfinite(achieved_camera))
+                    or not np.all(np.isfinite(achieved_look))):
+                raise ValueError('achieved camera FK is non-finite')
+        except (TypeError, ValueError) as error:
+            self.abort_motion('cannot record achieved viewpoint: %s' % error)
+            return False
+        viewpoint = self.plan_viewpoints[self.current_view]
+        self.latest_achieved_scan_view = {
+            'plan_id': str(self.plan_id),
+            'viewpoint_index': int(
+                viewpoint.get('index', self.current_view)),
+            'camera_position': dict(zip(
+                ('x', 'y', 'z'),
+                (float(value) for value in achieved_camera))),
+            'look_direction': dict(zip(
+                ('x', 'y', 'z'),
+                (float(value) for value in achieved_look))),
+            'joint_positions_rad': joints,
+            'achieved_at_sec': float(self.now()),
+        }
+        self.publish_scan_history()
+        return True
+
+    def latest_achieved_matches_current_view(self):
+        """Return whether the settled FK record belongs to this exact view."""
+        achieved = self.latest_achieved_scan_view
+        if (
+                not isinstance(achieved, dict)
+                or self.current_view >= len(self.plan_viewpoints)):
+            return False
+        viewpoint = self.plan_viewpoints[self.current_view]
+        return bool(
+            str(achieved.get('plan_id', '')) == str(self.plan_id)
+            and int(achieved.get('viewpoint_index', -1)) == int(
+                viewpoint.get('index', self.current_view)))
+
+    def final_capture_aim_rejection(self):
+        """Require the achieved optical axis to retain the five-degree aim."""
+        if self.plan_kind != MULTIVIEW_SCAN:
+            return ''
+        achieved = self.latest_achieved_scan_view
+        if not isinstance(achieved, dict):
+            return 'FINAL_AIM_EXCEEDED: achieved camera FK is unavailable'
+        try:
+            camera = np.asarray([
+                achieved['camera_position'][axis]
+                for axis in ('x', 'y', 'z')], dtype=float)
+            look = np.asarray([
+                achieved['look_direction'][axis]
+                for axis in ('x', 'y', 'z')], dtype=float)
+            target = np.asarray(self.plan_target_center, dtype=float)
+            tracked = getattr(self, 'latest_tracked_target', None)
+            tracked_header = getattr(tracked, 'header', None)
+            tracked_fresh = bool(
+                tracked is not None
+                and getattr(tracked, 'valid', False)
+                and str(getattr(tracked_header, 'frame_id', '')) == 'base_link'
+                and self.fresh('tracked_target'))
+            if tracked_fresh:
+                target = np.asarray([
+                    tracked.position.x,
+                    tracked.position.y,
+                    tracked.position.z,
+                ], dtype=float)
+            drift = float(np.linalg.norm(
+                target - np.asarray(self.plan_target_center, dtype=float)))
+            expected = target - camera
+            expected /= np.linalg.norm(expected)
+            look /= np.linalg.norm(look)
+            error_deg = math.degrees(math.acos(float(np.clip(
+                np.dot(expected, look), -1.0, 1.0))))
+        except (KeyError, TypeError, ValueError, ZeroDivisionError):
+            return 'FINAL_AIM_EXCEEDED: achieved target-facing geometry is invalid'
+        achieved['final_aim_error_deg'] = float(error_deg)
+        achieved['target_estimate_at_capture'] = dict(zip(
+            ('x', 'y', 'z'), (float(value) for value in target)))
+        achieved['target_estimate_drift_m'] = float(drift)
+        maximum_drift = float(configured_value(
+            self, 'max_target_drift_before_approval_m'))
+        if tracked_fresh and drift > maximum_drift + 1e-9:
+            return (
+                'TARGET_DRIFT_REPLAN: target estimate changed %.4fm after '
+                'planning; hold the achieved pose and request a fresh NBV'
+                % drift)
+        if error_deg > MAX_FINAL_CAPTURE_AIM_ERROR_DEG + 1e-6:
+            return (
+                'FINAL_AIM_EXCEEDED: achieved camera aim %.3fdeg exceeds '
+                '%.3fdeg' % (
+                    error_deg, MAX_FINAL_CAPTURE_AIM_ERROR_DEG))
+        return ''
 
     def advance_view(self):
         self.current_view += 1
@@ -3057,6 +3348,7 @@ class ScanViewpointExecutorNode(Node):
         self.finish_scan_future = None
         self.scan_history = []
         self.scan_rejections = []
+        self.latest_achieved_scan_view = None
         self.scan_session_id = ''
         self.scan_coverage_target_center = None
         self.publish_scan_history()
@@ -3675,6 +3967,7 @@ class ScanViewpointExecutorNode(Node):
         if joints is None or not joints_fresh:
             self.settle_position_anchor = None
             self.settle_last_sample_ok = False
+            self.settle_diagnostic = 'joint feedback is missing or stale'
             return False
         current = (
             self.current_joints() if snapshot is None else
@@ -3688,6 +3981,24 @@ class ScanViewpointExecutorNode(Node):
             target = current
         if updated_at <= self.settle_last_joint_update:
             return self.settle_last_sample_ok
+        target_error = float(np.max(np.abs(current - target)))
+        anchor_error = (
+            math.nan if self.settle_position_anchor is None else
+            float(np.max(np.abs(
+                current - np.asarray(self.settle_position_anchor, dtype=float))))
+        )
+        self.settle_diagnostic = (
+            'max_target_error=%.9frad (limit %.9f), '
+            'max_anchor_drift=%s (limit %.9f), current=%s, target=%s'
+            % (
+                target_error,
+                float(configured_value(self, 'joint_goal_tolerance_rad')),
+                ('not-started' if not math.isfinite(anchor_error)
+                 else '%.9frad' % anchor_error),
+                float(configured_value(self, 'endpoint_position_settled_rad')),
+                np.asarray(current, dtype=float).tolist(),
+                np.asarray(target, dtype=float).tolist(),
+            ))
         settled, anchor = target_position_window_sample_settled(
             current,
             target,
@@ -4212,6 +4523,11 @@ class ScanViewpointExecutorNode(Node):
                 configured_value(self, 'max_execution_viewpoints')),
             'entries': list(self.scan_history),
             'rejected_entries': list(self.scan_rejections),
+            'latest_achieved_camera': (
+                dict(getattr(self, 'latest_achieved_scan_view', None))
+                if isinstance(
+                    getattr(self, 'latest_achieved_scan_view', None), dict)
+                else None),
             'coverage_target_center': coverage_target_center,
         }, sort_keys=True)
         self.scan_history_pub.publish(msg)
