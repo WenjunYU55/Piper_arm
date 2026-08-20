@@ -1,5 +1,25 @@
 schema_version: 1
 document: technical_debt
+normalized_marginal_nbv_physical_qualification_2026_08_20:
+  status: software_fixed_supervised_physical_retest_pending
+  incident: scan_20260820_230845 committed six captures but repeated one reachable 65-degree band, achieved 53.6 degrees azimuth, passed neither Y-side floor and exhausted visual replacements before completion.
+  corrected: Replace raw unknown-pixel-first ranking with normalized marginal target information, then accepted-view angular novelty, absolute marginal support and travel. Preserve the existing global candidate region and Tesseract shortlist/feasibility boundary.
+  software_evidence: [118 focused upstream and downstream tests pass, 685 complete mobile tests pass, 117 complete Tesseract tests pass, 60 driver functional tests pass, 101 repository tests pass with one hardware skip, 30 isolated AI-worker tests pass, five-package build passes, rootless core PASS, rootless compact PASS, changed-file lint passes, registered colcon functional tests pass with only documented historical package-wide flake8 and pep257 debt, six-frame replay moves top twelve from all 75-degree directions to ten 15-degree and two 25-degree directions spanning both azimuth extremes]
+  remaining: Run one explicitly authorized supervised scan. Verify Tesseract diagnostics attempt both lateral sectors and multiple elevations, accepted captures increase measured novelty, final aim remains within five degrees, and terminal home/disable remains unchanged. Do not tune weights or add a staged Y policy before this evidence.
+supervised_e2e_followup_2026_08_20:
+  status: mid_elevation_shortlist_software_fixed_physical_run_pending
+  task: codex-e2e-tracking-20260820-2106
+  achieved: [startup, rough acquisition, target lock, exact-aim seed plan and motion, one GOOD/CLEAR capture, pre-home, rough home, storage, all-six disable, exact process cleanup]
+  failed: Generation-one Tesseract exhausted twelve shortlisted global/sector views; no continuity fallback was present even though nearby informative exact-aim IK existed.
+  corrected: [five-second stationary prediction bound sized above measured 3.8868-second GPU gap, 0.01 process noise, base-noise innovation gate, six global direction-sector leaders, five mid-elevation sector alternatives, one informative continuity slot inside existing twelve-view bridge bound]
+  latest_attempt: Task codex-e2e-clear-20260820-223207 exercised true voxel_nbv and committed three captures, but the continuity-only shortlist retained mostly 75/65-degree poses and achieved only 15.9 degrees azimuth before measured lock expired. Software-only rootless replay of that state now retains exact-feasible 45-degree alternatives on both sides of the reachable arc.
+  remaining: Run one supervised E2E and verify the selected feasible sequence can leave the prior 65-degree band while preserving exact aim and safe shutdown. Fresh but semantically drifted SAM2 masks remain a separate perception issue. Also inspect the driver SIGINT/raw-feedback shutdown traceback and process return-code reporting race without changing proved disable ordering.
+sam2_gradual_mask_drift_followup_2026_08_20:
+  status: deferred_outside_tracking_repair
+  fixed_here: Missing stale malformed wrong-frame and empty masks can no longer create high-confidence ROI target measurements. Abrupt statistically implausible base_link measurements are rejected and become bounded prediction-only states.
+  remaining: A fresh SAM2 mask that gradually expands onto the wrong semantic support can remain temporally correlated and statistically plausible, so innovation gating alone cannot prove object identity. Recorded vision.log shows later mask-supported depth moving from about 0.365 m toward 0.478 m after earlier approximately 5000-pixel support expanded.
+  investigate_next: [SAM2 eight-frame reseeding and seed provenance, mask IoU and area evolution, detector-mask agreement, component geometry across viewpoints]
+  do_not_do: [do not add XMem or VideoSAM without a separate design, do not create a second target estimator, do not modify NBV to hide semantic drift, do not tighten the Kalman gate until recorded valid viewpoint changes are characterized]
 tesseract_first_request_model_followup_2026_08_20:
   status: fixed_and_supervised_seed_verified
   evidence: task gui-sim-7d34364727c9405eb5d16e9b32f48db4 reached target lock but returned candidate_attempts zero and exceeded the 45-second automatic budget before candidate one; safe staged shutdown completed and its zero-capture dataset was removed.

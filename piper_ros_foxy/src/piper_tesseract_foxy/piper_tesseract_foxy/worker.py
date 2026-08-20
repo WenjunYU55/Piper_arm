@@ -2228,6 +2228,8 @@ class TesseractBackend:
                             'nbv_positive_information_gain',
                             'nbv_predicted_unknown_pixels',
                             'nbv_novel_surface_pixels',
+                            'nbv_marginal_information_pixels',
+                            'nbv_marginal_information_fraction',
                             'coverage_score',
                         )
                         if key in candidate
@@ -2311,6 +2313,8 @@ class TesseractBackend:
                             'nbv_positive_information_gain',
                             'nbv_predicted_unknown_pixels',
                             'nbv_novel_surface_pixels',
+                            'nbv_marginal_information_pixels',
+                            'nbv_marginal_information_fraction',
                             'nbv_projected_object_pixels',
                             'nbv_direction_novelty_deg',
                             'nbv_camera_travel_m',

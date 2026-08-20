@@ -1,6 +1,47 @@
 schema_version: 1
 document: consolidated_problem_and_incident_log
 last_reviewed: '2026-08-20'
+raw_unknown_pixel_nbv_diversity_bias_2026_08_20:
+  state: software_fixed_physical_retest_pending
+  task_id: codex-e2e-nbv15-20260820-230803
+  dataset: datasets/active_scan/scan_20260820_230845
+  symptom: Six accepted captures appeared orbit-like. Every post-seed accepted candidate used 65 degrees elevation, accepted directions covered only 53.6 degrees azimuth, neither Y side met its threshold, and later measured novel fractions fell near 0.09 to 0.13.
+  cause: rank_next_best_views compared raw predicted unknown pixels before surface and angular novelty. The six-capture replay ranked the full 75-degree elevation band ahead of every lower band; Tesseract rejected many 75-degree candidates and selected neighboring reachable 65-degree candidates.
+  correction: Rank normalized marginal information fraction first, accepted-view angular novelty second, absolute marginal pixels next and travel last. Carry both new marginal fields through existing private provenance only.
+  unchanged: [candidate region, accepted-only coverage, shortlist size and sector logic, Tesseract feasibility, exact aim, capture acceptance, tracking, speed, home, disable, shutdown, public ROS interfaces]
+  evidence: [118 focused tests pass, 685 complete mobile tests pass, 117 complete Tesseract tests pass, five-package build passes, rootless core and compact suites pass, changed-file lint passes, software replay top twelve contains ten 15-degree and two 25-degree candidates across both azimuth extremes]
+steep_band_nbv_shortlist_2026_08_20:
+  state: software_fixed_physical_retest_pending
+  task_id: codex-e2e-clear-20260820-223207
+  symptom: Three captures were committed but accepted azimuth span was only 15.9 degrees; most motion-planning attempts remained in the 75/65-degree elevation bands and the mission later failed TARGET_NOT_FOUND.
+  evidence: Candidate metadata showed top information views across Y sectors, but nearly every failed pose reported no finite bounded IK. Command-free raw-IK diagnosis proved a representative steep rank-one pose had zero raw IK across ninety roll/seed attempts while the selected continuity pose had fifty-six raw in-limit collision-free solutions. Mapping the configured dome found exact feasible poses around 35-55 degrees elevation and approximately -150 through +142.5 degrees of the reachable arc.
+  cause: The twelve-view bridge handoff preferred the achieved elevation for sector alternatives. After a rejected move reached 65 degrees, the shortlist preserved 75/65-degree variants instead of retaining mid-elevation IK escapes already present in the ranked NBV pool.
+  correction: Keep six global leaders from broad 30-degree direction sectors, retain five alternatives near the median configured elevation inside those informative sectors, keep one nearest informative continuity candidate, and restore final attempt order to authoritative NBV rank.
+  unchanged: [NBV candidate generation and information gain, twelve-view bound, Tesseract IK collision path authority, exact-first five-degree-fallback aim, speeds, capture, home, disable, public ROS interfaces]
+  software_evidence: [focused bridge tests, live-shaped shortlist replay retains exact-feasible continuity and both-side mid-elevation alternatives, rootless exact-aim IK validates four feasible shortlist choices]
+generation_one_shortlist_exhaustion_2026_08_20:
+  state: software_fixed_physical_rerun_pending
+  task_id: codex-e2e-tracking-20260820-2106
+  symptom: Mission safely started, locked the cube and committed one exact-aim GOOD/CLEAR capture, then returned TESSERACT_EXHAUSTED because all twelve shortlisted generation-one candidates failed exact and at-most-five-degree-fallback IK.
+  evidence: Voxel NBV generated 1050 candidates and retained 1044 positive nonduplicates. The bridge selected eight information leaders and four sector fallbacks, leaving no nearby continuity option. Offline replay found positive-information candidate 585 about 0.045 m from achieved FK, and rootless exact-aim Tesseract found thirteen collision-qualified IK goals for it.
+  contributing_tracking_issue: Live valid GPU measurements had gaps up to 3.8868 seconds, exceeding the former one-second LOST timeout; confidence-scaled noise also made low-confidence innovations easier to accept.
+  correction: Preserve global leaders, reserve one of the existing fallback slots for nearest positive-information continuity, return the final list in NBV rank order, extend bounded stationary prediction to five seconds, reduce process noise to 0.01 and use base measurement noise 0.02 for innovation gating.
+  containment: The mission performed pre-home, rough home, storage wrist, all-six disable and exact child cleanup. The single-capture dataset is retained as useful replay evidence.
+  software_evidence: [100 focused tests pass, 400 wider functional tests pass, five-package build passes, functional colcon tests pass, replay includes continuity candidate, rootless exact-aim IK finds thirteen goals]
+unsafe_hand_probe_stop_2026_08_20:
+  state: expected_safety_behavior_no_code_change
+  task_id: codex-e2e-rerun-20260820-2245
+  evidence: The persisted full frame and target-crop debug image show an operator arm and hand beside the cube. GroundingDINO reported cube 0.806 and hand 0.336; the local unsafe threshold is 0.30. The heavy result classified one unknown depth foreground as unsafe and the workflow returned OCCLUSION_NOT_CLEARED before NBV.
+  containment: Positive-only startup completed correctly. Terminal pre-home, rough home, storage, all-six disable, exact process cleanup and zero-capture dataset removal all passed.
+  decision: Do not lower the hand threshold or bypass unsafe objects. Clear people from the complete camera view and repeat the supervised E2E to qualify the tracking/shortlist changes.
+target_jump_from_unmasked_roi_depth_2026_08_20:
+  state: software_fixed_no_physical_test
+  recorded_evidence: vision.log repeatedly alternated valid mask depth near 0.363-0.366 m with source=roi depth near 0.412-0.418 m. The ROI samples had 441 of 441 valid pixels, low standard deviation and approximately 0.77-0.81 confidence, and they pulled the base_link track by centimetres.
+  root_cause: depth_to_3d_node treated a missing or stale mask as permission to use rectangular detection-ROI depth; flat background therefore appeared more confident than the semantic target. The tracker then used confidence-scaled noise plus a loose Euclidean jump allowance and had no prediction-only correction path.
+  correction: Target3D now requires a fresh correlated nonempty mask; the existing base_link tracker predicts without correction on invalid input and applies a Mahalanobis gate to valid measurements under a near-static model.
+  software_evidence: [60 focused depth/tracker tests pass, 680 mobile functional tests pass, 115 Tesseract tests pass unchanged, 120 repository tests pass with one hardware-dependent skip, 11 isolated AI worker tests pass, five-package Foxy build passes, changed tracking files pass flake8 and pep257, AI YAML parsing passes]
+  deferred: Later fresh SAM2 masks in the same log drift from about 0.365 m toward 0.478 m. Gradual semantic drift is not fully separable by a Kalman gate and remains a SAM2/reseed follow-up.
+  physical_action_during_fix: none
 stale_target_aim_and_local_nbv_frontier_2026_08_20:
   state: software_fixed_physical_validation_pending
   dataset: datasets/active_scan/scan_20260820_142919

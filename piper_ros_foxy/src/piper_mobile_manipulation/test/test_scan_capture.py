@@ -222,6 +222,8 @@ def test_capture_resolves_exact_nbv_policy_rank_and_gain_from_plan_id():
             'nbv_rank': 7,
             'nbv_predicted_unknown_pixels': 318,
             'nbv_novel_surface_pixels': 22,
+            'nbv_marginal_information_pixels': 340,
+            'nbv_marginal_information_fraction': 0.85,
         }],
     }
 

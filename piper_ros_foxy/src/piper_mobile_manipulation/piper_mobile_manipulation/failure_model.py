@@ -283,7 +283,10 @@ def legacy_failure_adapter(
             or 'fresh return-home safety gate failed' in lowered):
         tags.add(FailureTag.GUI_RETURN_HOME_RETRY)
     if (
-            lowered.endswith('data missing or stale')
+            lowered.endswith((
+                'data missing or stale',
+                'data is missing or stale',
+            ))
             or lowered.endswith(
                 'controller motion limits are missing or stale')
             or lowered.startswith('camera timestamp ')):

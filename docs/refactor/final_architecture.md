@@ -1,5 +1,20 @@
 # Final refactor architecture
 
+> 2026-08-20 focused tracking repair: `depth_to_3d_node.py` now requires a
+> fresh correlated semantic mask and never creates a target measurement from
+> an unmasked ROI. The existing `target_tracker_node.py` remains the sole
+> target estimate, using near-static prediction, Mahalanobis innovation gating
+> and bounded prediction-only output through the existing status interfaces.
+> NBV, Tesseract, capture coverage, motion and mission sequencing are unchanged.
+
+> 2026-08-20 live cadence/shortlist qualification: measured valid-target gaps
+> reached 3.8868 seconds, so the same authoritative stationary tracker now
+> retains prediction for five seconds with 0.01 process noise and gates with
+> base measurement noise rather than confidence-scaled noise. The existing
+> Tesseract bridge keeps global NBV leaders and reserves one of its existing
+> fallback slots for a nearby positive-information continuity candidate. This
+> changes neither NBV gain/coverage nor Tesseract feasibility ownership.
+
 > 2026-08-20 NBV repair: target measurement remains owned by
 > `depth_to_3d_node.py` and timestamped base-frame estimation by
 > `target_tracker_node.py`; `nbv_coverage.py` owns cumulative accepted coverage
@@ -158,7 +173,9 @@ derived/session state and do not belong in telemetry.
 
 ### Closed-loop view-generation ownership
 
-`nbv_coverage.py` owns measured voxel evidence and information scoring;
+`nbv_coverage.py` owns measured voxel evidence and normalized marginal
+information scoring (unknown plus direction-novel surface support divided by
+projected target support, followed by accepted-view angular novelty);
 `view_generation.py` owns immutable session/accepted-count generation
 identity. The viewpoint planner publishes a labelled generation, the existing
 preliminary filter preserves it, and the Tesseract bridge emits a receipt only

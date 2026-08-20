@@ -14,10 +14,15 @@
     # camera-relative depth.  Gate the timestamped base-frame observation.
     use_camera_space_gates: false
     max_target_speed_mps: 1.0
+    # Normalized 3-D innovation gate for the near-static base_link target.
+    innovation_gate_threshold: 5.0
     # GPU results may arrive late; never update velocity with an older image stamp.
     reject_out_of_order_measurements: true
     min_confidence: 0.20
-    lost_timeout_s: 1.0
+    # Live SAM2/GPU output is bursty: the 2026-08-20 E2E observed qualified
+    # measurement gaps up to 3.89 s. LOW_CONFIDENCE still begins after 0.5 s;
+    # five seconds only bounds how long the stationary prediction may survive.
+    lost_timeout_s: 5.0
     low_confidence_timeout_s: 0.5
     smoothing_alpha: 0.2
     debug: true
@@ -26,8 +31,11 @@
     min_track_frames: 5
     stable_speed_threshold_mps: 0.03
     stable_time_s: 0.4
-    process_noise: 0.05
-    measurement_noise: 0.03
+    # The target is stationary in base_link. Keep prediction covariance small
+    # enough that a bad semantic depth layer cannot make a 50-100 mm jump look
+    # statistically ordinary after a short perception gap.
+    process_noise: 0.01
+    measurement_noise: 0.02
     use_tf_transform: true
     piper_base_frame: "base_link"
     camera_frame: "camera_color_optical_frame"

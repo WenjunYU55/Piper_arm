@@ -149,6 +149,8 @@ def test_only_transient_snapshot_freshness_retries_plan_request():
         'planning blocked: controller motion limits are missing or stale')
     assert runtime_freshness_plan_request_rejection(
         'planning blocked: obstacles data missing or stale')
+    assert runtime_freshness_plan_request_rejection(
+        'planning blocked: obstacles data is missing or stale')
     assert not runtime_freshness_plan_request_rejection(
         'planning blocked: controller motion limits are invalid: no message')
     assert not runtime_freshness_plan_request_rejection(
@@ -191,6 +193,34 @@ def test_multiview_request_holds_then_retries_after_runtime_refresh(
             message=(
                 'planning blocked: controller motion limits are missing or '
                 'stale')),
+        SimpleNamespace(
+            accepted=True, request_id='fresh-plan', message='queued'),
+    ]
+    progress = []
+    fake = SimpleNamespace(
+        plan_client=object(),
+        call_service=lambda *_args, **_kwargs: responses.pop(0),
+        startup_progress=lambda *_args: progress.append(_args[-1]),
+        guard=lambda *_args: None,
+    )
+    monkeypatch.setattr(mission_node.time, 'sleep', lambda _seconds: None)
+
+    request_id = TargetScanMissionNode.request_multiview_plan(
+        fake, object(), object())
+
+    assert request_id == 'fresh-plan'
+    assert not responses
+    assert progress == [
+        'runtime telemetry dipped before scan planning; holding without motion '
+        'for one fresh snapshot']
+
+
+def test_multiview_request_retries_live_bridge_obstacle_freshness_wording(
+        monkeypatch):
+    responses = [
+        SimpleNamespace(
+            accepted=False, request_id='',
+            message='planning blocked: obstacles data is missing or stale'),
         SimpleNamespace(
             accepted=True, request_id='fresh-plan', message='queued'),
     ]

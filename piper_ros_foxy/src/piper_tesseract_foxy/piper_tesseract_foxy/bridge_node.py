@@ -314,7 +314,7 @@ def balanced_closed_loop_candidates(
 
 def bounded_nbv_candidates(
         candidates, start_camera_position, target_center, candidate_limit,
-        leader_fraction=2.0 / 3.0, direction_bin_deg=15.0):
+        leader_fraction=0.5, direction_bin_deg=30.0):
     """
     Bound an information-first shortlist while retaining direction spread.
 
@@ -323,7 +323,10 @@ def bounded_nbv_candidates(
     a plain rank prefix can fill that budget with different radii from one
     direction and hide the best candidate from every other visible face.
     Choose the best-ranked member of distinct azimuth/elevation bins first.
-    Use the reserved fallback slots for more comfortable poses in those same
+    A bin spans several samples from the 7.5-degree candidate grid so its
+    mid-elevation escape can shift slightly in azimuth when the exact
+    high-gain ray has no IK branch.
+    Use the reserved fallback slots for mid-elevation poses in those same
     informative azimuth sectors before retaining a generic nearby fallback.
     This keeps a steep high-gain direction from collapsing back to the current
     azimuth merely because its first elevation has no feasible IK solution.
@@ -354,6 +357,7 @@ def bounded_nbv_candidates(
     target_count = min(limit, len(ordered))
     leader_count = min(
         target_count, max(1, int(math.ceil(target_count * fraction))))
+
     def direction_angles(item):
         position = np.asarray(item.get('camera_position_m'), dtype=float)
         if position.shape != (3,) or not np.all(np.isfinite(position)):
@@ -376,6 +380,13 @@ def bounded_nbv_candidates(
         start_direction /= start_direction_norm
         start_elevation = math.degrees(math.asin(float(np.clip(
             start_direction[2], -1.0, 1.0))))
+    candidate_elevations = [
+        angles[1] for angles in (direction_angles(item) for item in ordered)
+        if angles is not None
+    ]
+    middle_elevation = (
+        float(np.median(candidate_elevations))
+        if candidate_elevations else start_elevation)
 
     selected = []
     direction_bins = set()
@@ -403,10 +414,18 @@ def bounded_nbv_candidates(
         selected = selected[:leader_count]
     selected_ids = {int(item['id']) for item in selected}
     fallback_slots = target_count - len(selected)
+    # Keep one informative continuity candidate close to the achieved physical
+    # camera pose.  Previously every fallback slot could be consumed by
+    # ambitious sector/elevation alternatives; the live 2026-08-20 run then
+    # exhausted twelve IK-infeasible views even though nearby positive-gain
+    # candidates had valid IK branches.  Information leaders still run first
+    # because the returned shortlist remains sorted by authoritative NBV rank.
+    continuity_slots = 1 if fallback_slots > 0 else 0
+    sector_slots = max(0, fallback_slots - continuity_slots)
     sector_fallbacks = []
     sector_fallback_ids = set()
     for leader in selected:
-        if len(sector_fallbacks) >= fallback_slots:
+        if len(sector_fallbacks) >= sector_slots:
             break
         leader_angles = direction_angles(leader)
         if leader_angles is None:
@@ -429,13 +448,18 @@ def bounded_nbv_candidates(
             elevation_change = abs(elevation - leader_elevation)
             alternatives.append((
                 # Prefer a genuinely different camera elevation over only a
-                # radial duplicate of the failed pose.
+                # radial duplicate of the failed pose.  Then prefer the middle
+                # of the configured elevation region, not the achieved
+                # elevation: a live run at 65 degrees otherwise retained only
+                # the same unreachable 65/75-degree IK band.  Camera travel is
+                # a tie-break inside the leader's information-bearing azimuth
+                # sector; it cannot displace a global information leader.
                 0 if elevation_change >= 5.0 else 1,
-                abs(elevation - start_elevation),
-                abs(azimuth - leader_azimuth),
+                abs(elevation - middle_elevation),
                 float(np.linalg.norm(
                     np.asarray(item['camera_position_m'], dtype=float)
                     - start)),
+                abs(azimuth - leader_azimuth),
                 int(item.get('nbv_rank', 2 ** 31 - 1)),
                 item_id,
                 item,
@@ -1143,6 +1167,10 @@ class TesseractPlanBridge(Node):
                     item.get('nbv_predicted_unknown_pixels', 0)),
                 'nbv_novel_surface_pixels': int(
                     item.get('nbv_novel_surface_pixels', 0)),
+                'nbv_marginal_information_pixels': int(
+                    item.get('nbv_marginal_information_pixels', 0)),
+                'nbv_marginal_information_fraction': float(
+                    item.get('nbv_marginal_information_fraction', 0.0)),
                 'nbv_projected_object_pixels': int(
                     item.get('nbv_projected_object_pixels', 0)),
                 'nbv_direction_novelty_deg': float(
@@ -1637,6 +1665,8 @@ class TesseractPlanBridge(Node):
                         'nbv_positive_information_gain',
                         'nbv_predicted_unknown_pixels',
                         'nbv_novel_surface_pixels',
+                        'nbv_marginal_information_pixels',
+                        'nbv_marginal_information_fraction',
                         'nbv_projected_object_pixels',
                         'nbv_direction_novelty_deg',
                         'nbv_camera_travel_m',
@@ -1655,12 +1685,14 @@ class TesseractPlanBridge(Node):
             selected = payload['selected_viewpoints'][0]
             self.get_logger().info(
                 'published plan=%s selected_view=%s policy=%s generation=%s '
-                'nbv_rank=%s predicted_unknown=%s novel_surface=%s'
+                'nbv_rank=%s marginal_fraction=%.4f predicted_unknown=%s '
+                'novel_surface=%s'
                 % (
                     payload['plan_id'], selected.get('id', ''),
                     selected.get('view_selection_policy', 'legacy'),
                     selected.get('view_selection_generation', 0),
                     selected.get('nbv_rank', 0),
+                    selected.get('nbv_marginal_information_fraction', 0.0),
                     selected.get('nbv_predicted_unknown_pixels', 0),
                     selected.get('nbv_novel_surface_pixels', 0)))
         self.set_status('PROPOSAL_READY', msg.reason, payload['request_id'])

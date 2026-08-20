@@ -387,7 +387,7 @@ def _camera_basis(camera_position, target_center, look_direction=None):
 def candidate_information(
         snapshot, camera_position, current_camera=None,
         look_direction=None):
-    """Predict visible unknown volume and direction-novel known surface."""
+    """Predict normalized marginal target information for one camera ray."""
     camera, right, down, forward = _camera_basis(
         camera_position, snapshot.target_center, look_direction)
     surface_indexes = np.flatnonzero(snapshot.states == SURFACE)
@@ -419,6 +419,8 @@ def candidate_information(
         return {
             'predicted_unknown_pixels': 0,
             'novel_surface_pixels': 0,
+            'marginal_information_pixels': 0,
+            'marginal_information_fraction': 0.0,
             'projected_object_pixels': 0,
             'direction_novelty_deg': 0.0,
             'camera_travel_m': math.inf,
@@ -448,6 +450,10 @@ def candidate_information(
     bit = np.uint32(1 << direction_bin(camera_direction))
     novel_surface = int(np.count_nonzero(
         surface & ((snapshot.surface_view_bits[visible_indexes] & bit) == 0)))
+    projected = int(len(visible_indexes))
+    marginal = int(unknown + novel_surface)
+    marginal_fraction = (
+        float(marginal) / float(projected) if projected > 0 else 0.0)
     novelty = 180.0
     if snapshot.view_directions:
         separations = []
@@ -463,7 +469,9 @@ def candidate_information(
     return {
         'predicted_unknown_pixels': unknown,
         'novel_surface_pixels': novel_surface,
-        'projected_object_pixels': int(len(visible_indexes)),
+        'marginal_information_pixels': marginal,
+        'marginal_information_fraction': marginal_fraction,
+        'projected_object_pixels': projected,
         'direction_novelty_deg': float(novelty),
         'camera_travel_m': float(travel),
         'positive_information_gain': bool(unknown > 0 or novel_surface > 0),
@@ -519,6 +527,10 @@ def rank_next_best_views(snapshot, viewpoints, current_camera=None):
                     metrics['predicted_unknown_pixels']),
                 'nbv_novel_surface_pixels': int(
                     metrics['novel_surface_pixels']),
+                'nbv_marginal_information_pixels': int(
+                    metrics['marginal_information_pixels']),
+                'nbv_marginal_information_fraction': float(
+                    metrics['marginal_information_fraction']),
                 'nbv_projected_object_pixels': int(
                     metrics['projected_object_pixels']),
                 'nbv_direction_novelty_deg': float(
@@ -533,12 +545,19 @@ def rank_next_best_views(snapshot, viewpoints, current_camera=None):
             int(item.get('index', 0)),
         ))
         scored_groups.append((key, alternatives, metrics))
+    # Compare the fraction of the projected target that is new before its raw
+    # pixel count. Raw counts systematically favored steep views in the live
+    # L515 replay because those rays projected more envelope voxels, even when
+    # they repeated the same accepted surface sector. Accepted-view angular
+    # novelty resolves equal fractions; absolute information and travel remain
+    # later tie-breaks rather than a fixed movement schedule.
     scored_groups.sort(key=lambda group: (
         not bool(group[2]['positive_information_gain']),
-        -int(group[2]['predicted_unknown_pixels']),
-        -int(group[2]['novel_surface_pixels']),
-        -int(group[2]['projected_object_pixels']),
+        -float(group[2]['marginal_information_fraction']),
         -float(group[2]['direction_novelty_deg']),
+        -int(group[2]['marginal_information_pixels']),
+        -int(group[2]['novel_surface_pixels']),
+        -int(group[2]['predicted_unknown_pixels']),
         min(float(item['nbv_camera_travel_m']) for item in group[1]),
         group[0],
     ))

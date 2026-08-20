@@ -787,7 +787,7 @@ def test_eye_in_hand_camera_changes_do_not_reject_consistent_base_measurement():
     )
 
     reason = TargetTrackerNode.gate_measurement(
-        tracker, msg, measurement, confidence=0.9, elapsed_s=0.1
+        tracker, msg, measurement, confidence=0.9
     )
 
     assert reason is None

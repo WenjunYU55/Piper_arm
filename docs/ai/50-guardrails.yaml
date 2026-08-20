@@ -1,5 +1,27 @@
 schema_version: 1
 document: guardrails
+normalized_marginal_nbv_guardrail_2026_08_20:
+  invariants:
+    - Only accepted persisted captures modify voxel states, surface direction bits or accepted view directions.
+    - Normalize marginal information by projected target support before comparing directions; raw unknown pixel count is diagnostic and cannot be the primary rank.
+    - Accepted-view angular novelty may break equal marginal fractions but must not become a fixed movement schedule, maximum step or replacement for information gain.
+    - The bridge and worker may transport marginal provenance but may not recompute gain or modify coverage. Tesseract remains the sole IK collision path feasibility authority.
+    - No ROS interface, candidate region, speed, capture threshold, tracking rule, home or shutdown behavior changes with this scorer repair.
+  must_retest_if_changed: [test_nbv_coverage.py, test_scan_session_memory.py, test_scan_capture.py, test_bridge_feedback_freshness.py, test_contract.py, recorded scan_20260820_230845 replay, full mobile and Tesseract functional suites, five-package build]
+live_tracking_and_shortlist_guardrail_2026_08_20:
+  invariants:
+    - The stationary tracker low-confidence boundary remains 0.5 seconds and LOST/reset boundary is five seconds, covering the measured 3.8868-second GPU gap without pretending prediction-only output is stable.
+    - Confidence-scaled measurement noise may weaken a correction but may never make the Mahalanobis acceptance gate more permissive; gate with base measurement noise 0.02.
+    - The bridge may reserve exactly one existing fallback slot for a nearby positive-information continuity view. It may not change candidate gain, coverage, the twelve-view cap, exact-first aim, collision proof or final NBV-rank attempt order.
+    - A supervised E2E failure still routes through pre-home, rough home, storage wrist, all-six disable and exact owned-process cleanup; do not weaken that proven path to improve scan completion.
+  must_retest_if_changed: [test_depth_to_3d.py, test_tracking_recovery.py, test_bridge_feedback_freshness.py, full mobile and Tesseract functional suites, five-package build, colcon test, recorded shortlist replay, rootless exact-aim IK proof, supervised E2E]
+target_tracking_measurement_guardrail_2026_08_20:
+  invariants:
+    - Missing, stale, malformed, wrong-frame or empty target masks must produce no Target3D correction measurement; low-variance rectangular background is never a target fallback.
+    - The tracker transforms qualified measurements at their source timestamp and gates the base_link innovation before correction. Confidence may scale measurement noise but cannot override rejection.
+    - A missing or rejected measurement advances the existing estimator prediction only. It must not create another estimate, immediately discard a mature track, or continue beyond lost_timeout_s.
+    - NBV, Tesseract, accepted coverage, reconstruction, motion, home and shutdown remain outside this repair.
+  must_retest_if_changed: [test_depth_to_3d.py mask qualification background innovation and outage cases, test_tracking_recovery.py, full piper_mobile_manipulation functional suite, colcon build, colcon test]
 tesseract_worker_readiness_guardrail_2026_08_20:
   invariants:
     - Never advertise worker_ready before qualified URDF/SRDF Robot construction succeeds.
@@ -49,7 +71,7 @@ voxel_nbv_generation_guardrail_2026_08_17:
     - A bridge receipt proves only that labelled candidates are cached; it never proves IK, collision safety, authorization, runtime safety, visibility or capture quality.
     - Keep bridge data_timeout_sec at its existing value. Solve planner latency with explicit generation synchronization, not stale-data tolerance or sleeps.
     - Requested voxel_nbv generation zero must remain visibly labelled voxel_nbv_seed. Never claim a seed capture used measured information gain.
-    - For authoritative voxel_nbv, shortlist membership must reserve distinct azimuth/elevation information leaders. Reserved fallbacks must stay in those leaders' lateral sectors while offering a more comfortable elevation/radius; do not fill them only with poses nearest the current camera and collapse back to the same azimuth. Final Tesseract attempt order remains NBV rank.
+    - For authoritative voxel_nbv, shortlist membership must retain six information leaders across broad 30-degree azimuth/elevation sectors, five alternatives near the middle of the configured elevation region in those informative sectors, and one nearest informative continuity candidate. Do not fill the bounded handoff only with the current steep elevation band or only with poses nearest the camera. Final Tesseract attempt order remains NBV rank.
     - WAITING_FOR_CAPTURE_REFRESH is a stationary current-pose hold. A transient invalid obstacle product created by that same heavy refresh may not abort the hold, but this grants no approval or motion authority: the next plan and every later command still require normal fresh valid obstacle evidence.
     - Capture provenance is exact plan_id/current_view correlation. Missing or mismatched provenance must be unavailable, never inferred from whichever planner message is latest.
     - Generation receipt and plan-provenance diagnostics must use declared ROS parameter access and must not throw after a valid plan is published; debug logging is never allowed to terminate the critical bridge.

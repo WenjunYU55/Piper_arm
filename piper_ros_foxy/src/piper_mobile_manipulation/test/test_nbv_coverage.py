@@ -5,6 +5,7 @@ from dataclasses import FrozenInstanceError
 import numpy as np
 import pytest
 
+from piper_mobile_manipulation import nbv_coverage
 from piper_mobile_manipulation.nbv_coverage import (
     candidate_information,
     ObjectCoverageModel,
@@ -89,6 +90,83 @@ def test_information_precedes_motion_cost():
     assert ranked[0]['index'] == 1
     assert ranked[0]['nbv_camera_travel_m'] > \
         ranked[1]['nbv_camera_travel_m']
+
+
+def test_marginal_fraction_prevents_raw_unknown_pixel_bias(monkeypatch):
+    snapshot = initialized_model().snapshot()
+    steep = viewpoint(10, [0.3, 0.0, 0.4])
+    diverse = viewpoint(20, [0.0, 0.3, 0.4])
+
+    def information(_snapshot, camera_position, _current, _look):
+        if float(camera_position[0]) > 0.0:
+            unknown, novel, projected, novelty = 900, 0, 1000, 10.0
+        else:
+            unknown, novel, projected, novelty = 400, 50, 450, 60.0
+        marginal = unknown + novel
+        return {
+            'predicted_unknown_pixels': unknown,
+            'novel_surface_pixels': novel,
+            'marginal_information_pixels': marginal,
+            'marginal_information_fraction': marginal / projected,
+            'projected_object_pixels': projected,
+            'direction_novelty_deg': novelty,
+            'camera_travel_m': 0.0,
+            'positive_information_gain': True,
+        }
+
+    monkeypatch.setattr(nbv_coverage, 'candidate_information', information)
+    ranked = rank_next_best_views(
+        snapshot, [steep, diverse], [0.0, 0.0, 0.4])
+
+    assert ranked[0]['index'] == 20
+    assert ranked[0]['nbv_predicted_unknown_pixels'] < \
+        ranked[1]['nbv_predicted_unknown_pixels']
+    assert ranked[0]['nbv_marginal_information_fraction'] > \
+        ranked[1]['nbv_marginal_information_fraction']
+
+
+def test_direction_novelty_breaks_equal_marginal_fraction(monkeypatch):
+    snapshot = initialized_model().snapshot()
+    adjacent = viewpoint(10, [0.3, 0.0, 0.4])
+    diverse = viewpoint(20, [0.0, 0.3, 0.4])
+
+    def information(_snapshot, camera_position, _current, _look):
+        adjacent_view = float(camera_position[0]) > 0.0
+        unknown = 900 if adjacent_view else 90
+        projected = 1000 if adjacent_view else 100
+        return {
+            'predicted_unknown_pixels': unknown,
+            'novel_surface_pixels': 0,
+            'marginal_information_pixels': unknown,
+            'marginal_information_fraction': 0.9,
+            'projected_object_pixels': projected,
+            'direction_novelty_deg': 10.0 if adjacent_view else 60.0,
+            'camera_travel_m': 0.0,
+            'positive_information_gain': True,
+        }
+
+    monkeypatch.setattr(nbv_coverage, 'candidate_information', information)
+    ranked = rank_next_best_views(
+        snapshot, [adjacent, diverse], [0.0, 0.0, 0.4])
+
+    assert ranked[0]['index'] == 20
+    assert ranked[0]['nbv_direction_novelty_deg'] == 60.0
+
+
+def test_candidate_information_reports_normalized_marginal_gain():
+    metrics = candidate_information(
+        initialized_model().snapshot(),
+        [0.0, 0.0, 0.8],
+        [0.0, 0.0, 0.0],
+    )
+
+    assert metrics['marginal_information_pixels'] == (
+        metrics['predicted_unknown_pixels']
+        + metrics['novel_surface_pixels'])
+    assert metrics['marginal_information_fraction'] == pytest.approx(
+        metrics['marginal_information_pixels']
+        / metrics['projected_object_pixels'])
+    assert 0.0 <= metrics['marginal_information_fraction'] <= 1.0
 
 
 def test_global_nbv_can_select_seventy_degrees_over_low_gain_twenty_degrees():

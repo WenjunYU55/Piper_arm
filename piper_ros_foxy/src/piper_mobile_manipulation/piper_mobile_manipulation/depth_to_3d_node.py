@@ -221,20 +221,28 @@ class DepthTo3DNode(Node):
                 % (u, v, w, h))
             return
 
-        mask = self.mask_for_depth(depth_msg, w, h)
-        if mask is not None:
-            x0, x1, y0, y1 = self.bbox_bounds(detection_msg, u, v, w, h)
-            roi_mask = mask[y0:y1, x0:x1] > 0
-            crop = depth_m[y0:y1, x0:x1]
-            valid = (
-                roi_mask & np.isfinite(crop)
-                & (crop > self.depth_min) & (crop < self.depth_max))
-            out.depth_source = 'mask'
-        else:
-            x0, x1, y0, y1 = self.depth_roi(detection_msg, u, v, w, h)
-            crop = depth_m[y0:y1, x0:x1]
-            valid = np.isfinite(crop) & (crop > self.depth_min) & (crop < self.depth_max)
-            out.depth_source = 'roi'
+        mask, mask_rejection = self.mask_for_depth(depth_msg, w, h)
+        if mask is None:
+            # Target3D is the semantic target-measurement path.  A rectangle
+            # around a stale/missing mask can contain a very clean background
+            # depth layer and must never be reinterpreted as the target.
+            out.depth_source = mask_rejection
+            out.valid = False
+            self.pub.publish(out)
+            self.log_debug(
+                'Target3D rejected before depth projection: %s'
+                % mask_rejection,
+                warn=True,
+            )
+            return
+
+        x0, x1, y0, y1 = self.bbox_bounds(detection_msg, u, v, w, h)
+        roi_mask = mask[y0:y1, x0:x1] > 0
+        crop = depth_m[y0:y1, x0:x1]
+        valid = (
+            roi_mask & np.isfinite(crop)
+            & (crop > self.depth_min) & (crop < self.depth_max))
+        out.depth_source = 'mask'
 
         out.roi_width = float(x1 - x0)
         out.roi_height = float(y1 - y0)
@@ -256,34 +264,30 @@ class DepthTo3DNode(Node):
             )
             return
 
-        primary_fraction = 1.0
-        if mask is not None:
-            try:
-                valid, component_report = select_target_depth_component(
-                    valid, crop,
-                    center_u=float(detection_msg.u) - float(x0),
-                    center_v=float(detection_msg.v) - float(y0),
-                    depth_band_m=self.primary_depth_band_m,
-                    minimum_peak_separation_m=max(
-                        self.primary_depth_neighbour_jump_m * 2.0, 0.025),
-                    minimum_points=self.min_valid_depth_pixels,
-                    minimum_support_fraction=(
-                        self.primary_depth_minimum_fraction),
-                    ambiguity_margin=self.primary_depth_ambiguity_margin,
-                    preferred_depth_m=self.previous_depth,
-                )
-            except ValueError as exc:
-                out.valid = False
-                self.pub.publish(out)
-                self.log_debug(
-                    'Depth rejected source=%s layer_selection=%s'
-                    % (out.depth_source, exc), warn=True)
-                return
-            valid_count = int(np.count_nonzero(valid))
-            primary_fraction = float(
-                component_report['selected_support_fraction'])
-        else:
-            valid_count = raw_valid_count
+        try:
+            valid, component_report = select_target_depth_component(
+                valid, crop,
+                center_u=float(detection_msg.u) - float(x0),
+                center_v=float(detection_msg.v) - float(y0),
+                depth_band_m=self.primary_depth_band_m,
+                minimum_peak_separation_m=max(
+                    self.primary_depth_neighbour_jump_m * 2.0, 0.025),
+                minimum_points=self.min_valid_depth_pixels,
+                minimum_support_fraction=(
+                    self.primary_depth_minimum_fraction),
+                ambiguity_margin=self.primary_depth_ambiguity_margin,
+                preferred_depth_m=self.previous_depth,
+            )
+        except ValueError as exc:
+            out.valid = False
+            self.pub.publish(out)
+            self.log_debug(
+                'Depth rejected source=%s layer_selection=%s'
+                % (out.depth_source, exc), warn=True)
+            return
+        valid_count = int(np.count_nonzero(valid))
+        primary_fraction = float(
+            component_report['selected_support_fraction'])
         ratio = float(valid_count) / float(max(total_count, 1))
         out.valid_depth_ratio = ratio
 
@@ -428,8 +432,11 @@ class DepthTo3DNode(Node):
         )
 
     def mask_for_depth(self, depth_msg, image_width, image_height):
-        if not self.use_mask_depth or self.latest_mask_msg is None:
-            return None
+        """Return one fresh, frame-correlated nonempty semantic target mask."""
+        if not self.use_mask_depth:
+            return None, 'mask_depth_disabled'
+        if self.latest_mask_msg is None:
+            return None, 'mask_missing'
         age = abs(
             (
                 self.stamp_to_seconds(depth_msg.header.stamp)
@@ -437,14 +444,18 @@ class DepthTo3DNode(Node):
             )
         )
         if age > self.mask_max_age_s:
-            return None
+            return None, 'mask_stale'
+        depth_frame = str(getattr(depth_msg.header, 'frame_id', ''))
+        mask_frame = str(getattr(self.latest_mask_msg.header, 'frame_id', ''))
+        if depth_frame and mask_frame and depth_frame != mask_frame:
+            return None, 'mask_frame_mismatch'
         try:
             mask = self.bridge.imgmsg_to_cv2(self.latest_mask_msg, desired_encoding='mono8')
         except Exception as exc:
             self.log_debug('mask cv_bridge failed: %s' % exc, warn=True)
-            return None
+            return None, 'mask_decode_failed'
         if mask.shape[0] != image_height or mask.shape[1] != image_width:
-            return None
+            return None, 'mask_shape_mismatch'
         if self.mask_erode_px > 0:
             import cv2
 
@@ -452,7 +463,9 @@ class DepthTo3DNode(Node):
                 cv2.MORPH_ELLIPSE, (2 * self.mask_erode_px + 1, 2 * self.mask_erode_px + 1)
             )
             mask = cv2.erode(mask, kernel)
-        return mask
+        if int(np.count_nonzero(mask)) == 0:
+            return None, 'mask_empty'
+        return mask, ''
 
     @staticmethod
     def stamp_to_seconds(stamp):

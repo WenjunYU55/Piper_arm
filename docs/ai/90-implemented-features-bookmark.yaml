@@ -1,6 +1,26 @@
 schema_version: 1
 document: implemented_features_bookmark
 updated_at: 2026-08-20
+normalized_marginal_nbv_diversity_2026_08_20:
+  status: software_implemented_supervised_physical_retest_pending
+  capability: Global voxel NBV compares the fraction of projected target support that is cumulatively new, then accepted-view angular novelty, absolute marginal support and travel. Raw unknown projection can no longer force every rank into one steep elevation band.
+  authority: [nbv_coverage.py, scan_viewpoint_planner_node.py]
+  provenance_path: [scan_viewpoints, reachability filter, Tesseract request and response, tesseract_plan_provenance, frame metadata]
+  preserved: [accepted-capture-only coverage, complete configured candidate region, six-degree duplicate floor, twelve-candidate bridge shortlist, Tesseract feasibility, exact-first five-degree aim, tracking, capture thresholds, motion, home, disable and shutdown]
+  evidence: [118 focused tests, 685 complete mobile tests, 117 complete Tesseract tests, five-package build, rootless core and compact PASS, changed-file lint, offline replay of scan_20260820_230845 shifts top twelve from all 75-degree to 15 and 25-degree candidates spanning both Y extremes]
+live_tracker_cadence_and_nbv_shortlist_handoff_2026_08_20:
+  status: software_implemented_mid_elevation_physical_rerun_pending
+  capabilities: [five-second bounded stationary prediction across measured bursty GPU gaps, process noise 0.01, base-noise Mahalanobis gate independent of confidence scaling, six broad-sector global NBV leaders, five mid-elevation sector alternatives, one nearby informative continuity fallback inside the existing twelve-candidate shortlist, final Tesseract attempt order by NBV rank]
+  authority: [target_tracker_node.py, tracking_params.yaml, piper_tesseract_foxy/bridge_node.py]
+  preserved: [NBV generation, information gain, cumulative coverage, candidate ranks, Tesseract feasibility, exact-first five-degree aim, motion, capture, home and shutdown]
+  evidence: [task codex-e2e-tracking-20260820-2106 proved startup seed capture and safe shutdown, task codex-e2e-clear-20260820-223207 committed three true-NBV captures and proved safe shutdown, live-shaped replay retains exact-feasible mid-elevation views on both sides of the reachable arc, focused bridge tests and rootless exact-aim IK pass]
+target_measurement_validity_and_prediction_only_2026_08_20:
+  status: software_implemented_partial_physical_loop_observed
+  capabilities: [fresh same-frame nonempty target mask required for Target3D, no unmasked ROI fallback, finite timestamped base_link measurements, confidence-scaled correction noise, base-noise Mahalanobis innovation rejection, near-static zero-velocity model with process noise 0.01, bounded prediction-only LOW_CONFIDENCE output, five-second LOST timeout and reset]
+  authority: [depth_to_3d_node.py, target_tracker_node.py, utils/kalman_filter.py, tracking_params.yaml]
+  preserved: [one authoritative target estimate, existing TrackedTarget and target status interfaces, NBV behavior, Tesseract, accepted coverage, capture, motion, home and shutdown]
+  software_evidence: [60 focused tests pass, 680 mobile functional tests pass, 115 unchanged Tesseract tests pass, 120 repository tests pass with one hardware-dependent skip, 11 isolated AI worker tests pass, five-package build passes, changed-file lint passes]
+  deferred: Gradual fresh-mask SAM2 drift and eight-frame reseeding require a separate perception investigation.
 global_nbv_target_aim_capture_recovery_2026_08_20:
   status: implemented_partial_physical_loop_verified_complete_scan_pending
   capabilities:

@@ -407,10 +407,116 @@ def test_nbv_shortlist_pairs_informative_azimuths_with_elevation_ik_escapes():
     ]
 
     selected = bounded_nbv_candidates(
-        candidates, position(0, 40), [0.0, 0.0, 0.0], 4,
+        candidates, position(0, 40), [0.0, 0.0, 0.0], 5,
         leader_fraction=0.5)
 
-    assert [item['id'] for item in selected] == [1, 2, 10, 11]
+    assert [item['id'] for item in selected] == [1, 2, 10, 11, 99]
+
+
+def test_nbv_shortlist_cannot_spend_every_fallback_on_unreachable_sectors():
+    def position(azimuth_deg, elevation_deg, radius=0.30):
+        azimuth = np.deg2rad(float(azimuth_deg))
+        elevation = np.deg2rad(float(elevation_deg))
+        return [
+            radius * np.cos(elevation) * np.cos(azimuth),
+            radius * np.cos(elevation) * np.sin(azimuth),
+            radius * np.sin(elevation),
+        ]
+
+    current = position(180, 35, 0.39)
+    candidates = []
+    for rank, azimuth in enumerate(range(90, 211, 15), 1):
+        candidates.append({
+            'id': rank,
+            'camera_position_m': position(azimuth, 75),
+            'nbv_rank': rank,
+        })
+        candidates.append({
+            'id': 100 + rank,
+            'camera_position_m': position(azimuth, 45),
+            'nbv_rank': 100 + rank,
+        })
+    candidates.append({
+        'id': 999,
+        'camera_position_m': position(172.5, 35, 0.39),
+        'nbv_rank': 999,
+    })
+
+    selected = bounded_nbv_candidates(
+        candidates, current, [0.0, 0.0, 0.0], 12)
+
+    assert 999 in [item['id'] for item in selected]
+    assert len(selected) == 12
+    assert [item['nbv_rank'] for item in selected] == sorted(
+        item['nbv_rank'] for item in selected)
+
+
+def test_nbv_shortlist_escapes_live_steep_band_without_losing_information():
+    def position(azimuth_deg, elevation_deg, radius=0.30):
+        azimuth = np.deg2rad(float(azimuth_deg))
+        elevation = np.deg2rad(float(elevation_deg))
+        return [
+            radius * np.cos(elevation) * np.cos(azimuth),
+            radius * np.cos(elevation) * np.sin(azimuth),
+            radius * np.sin(elevation),
+        ]
+
+    # Shape this like the physical 2026-08-20 failure: the best information
+    # directions are all steep, while useful target-facing IK exists in the
+    # middle elevation band at nearby azimuths.
+    leaders = [-135.0, -105.0, -142.5, 135.0, -165.0, 172.5]
+    candidates = [
+        {
+            'id': rank,
+            'camera_position_m': position(azimuth, 75.0),
+            'nbv_rank': rank,
+        }
+        for rank, azimuth in enumerate(leaders, 1)
+    ]
+    next_rank = 20
+    for elevation in (65.0, 55.0, 45.0, 35.0, 25.0, 15.0):
+        for azimuth in (
+                -150.0, -142.5, -135.0, -105.0,
+                135.0, 142.5, 165.0, 172.5):
+            candidates.append({
+                'id': next_rank,
+                'camera_position_m': position(azimuth, elevation),
+                'nbv_rank': next_rank,
+            })
+            next_rank += 1
+    candidates.append({
+        'id': 999,
+        'camera_position_m': position(172.5, 65.0, 0.39),
+        'nbv_rank': 999,
+    })
+
+    selected = bounded_nbv_candidates(
+        candidates, position(172.5, 65.0, 0.39),
+        [0.0, 0.0, 0.0], 12)
+    selected_angles = []
+    for item in selected:
+        camera = np.asarray(item['camera_position_m'])
+        radius = float(np.linalg.norm(camera))
+        selected_angles.append((
+            float(np.rad2deg(np.arctan2(camera[1], camera[0]))),
+            float(np.rad2deg(np.arcsin(camera[2] / radius))),
+        ))
+
+    assert all(item['id'] in [candidate['id'] for candidate in candidates]
+               for item in selected)
+    selected_ranks = {item['nbv_rank'] for item in selected}
+    # Ranks 1 and 3 occupy the same 30-degree direction sector, so retaining
+    # either one is sufficient; the other global sectors must remain.
+    assert len(selected_ranks.intersection(range(1, 7))) >= 5
+    assert 999 in [item['id'] for item in selected]
+    assert any(
+        azimuth == pytest.approx(142.5)
+        and elevation == pytest.approx(45.0)
+        for azimuth, elevation in selected_angles)
+    assert any(
+        azimuth == pytest.approx(-150.0)
+        and elevation == pytest.approx(45.0)
+        for azimuth, elevation in selected_angles)
 
 
 def test_closed_loop_shortlist_keeps_proven_local_fallback_under_diversity_bias():

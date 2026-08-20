@@ -120,8 +120,7 @@ The coordinator starts the disabled driver, proves feedback, starts camera/GPU
 perception, hand-eye TF, Tesseract and the scan stack, enables the arm, performs
 rough acquisition, runs a separate request-correlated semantic occlusion probe,
 then plans and captures at most one synchronized RGB-D view per measured-state
-transaction until 8-24 are accepted and feature/coverage gates pass. Eight is only the model-seed floor; measured convergence selects the terminal count. Each next automatic view is limited
-to a compact target-centred direction step, and the executor rejects a joint
+transaction until 8-24 are accepted and feature/coverage gates pass. Eight is only the model-seed floor; measured convergence selects the terminal count. Each next automatic view is selected by cumulative global information gain across the configured target-centric region; the bounded Tesseract handoff retains global leaders plus one informative continuity fallback and imposes no maximum angular step. The executor rejects a joint
 path that turns the camera off the measured target. The mission then returns to
 the saved home through direct ROUGH_HOME and STORAGE_WRIST requests with
 robot self-collision validation explicitly exempted but CAD-derived

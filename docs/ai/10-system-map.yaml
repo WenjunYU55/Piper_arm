@@ -1,5 +1,21 @@
 schema_version: 1
 document: system_map
+normalized_marginal_nbv_path_2026_08_20:
+  sequence: [accepted RGB-D and target mask rebuild immutable voxel coverage, candidate raycast counts unknown plus direction-novel surface pixels, divide by projected target pixels, rank by marginal fraction then accepted-view angular novelty then absolute marginal support then travel, bridge bounds to twelve direction sectors, worker performs exact-aim IK collision path feasibility, executor records achieved FK, capture validator alone commits coverage]
+  ownership: {gain_and_coverage: nbv_coverage.py, candidate_region: scan_viewpoint_planner_node.py, bounded_handoff: piper_tesseract_foxy/bridge_node.py, feasibility: piper_tesseract_foxy/worker.py, achieved_pose: scan_viewpoint_executor_node.py, capture_acceptance: scan_capture_node.py}
+  invariant: Rejected observations and predicted candidates never modify coverage; added marginal fields are private provenance and do not change a ROS schema.
+supervised_generation_one_repair_2026_08_20:
+  sequence: [seed capture accepted, cumulative coverage ranks full configured region, bridge retains six broad direction-sector information leaders plus five mid-elevation sector alternatives and one nearby informative continuity fallback, final list returns to NBV rank order, worker tests exact aim and bounded fallback]
+  reason: The bridge shortlist is a bounded handoff between information ranking and expensive feasibility. Mid-elevation sector alternatives prevent all expensive attempts from remaining in the same steep IK-infeasible band, while one continuity slot preserves a locally proven escape; neither creates another NBV policy or claims reachability.
+  unchanged: [candidate generation, information gain, coverage, twelve-view bound, Tesseract feasibility, motion, capture and mission sequence]
+target_tracking_measurement_path_2026_08_20:
+  ownership: {semantic_mask_validity_and_depth_projection: depth_to_3d_node.py, authoritative_filtered_target: target_tracker_node.py, linear_filter_math: utils/kalman_filter.py}
+  valid_flow: [fresh correlated nonempty mask, qualified target depth component, finite timestamped camera-frame Target3D, timestamped TF to base_link, Kalman predict, Mahalanobis innovation gate, correction, filtered TrackedTarget]
+  invalid_flow: [missing stale malformed or empty mask or invalid depth publishes invalid Target3D, tracker predicts without correction, TrackedTarget remains usable but unstable and LOW_CONFIDENCE for less than five seconds, timeout publishes LOST and resets for reacquisition]
+  filter_values: {process_noise: 0.01, measurement_noise: 0.02, lost_timeout_s: 5.0, innovation_gate_threshold: 5.0}
+  gate_rule: Confidence-scaled noise controls correction strength only; normalized innovation is evaluated with the base measurement noise so low confidence cannot enlarge the semantic acceptance gate.
+  forbidden_flow: unmasked rectangular ROI depth must not enter the target tracker.
+  unchanged_consumers: Existing NBV and mission consumers continue using /piper/tracked_target and /piper/target_status without a ROS schema change.
 tesseract_worker_readiness_2026_08_20:
   sequence: [load Python/native Tesseract backend, construct clean Robot scene from qualified URDF/SRDF, publish fresh ready heartbeat, first request consumes unused clean scene, later requests discard and reconstruct their scene]
   invariant: Model construction is a process-readiness responsibility; IK collision and path work remain request-budget responsibilities.
