@@ -566,6 +566,20 @@ def test_acquisition_replans_from_two_absent_looks_then_locks():
     assert context.session.acquisition_attempt == 3
 
 
+def test_acquisition_too_far_reports_reposition_and_rough_coordinates():
+    operations = FakeMissionOperations()
+    operations.acquisition_states = ['ACQUISITION_TARGET_TOO_FAR']
+
+    _operations, _context, result = _execute(operations)
+
+    assert not result.succeeded
+    assert result.outcome == 'REPOSITION_REQUIRED'
+    assert result.failure.failure_code == 'TARGET_TOO_FAR'
+    assert result.failure.retryable
+    assert 'x=0.400, y=0.000, z=0.000' in result.reason
+    assert 'stopping' in operations.events
+
+
 def test_repeated_missions_do_not_leak_engine_retry_or_capture_state():
     operations = FakeMissionOperations()
     engine = MissionEngine(operations)

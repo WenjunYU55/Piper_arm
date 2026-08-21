@@ -2083,6 +2083,10 @@ class TesseractBackend:
         self.last_planning_diagnostics = {
             'shortlisted_candidates': len(
                 request.get('scene', {}).get('candidate_views', [])),
+            'shortlisted_rays': int(request.get(
+                'planning', {}).get('shortlisted_ray_count', 0)),
+            'expanded_ray_candidates': int(request.get(
+                'planning', {}).get('expanded_ray_candidate_count', 0)),
             'candidate_attempts': 0,
             'exact_aim_attempts': 0,
             'fallback_aim_attempts': 0,
@@ -2319,6 +2323,10 @@ class TesseractBackend:
                             'nbv_direction_novelty_deg',
                             'nbv_camera_travel_m',
                             'coverage_score',
+                            'ray_id',
+                            'ray_standoff_m',
+                            'ray_probe_index',
+                            'ray_probe_phase',
                         )
                         if key in candidate
                     },
@@ -2329,6 +2337,13 @@ class TesseractBackend:
                     'camera_position_m': list(candidate['camera_position_m']),
                     'aim_fallback_used': bool(aim_fallback_used),
                     'aim_offset_deg': float(aim_offset_deg),
+                    **{
+                        key: candidate[key]
+                        for key in (
+                            'ray_id', 'ray_standoff_m', 'ray_probe_index',
+                            'ray_probe_phase')
+                        if key in candidate
+                    },
                 }
                 segments.append({
                     'from_viewpoint': (

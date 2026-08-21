@@ -1,5 +1,16 @@
 schema_version: 1
 document: guardrails
+frozen_viewpoint_ray_guardrail_2026_08_21:
+  invariants:
+    - Authoritative voxel_nbv creates one 25-by-7 angular ray pool from the first qualified mission target in base_link and does not translate or regenerate it until a new session.
+    - The 0.28 m ray minimum applies only to voxel_nbv. Legacy retains min_scan_radius_m 0.30 and its exact point lattice.
+    - Score one representative point per ray against accepted-only coverage. Shortlist no more than twelve rays before exact standoff expansion; Tesseract remains the sole IK collision path and visibility authority.
+    - Preferred standoff probes through 0.50 m must precede reserve probes. No ray may exceed the smaller of the target base-link radius and existing 0.80 m scan maximum, except the deliberate 0.28 m minimum clamp for a closer target.
+    - Accepted captures alone modify coverage. Both accepted and rejected achieved ray identity retire that direction; rejected capture geometry never becomes observed coverage and actual settled FK remains the next motion start.
+    - Ray final capture aim remains bound to the frozen target. Do not reintroduce live tracker jitter into ray geometry during this static phase; total tracking/safety loss still blocks through existing gates.
+    - TARGET_TOO_FAR requires sufficient exact-job semantic masked depth with every valid sample beyond 1.20 m. Never infer it from the rough coordinate, unmasked ROI, missing depth, low support or a mixed depth layer.
+    - TARGET_TOO_FAR and five-look TARGET_NOT_FOUND must include rough base_link XYZ and enter the unchanged failure home disable cleanup path.
+  must_retest_if_changed: [test_viewpoint_rays.py, test_scan_viewpoint_angles.py, test_nbv_coverage.py, test_scan_session_memory.py, test_phase1_executor_characterization.py, test_heavy_refresh_bridge.py, test_scan_target_acquisition.py, test_mission_engine.py, test_phase1_mission_characterization.py, test_bridge_feedback_freshness.py, test_contract.py, test_worker_validation.py, focused package build, colcon functional suites, supervised motors-disabled ray inspection before physical motion]
 normalized_marginal_nbv_guardrail_2026_08_20:
   invariants:
     - Only accepted persisted captures modify voxel states, surface direction bits or accepted view directions.
@@ -37,11 +48,11 @@ between_view_reacquisition_guardrail_2026_08_20:
 global_nbv_target_estimator_guardrail_2026_08_20:
   invariants:
     - Only accepted durable captures modify voxel coverage, accepted history or reconstruction. A rejected settled view updates latest physical achieved FK only.
-    - Historical capture clouds and transforms remain fixed in base_link. A newer filtered target estimate may place and aim future candidates and trigger drift replanning but never moves past geometry.
+    - Historical capture clouds and transforms remain fixed in base_link. In the current static-target ray phase the first qualified mission target also freezes future ray placement and aim; newer filtered target estimates do not move rays or past geometry.
     - Authoritative voxel_nbv scores the full configured region. Six degrees is a minimum accepted-view redundancy separation, never a maximum move; the retired 6-to-30 and 30-to-45 degree frontiers must not regain production authority.
     - Information gain is lexicographically primary. Motion distance can order equivalent radial or utility alternatives but cannot defeat materially greater unknown or novel-surface gain.
     - Preliminary geometry status must be called prequalified. Only the worker may prove finite bounded IK, collision-free path and dense visibility.
-    - Every automatic shortlist candidate aims exactly at the current filtered target. Exact aim is tried through roll and IK alternatives before at most one hash-bound fallback no more than five degrees away. The separate dense-path visibility cone remains twenty degrees.
+    - Every authoritative voxel_nbv shortlist candidate aims exactly at the frozen mission target. Exact aim is tried through roll and IK alternatives before at most one hash-bound fallback no more than five degrees away. The separate dense-path visibility cone remains twenty degrees.
     - A transient fresh visual capture rejection receives exactly one correlated heavy refresh while held. A busy single-flight worker retains that request in the bridge and queues it exactly once after idle and fresh-frame gates pass, bounded by the original capture timeout; no second perception job or independent retry layer may amplify it. A second visual rejection replans from achieved FK, and perception worker failure or timeout remains a mission failure.
     - Never average target coordinates across eye-in-hand motion in camera space. Qualify finite component depth, transform using the measurement timestamp and filter in base_link. Kalman filtering must not be used to hide systematic geometry bias.
     - Keep diagnostics with the stage that measured them. Planner counts do not grant Tesseract feasibility, and capture validation must not choose retry or NBV recovery policy.
@@ -359,9 +370,9 @@ session_coverage_frame_guardrail_2026_08_06:
     - Closed-loop target updates may move new candidate geometry but cannot rewrite achieved-view Y-side, azimuth, or elevation classification.
     - Planner ranking and mission completion consume the same normalized history field, with live measured center fallback only before the frame exists.
     - Session reset/finalization clears the frame; rejected views never change it or satisfy coverage.
-    - Twenty-five azimuth, seven elevation and six range samples define the configured information-scoring region; the automatic bridge/worker bound is twelve and Tesseract/executor safety authority is unchanged.
+    - Authoritative voxel_nbv uses twenty-five azimuth by seven elevation rays as its configured information-scoring region, then expands only twelve shortlisted rays across bounded standoff probes. Legacy alone retains six exact range samples. Tesseract/executor safety authority is unchanged.
   blast_radius: [executor transient-local scan history, planner feature ranking, mission completion result, Tesseract shortlist direction, physical Y-side traversal]
-  must_retest_if_changed: [scan_session_memory payload and shifted-target tests, planner 1050-candidate configured-region and global high-gain-angle test, mission feature-coverage tests, scan_motion/executor suite, bridge shortlist suite including at-most-twelve bound and exact-first aim, then explicit supervised low-speed diversity validation]
+  must_retest_if_changed: [scan_session_memory payload and frozen-target tests, planner 175-ray configured-region and global high-gain-angle test, legacy 1050-point compatibility test, mission feature-coverage tests, scan_motion/executor suite, bridge shortlist suite including at-most-twelve-ray bound and exact-first aim, then explicit supervised low-speed diversity validation]
 feature_capture_budget_guardrail_2026_08_06:
   invariants:
     - REQUIRED_CAPTURES=8 is the measured-model seed floor; MAX_FEATURE_CAPTURES=24 is the hard automatic session maximum.

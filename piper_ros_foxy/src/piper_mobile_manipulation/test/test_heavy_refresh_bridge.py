@@ -4,8 +4,12 @@ import json
 import time
 from types import SimpleNamespace
 
+import numpy as np
+import pytest
+
 from piper_mobile_manipulation.heavy_refresh_bridge_node import (
     HeavyRefreshBridgeNode,
+    masked_depth_range_diagnostic,
 )
 from piper_mobile_manipulation.scan_execution_modes import (
     heavy_refresh_status_action,
@@ -92,3 +96,30 @@ def test_waiting_for_worker_status_is_nonterminal():
     assert action == 'waiting_for_worker'
     assert reason == 'heavy worker is busy'
     assert image_stamp_ns is None
+
+
+def test_only_correlated_masked_depth_can_prove_target_is_too_far():
+    mask = np.zeros((8, 8), dtype=np.uint8)
+    mask[2:6, 2:6] = 255
+    depth_mm = np.full((8, 8), 400, dtype=np.uint16)
+    depth_mm[2:6, 2:6] = 1300
+
+    result = masked_depth_range_diagnostic(
+        mask, depth_mm, minimum_pixels=8, minimum_ratio=0.5,
+        maximum_depth_m=1.20)
+
+    assert result['target_depth_status'] == 'TOO_FAR'
+    assert result['target_depth_nearest_m'] == pytest.approx(1.30)
+
+
+def test_mixed_or_insufficient_masked_depth_does_not_claim_too_far():
+    mask = np.ones((4, 4), dtype=np.uint8)
+    mixed = np.full((4, 4), 1300, dtype=np.uint16)
+    mixed[0, 0] = 1000
+    invalid = np.zeros((4, 4), dtype=np.uint16)
+
+    assert masked_depth_range_diagnostic(
+        mask, mixed, 4, 0.5, 1.20)['target_depth_status'] == 'VALID'
+    assert masked_depth_range_diagnostic(
+        mask, invalid, 4, 0.5, 1.20)['target_depth_status'] == (
+            'INSUFFICIENT')

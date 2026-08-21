@@ -1,5 +1,8 @@
+from types import SimpleNamespace
+
 from piper_mobile_manipulation.scan_viewpoint_planner_node import (
     build_viewpoint_angles,
+    ScanViewpointPlannerNode,
     target_frame_rejection_reason,
     viewpoint_replan_required,
     viewpoint_refresh_required,
@@ -28,26 +31,60 @@ def test_live_thirteen_view_sector_retains_reachable_endpoints():
     assert angles[-1] == 175.0
 
 
-def test_live_flexible_region_spans_both_y_sides_distances_and_elevations():
+def test_live_ray_region_spans_both_y_sides_and_elevations_once():
     angles = build_viewpoint_angles(180, 180, 7.5, 25)
     pitches = [
         -50.0 + offset
         for offset in (35.0, 25.0, 15.0, 5.0, -5.0, -15.0, -25.0)
     ]
-    radii = [0.30, 0.33, 0.36, 0.39, 0.42, 0.45]
     candidates = [
-        (angle, pitch, radius)
-        for radius in radii for pitch in pitches for angle in angles]
+        (angle, pitch)
+        for pitch in pitches for angle in angles]
 
     assert len(angles) == 25
-    assert len(candidates) == 1050
+    assert len(candidates) == 175
     assert angles[0] == 90.0
     assert angles[-1] == 270.0
     # The failed physical pose landed at 195.6 degrees.  The denser region has
     # a meaningful but compact successor instead of jumping directly to 210.
     assert 6.0 <= 202.5 - 195.6 <= 8.0
-    assert sorted(set(pitch for _angle, pitch, _radius in candidates)) == [
+    assert sorted(set(pitch for _angle, pitch in candidates)) == [
         -75.0, -65.0, -55.0, -45.0, -35.0, -25.0, -15.0]
+
+
+def test_ray_pool_is_generated_once_and_ignores_later_target_shift():
+    calls = []
+    parameters = {
+        'camera_pitch_offsets_deg': [0.0, -10.0],
+        'camera_pitch_deg': -20.0,
+    }
+    harness = SimpleNamespace(
+        ray_pool_session_id='',
+        ray_pool_target_center=None,
+        ray_pool_frame_id='',
+        ray_pool=None,
+        get_parameter=lambda name: SimpleNamespace(value=parameters[name]),
+    )
+
+    def make_ray(ray_id, angle, center, frame_id, pitch):
+        calls.append((ray_id, angle, dict(center), frame_id, pitch))
+        return {'ray_id': ray_id, 'target_object_center': dict(center)}
+
+    harness.make_ray_viewpoint = make_ray
+    history = {'session_id': 'static-ray-session'}
+    first_center = {'x': 0.4, 'y': 0.0, 'z': 0.0}
+    shifted_center = {'x': 0.46, 'y': 0.0, 'z': 0.0}
+
+    frozen, first = ScanViewpointPlannerNode.frozen_ray_pool(
+        harness, history, first_center, 'base_link', [90.0, 180.0])
+    reused, second = ScanViewpointPlannerNode.frozen_ray_pool(
+        harness, history, shifted_center, 'base_link', [90.0, 180.0])
+
+    assert frozen == first_center
+    assert reused == first_center
+    assert first == second
+    assert len(first) == 4
+    assert len(calls) == 4
 
 
 def test_tracker_rate_duplicates_do_not_regenerate_candidates():

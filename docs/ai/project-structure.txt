@@ -71,6 +71,7 @@ piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/plan_auth
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/trajectory_runner.py - pure authorized trajectory schedule and monitoring decisions
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/capture_coordinator.py - pure settled RGB-D handoff and bounded retry policy
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/nbv_coverage.py - immutable object-centric voxel evidence and information-first candidate scoring
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/viewpoint_rays.py - pure bounded ray interval, private ray/probe identity and shortlisted-ray exact-standoff expansion
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/view_generation.py - immutable session/accepted-count/policy generation identity used for planner-to-bridge-to-mission synchronization
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture_node.py - transactional schema-2 RGB-D/mask persistence plus exact plan_id-correlated NBV policy/rank/gain audit metadata
 piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/bridge_node.py - command-free snapshot bridge, post-cache view-generation receipts, direction-diverse bounded NBV shortlist and selected-plan provenance publication

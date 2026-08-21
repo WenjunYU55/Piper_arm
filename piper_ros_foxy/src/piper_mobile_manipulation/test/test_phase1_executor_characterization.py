@@ -340,6 +340,21 @@ def test_post_motion_target_drift_rejects_capture_and_requests_closed_loop_repla
         'target_estimate_drift_m'] == pytest.approx(0.03)
 
 
+def test_frozen_ray_capture_aim_uses_plan_target_not_tracker_jitter():
+    harness, _events = _achieved_view_harness(0.0)
+    harness.plan_viewpoints[0]['ray_id'] = 7
+    harness.latest_tracked_target = SimpleNamespace(
+        valid=True,
+        header=SimpleNamespace(frame_id='base_link'),
+        position=SimpleNamespace(x=0.16, y=0.0, z=0.6),
+    )
+    harness.fresh = lambda key: key == 'tracked_target'
+    assert ScanViewpointExecutorNode.record_latest_achieved_scan_view(harness)
+
+    assert ScanViewpointExecutorNode.final_capture_aim_rejection(harness) == ''
+    assert harness.latest_achieved_scan_view['ray_id'] == 7
+
+
 @pytest.mark.parametrize(
     'error,elapsed,progress,expected', [
         (0.005, 1.0, 1.0, 'advance'),

@@ -1,6 +1,15 @@
 schema_version: 1
 document: implemented_features_bookmark
-updated_at: 2026-08-20
+updated_at: 2026-08-21
+frozen_viewpoint_ray_pool_2026_08_21:
+  status: software_implemented_physical_qualification_pending
+  capability: Authoritative voxel_nbv freezes 175 target-centred direction rays per mission, ranks them from accepted-only coverage, shortlists twelve, and expands only shortlisted rays into bounded preferred/reserve exact Tesseract probes.
+  authority: [scan_viewpoint_planner_node.py, viewpoint_rays.py, piper_tesseract_foxy/bridge_node.py]
+  retained_boundaries: {target_estimate: target_tracker_node.py, coverage: nbv_coverage.py, feasibility: worker.py, achieved_pose: scan_viewpoint_executor_node.py, capture_acceptance: scan_capture_node.py}
+target_too_far_terminal_result_2026_08_21:
+  status: software_implemented
+  capability: Exact-job semantic masked depth entirely beyond 1.20 m produces TARGET_TOO_FAR / REPOSITION_REQUIRED with rough base_link XYZ and normal shutdown. Five-look absence also reports XYZ while retaining TARGET_NOT_FOUND.
+  authority: [heavy_refresh_bridge_node.py, scan_execution_modes.py, scan_viewpoint_executor_node.py, mission_engine.py, target_scan_mission_node.py]
 normalized_marginal_nbv_diversity_2026_08_20:
   status: software_implemented_supervised_physical_retest_pending
   capability: Global voxel NBV compares the fraction of projected target support that is cumulatively new, then accepted-view angular novelty, absolute marginal support and travel. Raw unknown projection can no longer force every rank into one steep elevation band.

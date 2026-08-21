@@ -474,6 +474,19 @@ def test_grounding_status_is_correlated_and_requires_post_settle_frame():
     assert heavy_refresh_status_action(
         missing_invalid_count, 'wanted', minimum)[0] == 'not_found'
 
+    too_far = dict(queued)
+    too_far.update({
+        'state': 'published',
+        'target_depth_status': 'TOO_FAR',
+        'target_depth_median_m': 1.31,
+        'target_depth_maximum_m': 1.20,
+    })
+    action, reason, stamp_ns = heavy_refresh_status_action(
+        too_far, 'wanted', minimum)
+    assert action == 'too_far'
+    assert '1.310m' in reason
+    assert stamp_ns == 20_000_000_001
+
 
 def test_only_first_rough_segment_uses_static_bootstrap_scene():
     assert uses_bootstrap_static_scene(ROUGH_ACQUISITION, 0)

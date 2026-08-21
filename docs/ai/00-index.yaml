@@ -1,5 +1,13 @@
 schema_version: 1
 document: ai_context_index
+frozen_viewpoint_ray_pool_2026_08_21:
+  goal: Replace the authoritative voxel-NBV radial point lattice with one mission-frozen set of target-centred direction rays while leaving the selectable legacy point policy unchanged.
+  geometry: The first qualified base_link target lock freezes 175 directions from the existing 25 azimuth by 7 elevation grid. Each ray has a 0.28 m minimum standoff, a preferred band through 0.50 m, and a maximum capped by both the target base-link radius and the existing 0.80 m scan maximum.
+  handoff: The planner scores one representative point per ray against accepted-only cumulative coverage. The bridge shortlists at most twelve rays before expanding only those rays into preferred then reserve exact standoff probes for unchanged exact-aim and Tesseract feasibility checks.
+  static_scope: Tracking does not translate or regenerate the ray pool during this phase. Accepted captures update coverage; a rejected achieved ray is retired without adding coverage; actual settled FK remains the next motion start.
+  acquisition_failures: Five absent closed-loop looks return TARGET_NOT_FOUND with rough base_link XYZ. A fresh correlated semantic mask with sufficient masked depth entirely beyond 1.20 m returns retryable TARGET_TOO_FAR and REPOSITION_REQUIRED with rough base_link XYZ. Both use normal mission shutdown.
+  interfaces: No ROS topic, service, action or message schema changed; ray identity and diagnostics are additive private JSON/provenance fields and encoded existing viewpoint IDs.
+  physical_status: Software-only. No arm, camera, CAN or physical E2E command was issued.
 normalized_marginal_nbv_diversity_repair_2026_08_20:
   incident: Task codex-e2e-nbv15-20260820-230803 committed six captures in scan_20260820_230845, but every post-seed accepted view remained at 65 degrees elevation, achieved only 53.6 degrees azimuth span, and satisfied neither Y-side floor.
   cause: The voxel scorer compared raw projected unknown-pixel count before novel surface and angular novelty. Recorded replay ranked every 75-degree direction before all lower elevation bands, so Tesseract received steep leaders and selected reachable neighboring 65-degree poses.

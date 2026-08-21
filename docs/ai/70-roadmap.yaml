@@ -1,6 +1,11 @@
 schema_version: 1
 document: mission_goal_and_delivery_roadmap
-last_reviewed: '2026-08-20'
+last_reviewed: '2026-08-21'
+frozen_viewpoint_ray_phase_2026_08_21:
+  milestone: M5 feature-diverse measured NBV capture
+  software_status: Authoritative voxel_nbv now freezes 175 target-centred direction rays once, scores those rays against cumulative accepted coverage and expands only twelve shortlisted rays into bounded exact standoffs. Legacy remains unchanged.
+  range_status: Fresh semantic masked depth wholly beyond 1.20 m returns retryable TARGET_TOO_FAR / REPOSITION_REQUIRED with rough base_link XYZ; five-look absence reports TARGET_NOT_FOUND with the same coordinate context.
+  qualification_status: Software validation only. Next permitted stage is motors-disabled graph/provenance inspection; no physical motion was run.
 global_nbv_target_aim_repair_2026_08_20:
   milestone: M5 feature-diverse measured NBV capture
   software_status: Global cumulative-information candidate selection, actual-achieved-pose rejection recovery, exact-first five-degree aim, one-shot heavy capture refresh and base_link-only temporal target estimation are implemented without motion, home, shutdown, collision or public ROS changes.

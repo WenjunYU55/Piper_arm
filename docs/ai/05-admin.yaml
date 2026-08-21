@@ -1,5 +1,10 @@
 schema_version: 1
 document: maintenance_routing
+frozen_ray_scan_or_target_range_failure_2026_08_21:
+  inspect: [scan_viewpoint_planner_node.py frozen_ray_pool and make_ray_viewpoint, viewpoint_rays.py, /piper/scan_viewpoints candidate_geometry and ray fields, /piper/tesseract_plan_provenance ray probe fields, /piper/scan_session_history accepted and rejected ray_id, /piper/heavy_refresh_status target_depth fields, RunTargetScan failure_code and action_summary_json rough_target_base_link_xyz]
+  rule: For voxel_nbv create the direction pool once from the first qualified base_link target for the mission. Score rays cheaply, shortlist no more than twelve, then expand only shortlisted rays into exact standoff probes. Do not restore the six-radius full lattice, regenerate rays after every accepted capture, or move information gain into Tesseract.
+  too_far_rule: TARGET_TOO_FAR is valid only for the exact correlated heavy-refresh job when its semantic mask has sufficient valid target depth and every valid masked sample exceeds 1.20 m. Missing or insufficient depth remains unproved and must not use background ROI depth.
+  legacy: The GUI-selectable legacy policy retains its original 0.30 m minimum and exact point lattice.
 nbv_repeats_one_elevation_or_y_sector_2026_08_20:
   inspect: [frames/view_*_metadata.yaml view_selection marginal fraction direction novelty pitch and azimuth, /piper/scan_coverage, nbv_coverage.py candidate_information and rank_next_best_views, bridge candidate_diagnostics]
   rule: Rank positive candidates by normalized marginal-information fraction, then accepted-view angular novelty, absolute marginal pixels and only then motion. Do not restore raw unknown-pixel-first ordering, add a fixed large-move schedule, or move information scoring into Tesseract.

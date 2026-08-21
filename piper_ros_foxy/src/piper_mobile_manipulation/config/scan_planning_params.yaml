@@ -15,8 +15,12 @@
     # Closed-loop requests sample one exact Tesseract-qualified pose from this
     # bounded distance region instead of demanding a single fixed radius.
     scan_radius_offsets_m: [0.0, 0.03, 0.06, 0.09, 0.12, 0.15]
+    # The authoritative voxel-NBV policy treats each angular candidate as a
+    # bounded ray. The legacy point policy still starts at scan_radius_m=0.30.
     min_scan_radius_m: 0.30
     max_scan_radius_m: 0.80
+    ray_min_standoff_m: 0.28
+    preferred_scan_radius_m: 0.50
     # Deterministic samples of a flexible vertical camera region. Ten-degree
     # pitch spacing gives Tesseract intermediate J2/J3 configurations instead
     # of forcing one of a few exact wrist-down elevations near a close target.

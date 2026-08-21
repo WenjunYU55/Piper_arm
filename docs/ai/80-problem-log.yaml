@@ -1,6 +1,12 @@
 schema_version: 1
 document: consolidated_problem_and_incident_log
-last_reviewed: '2026-08-20'
+last_reviewed: '2026-08-21'
+voxel_radial_lattice_recomputation_2026_08_21:
+  state: software_fixed_physical_retest_pending
+  symptom: Authoritative voxel_nbv regenerated and rescored six exact radial layers for every angular direction even though information gain is directional and Tesseract ultimately owns exact reachable standoff.
+  correction: Freeze one angular ray pool per static-target mission, score 175 representative directions, shortlist twelve rays, then expand only those rays to preferred and reserve exact positions for Tesseract.
+  boundary: No NBV gain, coverage, motion, speed, collision, capture threshold, public interface, home or shutdown policy changed.
+  remaining: Confirm the first supervised ray mission produces materially different accepted directions and that preferred/backup standoff probing does not increase capture duplication.
 raw_unknown_pixel_nbv_diversity_bias_2026_08_20:
   state: software_fixed_physical_retest_pending
   task_id: codex-e2e-nbv15-20260820-230803

@@ -214,6 +214,22 @@ def heavy_refresh_status_action(payload, request_id, minimum_image_stamp_ns):
         if image_stamp_ns < int(minimum_image_stamp_ns):
             return 'abort', 'GroundingDINO result used a pre-settle image', image_stamp_ns
         if state == 'published':
+            if str(payload.get('target_depth_status', '')).upper() == 'TOO_FAR':
+                try:
+                    measured = float(payload['target_depth_median_m'])
+                    maximum = float(payload['target_depth_maximum_m'])
+                except (KeyError, TypeError, ValueError):
+                    return (
+                        'abort',
+                        'too-far target depth diagnostic is malformed',
+                        image_stamp_ns,
+                    )
+                return (
+                    'too_far',
+                    'fresh masked target depth %.3fm exceeds the configured '
+                    '%.3fm sensor profile' % (measured, maximum),
+                    image_stamp_ns,
+                )
             return 'detected', '', image_stamp_ns
         worker_status = str(payload.get('worker_status', ''))
         if worker_status == 'target_mask_missing':

@@ -85,6 +85,7 @@ from piper_mobile_manipulation.scan_motion import (
     validate_joint_path,
 )
 from piper_mobile_manipulation.motion_limit_stability import MotionLimitStability
+from piper_mobile_manipulation.viewpoint_rays import decoded_ray_id
 from piper_mobile_manipulation.scan_trajectory import (
     TIMING_POLICY_VERSION,
     validate_sdk_movej_waypoint_path,
@@ -1204,8 +1205,10 @@ class ScanViewpointExecutorNode(Node):
         self.plan_viewpoints = []
         for index, camera, look in zip(
                 msg.viewpoint_indices, msg.camera_positions, msg.look_directions):
+            ray_id = decoded_ray_id(index)
             self.plan_viewpoints.append({
                 'index': int(index),
+                'ray_id': ray_id,
                 'desired_camera_position': {
                     'x': float(camera.x), 'y': float(camera.y), 'z': float(camera.z),
                 },
@@ -1492,6 +1495,16 @@ class ScanViewpointExecutorNode(Node):
             self.set_state(
                 'WAITING_FOR_GROUNDING_DINO',
                 'matching GroundingDINO job queued on a fresh post-settle frame')
+            return
+        if action == 'too_far':
+            self.acquisition_job_image_stamp_ns = int(image_stamp_ns)
+            self.acquisition_detection_completed = self.now()
+            self.command_target = None
+            self.current_path = []
+            self.current_path_times = []
+            self.motion_started_at = None
+            self.publish_hold()
+            self.set_state('ACQUISITION_TARGET_TOO_FAR', reason)
             return
         if action == 'detected':
             self.acquisition_job_image_stamp_ns = int(image_stamp_ns)
@@ -2969,6 +2982,8 @@ class ScanViewpointExecutorNode(Node):
             'joint_positions_rad': joints,
             'achieved_at_sec': float(achieved['achieved_at_sec']),
             'target_estimate_used': planning_target,
+            **({'ray_id': int(viewpoint['ray_id'])}
+               if viewpoint.get('ray_id') is not None else {}),
         })
         self.publish_scan_history()
         return True
@@ -3006,6 +3021,8 @@ class ScanViewpointExecutorNode(Node):
             'achieved_at_sec': float(achieved['achieved_at_sec']),
             'target_estimate_used': planning_target,
             'reason': str(reason),
+            **({'ray_id': int(viewpoint['ray_id'])}
+               if viewpoint.get('ray_id') is not None else {}),
         })
         self.publish_scan_history()
         return True
@@ -3048,6 +3065,8 @@ class ScanViewpointExecutorNode(Node):
                 (float(value) for value in achieved_look))),
             'joint_positions_rad': joints,
             'achieved_at_sec': float(self.now()),
+            **({'ray_id': int(viewpoint['ray_id'])}
+               if viewpoint.get('ray_id') is not None else {}),
         }
         self.publish_scan_history()
         return True
@@ -3087,7 +3106,11 @@ class ScanViewpointExecutorNode(Node):
                 and getattr(tracked, 'valid', False)
                 and str(getattr(tracked_header, 'frame_id', '')) == 'base_link'
                 and self.fresh('tracked_target'))
-            if tracked_fresh:
+            viewpoint = (
+                self.plan_viewpoints[self.current_view]
+                if self.current_view < len(self.plan_viewpoints) else {})
+            frozen_ray_target = viewpoint.get('ray_id') is not None
+            if tracked_fresh and not frozen_ray_target:
                 target = np.asarray([
                     tracked.position.x,
                     tracked.position.y,
@@ -3108,7 +3131,9 @@ class ScanViewpointExecutorNode(Node):
         achieved['target_estimate_drift_m'] = float(drift)
         maximum_drift = float(configured_value(
             self, 'max_target_drift_before_approval_m'))
-        if tracked_fresh and drift > maximum_drift + 1e-9:
+        if (
+                tracked_fresh and not frozen_ray_target
+                and drift > maximum_drift + 1e-9):
             return (
                 'TARGET_DRIFT_REPLAN: target estimate changed %.4fm after '
                 'planning; hold the achieved pose and request a fresh NBV'

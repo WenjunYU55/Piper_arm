@@ -458,10 +458,23 @@ class MissionEngine:
                 % (look_index + 1, maximum_looks))
             execution = self.operations.wait_for_execution(
                 context,
-                ('ACQUIRED', 'ACQUISITION_LOOK_COMPLETE'),
+                (
+                    'ACQUIRED', 'ACQUISITION_LOOK_COMPLETE',
+                    'ACQUISITION_TARGET_TOO_FAR',
+                ),
                 self.workflow_config.acquisition_execution_timeout_sec,
                 ('ACQUISITION_FAILED', 'ABORTED', 'INVALID'))
             session.perception_scene_established = True
+            if str(execution.state) == 'ACQUISITION_TARGET_TOO_FAR':
+                target = [float(value) for value in context.target]
+                raise MissionFailure(
+                    'target is outside the qualified sensor depth at rough '
+                    'base_link coordinates x=%.3f, y=%.3f, z=%.3f: %s'
+                    % (
+                        target[0], target[1], target[2],
+                        str(execution.reason)),
+                    outcome='REPOSITION_REQUIRED',
+                    failure_code='TARGET_TOO_FAR', retryable=True)
             if str(execution.state) == 'ACQUIRED':
                 acquired = True
                 break
@@ -471,9 +484,12 @@ class MissionEngine:
                 'measured arm and camera state'
                 % (look_index + 1, maximum_looks))
         if not acquired:
+            target = [float(value) for value in context.target]
             raise MissionFailure(
-                'target not found after %d distinct closed-loop looks'
-                % maximum_looks,
+                'target not found after %d distinct closed-loop looks near '
+                'rough base_link coordinates x=%.3f, y=%.3f, z=%.3f'
+                % (
+                    maximum_looks, target[0], target[1], target[2]),
                 failure_code='TARGET_NOT_FOUND', retryable=True)
 
     def _handle_occlusion_probe(self, context):

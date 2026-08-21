@@ -22,6 +22,7 @@ from piper_mobile_manipulation.scan_session_memory import (
     validate_history_payload,
 )
 from piper_mobile_manipulation.view_generation import make_view_generation
+from piper_mobile_manipulation.viewpoint_rays import bounded_ray_interval
 
 
 def build_viewpoint_angles(center_deg, desired_deg, step_deg, max_viewpoints):
@@ -123,6 +124,8 @@ class ScanViewpointPlannerNode(Node):
         self.declare_parameter('scan_radius_offsets_m', [0.0, -0.06, 0.06])
         self.declare_parameter('min_scan_radius_m', 0.30)
         self.declare_parameter('max_scan_radius_m', 0.80)
+        self.declare_parameter('ray_min_standoff_m', 0.28)
+        self.declare_parameter('preferred_scan_radius_m', 0.50)
         self.declare_parameter('camera_pitch_deg', -10)
         self.declare_parameter('camera_pitch_offsets_deg', [0.0])
         self.declare_parameter('keep_object_centered', True)
@@ -163,6 +166,10 @@ class ScanViewpointPlannerNode(Node):
         self.nbv_model_error = 'no accepted capture is available'
         self.nbv_ranking_cache_key = None
         self.nbv_ranking_cache = None
+        self.ray_pool_session_id = ''
+        self.ray_pool_target_center = None
+        self.ray_pool_frame_id = ''
+        self.ray_pool = None
         self.coverage_model = ObjectCoverageModel(VoxelCoverageConfig(
             voxel_size_m=float(
                 self.get_parameter('nbv_voxel_size_m').value),
@@ -463,6 +470,12 @@ class ScanViewpointPlannerNode(Node):
             'max_views': int(self.get_parameter('session_max_views').value),
             'entries': [],
         }
+        angles = self.viewpoint_angles()
+        ray_policy = self.selection_policy() == 'voxel_nbv'
+        frozen_viewpoints = None
+        if ray_policy:
+            center, frozen_viewpoints = self.frozen_ray_pool(
+                history, center, frame_id, angles)
         history_signature = json.dumps(
             history, sort_keys=True, separators=(',', ':'))
         now = time.monotonic()
@@ -483,35 +496,41 @@ class ScanViewpointPlannerNode(Node):
             # A freshness-only publication must preserve the exact previously
             # planned geometry; sub-threshold tracker noise is not a replan.
             center = dict(self.last_planned_center)
-        angles = self.viewpoint_angles()
         radius = self.scan_radius()
-        viewpoints = []
-        index = 0
-        for radius_offset_m in self.get_parameter(
-                'scan_radius_offsets_m').value:
-            flexible_radius = min(
-                float(self.get_parameter('max_scan_radius_m').value),
-                max(
-                    float(self.get_parameter('min_scan_radius_m').value),
-                    radius + float(radius_offset_m)))
-            for pitch_offset_deg in self.get_parameter(
-                    'camera_pitch_offsets_deg').value:
-                pitch_deg = (
-                    float(self.get_parameter('camera_pitch_deg').value)
-                    + float(pitch_offset_deg))
-                for angle_deg in angles:
-                    viewpoint = self.make_viewpoint(
-                        index, angle_deg, flexible_radius, center, frame_id,
-                        pitch_deg)
-                    viewpoints.append(viewpoint)
-                    index += 1
+        if ray_policy:
+            viewpoints = [dict(item) for item in frozen_viewpoints]
+            if viewpoints:
+                radius = float(viewpoints[0]['ray_scoring_standoff_m'])
+        else:
+            viewpoints = []
+            index = 0
+            for radius_offset_m in self.get_parameter(
+                    'scan_radius_offsets_m').value:
+                flexible_radius = min(
+                    float(self.get_parameter('max_scan_radius_m').value),
+                    max(
+                        float(self.get_parameter('min_scan_radius_m').value),
+                        radius + float(radius_offset_m)))
+                for pitch_offset_deg in self.get_parameter(
+                        'camera_pitch_offsets_deg').value:
+                    pitch_deg = (
+                        float(self.get_parameter('camera_pitch_deg').value)
+                        + float(pitch_offset_deg))
+                    for angle_deg in angles:
+                        viewpoint = self.make_viewpoint(
+                            index, angle_deg, flexible_radius, center, frame_id,
+                            pitch_deg)
+                        viewpoints.append(viewpoint)
+                        index += 1
         generated_candidate_count = len(viewpoints)
         viewpoints = filter_and_order_viewpoints(
             viewpoints,
             history['entries'],
             self.get_parameter('duplicate_position_tolerance_m').value,
             self.get_parameter('duplicate_look_tolerance_deg').value,
-            accepted_entries=history.get('accepted_entries', []),
+            accepted_entries=(
+                history.get('entries', []) if ray_policy
+                else history.get('accepted_entries', [])),
             target_center=history_coverage_target_center(history, center),
             minimum_direction_separation_deg=self.get_parameter(
                 'minimum_useful_direction_separation_deg').value,
@@ -738,6 +757,73 @@ class ScanViewpointPlannerNode(Node):
             'reachable': False,
             'safe': False,
         }
+
+    def make_ray_viewpoint(
+            self, ray_id, angle_deg, center, frame_id, pitch_deg):
+        """Build one stable direction with a bounded standoff interval."""
+        minimum, maximum = bounded_ray_interval(
+            [center['x'], center['y'], center['z']],
+            self.get_parameter('ray_min_standoff_m').value,
+            self.get_parameter('max_scan_radius_m').value,
+        )
+        preferred_maximum = min(
+            maximum,
+            max(minimum, float(
+                self.get_parameter('preferred_scan_radius_m').value)),
+        )
+        scoring_standoff = 0.5 * (minimum + preferred_maximum)
+        viewpoint = self.make_viewpoint(
+            ray_id, angle_deg, scoring_standoff, center, frame_id,
+            pitch_deg)
+        camera = viewpoint['desired_camera_position']
+        direction = {
+            axis: (float(camera[axis]) - float(center[axis])) / scoring_standoff
+            for axis in ('x', 'y', 'z')
+        }
+        viewpoint.update({
+            'candidate_geometry': 'target_ray',
+            'ray_id': int(ray_id),
+            'ray_direction': direction,
+            'ray_min_standoff_m': float(minimum),
+            'ray_max_standoff_m': float(maximum),
+            'ray_preferred_max_standoff_m': float(preferred_maximum),
+            'ray_scoring_standoff_m': float(scoring_standoff),
+        })
+        return viewpoint
+
+    def frozen_ray_pool(self, history, center, frame_id, angles):
+        """Create one mission-scoped ray pool and otherwise return a copy."""
+        session_id = str(history.get('session_id', ''))
+        frozen_center = history_coverage_target_center(history, center)
+        if frozen_center is None:
+            frozen_center = dict(center)
+        reusable = bool(
+            session_id
+            and session_id == self.ray_pool_session_id
+            and self.ray_pool is not None)
+        if reusable:
+            return (
+                dict(self.ray_pool_target_center),
+                [dict(item) for item in self.ray_pool],
+            )
+
+        viewpoints = []
+        ray_id = 0
+        for pitch_offset_deg in self.get_parameter(
+                'camera_pitch_offsets_deg').value:
+            pitch_deg = (
+                float(self.get_parameter('camera_pitch_deg').value)
+                + float(pitch_offset_deg))
+            for angle_deg in angles:
+                viewpoints.append(self.make_ray_viewpoint(
+                    ray_id, angle_deg, frozen_center, frame_id, pitch_deg))
+                ray_id += 1
+        if session_id:
+            self.ray_pool_session_id = session_id
+            self.ray_pool_target_center = dict(frozen_center)
+            self.ray_pool_frame_id = str(frame_id)
+            self.ray_pool = [dict(item) for item in viewpoints]
+        return dict(frozen_center), viewpoints
 
     def viewpoint_angles(self):
         return build_viewpoint_angles(

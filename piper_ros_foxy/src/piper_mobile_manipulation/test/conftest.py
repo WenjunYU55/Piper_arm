@@ -296,7 +296,7 @@ class MissionCharacterizationHarness:
 
     def snapshot_target(self, _rough_target):
         self.events.append('target_snapshot')
-        return SimpleNamespace(point=SimpleNamespace(x=0.4, y=0.0, z=0.0))
+        return [0.4, 0.0, 0.0]
 
     def transition(self, _goal_handle, session, phase, reason):
         session.transition(phase, reason)

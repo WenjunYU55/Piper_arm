@@ -1160,6 +1160,9 @@ class TargetScanMissionNode(Node):
                     or failure_code_for_reason(failure))),
             retryable=(False if failure is None else failure.retryable),
             action_summary={
+                'rough_target_base_link_xyz': (
+                    [float(value) for value in context.target]
+                    if context.target is not None else []),
                 'processes': self.processes.health(),
                 'home_positions_rad': list(session.home_positions_rad),
                 'pre_home_positions_rad': list(

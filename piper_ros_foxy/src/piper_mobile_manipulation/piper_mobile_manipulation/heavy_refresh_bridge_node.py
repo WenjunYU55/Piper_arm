@@ -25,6 +25,45 @@ from piper_mobile_manipulation.heavy_refresh_contract import (
 )
 
 
+def masked_depth_range_diagnostic(
+        mask, depth, minimum_pixels, minimum_ratio, maximum_depth_m):
+    """Classify one correlated semantic mask without creating a 3D target."""
+    mask_array = np.asarray(mask)
+    depth_array = np.asarray(depth)
+    if mask_array.ndim < 2 or depth_array.shape[:2] != mask_array.shape[:2]:
+        return {'target_depth_status': 'UNCHECKED'}
+    mask_bool = mask_array > 0
+    mask_pixels = int(np.count_nonzero(mask_bool))
+    if mask_pixels <= 0:
+        return {'target_depth_status': 'UNCHECKED'}
+    values_m = depth_array.astype(np.float32, copy=False)
+    if np.issubdtype(depth_array.dtype, np.integer):
+        values_m = values_m * 0.001
+    valid = mask_bool & np.isfinite(values_m) & (values_m > 0.0)
+    values = values_m[valid]
+    valid_pixels = int(values.size)
+    ratio = valid_pixels / float(mask_pixels)
+    result = {
+        'target_mask_pixels': mask_pixels,
+        'target_depth_valid_pixels': valid_pixels,
+        'target_depth_valid_ratio': float(ratio),
+        'target_depth_maximum_m': float(maximum_depth_m),
+    }
+    if (
+            valid_pixels < int(minimum_pixels)
+            or ratio < float(minimum_ratio)):
+        result['target_depth_status'] = 'INSUFFICIENT'
+        return result
+    result['target_depth_median_m'] = float(np.median(values))
+    result['target_depth_nearest_m'] = float(np.min(values))
+    result['target_depth_farthest_m'] = float(np.max(values))
+    result['target_depth_status'] = (
+        'TOO_FAR'
+        if bool(np.all(values > float(maximum_depth_m)))
+        else 'VALID')
+    return result
+
+
 class HeavyRefreshBridgeNode(Node):
     def __init__(self):
         super().__init__('heavy_refresh_bridge_node')
@@ -48,6 +87,7 @@ class HeavyRefreshBridgeNode(Node):
         self.declare_parameter('idle_status_interval_sec', 2.0)
         self.declare_parameter('min_target_depth_valid_ratio', 0.05)
         self.declare_parameter('min_target_depth_valid_px', 25)
+        self.declare_parameter('max_target_depth_m', 1.20)
         self.declare_parameter('dry_run', True)
         self.declare_parameter('enable_real_arm_motion', False)
 
@@ -320,7 +360,8 @@ class HeavyRefreshBridgeNode(Node):
                             and result.get('tracked_objects')):
                         self.queue_sam2_live_seed(response, result)
                 else:
-                    self.publish_target_depth_diagnostic(mask, response.name, result)
+                    depth_diagnostic = self.publish_target_depth_diagnostic(
+                        mask, response.name, result)
                     out = self.bridge.cv2_to_imgmsg(mask, encoding='mono8')
                     stamp = result.get('image_stamp', {})
                     out.header.stamp.sec = int(stamp.get('sec', 0))
@@ -351,6 +392,7 @@ class HeavyRefreshBridgeNode(Node):
                             'obstacle_confidences', []),
                         tracked_objects=result.get('tracked_objects', []),
                         unsafe_obstacle_count=result.get('unsafe_obstacle_count', 0),
+                        **depth_diagnostic,
                     )
                     if bool(self.get_parameter('seed_sam2_live').value):
                         self.queue_sam2_live_seed(response, result)
@@ -397,58 +439,72 @@ class HeavyRefreshBridgeNode(Node):
         header.frame_id = str(result.get('frame_id', ''))
         return header
 
+    def correlated_job_depth(self, job_id):
+        """Load only the depth image captured for this exact heavy job."""
+        for root in ('archive', 'processing', 'requests'):
+            path = self.spool / root / job_id / 'depth.npy'
+            if not path.is_file():
+                continue
+            try:
+                return np.load(str(path), allow_pickle=False)
+            except (OSError, ValueError):
+                return None
+        return None
+
     def publish_target_depth_diagnostic(self, mask, job_id, result):
-        if self.latest_depth is None:
+        depth = self.correlated_job_depth(job_id)
+        if depth is None:
             self.publish_status(
                 'target_mask_depth_unchecked',
                 job_id=job_id,
                 request_id=result.get('request_id'),
                 reason='no aligned depth frame received yet',
             )
-            return
-        if mask.shape[:2] != self.latest_depth.shape[:2]:
+            return {'target_depth_status': 'UNCHECKED'}
+        if mask.shape[:2] != depth.shape[:2]:
             self.publish_status(
                 'target_mask_depth_shape_mismatch',
                 job_id=job_id,
                 request_id=result.get('request_id'),
                 mask_shape=list(mask.shape[:2]),
-                depth_shape=list(self.latest_depth.shape[:2]),
+                depth_shape=list(depth.shape[:2]),
             )
-            return
-        mask_bool = mask > 0
-        mask_px = int(np.count_nonzero(mask_bool))
-        if mask_px <= 0:
-            return
-        depth = self.latest_depth
-        if np.issubdtype(depth.dtype, np.floating):
-            valid_depth = np.isfinite(depth) & (depth > 0.0)
-        else:
-            valid_depth = depth > 0
-        valid_px = int(np.count_nonzero(valid_depth & mask_bool))
-        ratio = valid_px / float(mask_px)
+            return {'target_depth_status': 'UNCHECKED'}
         min_ratio = float(self.get_parameter('min_target_depth_valid_ratio').value)
         min_px = int(self.get_parameter('min_target_depth_valid_px').value)
-        if valid_px < min_px or ratio < min_ratio:
+        diagnostic = masked_depth_range_diagnostic(
+            mask, depth, min_px, min_ratio,
+            self.get_parameter('max_target_depth_m').value)
+        status = str(diagnostic.get('target_depth_status', 'UNCHECKED'))
+        if status == 'INSUFFICIENT':
             self.publish_status(
                 'target_mask_depth_warning',
                 job_id=job_id,
                 request_id=result.get('request_id'),
-                mask_px=mask_px,
-                valid_depth_px=valid_px,
-                valid_depth_ratio=ratio,
+                mask_px=diagnostic.get('target_mask_pixels', 0),
+                valid_depth_px=diagnostic.get(
+                    'target_depth_valid_pixels', 0),
+                valid_depth_ratio=diagnostic.get(
+                    'target_depth_valid_ratio', 0.0),
                 min_valid_depth_px=min_px,
                 min_valid_depth_ratio=min_ratio,
                 reason='heavy target mask has little valid aligned depth; publishing mask anyway',
+            )
+        elif status == 'TOO_FAR':
+            self.publish_status(
+                'target_mask_depth_too_far',
+                job_id=job_id,
+                request_id=result.get('request_id'),
+                **diagnostic,
             )
         else:
             self.publish_status(
                 'target_mask_depth_ok',
                 job_id=job_id,
                 request_id=result.get('request_id'),
-                mask_px=mask_px,
-                valid_depth_px=valid_px,
-                valid_depth_ratio=ratio,
+                **diagnostic,
             )
+        return diagnostic
 
     def queue_sam2_live_seed(self, response, result):
         rgb_path = response / 'rgb.jpg'

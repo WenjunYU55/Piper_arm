@@ -1,5 +1,12 @@
 schema_version: 1
 document: technical_debt
+frozen_viewpoint_ray_pool_2026_08_21:
+  status: software_implemented_physical_qualification_pending
+  scope: First incremental ray phase only. Static target centre, bounded flexible standoff and explicit target-too-far/absent reporting are implemented without moving-target ray regeneration.
+  implemented: [175 mission-frozen directions instead of 1050 voxel scoring points, legacy point policy unchanged, 0.28 m ray minimum, preferred band through 0.50 m, maximum capped by target base-link radius and 0.80 m, accepted/rejected ray retirement, twelve-ray shortlist before at-most-sixty exact probes, preferred probes before reserve, exact frozen-target aim, additive ray provenance, correlated 1.20 m TARGET_TOO_FAR proof, rough x/y/z in absence/range terminal results]
+  intentionally_deferred: [moving-target ray translation or regeneration, unbounded standoff beyond existing 0.80 m scan maximum, continuous visual servoing, a new target estimator, new ROS interfaces, ray-specific information gain, NBV performance optimization]
+  remaining: After software validation, inspect one motors-disabled generation and confirm 175 stable rays, twelve-ray shortlist, preferred-first exact probe expansion and no command publication. Only with explicit authorization proceed to one low-speed viewpoint, three supervised captures and a full E2E.
+  known_test_debt: Package-wide flake8 and pep257 targets retain historical unrelated findings; changed functional paths and focused new regressions must pass independently.
 normalized_marginal_nbv_physical_qualification_2026_08_20:
   status: software_fixed_supervised_physical_retest_pending
   incident: scan_20260820_230845 committed six captures but repeated one reachable 65-degree band, achieved 53.6 degrees azimuth, passed neither Y-side floor and exhausted visual replacements before completion.

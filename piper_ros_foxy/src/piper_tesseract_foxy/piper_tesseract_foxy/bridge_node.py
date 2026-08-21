@@ -35,6 +35,9 @@ from piper_mobile_manipulation.scan_execution_modes import (
     commanded_speed_percent,
 )
 from piper_mobile_manipulation.view_generation import parse_view_generation
+from piper_mobile_manipulation.viewpoint_rays import (
+    expand_shortlisted_rays,
+)
 from piper_mobile_manipulation.motion_limit_stability import MotionLimitStability
 from piper_mobile_manipulation.srv import RequestTesseractPlan
 
@@ -1136,7 +1139,7 @@ class TesseractPlanBridge(Node):
                     'prequalified', item.get('reachable')) is not True \
                     or item.get('safe') is not True:
                 continue
-            candidates.append({
+            candidate = {
                 'id': int(item.get('index', len(candidates))),
                 'camera_position_m': self.vector(
                     item.get('desired_camera_position'), 'camera position'),
@@ -1177,10 +1180,28 @@ class TesseractPlanBridge(Node):
                     item.get('nbv_direction_novelty_deg', 0.0)),
                 'nbv_camera_travel_m': float(
                     item.get('nbv_camera_travel_m', 0.0)),
-            })
+            }
+            if item.get('candidate_geometry') == 'target_ray':
+                candidate.update({
+                    'candidate_geometry': 'target_ray',
+                    'ray_id': int(item.get('ray_id', candidate['id'])),
+                    'ray_direction': self.vector(
+                        item.get('ray_direction'), 'ray direction'),
+                    'ray_min_standoff_m': float(
+                        item.get('ray_min_standoff_m')),
+                    'ray_max_standoff_m': float(
+                        item.get('ray_max_standoff_m')),
+                    'ray_preferred_max_standoff_m': float(
+                        item.get('ray_preferred_max_standoff_m')),
+                    'ray_scoring_standoff_m': float(
+                        item.get('ray_scoring_standoff_m')),
+                })
+            candidates.append(candidate)
         configured_maximum = max(
             1, int(self.get_parameter('max_execution_viewpoints').value))
         session = scan.get('scan_session', {}) if isinstance(scan, dict) else {}
+        shortlisted_ray_count = 0
+        expanded_ray_candidate_count = 0
         if plan_kind == 'MULTIVIEW_SCAN':
             session_id = str(session.get('session_id', ''))
             accepted_views = int(session.get('accepted_views', -1))
@@ -1229,6 +1250,13 @@ class TesseractPlanBridge(Node):
                 if authoritative_nbv:
                     candidates = bounded_nbv_candidates(
                         candidates, current_camera, center, candidate_limit)
+                    shortlisted_ray_count = sum(
+                        item.get('candidate_geometry') == 'target_ray'
+                        for item in candidates)
+                    if shortlisted_ray_count:
+                        candidates = expand_shortlisted_rays(
+                            candidates, current_camera, center)
+                        expanded_ray_candidate_count = len(candidates)
                 else:
                     candidates = balanced_closed_loop_candidates(
                         candidates, current_camera, candidate_limit,
@@ -1401,6 +1429,9 @@ class TesseractPlanBridge(Node):
                     if plan_kind in ('MULTIVIEW_SCAN', 'RETURN_HOME') else []
                 ),
                 'home_stage': home_stage,
+                'shortlisted_ray_count': int(shortlisted_ray_count),
+                'expanded_ray_candidate_count': int(
+                    expanded_ray_candidate_count),
             },
         }
         return attach_digest(payload, 'request_sha256')
@@ -1671,6 +1702,10 @@ class TesseractPlanBridge(Node):
                         'nbv_direction_novelty_deg',
                         'nbv_camera_travel_m',
                         'coverage_score',
+                        'ray_id',
+                        'ray_standoff_m',
+                        'ray_probe_index',
+                        'ray_probe_phase',
                     )
                     if key in selected
                 }
