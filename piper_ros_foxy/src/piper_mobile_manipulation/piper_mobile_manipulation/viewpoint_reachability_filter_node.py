@@ -14,6 +14,8 @@ from piper_mobile_manipulation.scan_motion import motor_control_reasons
 
 
 ROUGH_ACQUISITION = 'ROUGH_ACQUISITION'
+RAY_WORKSPACE_REJECTION = (
+    'bounded ray does not intersect configured camera workspace')
 
 
 def target_status_rejection_reason(target_status, plan_kind):
@@ -24,6 +26,82 @@ def target_status_rejection_reason(target_status, plan_kind):
     if status == 'LOST' and plan_kind != ROUGH_ACQUISITION:
         return 'target_status=LOST'
     return ''
+
+
+def bounded_ray_intersects_workspace(
+        viewpoint, min_reach_m, max_reach_m,
+        min_camera_distance_m, max_camera_distance_m,
+        max_height_change_m):
+    """Return whether any permitted point on a target ray is in workspace."""
+    try:
+        target_record = viewpoint['target_object_center']
+        target = [float(target_record[key]) for key in ('x', 'y', 'z')]
+        direction_record = viewpoint['ray_direction']
+        if isinstance(direction_record, dict):
+            direction = [
+                float(direction_record[key]) for key in ('x', 'y', 'z')]
+        else:
+            # Retain compatibility with recorded/private payloads produced
+            # before ray directions were serialized as named XYZ fields.
+            direction = [float(value) for value in direction_record]
+        minimum = max(
+            float(viewpoint['ray_min_standoff_m']),
+            float(min_camera_distance_m),
+        )
+        maximum = min(
+            float(viewpoint['ray_max_standoff_m']),
+            float(max_camera_distance_m),
+        )
+        minimum_reach = float(min_reach_m)
+        maximum_reach = float(max_reach_m)
+        maximum_height = float(max_height_change_m)
+    except (KeyError, TypeError, ValueError):
+        return False
+    if len(direction) != 3:
+        return False
+    values = (
+        target + direction + [
+            minimum, maximum, minimum_reach,
+            maximum_reach, maximum_height,
+        ])
+    if not all(math.isfinite(value) for value in values):
+        return False
+    direction_norm = math.sqrt(sum(value * value for value in direction))
+    if (
+            direction_norm <= 1e-9 or minimum <= 0.0
+            or maximum < minimum or minimum_reach < 0.0
+            or maximum_reach < minimum_reach or maximum_height < 0.0):
+        return False
+    direction = [value / direction_norm for value in direction]
+
+    vertical = abs(direction[2])
+    if vertical > 1e-12:
+        maximum = min(maximum, maximum_height / vertical)
+    if maximum < minimum:
+        return False
+
+    projection = sum(
+        target[index] * direction[index] for index in range(3))
+    target_norm_sq = sum(value * value for value in target)
+    discriminant = (
+        projection * projection - target_norm_sq
+        + maximum_reach * maximum_reach)
+    if discriminant < -1e-12:
+        return False
+    root = math.sqrt(max(0.0, discriminant))
+    minimum = max(minimum, -projection - root)
+    maximum = min(maximum, -projection + root)
+    if maximum < minimum:
+        return False
+
+    def reach_sq(standoff):
+        return sum(
+            (target[index] + direction[index] * standoff) ** 2
+            for index in range(3))
+
+    minimum_reach_sq = minimum_reach * minimum_reach
+    return max(reach_sq(minimum), reach_sq(maximum)) >= (
+        minimum_reach_sq - 1e-12)
 
 
 class ViewpointReachabilityFilterNode(Node):
@@ -46,10 +124,9 @@ class ViewpointReachabilityFilterNode(Node):
         self.declare_parameter('min_camera_object_distance_m', 0.25)
         self.declare_parameter('max_camera_object_distance_m', 0.80)
         self.declare_parameter('max_height_change_m', 0.40)
-        # Static radial/height boxes are not an authority for the deployed
-        # arm. Tesseract IK, joint limits, exact collision validation and the
-        # executor's runtime revalidation own physical reachability. Keep the
-        # legacy values only for explicit compatibility/debug opt-in.
+        # Exact-point policies keep the legacy opt-in behavior. Target rays
+        # always use these bounds as a cheap interval-intersection cull before
+        # Tesseract; this does not claim IK or collision feasibility.
         self.declare_parameter('enforce_static_reach_bounds', False)
         self.declare_parameter('arm_status_timeout_sec', 1.0)
         self.declare_parameter('dry_run', False)
@@ -165,10 +242,14 @@ class ViewpointReachabilityFilterNode(Node):
         filtered = []
         reachable_count = 0
         safe_count = 0
+        ray_candidate_count = 0
+        workspace_rejected_rays = 0
         for viewpoint in viewpoints:
             if not isinstance(viewpoint, dict):
                 continue
             result = dict(viewpoint)
+            if result.get('candidate_geometry') == 'target_ray':
+                ray_candidate_count += 1
             reasons = self.reject_reasons(result, plan_kind)
             accepted = len(reasons) == 0
             result['prequalified'] = bool(accepted)
@@ -178,6 +259,8 @@ class ViewpointReachabilityFilterNode(Node):
             result['safe'] = bool(accepted)
             result['reject_reasons'] = reasons
             filtered.append(result)
+            if RAY_WORKSPACE_REJECTION in reasons:
+                workspace_rejected_rays += 1
             if accepted:
                 reachable_count += 1
                 safe_count += 1
@@ -187,14 +270,18 @@ class ViewpointReachabilityFilterNode(Node):
         output['filter'] = {
             'node': 'viewpoint_reachability_filter_node',
             'mode': (
-                'legacy_static_reach_check'
-                if self.param_bool('enforce_static_reach_bounds')
-                else 'dynamic_kinematics_deferred_to_tesseract'),
+                'ray_workspace_cull_then_tesseract'
+                if ray_candidate_count else (
+                    'legacy_static_reach_check'
+                    if self.param_bool('enforce_static_reach_bounds')
+                    else 'dynamic_kinematics_deferred_to_tesseract')),
             'input_viewpoints': len(viewpoints),
             'output_viewpoints': len(filtered),
             'prequalified_viewpoints': reachable_count,
             'reachable_viewpoints': reachable_count,
             'safe_viewpoints': safe_count,
+            'ray_candidates': ray_candidate_count,
+            'workspace_rejected_rays': workspace_rejected_rays,
             'reachable_field_semantics': 'prequalified_compatibility_alias',
             'arm_status': self.arm_status_summary(),
             'target_status': self.target_status,
@@ -231,6 +318,20 @@ class ViewpointReachabilityFilterNode(Node):
             return reasons
         if not self.valid_vector(target_center):
             reasons.append('missing target object center')
+            return reasons
+
+        ray_geometry = viewpoint.get('candidate_geometry') == 'target_ray'
+        if ray_geometry:
+            if not bounded_ray_intersects_workspace(
+                    viewpoint,
+                    self.get_parameter('min_reach_m').value,
+                    self.get_parameter('max_reach_m').value,
+                    self.get_parameter(
+                        'min_camera_object_distance_m').value,
+                    self.get_parameter(
+                        'max_camera_object_distance_m').value,
+                    self.get_parameter('max_height_change_m').value):
+                reasons.append(RAY_WORKSPACE_REJECTION)
             return reasons
 
         if self.param_bool('enforce_static_reach_bounds'):

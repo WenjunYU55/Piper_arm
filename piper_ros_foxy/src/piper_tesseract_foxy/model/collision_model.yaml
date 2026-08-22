@@ -61,7 +61,10 @@ configured_home_direct_joint_move:
     appended to another plan.
 external_floor_clearance:
   enabled: true
-  floor_z_m: 0.0
+  # Raised virtual support plane after the supervised 2026-08-21 scan made
+  # physical table contact despite the nominal base_link plane. Keep this
+  # synchronized with scan_execution_params.yaml.
+  floor_z_m: 0.005
   clearance_m: 0.005
   label: camera holder/L515
   origin_link6_m: [-0.029750002, 0.0, 0.0375]

@@ -19,6 +19,7 @@ class TrajectoryAction(str, Enum):
     FAILED_INVALID = 'abort_invalid'
     FAILED_TIMEOUT = 'abort_timeout'
     FAILED_STALLED = 'abort_stalled'
+    HOLD_FOLLOWING = 'hold_following'
     FAILED_FOLLOWING = 'abort_following'
     FAILED_OVERRUN = 'abort_overrun'
 
@@ -106,11 +107,19 @@ class TrajectoryRunner:
 
     @staticmethod
     def following_decision(
-            elapsed_sec, following_error_rad, grace_sec, limit_rad):
-        """Apply the existing in-flight following-error guard."""
+            elapsed_sec, following_error_rad, grace_sec, limit_rad,
+            over_limit_elapsed_sec=None):
+        """Bound command lead while retaining the existing hard failure."""
         error = float(following_error_rad)
-        if float(elapsed_sec) >= float(grace_sec) and (
-                not math.isfinite(error) or error > float(limit_rad)):
+        if float(elapsed_sec) < float(grace_sec):
+            return TrajectoryDecision(TrajectoryAction.WAIT)
+        if not math.isfinite(error):
+            return TrajectoryDecision(TrajectoryAction.FAILED_FOLLOWING)
+        if error > float(limit_rad):
+            if (
+                    over_limit_elapsed_sec is not None
+                    and float(over_limit_elapsed_sec) <= float(grace_sec)):
+                return TrajectoryDecision(TrajectoryAction.HOLD_FOLLOWING)
             return TrajectoryDecision(TrajectoryAction.FAILED_FOLLOWING)
         return TrajectoryDecision(TrajectoryAction.WAIT)
 

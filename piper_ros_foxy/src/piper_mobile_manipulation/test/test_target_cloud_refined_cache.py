@@ -1,7 +1,14 @@
 from piper_mobile_manipulation.target_cloud_node import (
     closest_cached_frame,
     status_image_stamp,
+    TARGET_PIXEL_STRIDE,
+    TARGET_VOXEL_SIZE_M,
 )
+
+
+def test_refined_target_cloud_retains_one_millimetre_sampling():
+    assert TARGET_PIXEL_STRIDE == 1
+    assert TARGET_VOXEL_SIZE_M == 0.001
 
 
 def test_correlated_queued_status_exposes_selected_image_stamp():

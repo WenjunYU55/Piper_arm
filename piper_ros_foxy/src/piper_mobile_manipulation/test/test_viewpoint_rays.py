@@ -44,11 +44,20 @@ def test_only_shortlisted_rays_expand_to_exact_target_facing_probes():
     )
 
     assert {item['ray_id'] for item in expanded} == {3, 9}
-    phases = [item['ray_probe_phase'] for item in expanded]
-    first_reserve = phases.index('reserve')
-    assert phases[:first_reserve] == ['preferred'] * first_reserve
-    assert phases[first_reserve:] == ['reserve'] * (
-        len(phases) - first_reserve)
+    ray_order = [item['ray_id'] for item in expanded]
+    assert [
+        ray_id for index, ray_id in enumerate(ray_order)
+        if index == 0 or ray_order[index - 1] != ray_id
+    ] == [3, 9]
+    for ray_id in (3, 9):
+        phases = [
+            item['ray_probe_phase'] for item in expanded
+            if item['ray_id'] == ray_id]
+        if 'reserve' in phases:
+            first_reserve = phases.index('reserve')
+            assert phases[:first_reserve] == ['preferred'] * first_reserve
+            assert phases[first_reserve:] == ['reserve'] * (
+                len(phases) - first_reserve)
     assert len(expanded) <= 10
     assert len({item['id'] for item in expanded}) == len(expanded)
     for item in expanded:

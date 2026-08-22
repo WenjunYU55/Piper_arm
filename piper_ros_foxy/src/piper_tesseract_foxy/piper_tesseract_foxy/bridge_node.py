@@ -34,7 +34,10 @@ from piper_mobile_manipulation.scan_motion import (
 from piper_mobile_manipulation.scan_execution_modes import (
     commanded_speed_percent,
 )
-from piper_mobile_manipulation.view_generation import parse_view_generation
+from piper_mobile_manipulation.view_generation import (
+    parse_view_generation,
+    view_policy_capabilities,
+)
 from piper_mobile_manipulation.viewpoint_rays import (
     expand_shortlisted_rays,
 )
@@ -55,6 +58,9 @@ from piper_tesseract_foxy.contract import (
 )
 
 
+RAY_DIRECTION_ATTEMPT_LIMIT = 6
+
+
 def obstacle_scene_rejection_reason(scene):
     """
     Return a blocker only when collision geometry cannot be trusted.
@@ -70,6 +76,86 @@ def obstacle_scene_rejection_reason(scene):
     if not instances or invalid:
         return 'obstacle scene is blocked: %s' % scene.blocking_reason
     return None
+
+
+def uses_authoritative_nbv_order(candidates):
+    """Return whether every candidate carries an active NBV policy."""
+    if not candidates:
+        return False
+    policies = {
+        str(item.get('view_selection_policy', '')).strip()
+        for item in candidates}
+    if len(policies) != 1:
+        return False
+    try:
+        return view_policy_capabilities(policies.pop()).authoritative_nbv
+    except ValueError:
+        return False
+
+
+def validate_candidate_policy_batch(candidates):
+    """Fail closed when one multiview batch crosses policy/geometry seams."""
+    if not candidates:
+        return None
+    policies = {
+        str(item.get('view_selection_policy', '')).strip()
+        for item in candidates}
+    if len(policies) != 1:
+        raise ContractError('candidate batch mixes view-selection policies')
+    policy = policies.pop()
+    try:
+        capabilities = view_policy_capabilities(policy)
+    except ValueError as error:
+        raise ContractError(str(error))
+    for item in candidates:
+        geometry = str(item.get(
+            'candidate_geometry', 'exact_point')).strip()
+        if geometry != capabilities.candidate_geometry:
+            raise ContractError(
+                'candidate policy %s requires %s geometry, received %s'
+                % (policy, capabilities.candidate_geometry, geometry))
+        if capabilities.authoritative_nbv:
+            try:
+                rank = int(item.get('nbv_rank', 0))
+                fraction = float(item.get(
+                    'nbv_marginal_information_fraction', float('nan')))
+            except (TypeError, ValueError):
+                raise ContractError(
+                    'authoritative NBV candidate score is malformed')
+            if (
+                    rank < 1 or not math.isfinite(fraction)
+                    or fraction < 0.0 or fraction > 1.0):
+                raise ContractError(
+                    'authoritative NBV candidate score is invalid')
+        if capabilities.ray_expansion:
+            try:
+                ray_id = int(item.get('ray_id', -1))
+                direction = np.asarray(
+                    item.get('ray_direction'), dtype=float)
+                minimum = float(item.get('ray_min_standoff_m'))
+                maximum = float(item.get('ray_max_standoff_m'))
+                preferred = float(item.get(
+                    'ray_preferred_max_standoff_m'))
+            except (TypeError, ValueError):
+                raise ContractError('target-ray candidate is malformed')
+            if (
+                    ray_id < 0 or direction.shape != (3,)
+                    or not np.all(np.isfinite(direction))
+                    or float(np.linalg.norm(direction)) <= 1e-9
+                    or not all(math.isfinite(value) for value in (
+                        minimum, maximum, preferred))
+                    or minimum <= 0.0 or maximum < minimum
+                    or preferred < minimum or preferred > maximum):
+                raise ContractError('target-ray candidate is invalid')
+    return capabilities
+
+
+def bounded_candidate_attempt_limit(capabilities, configured_limit):
+    """Keep exact-point behavior while bounding ray directions to six."""
+    limit = max(1, int(configured_limit))
+    if capabilities is not None and capabilities.ray_expansion:
+        return min(limit, RAY_DIRECTION_ATTEMPT_LIMIT)
+    return limit
 
 
 def local_view_frontier_candidates(
@@ -702,6 +788,8 @@ class TesseractPlanBridge(Node):
         self.latest_obstacles = None
         self.updated = {}
         self.pending = {}
+        self.tesseract_exhausted_ray_generation = None
+        self.tesseract_exhausted_ray_ids = set()
         self.state = 'IDLE'
         self.reason = 'waiting for an explicit plan request'
         self.worker_generation_id = ''
@@ -1202,7 +1290,10 @@ class TesseractPlanBridge(Node):
         session = scan.get('scan_session', {}) if isinstance(scan, dict) else {}
         shortlisted_ray_count = 0
         expanded_ray_candidate_count = 0
+        candidate_capabilities = None
         if plan_kind == 'MULTIVIEW_SCAN':
+            candidate_capabilities = validate_candidate_policy_batch(
+                candidates)
             session_id = str(session.get('session_id', ''))
             accepted_views = int(session.get('accepted_views', -1))
             session_maximum = int(session.get('max_views', -1))
@@ -1244,23 +1335,41 @@ class TesseractPlanBridge(Node):
                 if closed_loop_one_view
                 else max(20, maximum * 4, maximum))
             if closed_loop_one_view:
-                authoritative_nbv = bool(candidates) and all(
-                    item.get('view_selection_policy') == 'voxel_nbv'
-                    for item in candidates)
+                authoritative_nbv = bool(
+                    candidate_capabilities is not None
+                    and candidate_capabilities.authoritative_nbv)
+                if (
+                        candidate_capabilities is not None
+                        and candidate_capabilities.ray_expansion):
+                    # Retire failed rays from the complete prequalified pool
+                    # before choosing the next bounded shortlist.  Applying
+                    # this after shortlisting mistakes one exhausted batch for
+                    # exhaustion of the full ray frontier.
+                    candidates = self.exclude_tesseract_exhausted_rays(
+                        candidates, session_id, accepted_views)
                 if authoritative_nbv:
+                    effective_limit = bounded_candidate_attempt_limit(
+                        candidate_capabilities, candidate_limit)
                     candidates = bounded_nbv_candidates(
-                        candidates, current_camera, center, candidate_limit)
+                        candidates, current_camera, center, effective_limit)
+                else:
+                    effective_limit = bounded_candidate_attempt_limit(
+                        candidate_capabilities, candidate_limit)
+                    candidates = balanced_closed_loop_candidates(
+                        candidates, current_camera, effective_limit,
+                        compact_first=(accepted_views == 0))
+                if (
+                        candidate_capabilities is not None
+                        and candidate_capabilities.ray_expansion):
                     shortlisted_ray_count = sum(
                         item.get('candidate_geometry') == 'target_ray'
                         for item in candidates)
-                    if shortlisted_ray_count:
-                        candidates = expand_shortlisted_rays(
-                            candidates, current_camera, center)
-                        expanded_ray_candidate_count = len(candidates)
-                else:
-                    candidates = balanced_closed_loop_candidates(
-                        candidates, current_camera, candidate_limit,
-                        compact_first=(accepted_views == 0))
+                    if shortlisted_ray_count != len(candidates):
+                        raise ContractError(
+                            'ray policy produced mixed candidate geometry')
+                    candidates = expand_shortlisted_rays(
+                        candidates, current_camera, center)
+                    expanded_ray_candidate_count = len(candidates)
                 candidates = exact_target_aim_candidates(
                     candidates,
                     center,
@@ -1432,6 +1541,9 @@ class TesseractPlanBridge(Node):
                 'shortlisted_ray_count': int(shortlisted_ray_count),
                 'expanded_ray_candidate_count': int(
                     expanded_ray_candidate_count),
+                'ray_direction_attempt_limit': int(
+                    RAY_DIRECTION_ATTEMPT_LIMIT
+                    if shortlisted_ray_count else 0),
             },
         }
         return attach_digest(payload, 'request_sha256')
@@ -1487,6 +1599,76 @@ class TesseractPlanBridge(Node):
             raise ContractError('%s is non-finite' % label)
         return result
 
+    def exclude_tesseract_exhausted_rays(
+            self, candidates, session_id, accepted_views):
+        """Retain untried rays for one accepted-coverage generation."""
+        generation = (str(session_id), int(accepted_views))
+        if getattr(
+                self, 'tesseract_exhausted_ray_generation', None
+        ) != generation:
+            self.tesseract_exhausted_ray_generation = generation
+            self.tesseract_exhausted_ray_ids = set()
+        exhausted = set(getattr(
+            self, 'tesseract_exhausted_ray_ids', set()))
+        if not exhausted:
+            return candidates
+        available = [
+            item for item in candidates
+            if int(item.get('ray_id', item.get('id', -1))) not in exhausted
+        ]
+        if not available:
+            raise ContractError(
+                'RAY_FRONTIER_EXHAUSTED: all %d prequalified rays were '
+                'rejected by Tesseract for accepted-view generation %d'
+                % (len(candidates), int(accepted_views)))
+        self.get_logger().info(
+            'excluded %d Tesseract-infeasible rays from session=%s '
+            'accepted=%d; %d candidates remain'
+            % (
+                len(candidates) - len(available), str(session_id),
+                int(accepted_views), len(available)))
+        return available
+
+    def remember_tesseract_exhausted_rays(self, payload):
+        """Retire only rays actually attempted by one failed worker request."""
+        codes = [str(value) for value in payload.get('rejection_codes', [])]
+        if 'TESSERACT_EXHAUSTED' not in codes:
+            return []
+        request_id = str(payload.get('request_id', ''))
+        pending = getattr(self, 'pending', {}).get(request_id, {})
+        request = pending.get('request', {})
+        if int(request.get('planning', {}).get(
+                'shortlisted_ray_count', 0)) < 1:
+            return []
+        session = request.get('scan_session', {})
+        generation = (
+            str(session.get('session_id', '')),
+            int(session.get('accepted_views', -1)),
+        )
+        if (
+                not generation[0]
+                or generation != getattr(
+                    self, 'tesseract_exhausted_ray_generation', None)):
+            return []
+        request_ray_ids = {
+            int(item['ray_id'])
+            for item in request.get('scene', {}).get('candidate_views', [])
+            if item.get('ray_id') is not None
+        }
+        attempted = {
+            int(value) for value in payload.get(
+                'planning_diagnostics', {}).get('attempted_ray_ids', [])
+        }.intersection(request_ray_ids)
+        exhausted = self.tesseract_exhausted_ray_ids
+        newly_exhausted = sorted(attempted.difference(exhausted))
+        exhausted.update(newly_exhausted)
+        if newly_exhausted:
+            self.get_logger().info(
+                'retired Tesseract-infeasible rays for session=%s '
+                'accepted=%d: %s'
+                % (generation[0], generation[1], newly_exhausted))
+        return newly_exhausted
+
     def poll(self):
         timeout = float(self.get_parameter('response_timeout_sec').value)
         for request_id, state in list(self.pending.items()):
@@ -1528,6 +1710,17 @@ class TesseractPlanBridge(Node):
     def publish_plan(self, payload):
         if payload.get('status') != 'success':
             codes = payload.get('rejection_codes') or ['PLANNING_FAILED']
+            exhausted_rays = self.remember_tesseract_exhausted_rays(payload)
+            if exhausted_rays:
+                self.publish_rejection(
+                    payload.get('request_id', ''),
+                    'RAY_SHORTLIST_EXHAUSTED',
+                    'TESSERACT_EXHAUSTED: %s; retired attempted ray IDs %s'
+                    % (
+                        str(payload.get('diagnostic', 'planning failed')),
+                        exhausted_rays),
+                    additional_codes=codes)
+                return
             self.publish_rejection(
                 payload.get('request_id', ''), str(codes[0]),
                 str(payload.get('diagnostic', 'planning failed')))
@@ -1732,7 +1925,8 @@ class TesseractPlanBridge(Node):
                     selected.get('nbv_novel_surface_pixels', 0)))
         self.set_status('PROPOSAL_READY', msg.reason, payload['request_id'])
 
-    def publish_rejection(self, request_id, code, reason):
+    def publish_rejection(
+            self, request_id, code, reason, additional_codes=None):
         msg = TesseractPlan()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'base_link'
@@ -1750,7 +1944,10 @@ class TesseractPlanBridge(Node):
         msg.dry_run = True
         msg.real_arm_motion = False
         msg.reason = '%s: %s' % (code, reason)
-        msg.rejection_codes = [code]
+        msg.rejection_codes = [code] + [
+            str(value) for value in (additional_codes or [])
+            if str(value) != str(code)
+        ]
         self.plan_pub.publish(msg)
         self.set_status('REJECTED', msg.reason, request_id)
 

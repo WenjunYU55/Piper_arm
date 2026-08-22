@@ -32,9 +32,55 @@ from run_groundingdino_on_capture import (  # noqa: E402
     validate_target_detections,
 )
 from temporal_heavy_refresh import classify_refined_obstacles  # noqa: E402
+from sam2_refine_on_capture import (  # noqa: E402
+    depth_occluder_mask,
+    target_depth_from_refined_mask,
+)
 
 
 class TargetSelectionTest(unittest.TestCase):
+    def test_cube_face_depth_is_not_misclassified_as_an_occluder(self):
+        target_mask = np.zeros((120, 160), dtype=bool)
+        target_mask[30:80, 50:110] = True
+        depth = np.full(target_mask.shape, 0.50, dtype=np.float32)
+        depth[target_mask] = 0.39
+        depth[30:65, 50:90] = 0.32
+        # A small under-segmented strip belongs to the same near cube face.
+        depth[25:30, 50:90] = 0.32
+
+        selected_depth, report = target_depth_from_refined_mask(
+            depth, target_mask, 0.37)
+        result = depth_occluder_mask(
+            Path('/unused'), depth, selected_depth, target_mask)
+
+        self.assertEqual(report['status'], 'selected')
+        self.assertAlmostEqual(selected_depth, 0.32, places=2)
+        self.assertIsNone(result)
+
+    def test_adjacent_support_surface_is_not_a_depth_occluder(self):
+        target_mask = np.zeros((120, 160), dtype=bool)
+        target_mask[30:80, 50:110] = True
+        depth = np.full(target_mask.shape, 0.40, dtype=np.float32)
+        depth[82:100, 40:120] = 0.32
+
+        result = depth_occluder_mask(
+            Path('/unused'), depth, 0.40, target_mask)
+
+        self.assertIsNone(result)
+
+    def test_foreground_crossing_target_envelope_is_a_depth_occluder(self):
+        target_mask = np.zeros((120, 160), dtype=bool)
+        target_mask[30:80, 50:110] = True
+        target_mask[50:70, 72:88] = False
+        depth = np.full(target_mask.shape, 0.40, dtype=np.float32)
+        depth[45:75, 72:88] = 0.32
+
+        result = depth_occluder_mask(
+            Path('/unused'), depth, 0.40, target_mask)
+
+        self.assertIsNotNone(result)
+        self.assertGreaterEqual(int(np.count_nonzero(result)), 20)
+
     def test_grounding_model_is_loaded_once_per_worker_device(self):
         calls = []
         _GROUNDING_MODEL_CACHE.clear()

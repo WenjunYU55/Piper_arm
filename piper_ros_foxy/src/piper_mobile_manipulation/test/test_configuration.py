@@ -89,8 +89,8 @@ LEGACY_EXECUTOR_DEFAULTS = {
     'waypoint_progress_timeout_sec': 20.0,
     'joint_velocity_settled': 0.20,
     'endpoint_position_settled_rad': 0.007,
-    'home_goal_tolerance_rad': 0.30,
-    'home_motion_tolerance_rad': 0.30,
+    'home_goal_tolerance_rad': 0.20,
+    'home_motion_tolerance_rad': 0.20,
     'home_joint_feedback_timeout_sec': 1.0,
     'home_settle_duration_sec': 1.0,
     'home_settle_timeout_sec': 30.0,
@@ -125,7 +125,7 @@ LEGACY_EXECUTOR_DEFAULTS = {
         0.000366362, 0.0, 0.0, 0.0, 0.43869236, 0.0],
     'pre_home_positions_rad': [
         0.0, 0.400357244, -0.498793736, 0.0, 0.600614364, 0.0],
-    'floor_z_m': 0.0,
+    'floor_z_m': 0.005,
     'link_radius_m': 0.025,
     'self_clearance_m': 0.060,
     'camera_holder_envelope_center_link6_m': [
@@ -145,9 +145,29 @@ def test_deployed_home_acceptance_matches_typed_configuration_defaults():
 
     defaults = executor_parameter_defaults()
     assert deployed['home_goal_tolerance_rad'] == \
-        defaults['home_goal_tolerance_rad'] == 0.30
+        defaults['home_goal_tolerance_rad'] == 0.20
     assert deployed['home_motion_tolerance_rad'] == \
-        defaults['home_motion_tolerance_rad'] == 0.30
+        defaults['home_motion_tolerance_rad'] == 0.20
+
+
+def test_executor_and_tesseract_share_raised_virtual_floor():
+    """Planning and execution must reject against the same support plane."""
+    source_root = Path(__file__).resolve().parents[2]
+    executor_path = (
+        source_root / 'piper_mobile_manipulation' / 'config'
+        / 'scan_execution_params.yaml')
+    worker_path = (
+        source_root / 'piper_tesseract_foxy' / 'model'
+        / 'collision_model.yaml')
+    with executor_path.open(encoding='utf-8') as stream:
+        executor = yaml.safe_load(stream)['/**']['ros__parameters']
+    with worker_path.open(encoding='utf-8') as stream:
+        worker = yaml.safe_load(stream)['external_floor_clearance']
+
+    assert executor['floor_z_m'] == 0.005
+    assert worker['floor_z_m'] == executor['floor_z_m']
+    assert worker['clearance_m'] == executor[
+        'camera_holder_external_clearance_m'] == 0.005
 
 
 class FakeParameterNode:

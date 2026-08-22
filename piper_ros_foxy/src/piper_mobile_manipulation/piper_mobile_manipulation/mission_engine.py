@@ -163,13 +163,16 @@ def target_drift_requires_replan(reason):
 
 
 def safe_view_exhaustion_after_capture(
-        reason, accepted_captures, feature_coverage=None,
-        required_captures=REQUIRED_CAPTURES):
+        reason, accepted_captures, feature_coverage=None):
     """Recognize a proved end of the adaptive safe-view frontier."""
+    accepted = int(accepted_captures)
+    proved_accepted = int(
+        feature_coverage.get('accepted_achieved_views', 0)
+        if isinstance(feature_coverage, dict) else 0)
     return (
-        int(accepted_captures) >= int(required_captures)
+        accepted >= 1
         and isinstance(feature_coverage, dict)
-        and feature_coverage.get('sufficient') is True
+        and proved_accepted >= accepted
         and as_failure(reason).has(FailureTag.SAFE_VIEW_EXHAUSTED)
     )
 
@@ -558,15 +561,22 @@ class MissionEngine:
             self.operations.wait_for_view_generation(
                 context, accepted,
                 self.workflow_config.plan_result_timeout_sec)
-            request_id = self.operations.request_multiview_plan(context)
             try:
+                request_id = self.operations.request_multiview_plan(context)
                 plan = self.operations.wait_for_plan(
                     context, 'MULTIVIEW_SCAN', request_id,
                     self.workflow_config.plan_result_timeout_sec)
             except MissionFailure as exc:
                 coverage = self.operations.current_feature_coverage(context)
+                if as_failure(exc).has(
+                        FailureTag.RAY_SHORTLIST_EXHAUSTED):
+                    self.operations.progress(
+                        context,
+                        'informative ray shortlist was infeasible; '
+                        'requesting the next untried bounded ray shortlist')
+                    continue
                 if not safe_view_exhaustion_after_capture(
-                        exc, accepted, coverage, required):
+                        exc, accepted, coverage):
                     if (
                             as_failure(exc).has(FailureTag.EMPTY_VIEW_FRONTIER)
                             and coverage.get('blockers')):

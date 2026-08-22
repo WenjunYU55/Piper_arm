@@ -27,6 +27,7 @@ from piper_mobile_manipulation.mission_core import (
 from piper_mobile_manipulation.mission_spool import MissionSpool
 from piper_mobile_manipulation.msg import MeshJobStatus
 from piper_mobile_manipulation.reconstruction_jobs import (
+    reconstruction_terminal_decision,
     transition_job,
     validate_home_report,
     waiting_job,
@@ -233,7 +234,7 @@ class TargetScanGatewayNode(Node):
         if configured:
             return configured
         root = Path(str(self.get_parameter('project_root').value)).resolve()
-        isolated = root / '.venv-reconstruction' / 'bin' / 'python'
+        isolated = root / 'reconstruction' / '.venv' / 'bin' / 'python'
         return str(isolated if isolated.is_file() else Path(sys.executable))
 
     def run_reconstruction_job(self, queued):
@@ -252,6 +253,8 @@ class TargetScanGatewayNode(Node):
                 [
                     self.reconstruction_python(), str(script), str(dataset),
                     '--output', str(output),
+                    '--allow-partial-view-set',
+                    '--allow-missing-calibration-id',
                 ],
                 check=False, capture_output=True, text=True,
                 timeout=float(self.get_parameter(
@@ -273,8 +276,10 @@ class TargetScanGatewayNode(Node):
             if len(mesh_hash) != 64 or not output.is_file():
                 raise ValueError(
                     'reconstruction worker did not produce a hashed mesh')
+            terminal_state, terminal_reason = reconstruction_terminal_decision(
+                report)
             job = transition_job(
-                job, 'SUCCEEDED', 'target mesh reconstruction completed',
+                job, terminal_state, terminal_reason,
                 mesh_path=str(output), mesh_sha256=mesh_hash,
                 quality_report=report)
         except (

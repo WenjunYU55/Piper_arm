@@ -1,8 +1,42 @@
 schema_version: 1
 document: maintenance_routing
+misregistered_or_oversized_reconstruction_2026_08_21:
+  inspect: [reconstruction/tsdf_reconstruct.py multiway_gicp and registration_candidate_assessment, target_mesh.ply.quality.json registration_comparison and multiway_registration, capture metadata camera_transform and timestamps, L515_camera/validate_fixed_board.py, corrected-scale hand-eye sample session]
+  rule: Keep robot-pose TSDF as the baseline. Multiway GICP may add only a bounded residual correction and auto may select it only after a material structural improvement; never widen the 20 mm or 5 degree limits to force a fit. A smooth but incomplete two-view mesh is not calibration evidence. If the 35 mm dimensional check still fails, collect a new corrected-scale calibration session and validate held-out poses before considering deployment.
+  required_retest: [reconstruction unit and GUI-support tests, immutable scan replay, unchanged robot-pose and sequential-output geometry comparison, exact-image-timestamp fixed-board regression, corrected-scale held-out validation before any calibration deployment]
+gui_mesh_density_selection_2026_08_21:
+  inspect: [piper_gui_native.py Reconstruction Validation tab, reconstruction/gui_support.py reconstruction_command and quality_summary, reconstruction/tsdf_reconstruct.py voxel-length argument, reconstruction/test_gui_support.py]
+  rule: Admit only 0.5-through-3.0 mm from the GUI and convert millimetres to metres exactly once at command construction. Keep 1.0 mm default. Do not describe more polygons as more measured information, and do not couple this control to capture, registration or automatic gateway jobs.
+physical_table_contact_or_floor_model_mismatch_2026_08_21:
+  inspect: [scan_execution_params.yaml floor_z_m and camera_holder_external_clearance_m, piper_tesseract_foxy/model/collision_model.yaml external_floor_clearance, scan_viewpoint_executor_node.py validate_attached_tool_external_path, worker.py external_floor_clearance_rejection, exact physical mount and table relationship]
+  rule: Executor and Tesseract must both use floor_z_m 0.005 and holder clearance 0.005. Never change only one source. The raised plane is a conservative virtual buffer, not proof that the CAD envelope or base_link-to-table measurement is correct.
+  required_retest: [configuration consistency regression, holder path regression, full mobile and Tesseract tests, both package builds, then only after inspection one supervised low-speed viewpoint with measured clearance]
+partial_mesh_or_gateway_reconstruction_failure_2026_08_21:
+  inspect: [reconstruction/tsdf_reconstruct.py capture_set_provenance and overall_quality, reconstruction/.venv, target_scan_gateway_node.py reconstruction_python and run_reconstruction_job, reconstruction_jobs.py reconstruction_terminal_decision, scan manifest calibration_sha256]
+  rule: Standalone reconstruction keeps 8-24 by default. The safely completed deferred gateway and the explicitly operator-selected command-free GUI diagnostic path supply allow-partial-view-set for 1-7; zero remains invalid. Missing historical calibration may run only with allow-missing-calibration-id and must report DIAGNOSTIC_ONLY. PASS or WARN completes a mesh job; FAIL preserves the diagnostic mesh/report but makes the durable job FAILED.
+  gui_boundary_check: The GUI must load output.with_suffix(output.suffix + '.quality.json'); do not restore the obsolete quality_report.json lookup.
+  future_capture_check: Confirm PIPER_CALIBRATION_SHA256 equals the SHA-256 of the exact PIPER_HAND_EYE_CALIBRATION file and is copied unchanged into scan metadata, every frame, and manifest.
+  current_replay: scan_20260821_185143 integrates three frames but is PARTIAL_VIEW_SET plus DIAGNOSTIC_ONLY plus FAIL; do not publish it as a usable completed model.
+final_ray_e2e_or_premature_success_2026_08_21:
+  inspect: [/tmp/piper_target_scan_missions/results, datasets/active_scan scan manifest and frames, /piper/scan_session_history, /piper/tesseract_plan_status, bridge_node.py ray feasibility cache, worker.py attempted_ray_ids, mission_engine.py safe_view_exhaustion_after_capture]
+  rule: A failed bounded ray shortlist is never the whole frontier. Exclude its validated attempted ray IDs from the complete prequalified pool, then take the next shortlist. A planning-budget expiry counts as ray exhaustion only after at least one ray was actually attempted. Adaptive success below the ordinary eight-view quality window requires at least one persisted achieved capture and typed full RAY_FRONTIER_EXHAUSTED; generic timeouts and planning failures still fail and enter staged shutdown.
+  evidence: Task codex-e2e-20260821-185113-adaptive accepted three views, exhausted the remaining 151 prequalified rays through Tesseract, returned SUCCEEDED, proved safe_shutdown, and left no mission-owned child alive.
+ray_shortlist_exhaustion_2026_08_21:
+  inspect: [bridge_node.py exclude_tesseract_exhausted_rays and remember_tesseract_exhausted_rays, worker.py planning_diagnostics.attempted_ray_ids, mission_engine.py RAY_SHORTLIST_EXHAUSTED handoff, failure_model.py typed legacy boundary]
+  rule: Retire only attempted ray IDs after a validated ray-policy TESSERACT_EXHAUSTED response. Keep the cache scoped to session_id plus accepted_views, reset after an accepted capture, and request another shortlist without changing coverage. Plain voxel or legacy TESSERACT_EXHAUSTED remains terminal.
+  failure_split: RAY_SHORTLIST_EXHAUSTED means untried rays remain and is retryable without motion. RAY_FRONTIER_EXHAUSTED means every prequalified ray in that generation was tried and follows the existing coverage-aware terminal decision.
+ray_does_not_reach_tesseract_or_workspace_count_is_wrong_2026_08_21:
+  inspect: [viewpoint_reachability_filter_node.py bounded_ray_intersects_workspace and reject_reasons, scan_planning_params.yaml reach and distance bounds, /piper/reachable_scan_viewpoints filter.workspace_rejected_rays and filter.ray_candidates]
+  rule: Keep a target ray when any continuous standoff inside its own bounded interval also satisfies camera-target distance, base_link camera-radius and target-relative height bounds. Reject it only when that joint interval is empty. Do not test only the representative scoring point and do not label this prequalification as Tesseract reachability.
+  compatibility: Exact-point policies retain enforce_static_reach_bounds behavior; the ray cull is always active only for candidate_geometry target_ray.
+nbv_policy_or_ray_attempt_regression_2026_08_21:
+  inspect: [view_generation.py VIEW_POLICY_CAPABILITIES, scan_viewpoint_planner_node.py frozen selection and minimum-information filter, bridge_node.py validate_candidate_policy_batch and bounded_candidate_attempt_limit, viewpoint_rays.py expand_shortlisted_rays, contract.py ray metadata validation, worker planning_diagnostics]
+  rule: Validate one policy and its required geometry at the planner/bridge boundary. Apply the 0.02 normalized predicted marginal-information floor only to authoritative voxel_nbv and ray_nbv. For ray_nbv attempt at most six directions and exhaust one ray's preferred then reserve probes before the next; voxel_nbv keeps twelve exact points. Never infer reachability before Tesseract.
+  compatibility: legacy, voxel_nbv_shadow and both seed generations do not use the floor. GUI policy changes are next-mission only because the running planner freezes its effective policy at startup.
 frozen_ray_scan_or_target_range_failure_2026_08_21:
   inspect: [scan_viewpoint_planner_node.py frozen_ray_pool and make_ray_viewpoint, viewpoint_rays.py, /piper/scan_viewpoints candidate_geometry and ray fields, /piper/tesseract_plan_provenance ray probe fields, /piper/scan_session_history accepted and rejected ray_id, /piper/heavy_refresh_status target_depth fields, RunTargetScan failure_code and action_summary_json rough_target_base_link_xyz]
-  rule: For voxel_nbv create the direction pool once from the first qualified base_link target for the mission. Score rays cheaply, shortlist no more than twelve, then expand only shortlisted rays into exact standoff probes. Do not restore the six-radius full lattice, regenerate rays after every accepted capture, or move information gain into Tesseract.
+  rule: For ray_nbv create the configured direction pool once from the first qualified base_link target for the mission. Score rays against each new accepted-coverage generation, reject normalized predicted marginal information below 0.02, shortlist no more than six directions, then exhaust each shortlisted ray's preferred and reserve exact standoff probes before trying the next. voxel_nbv deliberately retains the regenerated six-radius exact-point lattice and twelve-candidate handoff for timing comparison; legacy retains its original heuristic. Never move information gain into Tesseract.
+  selection: The GUI may save legacy, voxel_nbv or ray_nbv plus target_sector, upper_hemisphere or full_sphere and a ray count from 1 through 1000. Changes are next-mission only.
   too_far_rule: TARGET_TOO_FAR is valid only for the exact correlated heavy-refresh job when its semantic mask has sufficient valid target depth and every valid masked sample exceeds 1.20 m. Missing or insufficient depth remains unproved and must not use background ROI depth.
   legacy: The GUI-selectable legacy policy retains its original 0.30 m minimum and exact point lattice.
 nbv_repeats_one_elevation_or_y_sector_2026_08_20:
@@ -20,7 +54,7 @@ target_tracking_jump_or_background_lock_2026_08_20:
   separate_followup: Gradual SAM2 semantic mask expansion or self-reseeding can remain statistically plausible and must be diagnosed at the segmentation boundary rather than by loosening or tightening NBV.
 tesseract_timeout_before_candidate_one_2026_08_20:
   inspect: [worker startup duration and worker_health generation, worker.py TesseractBackend initialization and reset_scene, response planning_diagnostics candidate_attempts]
-  rule: worker_ready means Robot.from_files has succeeded and one clean unused planning scene exists. candidate_attempts zero with budget expiry indicates readiness/model-load regression; do not increase planning budgets to hide first-use initialization.
+  rule: worker_ready means Robot.from_files has succeeded and one clean unused planning scene exists. Reuse is permitted only while no request-local obstacles were added; any successful obstacle addition makes the scene dirty and requires reconstruction before reuse. candidate_attempts zero with budget expiry indicates setup/budget-boundary regression; do not increase planning budgets to hide model construction.
 post_view_tracking_lost_2026_08_20:
   inspect: [mission_engine.py VIEW_COMPLETE VIEW_REJECTED and target-drift branches, target_scan_mission_node.py request_multiview_plan and approve_plan, /piper/tracking_health, /piper/tesseract_view_generation]
   rule: Initial scan admission still requires stable multiview readiness. Between views, do not add a second generic readiness owner; re-enter the command-free request path, which owns bounded visual reacquisition, then require the unchanged full plan approval before motion.
@@ -81,6 +115,7 @@ where_to_start:
   staged_home_profile_hold_or_gui_recording: [piper_home_pose.json, piper_ros_foxy/src/piper_mobile_manipulation/config/scan_execution_params.yaml, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/home_pose.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission_engine.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_scan_mission_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py, piper_gui_native.py]
   gui_action_view_state_or_transport: [piper_gui/view_model.py, piper_gui/ros_client.py, piper_gui_native.py, test_piper_gui_phase8.py]
   gui_saved_viewpoint_policy_selection: [piper_gui/scan_policy.py, piper_gui_native.py, piper_ros_foxy/src/piper_mobile_manipulation/config/scan_planning_params.yaml, test_piper_gui_scan_policy.py]
+  gui_saved_camera_profile_selection: [piper_gui/camera_profile.py, piper_gui_native.py, L515_camera/rgb_profile.conf, L515_camera/start_l515_camera.sh, L515_camera/start_l515_camera_low_bandwidth.sh, test_piper_gui_camera_profile.py]
   viewpoint_plan_authorization: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/plan_authorizer.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_phase7_viewpoint_components.py]
   viewpoint_trajectory_monitoring: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/trajectory_runner.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_phase7_viewpoint_components.py]
   viewpoint_capture_or_recovery: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/capture_coordinator.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/executor_recovery.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/failure_model.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_phase7_viewpoint_components.py]
@@ -145,15 +180,16 @@ symptom_routing:
     note: Require the diagnostic measured_lock_ready=true from a fresh valid stable base_link TrackedTarget, TrackingHealth TRACKING/camera_settled/nonprediction, exact LOCKED status, a fresh obstacle array, and SCAN_READY. target_landmark is diagnostic, must not independently block Step 4, and is launched with both autonomous heavy-refresh request switches disabled.
   accepted_capture_not_modeled:
     inspect: [/piper/target_cloud, /piper/target_cloud_status, /supervised_cube_workflow/diagnostic_state, supervised_cube_workflow_node.py, target_cloud_node.py]
-    note: /piper/target_cloud is best-effort sensor QoS and the workflow subscription must match it. The workflow caches a capture cloud while WAIT_CAPTURE and processes it after the matching accumulating/full_resolution_refinement acceptance, regardless of message order.
+    note: /piper/target_cloud is best-effort sensor QoS and the workflow subscription must match it. The workflow caches a capture cloud while WAIT_CAPTURE and processes it after the matching accumulating/full_resolution_refinement acceptance, regardless of message order. Accepted refined target geometry uses every masked depth pixel and 0.001 m target voxels; do not confuse it with the unchanged 0.015 m coarse scene cloud or 0.005 m NBV coverage grid.
   accepted_view_missing_rgbd_record:
     inspect: [/scan_capture/capture_view, /piper/scan_capture_status, datasets/active_scan, scan_capture_node.py, scan_capture.py, scan_capture_params.yaml, scan_viewpoint_executor_node.py]
-    note: In supervised service mode the executor must enter CAPTURING_RGBD and receive one exact-stamp mask/RGB identity plus synchronized aligned RGB-D, native depth/camera-info, L515 confidence, TF and GOOD/CLEAR evidence. Schema 2 writes all artifacts transactionally. Catch-up/stale synchronization gaps retry at the held pose; fresh depth-quality rejection excludes the view; malformed provenance or failed persistence aborts and holds.
+    note: In supervised service mode the executor must enter CAPTURING_RGBD with TF and GOOD/CLEAR evidence. The recorder then collects exactly 20 new synchronized native depth/camera-info/L515-confidence frames while that achieved pose is held, uses one exact-stamp mask/RGB identity, and writes the confidence-qualified temporal-median depth plus all schema-2 artifacts transactionally. A missing frame or correlation gap rejects the capture without inventing data; fresh depth-quality rejection excludes the view; malformed provenance or failed persistence aborts and holds.
   target_depth_layer_jitter:
     inspect: [utils/target_depth.py, depth_to_3d_node.py, target_landmark_node.py, occlusion_checker_node.py, scan_capture.py, camera_params.yaml, test_depth_to_3d.py]
     note: All target-depth consumers must use the shared ambiguity-aware component selector. A close score tie fails closed; do not restore whole-mask median depth or seed-pixel flood filling independently in one consumer.
   false_occlusion:
-    inspect: [occlusion_checker_node.py, occlusion_checker_params.yaml, /piper/occlusion_status]
+    inspect: [occlusion_checker_node.py, occlusion_checker_params.yaml, AI_perception_tests/groundingdino_test/sam2_refine_on_capture.py, correlated heavy result sam2_masks.yaml and overlay, /piper/occlusion_status]
+    rule: A synthetic target_local_depth obstacle must meaningfully intrude into the observed target-mask bounding envelope; adjacency to a dilated mask alone is not occlusion. Keep semantic GroundingDINO obstacles fail-closed and do not use a CLEAR diagnostic stream to override correlated unsafe semantic evidence.
   heavy_refresh_storm:
     inspect: [sam2_live_bridge_node.py, target_landmark_node.py, heavy_refresh_bridge_node.py, /piper/heavy_refresh_status, PIPER_MAX_REACQUISITION_ATTEMPTS, PIPER_ABSENT_RETRY_SEC]
   stale_or_wrong_tf:
@@ -226,9 +262,11 @@ symptom_routing:
       J1-J5 5 rad/s and J6 3 rad/s multiplied once by selected speed, plus a
       0.05-rad hard step ceiling. Fresh queried limits remain health/hash
       evidence and are not a second timing multiplier. ISP derivatives are
-      never treated as PiPER commands. Intermediate samples do not
-      wait for convergence; feedback supplies a 0.30 rad following guard and
-      final endpoint/settle proof. Any multi-sample schedule overrun aborts to
+      never treated as PiPER commands. Intermediate samples do not endpoint-
+      settle. If current or next command lead reaches the unchanged 0.30-rad
+      corridor, schedule time freezes on the last safe setpoint for at most
+      the existing one-second grace. Feedback supplies that following guard
+      and final endpoint/settle proof. Any multi-sample schedule overrun aborts to
       hold rather than bursting or shortcutting a planned corner. Dedicated
       zero-capture RETURN_HOME remains the explicit exact two-point direct
       exception with its existing stage-bound collision-bypass evidence and
@@ -250,7 +288,7 @@ symptom_routing:
     note: Phase 8 submits only the production action. Verify the singleton mission listener/action server, goal acceptance and typed result. Do not start a worker/scan stack from the GUI or restore the retired Step 1-5 service clients.
   gui_viewpoint_policy_did_not_change:
     inspect: [piper_gui/scan_policy.py, piper_gui_native.py, piper_ros_foxy/src/piper_mobile_manipulation/config/scan_planning_params.yaml, piper_ros_foxy/src/piper_mobile_manipulation/launch/supervised_viewpoint_execution.launch.py]
-    note: Apply is intentionally disabled during an active mission. The control atomically saves only view_selection_policy for the next mission-owned scan-stack launch; it cannot mutate an already-running planner. The two operator choices are legacy and voxel_nbv, while voxel_nbv_shadow remains a command-line/config diagnostic mode.
+    note: Apply is intentionally disabled during an active mission. The control atomically saves view_selection_policy, ray_sampling_region and ray_count for the next mission-owned scan-stack launch; it cannot mutate an already-running planner. Operator policies are legacy, voxel_nbv exact-point lattice and ray_nbv frozen rays. Ray regions are target_sector, upper_hemisphere and full_sphere. voxel_nbv_shadow remains command-line/config diagnostic only.
   acquisition_failure_does_not_reach_configured_home:
     inspect: [target_scan_mission_node.py, scan_viewpoint_executor_node.py, home_pose.py, /scan_viewpoint_executor/execute_home_stage, /piper/scan_execution_status, /joint_states_single]
     note: A reverse of ROUGH_ACQUISITION proves only plan start and is never used by automatic recovery. The current path uses /scan_viewpoint_executor/hold to stop at measured feedback, then executes PRE_HOME, ROUGH_HOME and STORAGE_WRIST through the mission-authorized direct service, verifies each configured endpoint, holds, disables and cleans up. Tesseract is not part of configured-home planning.
@@ -326,10 +364,10 @@ maintenance_routing_2026_08_04:
     note: Service capture requires GOOD score at least 0.65, target_valid exactly true and CLEAR occlusion. Rejection saves no frame, appends rejected_entries, holds at measured current pose, and in automatic closed-loop mode requests one coverage-ranked replacement. Missing target_3d or mask may retry only at the same held pose under the ten-attempt readiness bound. A present fresh target_3d valid=false is equivalent to ScanQuality target_valid=false and must become VIEW_REJECTED rather than ABORTED. Malformed/nonfinite diagnostics, I/O, TF, service and safety faults fail closed.
   replacement_plan_has_wrong_count_or_reuses_pose:
     inspect: [/piper/scan_session_history, scan_session_memory.py, scan_viewpoint_executor_node.py, target_scan_mission_node.py, scan_viewpoint_planner_node.py, /piper/tesseract_plan_status]
-    note: accepted_views counts only persisted records; accepted/rejected entries both exclude duplicates. Automatic mission requests contain exactly one view and rank by new coverage from achieved FK pose/look; manual batch requests still contain every remaining view. The mission permits at most eight visual replacements. Automatic mode uses eight views only as a model-seed floor and may continue to 24 until achieved side/span floors and three-view measured surface convergence pass. A correlated zero-view result may complete only at eight or more after every feature and convergence floor is already proved and every remaining distinct candidate explicitly lacks finite bounded collision-free IK; all other planning failures remain failures and still enter fresh current-state home cleanup.
+    note: accepted_views counts only persisted records; accepted/rejected entries both exclude duplicates. Automatic mission requests contain exactly one view and rank by new coverage from achieved FK pose/look; manual batch requests still contain every remaining view. The mission permits at most eight visual replacements. Normal feature completion continues through 8-24 until achieved side/span floors and three-view measured surface convergence pass. Independently, typed full safe-ray-frontier exhaustion may finish after at least one persisted achieved capture, because no further collision-qualified target-facing observation exists. A failed shortlist, generic timeout, malformed response, worker failure, zero-capture run, or unproved history remains failure and enters fresh current-state home cleanup.
   automatic_feature_budget_exhausted:
     inspect: [target_scan_mission_node.py, mission_core.py, scan_session_memory.py, bridge_node.py, /piper/scan_session_history, /piper/scan_capture_status]
-    note: At 8-23 captures the coordinator stops only when achieved history in the frozen measured coverage frame proves two views per Y side, 120-degree azimuth, 25-degree elevation and three consecutive measured novel-surface gains at or below 0.02. Otherwise it requests one more view. At 24, missing floors are INSUFFICIENT_CAPTURE_QUALITY. For later voxel-NBV goals, rank cumulative marginal information globally and send at most twelve direction-diverse candidates to Tesseract; motion cost is secondary. Manual batch mode remains separately confirmed exact-13.
+    note: At 8-23 captures the coordinator stops only when achieved history in the frozen measured coverage frame proves two views per Y side, 120-degree azimuth, 25-degree elevation and three consecutive measured novel-surface gains at or below 0.02. Otherwise it requests one more view. At 24, missing floors are INSUFFICIENT_CAPTURE_QUALITY. For authoritative NBV goals, reject normalized predicted marginal information below 0.02, rank globally and send at most twelve voxel exact points or six ray directions to Tesseract; motion cost is secondary. Manual batch mode remains separately confirmed exact-13.
   adaptive_frontier_exhausted_before_feature_completion:
     inspect: [/piper/scan_session_history, /piper/tesseract_plan_status, target_scan_mission_node.py, scan_session_memory.py, piper_tesseract_foxy/bridge_node.py, persisted capture camera poses and measured surface-gain sequence]
     note: Historical task gui-sim-e9629c41e1224425b5adb0454b61ee3f exhausted the retired 6-to-30-degree frontier at 65.30/120 degrees azimuth. Current voxel_nbv has no local movement frontier; inspect NO_POSITIVE_INFORMATION_CANDIDATE separately from TESSERACT_EXHAUSTED and retain the existing completion thresholds. The historical run still physically accepted v3 timing at 20 percent and completed safe staged shutdown.
@@ -432,3 +470,12 @@ maintenance_routing_2026_08_06:
 
 nbv_maintenance_commands:
   nbv_recorded_replay: "python3 tools/replay_nbv_coverage.py datasets/active_scan/<scan_dir>"
+
+capture_diagnostic_delivery_issue:
+  inspect: [scan_capture_node.py diagnostic_callback_group and main, /piper/scan_quality, /piper/occlusion_status, vision.log, scan_stack.log]
+  rule: >-
+    If capture reports stale occlusion while occlusion_checker is publishing
+    fresh states, verify callback delivery before changing freshness or
+    acceptance thresholds. Quality and occlusion callbacks own a dedicated
+    mutually-exclusive group on the command-free recorder's two-thread
+    executor; retain their fail-closed one-second gate.

@@ -1,4 +1,6 @@
 from types import SimpleNamespace
+import time
+from threading import Condition, Thread
 
 import numpy as np
 
@@ -14,6 +16,7 @@ from piper_mobile_manipulation.scan_capture import (
     qualify_target_depth,
     rigid_transform_matrix,
     synchronized_bundle_rejection,
+    temporal_confident_depth_median,
 )
 from piper_mobile_manipulation.scan_capture_node import (
     capture_view_selection_provenance,
@@ -54,6 +57,158 @@ def test_depth_png_is_uint16_millimetres_for_l515_encodings():
     converted = depth_millimetres(metres, '32FC1')
     assert converted.dtype == np.uint16
     assert converted.tolist() == [[0, 301, 0]]
+
+
+def test_twenty_frame_confident_depth_burst_rejects_flying_pixels():
+    frames = []
+    confidence = []
+    for index in range(20):
+        frame = np.asarray([
+            [399 + (index % 3), 400],
+            [400, 400],
+        ], dtype=np.uint16)
+        if index == 19:
+            frame[0, 0] = 900
+        if index >= 9:
+            frame[1, 1] = 0
+        frames.append(frame)
+        confidence.append(np.full((2, 2), 10, dtype=np.uint8))
+
+    depth, grades, report = temporal_confident_depth_median(
+        frames, ['16UC1'] * 20, confidence,
+        minimum_confidence=8, minimum_support_fraction=0.50)
+
+    assert int(depth[0, 0]) == 400
+    assert int(grades[0, 0]) == 10
+    assert int(depth[1, 1]) == 0
+    assert int(grades[1, 1]) == 0
+    assert report['input_frames'] == 20
+    assert report['minimum_support_frames'] == 10
+    assert report['estimator'] == 'per_pixel_median'
+
+
+def test_depth_burst_never_uses_low_confidence_samples_as_support():
+    frames = [np.full((2, 2), 400, dtype=np.uint16) for _ in range(20)]
+    grades = [np.full((2, 2), 10, dtype=np.uint8) for _ in range(20)]
+    for index in range(11):
+        grades[index][0, 0] = 2
+
+    depth, confidence, report = temporal_confident_depth_median(
+        frames, ['16UC1'] * 20, grades,
+        minimum_confidence=8, minimum_support_fraction=0.50)
+
+    assert int(depth[0, 0]) == 0
+    assert int(confidence[0, 0]) == 0
+    assert report['retained_pixels'] == 3
+
+
+def _native_bundle(seconds, received_at):
+    depth = message(seconds)
+    confidence = message(seconds)
+    camera_info = message(seconds)
+    return depth, confidence, camera_info, received_at
+
+
+class BurstHarness:
+    valid_native_depth_bundles = ScanCaptureNode.valid_native_depth_bundles
+    collect_prospective_native_depth_burst = (
+        ScanCaptureNode.collect_prospective_native_depth_burst)
+
+    def __init__(self, bundles):
+        self.native_bundle_cache = list(bundles)
+        self.native_bundle_condition = Condition()
+
+    @staticmethod
+    def get_parameter(name):
+        return SimpleNamespace(value={
+            'capture_burst_frames': 20,
+            'max_bundle_age_sec': 1.0,
+            'native_depth_confidence_slop_sec': 0.005,
+        }[name])
+
+
+def test_capture_burst_collects_twenty_new_frames_after_request():
+    now = time.monotonic()
+    old = [_native_bundle(9.0, now - 0.1)]
+    fresh = [
+        _native_bundle(10.0 + index / 10.0, now + 0.01 + index / 10.0)
+        for index in range(20)]
+    harness = BurstHarness(old + fresh)
+
+    burst, reason = harness.collect_prospective_native_depth_burst(now)
+
+    assert reason == ''
+    assert len(burst) == 20
+    assert burst[0] is fresh[0]
+    assert burst[-1] is fresh[-1]
+
+
+def test_capture_burst_timeout_reports_actual_new_frame_count():
+    now = time.monotonic()
+    fresh = [
+        _native_bundle(10.0 + index / 10.0, now - 5.0 + index / 10.0)
+        for index in range(19)]
+    harness = BurstHarness(fresh)
+
+    burst, reason = harness.collect_prospective_native_depth_burst(now - 6.0)
+
+    assert burst is None
+    assert '19/20 received' in reason
+
+
+def test_capture_burst_waits_while_camera_callbacks_fill_it():
+    started_at = time.monotonic()
+    harness = BurstHarness([])
+    result = {}
+
+    thread = Thread(target=lambda: result.update(zip(
+        ('burst', 'reason'),
+        harness.collect_prospective_native_depth_burst(started_at))))
+    thread.start()
+    frames = [
+        _native_bundle(
+            20.0 + index / 10.0,
+            started_at + 0.01 + index / 10.0)
+        for index in range(20)]
+    with harness.native_bundle_condition:
+        harness.native_bundle_cache.extend(frames)
+        harness.native_bundle_condition.notify_all()
+    thread.join(timeout=1.0)
+
+    assert not thread.is_alive()
+    assert result['reason'] == ''
+    assert result['burst'] == frames
+
+
+def test_service_capture_collects_burst_before_preparing_and_saving():
+    events = []
+    frames = [_native_bundle(30.0 + index / 10.0, 1.0 + index)
+              for index in range(20)]
+    harness = SimpleNamespace(
+        frame_index=0,
+        capture_mode=lambda: 'service',
+        get_parameter=lambda name: SimpleNamespace(value={
+            'max_frames_per_scan': 30,
+        }[name]),
+        capture_prerequisites_ready=lambda: events.append(
+            'prerequisites') or (True, ''),
+        collect_prospective_native_depth_burst=lambda _started_at: (
+            events.append('collect') or (frames, '')),
+        capture_ready=lambda depth_burst: events.append(
+            ('prepare', depth_burst)) or (True, ''),
+        capture_frame=lambda _now: events.append('save') or (True, 'saved'),
+        get_clock=lambda: SimpleNamespace(now=lambda: object()),
+        note_skip=lambda reason: events.append(('skip', reason)),
+        publish_status=lambda *args: events.append(('status', args)),
+    )
+    response = SimpleNamespace(success=False, message='')
+
+    result = ScanCaptureNode.capture_view_cb(harness, object(), response)
+
+    assert result.success
+    assert result.message == 'saved'
+    assert events == [
+        'prerequisites', 'collect', ('prepare', frames), 'save']
 
 
 def test_rigid_camera_transform_metadata_matrix_is_exact_and_finite():

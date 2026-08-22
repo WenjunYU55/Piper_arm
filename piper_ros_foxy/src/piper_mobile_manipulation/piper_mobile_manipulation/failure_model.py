@@ -37,6 +37,7 @@ class FailureTag(str, Enum):
     CAPTURE_REJECT_VIEW = 'CAPTURE_REJECT_VIEW'
     NO_POSITIVE_INFORMATION = 'NO_POSITIVE_INFORMATION'
     TESSERACT_EXHAUSTED = 'TESSERACT_EXHAUSTED'
+    RAY_SHORTLIST_EXHAUSTED = 'RAY_SHORTLIST_EXHAUSTED'
     FINAL_AIM_EXCEEDED = 'FINAL_AIM_EXCEEDED'
     TERMINAL_HOME_REACHED = 'TERMINAL_HOME_REACHED'
     HOME_REACHED = 'HOME_REACHED'
@@ -202,6 +203,11 @@ def legacy_failure_adapter(
         tags.add(FailureTag.SAFE_VIEW_EXHAUSTED)
     if 'tesseract_exhausted' in lowered:
         tags.add(FailureTag.TESSERACT_EXHAUSTED)
+        tags.add(FailureTag.SAFE_VIEW_EXHAUSTED)
+    if 'ray_shortlist_exhausted' in lowered:
+        tags.add(FailureTag.RAY_SHORTLIST_EXHAUSTED)
+    if 'ray_frontier_exhausted' in lowered:
+        tags.add(FailureTag.EMPTY_VIEW_FRONTIER)
         tags.add(FailureTag.SAFE_VIEW_EXHAUSTED)
     if (
             (

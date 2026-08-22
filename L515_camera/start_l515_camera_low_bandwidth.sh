@@ -8,6 +8,25 @@ L515_REQUIRE_REALSENSE=1
 # shellcheck disable=SC1091
 source "$ROOT/L515_camera/source_l515_environment.sh"
 
+profile_path="${PIPER_CAMERA_PROFILE_PATH:-$ROOT/L515_camera/rgb_profile.conf}"
+saved_color_width=640
+saved_color_height=480
+saved_color_fps=30
+if [ -r "$profile_path" ]; then
+  IFS=, read -r saved_color_width saved_color_height saved_color_fps < "$profile_path"
+fi
+color_width="${PIPER_CAMERA_COLOR_WIDTH:-$saved_color_width}"
+color_height="${PIPER_CAMERA_COLOR_HEIGHT:-$saved_color_height}"
+color_fps="${PIPER_CAMERA_COLOR_FPS:-$saved_color_fps}"
+case "${color_width},${color_height},${color_fps}" in
+  640,480,15|640,480,30|960,540,15|960,540,30|1280,720,15|1280,720,30|1920,1080,15|1920,1080,30) ;;
+  *)
+    echo "Unsupported L515 RGB profile: ${color_width}x${color_height}@${color_fps}." >&2
+    exit 2
+    ;;
+esac
+rgb_profile="${color_width},${color_height},${color_fps}"
+
 if ! ros2 pkg prefix realsense2_camera >/dev/null 2>&1; then
   echo "realsense2_camera is not available in the current ROS environment."
   echo "Build and source $ROOT/L515_camera/realsense_ws first:"
@@ -18,7 +37,7 @@ fi
 
 echo "Starting L515 with reduced depth bandwidth."
 echo "Use this when the USB controller or DDS path resets during the normal launch."
-echo "RGB profile: 640x480@30; depth profile: 320x240@30."
+echo "RGB profile: ${color_width}x${color_height}@${color_fps}; depth profile: 320x240@30."
 echo "Close-range preset: ${L515_VISUAL_PRESET:-5} (5=Short Range, 3=Low Ambient Light)."
 ros2 launch realsense2_camera rs_launch.py \
   device_type:=l515 \
@@ -34,7 +53,7 @@ ros2 launch realsense2_camera rs_launch.py \
   enable_gyro:=false \
   enable_accel:=false \
   depth_module.profile:=320,240,30 \
-  rgb_camera.profile:=640,480,30 \
+  rgb_camera.profile:="$rgb_profile" \
   depth_module.global_time_enabled:=true \
   rgb_camera.global_time_enabled:=true \
   color_qos:=SENSOR_DATA \

@@ -15,6 +15,11 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 
+def test_default_reconstruction_preserves_one_millimetre_detail():
+    assert MODULE.DEFAULT_VOXEL_LENGTH_M == pytest.approx(0.001)
+    assert MODULE.DEFAULT_SDF_TRUNC_M == pytest.approx(0.005)
+
+
 def test_stored_base_camera_pose_is_inverted_for_open3d():
     base_camera = np.eye(4)
     base_camera[0, 3] = 0.25
@@ -45,6 +50,24 @@ def test_capture_count_outside_bounded_contract_is_rejected(count):
             {'capture_count': count}, [Path(str(index)) for index in range(count)])
 
 
+@pytest.mark.parametrize('count', [1, 3, 7])
+def test_partial_capture_count_requires_explicit_admission(count):
+    paths = [Path(str(index)) for index in range(count)]
+    assert MODULE.validate_capture_set(
+        {'capture_count': count}, paths,
+        allow_partial_view_set=True) == paths
+    report = MODULE.capture_set_provenance(
+        {'capture_count': count}, allow_partial_view_set=True)
+    assert report['classification'] == 'PARTIAL_VIEW_SET'
+    assert report['ordinary_feature_minimum'] == 8
+
+
+def test_zero_capture_set_remains_rejected_when_partial_is_allowed():
+    with pytest.raises(ValueError, match='1-24'):
+        MODULE.validate_capture_set(
+            {'capture_count': 0}, [], allow_partial_view_set=True)
+
+
 def test_manifest_and_frame_metadata_count_must_match():
     with pytest.raises(ValueError, match='does not match'):
         MODULE.validate_capture_set(
@@ -61,6 +84,30 @@ def test_registration_correction_is_bounded():
         correction, fitness=0.5, inlier_rmse=0.004)
     assert 'overlap' in MODULE.correction_rejection(
         np.eye(4), fitness=0.01, inlier_rmse=0.004)
+
+
+def test_multiway_pair_selection_is_bounded_and_keeps_consecutive_views():
+    poses = []
+    for index in range(8):
+        pose = np.eye(4)
+        angle = np.radians(index * 10.0)
+        pose[:3, 2] = [np.sin(angle), 0.0, np.cos(angle)]
+        poses.append(pose)
+    pairs = MODULE.multiway_registration_pairs(poses)
+    assert all((index - 1, index) in pairs for index in range(1, 8))
+    assert len(pairs) <= 7 + 8 * MODULE.MULTIWAY_MAX_PRIOR_NEIGHBORS
+
+
+def test_multiway_spanning_tree_requires_connected_accepted_edges():
+    edges = [
+        {'source': 0, 'target': 1, 'inlier_rmse_m': 0.001},
+        {'source': 1, 'target': 2, 'inlier_rmse_m': 0.002},
+        {'source': 0, 'target': 2, 'inlier_rmse_m': 0.003},
+    ]
+    selected = MODULE.registration_spanning_tree(3, edges)
+    assert len(selected) == 2
+    with pytest.raises(ValueError, match='disconnected'):
+        MODULE.registration_spanning_tree(4, edges)
 
 
 def test_manifest_integrity_rejects_changed_artifact(tmp_path):
@@ -311,3 +358,34 @@ def test_auto_selection_requires_material_safe_gicp_improvement():
     assert MODULE.select_registration_report(robot, weak)[0] == 'robot_pose'
     fragmented = _selection_report(0.004, 0.003, component=0.80)
     assert MODULE.select_registration_report(robot, fragmented)[0] == 'robot_pose'
+
+
+def test_auto_selection_can_choose_coherent_bounded_multiway_refinement():
+    robot = _selection_report(0.0040, 0.020, component=0.40, quality='FAIL')
+    sequential = _selection_report(
+        0.0033, 0.018, component=0.62, quality='FAIL')
+    multiway = _selection_report(
+        0.0025, 0.016, component=0.90, quality='FAIL')
+    selected, comparison = MODULE.select_registration_reports({
+        'robot_pose': robot,
+        'bounded_gicp': sequential,
+        'multiway_gicp': multiway,
+    })
+    assert selected == 'multiway_gicp'
+    assert comparison['candidate_assessments'][
+        'multiway_gicp']['eligible'] is True
+    assert comparison['candidate_assessments'][
+        'bounded_gicp']['eligible'] is False
+
+
+def test_auto_selection_retains_robot_pose_when_refinement_is_incoherent():
+    robot = _selection_report(0.0040, 0.005, component=0.85, quality='WARN')
+    refinement = _selection_report(
+        0.0020, 0.004, component=0.79, quality='WARN')
+    selected, comparison = MODULE.select_registration_reports({
+        'robot_pose': robot,
+        'multiway_gicp': refinement,
+    })
+    assert selected == 'robot_pose'
+    assert comparison['candidate_assessments'][
+        'multiway_gicp']['eligible'] is False

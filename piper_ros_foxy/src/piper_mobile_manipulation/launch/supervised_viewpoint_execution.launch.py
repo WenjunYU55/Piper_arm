@@ -97,10 +97,12 @@ def generate_launch_description():
                 'spool_root': os.path.join(
                     os.environ.get('XDG_RUNTIME_DIR', '/tmp'),
                     'piper_tesseract_plans'),
-                'hand_eye_calibration_path': os.path.join(
-                    root,
-                    'L515_camera/calibration/hand_eye/session_20260808_straight_mount/'
-                    'calibration_result.yaml'),
+                'hand_eye_calibration_path': os.environ.get(
+                    'PIPER_HAND_EYE_CALIBRATION', os.path.join(
+                        root,
+                        'L515_camera/calibration/hand_eye/'
+                        'session_20260808_straight_mount/'
+                        'calibration_result.yaml')),
                 'joint_bounds_path': os.path.join(root, 'piper_joint_bounds.json'),
                 'robot_xacro_path': os.path.join(
                     root,
@@ -164,11 +166,12 @@ def generate_launch_description():
                 LaunchConfiguration('allow_mission_policy'), value_type=bool),
             'closed_loop_one_view': ParameterValue(
                 LaunchConfiguration('closed_loop_one_view'), value_type=bool),
-            'hand_eye_calibration_path': os.path.join(
-                root,
-                'L515_camera/calibration/hand_eye/session_20260808_straight_mount/'
-                'calibration_result.yaml',
-            ),
+            'hand_eye_calibration_path': os.environ.get(
+                'PIPER_HAND_EYE_CALIBRATION', os.path.join(
+                    root,
+                    'L515_camera/calibration/hand_eye/'
+                    'session_20260808_straight_mount/'
+                    'calibration_result.yaml')),
             'joint_bounds_path': os.path.join(root, 'piper_joint_bounds.json'),
             **selected_home,
         }],
@@ -210,6 +213,8 @@ def generate_launch_description():
                     'PIPER_TARGET_PROFILE', 'green_cube'),
                 'target_prompt': os.environ.get(
                     'PIPER_TARGET_PROMPT', 'green cube .'),
+                'calibration_sha256': os.environ.get(
+                    'PIPER_CALIBRATION_SHA256', ''),
                 'max_frames_per_scan': ParameterValue(
                     LaunchConfiguration('max_execution_viewpoints'),
                     value_type=int),

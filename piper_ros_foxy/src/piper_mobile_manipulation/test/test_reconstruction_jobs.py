@@ -3,7 +3,8 @@ import time
 import pytest
 
 from piper_mobile_manipulation.reconstruction_jobs import (
-    mesh_job_id, transition_job, validate_home_report, waiting_job)
+    mesh_job_id, reconstruction_terminal_decision, transition_job,
+    validate_home_report, waiting_job)
 
 
 def result(tmp_path):
@@ -48,3 +49,23 @@ def test_terminal_mesh_job_cannot_restart(tmp_path):
     job = transition_job(job, 'FAILED', 'failed')
     with pytest.raises(ValueError, match='invalid'):
         transition_job(job, 'RUNNING', 'retry without a new job')
+
+
+@pytest.mark.parametrize('quality', ['PASS', 'WARN'])
+def test_usable_reconstruction_quality_completes_job(quality):
+    state, reason = reconstruction_terminal_decision({
+        'overall_quality': quality})
+    assert state == 'SUCCEEDED'
+    assert quality in reason
+
+
+def test_failed_reconstruction_quality_fails_job_but_preserves_diagnostics():
+    state, reason = reconstruction_terminal_decision({
+        'overall_quality': 'FAIL'})
+    assert state == 'FAILED'
+    assert 'diagnostic mesh' in reason
+
+
+def test_missing_reconstruction_quality_fails_closed():
+    with pytest.raises(ValueError, match='quality'):
+        reconstruction_terminal_decision({})

@@ -1,4 +1,5 @@
 from collections import deque
+import inspect
 
 import numpy as np
 
@@ -11,6 +12,7 @@ from validate_fixed_board import (
     DEFAULT_SQUARE_LENGTH_M as VALIDATION_SQUARE_LENGTH_M,
     joint_positions_are_stable,
     result_dict,
+    FixedBoardValidator,
 )
 
 
@@ -71,3 +73,9 @@ def test_nonfinite_feedback_fails_closed():
         (10.00, [0.0, 0.0, 0.0, 0.0, float("nan"), 0.0]),
     ])
     assert not joint_positions_are_stable(samples, 10.0, 0.75, 0.001)
+
+
+def test_board_pose_uses_the_exact_image_timestamp_for_tf():
+    source = inspect.getsource(FixedBoardValidator.image_cb)
+    assert 'Time.from_msg(message.header.stamp)' in source
+    assert 'rclpy.time.Time()' not in source

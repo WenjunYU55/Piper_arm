@@ -8,12 +8,14 @@ from piper_tesseract_foxy.worker import (
     attached_box_floor_clearance_rejection,
     camera_transform_path_rejection,
     CandidatePlanningError,
+    PlanningBudgetExceeded,
     planning_budgets_for_request,
     quiesce_bootstrap_recovery_prefix,
     reverse_sdk_movej_points,
     sdk_movej_waypoint_trajectory,
     subdivide_joint_segment,
     TesseractBackend,
+    worker_rejection_code,
 )
 
 
@@ -613,7 +615,7 @@ def test_worker_planning_budget_expires_before_bridge_timeout(monkeypatch):
         TesseractBackend.plan(backend, request)
 
 
-def test_first_request_uses_preloaded_clean_scene_then_rebuilds(monkeypatch):
+def test_clean_scene_is_reused_until_request_obstacles_make_it_dirty(monkeypatch):
     first_robot = object()
     second_robot = object()
     loads = []
@@ -623,6 +625,7 @@ def test_first_request_uses_preloaded_clean_scene_then_rebuilds(monkeypatch):
     backend.urdf_path = '/model/piper.urdf'
     backend.srdf_path = '/model/piper.srdf'
     backend._preloaded_scene_unused = True
+    backend._scene_has_request_obstacles = False
     backend.api = {
         'Robot': SimpleNamespace(
             from_files=lambda urdf, srdf: (
@@ -640,9 +643,99 @@ def test_first_request_uses_preloaded_clean_scene_then_rebuilds(monkeypatch):
 
     backend.reset_scene()
 
+    assert backend.robot is first_robot
+    assert loads == []
+    assert collections == []
+
+    backend._scene_has_request_obstacles = True
+    backend.reset_scene()
+
     assert backend.robot is second_robot
+    assert not backend._scene_has_request_obstacles
     assert loads == [('/model/piper.urdf', '/model/piper.srdf')]
     assert collections == [True]
+
+
+def test_successful_request_obstacle_marks_scene_dirty():
+    additions = []
+    backend = TesseractBackend.__new__(TesseractBackend)
+    backend.robot = object()
+    backend._scene_has_request_obstacles = False
+    backend.api = {
+        'box': lambda *size: ('box', size),
+        'Pose': SimpleNamespace(from_xyz=lambda *xyz: ('pose', xyz)),
+        'create_obstacle': lambda *args: additions.append(args) or True,
+    }
+
+    backend.add_obstacles([{
+        'id': 'branch 1',
+        'minimum_m': [0.1, -0.1, 0.0],
+        'maximum_m': [0.2, 0.1, 0.3],
+    }])
+
+    assert len(additions) == 1
+    assert backend._scene_has_request_obstacles
+
+
+def test_scene_setup_time_does_not_consume_candidate_budget(monkeypatch):
+    clock = {'now': 0.0}
+    monkeypatch.setattr(
+        worker_module.time, 'monotonic', lambda: float(clock['now']))
+    points = [
+        {'positions_rad': [0.0] * 6},
+        {'positions_rad': [0.01] * 6},
+    ]
+
+    def setup_scene():
+        clock['now'] = 60.0
+
+    backend = SimpleNamespace(
+        reset_scene=setup_scene,
+        add_obstacles=lambda _obstacles: None,
+        find_bootstrap_recovery=lambda _request: None,
+        plan_candidate=lambda *_args: (
+            0.0,
+            points,
+            {
+                'minimum_clearance_m': 0.1,
+                'limiting_link_pair': 'none/none',
+            },
+        ),
+    )
+    request = {
+        'plan_kind': 'MULTIVIEW_SCAN',
+        'scene': {
+            'obstacles': [],
+            'target_center_m': [0.4, 0.0, 0.0],
+            'candidate_views': [{
+                'id': 0,
+                'camera_position_m': [0.4, 0.0, 0.3],
+                'look_direction': [0.0, 0.0, -1.0],
+            }],
+        },
+        'planning': {
+            'min_viewpoints': 1,
+            'max_viewpoints': 1,
+            'include_return_home': False,
+            'max_execution_joint_step_rad': 0.10,
+            'roll_samples_rad': [0.0],
+            'effective_speed_percent': 5.0,
+            'command_rate_hz': 20.0,
+        },
+        'limits': {
+            'position_rad': [[-1.0, 1.0] for _ in range(6)],
+            'joint_margin_rad': 0.03,
+            'max_velocity_rad_s': [3.0] * 6,
+            'max_acceleration_rad_s2': [5.0] * 6,
+        },
+        'start_state': {'positions_rad': [0.0] * 6},
+    }
+
+    selected, segments = TesseractBackend.plan(backend, request)
+
+    assert [item['id'] for item in selected] == [0]
+    assert len(segments) == 1
+    assert backend.planning_deadline_monotonic == pytest.approx(105.0)
 
 
 def test_automatic_one_view_replan_has_a_tight_bounded_budget():
@@ -658,6 +751,17 @@ def test_automatic_one_view_replan_has_a_tight_bounded_budget():
 
     request['planning']['include_return_home'] = True
     assert planning_budgets_for_request(request) == (150.0, 5.0)
+
+
+def test_ray_budget_expiry_advances_only_after_an_attempt():
+    error = PlanningBudgetExceeded('wording is not part of the decision')
+
+    assert worker_rejection_code(error, {
+        'attempted_ray_ids': [17],
+    }) == 'TESSERACT_EXHAUSTED'
+    assert worker_rejection_code(error, {
+        'attempted_ray_ids': [],
+    }) == 'PLANNING_FAILED'
 
 
 def test_worker_budget_is_checked_between_candidate_planner_attempts(

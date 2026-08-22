@@ -175,6 +175,38 @@ def response_fixture(request):
     return attach_digest(value, 'response_sha256')
 
 
+def expanded_ray_request(ray_ids):
+    """Return a valid private request with one exact probe per ray ID."""
+    request = request_fixture('MULTIVIEW_SCAN')
+    template = request['scene']['candidate_views'][0]
+    request['scene']['candidate_views'] = [dict(
+        template,
+        id=1000 + index,
+        ray_id=int(ray_id),
+        ray_probe_index=index,
+    ) for index, ray_id in enumerate(ray_ids)]
+    request['planning'].update({
+        'shortlisted_ray_count': len(set(ray_ids)),
+        'expanded_ray_candidate_count': len(ray_ids),
+        'ray_direction_attempt_limit': 6,
+    })
+    return attach_digest(request, 'request_sha256')
+
+
+def test_expanded_ray_request_requires_direction_contiguous_attempts():
+    assert validate_request(expanded_ray_request([3, 3, 9, 9]))
+
+    with pytest.raises(ContractError, match='direction-contiguous'):
+        validate_request(expanded_ray_request([3, 9, 3]))
+
+
+def test_expanded_ray_request_cannot_exceed_direction_attempt_bound():
+    request = expanded_ray_request([1, 2, 3, 4, 5, 6, 7])
+
+    with pytest.raises(ContractError, match='bounds'):
+        validate_request(request)
+
+
 def test_closed_loop_one_view_response_omits_unused_embedded_home():
     request = request_fixture('MULTIVIEW_SCAN')
     request['planning']['include_return_home'] = False

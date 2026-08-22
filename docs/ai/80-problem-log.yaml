@@ -1,10 +1,89 @@
 schema_version: 1
 document: consolidated_problem_and_incident_log
 last_reviewed: '2026-08-21'
+multiview_cube_surface_duplicated_and_oversized_2026_08_21:
+  state: bounded_registration_improved_recalibration_evidence_required
+  symptom: The latest seven-view scan produced individually clean face planes but a sparse duplicated fused cube with a robot-pose OBB about 73 x 58 x 47 mm for a measured 35 mm cube.
+  root_cause: Capture density and the 20-frame median were not the primary failure. Cross-view residual alignment dominates; the exact share attributable to hand-eye calibration, robot FK repeatability and partial or symmetric surface registration remains unresolved.
+  correction: Add connected bounded multi-view GICP as an offline residual candidate, retain 20 mm and 5 degree bounds, and require evidence-based auto selection. Correct fixed-board validation to use exact image-time TF.
+  evidence: Robot baseline 39.5 percent dominant component and 3.97 mm p90 residual; multiway candidate 90.5 percent and 2.25 mm, but 58.8 x 52.9 x 48.3 mm OBB still fails. No threshold was weakened.
+  next_action: New operator-driven corrected-scale calibration dataset and held-out validation; do not deploy automatically.
+generation_seven_table_contact_2026_08_21:
+  state: contained_virtual_floor_raised_physical_requalification_blocked
+  symptom: Task gui-sim-d77550972be14f9ca55b27e206ccbfd0 accepted seven burst captures, selected ray-NBV view 1000400 and began motion, but the installed assembly contacted the table and continued downward until the runtime guard stopped on J5 feedback 1.225615 rad.
+  root_cause: The exact physical geometry discrepancy is not yet proven. The shared nominal floor_z_m 0.000 plus 0.005 m CAD-envelope margin was demonstrably insufficient for the installed table boundary; this is not a burst-capture or NBV information-gain failure.
+  correction: Raise floor_z_m to 0.005 in both executor and Tesseract while retaining the 0.005 m holder margin for 0.010 m total nominal protection. Offline FK confirms the recorded staged-home route still passes. No physical retest is authorized by this correction alone.
+  evidence: [/run/user/1000/piper_target_scan_logs/scan_stack.log, /tmp/piper_target_scan_missions/results/gui-sim-d77550972be14f9ca55b27e206ccbfd0.json, datasets/active_scan/scan_20260821_220003, scan_execution_params.yaml, collision_model.yaml]
+partial_scan_could_not_enter_reconstruction_2026_08_21:
+  state: integration_fixed_current_mesh_quality_failed
+  symptom: The successful three-capture safe-frontier mission queued a job that the old worker would reject at its hard eight-view count gate; the gateway also searched a different virtual-environment path than the installer/GUI and system Python had no Open3D. Every historical capture lacked calibration_sha256, so the automatic path would also fail certification.
+  correction: Keep standalone 8-24 by default, explicitly admit 1-7 from the safely completed deferred gateway or command-free manual GUI diagnostic route, classify them PARTIAL_VIEW_SET and cap overall quality below PASS, share reconstruction/.venv, allow missing historical identity only as DIAGNOSTIC_ONLY, hash the exact deployed calibration for future captures, and map quality FAIL to durable job FAILED with diagnostics retained. The GUI now reads target_mesh.ply.quality.json instead of the obsolete quality_report.json path.
+  evidence: [30 isolated reconstruction tests pass, 47 mission/reconstruction-job tests pass, 726 complete mobile tests pass, mobile package builds, gateway-equivalent replay integrates all three frames, actual GUI Build and Validate plus Open 3D Viewer route passes]
+  replay_result: scan_20260821_185143 produced 615 vertices and 719 triangles but failed quality at 70.4-percent dominant component and non-watertight geometry. No quality threshold was weakened.
+final_ray_e2e_integration_2026_08_21:
+  state: fixed_and_supervised_e2e_verified
+  task_id: codex-e2e-20260821-185113-adaptive
+  dataset: datasets/active_scan/scan_20260821_185143
+  result: Three accepted captures, true exhaustion of the remaining 151 prequalified rays, SUCCEEDED, safe_shutdown true, all configured home/storage stages proved, feedback disable proved, and no mission-owned child remained.
+  repaired_causes: [final semantic mask previously reused a biased pre-refinement target depth, low-rate capture diagnostics could starve behind RGB-D callbacks, exclusion occurred after six-ray bounding, an attempted-ray budget timeout remained generic PLANNING_FAILED, full safe-frontier completion incorrectly required the hard eight-view feature floor]
+  containment: No ROS interface, motion speed, capture quality threshold, Tesseract safety check, home sequence, disable sequence, or process ownership rule changed.
+single_failed_ray_shortlist_ended_complete_scan_2026_08_21:
+  state: fixed_and_supervised_e2e_verified
+  symptom: Tasks codex-e2e-20260821-174623-26afd7 and codex-e2e-20260821-175620-rayfix accepted four and three captures respectively, then one six-ray Tesseract batch failed IK and the mission incorrectly declared the complete roughly 160-ray frontier exhausted.
+  root_cause: The worker correctly reported attempted_ray_ids, but the bridge discarded that provenance and the mission classified any TESSERACT_EXHAUSTED batch as terminal.
+  correction: The bridge now retains attempted infeasible ray IDs only for the current session and accepted-count generation, excludes them from the next shortlist, and emits typed RAY_SHORTLIST_EXHAUSTED. MissionEngine retries that exact condition; genuine RAY_FRONTIER_EXHAUSTED remains coverage-aware and terminal.
+  evidence: [722 complete mobile tests pass, 131 complete Tesseract tests pass, affected packages build, codex-e2e-20260821-185113-adaptive advanced across successive failed batches and exhausted the true pool before successful staged shutdown]
+all_rays_removed_by_workspace_filter_2026_08_21:
+  state: fixed_and_live_verified
+  symptom: Task codex-e2e-20260821-174226-75933d reported zero of 175 workspace-prequalified rays.
+  root_cause: The live planner serialized ray_direction as a mapping with x y z fields while the new cull iterated it as a numeric sequence, so every ray failed local parsing. The configured workspace did not remove the rays.
+  correction: The filter accepts the authoritative mapping and retains backward-compatible sequence input. Offline replay retained 160 of 175 and later live tasks also retained 160 of 175.
+out_of_workspace_rays_reach_expensive_planner_2026_08_21:
+  state: software_fixed_physical_retest_pending
+  symptom: Information-ranked full-sphere rays could consume the bounded Tesseract direction budget even when no point on their permitted standoff interval lay inside the configured coarse camera workspace.
+  correction: The existing reachability-filter owner now tests continuous bounded-ray/workspace intersection and marks empty rays unsafe before bridge shortlisting. It retains rays when any permitted point intersects, even if their representative scoring point does not.
+  boundary: This is ray-only cheap culling, not an IK or collision approximation. Tesseract/executor feasibility and exact-point policies are unchanged.
+ray_policy_attempt_cost_and_low_value_candidates_2026_08_21:
+  state: software_fixed_physical_retest_pending
+  symptom: Frozen ray_nbv still handed a broad twelve-direction batch to Tesseract and allowed arbitrarily small positive predicted information, so expensive exact standoff attempts could be spent on low-value or later-ranked directions.
+  root_cause: Exact-point voxel and target-ray policies shared one candidate limit, and ray expansion ordered probe phases globally rather than exhausting one ranked direction before moving to the next.
+  correction: Bind policy to candidate geometry, require 0.02 normalized predicted marginal information for both authoritative NBV policies, retain twelve exact points for voxel_nbv, cap ray_nbv at six directions and keep each direction's preferred then reserve probes contiguous. Private request validation fails closed on mixed policies, interleaved rays or bound mismatches.
+  boundary: [NBV gain formula unchanged, ranking unchanged, accepted-only coverage unchanged, Tesseract remains feasibility owner, no ROS interface motion speed safety capture home or shutdown change]
+tesseract_detour_controller_lead_2026_08_21:
+  state: software_fixed_physical_retest_pending
+  task_id: gui-sim-b1806846b4cf401faaecd01bb8913828
+  symptom: The repaired clear-scene handoff reached the first ray-NBV seed motion, but a TESSERACT_STREAM detour accumulated 0.310360564 rad measured lag against the unchanged 0.30-rad corridor and aborted before capture.
+  root_cause: Direct straight-chord plans use one native MoveJ and had already succeeded at 15 percent. A collision/visibility detour must retain multiple setpoints; its wall-clock sender continued advancing those setpoints while the endpoint-style controller lagged, leaving no flow-control headroom before the hard following guard.
+  correction: Before issuing another detour setpoint, compare it and the last sent setpoint with fresh measured joints. When the existing 0.30-rad corridor is exhausted, stop advancing the schedule and retain the last collision-qualified setpoint. Resume the unchanged path when feedback catches up; if it does not recover within the existing one-second grace, abort and home. Never burst, skip, change speed, alter the path or weaken the numeric guard.
+  evidence: [150 focused executor and trajectory tests pass, 703 complete mobile tests pass]
+  containment: PRE_HOME ROUGH_HOME STORAGE_WRIST all-six disable empty-dataset removal and exact child cleanup all passed with safe_shutdown true.
+adjacent_table_false_depth_occluder_2026_08_21:
+  state: fixed_and_supervised_e2e_verified
+  task_id: gui-sim-465e116c2f4d4dfca5fba46776ea2543
+  symptom: Startup and first-look cube acquisition passed, but the settled workflow probe reported one unsafe unknown depth foreground object and aborted before the seed capture.
+  root_cause: The target-local depth fallback treated any closer-depth component touching a six-pixel target-mask dilation as relevant. A 1533-pixel table/shadow crescent below the resting cube had zero direct target overlap and zero intrusion into the target mask envelope, but 81 dilated-neighborhood pixels incorrectly made it an occluder.
+  correction: A synthetic target-local depth component must now contain at least the existing 20-pixel support minimum inside the observed target-mask bounding envelope. The complete connected component is retained when it crosses that envelope; adjacent support surfaces are rejected. GroundingDINO semantic obstacles and all downstream fail-closed handling are unchanged.
+  evidence: [recorded failed frame replays to no depth occluder, adjacent-support regression passes, crossing-foreground regression passes, 33 isolated GroundingDINO/SAM2 tests pass, later supervised E2Es passed clear-scene probing and accepted captures]
+  containment: The failed mission made zero captures, removed its empty dataset, completed PRE_HOME ROUGH_HOME STORAGE_WRIST all-six disable and owned-child cleanup.
+gui_camera_profile_controls_missing_2026_08_21:
+  state: software_fixed_no_physical_test
+  symptom: The current Automatic Scan tab no longer exposed the previously qualified L515 RGB resolution and frame-rate choices.
+  root_cause: The old implementation carried camera fields in RunTargetScan; the behavior-preserving refactor restored the baseline public action schema but did not retain a private next-start configuration boundary for the GUI controls.
+  correction: Restore the controls through a validated atomic L515_camera/rgb_profile.conf setting read by both camera launchers at process startup. Do not restore public action fields or mutate a running camera.
+  evidence: [camera profile unit tests, GUI Phase-8 source tests, shell syntax checks]
+terminal_pre_home_proof_suppressed_rough_home_2026_08_21:
+  state: software_fixed_physical_retest_pending
+  task_id: gui-sim-eee579370cae41cd96601541eacc7d40
+  symptom: Cancellation during VIEW_PLANNING emitted only one STORAGE_WRIST shutdown motion; no distinct PRE_HOME or ROUGH_HOME command appeared in the executor log even though the result payload claimed both stages.
+  root_cause: Fresh joints were inside the former 0.30-rad PRE_HOME shortcut band, and prove_return_home_for_shutdown incorrectly wrote that PRE_HOME proof into the shared return_home_proved field. MissionEngine consequently skipped the distinct ROUGH_HOME stage and STORAGE_WRIST moved J1-J5 and J6 together.
+  correction: Tighten only configured-home endpoint and successive-sample acceptance to 0.20 rad, keep the distinct 0.30-rad exact-first-point post-disable limit allowance unchanged, and record PRE_HOME, ROUGH_HOME and STORAGE_WRIST proof only in their corresponding MissionSession fields.
+  software_evidence: [114 focused mission/configuration tests pass, PRE_HOME regression proves return_home_proved remains false]
+  physical_gate: Restart the idle coordinator so it loads current source, then require one supervised cancel after acquisition to show separate PRE_HOME, ROUGH_HOME and STORAGE_WRIST transactions before disable.
 voxel_radial_lattice_recomputation_2026_08_21:
   state: software_fixed_physical_retest_pending
   symptom: Authoritative voxel_nbv regenerated and rescored six exact radial layers for every angular direction even though information gain is directional and Tesseract ultimately owns exact reachable standoff.
-  correction: Freeze one angular ray pool per static-target mission, score 175 representative directions, shortlist twelve rays, then expand only those rays to preferred and reserve exact positions for Tesseract.
+  correction: Freeze one angular ray pool per static-target mission, score configured representative directions, discard normalized predicted gain below 0.02, shortlist at most six rays, then exhaust each ray's preferred and reserve exact positions before the next direction. This path is named ray_nbv; voxel_nbv retains the former exact-point lattice and twelve-point bound so timing and mission behavior can be compared.
+  followup: GUI now selects legacy, voxel_nbv or ray_nbv, a target sector/upper hemisphere/full sphere, and 1 through 1000 rays. Default is 175 full-sphere rays. Software regression is complete; physical comparison is pending.
   boundary: No NBV gain, coverage, motion, speed, collision, capture threshold, public interface, home or shutdown policy changed.
   remaining: Confirm the first supervised ray mission produces materially different accepted directions and that preferred/backup standoff probing does not increase capture duplication.
 raw_unknown_pixel_nbv_diversity_bias_2026_08_20:
@@ -256,7 +335,7 @@ problem_groups:
       status: resolved
       symptom: Some failure paths could proceed toward disable without proving configured home and stable hold.
       root_cause: Terminal result handling and action-status races were incomplete.
-      correction: Home-stage action result, operator-authorized 0.3-rad per-joint feedback acceptance for one second, six-axis disable and exact child cleanup are mandatory and correlated. No redundant autonomous hold service is called between the proved final home target and disable.
+      correction: Home-stage action result, operator-authorized 0.2-rad per-joint endpoint acceptance for one second, six-axis disable and exact child cleanup are mandatory and correlated. No redundant autonomous hold service is called between the proved final home target and disable.
       evidence: [docs/ai/40-flows.yaml, docs/ai/50-guardrails.yaml]
     - id: gui_home_recording_erased_pre_home_2026_08_16
       status: resolved
@@ -580,10 +659,15 @@ required_update_links:
     - Preserve superseded incidents and rollback warnings.
 
 latest_nbv_incidents_2026_08_17:
+  - id: clean_second_scene_rebuild_consumed_candidate_budget
+    symptom: Task gui-sim-a0e116ab38c146f1adcf3393a63ec482 accepted its ray-NBV seed capture, then generation one expired after 45 seconds before attempting candidate one.
+    root_cause: The first request consumed the preloaded clean Robot quickly. The second request unconditionally rebuilt the native Robot inside the automatic candidate-planning clock even though the preceding request had added no obstacles; model setup consumed the complete budget.
+    correction: Track whether a request successfully adds scene obstacles, reuse only demonstrably clean scenes, rebuild dirty scenes before reuse, and start the unchanged 45-second candidate budget after scene setup. The unchanged 180-second bridge timeout still bounds the complete transaction.
+    evidence: [task gui-sim-a0e116ab38c146f1adcf3393a63ec482, scan_20260821_152812 seed capture accepted, generation one ray_nbv 174 directions, candidate_attempts zero, safe PRE_HOME ROUGH_HOME STORAGE_WRIST all-six disable and exact process cleanup]
   - id: tesseract_ready_before_first_robot_scene
     symptom: The 2026-08-20 scan_20260820_204529 locked the target but its seed request exhausted the 45-second automatic plan budget before starting candidate one.
     root_cause: Worker readiness proved Python/backend import only. The first Robot.from_files call occurred in reset_scene after the request deadline started, so native model initialization consumed the candidate budget.
-    correction: Construct one clean unused Robot scene in TesseractBackend initialization before worker-ready is published. Consume it for request one, then preserve the existing discard/rebuild isolation for every later request.
+    correction: Construct one clean unused Robot scene in TesseractBackend initialization before worker-ready is published. Reuse a scene only while it has received no request-local obstacles; rebuild every obstacle-dirty scene before reuse.
     evidence: [task gui-sim-7d34364727c9405eb5d16e9b32f48db4 pre-fix, scan_20260820_204529 removed as zero capture, candidate_attempts zero, task gui-sim-3eb814caa9204bfd884343f02a94323e post-fix seed view 412 and capture one, safe pre-home rough-home storage disable cleanup]
   - id: rejected_nbv_bypassed_existing_reacquisition_owner
     symptom: The 2026-08-20 scan_20260820_203704 committed a seed capture and executed true voxel_nbv generation one, but after strict final-aim rejection it failed with tracking LOST instead of requesting a replacement view.
@@ -618,3 +702,8 @@ latest_nbv_incidents_2026_08_17:
     symptom: A safely reached and settling/settled view could receive executor-is-not-at-an-accepted-settled-capture and abort as insufficient quality.
     root_cause: The capture service observed its asynchronous execution-status cache before the accepted settled update and the legacy adapter did not classify that exact state rejection as readiness.
     correction: Missing, wrong-mode and not-yet-accepted-settled status now take the existing bounded same-view readiness retry while preserving the existing Trigger response wording.
+  - id: occlusion_status_callback_starved_by_rgbd_load
+    symptom: The 2026-08-21 supervised mission accepted its first view, reached the second NBV, then exhausted ten same-pose retries with occlusion evidence is stale.
+    root_cause: The occlusion checker continued publishing fresh CLEAR evidence roughly every 0.4 seconds, but scan_capture's single-threaded executor serviced high-rate RGB-D entities ahead of its final low-rate occlusion subscription. Scan quality arrived while the local occlusion receipt timestamp stopped advancing.
+    correction: Give scan-quality and occlusion subscriptions one dedicated mutually-exclusive callback group and spin the command-free recorder with a two-thread executor. Preserve the one-second freshness threshold and all capture rules.
+    evidence: [task codex-e2e-20260821-1811-shortlistfix, scan_20260821_181024, vision.log CLEAR publications 1787332296.529 through 1787332300.137, scan_stack capture rejection at 1787332300.369, safe staged home disable and owned-child cleanup]

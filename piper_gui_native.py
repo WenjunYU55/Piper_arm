@@ -23,14 +23,25 @@ from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 from piper_gui.app import run_gui
+from piper_gui.camera_profile import (
+    CAMERA_PROFILE_FPS,
+    CameraProfile,
+    DEFAULT_CAMERA_PROFILE,
+    default_camera_profile_path,
+    read_camera_profile,
+    write_camera_profile,
+)
 from piper_gui.ros_client import MissionActionClient, MissionClientEvent
 from piper_gui.scan_policy import (
+    FULL_SPHERE_REGION,
     POLICY_LABELS,
+    RAY_NBV_POLICY,
+    RAY_REGION_LABELS,
     SELECTABLE_POLICIES,
-    VOXEL_NBV_POLICY,
+    SELECTABLE_RAY_REGIONS,
     default_scan_policy_path,
-    read_scan_policy,
-    write_scan_policy,
+    read_scan_settings,
+    write_scan_settings,
 )
 from piper_gui.view_model import MissionViewModel
 from reconstruction.gui_support import (
@@ -446,16 +457,50 @@ class PiperGuiApp:
         self.mission_label_var = tk.StringVar(value="green cube")
         self.scan_policy_path = default_scan_policy_path(PROJECT_ROOT)
         try:
-            saved_policy = read_scan_policy(self.scan_policy_path)
+            saved_settings = read_scan_settings(self.scan_policy_path)
+            saved_policy = saved_settings.policy
             policy_status = (
-                "Saved for the next scan stack: %s"
-                % POLICY_LABELS[saved_policy])
+                "Saved for next scan stack: %s; %s; %d rays"
+                % (
+                    POLICY_LABELS[saved_policy],
+                    RAY_REGION_LABELS[saved_settings.ray_region],
+                    saved_settings.ray_count))
         except (OSError, ValueError) as exc:
-            saved_policy = VOXEL_NBV_POLICY
+            saved_policy = RAY_NBV_POLICY
+            saved_ray_region = FULL_SPHERE_REGION
+            saved_ray_count = 175
             policy_status = (
                 "Planner policy configuration unavailable: %s" % exc)
+        else:
+            saved_ray_region = saved_settings.ray_region
+            saved_ray_count = saved_settings.ray_count
         self.scan_policy_var = tk.StringVar(value=POLICY_LABELS[saved_policy])
+        self.scan_ray_region_var = tk.StringVar(
+            value=RAY_REGION_LABELS[saved_ray_region])
+        self.scan_ray_count_var = tk.StringVar(
+            value=str(saved_ray_count))
         self.scan_policy_status_var = tk.StringVar(value=policy_status)
+        self.camera_profile_path = default_camera_profile_path(PROJECT_ROOT)
+        try:
+            saved_camera_profile = read_camera_profile(
+                self.camera_profile_path)
+            camera_profile_status = (
+                "Saved for next camera startup: %dx%d@%d FPS"
+                % (
+                    saved_camera_profile.width,
+                    saved_camera_profile.height,
+                    saved_camera_profile.fps))
+        except (OSError, ValueError) as exc:
+            saved_camera_profile = CameraProfile(*DEFAULT_CAMERA_PROFILE)
+            camera_profile_status = (
+                "Camera profile configuration unavailable: %s" % exc)
+        self.camera_resolution_var = tk.StringVar(
+            value="%dx%d" % (
+                saved_camera_profile.width, saved_camera_profile.height))
+        self.camera_fps_var = tk.StringVar(
+            value=str(saved_camera_profile.fps))
+        self.camera_profile_status_var = tk.StringVar(
+            value=camera_profile_status)
         self.mission_status_var = tk.StringVar(value="Autonomous mission idle")
         self.mesh_status_var = tk.StringVar(
             value="Mesh reconstruction is waiting for a completed scan")
@@ -470,6 +515,9 @@ class PiperGuiApp:
         self.reconstruction_mode_var = tk.StringVar(value='auto')
         self.reconstruction_dimension_vars = [
             tk.StringVar(value='40') for _axis in range(3)]
+        self.reconstruction_voxel_mm_var = tk.DoubleVar(value=1.0)
+        self.reconstruction_voxel_status_var = tk.StringVar(
+            value='1.0 mm voxel — baseline mesh detail')
         self.reconstruction_show_input_var = tk.BooleanVar(value=False)
         self.reconstruction_status_var = tk.StringVar(
             value='Select a completed scan dataset')
@@ -619,33 +667,101 @@ class PiperGuiApp:
             width=34,
         )
         self.scan_policy_combo.grid(row=0, column=0, sticky="w")
+        self.scan_ray_region_combo = ttk.Combobox(
+            policy,
+            textvariable=self.scan_ray_region_var,
+            values=tuple(
+                RAY_REGION_LABELS[item] for item in SELECTABLE_RAY_REGIONS),
+            state="readonly",
+            width=28,
+        )
+        self.scan_ray_region_combo.grid(
+            row=0, column=1, sticky="w", padx=(8, 0))
+        ttk.Label(policy, text="Rays").grid(
+            row=0, column=2, sticky="e", padx=(10, 4))
+        self.scan_ray_count_spinbox = ttk.Spinbox(
+            policy,
+            from_=1,
+            to=1000,
+            textvariable=self.scan_ray_count_var,
+            width=6,
+        )
+        self.scan_ray_count_spinbox.grid(row=0, column=3, sticky="w")
         self.scan_policy_apply_button = ttk.Button(
             policy,
             text="Apply for Next Mission",
             command=self.apply_scan_policy,
         )
-        self.scan_policy_apply_button.grid(row=0, column=1, padx=(8, 0))
+        self.scan_policy_apply_button.grid(row=0, column=4, padx=(8, 0))
         ttk.Label(
             policy,
             textvariable=self.scan_policy_status_var,
             foreground="#52606d",
             wraplength=760,
             justify="left",
-        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        ).grid(row=1, column=0, columnspan=5, sticky="w", pady=(8, 0))
         ttk.Label(
             policy,
             text=(
-                "This changes only the saved planner parameter. The mission "
+                "These change only the saved planner settings. The mission "
                 "server starts a fresh scan stack for each mission; it does "
-                "not change a stack that is already running."
+                "not change a stack that is already running. Ray settings "
+                "are retained when another policy is selected."
             ),
             foreground="#52606d",
             wraplength=760,
             justify="left",
-        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        ).grid(row=2, column=0, columnspan=5, sticky="w", pady=(4, 0))
+
+        camera = ttk.LabelFrame(
+            parent, text="L515 RGB profile for next mission", padding=12)
+        camera.grid(row=4, column=0, sticky="ew", pady=(12, 0))
+        self.camera_resolution_combo = ttk.Combobox(
+            camera,
+            textvariable=self.camera_resolution_var,
+            values=tuple(
+                "%dx%d" % resolution
+                for resolution in CAMERA_PROFILE_FPS),
+            state="readonly",
+            width=14,
+        )
+        self.camera_resolution_combo.grid(row=0, column=0, sticky="w")
+        self.camera_resolution_combo.bind(
+            "<<ComboboxSelected>>", self._camera_resolution_changed)
+        self.camera_fps_combo = ttk.Combobox(
+            camera,
+            textvariable=self.camera_fps_var,
+            state="readonly",
+            width=8,
+        )
+        self.camera_fps_combo.grid(row=0, column=1, sticky="w", padx=(8, 0))
+        self.camera_profile_apply_button = ttk.Button(
+            camera,
+            text="Apply for Next Mission",
+            command=self.apply_camera_profile,
+        )
+        self.camera_profile_apply_button.grid(row=0, column=2, padx=(8, 0))
+        ttk.Label(
+            camera,
+            textvariable=self.camera_profile_status_var,
+            foreground="#52606d",
+            wraplength=760,
+            justify="left",
+        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        ttk.Label(
+            camera,
+            text=(
+                "RGB resolution/FPS is loaded when the next mission starts "
+                "the L515. Depth remains at 640x480@30. This never changes "
+                "a camera process that is already running."),
+            foreground="#52606d",
+            wraplength=760,
+            justify="left",
+        ).grid(row=2, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        self._camera_resolution_changed()
 
         controls = ttk.Frame(parent)
-        controls.grid(row=4, column=0, sticky="w", pady=(18, 10))
+        controls.grid(row=5, column=0, sticky="w", pady=(18, 10))
         self.mission_start_button = ttk.Button(
             controls,
             text="Start Complete Automated Scan",
@@ -668,7 +784,7 @@ class PiperGuiApp:
         self.report_base_home_button.grid(row=0, column=2, padx=(8, 0))
 
         status = ttk.LabelFrame(parent, text="Mission status", padding=12)
-        status.grid(row=5, column=0, sticky="ew", pady=(6, 0))
+        status.grid(row=6, column=0, sticky="ew", pady=(6, 0))
         status.columnconfigure(0, weight=1)
         ttk.Label(
             status,
@@ -696,7 +812,7 @@ class PiperGuiApp:
             foreground="#8a3b12",
             wraplength=820,
             justify="left",
-        ).grid(row=6, column=0, sticky="ew", pady=(18, 0))
+        ).grid(row=7, column=0, sticky="ew", pady=(18, 0))
 
         ttk.Label(
             parent,
@@ -710,7 +826,46 @@ class PiperGuiApp:
             foreground="#52606d",
             wraplength=820,
             justify="left",
-        ).grid(row=7, column=0, sticky="ew", pady=(12, 0))
+        ).grid(row=8, column=0, sticky="ew", pady=(12, 0))
+
+    def _camera_resolution_changed(self, _event=None):
+        try:
+            width_text, height_text = self.camera_resolution_var.get().split(
+                "x", 1)
+            resolution = (int(width_text), int(height_text))
+            frame_rates = CAMERA_PROFILE_FPS[resolution]
+        except (KeyError, TypeError, ValueError):
+            resolution = DEFAULT_CAMERA_PROFILE[:2]
+            frame_rates = CAMERA_PROFILE_FPS[resolution]
+            self.camera_resolution_var.set("%dx%d" % resolution)
+        choices = tuple(str(value) for value in frame_rates)
+        self.camera_fps_combo.configure(values=choices)
+        if self.camera_fps_var.get() not in choices:
+            preferred = str(DEFAULT_CAMERA_PROFILE[2])
+            self.camera_fps_var.set(
+                preferred if preferred in choices else choices[-1])
+
+    def apply_camera_profile(self):
+        if not self.mission_view_model.state.can_start:
+            self.camera_profile_status_var.set(
+                "Camera profile was not changed: wait for the active mission "
+                "to finish.")
+            return
+        try:
+            width_text, height_text = self.camera_resolution_var.get().split(
+                "x", 1)
+            profile = write_camera_profile(
+                self.camera_profile_path,
+                width_text,
+                height_text,
+                self.camera_fps_var.get())
+        except (OSError, ValueError) as exc:
+            self.camera_profile_status_var.set(
+                "Camera profile was not changed: %s" % exc)
+            return
+        self.camera_profile_status_var.set(
+            "Saved for next camera startup: %dx%d@%d FPS"
+            % (profile.width, profile.height, profile.fps))
 
     def _build_reconstruction(self, parent: ttk.Frame) -> None:
         """Build command-free, offline TSDF/GICP validation controls."""
@@ -750,9 +905,27 @@ class PiperGuiApp:
             row=2, column=0, sticky='w', pady=(10, 0))
         ttk.Combobox(
             inputs, textvariable=self.reconstruction_mode_var,
-            values=('auto', 'robot_pose', 'bounded_gicp'),
+            values=(
+                'auto', 'robot_pose', 'bounded_gicp', 'multiway_gicp'),
             state='readonly', width=18).grid(
                 row=2, column=1, sticky='w', padx=(8, 0), pady=(10, 0))
+        ttk.Label(inputs, text='Mesh detail').grid(
+            row=3, column=0, sticky='w', pady=(12, 0))
+        ttk.Label(inputs, text='Coarse').grid(
+            row=3, column=1, sticky='w', pady=(12, 0))
+        tk.Scale(
+            inputs, from_=3.0, to=0.5, resolution=0.1,
+            orient='horizontal', showvalue=False, length=330,
+            variable=self.reconstruction_voxel_mm_var,
+            command=self.update_reconstruction_voxel_status).grid(
+                row=3, column=2, columnspan=2, sticky='ew',
+                padx=(8, 8), pady=(12, 0))
+        ttk.Label(inputs, text='Fine').grid(
+            row=3, column=4, sticky='e', pady=(12, 0))
+        ttk.Label(
+            inputs, textvariable=self.reconstruction_voxel_status_var,
+            foreground='#52606d').grid(
+                row=4, column=1, columnspan=4, sticky='w', pady=(3, 0))
         controls = ttk.Frame(parent)
         controls.grid(row=3, column=0, sticky='w', pady=(14, 8))
         self.reconstruction_build_button = ttk.Button(
@@ -778,6 +951,15 @@ class PiperGuiApp:
                 row=1, column=0, sticky='ew', pady=(8, 0))
         self.refresh_reconstruction_datasets()
 
+    def update_reconstruction_voxel_status(self, _value=None) -> None:
+        """Explain mesh density without claiming additional measured detail."""
+        voxel_mm = round(float(self.reconstruction_voxel_mm_var.get()), 1)
+        relative = 1.0 / (voxel_mm * voxel_mm)
+        self.reconstruction_voxel_status_var.set(
+            '%.1f mm voxel — approximately %.1fx baseline surface density; '
+            'does not repair missing or misregistered geometry'
+            % (voxel_mm, relative))
+
     def refresh_reconstruction_datasets(self) -> None:
         names = tuple(path.name for path in list_scan_datasets(PROJECT_ROOT))
         self.reconstruction_dataset_combo.configure(values=names)
@@ -798,13 +980,16 @@ class PiperGuiApp:
                 for variable in self.reconstruction_dimension_vars)
             command, output = reconstruction_command(
                 PROJECT_ROOT, self.reconstruction_dataset_var.get(),
-                dimensions, self.reconstruction_mode_var.get())
+                dimensions, self.reconstruction_mode_var.get(),
+                round(float(self.reconstruction_voxel_mm_var.get()), 1))
         except (OSError, TypeError, ValueError) as exc:
             self.reconstruction_status_var.set(str(exc))
             return
         self.reconstruction_build_button.configure(state='disabled')
         self.reconstruction_view_button.configure(state='disabled')
-        self.reconstruction_status_var.set('Reconstruction is running offline')
+        self.reconstruction_status_var.set(
+            'Reconstruction is running offline at %.1f mm mesh voxels'
+            % round(float(self.reconstruction_voxel_mm_var.get()), 1))
         self.reconstruction_output_path = output
 
         def worker():
@@ -812,7 +997,7 @@ class PiperGuiApp:
                 process = start_reconstruction_process(command)
                 self.reconstruction_process = process
                 output_text, _unused = process.communicate()
-                report_path = output.parent / 'quality_report.json'
+                report_path = output.with_suffix(output.suffix + '.quality.json')
                 if process.returncode != 0:
                     raise RuntimeError(
                         (output_text or 'reconstruction failed').strip()[-2000:])
@@ -1108,14 +1293,28 @@ class PiperGuiApp:
             self.scan_policy_status_var.set(
                 "Policy was not changed: invalid selection.")
             return
+        label_to_region = {
+            label: region for region, label in RAY_REGION_LABELS.items()}
+        selected_region = label_to_region.get(self.scan_ray_region_var.get())
+        if selected_region is None:
+            self.scan_policy_status_var.set(
+                "Policy was not changed: invalid ray region.")
+            return
         try:
-            write_scan_policy(self.scan_policy_path, selected_policy)
+            ray_count = int(self.scan_ray_count_var.get())
+            write_scan_settings(
+                self.scan_policy_path,
+                selected_policy,
+                selected_region,
+                ray_count,
+            )
         except (OSError, ValueError) as exc:
             self.scan_policy_status_var.set(
                 "Policy was not changed: %s" % exc)
             return
         self.scan_policy_status_var.set(
-            "Saved for the next scan stack: %s" % selected_label)
+            "Saved for next scan stack: %s; %s; %d rays"
+            % (selected_label, self.scan_ray_region_var.get(), ray_count))
 
     def cancel_automated_scan(self):
         if self.ros_node.cancel_mission():
@@ -1135,7 +1334,17 @@ class PiperGuiApp:
             state="disabled" if not state.can_start else "normal")
         self.scan_policy_combo.configure(
             state="readonly" if state.can_start else "disabled")
+        self.scan_ray_region_combo.configure(
+            state="readonly" if state.can_start else "disabled")
+        self.scan_ray_count_spinbox.configure(
+            state="normal" if state.can_start else "disabled")
         self.scan_policy_apply_button.configure(
+            state="normal" if state.can_start else "disabled")
+        self.camera_resolution_combo.configure(
+            state="readonly" if state.can_start else "disabled")
+        self.camera_fps_combo.configure(
+            state="readonly" if state.can_start else "disabled")
+        self.camera_profile_apply_button.configure(
             state="normal" if state.can_start else "disabled")
 
     def _restore_manual_controls_if_unowned(self):

@@ -1,12 +1,14 @@
 """Command-free tests for live voxel next-best-view scoring."""
 
 from dataclasses import FrozenInstanceError
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 from piper_mobile_manipulation import nbv_coverage
 from piper_mobile_manipulation.nbv_coverage import (
+    candidate_meets_minimum_information,
     candidate_information,
     ObjectCoverageModel,
     rank_next_best_views,
@@ -169,6 +171,65 @@ def test_candidate_information_reports_normalized_marginal_gain():
     assert 0.0 <= metrics['marginal_information_fraction'] <= 1.0
 
 
+@pytest.mark.parametrize(
+    'fraction, expected', (
+        (0.0199, False),
+        (0.0200, True),
+        (0.7500, True),
+        (float('nan'), False),
+    ),
+)
+def test_minimum_information_floor_is_normalized_and_fail_closed(
+        fraction, expected):
+    candidate = {
+        'nbv_marginal_information_fraction': fraction,
+        # A large raw count must not rescue a sub-threshold normalized gain.
+        'nbv_marginal_information_pixels': 100000,
+    }
+
+    assert candidate_meets_minimum_information(candidate) is expected
+
+
+@pytest.mark.parametrize('policy', ['voxel_nbv', 'ray_nbv'])
+def test_authoritative_nbv_policies_apply_same_two_percent_floor(
+        monkeypatch, policy):
+    snapshot = SimpleNamespace(session_id='scan-floor', generation=1)
+    ranked = []
+    for index, fraction in ((1, 0.0199), (2, 0.0200), (3, 0.4)):
+        item = viewpoint(index, [0.1 * index, 0.2, 0.4])
+        item.update({
+            'nbv_rank': index,
+            'nbv_rank_score': 4.0 - index,
+            'nbv_positive_information_gain': True,
+            'nbv_marginal_information_fraction': fraction,
+        })
+        ranked.append(item)
+
+    monkeypatch.setattr(
+        'piper_mobile_manipulation.scan_viewpoint_planner_node.'
+        'rank_next_best_views',
+        lambda _snapshot, _views, _camera: [dict(item) for item in ranked])
+    planner = type('Planner', (), {})()
+    planner.selection_policy = lambda: policy
+    planner.refresh_coverage_model = lambda: True
+    planner.coverage_model = type(
+        'Coverage', (), {'snapshot': lambda _self: snapshot})()
+    planner.current_achieved_camera = lambda _history: None
+    planner.nbv_ranking_cache_key = None
+    planner.nbv_ranking_cache = []
+
+    selected = ScanViewpointPlannerNode.apply_view_selection(
+        planner,
+        [viewpoint(index, [0.1 * index, 0.2, 0.4])
+         for index in (1, 2, 3)],
+        {'session_id': 'scan-floor', 'accepted_views': 1},
+    )
+
+    assert [item['index'] for item in selected] == [2, 3]
+    assert planner.nbv_positive_information_count == 3
+    assert planner.nbv_low_information_rejected_count == 1
+
+
 def test_global_nbv_can_select_seventy_degrees_over_low_gain_twenty_degrees():
     snapshot = initialized_model().snapshot()
     center = np.asarray(snapshot.target_center, dtype=float)
@@ -300,3 +361,18 @@ def test_authoritative_voxel_policy_labels_first_view_as_seed():
     assert selected[0]['view_selection_requested_policy'] == 'voxel_nbv'
     assert selected[0]['view_selection_generation'] == 0
     assert selected[0]['view_selection_session_id'] == 'scan-a'
+
+
+def test_authoritative_ray_policy_has_distinct_seed_identity():
+    planner = type('Planner', (), {
+        'selection_policy': lambda _self: 'ray_nbv',
+    })()
+
+    selected = ScanViewpointPlannerNode.apply_view_selection(
+        planner,
+        [viewpoint(7, [0.0, 0.3, 0.4])],
+        {'session_id': 'scan-ray', 'accepted_views': 0},
+    )
+
+    assert selected[0]['view_selection_policy'] == 'ray_nbv_seed'
+    assert selected[0]['view_selection_requested_policy'] == 'ray_nbv'

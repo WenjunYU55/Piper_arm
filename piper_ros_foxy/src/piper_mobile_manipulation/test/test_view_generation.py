@@ -8,6 +8,7 @@ from piper_mobile_manipulation.view_generation import (
     generation_matches_expected,
     make_view_generation,
     parse_view_generation,
+    view_policy_capabilities,
 )
 
 
@@ -33,6 +34,36 @@ def test_first_voxel_view_is_an_explicit_seed_generation():
         {'session_id': 'scan-a', 'accepted_views': 0}, 0)
 
     assert reason == ''
+
+
+def test_ray_nbv_generation_and_seed_are_supported():
+    assert generation_matches_expected(
+        _receipt(accepted=0, policy='ray_nbv_seed'),
+        {'session_id': 'scan-a', 'accepted_views': 0}, 0) == ''
+    assert generation_matches_expected(
+        _receipt(accepted=2, policy='ray_nbv'),
+        {'session_id': 'scan-a', 'accepted_views': 2}, 2) == ''
+
+
+def test_view_policy_capabilities_keep_generators_exchangeable():
+    legacy = view_policy_capabilities('legacy')
+    shadow = view_policy_capabilities('voxel_nbv_shadow')
+    voxel = view_policy_capabilities('voxel_nbv')
+    ray = view_policy_capabilities('ray_nbv')
+
+    assert legacy.candidate_geometry == 'exact_point'
+    assert not legacy.authoritative_nbv
+    assert not shadow.minimum_gain_required
+    assert voxel.candidate_geometry == 'exact_point'
+    assert voxel.authoritative_nbv and voxel.minimum_gain_required
+    assert ray.candidate_geometry == 'target_ray'
+    assert ray.authoritative_nbv and ray.minimum_gain_required
+    assert ray.frozen_candidates and ray.ray_expansion
+
+
+def test_unknown_view_policy_fails_closed():
+    with pytest.raises(ValueError, match='unsupported'):
+        view_policy_capabilities('future-unregistered-policy')
 
 
 def test_previous_session_receipt_cannot_start_a_repeated_mission():

@@ -364,8 +364,8 @@ def executor_parameter_defaults():
         # Operator-authorized configured-home acceptance. This applies
         # independently to every arm joint and is not a Tesseract planning
         # tolerance.
-        'home_goal_tolerance_rad': 0.30,
-        'home_motion_tolerance_rad': 0.30,
+        'home_goal_tolerance_rad': 0.20,
+        'home_motion_tolerance_rad': 0.20,
         'home_joint_feedback_timeout_sec': 1.0,
         'home_settle_duration_sec': 1.0,
         'home_settle_timeout_sec': 30.0,
@@ -400,7 +400,7 @@ def executor_parameter_defaults():
             0.000366362, 0.0, 0.0, 0.0, 0.43869236, 0.0],
         'pre_home_positions_rad': [
             0.0, 0.400357244, -0.498793736, 0.0, 0.600614364, 0.0],
-        'floor_z_m': 0.0,
+        'floor_z_m': 0.005,
         'link_radius_m': 0.025,
         'self_clearance_m': 0.060,
         'camera_holder_envelope_center_link6_m': [

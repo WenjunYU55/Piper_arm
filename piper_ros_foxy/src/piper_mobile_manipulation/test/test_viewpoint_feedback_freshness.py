@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 
 from piper_mobile_manipulation.viewpoint_reachability_filter_node import (
+    bounded_ray_intersects_workspace,
+    RAY_WORKSPACE_REJECTION,
     ViewpointReachabilityFilterNode,
 )
 
@@ -134,3 +136,77 @@ def test_static_radial_workspace_is_disabled_by_default():
 
     assert dynamic == []
     assert any('too far' in reason for reason in legacy)
+
+
+def target_ray(target, direction, minimum=0.28, maximum=0.50):
+    return {
+        'candidate_geometry': 'target_ray',
+        'desired_camera_position': {
+            'x': target[0] + direction[0] * maximum,
+            'y': target[1] + direction[1] * maximum,
+            'z': target[2] + direction[2] * maximum,
+        },
+        'target_object_center': dict(zip(('x', 'y', 'z'), target)),
+        # Match the planner's live JSON contract rather than relying only on
+        # the older positional-array representation.
+        'ray_direction': dict(zip(('x', 'y', 'z'), direction)),
+        'ray_min_standoff_m': minimum,
+        'ray_max_standoff_m': maximum,
+    }
+
+
+def ray_intersects(viewpoint, max_height=0.40):
+    return bounded_ray_intersects_workspace(
+        viewpoint,
+        min_reach_m=0.20,
+        max_reach_m=0.75,
+        min_camera_distance_m=0.25,
+        max_camera_distance_m=0.80,
+        max_height_change_m=max_height,
+    )
+
+
+def test_ray_is_kept_when_any_standoff_intersects_workspace():
+    viewpoint = target_ray([0.40, 0.0, 0.20], [1.0, 0.0, 0.0])
+
+    assert ray_intersects(viewpoint)
+    assert ViewpointReachabilityFilterNode.reject_reasons(
+        reachability_fixture(False), viewpoint) == []
+
+
+def test_recorded_list_ray_direction_remains_compatible():
+    viewpoint = target_ray([0.40, 0.0, 0.20], [1.0, 0.0, 0.0])
+    viewpoint['ray_direction'] = [1.0, 0.0, 0.0]
+
+    assert ray_intersects(viewpoint)
+
+
+def test_ray_outside_base_reach_is_culled_before_tesseract():
+    viewpoint = target_ray([0.70, 0.0, 0.20], [1.0, 0.0, 0.0])
+
+    assert not ray_intersects(viewpoint)
+    assert RAY_WORKSPACE_REJECTION in (
+        ViewpointReachabilityFilterNode.reject_reasons(
+            reachability_fixture(False), viewpoint))
+
+
+def test_ray_toward_base_is_kept_when_interval_enters_workspace():
+    viewpoint = target_ray([0.90, 0.0, 0.20], [-1.0, 0.0, 0.0])
+
+    assert ray_intersects(viewpoint)
+
+
+def test_ray_outside_height_slab_is_culled():
+    viewpoint = target_ray([0.40, 0.0, 0.20], [0.0, 0.0, 1.0])
+
+    assert not ray_intersects(viewpoint, max_height=0.20)
+
+
+def test_malformed_ray_fails_closed_without_crashing_filter():
+    viewpoint = target_ray([0.40, 0.0, 0.20], [1.0, 0.0, 0.0])
+    viewpoint['ray_direction'] = [1.0, 0.0]
+
+    assert not ray_intersects(viewpoint)
+    assert RAY_WORKSPACE_REJECTION in (
+        ViewpointReachabilityFilterNode.reject_reasons(
+            reachability_fixture(False), viewpoint))

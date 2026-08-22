@@ -1,11 +1,45 @@
 schema_version: 1
 document: implemented_features_bookmark
 updated_at: 2026-08-21
-frozen_viewpoint_ray_pool_2026_08_21:
+bounded_multiway_reconstruction_2026_08_21:
+  status: software_implemented_recalibration_pending
+  capability: Offline TSDF can compare robot poses, sequential bounded GICP and a connected bounded multi-view pose graph, then auto-select only a materially better structural candidate. All residuals remain within 20 mm and 5 degrees and are fully reported.
+  calibration_support: Fixed-board validation now uses the exact image timestamp for TF; collection and deployment remain operator-controlled.
+  evidence: [36 reconstruction and GUI-support tests pass, 7 fixed-board tests pass, scan_20260821_220003 improved to 90.5 percent dominant component and 2.25 mm p90 residual but correctly remains FAIL against the 35 mm cube]
+  preserved: [immutable captures, robot-pose baseline, public ROS interfaces, capture and NBV, Tesseract, motion, home, shutdown, calibration deployment authority]
+gui_selectable_mesh_density_2026_08_21:
+  capability: Manual command-free reconstruction exposes a 0.5-through-3.0 mm TSDF voxel slider, defaults to 1.0 mm, passes the selected resolution through the existing CLI and displays actual vertices/triangles plus quality evidence.
+  boundary: It does not change input capture density, GICP resolution, automatic mesh jobs, registration acceptance or any robot subsystem.
+partial_safe_frontier_reconstruction_2026_08_21:
+  status: software_implemented_current_dataset_diagnostic_fail
+  capability: The safely completed deferred path and explicitly operator-selected command-free GUI diagnostic path can integrate 1-7 immutable captures as an explicitly partial model while standalone TSDF retains its 8-24 default. Mesh generation and durable success are separate; only PASS or WARN succeeds, while FAIL preserves diagnostic outputs and fails the durable job.
+  provenance: Future missions bind the exact deployed hand-eye calibration file SHA-256. Historical missing-identity scans remain DIAGNOSTIC_ONLY and are never rewritten.
+  environment: reconstruction/.venv is shared by installer GUI and gateway.
+  evidence: [scan_20260821_185143 three-view gateway replay, actual GUI Build and Validate plus Open 3D Viewer replay, 615 vertices, 719 triangles, overall FAIL correctly retained, 30 reconstruction tests, 47 mission/job tests, 726 mobile tests, package build]
+supervised_ray_nbv_e2e_2026_08_21:
+  status: one_supervised_e2e_passed
+  capability: Frozen full-sphere ray NBV now advances across bounded failed shortlists, classifies an internal budget as ray exhaustion only after an actual attempted ray, and can terminate adaptively after at least one accepted achieved capture when the entire remaining prequalified safe frontier is genuinely exhausted.
+  evidence: codex-e2e-20260821-185113-adaptive accepted three views, returned SUCCEEDED with safe_shutdown true, and left only persistent GUI RViz display and coordinator nodes.
+  preserved: [accepted-only coverage, executor achieved FK, exact-first aim, Tesseract feasibility, GOOD/CLEAR capture gate, speeds, staged home, disable, owned-process cleanup, public ROS interfaces]
+ray_workspace_intersection_cull_2026_08_21:
   status: software_implemented_physical_qualification_pending
-  capability: Authoritative voxel_nbv freezes 175 target-centred direction rays per mission, ranks them from accepted-only coverage, shortlists twelve, and expands only shortlisted rays into bounded preferred/reserve exact Tesseract probes.
+  capability: Target rays whose entire bounded standoff interval lies outside the configured coarse camera workspace are rejected before bridge/Tesseract shortlisting. A ray survives if any permitted point intersects.
+  authority: viewpoint_reachability_filter_node.py
+  preserved: [exact-point policies, NBV scoring and ranking, accepted-only coverage, Tesseract IK collision path visibility, motion, safety, capture, home, shutdown, public ROS interfaces]
+  evidence: [108 focused tests, 716 complete mobile tests, 125 complete Tesseract tests, five-package build, changed-file ament lint, AI YAML parse]
+exchangeable_nbv_policy_boundary_2026_08_21:
+  status: software_implemented_physical_qualification_pending
+  capability: A private capability table binds legacy, voxel and ray policies to the correct candidate geometry and behavior. Active policy is frozen at stack startup; GUI changes apply to the next mission. Authoritative NBV requires 0.02 normalized predicted marginal information. voxel_nbv keeps twelve exact points; ray_nbv tries at most six directions and exhausts each direction's preferred/reserve standoffs contiguously.
+  authority: [view_generation.py, nbv_coverage.py, scan_viewpoint_planner_node.py, viewpoint_rays.py, piper_tesseract_foxy bridge contract and worker]
+  preserved: [legacy and shadow, seed generations, accepted-only coverage, exact-first five-degree aim, Tesseract feasibility, motion, capture, safety, home, disable, shutdown, public ROS interfaces]
+  evidence: [117 focused tests, 711 complete mobile tests, 125 complete Tesseract tests, 112 root tests with one hardware skip, 32 isolated AI tests, five-package build, changed-file ament lint, AI YAML parse]
+frozen_viewpoint_ray_pool_2026_08_21:
+  status: one_supervised_e2e_passed_repeatability_pending
+  capability: Selectable ray_nbv freezes a configurable target-sector, upper-hemisphere or full-sphere direction pool per mission, ranks it from accepted-only coverage, rejects normalized predicted gain below 0.02, shortlists at most six directions, and expands each selected ray into a contiguous preferred/reserve exact Tesseract group. voxel_nbv remains selectable as the exact-point lattice with its twelve-point handoff for performance comparison.
+  defaults: {policy: ray_nbv, ray_region: full_sphere, ray_count: 175}
   authority: [scan_viewpoint_planner_node.py, viewpoint_rays.py, piper_tesseract_foxy/bridge_node.py]
   retained_boundaries: {target_estimate: target_tracker_node.py, coverage: nbv_coverage.py, feasibility: worker.py, achieved_pose: scan_viewpoint_executor_node.py, capture_acceptance: scan_capture_node.py}
+  software_evidence: [96 focused tests, 818 complete mobile plus Tesseract tests, 100 repository tests with one hardware skip, five-package build, rootless core and compact Tesseract PASS, changed-file lint, AI YAML parse]
 target_too_far_terminal_result_2026_08_21:
   status: software_implemented
   capability: Exact-job semantic masked depth entirely beyond 1.20 m produces TARGET_TOO_FAR / REPOSITION_REQUIRED with rough base_link XYZ and normal shutdown. Five-look absence also reports XYZ while retaining TARGET_NOT_FOUND.
@@ -15,7 +49,7 @@ normalized_marginal_nbv_diversity_2026_08_20:
   capability: Global voxel NBV compares the fraction of projected target support that is cumulatively new, then accepted-view angular novelty, absolute marginal support and travel. Raw unknown projection can no longer force every rank into one steep elevation band.
   authority: [nbv_coverage.py, scan_viewpoint_planner_node.py]
   provenance_path: [scan_viewpoints, reachability filter, Tesseract request and response, tesseract_plan_provenance, frame metadata]
-  preserved: [accepted-capture-only coverage, complete configured candidate region, six-degree duplicate floor, twelve-candidate bridge shortlist, Tesseract feasibility, exact-first five-degree aim, tracking, capture thresholds, motion, home, disable and shutdown]
+  preserved: [accepted-capture-only coverage, complete configured candidate region, six-degree duplicate floor, twelve-exact-point voxel handoff, six-direction ray handoff, Tesseract feasibility, exact-first five-degree aim, tracking, capture thresholds, motion, home, disable and shutdown]
   evidence: [118 focused tests, 685 complete mobile tests, 117 complete Tesseract tests, five-package build, rootless core and compact PASS, changed-file lint, offline replay of scan_20260820_230845 shifts top twelve from all 75-degree to 15 and 25-degree candidates spanning both Y extremes]
 live_tracker_cadence_and_nbv_shortlist_handoff_2026_08_20:
   status: software_implemented_mid_elevation_physical_rerun_pending
@@ -34,7 +68,7 @@ global_nbv_target_aim_capture_recovery_2026_08_20:
   status: implemented_partial_physical_loop_verified_complete_scan_pending
   capabilities:
     - Cumulative accepted voxel coverage ranks the complete configured scan region; the retired 6-to-30 and 30-to-45 degree movement frontiers have no production authority.
-    - Information gain outranks motion cost, a six-degree accepted-view threshold rejects redundancy, and only twelve information-ranked direction-diverse candidates reach Tesseract.
+    - Information gain outranks motion cost, a six-degree accepted-view threshold rejects redundancy, authoritative predicted marginal information below 0.02 is rejected, and only twelve voxel exact points or six ray directions reach Tesseract.
     - Exact current-target aim is tried first through roll and IK alternatives. At most one canonical fallback within five degrees is allowed and provenance is validated.
     - Every settled commanded viewpoint stores actual FK independently of capture acceptance. Rejected views change next motion start but not accepted coverage or reconstruction.
     - One request-correlated heavy refresh handles transient fresh visual capture rejection before a persistent rejection requests a new NBV.
@@ -273,10 +307,12 @@ active_rollback_features:
   - id: selectable_camera_profiles
     status: [ACTIVE, SOFTWARE_QUALIFIED]
     summary: >-
-      GUI mission input carries bounded RGB resolution and frame-rate choices;
-      640x480 at 30 Hz remains the operationally evidenced profile while higher
-      RGB modes are available for benchmarking and calibration.
-    authority: [piper_gui_native.py, mission_core.py, start_l515_camera.sh]
+      GUI controls persist bounded RGB resolution and frame-rate choices for
+      the next newly started camera process without changing the public mission
+      action or mutating a live stream. 640x480 at 30 Hz remains the
+      operationally evidenced profile while higher RGB modes are available for
+      benchmarking and calibration.
+    authority: [piper_gui_native.py, piper_gui/camera_profile.py, L515_camera/rgb_profile.conf, start_l515_camera.sh, start_l515_camera_low_bandwidth.sh]
 
   - id: baseline_offline_masked_tsdf
     status: [ACTIVE, SOFTWARE_QUALIFIED]
@@ -360,6 +396,25 @@ later_feature_reintegration_status:
       semantic target jitter and persisted schema-2 capture remain to qualify.
     source: /home/prl/Piper_arm_previous_version
 
+  - id: settled_twenty_frame_depth_burst
+    status: [ACTIVE, SOFTWARE_REQUALIFIED, LIVE_SENSOR_REQUALIFICATION_REQUIRED]
+    summary: >-
+      Every accepted viewpoint now requires a trailing settled burst of twenty
+      synchronized native L515 depth/confidence observations. Nonzero
+      grade-8-or-better samples are fused by a per-pixel median with ten-frame
+      minimum support before the existing target-component qualification; the
+      exact mask-correlated RGB remains the representative colour frame.
+    authority: [scan_capture.py, scan_capture_node.py, scan_capture_params.yaml]
+
+  - id: one_millimetre_target_geometry
+    status: [ACTIVE, SOFTWARE_REQUALIFIED, PHYSICAL_REQUALIFICATION_REQUIRED]
+    summary: >-
+      Accepted refined target clouds retain every masked depth pixel into 1 mm
+      cells and offline TSDF defaults to 1 mm with a 5 mm truncation band.
+      Native schema-2 depth remains un-downsampled, while the separate NBV and
+      scene grids deliberately remain 5 mm and 15 mm respectively.
+    authority: [target_cloud_node.py, run_target_cloud.sh, tsdf_reconstruct.py]
+
   - id: smooth_direct_movej_or_streamed_detour
     status: [ACTIVE, SOFTWARE_REQUALIFIED, PHYSICAL_REQUALIFICATION_REQUIRED]
     summary: >-
@@ -412,6 +467,6 @@ live_voxel_nbv_2026_08_17:
   state: authoritative_selected_awaiting_supervised_E2E
   replaces_deferred_item: reachable_full_sphere_nbv_v2
   implemented: [schema2 voxel evidence, immutable coverage snapshot, visible unknown raycast, novel surface direction score, information-before-travel ordering, unique-direction-first radius fallbacks, recorded replay]
-  default_policy: voxel_nbv
+  default_policy: superseded_by_ray_nbv_default_2026_08_21
   authority_files: [nbv_coverage.py, scan_viewpoint_planner_node.py, piper_tesseract_foxy/bridge_node.py]
   physical_status: Not yet qualified. The operator explicitly selected authoritative voxel_nbv for the next supervised E2E on 2026-08-17; its outcome must be reviewed before qualification is claimed.

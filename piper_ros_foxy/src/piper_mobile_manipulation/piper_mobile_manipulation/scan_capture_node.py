@@ -5,6 +5,7 @@ import os
 import time
 from collections import deque
 from datetime import datetime
+from threading import Condition
 
 import cv2
 import hashlib
@@ -12,7 +13,9 @@ import numpy as np
 import rclpy
 from cv_bridge import CvBridge
 from message_filters import ApproximateTimeSynchronizer, Subscriber
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.duration import Duration
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.time import Time
@@ -30,9 +33,14 @@ from piper_mobile_manipulation.scan_capture import (
     nearest_stamped_item,
     qualify_target_depth,
     rigid_transform_matrix,
+    stamp_key,
     stamp_seconds,
     synchronized_bundle_rejection,
+    temporal_confident_depth_median,
 )
+
+
+CAPTURE_BURST_TIMEOUT_SEC = 5.0
 
 
 def capture_view_selection_provenance(plan_provenance, execution):
@@ -120,6 +128,9 @@ class ScanCaptureNode(Node):
         self.declare_parameter('synchronization_slop_sec', 0.08)
         self.declare_parameter('native_depth_confidence_slop_sec', 0.005)
         self.declare_parameter('capture_cache_size', 240)
+        self.declare_parameter('capture_burst_frames', 20)
+        self.declare_parameter(
+            'minimum_burst_support_fraction', 0.50)
         self.declare_parameter('minimum_depth_confidence', 8)
         self.declare_parameter('minimum_confident_target_points', 50)
         self.declare_parameter('minimum_confident_target_fraction', 0.50)
@@ -149,10 +160,15 @@ class ScanCaptureNode(Node):
         self.plan_provenance_by_id = {}
         self.latest_camera_transform = None
         self.latest_color_from_depth_transform = None
+        minimum_cache = max(
+            1, int(self.get_parameter('capture_burst_frames').value))
         self.color_bundle_cache = deque(maxlen=max(
-            20, int(self.get_parameter('capture_cache_size').value)))
+            minimum_cache,
+            int(self.get_parameter('capture_cache_size').value)))
         self.native_bundle_cache = deque(maxlen=max(
-            20, int(self.get_parameter('capture_cache_size').value)))
+            minimum_cache,
+            int(self.get_parameter('capture_cache_size').value)))
+        self.native_bundle_condition = Condition()
         self.prepared_capture = None
         self.latest_scan_viewpoints = None
         self.latest_reachable_scan_viewpoints = None
@@ -299,21 +315,30 @@ class ScanCaptureNode(Node):
             self.scan_coverage_cb,
             10,
         ))
+        # Keep capture-gating evidence responsive while the default callback
+        # group services the high-rate RGB-D subscriptions.
+        self.diagnostic_callback_group = MutuallyExclusiveCallbackGroup()
         self._retained_subscriptions.append(self.create_subscription(
             String,
             self.get_parameter('scan_quality_topic').value,
             self.scan_quality_cb,
             10,
+            callback_group=self.diagnostic_callback_group,
         ))
         self._retained_subscriptions.append(self.create_subscription(
             String,
             self.get_parameter('occlusion_status_topic').value,
             self.occlusion_status_cb,
             10,
+            callback_group=self.diagnostic_callback_group,
         ))
 
+        # A service capture waits for 20 new camera frames.  Its own callback
+        # group lets the image callbacks continue filling that burst.
+        self.capture_callback_group = MutuallyExclusiveCallbackGroup()
         self.capture_service = self.create_service(
-            Trigger, '~/capture_view', self.capture_view_cb)
+            Trigger, '~/capture_view', self.capture_view_cb,
+            callback_group=self.capture_callback_group)
         self.timer = None
         if self.capture_mode() == 'interval':
             self.timer = self.create_timer(0.25, self.timer_cb)
@@ -332,8 +357,10 @@ class ScanCaptureNode(Node):
             color, depth, camera_info, self.latest_bundle_received_at))
 
     def native_bundle_cb(self, depth, confidence, camera_info):
-        self.native_bundle_cache.append((
-            depth, confidence, camera_info, time.monotonic()))
+        bundle = (depth, confidence, camera_info, time.monotonic())
+        with self.native_bundle_condition:
+            self.native_bundle_cache.append(bundle)
+            self.native_bundle_condition.notify_all()
 
     def mask_cb(self, msg):
         self.latest_mask = msg
@@ -412,7 +439,23 @@ class ScanCaptureNode(Node):
             response.success = False
             response.message = 'maximum frame count reached'
             return response
-        ok, reason = self.capture_ready()
+        ok, reason = self.capture_prerequisites_ready()
+        if not ok:
+            self.note_skip(reason)
+            self.publish_status('skipped', reason)
+            response.success = False
+            response.message = reason
+            return response
+        burst_started_at = time.monotonic()
+        burst, reason = self.collect_prospective_native_depth_burst(
+            burst_started_at)
+        if reason:
+            self.note_skip(reason)
+            self.publish_status('skipped', reason)
+            response.success = False
+            response.message = reason
+            return response
+        ok, reason = self.capture_ready(depth_burst=burst)
         if not ok:
             self.note_skip(reason)
             self.publish_status('skipped', reason)
@@ -424,7 +467,8 @@ class ScanCaptureNode(Node):
         response.message = str(message)
         return response
 
-    def capture_ready(self):
+    def capture_prerequisites_ready(self):
+        """Check the unchanged non-image capture gates."""
         self.prepared_capture = None
         if not self.param_bool('dry_run'):
             return False, 'dry_run is false'
@@ -475,7 +519,18 @@ class ScanCaptureNode(Node):
                 )
                 if reason:
                     return False, reason
-        prepared, reason = self.prepare_confidence_capture()
+        return True, ''
+
+    def capture_ready(self, depth_burst=None):
+        """Prepare one capture after all established gates pass."""
+        ok, reason = self.capture_prerequisites_ready()
+        if not ok:
+            return False, reason
+        if depth_burst is None:
+            depth_burst, reason = self.latest_native_depth_burst()
+            if reason:
+                return False, reason
+        prepared, reason = self.prepare_confidence_capture(depth_burst)
         if reason:
             return False, reason
         self.prepared_capture = prepared
@@ -514,12 +569,91 @@ class ScanCaptureNode(Node):
             return 'timestamped camera transform is unavailable: %s' % exc
         return ''
 
-    def prepare_confidence_capture(self):
-        """Prepare one immutable mask/RGB/depth/confidence observation."""
-        if self.latest_mask is None:
+    def valid_native_depth_bundles(self, bundles):
+        """Return synchronized, unique native bundles in arrival order."""
+        requested = int(self.get_parameter('capture_burst_frames').value)
+        if requested < 1:
+            return [], 'capture_burst_frames must be positive'
+        maximum_age = float(self.get_parameter('max_bundle_age_sec').value)
+        native_slop = float(self.get_parameter(
+            'native_depth_confidence_slop_sec').value)
+        selected = []
+        seen = set()
+        for bundle in bundles:
+            depth, confidence, camera_info, received_at = bundle
+            key = stamp_key(depth)
+            if key in seen:
+                continue
+            # Prospective frames are fresh by construction.  Use their actual
+            # receipt instant to validate timestamp/camera synchronization;
+            # do not compare historical frames with the later service-return
+            # time and incorrectly discard the beginning of the burst.
+            reason = synchronized_bundle_rejection(
+                depth, confidence, camera_info, received_at, received_at,
+                maximum_age, native_slop)
+            if reason:
+                continue
+            selected.append(bundle)
+            seen.add(key)
+        return selected, ''
+
+    def latest_native_depth_burst(self):
+        """Return the latest complete burst for interval diagnostics."""
+        requested = int(self.get_parameter('capture_burst_frames').value)
+        with self.native_bundle_condition:
+            cached = list(self.native_bundle_cache)
+        selected, reason = self.valid_native_depth_bundles(cached)
+        if reason:
+            return None, reason
+        if len(selected) < requested:
+            return None, (
+                'confidence-qualified native depth is still catching up with '
+                'the %d-frame burst (%d/%d available)'
+                % (requested, len(selected), requested))
+        return selected[-requested:], ''
+
+    def collect_prospective_native_depth_burst(self, started_at):
+        """Wait for exactly the requested number of new camera frames."""
+        requested = int(self.get_parameter('capture_burst_frames').value)
+        if requested < 1:
+            return None, 'capture_burst_frames must be positive'
+        deadline = float(started_at) + CAPTURE_BURST_TIMEOUT_SEC
+        available = 0
+        with self.native_bundle_condition:
+            while True:
+                candidates = [
+                    bundle for bundle in self.native_bundle_cache
+                    if float(bundle[3]) > float(started_at)]
+                selected, reason = self.valid_native_depth_bundles(candidates)
+                if reason:
+                    return None, reason
+                available = len(selected)
+                if available >= requested:
+                    return selected[:requested], ''
+                remaining = deadline - time.monotonic()
+                if remaining <= 0.0:
+                    break
+                self.native_bundle_condition.wait(
+                    timeout=min(0.1, remaining))
+        return None, (
+            'timed out collecting %d new settled native depth frames '
+            '(%d/%d received)' % (requested, available, requested))
+
+    def prepare_confidence_capture(self, burst):
+        """Prepare one immutable mask/RGB plus 20-frame depth observation."""
+        if not isinstance(burst, (list, tuple)):
+            return None, (
+                'confidence-qualified native depth burst is unavailable')
+        requested = int(self.get_parameter('capture_burst_frames').value)
+        if len(burst) != requested:
+            return None, (
+                'confidence-qualified native depth burst requires exactly '
+                '%d frames; received %d' % (requested, len(burst)))
+        mask_message = self.latest_mask
+        if mask_message is None:
             return None, 'missing detection mask'
         color_bundle = exact_stamped_item(
-            self.color_bundle_cache, self.latest_mask)
+            self.color_bundle_cache, mask_message)
         if color_bundle is None:
             return None, (
                 'confidence-qualified RGB-D bundle is still catching up with '
@@ -536,12 +670,11 @@ class ScanCaptureNode(Node):
                 'confidence-qualified RGB-D bundle ' +
                 bundle_reason.lower().replace('rgb-d bundle ', ''))
         native_bundle = nearest_stamped_item(
-            self.native_bundle_cache, color,
+            burst, color,
             float(self.get_parameter('synchronization_slop_sec').value))
         if native_bundle is None:
             return None, (
-                'confidence-qualified native depth is still catching up with '
-                'the exact RGB frame')
+                'RGB and native depth timestamps are not synchronized')
         native_depth, confidence, native_info, native_received_at = \
             native_bundle
         native_slop = float(self.get_parameter(
@@ -568,20 +701,50 @@ class ScanCaptureNode(Node):
                 color, desired_encoding='bgr8')).copy()
             aligned = np.asarray(self.bridge.imgmsg_to_cv2(
                 aligned_depth, desired_encoding='passthrough')).copy()
-            raw_depth = np.asarray(self.bridge.imgmsg_to_cv2(
-                native_depth, desired_encoding='passthrough')).copy()
-            if str(confidence.encoding).upper() not in ('MONO8', '8UC1'):
-                raise ValueError(
-                    'L515 confidence image encoding must be mono8')
-            grades = np.asarray(self.bridge.imgmsg_to_cv2(
-                confidence, desired_encoding='mono8')).copy()
+            raw_depth_frames = []
+            depth_encodings = []
+            confidence_frames = []
+            for burst_depth, burst_confidence, burst_info, _ in burst:
+                if str(burst_depth.header.frame_id) != str(
+                        native_depth.header.frame_id):
+                    raise ValueError(
+                        'native depth frame changed within settled burst')
+                if (
+                        int(burst_info.width) != int(native_info.width)
+                        or int(burst_info.height) != int(native_info.height)
+                        or not np.allclose(
+                            np.asarray(burst_info.k, dtype=float),
+                            np.asarray(native_info.k, dtype=float),
+                            rtol=0.0, atol=1e-9)):
+                    raise ValueError(
+                        'native depth camera profile changed within burst')
+                if str(burst_confidence.encoding).upper() not in (
+                        'MONO8', '8UC1'):
+                    raise ValueError(
+                        'L515 confidence image encoding must be mono8')
+                raw_depth_frames.append(np.asarray(
+                    self.bridge.imgmsg_to_cv2(
+                        burst_depth, desired_encoding='passthrough')).copy())
+                depth_encodings.append(str(burst_depth.encoding))
+                confidence_frames.append(np.asarray(
+                    self.bridge.imgmsg_to_cv2(
+                        burst_confidence,
+                        desired_encoding='mono8')).copy())
+            raw_depth, grades, burst_report = \
+                temporal_confident_depth_median(
+                    raw_depth_frames, depth_encodings, confidence_frames,
+                    minimum_confidence=int(self.get_parameter(
+                        'minimum_depth_confidence').value),
+                    minimum_support_fraction=float(self.get_parameter(
+                        'minimum_burst_support_fraction').value),
+                )
             mask = np.asarray(self.bridge.imgmsg_to_cv2(
-                self.latest_mask, desired_encoding='mono8')).copy()
+                mask_message, desired_encoding='mono8')).copy()
             if mask.shape != rgb.shape[:2]:
                 raise ValueError(
                     'detection mask shape does not match exact RGB frame')
             qualified = qualify_target_depth(
-                raw_depth, native_depth.encoding, grades, mask,
+                raw_depth, '16UC1', grades, mask,
                 native_info.k, color_info.k, color_info.d,
                 color_info.distortion_model,
                 self.transform_matrix(
@@ -597,6 +760,21 @@ class ScanCaptureNode(Node):
                 component_ambiguity_margin=float(self.get_parameter(
                     'depth_component_ambiguity_margin').value),
             )
+            burst_report.update({
+                'requested_frames': int(self.get_parameter(
+                    'capture_burst_frames').value),
+                'start_stamp': self.header_stamp(burst[0][0]),
+                'end_stamp': self.header_stamp(burst[-1][0]),
+                'span_sec': float(
+                    stamp_seconds(burst[-1][0])
+                    - stamp_seconds(burst[0][0])),
+                'collection': '20_new_frames_after_capture_request',
+                'rgb_policy': 'single exact-mask-correlated reference frame',
+            })
+            qualified['target']['depth_source'] = (
+                'l515_temporal_median_confidence_qualified_native_depth')
+            qualified['quality']['temporal_aggregation'] = dict(
+                burst_report)
         except DepthQualityRejected as exc:
             return None, str(exc)
         except (TypeError, ValueError, cv2.error) as exc:
@@ -608,16 +786,17 @@ class ScanCaptureNode(Node):
             'native_depth_message': native_depth,
             'native_depth_info': native_info,
             'confidence_message': confidence,
-            'mask_message': self.latest_mask,
+            'mask_message': mask_message,
             'rgb': rgb,
             'aligned_depth': aligned,
             'mask': mask,
             'qualified': qualified,
+            'depth_burst': burst_report,
             'rgb_native_depth_delta_sec': rgb_depth_delta,
             'native_depth_confidence_delta_sec': abs(
                 stamp_seconds(native_depth) - stamp_seconds(confidence)),
             'mask_rgb_delta_sec': abs(
-                stamp_seconds(self.latest_mask) - stamp_seconds(color)),
+                stamp_seconds(mask_message) - stamp_seconds(color)),
             'camera_transform': self.latest_camera_transform,
             'color_from_depth_transform': (
                 self.latest_color_from_depth_transform),
@@ -764,6 +943,7 @@ class ScanCaptureNode(Node):
                     self.get_parameter(
                         'native_depth_confidence_slop_sec').value),
             },
+            'depth_burst': dict(prepared['depth_burst']),
             'task_id': str(self.get_parameter('task_id').value),
             'mission_sha256': str(
                 self.get_parameter('mission_sha256').value),
@@ -1261,6 +1441,15 @@ class ScanCaptureNode(Node):
                 'minimum_primary_component_fraction').value),
             'depth_component_ambiguity_margin': float(self.get_parameter(
                 'depth_component_ambiguity_margin').value),
+            'temporal_depth_burst': {
+                'frames': int(self.get_parameter(
+                    'capture_burst_frames').value),
+                'estimator': 'per_pixel_median',
+                'collection': 'new_frames_after_capture_request',
+                'minimum_support_fraction': float(self.get_parameter(
+                    'minimum_burst_support_fraction').value),
+                'rgb_policy': 'single exact-mask-correlated reference frame',
+            },
             'mask_erosion': 'adaptive one-native-depth-pixel equivalent',
             'target_cluster': (
                 'scored multi-layer 8-connected component; '
@@ -1354,9 +1543,12 @@ class ScanCaptureNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = ScanCaptureNode()
+    executor = MultiThreadedExecutor(num_threads=3)
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     finally:
+        executor.shutdown()
         node.destroy_node()
         rclpy.shutdown()
 

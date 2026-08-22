@@ -11,6 +11,24 @@ MESH_STATES = frozenset((
     'WAITING_FOR_BASE_HOME', 'QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED'))
 
 
+def reconstruction_terminal_decision(report):
+    """Convert the worker's measured mesh quality into a durable job result."""
+    if not isinstance(report, dict):
+        raise ValueError('reconstruction quality report is missing')
+    quality = str(report.get('overall_quality', '')).strip().upper()
+    if quality == 'FAIL':
+        return (
+            'FAILED',
+            'target mesh was generated but failed reconstruction quality '
+            'validation; inspect the diagnostic mesh and quality report')
+    if quality in ('PASS', 'WARN'):
+        return (
+            'SUCCEEDED',
+            'target mesh reconstruction completed with %s quality; visual '
+            'review remains required' % quality)
+    raise ValueError('reconstruction worker returned an invalid quality result')
+
+
 def mesh_job_id(task_id, manifest_sha256):
     task = str(task_id).strip()
     manifest = str(manifest_sha256).strip().lower()

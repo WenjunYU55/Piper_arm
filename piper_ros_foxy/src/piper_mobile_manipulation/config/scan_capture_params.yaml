@@ -32,6 +32,11 @@
     synchronization_slop_sec: 0.08
     native_depth_confidence_slop_sec: 0.005
     capture_cache_size: 240
+    # Once a settled capture is requested, collect 20 new native L515
+    # depth/confidence observations at that held viewpoint. The representative
+    # RGB and SAM mask keep their exact timestamp pairing; only depth is fused.
+    capture_burst_frames: 20
+    minimum_burst_support_fraction: 0.50
     minimum_depth_confidence: 8
     minimum_confident_target_points: 50
     minimum_confident_target_fraction: 0.50

@@ -81,6 +81,26 @@ class CandidateExhausted(ContractError):
     """Informative candidates existed, but none met Tesseract feasibility."""
 
 
+class PlanningBudgetExceeded(ContractError):
+    """The bounded worker budget ended before another attempt could start."""
+
+
+def worker_rejection_code(error, planning_diagnostics):
+    """Classify one typed worker failure without parsing diagnostic text."""
+    if isinstance(error, BackendUnavailable):
+        return 'BACKEND_UNAVAILABLE'
+    if isinstance(error, CandidateExhausted):
+        return 'TESSERACT_EXHAUSTED'
+    if (
+            isinstance(error, PlanningBudgetExceeded)
+            and planning_diagnostics.get('attempted_ray_ids')):
+        # A ray that consumed the complete bounded planning budget is not
+        # executable within this transaction.  Let the bridge retire only the
+        # IDs actually attempted and offer the next finite ray shortlist.
+        return 'TESSERACT_EXHAUSTED'
+    return 'PLANNING_FAILED'
+
+
 def look_at_quaternion(look_direction, roll):
     z_axis = np.asarray(look_direction, dtype=float)
     z_axis /= np.linalg.norm(z_axis)
@@ -622,6 +642,7 @@ class TesseractBackend:
         self.robot = self.api['Robot'].from_files(
             self.urdf_path, self.srdf_path)
         self._preloaded_scene_unused = True
+        self._scene_has_request_obstacles = False
 
     def collision_policy(self):
         default = float(self.manifest.get('hardware_clearance_margin_m', -1.0))
@@ -1112,6 +1133,13 @@ class TesseractBackend:
         if bool(getattr(self, '_preloaded_scene_unused', False)):
             self._preloaded_scene_unused = False
             return
+        # Joint-state updates and planning do not add persistent geometry. A
+        # scene which received no request-local obstacles is therefore still
+        # clean and can be reused without rebuilding the native Robot. This
+        # matters for closed-loop scans: rebuilding the model took the whole
+        # one-view candidate budget even though there was nothing to remove.
+        if not bool(getattr(self, '_scene_has_request_obstacles', False)):
+            return
         # The nanobind Robot owns native Bullet/OMPL resources.  Drop the old
         # environment before loading the next request-local scene so repeated
         # qualification/planning does not retain every decomposed collision
@@ -1119,6 +1147,7 @@ class TesseractBackend:
         self.robot = None
         gc.collect()
         self.robot = self.api['Robot'].from_files(self.urdf_path, self.srdf_path)
+        self._scene_has_request_obstacles = False
 
     def remaining_planning_time(self, context):
         """Return bounded OMPL time while reserving time to emit the response."""
@@ -1131,7 +1160,7 @@ class TesseractBackend:
         if remaining <= 0.0:
             planning_budget = float(getattr(
                 self, 'planning_budget_sec', WORKER_PLANNING_BUDGET_SEC))
-            raise ContractError(
+            raise PlanningBudgetExceeded(
                 'Tesseract planning exceeded the internal %.0f-second '
                 'budget before the bridge 180-second timeout (%s)'
                 % (planning_budget, context))
@@ -1327,6 +1356,9 @@ class TesseractBackend:
             )
             if not added:
                 raise ContractError('obstacle %d could not be added to the scene' % index)
+            # Mark each successful addition immediately so a later malformed
+            # obstacle cannot leave a partially modified scene reusable.
+            self._scene_has_request_obstacles = True
 
     def state_in_collision(self, joints):
         manager = self.robot.env.getDiscreteContactManager()
@@ -2078,8 +2110,11 @@ class TesseractBackend:
         planning_budget, segment_budget = planning_budgets_for_request(request)
         self.planning_budget_sec = planning_budget
         self.segment_planning_budget_sec = segment_budget
-        planning_deadline = time.monotonic() + planning_budget
-        self.planning_deadline_monotonic = planning_deadline
+        # Scene cleanup/model loading is request setup, not an IK/OMPL
+        # candidate attempt. The bridge's unchanged response timeout bounds
+        # the complete transaction; start the tighter worker budget only once
+        # the request-local collision scene is ready.
+        self.planning_deadline_monotonic = None
         self.last_planning_diagnostics = {
             'shortlisted_candidates': len(
                 request.get('scene', {}).get('candidate_views', [])),
@@ -2092,9 +2127,13 @@ class TesseractBackend:
             'fallback_aim_attempts': 0,
             'failure_stage_counts': {},
             'candidate_failures': [],
+            'attempted_ray_ids': [],
+            'ray_failure_stage_counts': {},
         }
         self.reset_scene()
         self.add_obstacles(request['scene'].get('obstacles', []))
+        planning_deadline = time.monotonic() + planning_budget
+        self.planning_deadline_monotonic = planning_deadline
         self.execution_speed_percent = float(
             request['planning']['effective_speed_percent'])
         self.command_rate_hz = float(
@@ -2269,6 +2308,12 @@ class TesseractBackend:
             for candidate_index, candidate in enumerate(pending):
                 TesseractBackend.ensure_planning_time(
                     self, 'before starting a viewpoint candidate')
+                ray_id = candidate.get('ray_id')
+                if ray_id is not None:
+                    attempted_rays = self.last_planning_diagnostics[
+                        'attempted_ray_ids']
+                    if int(ray_id) not in attempted_rays:
+                        attempted_rays.append(int(ray_id))
                 try:
                     self.last_planning_diagnostics['candidate_attempts'] += 1
                     accepted = TesseractBackend.plan_candidate_aims(
@@ -2279,6 +2324,14 @@ class TesseractBackend:
                 except (ContractError, RuntimeError, ValueError) as error:
                     failures[int(candidate['id'])] = str(error)
                     diagnostics = self.last_planning_diagnostics
+                    if ray_id is not None:
+                        ray_counts = diagnostics[
+                            'ray_failure_stage_counts'].setdefault(
+                                str(int(ray_id)), {})
+                        stage = str(getattr(
+                            error, 'stage', 'PLANNING_FAILURE'))
+                        ray_counts[stage] = int(
+                            ray_counts.get(stage, 0)) + 1
                     if len(diagnostics['candidate_failures']) < len(
                             request['scene']['candidate_views']):
                         diagnostics['candidate_failures'].append({
@@ -2517,12 +2570,10 @@ class Worker:
                 'status': 'failed',
                 'backend': 'tesseract',
                 'backend_version': getattr(self.backend, 'version', 'unavailable'),
-                'rejection_codes': [
-                    'BACKEND_UNAVAILABLE' if isinstance(error, BackendUnavailable)
-                    else 'TESSERACT_EXHAUSTED'
-                    if isinstance(error, CandidateExhausted)
-                    else 'PLANNING_FAILED'
-                ],
+                'rejection_codes': [worker_rejection_code(
+                    error,
+                    getattr(self.backend, 'last_planning_diagnostics', {}),
+                )],
                 'diagnostic': str(error),
                 'planning_diagnostics': dict(getattr(
                     self.backend, 'last_planning_diagnostics', {})),

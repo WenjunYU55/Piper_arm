@@ -25,6 +25,10 @@ from piper_mobile_manipulation.supervised_workflow import (
 )
 
 
+TARGET_PIXEL_STRIDE = 1
+TARGET_VOXEL_SIZE_M = 0.001
+
+
 def status_image_stamp(payload, request_id):
     """Return the correlated heavy-job image stamp, or ``None``."""
     if not isinstance(payload, dict):
@@ -82,8 +86,11 @@ class TargetCloudNode(Node):
         # requests one full-resolution refinement per accepted view, which is
         # the authoritative accumulated cloud source.
         self.declare_parameter('accumulate_live_masks', False)
-        self.declare_parameter('pixel_stride', 2)
-        self.declare_parameter('voxel_size_m', 0.004)
+        # Accepted refined captures retain every masked depth pixel.  A 1 mm
+        # model cell preserves useful L515 sampling on the 35 mm target while
+        # still bounding duplicate points and publication cost.
+        self.declare_parameter('pixel_stride', TARGET_PIXEL_STRIDE)
+        self.declare_parameter('voxel_size_m', TARGET_VOXEL_SIZE_M)
         self.declare_parameter('max_voxels', 250000)
         self.declare_parameter('scene_pixel_stride', 12)
         self.declare_parameter('scene_voxel_size_m', 0.015)

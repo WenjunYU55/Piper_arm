@@ -67,3 +67,6 @@ piper_ros_foxy/.git.agilex-backup/
 # Local basic offline perception venv
 AI_perception_tests/.venv/
 AI_perception_tests/.venv_basic/
+
+# Local isolated Open3D reconstruction environment
+reconstruction/.venv/

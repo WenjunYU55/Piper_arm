@@ -3,10 +3,15 @@ from pathlib import Path
 import pytest
 
 from piper_gui.scan_policy import (
+    FULL_SPHERE_REGION,
     LEGACY_POLICY,
+    RAY_NBV_POLICY,
+    TARGET_SECTOR_REGION,
     VOXEL_NBV_POLICY,
     read_scan_policy,
+    read_scan_settings,
     write_scan_policy,
+    write_scan_settings,
 )
 
 
@@ -15,6 +20,8 @@ def _config(tmp_path, policy=LEGACY_POLICY):
     path.write_text(
         "/**:\n  ros__parameters:\n"
         "    max_viewpoints: 25\n"
+        '    ray_sampling_region: "target_sector"\n'
+        "    ray_count: 175\n"
         '    view_selection_policy: "%s"  # retained comment\n'
         "    dry_run: true\n" % policy,
         encoding="utf-8",
@@ -39,6 +46,36 @@ def test_writing_selected_policy_is_idempotent(tmp_path):
     path = _config(tmp_path, VOXEL_NBV_POLICY)
     before = path.read_bytes()
     write_scan_policy(path, VOXEL_NBV_POLICY)
+    assert path.read_bytes() == before
+
+
+def test_complete_ray_settings_change_atomically_without_touching_other_yaml(
+        tmp_path):
+    path = _config(tmp_path, VOXEL_NBV_POLICY)
+    before = path.read_text(encoding="utf-8")
+
+    saved = write_scan_settings(
+        path, RAY_NBV_POLICY, FULL_SPHERE_REGION, 240)
+
+    assert saved.policy == RAY_NBV_POLICY
+    assert read_scan_settings(path) == saved
+    after = path.read_text(encoding="utf-8")
+    expected = before.replace(
+        '"voxel_nbv"', '"ray_nbv"').replace(
+            '"target_sector"', '"full_sphere"').replace(
+                "ray_count: 175", "ray_count: 240")
+    assert after == expected
+    assert "max_viewpoints: 25" in after
+    assert "# retained comment" in after
+
+
+@pytest.mark.parametrize("count", [0, 1001])
+def test_complete_settings_reject_unbounded_ray_count(tmp_path, count):
+    path = _config(tmp_path)
+    before = path.read_bytes()
+    with pytest.raises(ValueError, match="ray count must be between"):
+        write_scan_settings(
+            path, RAY_NBV_POLICY, TARGET_SECTOR_REGION, count)
     assert path.read_bytes() == before
 
 

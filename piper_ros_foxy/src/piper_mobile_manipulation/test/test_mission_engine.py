@@ -67,6 +67,8 @@ class FakeMissionOperations:
         self.terminal_cancel_stage = ''
         self._triggered = set()
         self.capture_states = []
+        self.planning_failures = []
+        self.plan_request_failures = []
         self.acquisition_states = ['ACQUIRED']
         self.workflow_state = 'SCAN_READY'
         self.target_drift_once = False
@@ -231,6 +233,8 @@ class FakeMissionOperations:
         del request_id
         stage = 'acquisition_plan' if kind == 'ROUGH_ACQUISITION' else 'planning'
         self._record(stage, context)
+        if kind == 'MULTIVIEW_SCAN' and self.planning_failures:
+            raise self.planning_failures.pop(0)
         return SimpleNamespace(
             plan_kind=kind, plan_id='plan', trajectory_sha256='a' * 64)
 
@@ -282,6 +286,8 @@ class FakeMissionOperations:
     def request_multiview_plan(self, context):
         self._record('view_planning', context)
         self.plan_requests += 1
+        if self.plan_request_failures:
+            raise self.plan_request_failures.pop(0)
         return 'view-%d' % self.plan_requests
 
     def wait_for_view_generation(self, context, accepted_views, _timeout):
@@ -537,6 +543,72 @@ def test_visual_rejection_retries_with_a_new_view():
     assert operations.plan_requests == 9
     assert context.session.accepted_captures == 8
     assert operations.events.count('multiview_readiness') == 1
+
+
+def test_ray_shortlist_exhaustion_requests_next_untried_batch():
+    operations = FakeMissionOperations()
+    operations.planning_failures = [MissionFailure(
+        'MULTIVIEW_SCAN planning failed: RAY_SHORTLIST_EXHAUSTED: '
+        'TESSERACT_EXHAUSTED: attempted rays were infeasible')]
+
+    operations, context, result = _execute(operations)
+
+    assert result.succeeded
+    assert operations.plan_requests == 9
+    assert context.session.accepted_captures == 8
+
+
+def test_plain_tesseract_exhaustion_remains_terminal():
+    operations = FakeMissionOperations()
+    operations.planning_failures = [MissionFailure(
+        'MULTIVIEW_SCAN planning failed: TESSERACT_EXHAUSTED: '
+        'attempted candidates were infeasible')]
+
+    operations, context, result = _execute(operations)
+
+    assert not result.succeeded
+    assert operations.plan_requests == 1
+    assert context.session.accepted_captures == 0
+
+
+def test_complete_ray_frontier_exhaustion_is_terminal_and_adds_blockers():
+    operations = FakeMissionOperations()
+    operations.plan_request_failures = [MissionFailure(
+        'request creation failed: RAY_FRONTIER_EXHAUSTED: '
+        'all prequalified rays were rejected')]
+
+    operations, context, result = _execute(operations)
+
+    assert not result.succeeded
+    assert result.failure.failure_code == 'INSUFFICIENT_CAPTURE_QUALITY'
+    assert 'coverage incomplete' in result.reason
+    assert context.session.disabled_proved
+
+
+def test_proved_ray_frontier_exhaustion_after_valid_captures_is_complete():
+    operations = FakeMissionOperations()
+
+    def request_plan(context):
+        operations._record('view_planning', context)
+        operations.plan_requests += 1
+        if operations.capture_count(context) >= 7:
+            raise MissionFailure(
+                'request creation failed: RAY_FRONTIER_EXHAUSTED: '
+                'all prequalified rays were rejected')
+        return 'view-%d' % operations.plan_requests
+
+    operations.request_multiview_plan = request_plan
+    operations.current_feature_coverage = lambda context: {
+        'sufficient': False,
+        'accepted_achieved_views': operations.capture_count(context),
+        'blockers': ['coverage incomplete'],
+    }
+
+    operations, context, result = _execute(operations)
+
+    assert result.succeeded
+    assert context.session.accepted_captures == 7
+    assert context.session.disabled_proved
 
 
 def test_target_drift_replans_through_command_free_request_without_capture():

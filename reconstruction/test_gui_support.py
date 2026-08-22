@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 import pytest
 
@@ -32,9 +31,24 @@ def test_gui_command_is_argument_only_and_diagnostic(tmp_path):
     command, output = reconstruction_command(
         root, scan.name, (40.0, 40.0, 40.0))
     assert '--allow-missing-calibration-id' in command
+    assert '--allow-partial-view-set' in command
     assert command[command.index('--registration-mode') + 1] == 'auto'
+    assert command[command.index('--voxel-length') + 1] == '0.001'
     assert output == scan / 'reconstruction' / 'validation' / 'target_mesh.ply'
     assert all('\n' not in argument for argument in command)
+
+
+def test_gui_command_accepts_bounded_mesh_detail(tmp_path):
+    root, scan = project(tmp_path)
+    command, _output = reconstruction_command(
+        root, scan.name, (35.0, 35.0, 35.0), voxel_length_mm=0.5)
+    assert command[command.index('--voxel-length') + 1] == '0.0005'
+
+    for invalid in (0.49, 3.01, float('nan'), float('inf')):
+        with pytest.raises(ValueError, match='voxel size'):
+            reconstruction_command(
+                root, scan.name, (35.0, 35.0, 35.0),
+                voxel_length_mm=invalid)
 
 
 def test_viewer_report_cannot_escape_dataset_root(tmp_path):
@@ -58,6 +72,7 @@ def test_quality_summary_calls_out_provisional_dimension_and_visual_review():
         'provenance': {'classification': 'DIAGNOSTIC_ONLY'},
         'registration_mode': 'robot_pose', 'integrated_views': 15,
         'vertex_count': 100, 'triangle_count': 200,
+        'configuration': {'voxel_length_m': 0.0005},
         'registration_summary': {'median_rmse_m': 0.006},
         'mesh_metrics': {
             'dominant_component_triangle_ratio': 0.9,
@@ -69,4 +84,5 @@ def test_quality_summary_calls_out_provisional_dimension_and_visual_review():
     })
     assert 'FAIL / DIAGNOSTIC_ONLY' in summary
     assert 'Provisional cube OBB' in summary
+    assert 'TSDF mesh voxel: 0.50 mm' in summary
     assert 'Visual review is required' in summary

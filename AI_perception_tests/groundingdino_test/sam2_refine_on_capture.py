@@ -19,6 +19,19 @@ from run_groundingdino_on_capture import target_mask_appearance_validation
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 AI_TEST_DIR = SCRIPT_DIR.parent
+PIPER_PACKAGE_SOURCE = (
+    SCRIPT_DIR.parents[1]
+    / "piper_ros_foxy"
+    / "src"
+    / "piper_mobile_manipulation"
+)
+if str(PIPER_PACKAGE_SOURCE) not in sys.path:
+    sys.path.insert(0, str(PIPER_PACKAGE_SOURCE))
+
+from piper_mobile_manipulation.utils.target_depth import (  # noqa: E402
+    select_target_depth_component,
+)
+
 DEFAULT_OUTPUT_ROOT = AI_TEST_DIR / "outputs"
 DEFAULT_GROUNDED_SAM2_REPO_DIR = SCRIPT_DIR / "Grounded-SAM-2"
 DEFAULT_SAM2_CONFIG = "configs/sam2.1/sam2.1_hiera_t.yaml"
@@ -123,6 +136,44 @@ def target_depth_from_capture(capture_dir: Path, fallback_depth: np.ndarray | No
     if values.size == 0:
         return None
     return float(np.median(values))
+
+
+def target_depth_from_refined_mask(
+    depth_m: np.ndarray | None,
+    target_mask: np.ndarray | None,
+    fallback_depth_m: float | None,
+) -> tuple[float | None, dict[str, Any]]:
+    """Select the coherent target layer from the final semantic mask.
+
+    The saved target depth is retained only as a compatibility fallback when
+    the final SAM mask cannot provide enough coherent depth support.  When the
+    selector succeeds, its result prevents different visible faces of the
+    target from being mistaken for a separate foreground obstacle.
+    """
+    if (
+        depth_m is None
+        or target_mask is None
+        or depth_m.shape[:2] != target_mask.shape[:2]
+    ):
+        return fallback_depth_m, {
+            "status": "fallback",
+            "reason": "refined target mask depth is unavailable",
+        }
+    try:
+        _component, report = select_target_depth_component(
+            target_mask,
+            depth_m,
+            preferred_depth_m=fallback_depth_m,
+        )
+    except ValueError as exc:
+        return fallback_depth_m, {
+            "status": "fallback",
+            "reason": str(exc),
+        }
+    return float(report["selected_depth_m"]), {
+        "status": "selected",
+        **report,
+    }
 
 
 def tracked_mask_target_fallback(capture_dir: Path) -> dict[str, Any] | None:
@@ -236,9 +287,34 @@ def depth_occluder_mask(
     valid = np.isfinite(depth_m) & (depth_m > 0.0)
     closer = near_target & ~base_mask.astype(bool) & valid & (depth_m < target_depth_m - TARGET_DEPTH_MARGIN_M)
     closer_u8 = cv2.morphologyEx(closer.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
-    if int(np.count_nonzero(closer_u8)) < MIN_DEPTH_OCCLUDER_AREA_PX:
+    target_y, target_x = np.nonzero(base_mask)
+    if target_x.size == 0 or target_y.size == 0:
         return None
-    return closer_u8 > 0
+
+    # A depth-only occluder must intrude into the target's observed image
+    # envelope.  Merely being near the mask is insufficient: support surfaces
+    # and their shadows commonly form a closer-depth component immediately
+    # below a resting target.  Keep the whole connected component so downstream
+    # geometry still describes a real crossing occluder, but require meaningful
+    # support inside the target envelope before retaining it.
+    target_envelope = np.zeros_like(closer_u8, dtype=bool)
+    target_envelope[
+        int(target_y.min()):int(target_y.max()) + 1,
+        int(target_x.min()):int(target_x.max()) + 1,
+    ] = True
+    component_count, labels, stats, _ = cv2.connectedComponentsWithStats(
+        closer_u8, connectivity=8)
+    retained = np.zeros_like(closer_u8, dtype=bool)
+    for component in range(1, component_count):
+        if int(stats[component, cv2.CC_STAT_AREA]) < MIN_DEPTH_OCCLUDER_AREA_PX:
+            continue
+        component_mask = labels == component
+        envelope_support = int(np.count_nonzero(component_mask & target_envelope))
+        if envelope_support >= MIN_DEPTH_OCCLUDER_AREA_PX:
+            retained |= component_mask
+    if int(np.count_nonzero(retained)) < MIN_DEPTH_OCCLUDER_AREA_PX:
+        return None
+    return retained
 
 
 def best_mask(masks: Any, scores: Any, index: int) -> tuple[np.ndarray, float]:
@@ -480,6 +556,19 @@ def refine_capture(
         ),
         None,
     )
+    target_depth_m, target_depth_selection = target_depth_from_refined_mask(
+        depth_m,
+        target_mask,
+        target_depth_m,
+    )
+    # The initial records were built before the final target mask and its
+    # coherent depth layer were known.  Re-evaluate their depth relationship
+    # against the selected target layer before classifying occluders.
+    for record in mask_records:
+        mask_path = Path(str(record.get("mask_png", "")))
+        record_mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+        if record_mask is not None:
+            record.update(mask_metrics(record_mask > 0, depth_m, target_depth_m))
     depth_mask = depth_occluder_mask(capture_dir, depth_m, target_depth_m, target_mask)
     if depth_mask is not None:
         mask_path = output_dir / ("mask_%02d_obstacle_depth.png" % len(mask_records))
@@ -524,6 +613,7 @@ def refine_capture(
         "sam2_checkpoint": str(sam2_checkpoint),
         "device": device,
         "target_depth_m": target_depth_m,
+        "target_depth_selection": target_depth_selection,
         "masks": mask_records,
         "outputs": {
             "masks_yaml": str(output_dir / "sam2_masks.yaml"),

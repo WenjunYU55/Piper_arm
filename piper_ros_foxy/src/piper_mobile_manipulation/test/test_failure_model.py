@@ -242,3 +242,16 @@ def test_failure_is_immutable_and_with_detail_preserves_machine_fields():
 ))
 def test_legacy_adapter_tags_string_only_ros_boundaries(detail, tag):
     assert legacy_failure_adapter(detail).has(tag)
+
+
+def test_ray_shortlist_and_complete_frontier_have_distinct_decisions():
+    shortlist = legacy_failure_adapter(
+        'RAY_SHORTLIST_EXHAUSTED: TESSERACT_EXHAUSTED: six rays failed')
+    frontier = legacy_failure_adapter(
+        'RAY_FRONTIER_EXHAUSTED: every prequalified ray was attempted')
+
+    assert shortlist.has(FailureTag.RAY_SHORTLIST_EXHAUSTED)
+    assert shortlist.has(FailureTag.TESSERACT_EXHAUSTED)
+    assert frontier.has(FailureTag.EMPTY_VIEW_FRONTIER)
+    assert frontier.has(FailureTag.SAFE_VIEW_EXHAUSTED)
+    assert not frontier.has(FailureTag.RAY_SHORTLIST_EXHAUSTED)

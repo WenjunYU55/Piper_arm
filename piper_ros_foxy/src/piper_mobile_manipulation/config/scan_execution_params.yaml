@@ -61,8 +61,8 @@
     # This avoids false failures from PiPER's noisy instantaneous speed field.
     # Operator-authorized configured-home acceptance, independently per joint.
     # Direct home uses ExecuteHomeStage/native MoveJ, not Tesseract.
-    home_goal_tolerance_rad: 0.30
-    home_motion_tolerance_rad: 0.30
+    home_goal_tolerance_rad: 0.20
+    home_motion_tolerance_rad: 0.20
     # The driver rejects CAN joint sets whose six frame stamps are too skewed.
     # One dropped set must not reset an otherwise stationary home proof.
     home_joint_feedback_timeout_sec: 1.0
@@ -126,7 +126,11 @@
     # Exact approval covers this final return and all capture segments.
     # Canonical value is loaded from the hash-verified repository home file.
     return_home_positions_rad: [-0.010187296, 0.0, -0.01692068, 0.068485144, 0.441280868, 0.012594568]
-    floor_z_m: 0.0
+    # The physical 2026-08-21 table-contact run proved that the nominal
+    # base_link support plane under-models the installed assembly/table
+    # boundary. Keep a 5 mm virtual-floor offset in addition to the separate
+    # 5 mm holder clearance. This must match Tesseract collision_model.yaml.
+    floor_z_m: 0.005
     link_radius_m: 0.025
     self_clearance_m: 0.060
     # Exact link6-frame AABB derived from the locked cameraHolder.STL visual

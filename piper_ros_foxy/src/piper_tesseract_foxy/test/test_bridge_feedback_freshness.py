@@ -7,6 +7,7 @@ import pytest
 
 from piper_tesseract_foxy.bridge_node import (
     balanced_closed_loop_candidates,
+    bounded_candidate_attempt_limit,
     bounded_nbv_candidates,
     bounded_current_look_direction,
     exact_target_aim_candidates,
@@ -16,7 +17,11 @@ from piper_tesseract_foxy.bridge_node import (
     relax_closed_loop_candidate_aims,
     select_diverse_smooth_view_path,
     TesseractPlanBridge,
+    uses_authoritative_nbv_order,
+    validate_candidate_policy_batch,
 )
+from piper_tesseract_foxy.contract import ContractError
+from piper_mobile_manipulation.view_generation import view_policy_capabilities
 from piper_mobile_manipulation.motion_limit_stability import MotionLimitStability
 
 
@@ -34,6 +39,187 @@ class _Logger:
 
     def info(self, message):
         self.messages.append(message)
+
+
+def test_point_and_ray_nbv_share_ranking_but_seed_and_legacy_do_not():
+    assert uses_authoritative_nbv_order([
+        {'view_selection_policy': 'voxel_nbv'}])
+    assert uses_authoritative_nbv_order([
+        {'view_selection_policy': 'ray_nbv'}])
+    assert not uses_authoritative_nbv_order([
+        {'view_selection_policy': 'ray_nbv_seed'}])
+    assert not uses_authoritative_nbv_order([
+        {'view_selection_policy': 'legacy'}])
+    assert not uses_authoritative_nbv_order([])
+
+
+def _policy_candidate(policy, geometry='exact_point', item_id=1):
+    candidate = {
+        'id': item_id,
+        'view_selection_policy': policy,
+        'candidate_geometry': geometry,
+        'camera_position_m': [0.3, 0.0, 0.2],
+        'nbv_rank': 1,
+        'nbv_marginal_information_fraction': 0.5,
+    }
+    if geometry == 'target_ray':
+        candidate.update({
+            'ray_id': item_id,
+            'ray_direction': [1.0, 0.0, 0.0],
+            'ray_min_standoff_m': 0.28,
+            'ray_max_standoff_m': 0.50,
+            'ray_preferred_max_standoff_m': 0.45,
+        })
+    return candidate
+
+
+def test_candidate_policy_batch_preserves_point_and_ray_seams():
+    voxel = validate_candidate_policy_batch([
+        _policy_candidate('voxel_nbv')])
+    ray = validate_candidate_policy_batch([
+        _policy_candidate('ray_nbv', 'target_ray')])
+
+    assert voxel.candidate_geometry == 'exact_point'
+    assert not voxel.ray_expansion
+    assert ray.candidate_geometry == 'target_ray'
+    assert ray.ray_expansion
+
+    ray_seed = validate_candidate_policy_batch([
+        _policy_candidate('ray_nbv_seed', 'target_ray')])
+    assert not ray_seed.authoritative_nbv
+    assert ray_seed.ray_expansion
+
+
+def test_candidate_policy_batch_rejects_mixed_policy_or_geometry():
+    with pytest.raises(ContractError, match='mixes'):
+        validate_candidate_policy_batch([
+            _policy_candidate('voxel_nbv', item_id=1),
+            _policy_candidate('ray_nbv', 'target_ray', item_id=2),
+        ])
+    with pytest.raises(ContractError, match='requires target_ray'):
+        validate_candidate_policy_batch([
+            _policy_candidate('ray_nbv', 'exact_point')])
+
+
+def test_only_ray_policy_reduces_direction_attempt_bound_to_six():
+    assert bounded_candidate_attempt_limit(
+        view_policy_capabilities('ray_nbv'), 12) == 6
+    assert bounded_candidate_attempt_limit(
+        view_policy_capabilities('ray_nbv_seed'), 12) == 6
+    assert bounded_candidate_attempt_limit(
+        view_policy_capabilities('voxel_nbv'), 12) == 12
+
+
+def test_tesseract_exhausted_rays_are_excluded_only_within_generation():
+    bridge = object.__new__(TesseractPlanBridge)
+    bridge.tesseract_exhausted_ray_generation = None
+    bridge.tesseract_exhausted_ray_ids = set()
+    bridge.get_logger = lambda: _Logger()
+    candidates = [
+        _policy_candidate('ray_nbv', 'target_ray', item_id=item_id)
+        for item_id in (10, 11, 12)
+    ]
+
+    assert TesseractPlanBridge.exclude_tesseract_exhausted_rays(
+        bridge, candidates, 'session-a', 2) == candidates
+    bridge.tesseract_exhausted_ray_ids.update((10, 12))
+    available = TesseractPlanBridge.exclude_tesseract_exhausted_rays(
+        bridge, candidates, 'session-a', 2)
+
+    assert [item['ray_id'] for item in available] == [11]
+    assert TesseractPlanBridge.exclude_tesseract_exhausted_rays(
+        bridge, candidates, 'session-a', 3) == candidates
+    assert bridge.tesseract_exhausted_ray_ids == set()
+
+
+def test_all_tesseract_exhausted_rays_end_the_true_ray_frontier():
+    bridge = object.__new__(TesseractPlanBridge)
+    bridge.tesseract_exhausted_ray_generation = ('session-a', 2)
+    bridge.tesseract_exhausted_ray_ids = {10, 11}
+    bridge.get_logger = lambda: _Logger()
+    candidates = [
+        _policy_candidate('ray_nbv', 'target_ray', item_id=item_id)
+        for item_id in (10, 11)
+    ]
+
+    with pytest.raises(ContractError, match='RAY_FRONTIER_EXHAUSTED'):
+        TesseractPlanBridge.exclude_tesseract_exhausted_rays(
+            bridge, candidates, 'session-a', 2)
+
+
+def test_next_ray_shortlist_is_selected_from_full_untried_frontier():
+    bridge = object.__new__(TesseractPlanBridge)
+    bridge.tesseract_exhausted_ray_generation = ('session-a', 2)
+    bridge.tesseract_exhausted_ray_ids = set(range(1, 7))
+    bridge.get_logger = lambda: _Logger()
+    candidates = [
+        _policy_candidate('ray_nbv', 'target_ray', item_id=item_id)
+        for item_id in range(1, 13)
+    ]
+
+    available = TesseractPlanBridge.exclude_tesseract_exhausted_rays(
+        bridge, candidates, 'session-a', 2)
+    shortlisted = bounded_nbv_candidates(
+        available, [0.0, 0.0, 0.0], [0.4, 0.0, 0.0], 6)
+
+    assert len(available) == 6
+    assert {item['ray_id'] for item in shortlisted} == set(range(7, 13))
+
+
+def test_worker_exhaustion_retires_only_attempted_request_rays():
+    bridge = object.__new__(TesseractPlanBridge)
+    bridge.tesseract_exhausted_ray_generation = ('session-a', 2)
+    bridge.tesseract_exhausted_ray_ids = set()
+    bridge.get_logger = lambda: _Logger()
+    bridge.pending = {'request-a': {'request': {
+        'planning': {'shortlisted_ray_count': 2},
+        'scan_session': {'session_id': 'session-a', 'accepted_views': 2},
+        'scene': {'candidate_views': [
+            {'id': 100, 'ray_id': 10},
+            {'id': 101, 'ray_id': 10},
+            {'id': 110, 'ray_id': 11},
+        ]},
+    }}}
+    payload = {
+        'request_id': 'request-a',
+        'rejection_codes': ['TESSERACT_EXHAUSTED'],
+        'planning_diagnostics': {'attempted_ray_ids': [10, 11, 999]},
+    }
+
+    retired = TesseractPlanBridge.remember_tesseract_exhausted_rays(
+        bridge, payload)
+
+    assert retired == [10, 11]
+    assert bridge.tesseract_exhausted_ray_ids == {10, 11}
+    assert TesseractPlanBridge.remember_tesseract_exhausted_rays(
+        bridge, payload) == []
+
+
+def test_ray_worker_exhaustion_publishes_retryable_batch_diagnostic():
+    bridge = object.__new__(TesseractPlanBridge)
+    bridge.tesseract_exhausted_ray_generation = ('session-a', 2)
+    bridge.tesseract_exhausted_ray_ids = set()
+    bridge.get_logger = lambda: _Logger()
+    bridge.pending = {'request-a': {'request': {
+        'planning': {'shortlisted_ray_count': 1},
+        'scan_session': {'session_id': 'session-a', 'accepted_views': 2},
+        'scene': {'candidate_views': [{'id': 100, 'ray_id': 10}]},
+    }}}
+    published = []
+    bridge.publish_rejection = lambda *args, **kwargs: published.append(
+        (args, kwargs))
+
+    TesseractPlanBridge.publish_plan(bridge, {
+        'request_id': 'request-a',
+        'status': 'failed',
+        'diagnostic': 'no ray was reachable',
+        'rejection_codes': ['TESSERACT_EXHAUSTED'],
+        'planning_diagnostics': {'attempted_ray_ids': [10]},
+    })
+
+    assert published[0][0][1] == 'RAY_SHORTLIST_EXHAUSTED'
+    assert published[0][1]['additional_codes'] == ['TESSERACT_EXHAUSTED']
+    assert bridge.tesseract_exhausted_ray_ids == {10}
 
 
 def test_bridge_caches_and_logs_view_generation_with_debug_enabled():

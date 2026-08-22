@@ -1,13 +1,86 @@
 schema_version: 1
 document: ai_context_index
+bounded_multiway_reconstruction_and_timestamped_board_validation_2026_08_21:
+  behavior: Offline reconstruction may jointly refine overlapping capture poses with a bounded multi-view GICP pose graph. Every pair and every optimized camera pose remains subject to the existing 20 mm and 5 degree residual-correction limits; auto mode selects a refinement only when it materially improves measured structural evidence over robot-pose TSDF.
+  replay: scan_20260821_220003 improved from 39.5 percent dominant-component support and 3.97 mm p90 plane residual under robot poses to 90.5 percent and 2.25 mm under bounded multiway refinement, but its 58.8 x 52.9 x 48.3 mm OBB still fails the 35 mm cube reference and remains diagnostic only.
+  calibration: Fixed-board validation now looks up base-to-camera TF at the exact image timestamp. New 17 mm square and 12 mm marker samples are required before solving a replacement calibration; no existing calibration file is overwritten or deployed automatically.
+  boundary: Offline reconstruction and read-only operator-triggered calibration validation only. No capture, NBV, Tesseract, motion, home, shutdown, ROS interface or physical command changed.
+gui_mesh_detail_control_2026_08_21:
+  behavior: The command-free Reconstruction Validation tab exposes a bounded 0.5-through-3.0 mm TSDF mesh-voxel slider. Default remains 1.0 mm; smaller voxels permit more extracted mesh polygons and the exact selected voxel is persisted in the existing quality report configuration.
+  boundary: The control changes only the manual offline GUI reconstruction command. It does not change capture pixels, confidence qualification, input-cloud/GICP downsampling, registration policy, automatic deferred reconstruction, NBV, Tesseract, ROS interfaces or robot behavior.
+  safety: The GUI does not expose 0.1 mm because surface polygon count grows approximately with inverse voxel area and cannot repair missing or misregistered geometry. The quality summary continues to show vertices, triangles, registration residual and component coherence.
+  validation: GUI command and report tests cover the default, fine bound, invalid values and displayed voxel provenance; GUI and helper lint pass.
+raised_virtual_support_plane_2026_08_21:
+  incident: Supervised task gui-sim-d77550972be14f9ca55b27e206ccbfd0 made physical table contact during the generation-seven ray-NBV motion, then stopped when J5 feedback reached 1.225615 rad. The nominal zero-metre support plane plus five-millimetre holder margin was not conservative enough for the installed physical boundary.
+  correction: Raise floor_z_m consistently from 0.000 to 0.005 m in both executor dense validation and the Tesseract collision manifest. Retain the independent 0.005 m holder/L515 clearance, producing a 0.010 m minimum model height above nominal base_link z zero.
+  qualification: Software FK proves the exact configured PRE_HOME through ROUGH_HOME through STORAGE_WRIST route still clears the raised plane; its tightest modeled holder point is 0.040637 m, leaving 0.035637 m over the virtual plane and 0.030637 m beyond the required clearance.
+  boundary: No NBV score, target estimate, capture, speed, joint limit, home endpoint, ROS interface or attached-tool envelope changed. Physical requalification is blocked until the operator has safely recovered and inspected the arm.
+prospective_twenty_frame_capture_2026_08_21:
+  behavior: After a settled capture request, scan_capture_node collects exactly 20 new synchronized native L515 depth/confidence/camera-info frames while the achieved pose is held, then applies the existing confidence-qualified per-pixel median. Pre-request frames cannot count. One exact SAM-mask/RGB pair remains the semantic reference.
+  implementation: The capture service has its own callback group and waits on the native-frame condition while image and diagnostic callbacks continue. The internal collection limit is five seconds, below the unchanged executor capture timeout; fewer than 20 frames fails without writing or incrementing coverage.
+  removed: The failed trailing-window implementation that forced 20 frames to precede one frozen mask timestamp, plus its added expired-mask/stale-quality recovery classifications.
+  boundary: No NBV, Tesseract, motion, home, disable, public ROS interface or capture-quality threshold changed.
+  status: software_qualified_no_further_physical_test_run_this_turn
+one_millimetre_target_geometry_2026_08_21:
+  behavior: Schema-2 capture retains native confidence-qualified target depth without spatial downsampling. The accepted refined /piper/target_cloud model now uses pixel_stride 1 and 0.001 m target voxels. Offline TSDF defaults to 0.001 m voxels with a 0.005 m truncation band. The scene cloud remains coarse and NBV coverage remains 0.005 m.
+  boundary: Target-cloud display/model density and offline mesh resolution only. No capture count, mask/confidence threshold, NBV scoring, Tesseract, motion, home, disable, shutdown or public ROS interface changed.
+  status: software_qualified_supervised_E2E_pending
+partial_safe_frontier_reconstruction_2026_08_21:
+  contract: Offline TSDF retains the ordinary 8-through-24 feature-complete input rule by default. The deferred gateway, which accepts only SUCCEEDED plus safe_shutdown and a matching tracked-base-home report, and the explicitly operator-selected command-free GUI diagnostic route admit immutable 1-through-7 capture datasets as PARTIAL_VIEW_SET; zero captures and more than 24 remain rejected.
+  quality: Partial admission never implies a good model. A partial result cannot receive overall PASS, every report remains visual-review-required, and the durable mesh job is SUCCEEDED only for measured PASS or WARN. A generated mesh with overall FAIL becomes a durable FAILED job while retaining mesh/hash/report diagnostics.
+  environment: Gateway, GUI and reconstruction/setup_environment.sh now share reconstruction/.venv. System-Python fallback remains possible only when the isolated executable is absent.
+  calibration: Mission startup hashes the exact PIPER_HAND_EYE_CALIBRATION file used by the hand-eye child and passes that identity into every future frame and manifest. Historical immutable datasets with no identity require the existing explicit diagnostic flag and remain DIAGNOSTIC_ONLY.
+  replay: scan_20260821_185143 generated a 615-vertex 719-triangle diagnostic mesh from three views. The actual GUI Build and Validate control regenerated and displayed it and opened the 3D viewer. It correctly reports PARTIAL_VIEW_SET, DIAGNOSTIC_ONLY and overall FAIL because dominant-component support is 70.4 percent and the mesh is not watertight.
+supervised_ray_nbv_e2e_2026_08_21:
+  result: Task codex-e2e-20260821-185113-adaptive completed SUCCEEDED with three accepted GOOD/CLEAR captures, safe_shutdown true, configured pre-home rough-home and storage-wrist proof, feedback disable, and exact mission-child cleanup.
+  dataset: datasets/active_scan/scan_20260821_185143
+  integration_repairs: [final-SAM-mask coherent target-depth selection, low-rate capture diagnostic callback isolation, full-pool exclusion before bounded ray shortlisting, typed attempted-ray planning-budget exhaustion, adaptive completion after a proved safe-view frontier is exhausted]
+  completion_rule: Normal measured-feature completion still uses the existing 8-through-24 quality window and side/span/convergence diagnostics. A distinct terminal branch may complete after at least one persisted accepted achieved view only when typed RAY_FRONTIER_EXHAUSTED proves that every prequalified ray in the current generation has been attempted safely; ordinary timeout, generic planning failure, worker failure, or one failed shortlist cannot become success.
+  unchanged: [ROS interfaces, motion speeds, capture thresholds, target confidence, Tesseract IK collision path and visibility checks, home stages, disable order, process ownership]
+  reconstruction_note: The durable mesh job remains queued for the authentic tracked-base-home signal. A command-free replay generated a diagnostic mesh but correctly failed quality; the immutable missing calibration identity keeps this historical dataset DIAGNOSTIC_ONLY.
+ray_shortlist_exhaustion_handoff_2026_08_21:
+  behavior: A failed ray_nbv Tesseract batch retires only the ray IDs actually attempted for the current session and accepted-capture count, then MissionEngine requests the next bounded shortlist. A committed capture changes the generation and clears that feasibility cache.
+  boundary: The bridge owns the temporary Tesseract-feasibility cache; accepted coverage remains planner-owned. Legacy and voxel policies retain terminal TESSERACT_EXHAUSTED behavior. No ROS schema, speed, motion, capture, home or shutdown rule changed.
+  live_evidence: Task codex-e2e-20260821-175620-rayfix retained 160 of 175 rays and accepted three captures, then exposed the old one-shortlist terminal bug. It proved pre-home, rough home, storage wrist, disable and owned-process cleanup.
+  software_validation: The final implementation passes 722 complete mobile tests and 131 complete Tesseract tests; both affected packages build. The supervised task codex-e2e-20260821-185113-adaptive physically proved successive shortlist retirement through genuine full-frontier exhaustion and safe mission completion.
+ray_workspace_intersection_cull_2026_08_21:
+  behavior: Every target_ray must have at least one permitted standoff point inside the configured coarse camera workspace before it may enter the bridge/Tesseract shortlist. The test uses the complete bounded interval, not only the representative scoring point.
+  workspace: {base_link_camera_radius_m: [0.20, 0.75], camera_target_distance_m: [0.25, 0.80], maximum_target_relative_height_change_m: 0.40}
+  boundary: This is a cheap ray-only prequalification. It does not affect legacy or voxel exact points, does not claim IK/collision feasibility, and does not change Tesseract, executor, motion, safety, capture, home, shutdown or public ROS interfaces.
+  validation: 108 focused workspace/NBV/bridge tests, 716 complete mobile tests and 125 complete Tesseract tests pass; five ROS packages build and changed-file ament lint passes. Registered functional tests pass with only the unchanged historical 68 flake8 and 14 pep257 findings.
+exchangeable_nbv_policy_boundary_2026_08_21:
+  contract: legacy and voxel_nbv keep exact-point geometry; ray_nbv alone uses frozen target rays with bounded standoff expansion. The selected policy is validated and frozen when the mission stack starts, so a GUI edit applies only to the next mission.
+  useful_gain_floor: Authoritative voxel_nbv and ray_nbv reject candidates below 0.02 normalized predicted marginal information after accepted-only coverage scoring. Seed, shadow and legacy paths are unchanged; raw pixel count cannot bypass the floor.
+  ray_feasibility_bound: The bridge hands at most six information-ranked ray directions to Tesseract and keeps every preferred then reserve standoff probe for one ray contiguous before the next ray. Exact-point voxel_nbv retains its existing twelve-candidate bound.
+  ownership: The planner owns policy validation, coverage scoring and the useful-gain floor; the bridge owns bounded handoff and ray expansion; the worker alone owns IK, collision, path and visibility feasibility.
+  interfaces: No public ROS topic, service, action, message, speed, safety, capture, home or shutdown contract changed.
+  validation: 117 focused boundary tests, 711 complete mobile tests, 125 complete Tesseract tests, 112 root GUI/reconstruction tests with one hardware skip, and 32 isolated AI-worker tests pass. Five ROS packages build. Registered functional tests pass; colcon test retains only the documented historical 68 flake8 and 14 pep257 findings, while every changed implementation file passes focused ament flake8 and pep257.
+tesseract_stream_feedback_pacing_2026_08_21:
+  incident: A collision/visibility detour at 15 percent accumulated 0.310360564 rad command lead because the wall-clock sender kept advancing endpoint-style MoveJ targets while feedback lagged.
+  correction: Keep the exact Tesseract path, 20 Hz active schedule, 15 percent command speed, 0.05-rad step and 0.30-rad corridor. When the current or next target exhausts the corridor, freeze schedule time on the last safe setpoint; resume after feedback catches up or abort after the unchanged one-second grace.
+  boundary: Direct MoveJ chords, planning, collision validation, NBV, capture, home, disable and public interfaces are unchanged.
+target_local_depth_occlusion_repair_2026_08_21:
+  incident: A settled workflow probe mislabeled a closer table/shadow crescent below the cube as unsafe because 81 pixels touched a six-pixel mask dilation despite zero target overlap or envelope intrusion.
+  correction: Synthetic closer-depth components now require the existing 20-pixel support minimum inside the target-mask bounding envelope. Crossing components retain full geometry; semantic obstacle handling and downstream fail-closed safety are unchanged.
+  status: Recorded-frame replay and focused/isolated perception tests pass. Supervised tasks after the repair passed the clear-scene probe and accepted multiple captures without recreating the adjacent-table false occluder.
+selectable_camera_profile_restoration_2026_08_21:
+  contract: GUI saves one validated RGB profile for the next L515 startup; no public ROS action field or live camera mutation is introduced.
+  profiles: [640x480 at 15 or 30 FPS, 960x540 at 15 or 30 FPS, 1280x720 at 15 or 30 FPS, 1920x1080 at 15 or 30 FPS]
+  default: 640x480 at 30 FPS; normal depth remains 640x480 at 30 FPS and low-bandwidth depth remains 320x240 at 30 FPS.
+terminal_home_stage_proof_repair_2026_08_21:
+  issue: A PRE_HOME shortcut inside the old 0.30-rad band incorrectly set the ROUGH_HOME proof flag, so cancellation could jump directly to STORAGE_WRIST.
+  repair: Configured-home endpoint and settling acceptance is now 0.20 rad, while the separate exact-first-point post-disable limit allowance remains 0.30 rad. PRE_HOME, ROUGH_HOME and STORAGE_WRIST proofs are independent.
+  validation: 114 focused mission/configuration tests pass; supervised staged-home requalification remains pending.
 frozen_viewpoint_ray_pool_2026_08_21:
-  goal: Replace the authoritative voxel-NBV radial point lattice with one mission-frozen set of target-centred direction rays while leaving the selectable legacy point policy unchanged.
-  geometry: The first qualified base_link target lock freezes 175 directions from the existing 25 azimuth by 7 elevation grid. Each ray has a 0.28 m minimum standoff, a preferred band through 0.50 m, and a maximum capped by both the target base-link radius and the existing 0.80 m scan maximum.
-  handoff: The planner scores one representative point per ray against accepted-only cumulative coverage. The bridge shortlists at most twelve rays before expanding only those rays into preferred then reserve exact standoff probes for unchanged exact-aim and Tesseract feasibility checks.
+  goal: Keep frozen-ray NBV separately selectable from both legacy and exact-point voxel NBV so timing and physical behavior can be compared without parallel planning implementations.
+  geometry: ray_nbv freezes the configured ray_count once from the first qualified base_link target lock. target_sector reproduces the former 180-degree 25-by-7 region at count 175, upper_hemisphere covers 360 degrees above the target, and full_sphere covers 360 degrees above and below using deterministic equal-area samples. Each ray has a 0.28 m minimum standoff, a preferred band through 0.50 m, and a maximum capped by both the target base-link radius and the existing 0.80 m scan maximum.
+  handoff: The planner scores one representative point per ray against accepted-only cumulative coverage and removes normalized predicted gain below 0.02. The bridge shortlists at most six rays before expanding each ray into contiguous preferred then reserve exact standoff probes for unchanged exact-aim and Tesseract feasibility checks. Exact-point voxel_nbv retains twelve candidates.
   static_scope: Tracking does not translate or regenerate the ray pool during this phase. Accepted captures update coverage; a rejected achieved ray is retired without adding coverage; actual settled FK remains the next motion start.
   acquisition_failures: Five absent closed-loop looks return TARGET_NOT_FOUND with rough base_link XYZ. A fresh correlated semantic mask with sufficient masked depth entirely beyond 1.20 m returns retryable TARGET_TOO_FAR and REPOSITION_REQUIRED with rough base_link XYZ. Both use normal mission shutdown.
+  selectable_policies: {legacy: original heuristic exact points, voxel_nbv: cumulative-information ranking over the regenerated exact-point lattice, ray_nbv: cumulative-information ranking over one frozen bounded-ray pool}
+  gui: Atomically saves view_selection_policy, ray_sampling_region and ray_count only for the next mission. Current saved selection is ray_nbv full_sphere with 175 rays.
   interfaces: No ROS topic, service, action or message schema changed; ray identity and diagnostics are additive private JSON/provenance fields and encoded existing viewpoint IDs.
-  physical_status: Software-only. No arm, camera, CAN or physical E2E command was issued.
+  physical_status: The ray policy completed task codex-e2e-20260821-185113-adaptive with three accepted views and safe shutdown. Comparative legacy/voxel timing and repeated-mission qualification remain separate.
 normalized_marginal_nbv_diversity_repair_2026_08_20:
   incident: Task codex-e2e-nbv15-20260820-230803 committed six captures in scan_20260820_230845, but every post-seed accepted view remained at 65 degrees elevation, achieved only 53.6 degrees azimuth span, and satisfied neither Y-side floor.
   cause: The voxel scorer compared raw projected unknown-pixel count before novel surface and angular novelty. Recorded replay ranked every 75-degree direction before all lower elevation bands, so Tesseract received steep leaders and selected reachable neighboring 65-degree poses.
@@ -27,7 +100,7 @@ target_tracking_measurement_repair_2026_08_20:
   deferred: Slowly evolving, internally consistent SAM2 mask drift may still pass the measurement contract and remains a separate perception investigation; do not hide it in NBV or add another estimator.
 tesseract_model_readiness_repair_2026_08_20:
   symptom: A seed plan exhausted the automatic 45-second budget before candidate one because first-use Robot.from_files model construction occurred inside the post-enable request budget.
-  correction: The isolated Tesseract backend constructs one clean unused robot scene before publishing worker-ready. The first request consumes that scene; every later request still rebuilds a clean request-local scene.
+  correction: The isolated Tesseract backend constructs one clean unused robot scene before publishing worker-ready. Requests reuse that scene only while no request-local obstacles have been added; an obstacle-bearing request marks it dirty and forces reconstruction before the next request. Scene setup is bounded by the unchanged bridge timeout but no longer consumes the unchanged candidate-planning budget.
   unchanged: [45-second automatic plan budget, three-second segment budget, 180-second bridge timeout, collision model, candidates, motion and public interfaces]
   physical_evidence: GUI task gui-sim-3eb814caa9204bfd884343f02a94323e loaded the worker model before readiness, planned and executed seed view 412, and committed capture one. The earlier candidate-zero timeout did not recur.
 post_view_reacquisition_routing_2026_08_20:
@@ -79,9 +152,10 @@ voxel_nbv_generation_handoff_2026_08_17:
   physical_status: Software verified only after the incident; a new supervised E2E is required.
 gui_viewpoint_policy_selector_2026_08_17:
   goal: Let the operator select the existing legacy or voxel-NBV viewpoint policy without duplicating planner logic in the GUI.
-  boundary: piper_gui_native.py changes only view_selection_policy in the source scan_planning_params.yaml through piper_gui/scan_policy.py. MissionEngine still owns startup and starts a fresh scan stack which reads that parameter; the GUI does not change a running stack, action schema, planning, safety, retry, motion, or shutdown behavior.
-  selectable_policies: [legacy, voxel_nbv]
-  current_saved_policy: voxel_nbv
+  boundary: piper_gui_native.py changes only view_selection_policy, ray_sampling_region and ray_count in the source scan_planning_params.yaml through piper_gui/scan_policy.py. MissionEngine still owns startup and starts a fresh scan stack which reads those parameters; the GUI does not change a running stack, action schema, planning, safety, retry, motion, or shutdown behavior.
+  selectable_policies: [legacy, voxel_nbv, ray_nbv]
+  ray_regions: [target_sector, upper_hemisphere, full_sphere]
+  current_saved_policy: ray_nbv
   validation: [test_piper_gui_scan_policy.py, test_piper_gui_phase8.py]
 current_change_2026_08_17:
   goal: Simplify mission shutdown and executor runtime gates without changing public ROS, numerical motion, perception, TF/calibration or scan-trajectory contracts.
@@ -1208,7 +1282,7 @@ selected_feature_reintegration_2026_08_15:
   qualification: Software-only. No physical motion was run during this integration.
 selected_perception_reintegration_2026_08_16:
   order: [shared target-depth selector, live geometry consumers, native L515 confidence capture, schema-2 provenance]
-  authority: piper_mobile_manipulation/utils/target_depth.py owns target-layer selection; scan_capture.py owns pure native-depth projection and confidence qualification; scan_capture_node.py owns exact-time correlation and transactional persistence.
+  authority: piper_mobile_manipulation/utils/target_depth.py owns target-layer selection; scan_capture.py owns pure native-depth projection, confidence qualification and settled-burst temporal median; scan_capture_node.py owns exact-time correlation, 20-frame burst selection and transactional persistence.
   compatibility: Existing ROS topics, services, QoS, RGB-D slop, target-valid default, TF semantics, calibration, motion, and NBV behavior remain unchanged. Native depth and confidence subscriptions are additive.
   qualification: Software and recorded-data only; no camera, GPU, arm, or mission process was started.
 commissioning_control_reintegration_2026_08_16: >-
@@ -1234,3 +1308,16 @@ live_voxel_nbv_2026_08_17:
   integration: [scan_viewpoint_planner_node.py, piper_tesseract_foxy/bridge_node.py]
   summary: Accepted schema-2 RGB-D/mask artifacts rebuild a session-scoped object voxel model. Candidate viewing directions are raycast and ranked by normalized cumulative marginal target information, accepted-view angular novelty, absolute marginal support and only then travel. Radius variants remain bounded IK fallbacks. Physical runs have exercised voxel_nbv, but the normalized diversity ranking still requires supervised qualification.
   replay: tools/replay_nbv_coverage.py
+
+capture_diagnostic_liveness_repair_2026_08_21:
+  observed_run: codex-e2e-20260821-1811-shortlistfix
+  symptom: >-
+    The second settled viewpoint saw the producer publish fresh CLEAR
+    occlusion evidence throughout the capture window, while scan_capture's
+    local evidence aged out and exhausted ten same-pose readiness retries.
+  repair: >-
+    scan_capture keeps quality and occlusion subscriptions in one dedicated
+    mutually-exclusive callback group and uses a two-thread executor so the
+    low-rate safety evidence cannot be starved by high-rate RGB-D callbacks.
+  unchanged: [topics, QoS, one-second freshness threshold, GOOD/CLEAR capture gate, retry limit, motion, home, shutdown]
+  qualification: Supervised tasks after the repair consumed fresh GOOD/CLEAR evidence across multiple settled captures; the final task succeeded and shut down safely.

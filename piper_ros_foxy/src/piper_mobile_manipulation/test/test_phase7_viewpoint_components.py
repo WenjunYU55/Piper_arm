@@ -165,6 +165,15 @@ def test_trajectory_cancellation_is_explicit():
         False).action is TrajectoryAction.WAIT
 
 
+def test_following_corridor_can_hold_before_existing_bounded_failure():
+    decision = TrajectoryRunner.following_decision(
+        2.0, 0.31, 1.0, 0.30, over_limit_elapsed_sec=0.5)
+    assert decision.action is TrajectoryAction.HOLD_FOLLOWING
+    expired = TrajectoryRunner.following_decision(
+        3.0, 0.31, 1.0, 0.30, over_limit_elapsed_sec=1.01)
+    assert expired.action is TrajectoryAction.FAILED_FOLLOWING
+
+
 def test_capture_success_retry_and_failure():
     """Preserve accepted, bounded retry, replacement, and abort outcomes."""
     coordinator = CaptureCoordinator(maximum_readiness_retries=10)

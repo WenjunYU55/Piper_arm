@@ -8,7 +8,46 @@ VIEW_SELECTION_POLICIES = (
     'voxel_nbv_shadow',
     'voxel_nbv_seed',
     'voxel_nbv',
+    'ray_nbv_seed',
+    'ray_nbv',
 )
+
+
+@dataclass(frozen=True)
+class ViewPolicyCapabilities:
+    """Private planning capabilities for one existing selection policy."""
+
+    candidate_geometry: str
+    authoritative_nbv: bool
+    minimum_gain_required: bool
+    frozen_candidates: bool
+    ray_expansion: bool
+
+
+VIEW_POLICY_CAPABILITIES = {
+    'legacy': ViewPolicyCapabilities(
+        'exact_point', False, False, False, False),
+    'voxel_nbv_shadow': ViewPolicyCapabilities(
+        'exact_point', False, False, False, False),
+    'voxel_nbv_seed': ViewPolicyCapabilities(
+        'exact_point', False, False, False, False),
+    'voxel_nbv': ViewPolicyCapabilities(
+        'exact_point', True, True, False, False),
+    'ray_nbv_seed': ViewPolicyCapabilities(
+        'target_ray', False, False, True, True),
+    'ray_nbv': ViewPolicyCapabilities(
+        'target_ray', True, True, True, True),
+}
+
+
+def view_policy_capabilities(policy):
+    """Return the validated private capabilities for ``policy``."""
+    selected = str(policy).strip()
+    try:
+        return VIEW_POLICY_CAPABILITIES[selected]
+    except KeyError:
+        raise ValueError(
+            'view generation policy is unsupported: %s' % selected)
 
 
 @dataclass(frozen=True)

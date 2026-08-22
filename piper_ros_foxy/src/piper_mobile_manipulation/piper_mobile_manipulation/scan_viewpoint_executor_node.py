@@ -471,6 +471,9 @@ class ScanViewpointExecutorNode(Node):
         self.max_command_interval_sec = 0.0
         self.dropped_command_samples = 0
         self.motion_started_at = None
+        self.stream_last_tick_at = None
+        self.stream_schedule_paused_sec = 0.0
+        self.stream_following_hold_started_at = None
         self.stream_schedule_completion_logged = False
         self.last_stream_planned_duration_sec = 0.0
         self.last_stream_actual_duration_sec = 0.0
@@ -2363,24 +2366,70 @@ class ScanViewpointExecutorNode(Node):
         """Follow Tesseract timestamps; feedback gates safety and the endpoint."""
         if self.motion_started_at is None:
             self.motion_started_at = now
-        elapsed = max(0.0, now - self.motion_started_at)
+        last_tick = getattr(self, 'stream_last_tick_at', None)
+        tick_interval = (
+            max(0.0, now - float(last_tick))
+            if last_tick is not None else 0.0)
+        self.stream_last_tick_at = now
+        elapsed = max(
+            0.0,
+            now - self.motion_started_at
+            - float(getattr(self, 'stream_schedule_paused_sec', 0.0)),
+        )
+
+        def hold_or_abort_following(error, target, grace, limit):
+            hold_started = getattr(
+                self, 'stream_following_hold_started_at', None)
+            if hold_started is None:
+                hold_started = now
+                self.stream_following_hold_started_at = now
+                self.get_logger().warning(
+                    'Tesseract stream feedback corridor reached; holding '
+                    'the last collision-qualified setpoint until measured '
+                    'joints catch up')
+            decision = TrajectoryRunner.following_decision(
+                elapsed,
+                error,
+                grace,
+                limit,
+                over_limit_elapsed_sec=now - hold_started,
+            )
+            if decision.action is TrajectoryAction.HOLD_FOLLOWING:
+                self.stream_schedule_paused_sec = float(getattr(
+                    self, 'stream_schedule_paused_sec', 0.0)) + tick_interval
+                if now - self.last_motion_status_at >= 0.10:
+                    self.last_motion_status_at = now
+                    self.publish_status()
+                return True
+            if decision.action is TrajectoryAction.FAILED_FOLLOWING:
+                try:
+                    current = self.current_joints().tolist()
+                except (AttributeError, ValueError):
+                    current = []
+                self.abort_or_finish_captures(
+                    'measured joints did not recover inside the scheduled '
+                    'Tesseract following corridor: max_error=%.9f rad '
+                    'limit=%.9f rad current=%s target=%s'
+                    % (error, limit, current, np.asarray(target).tolist()))
+                return True
+            return False
 
         if self.command_target is not None:
+            grace = float(configured_value(
+                self, 'trajectory_following_error_grace_sec'))
+            limit = float(configured_value(
+                self, 'trajectory_following_error_rad'))
             following_error = self.max_joint_error(self.command_target)
             self.current_waypoint_error = following_error
             if math.isfinite(following_error):
                 self.max_waypoint_error = max(
                     self.max_waypoint_error, following_error)
-            grace = float(configured_value(self, 'trajectory_following_error_grace_sec'))
-            limit = float(configured_value(self, 'trajectory_following_error_rad'))
             following_decision = TrajectoryRunner.following_decision(
                 elapsed, following_error, grace, limit)
             if following_decision.action is TrajectoryAction.FAILED_FOLLOWING:
-                self.abort_or_finish_captures(
-                    'measured joints stopped following the scheduled '
-                    'Tesseract path: max_error=%.9f rad limit=%.9f rad'
-                    % (following_error, limit))
-                return
+                if hold_or_abort_following(
+                        following_error, self.command_target, grace, limit):
+                    return
 
         if self.path_index < len(self.current_path):
             stream_decision = TrajectoryRunner.stream_decision(
@@ -2401,6 +2450,22 @@ class ScanViewpointExecutorNode(Node):
             # path corners. The pure runner returns exactly one due index.
             due_index = int(stream_decision.sample_index)
             target = self.current_path[due_index]
+            grace = float(configured_value(
+                self, 'trajectory_following_error_grace_sec'))
+            limit = float(configured_value(
+                self, 'trajectory_following_error_rad'))
+            candidate_error = self.max_joint_error(target)
+            candidate_decision = TrajectoryRunner.following_decision(
+                elapsed, candidate_error, grace, limit)
+            if candidate_decision.action is TrajectoryAction.FAILED_FOLLOWING:
+                if hold_or_abort_following(
+                        candidate_error, target, grace, limit):
+                    return
+            if getattr(self, 'stream_following_hold_started_at', None) is not None:
+                self.get_logger().info(
+                    'measured joints recovered inside the Tesseract stream '
+                    'feedback corridor; resuming the unchanged path')
+                self.stream_following_hold_started_at = None
             self.path_index = due_index + 1
             self.publish_joint_command(target)
             self.command_target = np.asarray(target, dtype=float).copy()
@@ -3598,6 +3663,9 @@ class ScanViewpointExecutorNode(Node):
         self.max_command_interval_sec = 0.0
         self.dropped_command_samples = 0
         self.motion_started_at = None
+        self.stream_last_tick_at = None
+        self.stream_schedule_paused_sec = 0.0
+        self.stream_following_hold_started_at = None
         self.stream_schedule_completion_logged = False
         self.last_motion_status_at = 0.0
         self.waypoint_started_at = None

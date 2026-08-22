@@ -1,11 +1,52 @@
 schema_version: 1
 document: technical_debt
+reconstruction_alignment_and_calibration_followup_2026_08_21:
+  status: bounded_offline_registration_improved_but_dimensional_quality_still_failed
+  evidence: scan_20260821_220003 has clean individual face support but robot-pose fusion yields 39.5 percent dominant component and 3.97 mm p90 plane residual. Bounded multiway refinement yields 90.5 percent and 2.25 mm, yet the 58.8 x 52.9 x 48.3 mm OBB remains too large for the measured 35 mm cube.
+  interpretation: Residual view registration is real, but software alignment alone has not proved metric correctness. The current corrected-scale fixed-board authority passed manipulation-scale limits at 5.73 mm mean and 12.22 mm worst translation drift, which is not a one-millimetre reconstruction guarantee.
+  next_cut: Collect a new immutable 17 mm square and 12 mm marker calibration session with diverse stable poses, exact image-time TF, and held-out validation. Compare reconstruction before deployment. Do not widen GICP bounds, rewrite historical captures or silently replace the deployed calibration.
+  deferred: Geometry-derived target centre and nonrigid/outdoor reconstruction remain separate work and are not justified by this stationary-cube replay.
+mesh_density_and_sparse_surface_followup_2026_08_21:
+  status: operator_density_control_added_alignment_problem_remains
+  implemented: A command-free GUI slider selects 0.5-through-3.0 mm TSDF voxels and reports exact vertices and triangles without changing capture or registration.
+  evidence: The temporary seven-view replay contained 36149 qualified target pixels and produced 20568 vertices at 1.0 mm, but robot-pose fusion still had 1784 connected components, 39.5-percent dominant support and approximately 73-by-58-by-47 mm extent for the 35 mm cube. At the finest GUI setting 0.5 mm it produced 166214 vertices and 225320 triangles, yet fragmentation worsened to 9200 components with only 46.1-percent dominant support and approximately 78-by-78-by-56 mm extent. Density is not the primary defect.
+  remaining: [repair inter-view pose/registration consistency, acquire missing negative-Y and wider coverage safely, compare 1.0 and 0.5 mm only after alignment improves, never use polygon count as a quality substitute]
+physical_floor_model_followup_2026_08_21:
+  status: conservative_software_buffer_added_physical_requalification_pending
+  evidence: Task gui-sim-d77550972be14f9ca55b27e206ccbfd0 accepted seven captures, then physically contacted the table during motion toward generation-seven selected view 1000400. J5 subsequently exceeded its tolerated upper bound by 0.000615 rad and shutdown retained an enabled hold because current-state external clearance was already invalid.
+  implemented: [raise both planning and execution virtual support planes by 0.005 m, retain separate 0.005 m holder margin for 0.010 m total nominal protection, add cross-source consistency regression, verify recorded configured home route remains admissible offline]
+  remaining: [measure the actual table plane in base_link, inspect whether the CAD envelope omits any protruding hardware or cable, inspect J5 and holder after contact, perform only the staged supervised clearance requalification]
+partial_reconstruction_followup_2026_08_21:
+  status: software_repaired_current_dataset_quality_failed
+  implemented: [explicit 1-through-7 partial-view admission at deferred gateway only, default 8-through-24 retained, zero rejected, PARTIAL_VIEW_SET report and PASS cap, shared reconstruction/.venv path, historical missing-calibration diagnostic admission, exact future hand-eye file SHA-256 binding, durable FAIL mapping for failed mesh quality]
+  current_dataset: scan_20260821_185143 generated a diagnostic mesh but failed structural quality with 615 vertices, 719 triangles, 70.4-percent dominant component and non-watertight geometry. This is useful evidence, not a valid completed reconstruction.
+  remaining: [exercise exact tracked-base-home service and durable job transition, visually inspect diagnostic mesh, obtain a more diverse higher-quality capture set, confirm next manifest contains the deployed calibration SHA-256, rerun and seek PASS or WARN rather than weakening quality thresholds]
+final_ray_e2e_followup_2026_08_21:
+  status: supervised_arm_mission_passed_reconstruction_trigger_pending
+  evidence: Task codex-e2e-20260821-185113-adaptive accepted three GOOD/CLEAR views, exercised successive ray shortlist retirement and typed attempted-ray budget recovery, exhausted the true prequalified safe frontier, completed all home/storage/disable stages, stopped every owned child, and returned SUCCEEDED with safe_shutdown true.
+  remaining: [Do not tune coarse workspace or NBV ranking from one run, validate the queued mesh job through an authentic tracked-base-home signal, obtain enough useful geometry for PASS or WARN reconstruction, repeat supervised missions before operational qualification]
+  no_longer_pending: [capture diagnostic callback delivery, adjacent-depth false occluder replay, one-shortlist terminal repair, attempted-ray planning-budget handoff, one complete ray-policy arm mission]
+ray_shortlist_exhaustion_qualification_2026_08_21:
+  status: physically_verified_in_successful_e2e
+  live_incident: Task codex-e2e-20260821-175620-rayfix accepted three views, then six information-ranked rays all failed exact and fallback IK. The old mission incorrectly treated that bounded batch as the complete 160-ray frontier.
+  correction: The bridge now retires only those attempted ray IDs for the unchanged accepted-count generation; MissionEngine requests successive bounded batches. A changed accepted count resets feasibility history. No coverage or Tesseract behavior changed.
+  remaining: Profile total planning time separately; do not weaken IK or collision gates to make it faster. The supervised run proved failed batches advance to new ray IDs and that true exhaustion still performs staged shutdown.
+ray_workspace_cull_qualification_2026_08_21:
+  status: physically_verified_in_successful_ray_e2e
+  implemented: Continuous bounded-ray intersection with existing camera distance, base_link radial and target-relative height values; ray-only prequalification diagnostics; downstream Tesseract authority retained.
+  intentionally_not_claimed: [exact IK reachability, self collision, environment collision, camera-holder clearance, dense path visibility, learned workspace, camera frustum occlusion]
+  remaining: Live tasks retained 160 of 175 rays after the dict/list contract repair and passed candidates to Tesseract. Do not tune the coarse bounds from this single scene; changes affect which target sectors can ever be attempted.
+exchangeable_nbv_policy_qualification_2026_08_21:
+  status: ray_policy_one_supervised_e2e_passed_other_policy_comparison_pending
+  implemented: [private policy capability seam, next-stack policy freeze, authoritative 0.02 normalized predicted information floor, voxel twelve-exact-point compatibility, ray six-direction bound, contiguous per-ray preferred then reserve probes, fail-closed mixed-policy and ray-metadata validation, typed per-ray attempt diagnostics]
+  intentionally_unchanged: [legacy, voxel shadow and seed behavior, NBV gain formula and ranking, accepted-only coverage, Tesseract feasibility, speeds, capture thresholds, safety, home, shutdown, public ROS interfaces]
+  remaining: With motors disabled compare all three selectable policies and confirm private geometry/attempt provenance. Later physical qualification still requires explicit authorization and must begin with one low-speed planned viewpoint.
 frozen_viewpoint_ray_pool_2026_08_21:
-  status: software_implemented_physical_qualification_pending
-  scope: First incremental ray phase only. Static target centre, bounded flexible standoff and explicit target-too-far/absent reporting are implemented without moving-target ray regeneration.
-  implemented: [175 mission-frozen directions instead of 1050 voxel scoring points, legacy point policy unchanged, 0.28 m ray minimum, preferred band through 0.50 m, maximum capped by target base-link radius and 0.80 m, accepted/rejected ray retirement, twelve-ray shortlist before at-most-sixty exact probes, preferred probes before reserve, exact frozen-target aim, additive ray provenance, correlated 1.20 m TARGET_TOO_FAR proof, rough x/y/z in absence/range terminal results]
+  status: one_supervised_e2e_passed_repeatability_pending
+  scope: First incremental ray phase only. Static target centre, selectable ray region/count, bounded flexible standoff and explicit target-too-far/absent reporting are implemented without moving-target ray regeneration.
+  implemented: [ray_nbv separated from legacy and exact-point voxel_nbv, configurable 1-through-1000 mission-frozen directions, target_sector upper_hemisphere and full_sphere sampling, default 175 full-sphere rays, 0.28 m ray minimum, preferred band through 0.50 m, maximum capped by target base-link radius and 0.80 m, accepted/rejected ray retirement, six-ray shortlist before at-most-thirty exact probes, each ray's preferred then reserve probes attempted contiguously, exact frozen-target aim, additive ray provenance, correlated 1.20 m TARGET_TOO_FAR proof, rough x/y/z in absence/range terminal results]
   intentionally_deferred: [moving-target ray translation or regeneration, unbounded standoff beyond existing 0.80 m scan maximum, continuous visual servoing, a new target estimator, new ROS interfaces, ray-specific information gain, NBV performance optimization]
-  remaining: After software validation, inspect one motors-disabled generation and confirm 175 stable rays, twelve-ray shortlist, preferred-first exact probe expansion and no command publication. Only with explicit authorization proceed to one low-speed viewpoint, three supervised captures and a full E2E.
+  remaining: Compare legacy, voxel_nbv and ray_nbv timing with motors disabled; confirm configured stable ray count, six-ray bound, direction-contiguous preferred-first exact probe expansion and no command publication. Full-sphere can rank below-target directions that prove infeasible, so supervised qualification must confirm reachable shortlist diversity before claiming it faster or better. Only with explicit authorization proceed to one low-speed viewpoint, three supervised captures and a full E2E.
   known_test_debt: Package-wide flake8 and pep257 targets retain historical unrelated findings; changed functional paths and focused new regressions must pass independently.
 normalized_marginal_nbv_physical_qualification_2026_08_20:
   status: software_fixed_supervised_physical_retest_pending
@@ -443,7 +484,7 @@ deferred_cleanup:
       completed five physical viewpoints with five accepted/modeled clouds on 2026-07-24. Acceptance
       exposed and fixed post-motion depth latching, TF starvation, tracking-freshness mismatch,
       target-cloud QoS incompatibility, and capture/status ordering.
-    next_cut: Preserve the 2026-07-24 stop-per-sample, 2026-07-29 endpoint-only and 2026-08-11 tesseract_stream_v1/v2 runs as historical fixtures. The current tesseract_stream_v3 retains every collision-checked OMPL/ISP source vertex, adds exact on-segment targets at 20 Hz, and applies selected speed once to the qualified MoveJ model [5,5,5,5,5,3] rad/s. It retains the 0.05 rad hard adjacent-step ceiling, 0.30 rad following guard and final-only settle. Fresh queried limits remain hash-bound health evidence rather than a second timing multiplier. V2 acquired the target and delivered 1,955 samples at 99.9 Hz but exhausted the first one-view 45-second budget validating transport-density samples; v3 validates source geometry independently of schedule length. V3 task gui-sim-e9629c41e1224425b5adb0454b61ee3f physically accepted the 20-percent timing behavior at approximately 18.0-19.6 Hz over acquisition and scan segments, with aligned planned/actual duration and safe terminal home/disable. Complete 1/5/10-percent staging and deliberate cancel-to-hold before extending beyond the exact-through-20-percent envelope.
+    next_cut: Preserve the 2026-07-24 stop-per-sample, 2026-07-29 endpoint-only and 2026-08-11 tesseract_stream_v1/v2 runs as historical fixtures. The current tesseract_stream_v3 retains every collision-checked OMPL/ISP source vertex, adds exact on-segment targets at 20 Hz, and applies selected speed once to the qualified MoveJ model [5,5,5,5,5,3] rad/s. It retains the 0.05 rad hard adjacent-step ceiling, 0.30 rad following corridor and final-only settle. A detour freezes on its last safe setpoint when command lead exhausts the corridor, then resumes on recovery or aborts after the existing one-second grace. Fresh queried limits remain hash-bound health evidence rather than a second timing multiplier. V2 acquired the target and delivered 1,955 samples at 99.9 Hz but exhausted the first one-view 45-second budget validating transport-density samples; v3 validates source geometry independently of schedule length. V3 task gui-sim-e9629c41e1224425b5adb0454b61ee3f physically accepted the 20-percent timing behavior at approximately 18.0-19.6 Hz over acquisition and scan segments, with aligned planned/actual duration and safe terminal home/disable. Complete 1/5/10-percent staging, feedback-corridor hold/resume and deliberate cancel-to-hold before extending beyond the exact-through-20-percent envelope.
   - id: foxy_proposal_callback_delivery
     issue: >-
       On 2026-07-21 Foxy/Fast DDS exposed already-running /arm_status and
@@ -1137,7 +1178,7 @@ live_e2e_status_2026_08_06:
 
 selected_reintegration_debt_2026_08_15:
   completed_software_ports:
-    - Direct configured home bypasses the Tesseract worker through ExecuteHomeStage/native MoveJ while retaining mission identity, fresh finite feedback, motor state, installed-holder external-clearance, operator-authorized 0.3-rad per-joint home acceptance and disable proof. It does not require Tesseract motion-limit telemetry or a redundant hold-service acknowledgement.
+    - Direct configured home bypasses the Tesseract worker through ExecuteHomeStage/native MoveJ while retaining mission identity, fresh finite feedback, motor state, installed-holder external-clearance, independent PRE_HOME/ROUGH_HOME/STORAGE_WRIST proof, operator-authorized 0.2-rad per-joint configured-home endpoint acceptance and disable proof. It does not require Tesseract motion-limit telemetry or a redundant hold-service acknowledgement.
     - Schema-v4 terminal PRE_HOME and the driver-owned positive-only J6 startup wrap bridge are active.
     - Zero-capture failed-dataset deletion is identity/path/artifact guarded.
     - Normal Tesseract output can use a densely validated direct chord or pass-through-smoothed streamed detour with exact fallback.
@@ -1182,3 +1223,23 @@ live_voxel_nbv_qualification_2026_08_17:
   remaining: The operator chose to proceed directly to a supervised authoritative E2E. Candidate latency, selected-direction changes, complete-scan diversity/completion, terminal home and disable therefore all require review from that run; the skipped shadow/isolated stages are not recorded as passed.
   warning: The archived 17-view mask creates a much larger envelope than the current cube data and is useful as a performance stress case, not proof of correct target segmentation.
   next_cut: Run the explicitly operator-authorized supervised E2E with voxel_nbv, preserve logs and dataset, then inspect model radius, successive selected directions, accepted-view diversity, capture retries, terminal home and disable before claiming qualification.
+
+capture_diagnostic_delivery_2026_08_21:
+  status: physically_verified_in_successful_e2e
+  issue: >-
+    A supervised E2E proved fresh CLEAR occlusion publication continued while
+    scan_capture's final low-rate subscription was starved behind its high-rate
+    RGB-D workload. One accepted capture was retained and shutdown was safe.
+  repair: >-
+    Isolate quality/occlusion callbacks in a dedicated mutually-exclusive
+    callback group and spin the command-free recorder with two threads. No
+    public interface, timeout, threshold, retry, or motion behavior changed.
+  next_cut: Multiple settled captures consumed fresh CLEAR evidence in the successful 2026-08-21 ray E2E. Retain this as a regression boundary; no further callback architecture is required.
+
+settled_depth_burst_and_mesh_resolution_2026_08_21:
+  status: burst_and_one_millimetre_defaults_software_implemented_hardware_unqualified
+  implemented: Once an achieved viewpoint is settled and the capture service is requested, the command-free recorder collects exactly 20 new synchronized native L515 depth/confidence/camera-info frames while that pose is held. Nonzero grade-8-or-better samples are fused with a per-pixel median and 0.50 temporal-support floor before the existing component qualification and schema-2 transaction. One exact mask/RGB pair remains the semantic reference.
+  evidence: Twenty-one focused capture tests and all 733 mobile tests pass. Regressions prove flying-depth rejection, exclusion of low-confidence samples, exclusion of pre-request frames, acceptance of a 20-frame burst spanning more than one second, callback-fed collection, service ordering and bounded refusal at 19 frames. The first over-constrained implementation incorrectly required all 20 frames to precede one frozen mask timestamp and also applied the one-second single-frame freshness rule to the whole burst; three zero-capture physical runs exposed that defect and each proved safe home, disable, child cleanup and empty-dataset deletion. That trailing-window implementation and its unrelated recovery changes were removed.
+  resolution_change: Accepted refined target clouds now retain every masked pixel into 1 mm cells, and TSDF defaults to 1 mm with a 5 mm truncation band. NBV remains 5 mm and the scene cloud remains 15 mm. No 0.1 mm mode was enabled.
+  deferred: Adaptive mesh resolution remains deferred. A 0.1 mm default would increase cubic voxel density by 1000 times versus 1 mm while exceeding demonstrated L515 spatial evidence.
+  next_cut: Run the explicitly authorized supervised burst E2E, inspect temporal support and target-cloud density, reconstruct its immutable output at the new 1 mm default, and compare surface continuity/runtime with the prior 3 mm report before claiming improvement.

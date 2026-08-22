@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Headless, bounded ROS action orchestrator for one PiPER target scan."""
 
+import hashlib
 import json
 import math
 import os
@@ -144,6 +145,23 @@ NON_COMMAND_PROCESS_GROUPS = (
     'hand_eye',
     'tesseract_worker',
 )
+
+
+def calibration_identity_for_mission(root, environment):
+    """Bind capture provenance to the exact hand-eye file used by this run."""
+    default_path = (
+        Path(root) / 'L515_camera' / 'calibration' / 'hand_eye'
+        / 'session_20260808_straight_mount' / 'calibration_result.yaml')
+    path = Path(str(environment.get(
+        'PIPER_HAND_EYE_CALIBRATION', default_path))).expanduser().resolve()
+    if not path.is_file():
+        raise MissionFailure(
+            'hand-eye calibration file is missing: %s' % path)
+    digest = hashlib.sha256()
+    with path.open('rb') as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b''):
+            digest.update(block)
+    return path, digest.hexdigest()
 
 
 def previous_generation_cleanup_targets(
@@ -1260,6 +1278,10 @@ class TargetScanMissionNode(Node):
             'PIPER_TARGET_PROFILE': session.goal['target_profile'],
             'PIPER_TARGET_PROMPT': session.goal['target_prompt'],
         })
+        calibration_path, calibration_sha256 = calibration_identity_for_mission(
+            root, environment)
+        environment['PIPER_HAND_EYE_CALIBRATION'] = str(calibration_path)
+        environment['PIPER_CALIBRATION_SHA256'] = calibration_sha256
         with self._lock:
             self.joint_generation_started_ns = int(
                 self.get_clock().now().nanoseconds)
@@ -1921,7 +1943,7 @@ class TargetScanMissionNode(Node):
             context, normal_completion=normal_completion, failure=failure)
 
     def at_configured_home(
-            self, session, tolerance_rad=0.30, target_positions=None,
+            self, session, tolerance_rad=0.20, target_positions=None,
             home_stage=None):
         self.require_fresh_joint_feedback()
         telemetry_store = getattr(self, 'telemetry_store', None)
@@ -1956,6 +1978,19 @@ class TargetScanMissionNode(Node):
             target_positions=None, home_stage='ROUGH_HOME'):
         """Stop at measured state, then request one direct configured home target."""
         self.last_return_home_diagnostic = ''
+        normalized_home_stage = str(home_stage).strip().upper()
+
+        def record_stage_proof():
+            # A PRE_HOME proof must not also suppress the following distinct
+            # ROUGH_HOME transaction.  Keep each configured stage's proof in
+            # its own MissionSession field.
+            if normalized_home_stage == 'PRE_HOME':
+                session.pre_home_completed = True
+            elif normalized_home_stage == 'STORAGE_WRIST':
+                session.storage_wrist_proved = True
+            else:
+                session.return_home_proved = True
+
         target_positions = list(
             session.home_positions_rad
             if target_positions is None else target_positions)
@@ -1987,7 +2022,7 @@ class TargetScanMissionNode(Node):
             if self.at_configured_home(
                     session, target_positions=target_positions,
                     home_stage=home_stage):
-                session.return_home_proved = True
+                record_stage_proof()
                 self.last_return_home_diagnostic = (
                     'fresh feedback is already within %s tolerance'
                     % str(home_stage).lower())
@@ -2058,7 +2093,7 @@ class TargetScanMissionNode(Node):
                     if self.at_configured_home(
                             session, target_positions=target_positions,
                             home_stage=home_stage):
-                        session.return_home_proved = True
+                        record_stage_proof()
                         self.last_return_home_diagnostic = (
                             '%s reached and feedback-proved'
                             % str(home_stage).lower())

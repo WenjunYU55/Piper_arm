@@ -425,6 +425,37 @@ def validate_request(payload, now_ns=None):
             'ROUGH_ACQUISITION requires min_viewpoints=1 and max_viewpoints<=5')
     if plan_kind == 'ROUGH_ACQUISITION' and include_return_home:
         raise ContractError('ROUGH_ACQUISITION must not include a home segment')
+    shortlisted_rays = int(planning.get('shortlisted_ray_count', 0))
+    expanded_ray_candidates = int(planning.get(
+        'expanded_ray_candidate_count', 0))
+    ray_attempt_limit = int(planning.get(
+        'ray_direction_attempt_limit', 0))
+    expanded = [
+        candidate for candidate in candidates
+        if 'ray_probe_index' in candidate]
+    if expanded:
+        ray_order = []
+        for candidate in expanded:
+            ray_id = int(candidate.get('ray_id', -1))
+            probe_index = int(candidate.get('ray_probe_index', -1))
+            if ray_id < 0 or probe_index < 0:
+                raise ContractError('expanded ray candidate identity is invalid')
+            if not ray_order or ray_order[-1] != ray_id:
+                if ray_id in ray_order:
+                    raise ContractError(
+                        'expanded ray candidates are not direction-contiguous')
+                ray_order.append(ray_id)
+        if (
+                shortlisted_rays != len(ray_order)
+                or expanded_ray_candidates != len(expanded)
+                or ray_attempt_limit < 1
+                or len(ray_order) > ray_attempt_limit):
+            raise ContractError(
+                'expanded ray candidate bounds do not match planning metadata')
+    elif any(value != 0 for value in (
+            shortlisted_rays, expanded_ray_candidates, ray_attempt_limit)):
+        raise ContractError(
+            'non-ray request contains ray planning metadata')
     if (
             plan_kind == 'MULTIVIEW_SCAN'
             and not include_return_home

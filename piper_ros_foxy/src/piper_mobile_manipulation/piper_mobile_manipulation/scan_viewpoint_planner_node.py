@@ -11,6 +11,8 @@ from std_msgs.msg import String
 
 from piper_mobile_manipulation.msg import Target3D, TrackedTarget
 from piper_mobile_manipulation.nbv_coverage import (
+    candidate_meets_minimum_information,
+    MINIMUM_USEFUL_MARGINAL_INFORMATION_FRACTION,
     ObjectCoverageModel,
     rank_next_best_views,
     VoxelCoverageConfig,
@@ -21,8 +23,14 @@ from piper_mobile_manipulation.scan_session_memory import (
     history_coverage_target_center,
     validate_history_payload,
 )
-from piper_mobile_manipulation.view_generation import make_view_generation
-from piper_mobile_manipulation.viewpoint_rays import bounded_ray_interval
+from piper_mobile_manipulation.view_generation import (
+    make_view_generation,
+    view_policy_capabilities,
+)
+from piper_mobile_manipulation.viewpoint_rays import (
+    bounded_ray_interval,
+    build_ray_samples,
+)
 
 
 def build_viewpoint_angles(center_deg, desired_deg, step_deg, max_viewpoints):
@@ -101,6 +109,23 @@ def target_frame_rejection_reason(frame_id, planning_frame_id='base_link'):
     return ''
 
 
+def is_authoritative_nbv_policy(policy):
+    """Return whether measured coverage controls candidate ordering."""
+    return view_policy_capabilities(policy).authoritative_nbv
+
+
+def effective_selection_policy(policy, accepted_views):
+    """Name seed generations without claiming measured NBV evidence."""
+    selected = str(policy)
+    if int(accepted_views) > 0:
+        return selected
+    if selected == 'voxel_nbv':
+        return 'voxel_nbv_seed'
+    if selected == 'ray_nbv':
+        return 'ray_nbv_seed'
+    return selected
+
+
 class ScanViewpointPlannerNode(Node):
     def __init__(self):
         super().__init__('scan_viewpoint_planner_node')
@@ -126,6 +151,8 @@ class ScanViewpointPlannerNode(Node):
         self.declare_parameter('max_scan_radius_m', 0.80)
         self.declare_parameter('ray_min_standoff_m', 0.28)
         self.declare_parameter('preferred_scan_radius_m', 0.50)
+        self.declare_parameter('ray_sampling_region', 'full_sphere')
+        self.declare_parameter('ray_count', 175)
         self.declare_parameter('camera_pitch_deg', -10)
         self.declare_parameter('camera_pitch_offsets_deg', [0.0])
         self.declare_parameter('keep_object_centered', True)
@@ -142,7 +169,7 @@ class ScanViewpointPlannerNode(Node):
         self.declare_parameter('target_replan_translation_m', 0.01)
         self.declare_parameter('target_replan_min_period_sec', 0.5)
         self.declare_parameter('target_plan_refresh_period_sec', 0.5)
-        self.declare_parameter('view_selection_policy', 'voxel_nbv_shadow')
+        self.declare_parameter('view_selection_policy', 'ray_nbv')
         self.declare_parameter('nbv_voxel_size_m', 0.005)
         self.declare_parameter('nbv_minimum_radius_m', 0.030)
         self.declare_parameter('nbv_maximum_radius_m', 0.250)
@@ -152,6 +179,16 @@ class ScanViewpointPlannerNode(Node):
         self.declare_parameter('nbv_render_width', 64)
         self.declare_parameter('nbv_render_height', 48)
         self.declare_parameter('nbv_maximum_scoring_voxels', 20000)
+
+        self._selection_policy = str(
+            self.get_parameter('view_selection_policy').value).strip()
+        if self._selection_policy not in (
+                'legacy', 'voxel_nbv_shadow', 'voxel_nbv', 'ray_nbv'):
+            raise ValueError(
+                'unsupported view_selection_policy %s'
+                % self._selection_policy)
+        self._selection_capabilities = view_policy_capabilities(
+            self._selection_policy)
 
         self.target_status = 'UNKNOWN'
         self.latest_camera_info = None
@@ -170,6 +207,11 @@ class ScanViewpointPlannerNode(Node):
         self.ray_pool_target_center = None
         self.ray_pool_frame_id = ''
         self.ray_pool = None
+        self.configured_ray_samples = (
+            tuple(self.ray_samples())
+            if self._selection_capabilities.frozen_candidates else None)
+        self.nbv_positive_information_count = 0
+        self.nbv_low_information_rejected_count = 0
         self.coverage_model = ObjectCoverageModel(VoxelCoverageConfig(
             voxel_size_m=float(
                 self.get_parameter('nbv_voxel_size_m').value),
@@ -276,10 +318,21 @@ class ScanViewpointPlannerNode(Node):
         self.refresh_coverage_model()
 
     def selection_policy(self):
-        policy = str(self.get_parameter('view_selection_policy').value).strip()
-        if policy not in ('legacy', 'voxel_nbv_shadow', 'voxel_nbv'):
-            raise ValueError('unsupported view_selection_policy %s' % policy)
-        return policy
+        """Return the policy frozen when this mission stack started."""
+        return self._selection_policy
+
+    def authoritative_nbv_policy(self):
+        """Return whether measured coverage controls candidate ordering."""
+        return is_authoritative_nbv_policy(self.selection_policy())
+
+    def ray_policy(self):
+        """Return whether candidates are mission-frozen bounded rays."""
+        return self._selection_capabilities.ray_expansion
+
+    def effective_policy(self, accepted_views):
+        """Name the seed generation without claiming measured NBV evidence."""
+        return effective_selection_policy(
+            self.selection_policy(), accepted_views)
 
     def refresh_coverage_model(self):
         try:
@@ -360,12 +413,13 @@ class ScanViewpointPlannerNode(Node):
 
     def apply_view_selection(self, viewpoints, history):
         policy = self.selection_policy()
+        capabilities = view_policy_capabilities(policy)
         accepted = int(history.get('accepted_views', 0))
         session_id = str(history.get('session_id', ''))
+        self.nbv_positive_information_count = 0
+        self.nbv_low_information_rejected_count = 0
         if policy == 'legacy' or accepted <= 0:
-            effective = (
-                'voxel_nbv_seed'
-                if policy == 'voxel_nbv' and accepted <= 0 else policy)
+            effective = effective_selection_policy(policy, accepted)
             return [dict(
                 item,
                 view_selection_policy=effective,
@@ -375,7 +429,7 @@ class ScanViewpointPlannerNode(Node):
             ) for item in viewpoints]
         ready = self.refresh_coverage_model()
         if not ready:
-            if policy == 'voxel_nbv':
+            if is_authoritative_nbv_policy(policy):
                 return None
             return [dict(item, nbv_shadow_status=self.nbv_model_error)
                     for item in viewpoints]
@@ -392,6 +446,7 @@ class ScanViewpointPlannerNode(Node):
         cache_key = (
             snapshot.session_id,
             snapshot.generation,
+            policy,
             tuple(current_camera or ()),
             candidate_geometry,
         )
@@ -419,9 +474,17 @@ class ScanViewpointPlannerNode(Node):
                 candidate['view_selection_session_id'] = session_id
                 result.append(candidate)
             return result
-        positive = [
+        positive_information = [
             dict(item) for item in ranked
             if bool(item.get('nbv_positive_information_gain'))]
+        self.nbv_positive_information_count = len(positive_information)
+        positive = [
+            item for item in positive_information
+            if (
+                not capabilities.minimum_gain_required
+                or candidate_meets_minimum_information(item))]
+        self.nbv_low_information_rejected_count = (
+            len(positive_information) - len(positive))
         for item in positive:
             item['legacy_expected_new_coverage_score'] = float(
                 item.get('expected_new_coverage_score', 0.0))
@@ -471,11 +534,11 @@ class ScanViewpointPlannerNode(Node):
             'entries': [],
         }
         angles = self.viewpoint_angles()
-        ray_policy = self.selection_policy() == 'voxel_nbv'
+        ray_policy = self.ray_policy()
         frozen_viewpoints = None
         if ray_policy:
             center, frozen_viewpoints = self.frozen_ray_pool(
-                history, center, frame_id, angles)
+                history, center, frame_id, self.configured_ray_samples)
         history_signature = json.dumps(
             history, sort_keys=True, separators=(',', ':'))
         now = time.monotonic()
@@ -549,13 +612,17 @@ class ScanViewpointPlannerNode(Node):
             viewpoints = []
         else:
             viewpoints = selected_viewpoints
-        positive_information_count = int(sum(
-            bool(item.get('nbv_positive_information_gain', True))
-            for item in viewpoints))
+        positive_information_count = (
+            int(self.nbv_positive_information_count)
+            if self.authoritative_nbv_policy()
+            and int(history.get('accepted_views', 0)) > 0
+            else int(sum(
+                bool(item.get('nbv_positive_information_gain', True))
+                for item in viewpoints)))
         selection_failure_code = (
             'NO_POSITIVE_INFORMATION_CANDIDATE'
             if (
-                self.selection_policy() == 'voxel_nbv'
+                self.authoritative_nbv_policy()
                 and int(history.get('accepted_views', 0)) > 0
                 and selection_ready
                 and not viewpoints)
@@ -569,8 +636,14 @@ class ScanViewpointPlannerNode(Node):
         if remaining == 0:
             viewpoints = []
 
-        requested_coverage = float(self.get_parameter('desired_scan_angle_deg').value)
+        requested_coverage = float(
+            self.get_parameter('desired_scan_angle_deg').value)
         achieved_dry_run_coverage = self.coverage_from_angles(angles)
+        if ray_policy and str(self.get_parameter(
+                'ray_sampling_region').value) in (
+                    'upper_hemisphere', 'full_sphere'):
+            requested_coverage = 360.0
+            achieved_dry_run_coverage = 360.0
         stamp = {
             'sec': int(msg.header.stamp.sec),
             'nanosec': int(msg.header.stamp.nanosec),
@@ -584,16 +657,11 @@ class ScanViewpointPlannerNode(Node):
             and int(history['accepted_views']) > 0)
         nbv_snapshot = (
             self.coverage_model.snapshot() if nbv_model_ready else None)
-        requested_policy = self.selection_policy()
-        effective_policy = (
-            'voxel_nbv_seed'
-            if requested_policy == 'voxel_nbv'
-            and int(history['accepted_views']) == 0
-            else requested_policy)
+        effective_policy = self.effective_policy(history['accepted_views'])
         view_generation = None
         if str(history['session_id']).strip():
             generation_reason = ''
-            if effective_policy == 'voxel_nbv_seed':
+            if effective_policy in ('voxel_nbv_seed', 'ray_nbv_seed'):
                 generation_reason = (
                     'first accepted observation seeds measured voxel coverage')
             elif not selection_ready:
@@ -647,6 +715,14 @@ class ScanViewpointPlannerNode(Node):
                 'requested_scan_angle_deg': requested_coverage,
                 'planned_scan_angle_deg': achieved_dry_run_coverage,
                 'viewpoint_step_deg': float(self.get_parameter('viewpoint_step_deg').value),
+                'candidate_geometry': (
+                    'target_ray' if ray_policy else 'exact_point'),
+                'ray_sampling_region': (
+                    str(self.get_parameter('ray_sampling_region').value)
+                    if ray_policy else ''),
+                'configured_ray_count': (
+                    int(self.get_parameter('ray_count').value)
+                    if ray_policy else 0),
                 'candidate_viewpoints': len(viewpoints),
                 'scan_session_id': str(history['session_id']),
                 'session_accepted_views': int(history['accepted_views']),
@@ -679,6 +755,10 @@ class ScanViewpointPlannerNode(Node):
                     nonduplicate_candidate_count),
                 'positive_information_candidates': int(
                     positive_information_count),
+                'minimum_information_fraction': float(
+                    MINIMUM_USEFUL_MARGINAL_INFORMATION_FRACTION),
+                'low_information_rejected_candidates': int(
+                    self.nbv_low_information_rejected_count),
                 'note': (
                     'reachability and safety are intentionally false until a later '
                     'dry-run evaluator is added'),
@@ -791,7 +871,7 @@ class ScanViewpointPlannerNode(Node):
         })
         return viewpoint
 
-    def frozen_ray_pool(self, history, center, frame_id, angles):
+    def frozen_ray_pool(self, history, center, frame_id, ray_samples):
         """Create one mission-scoped ray pool and otherwise return a copy."""
         session_id = str(history.get('session_id', ''))
         frozen_center = history_coverage_target_center(history, center)
@@ -809,21 +889,30 @@ class ScanViewpointPlannerNode(Node):
 
         viewpoints = []
         ray_id = 0
-        for pitch_offset_deg in self.get_parameter(
-                'camera_pitch_offsets_deg').value:
-            pitch_deg = (
-                float(self.get_parameter('camera_pitch_deg').value)
-                + float(pitch_offset_deg))
-            for angle_deg in angles:
-                viewpoints.append(self.make_ray_viewpoint(
-                    ray_id, angle_deg, frozen_center, frame_id, pitch_deg))
-                ray_id += 1
+        for angle_deg, pitch_deg in ray_samples:
+            viewpoints.append(self.make_ray_viewpoint(
+                ray_id, angle_deg, frozen_center, frame_id, pitch_deg))
+            ray_id += 1
         if session_id:
             self.ray_pool_session_id = session_id
             self.ray_pool_target_center = dict(frozen_center)
             self.ray_pool_frame_id = str(frame_id)
             self.ray_pool = [dict(item) for item in viewpoints]
         return dict(frozen_center), viewpoints
+
+    def ray_samples(self):
+        """Return the configured deterministic ray directions."""
+        pitches = [
+            float(self.get_parameter('camera_pitch_deg').value) + float(offset)
+            for offset in self.get_parameter('camera_pitch_offsets_deg').value
+        ]
+        return build_ray_samples(
+            self.get_parameter('ray_sampling_region').value,
+            self.get_parameter('ray_count').value,
+            self.get_parameter('viewpoint_center_angle_deg').value,
+            self.get_parameter('desired_scan_angle_deg').value,
+            pitches,
+        )
 
     def viewpoint_angles(self):
         return build_viewpoint_angles(

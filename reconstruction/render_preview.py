@@ -74,12 +74,17 @@ def render(report_path, output_path):
         axis.set_ylabel('base Y (m)')
         axis.set_zlabel('base Z (m)')
     observed = dimension_check.get('observed_obb_m', [])
+    expected_label = (
+        ' x '.join('%.1f' % (1000.0 * float(value)) for value in expected)
+        + ' mm reference'
+        if expected.shape == (3,) else 'no dimensional reference')
     fig.suptitle(
-        '%s | %s | OBB %s mm (red: provisional 40 mm cube)' % (
+        '%s | %s | OBB %s mm (red: provisional %s)' % (
             report.get('registration_mode', 'unknown'),
             report.get('overall_quality',
                        report.get('structural_quality', 'UNKNOWN')),
-            ' x '.join('%.1f' % (1000.0 * float(value)) for value in observed)),
+            ' x '.join('%.1f' % (1000.0 * float(value)) for value in observed),
+            expected_label),
         fontsize=12)
     output = Path(output_path).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)

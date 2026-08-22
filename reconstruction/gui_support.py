@@ -1,8 +1,13 @@
 """Pure command construction and reporting helpers for the Tk GUI."""
 
 import json
+import math
 from pathlib import Path
 import subprocess
+
+
+MINIMUM_GUI_VOXEL_LENGTH_MM = 0.5
+MAXIMUM_GUI_VOXEL_LENGTH_MM = 3.0
 
 
 def dataset_root(project_root):
@@ -39,7 +44,7 @@ def reconstruction_python(project_root):
 
 
 def reconstruction_command(project_root, selection, dimensions_mm,
-                           registration_mode='auto'):
+                           registration_mode='auto', voxel_length_mm=1.0):
     root = Path(project_root).resolve()
     dataset = validated_dataset_path(root, selection)
     python = reconstruction_python(root)
@@ -51,13 +56,20 @@ def reconstruction_command(project_root, selection, dimensions_mm,
     if len(dimensions) != 3 or any(
             value <= 0.0 or value > 2000.0 for value in dimensions):
         raise ValueError('expected X/Y/Z must be between 0 and 2000 mm')
+    voxel_mm = float(voxel_length_mm)
+    if not math.isfinite(voxel_mm) or not (
+            MINIMUM_GUI_VOXEL_LENGTH_MM
+            <= voxel_mm <= MAXIMUM_GUI_VOXEL_LENGTH_MM):
+        raise ValueError('mesh voxel size must be between 0.5 and 3.0 mm')
     output = dataset / 'reconstruction' / 'validation' / 'target_mesh.ply'
     command = [
         str(python), str(root / 'reconstruction' / 'tsdf_reconstruct.py'),
         str(dataset), '--output', str(output), '--registration-mode',
         str(registration_mode), '--expected-dimensions-mm',
         *(format(value, '.12g') for value in dimensions),
+        '--voxel-length', format(voxel_mm / 1000.0, '.12g'),
         '--allow-missing-calibration-id',
+        '--allow-partial-view-set',
     ]
     return command, output
 
@@ -107,6 +119,7 @@ def quality_summary(report):
     registration = report.get('registration_summary', {})
     mesh = report.get('mesh_metrics', {})
     dimensions = mesh.get('dimension_check') or {}
+    configuration = report.get('configuration', {})
     lines = [
         '%s / %s' % (
             report.get('overall_quality',
@@ -116,6 +129,9 @@ def quality_summary(report):
             report.get('registration_mode', 'unknown'),
             report.get('integrated_views', '?'), report.get('vertex_count', '?'),
             report.get('triangle_count', '?')),
+        'TSDF mesh voxel: %.2f mm (smaller permits more polygons)' % (
+            1000.0 * float(configuration.get(
+                'voxel_length_m', float('nan')))),
         'Registration median RMSE: %.2f mm; dominant component: %.1f%%' % (
             1000.0 * float(registration.get('median_rmse_m', float('nan'))),
             100.0 * float(mesh.get(

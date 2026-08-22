@@ -1,5 +1,6 @@
 """Phase 1 characterization of the production mission orchestrator."""
 
+import hashlib
 import threading
 from types import SimpleNamespace
 
@@ -217,6 +218,11 @@ def test_process_startup_order_and_environment_are_characterized(
         'maximum_captures': 24,
         'required_captures': 8,
     }
+    calibration = (
+        tmp_path / 'L515_camera' / 'calibration' / 'hand_eye'
+        / 'session_20260808_straight_mount' / 'calibration_result.yaml')
+    calibration.parent.mkdir(parents=True)
+    calibration.write_text('status: accepted\n', encoding='utf-8')
     harness = SimpleNamespace(
         get_parameter=lambda name: SimpleNamespace(value=values[name]),
         param_bool=lambda name: bool(values[name]),
@@ -261,6 +267,9 @@ def test_process_startup_order_and_environment_are_characterized(
     assert environment['PIPER_VIEWPOINT_MAX_VIEWS'] == '24'
     assert environment['PIPER_MISSION_TASK_ID'] == session.task_id
     assert environment['PIPER_MISSION_SHA256'] == session.mission_sha256
+    assert environment['PIPER_HAND_EYE_CALIBRATION'] == str(calibration)
+    assert environment['PIPER_CALIBRATION_SHA256'] == hashlib.sha256(
+        calibration.read_bytes()).hexdigest()
 
 
 def test_occlusion_plan_ready_remains_needs_operator_and_never_contacts_scene(

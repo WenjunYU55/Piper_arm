@@ -7,6 +7,94 @@ import numpy as np
 
 RAY_PROBE_ID_BASE = 1_000_000
 RAY_PROBE_ID_STRIDE = 8
+RAY_REGIONS = (
+    'target_sector',
+    'upper_hemisphere',
+    'full_sphere',
+)
+MIN_RAY_COUNT = 1
+MAX_RAY_COUNT = 1000
+
+
+def _wrapped_angle_deg(value):
+    return (float(value) + 180.0) % 360.0 - 180.0
+
+
+def _evenly_downsample(values, count):
+    if len(values) == count:
+        return list(values)
+    if count == 1:
+        return [values[len(values) // 2]]
+    last = len(values) - 1
+    indexes = [
+        int(round(index * last / float(count - 1)))
+        for index in range(count)
+    ]
+    return [values[index] for index in indexes]
+
+
+def build_ray_samples(
+        region, ray_count, center_angle_deg=180.0,
+        sector_angle_deg=180.0, sector_pitch_degrees=()):
+    """
+    Return exactly ``ray_count`` deterministic target-centred directions.
+
+    ``target_sector`` retains the existing azimuth/elevation grid convention.
+    The hemisphere and sphere use equal-area Fibonacci samples so their poles
+    are not duplicated for every azimuth.
+    """
+    selected_region = str(region).strip()
+    count = int(ray_count)
+    center = float(center_angle_deg)
+    if selected_region not in RAY_REGIONS:
+        raise ValueError('unsupported ray sampling region: %s' % region)
+    if count < MIN_RAY_COUNT or count > MAX_RAY_COUNT:
+        raise ValueError(
+            'ray count must be between %d and %d'
+            % (MIN_RAY_COUNT, MAX_RAY_COUNT))
+    if not math.isfinite(center):
+        raise ValueError('ray center angle must be finite')
+
+    if selected_region == 'target_sector':
+        span = min(abs(float(sector_angle_deg)), 360.0)
+        pitches = [float(value) for value in sector_pitch_degrees]
+        if not math.isfinite(span) or span <= 0.0:
+            raise ValueError('target-sector angle must be positive and finite')
+        if not pitches or not all(
+                math.isfinite(value) and -90.0 <= value <= 90.0
+                for value in pitches):
+            raise ValueError(
+                'target-sector pitches must be finite values within 90 degrees')
+        azimuth_count = max(1, int(math.ceil(count / float(len(pitches)))))
+        if span >= 360.0 - 1e-9:
+            step = 360.0 / float(azimuth_count)
+            azimuths = [
+                center - 180.0 + index * step
+                for index in range(azimuth_count)
+            ]
+        elif azimuth_count == 1:
+            azimuths = [center]
+        else:
+            start = center - 0.5 * span
+            step = span / float(azimuth_count - 1)
+            azimuths = [start + index * step for index in range(azimuth_count)]
+        grid = [
+            (float(azimuth), float(pitch))
+            for pitch in pitches for azimuth in azimuths
+        ]
+        return _evenly_downsample(grid, count)
+
+    golden_angle_deg = 137.50776405003785
+    samples = []
+    for index in range(count):
+        unit = (index + 0.5) / float(count)
+        vertical = (
+            unit if selected_region == 'upper_hemisphere'
+            else 1.0 - 2.0 * unit)
+        pitch = -math.degrees(math.asin(vertical))
+        azimuth = _wrapped_angle_deg(center + index * golden_angle_deg)
+        samples.append((azimuth, pitch))
+    return samples
 
 
 def bounded_ray_interval(
@@ -58,9 +146,10 @@ def expand_shortlisted_rays(
     """
     Expand only shortlisted rays into bounded exact Tesseract endpoints.
 
-    Every preferred-band probe is ordered before every reserve-band probe.
-    This retains the existing exact-pose Tesseract contract without restoring
-    the planner's former full radial lattice.
+    Keep every probe for one information-ranked ray adjacent.  The worker can
+    therefore exhaust that direction before attempting the next ray without
+    changing the existing exact-pose Tesseract contract or restoring the
+    planner's former full radial lattice.
     """
     start = np.asarray(start_camera_position, dtype=float)
     target = np.asarray(target_center, dtype=float)
@@ -72,12 +161,11 @@ def expand_shortlisted_rays(
     if not math.isfinite(tolerance) or tolerance < 0.0:
         raise ValueError('ray standoff tolerance is invalid')
 
-    preferred = []
-    reserve = []
+    expanded = []
     for item in candidates:
         candidate = dict(item)
         if candidate.get('candidate_geometry') != 'target_ray':
-            preferred.append(candidate)
+            expanded.append(candidate)
             continue
         ray_id = int(candidate['ray_id'])
         direction = np.asarray(candidate.get('ray_direction'), dtype=float)
@@ -123,9 +211,10 @@ def expand_shortlisted_rays(
             return result
 
         for probe_index, standoff in enumerate(preferred_values):
-            preferred.append(exact_probe(standoff, probe_index, 'preferred'))
+            expanded.append(exact_probe(
+                standoff, probe_index, 'preferred'))
         reserve_offset = len(preferred_values)
         for offset, standoff in enumerate(reserve_values):
-            reserve.append(exact_probe(
+            expanded.append(exact_probe(
                 standoff, reserve_offset + offset, 'reserve'))
-    return preferred + reserve
+    return expanded

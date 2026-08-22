@@ -1665,6 +1665,33 @@ def test_august_11_incident_home_start_is_rejected_by_holder_floor_envelope():
     assert 'floor clearance 0.001245m is below 0.005000m' in reasons[0]
 
 
+def test_deployed_home_stages_clear_raised_virtual_floor():
+    """The contact buffer must not make the recorded safe home unusable."""
+    root = Path(__file__).resolve().parents[4]
+    kinematics = PiperScanKinematics(load_accepted_hand_eye(
+        str(root / 'L515_camera/calibration/hand_eye/'
+            'session_20260808_straight_mount/calibration_result.yaml')))
+    with (root / 'piper_home_pose.json').open(encoding='utf-8') as stream:
+        home = json.load(stream)
+    pre_home = np.asarray(home['pre_home_positions_rad'], dtype=float)
+    rough_home = np.asarray(home['positions_rad'], dtype=float)
+    storage = rough_home.copy()
+    storage[5] = float(home['storage_joint6_rad'])
+    path = [pre_home]
+    path.extend(interpolate_joint_path(pre_home, rough_home, 0.025))
+    path.extend(interpolate_joint_path(rough_home, storage, 0.025))
+
+    assert validate_attached_box_external_clearance_path(
+        kinematics,
+        path,
+        origin_link6_m=[-0.029750002, 0.0, 0.0375],
+        size_m=[0.1395, 0.10572671, 0.053],
+        floor_z_m=0.005,
+        clearance_m=0.005,
+        label='camera holder/L515',
+    ) == []
+
+
 def test_folded_start_escape_must_monotonically_reach_normal_proxy_clearance():
     kinematics = PiperScanKinematics(LINK6_FROM_CAMERA)
     start = np.asarray([
@@ -2366,6 +2393,65 @@ def test_executor_aborts_instead_of_bursting_or_shortcutting_overdue_path():
     assert 'refusing to burst or shortcut' in aborts[0]
     assert fake.path_index == 0
     assert fake.dropped_command_samples == 1
+
+
+def test_executor_holds_stream_until_feedback_catches_up():
+    published = []
+    aborts = []
+    target = np.full(6, 0.2)
+    errors = iter((0.31, 0.31, 0.25))
+    parameters = {
+        'trajectory_following_error_grace_sec': 1.0,
+        'trajectory_following_error_rad': 0.30,
+    }
+    logger = SimpleNamespace(
+        info=lambda _message: None,
+        warning=lambda _message: None,
+    )
+    fake = SimpleNamespace(
+        motion_started_at=0.0,
+        stream_last_tick_at=1.0,
+        stream_schedule_paused_sec=0.0,
+        stream_following_hold_started_at=None,
+        command_target=None,
+        path_index=0,
+        current_path=[target],
+        current_path_times=[1.0],
+        current_waypoint_error=0.0,
+        max_waypoint_error=0.0,
+        dropped_command_samples=0,
+        command_sent_at=0.0,
+        command_samples_sent=0,
+        max_command_interval_sec=0.0,
+        stream_schedule_completion_logged=False,
+        last_stream_planned_duration_sec=0.0,
+        last_stream_actual_duration_sec=0.0,
+        last_stream_achieved_rate_hz=0.0,
+        last_motion_status_at=0.0,
+        waypoint_started_at=None,
+        waypoint_last_progress_at=None,
+        waypoint_best_error=math.inf,
+        max_joint_error=lambda _target: next(errors),
+        total_joint_error=lambda _target: 0.25,
+        get_parameter=lambda name: SimpleNamespace(value=parameters[name]),
+        publish_joint_command=lambda value: published.append(
+            np.asarray(value).copy()),
+        publish_status=lambda: None,
+        get_logger=lambda: logger,
+        abort_or_finish_captures=aborts.append,
+    )
+
+    ScanViewpointExecutorNode.streaming_moving_tick(fake, 1.05)
+    ScanViewpointExecutorNode.streaming_moving_tick(fake, 1.10)
+    assert published == []
+    assert aborts == []
+    assert fake.path_index == 0
+    assert fake.stream_schedule_paused_sec == pytest.approx(0.10)
+
+    ScanViewpointExecutorNode.streaming_moving_tick(fake, 1.15)
+    assert len(published) == 1
+    assert fake.path_index == 1
+    assert fake.stream_following_hold_started_at is None
 
 
 def test_executor_aborts_movej_immediately_when_joint_delivery_is_stale():

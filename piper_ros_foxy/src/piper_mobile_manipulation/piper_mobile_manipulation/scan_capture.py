@@ -127,6 +127,90 @@ def depth_millimetres(depth, encoding):
     return np.clip(np.rint(millimetres), 0, 65535).astype(np.uint16)
 
 
+def temporal_confident_depth_median(
+        depth_frames, depth_encodings, confidence_frames,
+        minimum_confidence=8, minimum_support_fraction=0.50):
+    """
+    Fuse a settled native-depth burst without averaging invalid pixels.
+
+    Only nonzero depth samples with a qualifying L515 confidence grade
+    contribute.  A pixel is retained when it is supported by the configured
+    fraction of the burst.  Median, rather than arithmetic mean, prevents one
+    flying depth sample from pulling the reconstructed surface.
+    """
+    depths = list(depth_frames)
+    encodings = list(depth_encodings)
+    confidences = list(confidence_frames)
+    if not depths:
+        raise ValueError('depth burst must contain at least one frame')
+    if len(depths) != len(encodings) or len(depths) != len(confidences):
+        raise ValueError(
+            'depth, encoding and confidence burst lengths must match')
+    fraction = float(minimum_support_fraction)
+    if not math.isfinite(fraction) or fraction <= 0.0 or fraction > 1.0:
+        raise ValueError(
+            'minimum temporal support fraction must be in (0, 1]')
+    threshold = int(minimum_confidence)
+    if threshold < 0 or threshold > 15:
+        raise ValueError('minimum confidence must be in the range 0..15')
+
+    depth_stack = np.stack([
+        depth_millimetres(frame, encoding)
+        for frame, encoding in zip(depths, encodings)
+    ])
+    confidence_stack = np.stack([
+        normalize_l515_confidence(frame)[0] for frame in confidences
+    ])
+    if depth_stack.ndim != 3:
+        raise ValueError('every native depth burst frame must be 2D')
+    if confidence_stack.shape != depth_stack.shape:
+        raise ValueError(
+            'confidence burst shapes must match native depth shapes')
+
+    valid = (depth_stack > 0) & (confidence_stack >= threshold)
+    support = np.count_nonzero(valid, axis=0)
+    required = max(1, int(math.ceil(len(depths) * fraction)))
+    retained = support >= required
+
+    def valid_integer_median(stack, sentinel):
+        values = np.where(valid, stack, sentinel)
+        values.sort(axis=0)
+        lower_index = np.maximum(0, (support - 1) // 2)[None, ...]
+        upper_index = np.maximum(0, support // 2)[None, ...]
+        lower = np.take_along_axis(values, lower_index, axis=0)[0]
+        upper = np.take_along_axis(values, upper_index, axis=0)[0]
+        return (
+            lower.astype(np.uint32) + upper.astype(np.uint32)
+        ) / 2.0
+
+    median_depth = valid_integer_median(depth_stack, np.uint16(65535))
+    median_confidence = valid_integer_median(
+        confidence_stack, np.uint8(255))
+    output_depth = np.zeros(depth_stack.shape[1:], dtype=np.uint16)
+    output_confidence = np.zeros(depth_stack.shape[1:], dtype=np.uint8)
+    output_depth[retained] = np.clip(
+        np.rint(median_depth[retained]), 0, 65535).astype(np.uint16)
+    output_confidence[retained] = np.clip(
+        np.rint(median_confidence[retained]), 0, 15).astype(np.uint8)
+
+    retained_support = support[retained]
+    return output_depth, output_confidence, {
+        'estimator': 'per_pixel_median',
+        'input_frames': int(len(depths)),
+        'minimum_confidence_grade': threshold,
+        'minimum_support_fraction': fraction,
+        'minimum_support_frames': required,
+        'retained_pixels': int(np.count_nonzero(retained)),
+        'retained_support_min_frames': (
+            int(np.min(retained_support)) if retained_support.size else 0),
+        'retained_support_median_frames': (
+            float(np.median(retained_support))
+            if retained_support.size else 0.0),
+        'retained_support_max_frames': (
+            int(np.max(retained_support)) if retained_support.size else 0),
+    }
+
+
 def camera_matrix(values, name):
     """Validate and return a three-by-three pinhole camera matrix."""
     matrix = np.asarray(values, dtype=float)

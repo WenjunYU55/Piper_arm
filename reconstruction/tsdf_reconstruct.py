@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Secure offline object-masked RGB-D reconstruction for completed PiPER scans.
+"""
+Secure offline object-masked RGB-D reconstruction for completed PiPER scans.
 
-TSDF is the surface-fusion method.  Bounded GICP is an optional local
-correction around each capture-time robot pose; it is not a global optimizer.
+TSDF is the surface-fusion method.  Sequential bounded GICP and bounded
+multi-view pose-graph GICP are optional residual corrections around the
+capture-time robot poses; neither replaces calibration or robot kinematics.
 """
 
 import argparse
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -15,11 +18,16 @@ import numpy as np
 
 
 MINIMUM_CAPTURE_VIEWS = 8
+MINIMUM_PARTIAL_CAPTURE_VIEWS = 1
 MAXIMUM_CAPTURE_VIEWS = 24
-DEFAULT_VOXEL_LENGTH_M = 0.003
-DEFAULT_SDF_TRUNC_M = 0.015
+DEFAULT_VOXEL_LENGTH_M = 0.001
+DEFAULT_SDF_TRUNC_M = 0.005
 DEFAULT_DEPTH_TRUNC_M = 1.5
-REGISTRATION_MODES = ('robot_pose', 'bounded_gicp', 'auto')
+REGISTRATION_MODES = (
+    'robot_pose', 'bounded_gicp', 'multiway_gicp', 'auto')
+MULTIWAY_MAX_PRIOR_NEIGHBORS = 3
+MULTIWAY_MAX_VIEW_ANGLE_DEG = 75.0
+MULTIWAY_MAX_CORRESPONDENCE_M = 0.015
 
 
 def canonical_sha256(value):
@@ -61,13 +69,40 @@ def load_metadata(path):
     return value
 
 
-def validate_capture_set(manifest, metadata_paths):
-    """Validate one bounded feature-driven capture set before integration."""
+def capture_set_provenance(manifest, allow_partial_view_set=False):
+    """Classify the immutable view set without confusing count with quality."""
     count = int(manifest.get('capture_count', 0))
-    if not MINIMUM_CAPTURE_VIEWS <= count <= MAXIMUM_CAPTURE_VIEWS:
+    minimum = (
+        MINIMUM_PARTIAL_CAPTURE_VIEWS
+        if allow_partial_view_set else MINIMUM_CAPTURE_VIEWS)
+    if not minimum <= count <= MAXIMUM_CAPTURE_VIEWS:
         raise ValueError(
-            'TSDF reconstruction requires %d-%d captured views'
-            % (MINIMUM_CAPTURE_VIEWS, MAXIMUM_CAPTURE_VIEWS))
+            'TSDF reconstruction requires %d-%d captured views%s'
+            % (
+                minimum, MAXIMUM_CAPTURE_VIEWS,
+                ' when partial view sets are explicitly allowed'
+                if allow_partial_view_set else ''))
+    partial = count < MINIMUM_CAPTURE_VIEWS
+    return {
+        'classification': (
+            'PARTIAL_VIEW_SET' if partial else 'FEATURE_COMPLETE_ELIGIBLE'),
+        'capture_count': count,
+        'ordinary_feature_minimum': MINIMUM_CAPTURE_VIEWS,
+        'partial_view_set_explicitly_allowed': bool(allow_partial_view_set),
+        'reason': (
+            'view count is below the ordinary feature-complete floor; '
+            'mesh quality and coverage remain provisional'
+            if partial else
+            'view count is eligible for ordinary feature-complete validation'),
+    }
+
+
+def validate_capture_set(
+        manifest, metadata_paths, allow_partial_view_set=False):
+    """Validate one bounded feature-driven capture set before integration."""
+    capture_set = capture_set_provenance(
+        manifest, allow_partial_view_set=allow_partial_view_set)
+    count = int(capture_set['capture_count'])
     paths = list(metadata_paths)
     if len(paths) != count:
         raise ValueError(
@@ -129,18 +164,22 @@ def manifest_artifact_index(scan, manifest):
     return index
 
 
-def metadata_paths_from_manifest(scan, manifest):
+def metadata_paths_from_manifest(
+        scan, manifest, allow_partial_view_set=False):
     artifacts = manifest_artifact_index(scan, manifest)
     paths = [
         path for relative, path in artifacts.items()
         if relative.startswith('frames/view_')
         and relative.endswith('_metadata.yaml')
     ]
-    return validate_capture_set(manifest, sorted(paths))
+    return validate_capture_set(
+        manifest, sorted(paths),
+        allow_partial_view_set=allow_partial_view_set)
 
 
 def resolve_frame_artifacts(scan, metadata_path, metadata, manifest):
-    """Resolve a frame only through manifest-listed dataset-relative paths.
+    """
+    Resolve a frame only through manifest-listed dataset-relative paths.
 
     Historical metadata contains absolute paths.  Those strings are treated as
     provenance only; their basename must agree with the immutable frame name.
@@ -396,6 +435,191 @@ def correction_rejection(
     return ''
 
 
+def camera_direction_angle_deg(first, second):
+    """Return the angle between two finite camera optical axes."""
+    first_axis = np.asarray(first, dtype=float)[:3, 2]
+    second_axis = np.asarray(second, dtype=float)[:3, 2]
+    first_norm = float(np.linalg.norm(first_axis))
+    second_norm = float(np.linalg.norm(second_axis))
+    if first_norm <= 0.0 or second_norm <= 0.0 \
+            or not np.isfinite(first_norm) or not np.isfinite(second_norm):
+        raise ValueError('camera pose has no finite optical axis')
+    cosine = float(np.clip(
+        np.dot(first_axis, second_axis) / (first_norm * second_norm),
+        -1.0, 1.0))
+    return float(np.degrees(np.arccos(cosine)))
+
+
+def multiway_registration_pairs(
+        nominal_poses, maximum_prior_neighbors=MULTIWAY_MAX_PRIOR_NEIGHBORS,
+        maximum_view_angle_deg=MULTIWAY_MAX_VIEW_ANGLE_DEG):
+    """
+    Select a bounded set of overlapping pair candidates.
+
+    Consecutive captures are always evaluated.  Each capture also considers a
+    few earlier views with the closest optical direction, avoiding an O(N^2)
+    registration sweep while retaining loop closures across the scan.
+    """
+    poses = [np.asarray(value, dtype=float) for value in nominal_poses]
+    if len(poses) < 2:
+        return []
+    if int(maximum_prior_neighbors) < 1:
+        raise ValueError('maximum prior neighbors must be positive')
+    pairs = {(index - 1, index) for index in range(1, len(poses))}
+    for target in range(1, len(poses)):
+        ranked = sorted(
+            (camera_direction_angle_deg(poses[source], poses[target]), source)
+            for source in range(target))
+        for angle, source in ranked[:int(maximum_prior_neighbors)]:
+            if angle <= float(maximum_view_angle_deg):
+                pairs.add((source, target))
+    return sorted(pairs)
+
+
+def registration_spanning_tree(node_count, accepted_edges):
+    """Return accepted edge indices forming one deterministic spanning tree."""
+    count = int(node_count)
+    if count < 1:
+        raise ValueError('pose graph must contain at least one node')
+    parent = list(range(count))
+
+    def root(value):
+        while parent[value] != value:
+            parent[value] = parent[parent[value]]
+            value = parent[value]
+        return value
+
+    selected = set()
+    ranked = sorted(
+        enumerate(accepted_edges),
+        key=lambda item: (
+            abs(int(item[1]['target']) - int(item[1]['source'])),
+            float(item[1]['inlier_rmse_m']), item[0]))
+    for edge_index, edge in ranked:
+        source = int(edge['source'])
+        target = int(edge['target'])
+        if source < 0 or target < 0 or source >= count or target >= count:
+            raise ValueError('pose-graph edge references an invalid node')
+        source_root, target_root = root(source), root(target)
+        if source_root == target_root:
+            continue
+        parent[target_root] = source_root
+        selected.add(edge_index)
+        if len(selected) == count - 1:
+            break
+    if len(selected) != count - 1:
+        raise ValueError(
+            'bounded multi-view registration graph is disconnected')
+    return selected
+
+
+def bounded_multiway_camera_poses(frames, o3d):
+    """Refine all camera poses jointly while retaining robot-pose bounds."""
+    if len(frames) < 3:
+        raise ValueError(
+            'bounded multi-view registration requires at least three views')
+    nominal = [
+        np.asarray(frame['nominal_base_camera'], dtype=float)
+        for frame in frames]
+    graph = o3d.pipelines.registration.PoseGraph()
+    for pose in nominal:
+        graph.nodes.append(
+            o3d.pipelines.registration.PoseGraphNode(pose))
+    accepted_edges = []
+    attempted_edges = []
+    for source, target in multiway_registration_pairs(nominal):
+        initial = np.linalg.inv(nominal[target]) @ nominal[source]
+        result = o3d.pipelines.registration.registration_generalized_icp(
+            frames[source]['cloud_camera'], frames[target]['cloud_camera'],
+            MULTIWAY_MAX_CORRESPONDENCE_M, initial,
+            o3d.pipelines.registration.
+            TransformationEstimationForGeneralizedICP(),
+            o3d.pipelines.registration.ICPConvergenceCriteria(
+                relative_fitness=1e-6, relative_rmse=1e-6,
+                max_iteration=40))
+        relative = np.asarray(result.transformation, dtype=float)
+        # Hold the target at its robot pose to express the pairwise proposal as
+        # one base-frame correction of the source pose.  The established
+        # correction bounds therefore retain their original physical meaning.
+        correction = (
+            nominal[target] @ relative @ np.linalg.inv(nominal[source]))
+        rejection = correction_rejection(
+            correction, result.fitness, result.inlier_rmse)
+        record = {
+            'source': int(source),
+            'target': int(target),
+            'fitness': float(result.fitness),
+            'inlier_rmse_m': float(result.inlier_rmse),
+            'proposed_translation_correction_m': float(
+                np.linalg.norm(correction[:3, 3])),
+            'proposed_rotation_correction_deg': float(
+                np.degrees(rotation_angle_rad(correction))),
+            'accepted': not rejection,
+            'rejection': rejection,
+        }
+        attempted_edges.append(record)
+        if rejection:
+            continue
+        information = o3d.pipelines.registration.\
+            get_information_matrix_from_point_clouds(
+                frames[source]['cloud_camera'],
+                frames[target]['cloud_camera'],
+                MULTIWAY_MAX_CORRESPONDENCE_M, relative)
+        record['relative_transform'] = relative
+        record['information'] = information
+        accepted_edges.append(record)
+    tree_edges = registration_spanning_tree(len(frames), accepted_edges)
+    for edge_index, edge in enumerate(accepted_edges):
+        graph.edges.append(o3d.pipelines.registration.PoseGraphEdge(
+            edge['source'], edge['target'], edge['relative_transform'],
+            edge['information'], uncertain=edge_index not in tree_edges))
+    options = o3d.pipelines.registration.GlobalOptimizationOption(
+        max_correspondence_distance=MULTIWAY_MAX_CORRESPONDENCE_M,
+        edge_prune_threshold=0.25,
+        preference_loop_closure=1.0,
+        reference_node=0)
+    o3d.pipelines.registration.global_optimization(
+        graph,
+        o3d.pipelines.registration.
+        GlobalOptimizationLevenbergMarquardt(),
+        o3d.pipelines.registration.GlobalOptimizationConvergenceCriteria(),
+        options)
+    refined = []
+    corrections = []
+    for index, (node, robot_pose) in enumerate(zip(graph.nodes, nominal)):
+        pose = np.asarray(node.pose, dtype=float)
+        correction = pose @ np.linalg.inv(robot_pose)
+        rejection = correction_rejection(
+            correction, fitness=1.0, inlier_rmse=0.0)
+        if rejection:
+            raise ValueError(
+                'multi-view pose %d rejected: %s' % (index, rejection))
+        refined.append(pose)
+        corrections.append({
+            'frame_index': int(index),
+            'translation_correction_m': float(
+                np.linalg.norm(correction[:3, 3])),
+            'rotation_correction_deg': float(
+                np.degrees(rotation_angle_rad(correction))),
+        })
+    serializable_edges = []
+    for edge in attempted_edges:
+        serializable_edges.append({
+            key: value for key, value in edge.items()
+            if key not in ('relative_transform', 'information')})
+    return refined, {
+        'candidate_pair_count': len(attempted_edges),
+        'accepted_pair_count': len(accepted_edges),
+        'spanning_tree_pair_count': len(tree_edges),
+        'pairwise_edges': serializable_edges,
+        'pose_corrections': corrections,
+        'robot_pose_bounds_retained': {
+            'maximum_translation_m': 0.020,
+            'maximum_rotation_deg': 5.0,
+        },
+    }
+
+
 def camera_matrix(camera_info):
     k = np.asarray(camera_info.get('k', []), dtype=float)
     if not camera_info.get('available') or k.size != 9 \
@@ -470,7 +694,8 @@ def expected_dimensions_m(values):
 
 def target_depth_support_mask(depth_mm, mask, target_depth_m,
                               expected_dimensions):
-    """Reject masked background beyond the known target's depth envelope.
+    """
+    Reject masked background beyond the known target's depth envelope.
 
     Segmentation boundaries on aligned RGB-D can contain table pixels.  For a
     measured reference object, its maximum line-of-sight half-extent cannot
@@ -656,7 +881,8 @@ def _atomic_write_json(path, value):
 def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
                         output_path, registration_mode, voxel_length,
                         sdf_trunc, depth_trunc, expected_dimensions,
-                        provenance, manifest_sha256):
+                        provenance, manifest_sha256,
+                        allow_partial_view_set=False):
     try:
         import cv2
         import open3d as o3d
@@ -666,15 +892,22 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
     volume = o3d.pipelines.integration.ScalableTSDFVolume(
         voxel_length=float(voxel_length), sdf_trunc=float(sdf_trunc),
         color_type=o3d.pipelines.integration.TSDFVolumeColorType.RGB8)
+    frames = [
+        _load_capture(
+            scan, metadata_path, metadata, manifest, cv2, o3d, depth_trunc,
+            expected_dimensions)
+        for metadata_path, metadata in zip(metadata_paths, metadata_values)]
+    multiway_diagnostics = None
+    refined_multiway_poses = None
+    if registration_mode == 'multiway_gicp':
+        refined_multiway_poses, multiway_diagnostics = \
+            bounded_multiway_camera_poses(frames, o3d)
     registration = []
     frame_inputs = []
     accumulated = None
-    for metadata_path, metadata in zip(metadata_paths, metadata_values):
-        frame = _load_capture(
-            scan, metadata_path, metadata, manifest, cv2, o3d, depth_trunc,
-            expected_dimensions)
-        cloud_base = frame['cloud_camera'].transform(
-            frame['nominal_base_camera'].copy())
+    for frame_index, (metadata_path, frame) in enumerate(
+            zip(metadata_paths, frames)):
+        cloud_base = None
         correction = np.eye(4)
         accepted = False
         rejection = 'first frame anchors the target model'
@@ -682,7 +915,30 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
         inlier_rmse = 0.0
         proposed_translation = 0.0
         proposed_rotation = 0.0
-        if accumulated is not None and len(accumulated.points) >= 20:
+        if refined_multiway_poses is not None:
+            refined_base_camera = refined_multiway_poses[frame_index]
+            correction = (
+                refined_base_camera
+                @ np.linalg.inv(frame['nominal_base_camera']))
+            proposed_translation = float(np.linalg.norm(correction[:3, 3]))
+            proposed_rotation = float(
+                np.degrees(rotation_angle_rad(correction)))
+            accepted = frame_index != 0 and (
+                proposed_translation > 1e-9 or proposed_rotation > 1e-9)
+            rejection = (
+                'first frame anchors bounded multi-view registration'
+                if frame_index == 0 else '')
+            incident = [
+                edge for edge in multiway_diagnostics['pairwise_edges']
+                if edge['accepted'] and frame_index in (
+                    edge['source'], edge['target'])]
+            if incident:
+                fitness = float(min(edge['fitness'] for edge in incident))
+                inlier_rmse = float(np.median([
+                    edge['inlier_rmse_m'] for edge in incident]))
+        elif accumulated is not None and len(accumulated.points) >= 20:
+            cloud_base = copy.deepcopy(frame['cloud_camera'])
+            cloud_base.transform(frame['nominal_base_camera'].copy())
             result = o3d.pipelines.registration.registration_generalized_icp(
                 cloud_base, accumulated, 0.015, np.eye(4),
                 o3d.pipelines.registration.TransformationEstimationForGeneralizedICP(),
@@ -703,7 +959,12 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
                 correction = proposed
                 cloud_base.transform(correction)
                 accepted = True
-        refined_base_camera = correction @ frame['nominal_base_camera']
+            refined_base_camera = correction @ frame['nominal_base_camera']
+        else:
+            refined_base_camera = frame['nominal_base_camera'].copy()
+        if cloud_base is None:
+            cloud_base = copy.deepcopy(frame['cloud_camera'])
+            cloud_base.transform(refined_base_camera.copy())
         registration.append({
             'frame': metadata_path.name,
             'fitness': fitness,
@@ -748,9 +1009,25 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
         output.with_name(output.stem + '.input_cloud.ply'))
     metrics = mesh_metrics(
         o3d, mesh, accumulated, expected_dimensions)
-    registration_rmse = np.asarray(
-        [item['inlier_rmse_m'] for item in registration[1:]
-         if np.isfinite(item['inlier_rmse_m'])], dtype=float)
+    if multiway_diagnostics is not None:
+        registration_rmse = np.asarray([
+            item['inlier_rmse_m']
+            for item in multiway_diagnostics['pairwise_edges']
+            if item['accepted'] and np.isfinite(item['inlier_rmse_m'])],
+            dtype=float)
+        registration_fitness = [
+            item['fitness']
+            for item in multiway_diagnostics['pairwise_edges']
+            if item['accepted']]
+        evaluated_pairs = int(
+            multiway_diagnostics['candidate_pair_count'])
+    else:
+        registration_rmse = np.asarray(
+            [item['inlier_rmse_m'] for item in registration[1:]
+             if np.isfinite(item['inlier_rmse_m'])], dtype=float)
+        registration_fitness = [
+            item['fitness'] for item in registration[1:]]
+        evaluated_pairs = max(0, len(registration) - 1)
     median_rmse = (
         float(np.median(registration_rmse))
         if registration_rmse.size else float('inf'))
@@ -765,6 +1042,12 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
             overall_quality = 'FAIL'
         elif dimension_quality == 'WARN' and overall_quality == 'PASS':
             overall_quality = 'WARN'
+    capture_set = capture_set_provenance(
+        manifest, allow_partial_view_set=allow_partial_view_set)
+    if (
+            capture_set['classification'] == 'PARTIAL_VIEW_SET'
+            and overall_quality == 'PASS'):
+        overall_quality = 'WARN'
     config = {
         'registration_mode': registration_mode,
         'voxel_length_m': float(voxel_length),
@@ -774,12 +1057,22 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
         'expected_dimensions_m': (
             expected_dimensions.tolist()
             if expected_dimensions is not None else None),
+        'allow_partial_view_set': bool(allow_partial_view_set),
     }
+    if multiway_diagnostics is not None:
+        config['multiway_registration'] = {
+            'maximum_prior_neighbors': MULTIWAY_MAX_PRIOR_NEIGHBORS,
+            'maximum_view_angle_deg': MULTIWAY_MAX_VIEW_ANGLE_DEG,
+            'maximum_correspondence_m': MULTIWAY_MAX_CORRESPONDENCE_M,
+            'maximum_pose_translation_correction_m': 0.020,
+            'maximum_pose_rotation_correction_deg': 5.0,
+        }
     report = {
         'schema_version': 3,
         'scan_dir': str(scan),
         'input_manifest_sha256': manifest_sha256,
         'provenance': provenance,
+        'capture_set': capture_set,
         'integrated_views': len(frame_inputs),
         'registration_mode': registration_mode,
         'vertex_count': len(mesh.vertices),
@@ -791,17 +1084,18 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
         'configuration': config,
         'configuration_sha256': canonical_sha256(config),
         'registration': registration,
+        'multiway_registration': multiway_diagnostics,
         'registration_summary': {
             'accepted_corrections': sum(
                 bool(item['correction_accepted']) for item in registration),
-            'evaluated_pairs': max(0, len(registration) - 1),
+            'evaluated_pairs': evaluated_pairs,
             'median_rmse_m': median_rmse,
             'maximum_rmse_m': (
                 float(np.max(registration_rmse))
                 if registration_rmse.size else float('inf')),
-            'minimum_fitness': float(min(
-                item['fitness'] for item in registration[1:]))
-                if len(registration) > 1 else 0.0,
+            'minimum_fitness': (
+                float(min(registration_fitness))
+                if registration_fitness else 0.0),
         },
         'mesh_metrics': metrics,
         'structural_quality': structural,
@@ -859,16 +1153,104 @@ def select_registration_report(robot_report, gicp_report):
     }
 
 
+def registration_candidate_assessment(robot_report, candidate_report):
+    """Decide whether one residual refinement safely improves the baseline."""
+    robot_metrics = robot_report['mesh_metrics']
+    candidate_metrics = candidate_report['mesh_metrics']
+    robot_residual = float(
+        robot_metrics['point_to_mesh_residual']['median_m'])
+    candidate_residual = float(
+        candidate_metrics['point_to_mesh_residual']['median_m'])
+    residual_improvement = (
+        (robot_residual - candidate_residual) / robot_residual
+        if np.isfinite(robot_residual) and robot_residual > 0.0 else 0.0)
+    robot_component = float(
+        robot_metrics['dominant_component_triangle_ratio'])
+    candidate_component = float(
+        candidate_metrics['dominant_component_triangle_ratio'])
+    component_improvement = candidate_component - robot_component
+    robot_dimension = robot_metrics.get('dimension_check')
+    candidate_dimension = candidate_metrics.get('dimension_check')
+    dimension_ok = True
+    if robot_dimension and candidate_dimension:
+        dimension_ok = (
+            float(candidate_dimension['mean_absolute_error_m'])
+            <= float(robot_dimension['mean_absolute_error_m']) + 0.002)
+    component_ok = (
+        candidate_component >= 0.80
+        and (component_improvement >= 0.05 or candidate_component >= 0.95))
+    quality_ok = _quality_rank(
+        candidate_report['structural_quality']) >= _quality_rank(
+            robot_report['structural_quality'])
+    material_improvement = (
+        residual_improvement >= 0.10 or component_improvement >= 0.10)
+    eligible = bool(
+        dimension_ok and component_ok and quality_ok and material_improvement)
+    return {
+        'eligible': eligible,
+        'robot_pose_point_to_mesh_median_m': robot_residual,
+        'candidate_point_to_mesh_median_m': candidate_residual,
+        'residual_improvement_fraction': residual_improvement,
+        'robot_pose_dominant_component_ratio': robot_component,
+        'candidate_dominant_component_ratio': candidate_component,
+        'component_improvement_fraction': component_improvement,
+        'dimension_not_worse_by_more_than_2mm': bool(dimension_ok),
+        'component_coherence_acceptable': bool(component_ok),
+        'structural_quality_not_worse': bool(quality_ok),
+        'material_improvement': bool(material_improvement),
+        'selection_rule': (
+            'refinement must retain dimension and structural quality, reach '
+            'at least 80% dominant-component coherence with material '
+            'improvement, and improve residual or coherence materially'),
+    }
+
+
+def select_registration_reports(reports):
+    """Select the strongest safe refinement while retaining robot fallback."""
+    if 'robot_pose' not in reports:
+        selected = next(iter(reports))
+        return selected, {
+            'selection_rule': 'robot-pose baseline did not complete',
+            'candidate_assessments': {},
+        }
+    robot = reports['robot_pose']
+    assessments = {}
+    eligible = []
+    for mode, report in reports.items():
+        if mode == 'robot_pose':
+            continue
+        assessment = registration_candidate_assessment(robot, report)
+        assessments[mode] = assessment
+        if assessment['eligible']:
+            metrics = report['mesh_metrics']
+            eligible.append((
+                float(metrics['dominant_component_triangle_ratio']),
+                -float(metrics['point_to_mesh_residual']['median_m']),
+                mode))
+    selected = max(eligible)[2] if eligible else 'robot_pose'
+    return selected, {
+        'selected_mode': selected,
+        'candidate_assessments': assessments,
+        'selection_rule': (
+            'select the eligible refinement with greatest component '
+            'coherence, then lowest point-to-mesh residual; otherwise retain '
+            'the timestamped robot-pose baseline'),
+    }
+
+
 def reconstruct(scan_dir, output_path, voxel_length=DEFAULT_VOXEL_LENGTH_M,
                 sdf_trunc=DEFAULT_SDF_TRUNC_M,
                 depth_trunc=DEFAULT_DEPTH_TRUNC_M,
                 registration_mode='auto', expected_dimensions=None,
-                allow_missing_calibration_id=False):
+                allow_missing_calibration_id=False,
+                allow_partial_view_set=False):
     scan = Path(scan_dir).resolve()
     with open(scan / 'manifest.json', 'r', encoding='utf-8') as stream:
         manifest = json.load(stream)
     manifest_sha256 = validate_manifest_integrity(scan, manifest)
-    metadata_paths = metadata_paths_from_manifest(scan, manifest)
+    metadata_paths = metadata_paths_from_manifest(
+        scan, manifest,
+        allow_partial_view_set=allow_partial_view_set)
     metadata_values = [load_metadata(path) for path in metadata_paths]
     provenance = calibration_provenance(
         manifest, metadata_values, allow_missing_calibration_id)
@@ -884,30 +1266,26 @@ def reconstruct(scan_dir, output_path, voxel_length=DEFAULT_VOXEL_LENGTH_M,
         return _reconstruct_single(
             scan, manifest, metadata_paths, metadata_values, output, mode,
             voxel_length, sdf_trunc, depth_trunc, dimensions, provenance,
-            manifest_sha256)
+            manifest_sha256, allow_partial_view_set)
     reports = {}
     errors = {}
-    for candidate_mode in ('robot_pose', 'bounded_gicp'):
+    for candidate_mode in (
+            'robot_pose', 'bounded_gicp', 'multiway_gicp'):
         candidate_output = output.with_name(
             output.stem + '.' + candidate_mode + output.suffix)
         try:
             reports[candidate_mode] = _reconstruct_single(
                 scan, manifest, metadata_paths, metadata_values,
                 candidate_output, candidate_mode, voxel_length, sdf_trunc,
-                depth_trunc, dimensions, provenance, manifest_sha256)
+                depth_trunc, dimensions, provenance, manifest_sha256,
+                allow_partial_view_set)
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
             errors[candidate_mode] = str(exc)
     if not reports:
-        raise ValueError('both reconstruction modes failed: %s' % errors)
-    if len(reports) == 2:
-        selected_mode, comparison = select_registration_report(
-            reports['robot_pose'], reports['bounded_gicp'])
-    else:
-        selected_mode = next(iter(reports))
-        comparison = {
-            'selection_rule': 'only one reconstruction mode completed',
-            'mode_errors': errors,
-        }
+        raise ValueError('all reconstruction modes failed: %s' % errors)
+    selected_mode, comparison = select_registration_reports(reports)
+    if errors:
+        comparison['mode_errors'] = errors
     selected = dict(reports[selected_mode])
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_name(output.name + '.partial')
@@ -941,6 +1319,11 @@ def main():
         '--expected-dimensions-mm', type=float, nargs=3,
         metavar=('X', 'Y', 'Z'))
     parser.add_argument('--allow-missing-calibration-id', action='store_true')
+    parser.add_argument(
+        '--allow-partial-view-set', action='store_true',
+        help=(
+            'Permit 1-7 immutable captures for a partial/provisional mesh; '
+            'the report remains explicitly PARTIAL_VIEW_SET.'))
     args = parser.parse_args()
     dimensions = (
         np.asarray(args.expected_dimensions_mm, dtype=float) / 1000.0
@@ -948,7 +1331,8 @@ def main():
     print(json.dumps(reconstruct(
         args.scan_dir, args.output, args.voxel_length, args.sdf_trunc,
         args.depth_trunc, args.registration_mode, dimensions,
-        args.allow_missing_calibration_id), indent=2, sort_keys=True))
+        args.allow_missing_calibration_id,
+        args.allow_partial_view_set), indent=2, sort_keys=True))
 
 
 if __name__ == '__main__':

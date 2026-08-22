@@ -7,6 +7,7 @@ from piper_mobile_manipulation.scan_viewpoint_planner_node import (
     viewpoint_replan_required,
     viewpoint_refresh_required,
 )
+from piper_mobile_manipulation.viewpoint_rays import build_ray_samples
 
 
 def test_reachable_workstation_sector_has_five_ordered_views():
@@ -51,6 +52,30 @@ def test_live_ray_region_spans_both_y_sides_and_elevations_once():
     assert sorted(set(pitch for _angle, pitch in candidates)) == [
         -75.0, -65.0, -55.0, -45.0, -35.0, -25.0, -15.0]
 
+    samples = build_ray_samples(
+        'target_sector', 175, 180.0, 180.0, sorted(set(pitches)))
+    assert len(samples) == 175
+    assert min(angle for angle, _pitch in samples) == 90.0
+    assert max(angle for angle, _pitch in samples) == 270.0
+
+
+def test_full_sphere_has_exact_requested_count_and_both_vertical_halves():
+    samples = build_ray_samples('full_sphere', 175)
+    assert len(samples) == 175
+    assert len(set(samples)) == 175
+    assert min(pitch for _angle, pitch in samples) < -80.0
+    assert max(pitch for _angle, pitch in samples) > 80.0
+    assert all(-180.0 <= angle < 180.0 for angle, _pitch in samples)
+
+
+def test_upper_hemisphere_is_360_degree_and_never_below_target():
+    samples = build_ray_samples('upper_hemisphere', 120)
+    assert len(samples) == 120
+    assert all(-90.0 <= pitch < 0.0 for _angle, pitch in samples)
+    quadrants = {
+        int((angle + 180.0) // 90.0) for angle, _pitch in samples}
+    assert quadrants == {0, 1, 2, 3}
+
 
 def test_ray_pool_is_generated_once_and_ignores_later_target_shift():
     calls = []
@@ -76,15 +101,16 @@ def test_ray_pool_is_generated_once_and_ignores_later_target_shift():
     shifted_center = {'x': 0.46, 'y': 0.0, 'z': 0.0}
 
     frozen, first = ScanViewpointPlannerNode.frozen_ray_pool(
-        harness, history, first_center, 'base_link', [90.0, 180.0])
+        harness, history, first_center, 'base_link',
+        [(90.0, -20.0), (180.0, -30.0)])
     reused, second = ScanViewpointPlannerNode.frozen_ray_pool(
-        harness, history, shifted_center, 'base_link', [90.0, 180.0])
+        harness, history, shifted_center, 'base_link', [(0.0, 40.0)])
 
     assert frozen == first_center
     assert reused == first_center
     assert first == second
-    assert len(first) == 4
-    assert len(calls) == 4
+    assert len(first) == 2
+    assert len(calls) == 2
 
 
 def test_tracker_rate_duplicates_do_not_regenerate_candidates():

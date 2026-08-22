@@ -55,17 +55,38 @@ def test_startup_wrist_direction_is_proved_before_motor_enable():
         MissionEngine._handle_enable_and_hold)
 
 
-def test_configured_home_acceptance_uses_operator_authorized_point_three_rad():
+def test_configured_home_acceptance_uses_operator_authorized_point_two_rad():
     node = SimpleNamespace(
         require_fresh_joint_feedback=lambda: None,
         telemetry_store=None,
-        latest_joints=SimpleNamespace(position=[0.299] * 6),
+        latest_joints=SimpleNamespace(position=[0.199] * 6),
     )
     session = SimpleNamespace(home_positions_rad=[0.0] * 6)
 
     assert TargetScanMissionNode.at_configured_home(node, session)
-    node.latest_joints = SimpleNamespace(position=[0.301] + [0.0] * 5)
+    node.latest_joints = SimpleNamespace(position=[0.201] + [0.0] * 5)
     assert not TargetScanMissionNode.at_configured_home(node, session)
+
+
+def test_pre_home_proof_does_not_claim_rough_home_completion():
+    session = SimpleNamespace(
+        pre_home_completed=False,
+        return_home_proved=False,
+        storage_wrist_proved=False,
+        home_positions_rad=[0.0] * 6,
+    )
+    node = SimpleNamespace(
+        last_return_home_diagnostic='',
+        processes=SimpleNamespace(failed=lambda: {}),
+        at_configured_home=lambda _session, **_kwargs: True,
+    )
+
+    assert TargetScanMissionNode.prove_return_home_for_shutdown(
+        node, session, target_positions=[0.0] * 6,
+        home_stage='PRE_HOME')
+    assert session.pre_home_completed
+    assert not session.return_home_proved
+    assert not session.storage_wrist_proved
 
 
 def test_compatibility_hold_helpers_use_acknowledgement_not_noise_window():
@@ -300,17 +321,20 @@ def test_only_proved_post_capture_safe_view_exhaustion_completes_adaptively():
         'MULTIVIEW_SCAN planning failed: Tesseract proposal rejected: '
         'PLANNING_FAILED: only 0 viewpoints planned; require at least 1 of 1 '
         '(view 7: no finite bounded collision-free IK goal for any roll)')
-    sufficient = {'sufficient': True}
+    complete_history = {
+        'sufficient': False,
+        'accepted_achieved_views': 7,
+    }
     assert REQUIRED_CAPTURES == 8
     assert safe_view_exhaustion_after_capture(
-        reason, REQUIRED_CAPTURES, sufficient)
-    assert not safe_view_exhaustion_after_capture(reason, REQUIRED_CAPTURES, {
-        'sufficient': False})
+        reason, 7, complete_history)
     assert not safe_view_exhaustion_after_capture(
-        reason, REQUIRED_CAPTURES - 1, sufficient)
+        reason, 7, {'accepted_achieved_views': 6})
+    assert not safe_view_exhaustion_after_capture(
+        reason, 0, {'accepted_achieved_views': 0})
     assert not safe_view_exhaustion_after_capture(
         'MULTIVIEW_SCAN planning failed: worker timed out',
-        REQUIRED_CAPTURES, sufficient)
+        7, complete_history)
 
 
 def test_feature_capture_contract_uses_seed_floor_then_bounded_extras():

@@ -13,6 +13,7 @@ import yaml
 UNKNOWN = np.uint8(0)
 FREE = np.uint8(1)
 SURFACE = np.uint8(2)
+MINIMUM_USEFUL_MARGINAL_INFORMATION_FRACTION = 0.02
 
 
 @dataclass(frozen=True)
@@ -91,6 +92,21 @@ def _vector3(value, label):
     if result.shape != (3,) or not np.all(np.isfinite(result)):
         raise ValueError('%s must contain three finite values' % label)
     return result
+
+
+def candidate_meets_minimum_information(
+        candidate,
+        minimum_fraction=MINIMUM_USEFUL_MARGINAL_INFORMATION_FRACTION):
+    """Return whether a scored NBV clears the useful-gain floor."""
+    minimum = float(minimum_fraction)
+    fraction = float(candidate.get(
+        'nbv_marginal_information_fraction', float('nan')))
+    if (
+            not math.isfinite(minimum) or minimum < 0.0 or minimum > 1.0
+            or not math.isfinite(fraction) or fraction < 0.0
+            or fraction > 1.0):
+        return False
+    return fraction + 1e-12 >= minimum
 
 
 def _inside(root, value):

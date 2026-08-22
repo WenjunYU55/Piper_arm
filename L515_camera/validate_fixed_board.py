@@ -15,6 +15,7 @@ import rclpy
 from cv_bridge import CvBridge
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
+from rclpy.time import Time
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import CameraInfo, Image, JointState
 from tf2_ros import Buffer, TransformException, TransformListener
@@ -182,7 +183,8 @@ class FixedBoardValidator(Node):
             rotation, _ = cv2.Rodrigues(rvec)
             base_from_camera = transform_message(
                 self.tf_buffer.lookup_transform(
-                    self.args.base_frame, self.args.camera_frame, rclpy.time.Time()
+                    self.args.base_frame, self.args.camera_frame,
+                    Time.from_msg(message.header.stamp)
                 )
             )
             base_from_board = base_from_camera @ transform(rotation, tvec.reshape(3))
