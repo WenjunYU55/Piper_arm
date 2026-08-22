@@ -2,17 +2,20 @@
 """
 Secure offline object-masked RGB-D reconstruction for completed PiPER scans.
 
-TSDF is the surface-fusion method.  Sequential bounded GICP and bounded
-multi-view pose-graph GICP are optional residual corrections around the
-capture-time robot poses; neither replaces calibration or robot kinematics.
+TSDF is the surface-fusion method.  Sequential target GICP, target-only
+multi-view GICP and static-scene RGB-D pose-graph refinement are optional
+residual corrections around the capture-time robot poses; none replaces
+calibration or robot kinematics.
 """
 
 import argparse
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
+import subprocess
 
 import numpy as np
 
@@ -24,10 +27,14 @@ DEFAULT_VOXEL_LENGTH_M = 0.001
 DEFAULT_SDF_TRUNC_M = 0.005
 DEFAULT_DEPTH_TRUNC_M = 1.5
 REGISTRATION_MODES = (
-    'robot_pose', 'bounded_gicp', 'multiway_gicp', 'auto')
+    'robot_pose', 'bounded_gicp', 'multiway_gicp', 'scene_pose_graph', 'auto')
+MASK_SOURCES = ('captured', 'offline_resegment')
 MULTIWAY_MAX_PRIOR_NEIGHBORS = 3
 MULTIWAY_MAX_VIEW_ANGLE_DEG = 75.0
 MULTIWAY_MAX_CORRESPONDENCE_M = 0.015
+SCENE_REGISTRATION_VOXEL_M = 0.005
+SCENE_TARGET_EXCLUSION_RADIUS_PX = 6
+SCENE_MINIMUM_POINTS = 500
 
 
 def canonical_sha256(value):
@@ -162,6 +169,116 @@ def manifest_artifact_index(scan, manifest):
             raise ValueError('manifest file escapes the dataset root') from exc
         index[relative.as_posix()] = candidate
     return index
+
+
+def prepare_offline_mask_context(scan, manifest_sha256):
+    """Run/reuse the isolated offline segmenter and validate its index."""
+    scan = Path(scan).resolve()
+    project_root = Path(__file__).resolve().parent.parent
+    python = (
+        project_root / 'AI_perception_tests' / 'groundingdino_test'
+        / 'envs' / 'grounded_sam2_py310' / 'bin' / 'python')
+    script = project_root / 'reconstruction' / 'offline_resegment.py'
+    if not python.is_file() or not script.is_file():
+        raise ValueError(
+            'offline segmentation environment is unavailable; run the '
+            'Grounded-SAM2 environment setup first')
+    ai_root = project_root / 'AI_perception_tests' / 'groundingdino_test'
+    environment = dict(os.environ)
+    environment.update({
+        'HF_HOME': str(ai_root / 'hf_cache'),
+        'TRANSFORMERS_CACHE': str(ai_root / 'hf_cache' / 'transformers'),
+        'HF_HUB_OFFLINE': '1',
+        'TRANSFORMERS_OFFLINE': '1',
+        'HF_HUB_DISABLE_TELEMETRY': '1',
+        'MPLCONFIGDIR': str(Path('/tmp') / 'piper_offline_resegment_mpl'),
+    })
+    result = subprocess.run(
+        [str(python), str(script), str(scan)],
+        cwd=str(project_root), env=environment,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, check=False)
+    if result.returncode != 0:
+        raise ValueError(
+            'offline GroundingDINO/SAM2 preprocessing failed: %s'
+            % (result.stdout or 'no diagnostic output').strip()[-3000:])
+    summary = None
+    for line in reversed((result.stdout or '').splitlines()):
+        try:
+            candidate = json.loads(line)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if isinstance(candidate, dict) \
+                and candidate.get('offline_resegment_index'):
+            summary = candidate
+            break
+    if summary is None:
+        raise ValueError(
+            'offline segmentation completed without an index result')
+    index_path = Path(str(summary['offline_resegment_index'])).resolve()
+    allowed_root = (scan / 'reconstruction' / 'offline_resegment').resolve()
+    try:
+        index_path.relative_to(allowed_root)
+    except ValueError as exc:
+        raise ValueError(
+            'offline segmentation index escapes the scan dataset') from exc
+    with open(index_path, 'r', encoding='utf-8') as stream:
+        index = json.load(stream)
+    if not isinstance(index, dict) \
+            or str(index.get('identity', {}).get('manifest_sha256', '')) \
+            != str(manifest_sha256) \
+            or index.get('source_captures_immutable') is not True \
+            or index.get('live_mask_used_as_model_fallback') is not False:
+        raise ValueError(
+            'offline segmentation index does not match the immutable scan')
+    frames = index.get('frames')
+    if not isinstance(frames, list) or not frames:
+        raise ValueError('offline segmentation index contains no frame masks')
+    by_frame = {}
+    for frame in frames:
+        if not isinstance(frame, dict):
+            raise ValueError('offline segmentation frame record is invalid')
+        name = str(frame.get('frame', ''))
+        if not name or name in by_frame:
+            raise ValueError(
+                'offline segmentation frame identity is missing or duplicated')
+        by_frame[name] = frame
+    return {
+        'root': index_path.parent,
+        'index_path': index_path,
+        'index': index,
+        'by_frame': by_frame,
+    }
+
+
+def load_offline_target_mask(
+        context, metadata_path, source_rgb, expected_shape, cv2):
+    """Load one hash-bound derived mask without trusting an arbitrary path."""
+    record = context['by_frame'].get(metadata_path.name)
+    if record is None:
+        raise ValueError(
+            '%s has no offline target mask' % metadata_path.name)
+    root = Path(context['root']).resolve()
+    relative = Path(str(record.get('mask_path', '')))
+    if relative.is_absolute() or '..' in relative.parts:
+        raise ValueError('offline target mask path is not dataset relative')
+    path = (root / relative).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError as exc:
+        raise ValueError('offline target mask escapes its generation') from exc
+    if not path.is_file() \
+            or sha256_file(path) != str(record.get('mask_sha256', '')):
+        raise ValueError('offline target mask hash is invalid')
+    if sha256_file(source_rgb) != str(record.get('source_rgb_sha256', '')):
+        raise ValueError('offline target mask belongs to a different RGB input')
+    mask = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+    if mask is None or mask.shape != tuple(expected_shape):
+        raise ValueError('offline target mask dimensions are invalid')
+    unique = set(np.unique(mask).astype(int).tolist())
+    if not unique.issubset({0, 255}) or not np.any(mask):
+        raise ValueError('offline target mask is empty or non-binary')
+    return mask, record
 
 
 def metadata_paths_from_manifest(
@@ -513,8 +630,10 @@ def registration_spanning_tree(node_count, accepted_edges):
     return selected
 
 
-def bounded_multiway_camera_poses(frames, o3d):
-    """Refine all camera poses jointly while retaining robot-pose bounds."""
+def _bounded_pose_graph_camera_poses(
+        frames, o3d, cloud_key, registration_source,
+        use_rgbd_odometry=False):
+    """Refine camera poses from one explicit registration data source."""
     if len(frames) < 3:
         raise ValueError(
             'bounded multi-view registration requires at least three views')
@@ -529,9 +648,35 @@ def bounded_multiway_camera_poses(frames, o3d):
     attempted_edges = []
     for source, target in multiway_registration_pairs(nominal):
         initial = np.linalg.inv(nominal[target]) @ nominal[source]
+        seed = initial
+        odometry_attempted = False
+        odometry_succeeded = False
+        odometry_failure = ''
+        if use_rgbd_odometry:
+            odometry_attempted = True
+            try:
+                odometry_succeeded, odometry_transform, _ = \
+                    o3d.pipelines.odometry.compute_rgbd_odometry(
+                        frames[source]['registration_rgbd'],
+                        frames[target]['registration_rgbd'],
+                        frames[source]['intrinsic'], initial,
+                        o3d.pipelines.odometry.
+                        RGBDOdometryJacobianFromHybridTerm(),
+                        o3d.pipelines.odometry.OdometryOption())
+                odometry_transform = np.asarray(
+                    odometry_transform, dtype=float)
+                if odometry_succeeded \
+                        and odometry_transform.shape == (4, 4) \
+                        and np.all(np.isfinite(odometry_transform)):
+                    seed = odometry_transform
+                else:
+                    odometry_succeeded = False
+                    odometry_failure = 'RGB-D odometry found no valid solution'
+            except RuntimeError as exc:
+                odometry_failure = str(exc)
         result = o3d.pipelines.registration.registration_generalized_icp(
-            frames[source]['cloud_camera'], frames[target]['cloud_camera'],
-            MULTIWAY_MAX_CORRESPONDENCE_M, initial,
+            frames[source][cloud_key], frames[target][cloud_key],
+            MULTIWAY_MAX_CORRESPONDENCE_M, seed,
             o3d.pipelines.registration.
             TransformationEstimationForGeneralizedICP(),
             o3d.pipelines.registration.ICPConvergenceCriteria(
@@ -556,14 +701,18 @@ def bounded_multiway_camera_poses(frames, o3d):
                 np.degrees(rotation_angle_rad(correction))),
             'accepted': not rejection,
             'rejection': rejection,
+            'registration_source': registration_source,
+            'rgbd_odometry_attempted': odometry_attempted,
+            'rgbd_odometry_succeeded': bool(odometry_succeeded),
+            'rgbd_odometry_failure': odometry_failure,
         }
         attempted_edges.append(record)
         if rejection:
             continue
         information = o3d.pipelines.registration.\
             get_information_matrix_from_point_clouds(
-                frames[source]['cloud_camera'],
-                frames[target]['cloud_camera'],
+                frames[source][cloud_key],
+                frames[target][cloud_key],
                 MULTIWAY_MAX_CORRESPONDENCE_M, relative)
         record['relative_transform'] = relative
         record['information'] = information
@@ -613,11 +762,33 @@ def bounded_multiway_camera_poses(frames, o3d):
         'spanning_tree_pair_count': len(tree_edges),
         'pairwise_edges': serializable_edges,
         'pose_corrections': corrections,
+        'registration_source': registration_source,
+        'target_geometry_used_for_registration': bool(
+            registration_source == 'target_masked_depth'),
         'robot_pose_bounds_retained': {
             'maximum_translation_m': 0.020,
             'maximum_rotation_deg': 5.0,
         },
     }
+
+
+def bounded_multiway_camera_poses(frames, o3d):
+    """Refine poses from target-only geometry with the legacy behaviour."""
+    return _bounded_pose_graph_camera_poses(
+        frames, o3d, 'cloud_camera', 'target_masked_depth')
+
+
+def scene_pose_graph_camera_poses(frames, o3d):
+    """Refine poses from static RGB-D scene context, never target geometry."""
+    for frame in frames:
+        if frame.get('registration_cloud_camera') is None \
+                or frame.get('registration_rgbd') is None:
+            raise ValueError('static-scene registration inputs are unavailable')
+        if len(frame['registration_cloud_camera'].points) < 20:
+            raise ValueError('static-scene registration cloud is too small')
+    return _bounded_pose_graph_camera_poses(
+        frames, o3d, 'registration_cloud_camera',
+        'static_scene_rgbd_excluding_target', use_rgbd_odometry=True)
 
 
 def camera_matrix(camera_info):
@@ -667,7 +838,9 @@ def rectify_rgbd_mask(cv2, rgb_bgr, depth_mm, mask, camera_info):
     return rgb_bgr, depth_mm, mask, k, rectified
 
 
-def masked_camera_cloud(o3d, depth_mm, mask, intrinsic, depth_trunc=1.5):
+def masked_camera_cloud(
+        o3d, depth_mm, mask, intrinsic, depth_trunc=1.5,
+        voxel_length=DEFAULT_VOXEL_LENGTH_M):
     values = np.asarray(depth_mm, dtype=np.uint16).copy()
     values[np.asarray(mask) <= 0] = 0
     image = o3d.geometry.Image(values)
@@ -675,11 +848,35 @@ def masked_camera_cloud(o3d, depth_mm, mask, intrinsic, depth_trunc=1.5):
         image, intrinsic, depth_scale=1000.0,
         depth_trunc=float(depth_trunc), stride=1,
         project_valid_depth_only=True)
-    cloud = cloud.voxel_down_sample(DEFAULT_VOXEL_LENGTH_M)
+    cloud = cloud.voxel_down_sample(float(voxel_length))
     if len(cloud.points) >= 20:
         cloud.estimate_normals(
             o3d.geometry.KDTreeSearchParamHybrid(radius=0.015, max_nn=30))
     return cloud
+
+
+def scene_registration_support_mask(
+        cv2, depth_mm, target_mask, depth_trunc,
+        exclusion_radius_px=SCENE_TARGET_EXCLUSION_RADIUS_PX):
+    """Return static-scene support while excluding the target and bad depth."""
+    depth = np.asarray(depth_mm)
+    target = np.asarray(target_mask)
+    if depth.ndim != 2 or target.shape != depth.shape:
+        raise ValueError('scene depth and target mask dimensions disagree')
+    radius = int(exclusion_radius_px)
+    if radius < 0 or radius > 64:
+        raise ValueError('scene target-exclusion radius is invalid')
+    binary_target = np.asarray(target > 0, dtype=np.uint8)
+    if radius:
+        kernel_size = 2 * radius + 1
+        binary_target = cv2.dilate(
+            binary_target,
+            np.ones((kernel_size, kernel_size), dtype=np.uint8),
+            iterations=1)
+    depth_m = depth.astype(float) / 1000.0
+    return (
+        np.isfinite(depth_m) & (depth_m > 0.10)
+        & (depth_m <= float(depth_trunc)) & (binary_target == 0))
 
 
 def expected_dimensions_m(values):
@@ -797,48 +994,131 @@ def mesh_metrics(o3d, mesh, input_cloud, expected_dimensions):
 
 
 def _load_capture(scan, metadata_path, metadata, manifest, cv2, o3d,
-                  depth_trunc, expected_dimensions=None):
+                  depth_trunc, expected_dimensions=None,
+                  include_scene_registration=False,
+                  offline_mask_context=None):
     artifacts = resolve_frame_artifacts(scan, metadata_path, metadata, manifest)
-    rgb_bgr = cv2.imread(str(artifacts['rgb']), cv2.IMREAD_COLOR)
+    raw_rgb_bgr = cv2.imread(str(artifacts['rgb']), cv2.IMREAD_COLOR)
+    scene_depth = cv2.imread(str(artifacts['depth']), cv2.IMREAD_UNCHANGED)
+    scene_target_mask = cv2.imread(
+        str(artifacts['mask']), cv2.IMREAD_GRAYSCALE)
     input_provenance = confidence_capture_provenance(
         metadata, manifest, artifacts, cv2)
     if input_provenance['confidence_qualified']:
-        depth = cv2.imread(
+        target_depth = cv2.imread(
             str(artifacts['target_depth']), cv2.IMREAD_UNCHANGED)
-        mask = cv2.imread(
+        target_mask = cv2.imread(
             str(artifacts['target_support_mask']), cv2.IMREAD_GRAYSCALE)
         target = metadata.get('synchronized_target_3d', {})
     else:
-        depth = cv2.imread(str(artifacts['depth']), cv2.IMREAD_UNCHANGED)
-        mask = cv2.imread(str(artifacts['mask']), cv2.IMREAD_GRAYSCALE)
+        target_depth = scene_depth
+        target_mask = cv2.imread(
+            str(artifacts['mask']), cv2.IMREAD_GRAYSCALE)
         target = metadata.get('target_3d', {})
-    rgb_bgr, depth, mask, k, rectified = rectify_rgbd_mask(
-        cv2, rgb_bgr, depth, mask, metadata.get('camera_info', {}))
-    height, width = depth.shape[:2]
+
+    if offline_mask_context is not None:
+        fresh_mask, fresh_record = load_offline_target_mask(
+            offline_mask_context, metadata_path, artifacts['rgb'],
+            raw_rgb_bgr.shape[:2], cv2)
+        original_support_points = int(np.count_nonzero(target_mask))
+        target_mask = (
+            (np.asarray(target_mask) > 0) & (fresh_mask > 0)
+        ).astype(np.uint8) * 255
+        target_depth = np.asarray(target_depth, dtype=np.uint16).copy()
+        target_depth[target_mask == 0] = 0
+        retained_points = int(np.count_nonzero(target_mask))
+        minimum_points = int(
+            manifest.get('confidence_policy', {}).get(
+                'minimum_target_points', 20))
+        if retained_points < minimum_points:
+            raise ValueError(
+                '%s offline mask retains only %d confidence-qualified target '
+                'points; need %d'
+                % (metadata_path.name, retained_points, minimum_points))
+        input_provenance = dict(input_provenance)
+        input_provenance.update({
+            'semantic_mask_source':
+                'offline_groundingdino_sam2_intersected_with_captured_support',
+            'offline_mask_sha256': str(fresh_record['mask_sha256']),
+            'offline_groundingdino_confidence': float(
+                fresh_record['groundingdino_confidence']),
+            'offline_sam2_score': float(fresh_record['sam2_score']),
+            'captured_support_points_before_offline_mask':
+                original_support_points,
+            'retained_support_points_after_offline_mask': retained_points,
+            'offline_mask_never_expands_captured_support': True,
+        })
+    else:
+        input_provenance = dict(input_provenance)
+        input_provenance['semantic_mask_source'] = 'captured_live_sam2'
+
+    # Target fusion and scene registration share one rectified color plane but
+    # retain separate depth support.  The scene depth is never integrated into
+    # the target TSDF.
+    rgb_bgr, target_depth, target_mask, k, rectified = rectify_rgbd_mask(
+        cv2, raw_rgb_bgr, target_depth, target_mask,
+        metadata.get('camera_info', {}))
+    height, width = target_depth.shape[:2]
     valid, depth_gate = target_depth_support_mask(
-        depth, mask, target.get('depth'), expected_dimensions)
+        target_depth, target_mask, target.get('depth'), expected_dimensions)
     valid_count = int(np.count_nonzero(valid))
     if valid_count < 20:
         raise ValueError('%s has too few masked depth points' % metadata_path.name)
     rgb = cv2.cvtColor(rgb_bgr, cv2.COLOR_BGR2RGB)
     rgb[~valid] = 0
-    depth = np.asarray(depth, dtype=np.uint16)
+    depth = np.asarray(target_depth, dtype=np.uint16)
     depth[~valid] = 0
     intrinsic = o3d.camera.PinholeCameraIntrinsic(
         int(width), int(height), float(k[0, 0]), float(k[1, 1]),
         float(k[0, 2]), float(k[1, 2]))
     nominal_base_camera = np.linalg.inv(camera_extrinsic_from_metadata(metadata))
     cloud_camera = masked_camera_cloud(
-        o3d, depth, mask, intrinsic, depth_trunc=depth_trunc)
+        o3d, depth, target_mask, intrinsic, depth_trunc=depth_trunc)
+
+    registration_cloud_camera = None
+    registration_rgbd = None
+    scene_valid_count = 0
+    if include_scene_registration:
+        scene_rgb_bgr, scene_depth, scene_target_mask, scene_k, \
+            scene_rectified = rectify_rgbd_mask(
+                cv2, raw_rgb_bgr, scene_depth, scene_target_mask,
+                metadata.get('camera_info', {}))
+        if rectified != scene_rectified \
+                or not np.allclose(k, scene_k, atol=1e-9):
+            raise ValueError('target and scene rectification disagree')
+        scene_support = scene_registration_support_mask(
+            cv2, scene_depth, scene_target_mask, depth_trunc)
+        scene_valid_count = int(np.count_nonzero(scene_support))
+        if scene_valid_count < SCENE_MINIMUM_POINTS:
+            raise ValueError(
+                '%s has too few static-scene depth points'
+                % metadata_path.name)
+        scene_rgb = cv2.cvtColor(scene_rgb_bgr, cv2.COLOR_BGR2RGB)
+        scene_rgb[~scene_support] = 0
+        scene_depth = np.asarray(scene_depth, dtype=np.uint16).copy()
+        scene_depth[~scene_support] = 0
+        registration_cloud_camera = masked_camera_cloud(
+            o3d, scene_depth, scene_support, intrinsic,
+            depth_trunc=depth_trunc,
+            voxel_length=SCENE_REGISTRATION_VOXEL_M)
+        registration_rgbd = \
+            o3d.geometry.RGBDImage.create_from_color_and_depth(
+                o3d.geometry.Image(np.ascontiguousarray(scene_rgb)),
+                o3d.geometry.Image(np.ascontiguousarray(scene_depth)),
+                depth_scale=1000.0, depth_trunc=float(depth_trunc),
+                convert_rgb_to_intensity=True)
     return {
         'metadata_path': metadata_path,
         'metadata': metadata,
         'rgb': np.ascontiguousarray(rgb),
         'depth': np.ascontiguousarray(depth),
-        'mask': np.ascontiguousarray(mask),
+        'mask': np.ascontiguousarray(target_mask),
         'intrinsic': intrinsic,
         'nominal_base_camera': nominal_base_camera,
         'cloud_camera': cloud_camera,
+        'registration_cloud_camera': registration_cloud_camera,
+        'registration_rgbd': registration_rgbd,
+        'valid_scene_depth_points': scene_valid_count,
         'valid_masked_depth_points': valid_count,
         'rectified': rectified,
         'depth_gate': depth_gate,
@@ -882,7 +1162,8 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
                         output_path, registration_mode, voxel_length,
                         sdf_trunc, depth_trunc, expected_dimensions,
                         provenance, manifest_sha256,
-                        allow_partial_view_set=False):
+                        allow_partial_view_set=False,
+                        offline_mask_context=None):
     try:
         import cv2
         import open3d as o3d
@@ -895,13 +1176,19 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
     frames = [
         _load_capture(
             scan, metadata_path, metadata, manifest, cv2, o3d, depth_trunc,
-            expected_dimensions)
+            expected_dimensions,
+            include_scene_registration=(
+                registration_mode == 'scene_pose_graph'),
+            offline_mask_context=offline_mask_context)
         for metadata_path, metadata in zip(metadata_paths, metadata_values)]
     multiway_diagnostics = None
     refined_multiway_poses = None
     if registration_mode == 'multiway_gicp':
         refined_multiway_poses, multiway_diagnostics = \
             bounded_multiway_camera_poses(frames, o3d)
+    elif registration_mode == 'scene_pose_graph':
+        refined_multiway_poses, multiway_diagnostics = \
+            scene_pose_graph_camera_poses(frames, o3d)
     registration = []
     frame_inputs = []
     accumulated = None
@@ -978,6 +1265,7 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
             'applied_rotation_correction_deg': float(
                 np.degrees(rotation_angle_rad(correction))),
             'rectified': bool(frame['rectified']),
+            'valid_scene_depth_points': frame['valid_scene_depth_points'],
             'valid_masked_depth_points': frame['valid_masked_depth_points'],
             'target_depth_gate': frame['depth_gate'],
             'capture_input_provenance': frame['input_provenance'],
@@ -989,6 +1277,8 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
             'frame': metadata_path.name,
             'T_base_camera': refined_base_camera.tolist(),
             'width': frame['width'], 'height': frame['height'],
+            'semantic_mask_source': frame['input_provenance'].get(
+                'semantic_mask_source', 'unknown'),
         })
         rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
             o3d.geometry.Image(frame['rgb']), o3d.geometry.Image(frame['depth']),
@@ -1058,7 +1348,20 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
             expected_dimensions.tolist()
             if expected_dimensions is not None else None),
         'allow_partial_view_set': bool(allow_partial_view_set),
+        'semantic_mask_source': (
+            'offline_resegment'
+            if offline_mask_context is not None else 'captured'),
     }
+    if offline_mask_context is not None:
+        config['offline_resegment'] = {
+            'index_path': str(offline_mask_context['index_path']),
+            'generation_sha256': str(
+                offline_mask_context['index']['generation_sha256']),
+            'source_captures_immutable': True,
+            'live_mask_used_as_model_fallback': False,
+            'combination_policy':
+                'intersection_with_captured_confidence_qualified_support',
+        }
     if multiway_diagnostics is not None:
         config['multiway_registration'] = {
             'maximum_prior_neighbors': MULTIWAY_MAX_PRIOR_NEIGHBORS,
@@ -1067,6 +1370,17 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
             'maximum_pose_translation_correction_m': 0.020,
             'maximum_pose_rotation_correction_deg': 5.0,
         }
+        if registration_mode == 'scene_pose_graph':
+            config['multiway_registration'].update({
+                'registration_source':
+                    'static_scene_rgbd_excluding_target',
+                'scene_registration_voxel_m':
+                    SCENE_REGISTRATION_VOXEL_M,
+                'target_exclusion_radius_px':
+                    SCENE_TARGET_EXCLUSION_RADIUS_PX,
+                'target_tsdf_fusion_source':
+                    'confidence_qualified_target_only_depth',
+            })
     report = {
         'schema_version': 3,
         'scan_dir': str(scan),
@@ -1243,11 +1557,18 @@ def reconstruct(scan_dir, output_path, voxel_length=DEFAULT_VOXEL_LENGTH_M,
                 depth_trunc=DEFAULT_DEPTH_TRUNC_M,
                 registration_mode='auto', expected_dimensions=None,
                 allow_missing_calibration_id=False,
-                allow_partial_view_set=False):
+                allow_partial_view_set=False, mask_source='captured'):
     scan = Path(scan_dir).resolve()
     with open(scan / 'manifest.json', 'r', encoding='utf-8') as stream:
         manifest = json.load(stream)
     manifest_sha256 = validate_manifest_integrity(scan, manifest)
+    source = str(mask_source)
+    if source not in MASK_SOURCES:
+        raise ValueError('mask source must be one of: %s' % ', '.join(
+            MASK_SOURCES))
+    offline_mask_context = (
+        prepare_offline_mask_context(scan, manifest_sha256)
+        if source == 'offline_resegment' else None)
     metadata_paths = metadata_paths_from_manifest(
         scan, manifest,
         allow_partial_view_set=allow_partial_view_set)
@@ -1266,11 +1587,13 @@ def reconstruct(scan_dir, output_path, voxel_length=DEFAULT_VOXEL_LENGTH_M,
         return _reconstruct_single(
             scan, manifest, metadata_paths, metadata_values, output, mode,
             voxel_length, sdf_trunc, depth_trunc, dimensions, provenance,
-            manifest_sha256, allow_partial_view_set)
+            manifest_sha256, allow_partial_view_set,
+            offline_mask_context)
     reports = {}
     errors = {}
     for candidate_mode in (
-            'robot_pose', 'bounded_gicp', 'multiway_gicp'):
+            'robot_pose', 'bounded_gicp', 'multiway_gicp',
+            'scene_pose_graph'):
         candidate_output = output.with_name(
             output.stem + '.' + candidate_mode + output.suffix)
         try:
@@ -1278,7 +1601,7 @@ def reconstruct(scan_dir, output_path, voxel_length=DEFAULT_VOXEL_LENGTH_M,
                 scan, manifest, metadata_paths, metadata_values,
                 candidate_output, candidate_mode, voxel_length, sdf_trunc,
                 depth_trunc, dimensions, provenance, manifest_sha256,
-                allow_partial_view_set)
+                allow_partial_view_set, offline_mask_context)
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
             errors[candidate_mode] = str(exc)
     if not reports:
@@ -1320,6 +1643,11 @@ def main():
         metavar=('X', 'Y', 'Z'))
     parser.add_argument('--allow-missing-calibration-id', action='store_true')
     parser.add_argument(
+        '--mask-source', choices=MASK_SOURCES, default='captured',
+        help=(
+            'Use the captured live mask, or run/reuse a fresh offline '
+            'GroundingDINO/SAM2 mask that may only narrow captured support.'))
+    parser.add_argument(
         '--allow-partial-view-set', action='store_true',
         help=(
             'Permit 1-7 immutable captures for a partial/provisional mesh; '
@@ -1332,7 +1660,8 @@ def main():
         args.scan_dir, args.output, args.voxel_length, args.sdf_trunc,
         args.depth_trunc, args.registration_mode, dimensions,
         args.allow_missing_calibration_id,
-        args.allow_partial_view_set), indent=2, sort_keys=True))
+        args.allow_partial_view_set, args.mask_source),
+        indent=2, sort_keys=True))
 
 
 if __name__ == '__main__':

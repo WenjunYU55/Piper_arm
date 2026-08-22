@@ -18,6 +18,52 @@ SPEC.loader.exec_module(MODULE)
 def test_default_reconstruction_preserves_one_millimetre_detail():
     assert MODULE.DEFAULT_VOXEL_LENGTH_M == pytest.approx(0.001)
     assert MODULE.DEFAULT_SDF_TRUNC_M == pytest.approx(0.005)
+    assert 'robot_pose' in MODULE.REGISTRATION_MODES
+    assert 'scene_pose_graph' in MODULE.REGISTRATION_MODES
+    assert MODULE.MASK_SOURCES == ('captured', 'offline_resegment')
+
+
+def test_offline_mask_loader_is_hash_and_rgb_bound(tmp_path):
+    root = tmp_path / 'derived'
+    masks = root / 'masks'
+    masks.mkdir(parents=True)
+    mask_path = masks / 'view_000_mask.png'
+    assert cv2.imwrite(
+        str(mask_path), np.pad(
+            np.full((2, 2), 255, dtype=np.uint8), 1))
+    rgb_path = tmp_path / 'view_000_rgb.png'
+    assert cv2.imwrite(
+        str(rgb_path), np.zeros((4, 4, 3), dtype=np.uint8))
+    metadata_path = tmp_path / 'view_000_metadata.yaml'
+    record = {
+        'frame': metadata_path.name,
+        'mask_path': 'masks/view_000_mask.png',
+        'mask_sha256': MODULE.sha256_file(mask_path),
+        'source_rgb_sha256': MODULE.sha256_file(rgb_path),
+    }
+    context = {'root': root, 'by_frame': {metadata_path.name: record}}
+    loaded, returned = MODULE.load_offline_target_mask(
+        context, metadata_path, rgb_path, (4, 4), cv2)
+    assert np.array_equal(loaded, cv2.imread(str(mask_path), 0))
+    assert returned is record
+    record['source_rgb_sha256'] = '0' * 64
+    with pytest.raises(ValueError, match='different RGB'):
+        MODULE.load_offline_target_mask(
+            context, metadata_path, rgb_path, (4, 4), cv2)
+
+
+def test_scene_registration_excludes_target_and_invalid_depth():
+    depth = np.full((7, 7), 400, dtype=np.uint16)
+    depth[0, 0] = 0
+    depth[0, 1] = 1600
+    target = np.zeros((7, 7), dtype=np.uint8)
+    target[3, 3] = 255
+    support = MODULE.scene_registration_support_mask(
+        cv2, depth, target, depth_trunc=1.5, exclusion_radius_px=1)
+    assert not support[0, 0]
+    assert not support[0, 1]
+    assert not np.any(support[2:5, 2:5])
+    assert support[6, 6]
 
 
 def test_stored_base_camera_pose_is_inverted_for_open3d():
@@ -376,6 +422,22 @@ def test_auto_selection_can_choose_coherent_bounded_multiway_refinement():
         'multiway_gicp']['eligible'] is True
     assert comparison['candidate_assessments'][
         'bounded_gicp']['eligible'] is False
+
+
+def test_auto_selection_can_choose_scene_pose_graph_refinement():
+    robot = _selection_report(0.0040, 0.010, component=0.70, quality='WARN')
+    target_only = _selection_report(
+        0.0038, 0.009, component=0.78, quality='WARN')
+    scene = _selection_report(
+        0.0020, 0.008, component=0.96, quality='WARN')
+    selected, comparison = MODULE.select_registration_reports({
+        'robot_pose': robot,
+        'multiway_gicp': target_only,
+        'scene_pose_graph': scene,
+    })
+    assert selected == 'scene_pose_graph'
+    assert comparison['candidate_assessments'][
+        'scene_pose_graph']['eligible'] is True
 
 
 def test_auto_selection_retains_robot_pose_when_refinement_is_incoherent():

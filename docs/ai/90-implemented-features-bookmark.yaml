@@ -1,6 +1,21 @@
 schema_version: 1
 document: implemented_features_bookmark
-updated_at: 2026-08-21
+updated_at: 2026-08-22
+shared_settled_capture_deadline_2026_08_22:
+  status: software_implemented_physical_retest_deferred
+  capability: The command-free recorder still requires exactly 20 new synchronized settled native frames, but now consumes 18 seconds of the executor's existing 20-second capture_timeout_sec and reserves two seconds for returning the Trigger result. Timeout diagnostics expose count, elapsed time and synchronized rate.
+  incident: gui-sim-8733327f74f3455eb8656f01a6ceb66d failed only after a later burst reached 18/20 at the former five-second limit; its first burst completed in 1.031 seconds and terminal staged shutdown was safe.
+  preserved: [20-frame requirement, temporal median and confidence thresholds, capture acceptance, retry semantics, NBV, Tesseract, motion, home, disable, cleanup, public ROS interfaces]
+offline_resegmented_reconstruction_masks_2026_08_22:
+  status: software_implemented_dataset_replay_improved_but_quality_failed
+  capability: Reconstruction Validation defaults to selectable offline_resegment, which runs one fresh GroundingDINO and SAM2 image pass per immutable RGB, rejects live-mask fallback, stores hash-bound derived masks and comparison overlays, and intersects only with existing confidence-qualified target support.
+  evidence: [44 focused reconstruction and GUI tests pass, 45 perception and native-GUI tests pass, seven fresh masks generated from scan_20260821_220003, view-004 shadow support reduced from 7342 to 4976 pixels, auto mesh OBB improved to 51.48 x 49.00 x 45.77 mm but remains FAIL]
+  preserved: [immutable capture artifacts, live SAM2 audit mask, captured depth authority, registration choices and bounds, reconstruction quality gates, public ROS interfaces, tracking, NBV, Tesseract, motion, home and shutdown]
+selectable_static_scene_pose_graph_reconstruction_2026_08_22:
+  status: software_implemented_dataset_replay_failed_quality
+  capability: The offline GUI and CLI can select robot_pose or scene_pose_graph. The new path registers target-excluded aligned static-scene RGB-D using robot-seeded odometry and bounded GICP, while the target TSDF remains confidence-qualified and target-only.
+  evidence: [39 focused reconstruction and GUI-support tests pass, seven-view robot_pose and scene_pose_graph replays complete, auto evaluates and safely rejects the less coherent scene candidate]
+  preserved: [immutable capture history, robot-pose baseline, 20 mm and 5 degree correction bounds, existing quality gates, mesh voxel selector, public ROS interfaces, NBV, Tesseract, motion, home and shutdown]
 bounded_multiway_reconstruction_2026_08_21:
   status: software_implemented_recalibration_pending
   capability: Offline TSDF can compare robot poses, sequential bounded GICP and a connected bounded multi-view pose graph, then auto-select only a materially better structural candidate. All residuals remain within 20 mm and 5 degrees and are fully reported.

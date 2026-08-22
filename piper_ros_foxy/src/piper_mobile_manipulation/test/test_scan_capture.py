@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 import time
 from threading import Condition, Thread
+from pathlib import Path
 
 import numpy as np
 
@@ -122,6 +123,7 @@ class BurstHarness:
     def get_parameter(name):
         return SimpleNamespace(value={
             'capture_burst_frames': 20,
+            'capture_timeout_sec': 20.0,
             'max_bundle_age_sec': 1.0,
             'native_depth_confidence_slop_sec': 0.005,
         }[name])
@@ -146,14 +148,46 @@ def test_capture_burst_collects_twenty_new_frames_after_request():
 def test_capture_burst_timeout_reports_actual_new_frame_count():
     now = time.monotonic()
     fresh = [
-        _native_bundle(10.0 + index / 10.0, now - 5.0 + index / 10.0)
+        _native_bundle(10.0 + index / 10.0, now - 17.0 + index / 10.0)
         for index in range(19)]
     harness = BurstHarness(fresh)
 
-    burst, reason = harness.collect_prospective_native_depth_burst(now - 6.0)
+    burst, reason = harness.collect_prospective_native_depth_burst(now - 19.0)
 
     assert burst is None
     assert '19/20 received' in reason
+    assert 'synchronized rate' in reason
+
+
+def test_capture_burst_can_complete_after_former_five_second_limit():
+    now = time.monotonic()
+    started_at = now - 6.0
+    fresh = [
+        _native_bundle(
+            15.0 + index / 10.0,
+            started_at + 0.1 + index * 0.25)
+        for index in range(20)]
+    harness = BurstHarness(fresh)
+
+    burst, reason = harness.collect_prospective_native_depth_burst(started_at)
+
+    assert reason == ''
+    assert burst == fresh
+
+
+def test_capture_recorder_reuses_outer_capture_deadline_configuration():
+    package_root = Path(__file__).resolve().parents[1]
+    launch_source = (
+        package_root / 'launch' / 'supervised_viewpoint_execution.launch.py'
+    ).read_text()
+    capture_block = launch_source.split('capture = Node(', 1)[1].split(
+        'return LaunchDescription', 1)[0]
+
+    assert "self.declare_parameter('capture_timeout_sec', 20.0)" in (
+        package_root / 'piper_mobile_manipulation' /
+        'scan_capture_node.py').read_text()
+    assert capture_block.index('execution_params,') < capture_block.index(
+        'scan_params,') < capture_block.index('capture_params,')
 
 
 def test_capture_burst_waits_while_camera_callbacks_fill_it():

@@ -200,6 +200,10 @@ def generate_launch_description():
         name='scan_capture',
         output='screen',
         parameters=[
+            # Reuse capture_timeout_sec from the executor configuration.  Put
+            # capture-specific settings last so unrelated overlapping values
+            # can never override the recorder's command-free safety profile.
+            execution_params,
             scan_params,
             capture_params,
             {

@@ -40,7 +40,7 @@ from piper_mobile_manipulation.scan_capture import (
 )
 
 
-CAPTURE_BURST_TIMEOUT_SEC = 5.0
+CAPTURE_RESPONSE_MARGIN_SEC = 2.0
 
 
 def capture_view_selection_provenance(plan_provenance, execution):
@@ -129,6 +129,10 @@ class ScanCaptureNode(Node):
         self.declare_parameter('native_depth_confidence_slop_sec', 0.005)
         self.declare_parameter('capture_cache_size', 240)
         self.declare_parameter('capture_burst_frames', 20)
+        # This is the same mission capture deadline used by the executor.  The
+        # burst collector keeps a small response margin so its Trigger result
+        # reaches the executor before that outer deadline expires.
+        self.declare_parameter('capture_timeout_sec', 20.0)
         self.declare_parameter(
             'minimum_burst_support_fraction', 0.50)
         self.declare_parameter('minimum_depth_confidence', 8)
@@ -617,7 +621,14 @@ class ScanCaptureNode(Node):
         requested = int(self.get_parameter('capture_burst_frames').value)
         if requested < 1:
             return None, 'capture_burst_frames must be positive'
-        deadline = float(started_at) + CAPTURE_BURST_TIMEOUT_SEC
+        capture_timeout = float(
+            self.get_parameter('capture_timeout_sec').value)
+        collection_timeout = capture_timeout - CAPTURE_RESPONSE_MARGIN_SEC
+        if collection_timeout <= 0.0:
+            return None, (
+                'capture_timeout_sec must exceed the %.1f-second service '
+                'response margin' % CAPTURE_RESPONSE_MARGIN_SEC)
+        deadline = float(started_at) + collection_timeout
         available = 0
         with self.native_bundle_condition:
             while True:
@@ -635,9 +646,12 @@ class ScanCaptureNode(Node):
                     break
                 self.native_bundle_condition.wait(
                     timeout=min(0.1, remaining))
+        elapsed = max(0.0, time.monotonic() - float(started_at))
+        rate = float(available) / elapsed if elapsed > 0.0 else 0.0
         return None, (
             'timed out collecting %d new settled native depth frames '
-            '(%d/%d received)' % (requested, available, requested))
+            '(%d/%d received over %.2fs; synchronized rate %.2f Hz)'
+            % (requested, available, requested, elapsed, rate))
 
     def prepare_confidence_capture(self, burst):
         """Prepare one immutable mask/RGB plus 20-frame depth observation."""

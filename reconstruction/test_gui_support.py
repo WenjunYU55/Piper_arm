@@ -51,6 +51,30 @@ def test_gui_command_accepts_bounded_mesh_detail(tmp_path):
                 voxel_length_mm=invalid)
 
 
+def test_gui_command_accepts_scene_pose_graph_mode(tmp_path):
+    root, scan = project(tmp_path)
+    command, _output = reconstruction_command(
+        root, scan.name, (35.0, 35.0, 35.0),
+        registration_mode='scene_pose_graph', voxel_length_mm=0.8)
+    assert command[command.index('--registration-mode') + 1] == \
+        'scene_pose_graph'
+    assert command[command.index('--voxel-length') + 1] == '0.0008'
+
+
+def test_gui_command_selects_offline_resegmentation_without_changing_registration(tmp_path):
+    root, scan = project(tmp_path)
+    command, _output = reconstruction_command(
+        root, scan.name, (35.0, 35.0, 35.0),
+        registration_mode='robot_pose', mask_source='offline_resegment')
+    assert command[command.index('--mask-source') + 1] == \
+        'offline_resegment'
+    assert command[command.index('--registration-mode') + 1] == 'robot_pose'
+    with pytest.raises(ValueError, match='mask source'):
+        reconstruction_command(
+            root, scan.name, (35.0, 35.0, 35.0),
+            mask_source='untrusted')
+
+
 def test_viewer_report_cannot_escape_dataset_root(tmp_path):
     root, scan = project(tmp_path)
     report = scan / 'reconstruction' / 'validation' / 'target_mesh.ply.quality.json'
@@ -85,4 +109,5 @@ def test_quality_summary_calls_out_provisional_dimension_and_visual_review():
     assert 'FAIL / DIAGNOSTIC_ONLY' in summary
     assert 'Provisional cube OBB' in summary
     assert 'TSDF mesh voxel: 0.50 mm' in summary
+    assert 'Target mask: captured' in summary
     assert 'Visual review is required' in summary

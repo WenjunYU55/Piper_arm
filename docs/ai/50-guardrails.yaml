@@ -1,5 +1,14 @@
 schema_version: 1
 document: guardrails
+offline_resegmentation_guardrail_2026_08_22:
+  invariants:
+    - Never overwrite or remove immutable RGB-D, live mask, metadata or manifest artifacts.
+    - The fresh offline model input must not contain detection_mask.png; a failed GroundingDINO detection fails closed and never reuses the live mask.
+    - A derived semantic mask may only narrow/intersect captured confidence-qualified target support. It cannot manufacture target depth, rewrite capture-time transforms or change accepted coverage.
+    - Bind every cache generation to the manifest, target prompt/profile and exact model hashes; verify each derived mask path, source RGB hash and mask hash before use.
+    - Keep live capture, tracking, NBV, Tesseract, motion, home, shutdown and automatic gateway defaults unchanged.
+    - Offline resegmentation does not override mesh dimension, registration, component, watertightness or visual-review failures.
+  must_retest_if_changed: [reconstruction/test_offline_resegment.py, reconstruction/test_tsdf_reconstruct.py, reconstruction/test_gui_support.py, AI_perception_tests/test_groundingdino_target_selection.py, test_piper_gui_phase8.py, immutable dataset replay and GUI import]
 manual_mesh_density_guardrail_2026_08_21:
   invariants:
     - The slider controls TSDF mesh voxel length only; it never changes confidence-qualified capture artifacts or accepted coverage.
@@ -568,11 +577,13 @@ reconstruction_validation_guardrail_2026_08_15:
   invariants:
     - Robot-pose masked TSDF remains the baseline; bounded GICP is an optional residual refinement, never an unbounded replacement for calibration or kinematics.
     - Multiway GICP may optimize only a connected graph of accepted bounded pairwise residuals. Every final pose is independently rechecked against its capture-time robot pose using the same 20 mm and 5 degree limits.
+    - scene_pose_graph may use aligned static-scene RGB-D only for camera-pose refinement. The dilated target is excluded from registration, and full-scene pixels must never enter the target TSDF.
+    - Robot relative poses seed scene RGB-D odometry and GICP. RGB-D failure falls back to that seed; it never relaxes the correction limits or changes capture history.
     - Auto selection must retain robot_pose unless a candidate provides material measured structural improvement without worse dimension or quality evidence. It must never select a smoother-looking result solely by visual appearance.
     - Manifest, frame count, capture-time transform, calibration and confidence provenance are validated before fusion.
     - A correction outside configured translation/rotation/fitness/correspondence bounds is rejected and reported, not silently integrated.
     - GUI build/preview/view operations are offline and cannot start a mission or command hardware.
-  must_retest_if_changed: [reconstruction/test_tsdf_reconstruct.py, reconstruction/test_gui_support.py, GUI import and ViewModel tests, representative immutable dataset validation, robot-pose and sequential geometry equivalence, multiway correction-bound and connected-graph tests]
+  must_retest_if_changed: [reconstruction/test_tsdf_reconstruct.py, reconstruction/test_gui_support.py, GUI import and ViewModel tests, representative immutable dataset validation, robot-pose and sequential geometry equivalence, multiway correction-bound and connected-graph tests, scene target-exclusion test, robot_pose versus scene_pose_graph replay, auto fallback replay]
 
 target_geometry_resolution_guardrail_2026_08_21:
   invariants:
@@ -590,11 +601,12 @@ target_depth_and_schema2_guardrail_2026_08_16:
     - Burst fusion is per-pixel median over nonzero grade-8-or-better samples with at least 0.50 temporal support. It does not average RGB, reuse low-confidence depth, add capture counts, alter accepted coverage, or create an independent retry loop.
     - Camera launch must enable stream synchronization and observe a color CameraInfo sample before changing preset/global-time controls. Do not restore eager parameter writes that can race the expanded confidence stream's USB startup.
     - The default burst count 20, 0.50 temporal-support fraction, grade 8, 50-point, 0.50 confident-fraction, 0.15 component-fraction, 0.08 ambiguity, 0.005-second native slop and existing 0.08-second RGB-D slop are independent units and must not be changed as cleanup.
+    - The recorder and executor share capture_timeout_sec=20.0. The recorder must reserve two seconds for its service response and may use the remaining 18 seconds to collect all 20 frames; never restore the physically brittle independent five-second limit or wait through the executor deadline.
     - A frame is immutable only after every artifact and its metadata commit. Partial schema-2 files may never increment capture count or enter the manifest.
     - Capture-time aligned depth and live Target3D remain diagnostic provenance; reconstruction uses confidence-qualified target depth/support and validates all manifest hashes before fusion.
     - These perception/capture changes grant no motion, collision, NBV or physical-manipulation authority.
   blast_radius: [live target position and jitter, stable lock, occlusion state, capture retry versus replan, immutable dataset format, TSDF/GICP input]
-  must_retest_if_changed: [test_depth_to_3d.py shared-mode and ambiguity cases, test_scan_capture.py timestamp/confidence/projection/transaction helpers, full piper_mobile_manipulation characterization suite, reconstruction provenance and tamper tests, camera launch confidence-stream contract, normal package build, recorded RGB-D replay before live sensors]
+  must_retest_if_changed: [test_depth_to_3d.py shared-mode and ambiguity cases, test_scan_capture.py timestamp/confidence/projection/transaction/slow-delivery helpers, full piper_mobile_manipulation characterization suite, reconstruction provenance and tamper tests, camera launch confidence-stream contract, normal package build, recorded RGB-D replay before live sensors]
 
 live_voxel_nbv_guardrail_2026_08_17:
   invariants:

@@ -50,6 +50,9 @@ class Sam2Unavailable(RuntimeError):
     pass
 
 
+_SAM2_MODEL_CACHE: dict[tuple[str, str, str], Any] = {}
+
+
 def add_repo_to_path(repo_dir: Path) -> None:
     if repo_dir.is_dir() and str(repo_dir) not in sys.path:
         sys.path.insert(0, str(repo_dir))
@@ -66,6 +69,25 @@ def require_sam2(repo_dir: Path):
             "Grounded-SAM-2 dependencies in the isolated env. Original error: %s" % exc
         ) from exc
     return build_sam2, SAM2ImagePredictor
+
+
+def cached_sam2_model(
+    build_sam2: Any,
+    sam2_config: str,
+    sam2_checkpoint: Path,
+    device: str,
+) -> Any:
+    """Load one immutable SAM2 image model per process/device generation."""
+    key = (
+        str(sam2_config),
+        str(sam2_checkpoint.expanduser().resolve()),
+        str(device),
+    )
+    model = _SAM2_MODEL_CACHE.get(key)
+    if model is None:
+        model = build_sam2(key[0], key[1], device=key[2])
+        _SAM2_MODEL_CACHE[key] = model
+    return model
 
 
 def read_yaml(path: Path) -> dict[str, Any]:
@@ -118,6 +140,13 @@ def load_depth(capture_dir: Path) -> np.ndarray | None:
     return depth_to_meters(np.load(str(depth_path)))
 
 
+def load_detection_mask(capture_dir: Path) -> np.ndarray | None:
+    path = capture_dir / "detection_mask.png"
+    if not path.is_file():
+        return None
+    return cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+
+
 def target_depth_from_capture(capture_dir: Path, fallback_depth: np.ndarray | None = None) -> float | None:
     target = read_yaml(capture_dir / "target_3d.yaml")
     for value in (target.get("depth"), target.get("point", {}).get("z") if isinstance(target.get("point"), dict) else None):
@@ -129,7 +158,7 @@ def target_depth_from_capture(capture_dir: Path, fallback_depth: np.ndarray | No
             return numeric
     if fallback_depth is None:
         return None
-    mask = cv2.imread(str(capture_dir / "detection_mask.png"), cv2.IMREAD_GRAYSCALE)
+    mask = load_detection_mask(capture_dir)
     if mask is None or mask.shape[:2] != fallback_depth.shape[:2]:
         return None
     values = fallback_depth[(mask > 0) & np.isfinite(fallback_depth) & (fallback_depth > 0.0)]
@@ -177,7 +206,7 @@ def target_depth_from_refined_mask(
 
 
 def tracked_mask_target_fallback(capture_dir: Path) -> dict[str, Any] | None:
-    mask = cv2.imread(str(capture_dir / "detection_mask.png"), cv2.IMREAD_GRAYSCALE)
+    mask = load_detection_mask(capture_dir)
     image = cv2.imread(str(capture_dir / "rgb.png"), cv2.IMREAD_COLOR)
     if (
         mask is None
@@ -521,7 +550,8 @@ def refine_capture(
     depth_m = load_depth(capture_dir)
     target_depth_m = target_depth_from_capture(capture_dir, depth_m)
 
-    sam2_model = build_sam2(sam2_config, str(sam2_checkpoint.expanduser().resolve()), device=device)
+    sam2_model = cached_sam2_model(
+        build_sam2, sam2_config, sam2_checkpoint, device)
     predictor = SAM2ImagePredictor(sam2_model)
     predictor.set_image(rgb)
     with torch.inference_mode():

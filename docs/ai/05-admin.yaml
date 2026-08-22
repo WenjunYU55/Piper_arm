@@ -1,12 +1,20 @@
 schema_version: 1
 document: maintenance_routing
+offline_resegmented_mask_reconstruction_2026_08_22:
+  inspect: [reconstruction/offline_resegment.py generation index and comparison overlays, reconstruction/tsdf_reconstruct.py prepare_offline_mask_context and load_offline_target_mask, reconstruction/gui_support.py mask-source command, piper_gui_native.py Reconstruction Validation target-mask selector]
+  rule: Keep the captured live mask immutable and available for audit. A fresh offline mask must come from a real GroundingDINO target detection, be hash-bound to the exact source RGB and model assets, and may only intersect/narrow captured confidence-qualified support. Missing detection, invalid mask, insufficient retained support, stale hash or preprocessing failure must fail the selected reconstruction rather than fall back to the live mask.
+  required_retest: [offline resegment pure tests, GroundingDINO target-selection tests, reconstruction and GUI-support tests, immutable seven-view replay, captured-mode regression, GUI import, YAML parse]
+scene_pose_graph_reconstruction_2026_08_22:
+  inspect: [reconstruction/tsdf_reconstruct.py scene_pose_graph_camera_poses and scene_registration_support_mask, target_mesh.ply.quality.json multiway_registration registration_source and pairwise_edges, piper_gui_native.py Reconstruction Validation registration selector]
+  rule: Use static-scene RGB-D only for bounded camera-pose refinement. Dilate and exclude the target mask from registration, keep confidence-qualified target depth as the sole TSDF fusion input, retain robot-pose seeds and the unchanged 20 mm and 5 degree correction limits, and let auto reject the candidate unless measured structural evidence improves safely.
+  required_retest: [reconstruction and GUI-support unit tests, robot_pose and scene_pose_graph replay on the same immutable dataset and voxel size, auto fallback replay, GUI import, YAML parse]
 misregistered_or_oversized_reconstruction_2026_08_21:
-  inspect: [reconstruction/tsdf_reconstruct.py multiway_gicp and registration_candidate_assessment, target_mesh.ply.quality.json registration_comparison and multiway_registration, capture metadata camera_transform and timestamps, L515_camera/validate_fixed_board.py, corrected-scale hand-eye sample session]
-  rule: Keep robot-pose TSDF as the baseline. Multiway GICP may add only a bounded residual correction and auto may select it only after a material structural improvement; never widen the 20 mm or 5 degree limits to force a fit. A smooth but incomplete two-view mesh is not calibration evidence. If the 35 mm dimensional check still fails, collect a new corrected-scale calibration session and validate held-out poses before considering deployment.
+  inspect: [reconstruction/tsdf_reconstruct.py multiway_gicp scene_pose_graph and registration_candidate_assessment, target_mesh.ply.quality.json registration_comparison and multiway_registration, capture metadata camera_transform and timestamps, L515_camera/validate_fixed_board.py, corrected-scale hand-eye sample session]
+  rule: Keep robot-pose TSDF as the baseline. Target-only multiway GICP and target-excluded static-scene pose-graph registration may add only bounded residual corrections, and auto may select one only after material structural improvement; never widen the 20 mm or 5 degree limits to force a fit. A smooth but incomplete mesh is not calibration evidence. If the 35 mm dimensional check still fails, collect a new corrected-scale calibration session and validate held-out poses before considering deployment.
   required_retest: [reconstruction unit and GUI-support tests, immutable scan replay, unchanged robot-pose and sequential-output geometry comparison, exact-image-timestamp fixed-board regression, corrected-scale held-out validation before any calibration deployment]
 gui_mesh_density_selection_2026_08_21:
   inspect: [piper_gui_native.py Reconstruction Validation tab, reconstruction/gui_support.py reconstruction_command and quality_summary, reconstruction/tsdf_reconstruct.py voxel-length argument, reconstruction/test_gui_support.py]
-  rule: Admit only 0.5-through-3.0 mm from the GUI and convert millimetres to metres exactly once at command construction. Keep 1.0 mm default. Do not describe more polygons as more measured information, and do not couple this control to capture, registration or automatic gateway jobs.
+  rule: Admit only 0.5-through-3.0 mm from the GUI and convert millimetres to metres exactly once at command construction. Keep 1.0 mm voxel default and 35 x 35 x 35 mm expected-dimension defaults for the measured reference cube. Do not describe more polygons as more measured information, and do not couple this control to capture, registration or automatic gateway jobs.
 physical_table_contact_or_floor_model_mismatch_2026_08_21:
   inspect: [scan_execution_params.yaml floor_z_m and camera_holder_external_clearance_m, piper_tesseract_foxy/model/collision_model.yaml external_floor_clearance, scan_viewpoint_executor_node.py validate_attached_tool_external_path, worker.py external_floor_clearance_rejection, exact physical mount and table relationship]
   rule: Executor and Tesseract must both use floor_z_m 0.005 and holder clearance 0.005. Never change only one source. The raised plane is a conservative virtual buffer, not proof that the CAD envelope or base_link-to-table measurement is correct.
@@ -479,3 +487,9 @@ capture_diagnostic_delivery_issue:
     acceptance thresholds. Quality and occlusion callbacks own a dedicated
     mutually-exclusive group on the command-free recorder's two-thread
     executor; retain their fail-closed one-second gate.
+
+capture_burst_timeout_routing_2026_08_22:
+  owner: scan_capture_node.py plus supervised_viewpoint_execution.launch.py
+  rule: The recorder must collect exactly 20 new synchronized native frames, use capture_timeout_sec from scan_execution_params.yaml, and return at least two seconds before the executor's outer deadline. Do not restore an independent five-second deadline or weaken the 20-frame requirement.
+  incident: gui-sim-8733327f74f3455eb8656f01a6ceb66d received 18/20 before the former five-second limit; this was the terminal DEADLINE_EXPIRED cause, not an operator cancellation or NBV failure.
+  next_check: Before another physical E2E, run test_scan_capture.py and the package build. On the next explicitly authorized run, inspect the reported synchronized rate and RealSense USB warnings.

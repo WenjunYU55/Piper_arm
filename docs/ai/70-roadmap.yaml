@@ -1,6 +1,11 @@
 schema_version: 1
 document: mission_goal_and_delivery_roadmap
-last_reviewed: '2026-08-21'
+last_reviewed: '2026-08-22'
+offline_resegmented_reconstruction_2026_08_22:
+  milestone: M6 target mesh reconstruction
+  software_status: Command-free GUI and CLI can use fresh independent GroundingDINO/SAM2 masks while preserving immutable captured masks and confidence-qualified depth authority.
+  replay_status: Seven-view replay reduced material shadow contamination and improved dimensions, but the resulting 51.48 x 49.00 x 45.77 mm mesh remains quality FAIL for the 35 mm cube.
+  next_gate: Operator visual comparison of captured versus offline mask overlays and meshes, followed by a better calibration-qualified stationary scan; no physical motion is required for mask qualification.
 bounded_multiway_reconstruction_2026_08_21:
   milestone: M6 target mesh reconstruction
   software_status: Connected bounded multi-view GICP and evidence-based auto selection are implemented offline; exact image-time fixed-board validation is repaired.
@@ -139,7 +144,7 @@ system_behavior_required:
   reconstruction:
     - A successful arm mission creates a durable WAITING_FOR_BASE_HOME mesh job; it does not reconstruct immediately.
     - Accept only an exact task/job/manifest-correlated tracked-robot-homed report.
-    - Run target-only registration and reconstruction in isolation, reject corrupt/inconsistent inputs, and publish durable mesh status plus the validated output hash/path.
+    - Run target-only TSDF reconstruction in isolation with selectable bounded target-only or target-excluded static-scene pose refinement, reject corrupt/inconsistent inputs, and publish durable mesh status plus the validated output hash/path.
 
 definition_of_done:
   functional:
@@ -270,7 +275,7 @@ milestones:
     work:
       - Complete a successful dataset and verify its immutable manifest/hash.
       - Send wrong and correct tracked-base-home identities and prove rejection/idempotence.
-      - Run isolated reconstruction, inspect registration metrics and visually inspect the PLY for completeness, duplicates and target-only geometry.
+      - Run isolated robot_pose, target-only multiway and target-excluded static-scene pose-graph reconstruction, inspect registration metrics and visually inspect the PLY for completeness, duplicates and target-only fused geometry.
     exit_criteria: Exact base-home correlation produces one durable successful mesh job and a usable validated mesh; corrupt or mismatched inputs fail without changing accepted data.
   - id: M7
     name: Tracked-robot production integration

@@ -1,5 +1,11 @@
 schema_version: 1
 document: module_ownership
+offline_resegmentation_ownership_2026_08_22:
+  owner_module: reconstruction/offline_resegment.py
+  allowed_edit_paths: [reconstruction/offline_resegment.py, reconstruction/tsdf_reconstruct.py, reconstruction/gui_support.py, reconstruction/test_offline_resegment.py, reconstruction/test_tsdf_reconstruct.py, reconstruction/test_gui_support.py, AI_perception_tests/groundingdino_test/run_groundingdino_on_capture.py, AI_perception_tests/groundingdino_test/sam2_refine_on_capture.py, AI_perception_tests/test_groundingdino_target_selection.py, piper_gui_native.py, test_piper_gui_phase8.py, docs/ai]
+  owns: Independent per-capture GroundingDINO target detection, cached SAM2 image-model inference, manifest/model-hash-bound derived target masks, compact comparison overlays and removal of temporary duplicated model inputs.
+  separate_owners: {live_capture_mask_and_acceptance: scan_capture_node.py, captured_confidence_depth_support: scan_capture_node.py plus immutable manifest, derived_mask_loading_and_intersection: reconstruction/tsdf_reconstruct.py, registration_and_TSDF: reconstruction/tsdf_reconstruct.py, GUI_selection: reconstruction/gui_support.py plus piper_gui_native.py}
+  must_not_move_without: [immutable manifest integrity, exact source RGB hash, no live-mask model fallback, captured-support-only depth authority, reconstruction quality gates, command-free GUI boundary]
 gui_mesh_detail_ownership_2026_08_21:
   owner_module: reconstruction/gui_support.py
   presentation_owner: piper_gui_native.py Reconstruction Validation tab
@@ -190,7 +196,7 @@ modules:
   reconstruction_export:
     owner_module: reconstruction/tsdf_reconstruct.py
     allowed_edit_paths: [reconstruction/tsdf_reconstruct.py, reconstruction/test_tsdf_reconstruct.py, reconstruction/requirements.txt]
-    owns: Offline masked RGB-D TSDF integration for immutable successful automatic scan datasets, including the default 8-to-24 feature-complete contract, explicit 1-to-7 PARTIAL_VIEW_SET admission only at an authorized caller boundary, exact manifest-to-frame-metadata count agreement, timestamped camera-transform validation, robot-pose baseline, optional sequential or connected bounded multi-view GICP residual refinement, evidence-based auto selection, and mesh quality report.
+    owns: Offline masked RGB-D TSDF integration for immutable successful automatic scan datasets, including the default 8-to-24 feature-complete contract, explicit 1-to-7 PARTIAL_VIEW_SET admission only at an authorized caller boundary, exact manifest-to-frame-metadata count agreement, timestamped camera-transform validation, robot-pose baseline, optional sequential or connected bounded target-only GICP and target-excluded static-scene RGB-D pose-graph residual refinement, evidence-based auto selection, and mesh quality report.
     must_not_move_without: [autonomous_target_scan, supervised_scan_execution, scan_and_obstacles]
 startup_home_ownership_2026_08_04:
   mission_owner: target_scan_mission_node.py selects nonterminal hold versus terminal cancel and requests STARTUP_WRIST then ROUGH_HOME at startup, and PRE_HOME then ROUGH_HOME then STORAGE_WRIST at terminal shutdown.
@@ -246,7 +252,7 @@ selected_reintegration_ownership_2026_08_15:
     allowed_edit_paths: [reconstruction, piper_gui_native.py]
     must_not_move_without: [dataset manifest and capture provenance, calibration hash, confidence availability, output quality report, command-free GUI boundary]
     resolution_contract: {target_cloud_owner: target_cloud_node.py, accepted_target_pixel_stride: 1, accepted_target_voxel_m: 0.001, tsdf_voxel_m: 0.001, tsdf_truncation_m: 0.005, unchanged_nbv_voxel_m: 0.005, unchanged_scene_voxel_m: 0.015}
-    registration_contract: {baseline: robot_pose, optional_modes: [bounded_gicp, multiway_gicp], maximum_translation_correction_m: 0.020, maximum_rotation_correction_deg: 5.0, auto_requires_material_structural_improvement: true}
+    registration_contract: {baseline: robot_pose, optional_modes: [bounded_gicp, multiway_gicp, scene_pose_graph], scene_registration_source: target-excluded aligned static-scene RGB-D, fusion_source: confidence-qualified target-only depth/support, maximum_translation_correction_m: 0.020, maximum_rotation_correction_deg: 5.0, auto_requires_material_structural_improvement: true}
   target_depth_selection:
     owner_module: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/utils/target_depth.py
     allowed_edit_paths: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/utils/target_depth.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/depth_to_3d_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_landmark_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/occlusion_checker_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_depth_to_3d.py]
@@ -254,8 +260,8 @@ selected_reintegration_ownership_2026_08_15:
   confidence_capture_schema2:
     owner_module: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture.py
     runtime_owner: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture_node.py
-    owns: [prospective 20-new-frame native-depth burst collection at the held achieved pose, confidence-qualified per-pixel temporal median, exact representative mask/RGB identity, target depth qualification, transactional artifacts and burst provenance]
-    allowed_edit_paths: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/failure_model.py, piper_ros_foxy/src/piper_mobile_manipulation/config/scan_capture_params.yaml, L515_camera/start_l515_camera.sh, L515_camera/start_l515_camera_low_bandwidth.sh, reconstruction]
+    owns: [prospective 20-new-frame native-depth burst collection at the held achieved pose, shared outer capture deadline with a two-second service-response margin, confidence-qualified per-pixel temporal median, exact representative mask/RGB identity, target depth qualification, transactional artifacts and burst provenance]
+    allowed_edit_paths: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/failure_model.py, piper_ros_foxy/src/piper_mobile_manipulation/config/scan_capture_params.yaml, piper_ros_foxy/src/piper_mobile_manipulation/config/scan_execution_params.yaml, piper_ros_foxy/src/piper_mobile_manipulation/launch/supervised_viewpoint_execution.launch.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_scan_capture.py, L515_camera/start_l515_camera.sh, L515_camera/start_l515_camera_low_bandwidth.sh, reconstruction]
     must_not_move_without: [exact mask/RGB stamp identity, settled burst and native depth/confidence synchronization, temporal support policy, depth-to-colour TF, transactional artifact commit, manifest hashes, reconstruction provenance validation, capture retry/replan policy]
   live_voxel_nbv:
     owner_module: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/nbv_coverage.py

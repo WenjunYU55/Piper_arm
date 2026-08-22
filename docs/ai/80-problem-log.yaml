@@ -1,6 +1,12 @@
 schema_version: 1
 document: consolidated_problem_and_incident_log
-last_reviewed: '2026-08-21'
+last_reviewed: '2026-08-22'
+settled_capture_deadline_incident_2026_08_22:
+  task_id: gui-sim-8733327f74f3455eb8656f01a6ceb66d
+  symptom: One 20-frame burst succeeded in 1.031 seconds; a later settled request reached only 18/20 before the recorder's independent five-second deadline and terminated the mission as DEADLINE_EXPIRED. The executor's subsequent cancel log was internal failure cleanup, not an operator action.
+  root_cause: The newly added temporal burst used a physically brittle fixed five-second collection budget that was disconnected from the existing 20-second capture_timeout_sec. Intermittent synchronized-frame delivery and contemporaneous RealSense USB resource-unavailable warnings exposed the mismatch; logs cannot yet attribute the slowdown uniquely to USB, DDS or host load.
+  correction: Share capture_timeout_sec through the existing supervised launch, reserve two seconds for service response, retain all 20 frames and add elapsed/rate timeout evidence. No physical retest was run after the operator deferred it.
+  safety_result: PRE_HOME, ROUGH_HOME, STORAGE_WRIST, all-six disable, gripper disable and exact child cleanup passed; durable safe_shutdown was true.
 multiview_cube_surface_duplicated_and_oversized_2026_08_21:
   state: bounded_registration_improved_recalibration_evidence_required
   symptom: The latest seven-view scan produced individually clean face planes but a sparse duplicated fused cube with a robot-pose OBB about 73 x 58 x 47 mm for a measured 35 mm cube.

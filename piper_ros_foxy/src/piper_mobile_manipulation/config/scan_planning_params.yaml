@@ -24,7 +24,7 @@
     ray_min_standoff_m: 0.28
     preferred_scan_radius_m: 0.50
     ray_sampling_region: "full_sphere"
-    ray_count: 175
+    ray_count: 360
     # Deterministic samples of a flexible vertical camera region. Ten-degree
     # pitch spacing gives Tesseract intermediate J2/J3 configurations instead
     # of forcing one of a few exact wrist-down elevations near a close target.

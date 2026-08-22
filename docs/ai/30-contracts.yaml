@@ -1,10 +1,27 @@
 schema_version: 1
 document: runtime_contracts
+offline_resegmentation_contract_2026_08_22:
+  selectable_mask_sources: [captured, offline_resegment]
+  default_boundaries: {CLI_and_automatic_gateway: captured, command_free_GUI: offline_resegment}
+  offline_input: Immutable manifest-listed RGB and aligned depth plus manifest target label, profile and prompt. The captured detection mask is not copied into the model workspace and cannot serve as GroundingDINO fallback.
+  derived_identity: Canonical hash of pipeline version, immutable manifest SHA-256, target label/profile/prompt and exact GroundingDINO config/checkpoint plus SAM2 checkpoint hashes.
+  acceptance: Exactly one target mask with prompt_source groundingdino, finite positive detector and SAM2 confidence, correct RGB dimensions, nonempty binary support and at least 100 pixels after GroundingDINO-box clipping.
+  fusion: The derived mask is intersected with captured confidence-qualified target support. It may remove pixels but cannot add target depth outside captured support. Every frame must retain the manifest minimum target-point count.
+  outputs: Derived mask, red-removed/green-retained comparison overlay, generation index and additive mesh-quality provenance; no source artifact or public ROS message changes.
+  failure: Missing assets/detection, fallback source, invalid hash/path/mask, insufficient retained support or GPU failure fails offline_resegment without silently using captured mode.
+static_scene_pose_graph_registration_contract_2026_08_22:
+  selectable_mode: scene_pose_graph
+  inputs: Immutable aligned RGB/depth, segmentation mask, camera intrinsics and capture-time T_base_camera already present in each accepted frame.
+  registration_only: Target mask dilated by six pixels is removed from full-scene support. RGB-D odometry and 5 mm static-scene GICP use robot relative pose as their seed; an odometry failure falls back to the same robot seed rather than inventing a pose.
+  fusion_only: TSDF continues to consume only confidence-qualified target depth/support. Static-scene pixels can never enter target reconstruction.
+  bounds: {maximum_translation_correction_m: 0.020, maximum_rotation_correction_deg: 5.0, maximum_correspondence_m: 0.015}
+  outputs: Existing mesh and quality JSON with backward-compatible registration-source, RGB-D odometry, edge and pose-correction provenance. No public ROS schema changes.
+  GUI: scene_pose_graph and robot_pose are directly selectable; existing modes and the 0.5-through-3.0 mm voxel control remain available.
 bounded_multiway_registration_contract_2026_08_21:
   inputs: Immutable confidence-qualified target geometry plus the recorded capture-time T_base_camera for each accepted view.
   pair_policy: Consecutive views plus at most three prior views with closest optical directions inside 75 degrees are cheap overlap candidates; pairwise GICP uses a 0.015 m correspondence distance and the existing fitness, residual, 0.020 m translation and 5 degree rotation rejection contract.
   optimization_policy: Accepted edges must form a connected graph. After pose-graph optimization, every final camera pose is rechecked relative to its own robot pose. Any disconnected graph, malformed transform or excessive correction fails the candidate closed.
-  auto_policy: robot_pose is always evaluated. bounded_gicp and multiway_gicp are optional candidates; only a candidate with nonworse dimensions/quality and material component-coherence or residual improvement is eligible.
+  auto_policy: robot_pose is always evaluated. bounded_gicp, multiway_gicp and scene_pose_graph are optional candidates; only a candidate with nonworse dimensions/quality and material component-coherence or residual improvement is eligible.
   outputs: Existing quality JSON plus backward-compatible multiway pair, correction, assessment and selection provenance. No public ROS schema changes.
 fixed_board_measurement_time_contract_2026_08_21:
   input: One complete detected board image with its original ROS header timestamp.
@@ -14,6 +31,7 @@ manual_gui_mesh_detail_contract_2026_08_21:
   input_unit: millimetres
   admitted_range_mm: [0.5, 3.0]
   default_mm: 1.0
+  default_expected_dimensions_mm: [35.0, 35.0, 35.0]
   worker_unit: metres
   output_evidence: [configuration.voxel_length_m, vertex_count, triangle_count, mesh_metrics]
   compatibility: Existing reconstruction_command callers retain 1.0 mm by default; public ROS and automatic reconstruction-job contracts are unchanged.
@@ -583,11 +601,11 @@ confidence_capture_schema2_contract_2026_08_16:
   additive_inputs: [/camera/depth/image_rect_raw, /camera/depth/camera_info, /camera/confidence/image_rect_raw]
   camera_startup: Both L515 launchers enable synchronized streams, require a real color CameraInfo sample before applying visual-preset/global-time controls, externally bound every parameter transaction, and fail closed unless preset 5 plus both global-time controls are verified.
   immutable_identity: The SAM mask must have the exact RGB stamp; the reference native depth/confidence/camera-info use the configured bounded synchronizer and reference native depth must remain within the unchanged RGB-D slop.
-  temporal_depth_burst: After a settled capture request, the command-free recorder collects exactly 20 new synchronized native L515 depth/confidence/camera-info observations while the achieved pose remains held. Per-pixel median uses only nonzero grade-8-or-better samples and retains pixels supported by at least 0.50 of the burst. The exact mask-correlated RGB remains one representative frame so temporal depth filtering cannot blur semantic identity.
+  temporal_depth_burst: After a settled capture request, the command-free recorder collects exactly 20 new synchronized native L515 depth/confidence/camera-info observations while the achieved pose remains held. It consumes the existing 20-second capture_timeout_sec with a mandatory two-second service-response margin rather than an independent five-second deadline. Per-pixel median uses only nonzero grade-8-or-better samples and retains pixels supported by at least 0.50 of the burst. The exact mask-correlated RGB remains one representative frame so temporal depth filtering cannot blur semantic identity.
   confidence: L515 mono8 accepts only logical grades 0..15 or exact high-nibble RAW8 values 0,16,...,240. The default minimum grade is 8, temporal support fraction 0.50, minimum target points 50, and minimum confident target fraction 0.50.
   outputs: [RGB PNG, aligned depth NPY and millimetre PNG, exact mask PNG, native depth NPY and PNG, normalized confidence PNG, projected target-depth PNG, target-support mask PNG, frame metadata YAML, hash manifest]
   transaction: Temporary files are renamed only after every artifact and metadata write succeeds; any error removes partial and already-committed files for that frame.
-  retry_routing: Fewer than 20 new frames within the bounded service collection or a correlation/synchronization gap rejects the same capture through the existing bounded caller policy. DEPTH_QUALITY_REJECTED is fresh visual evidence and requests a different view. Malformed encoding/intrinsics/TF/provenance and persistence errors abort.
+  retry_routing: Fewer than 20 new frames within capture_timeout_sec minus the two-second response margin, or a correlation/synchronization gap, rejects the same capture through the existing bounded caller policy. The timeout diagnostic includes received count, elapsed collection time and synchronized rate. DEPTH_QUALITY_REJECTED is fresh visual evidence and requests a different view. Malformed encoding/intrinsics/TF/provenance and persistence errors abort.
   compatibility: Existing Trigger service, status/summary topics, QoS, synchronization_slop_sec=0.08, require_valid_target=true default and motion/NBV behavior are unchanged.
 
 one_millimetre_target_geometry_contract_2026_08_21:

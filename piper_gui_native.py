@@ -513,8 +513,10 @@ class PiperGuiApp:
         self.last_successful_mission = None
         self.reconstruction_dataset_var = tk.StringVar(value='')
         self.reconstruction_mode_var = tk.StringVar(value='auto')
+        self.reconstruction_mask_source_var = tk.StringVar(
+            value='offline_resegment')
         self.reconstruction_dimension_vars = [
-            tk.StringVar(value='40') for _axis in range(3)]
+            tk.StringVar(value='35') for _axis in range(3)]
         self.reconstruction_voxel_mm_var = tk.DoubleVar(value=1.0)
         self.reconstruction_voxel_status_var = tk.StringVar(
             value='1.0 mm voxel — baseline mesh detail')
@@ -522,7 +524,7 @@ class PiperGuiApp:
         self.reconstruction_status_var = tk.StringVar(
             value='Select a completed scan dataset')
         self.reconstruction_summary_var = tk.StringVar(
-            value='Validation requires visual review; expected cube is 40 mm.')
+            value='Validation requires visual review; expected cube is 35 mm.')
         self.reconstruction_process = None
         self.reconstruction_report_path = None
         self.reconstruction_output_path = None
@@ -906,26 +908,42 @@ class PiperGuiApp:
         ttk.Combobox(
             inputs, textvariable=self.reconstruction_mode_var,
             values=(
-                'auto', 'robot_pose', 'bounded_gicp', 'multiway_gicp'),
-            state='readonly', width=18).grid(
+                'auto', 'robot_pose', 'scene_pose_graph',
+                'bounded_gicp', 'multiway_gicp'),
+            state='readonly', width=23).grid(
                 row=2, column=1, sticky='w', padx=(8, 0), pady=(10, 0))
+        ttk.Label(inputs, text='Target mask').grid(
+            row=3, column=0, sticky='w', pady=(10, 0))
+        ttk.Combobox(
+            inputs, textvariable=self.reconstruction_mask_source_var,
+            values=('offline_resegment', 'captured'),
+            state='readonly', width=23).grid(
+                row=3, column=1, sticky='w', padx=(8, 0), pady=(10, 0))
+        ttk.Label(
+            inputs,
+            text=(
+                'offline_resegment runs fresh GroundingDINO/SAM2 and can only '
+                'narrow the immutable confidence-qualified target support.'),
+            foreground='#52606d', wraplength=540, justify='left').grid(
+                row=3, column=2, columnspan=3, sticky='w', padx=(8, 0),
+                pady=(10, 0))
         ttk.Label(inputs, text='Mesh detail').grid(
-            row=3, column=0, sticky='w', pady=(12, 0))
+            row=4, column=0, sticky='w', pady=(12, 0))
         ttk.Label(inputs, text='Coarse').grid(
-            row=3, column=1, sticky='w', pady=(12, 0))
+            row=4, column=1, sticky='w', pady=(12, 0))
         tk.Scale(
             inputs, from_=3.0, to=0.5, resolution=0.1,
             orient='horizontal', showvalue=False, length=330,
             variable=self.reconstruction_voxel_mm_var,
             command=self.update_reconstruction_voxel_status).grid(
-                row=3, column=2, columnspan=2, sticky='ew',
+                row=4, column=2, columnspan=2, sticky='ew',
                 padx=(8, 8), pady=(12, 0))
         ttk.Label(inputs, text='Fine').grid(
-            row=3, column=4, sticky='e', pady=(12, 0))
+            row=4, column=4, sticky='e', pady=(12, 0))
         ttk.Label(
             inputs, textvariable=self.reconstruction_voxel_status_var,
             foreground='#52606d').grid(
-                row=4, column=1, columnspan=4, sticky='w', pady=(3, 0))
+            row=5, column=1, columnspan=4, sticky='w', pady=(3, 0))
         controls = ttk.Frame(parent)
         controls.grid(row=3, column=0, sticky='w', pady=(14, 8))
         self.reconstruction_build_button = ttk.Button(
@@ -981,15 +999,18 @@ class PiperGuiApp:
             command, output = reconstruction_command(
                 PROJECT_ROOT, self.reconstruction_dataset_var.get(),
                 dimensions, self.reconstruction_mode_var.get(),
-                round(float(self.reconstruction_voxel_mm_var.get()), 1))
+                round(float(self.reconstruction_voxel_mm_var.get()), 1),
+                self.reconstruction_mask_source_var.get())
         except (OSError, TypeError, ValueError) as exc:
             self.reconstruction_status_var.set(str(exc))
             return
         self.reconstruction_build_button.configure(state='disabled')
         self.reconstruction_view_button.configure(state='disabled')
         self.reconstruction_status_var.set(
-            'Reconstruction is running offline at %.1f mm mesh voxels'
-            % round(float(self.reconstruction_voxel_mm_var.get()), 1))
+            'Reconstruction is running offline at %.1f mm mesh voxels using %s'
+            % (
+                round(float(self.reconstruction_voxel_mm_var.get()), 1),
+                self.reconstruction_mask_source_var.get()))
         self.reconstruction_output_path = output
 
         def worker():

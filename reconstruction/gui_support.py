@@ -8,6 +8,7 @@ import subprocess
 
 MINIMUM_GUI_VOXEL_LENGTH_MM = 0.5
 MAXIMUM_GUI_VOXEL_LENGTH_MM = 3.0
+RECONSTRUCTION_MASK_SOURCES = ('captured', 'offline_resegment')
 
 
 def dataset_root(project_root):
@@ -44,7 +45,8 @@ def reconstruction_python(project_root):
 
 
 def reconstruction_command(project_root, selection, dimensions_mm,
-                           registration_mode='auto', voxel_length_mm=1.0):
+                           registration_mode='auto', voxel_length_mm=1.0,
+                           mask_source='captured'):
     root = Path(project_root).resolve()
     dataset = validated_dataset_path(root, selection)
     python = reconstruction_python(root)
@@ -61,6 +63,10 @@ def reconstruction_command(project_root, selection, dimensions_mm,
             MINIMUM_GUI_VOXEL_LENGTH_MM
             <= voxel_mm <= MAXIMUM_GUI_VOXEL_LENGTH_MM):
         raise ValueError('mesh voxel size must be between 0.5 and 3.0 mm')
+    source = str(mask_source)
+    if source not in RECONSTRUCTION_MASK_SOURCES:
+        raise ValueError(
+            'mask source must be captured or offline_resegment')
     output = dataset / 'reconstruction' / 'validation' / 'target_mesh.ply'
     command = [
         str(python), str(root / 'reconstruction' / 'tsdf_reconstruct.py'),
@@ -68,6 +74,7 @@ def reconstruction_command(project_root, selection, dimensions_mm,
         str(registration_mode), '--expected-dimensions-mm',
         *(format(value, '.12g') for value in dimensions),
         '--voxel-length', format(voxel_mm / 1000.0, '.12g'),
+        '--mask-source', source,
         '--allow-missing-calibration-id',
         '--allow-partial-view-set',
     ]
@@ -132,6 +139,8 @@ def quality_summary(report):
         'TSDF mesh voxel: %.2f mm (smaller permits more polygons)' % (
             1000.0 * float(configuration.get(
                 'voxel_length_m', float('nan')))),
+        'Target mask: %s' % configuration.get(
+            'semantic_mask_source', 'captured'),
         'Registration median RMSE: %.2f mm; dominant component: %.1f%%' % (
             1000.0 * float(registration.get('median_rmse_m', float('nan'))),
             100.0 * float(mesh.get(

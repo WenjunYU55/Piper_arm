@@ -33,12 +33,33 @@ from run_groundingdino_on_capture import (  # noqa: E402
 )
 from temporal_heavy_refresh import classify_refined_obstacles  # noqa: E402
 from sam2_refine_on_capture import (  # noqa: E402
+    _SAM2_MODEL_CACHE,
+    cached_sam2_model,
     depth_occluder_mask,
+    load_detection_mask,
     target_depth_from_refined_mask,
 )
 
 
 class TargetSelectionTest(unittest.TestCase):
+    def test_sam2_model_is_loaded_once_per_process_device(self):
+        calls = []
+        _SAM2_MODEL_CACHE.clear()
+
+        def build(config, checkpoint, device):
+            calls.append((config, checkpoint, device))
+            return object()
+
+        checkpoint = Path('/tmp/model.pt')
+        first = cached_sam2_model(build, 'config.yaml', checkpoint, 'cuda')
+        second = cached_sam2_model(build, 'config.yaml', checkpoint, 'cuda')
+        self.assertIs(first, second)
+        self.assertEqual(len(calls), 1)
+
+    def test_missing_detection_mask_is_cleanly_absent(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            self.assertIsNone(load_detection_mask(Path(temporary)))
+
     def test_cube_face_depth_is_not_misclassified_as_an_occluder(self):
         target_mask = np.zeros((120, 160), dtype=bool)
         target_mask[30:80, 50:110] = True

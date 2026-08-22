@@ -622,7 +622,10 @@ def run_on_capture(
             _, crop_image = load_image(str(crop_path))
             crop_height, crop_width = crop_bgr.shape[:2]
             grouped_detections = []
-            for prompt_group in parse_prompt_groups(obstacle_prompt):
+            prompt_groups = (
+                parse_prompt_groups(obstacle_prompt)
+                if str(obstacle_prompt).strip() else [])
+            for prompt_group in prompt_groups:
                 local_boxes, local_logits, local_phrases = predict(
                     model=model,
                     image=crop_image,

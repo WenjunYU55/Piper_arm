@@ -29,7 +29,7 @@ Piper_arm/
 │   └── realsense_ws/                Generated/source RealSense workspace; do not edit install output
 ├── AI_perception_tests/             Offline datasets/tools and isolated GPU model workers
 │   └── groundingdino_test/          Grounded-SAM-2 environment, scripts, requirements, asset fetch
-├── reconstruction/                  Offline masked RGB-D TSDF, optional bounded GICP, provenance/quality reports, preview rendering and Open3D validation
+├── reconstruction/                  Offline target-only RGB-D TSDF with selectable captured or fresh manifest/model-hash-bound GroundingDINO/SAM2 masks, captured-support-only semantic intersection, robot-pose/bounded target-GICP/target-excluded static-scene registration, provenance/quality reports, comparison overlays, preview rendering and Open3D validation
 ├── README.md                        Dependency surfaces and installation overview
 ├── SYSTEM_HANDOFF.md                Whole-system architecture, validated state, limitations, and continuation
 ├── OPERATOR_COMMANDS.md             Supported runtime and safety command reference
@@ -77,7 +77,8 @@ piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/viewpoint
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/view_generation.py - immutable session/accepted-count/policy generation identity used for planner-to-bridge-to-mission synchronization
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture_node.py - transactional native-resolution schema-2 RGB-D/mask persistence that collects 20 new confidence-qualified native-depth frames after each settled capture request, then applies a per-pixel median; includes exact plan_id-correlated NBV policy/rank/gain audit metadata
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_cloud_node.py - accepted-refinement target model retaining every masked pixel into 1 mm cells; separate coarse 15 mm scene cloud remains bounded
-reconstruction/tsdf_reconstruct.py - immutable target-only TSDF/GICP validation with 1 mm voxel and 5 mm truncation defaults; NBV resolution is separate
+reconstruction/offline_resegment.py - command-free per-capture fresh GroundingDINO/SAM2 target masks, exact manifest/model generation identity, no live-mask fallback, compact comparison overlays and temporary-input cleanup
+reconstruction/tsdf_reconstruct.py - immutable target-only TSDF fusion with selectable captured or offline-resegmented semantic support, robot-pose, bounded target GICP and target-excluded static-scene RGB-D pose-graph options; 1 mm voxel and 5 mm truncation defaults; NBV resolution is separate
 piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/bridge_node.py - command-free snapshot bridge, post-cache view-generation receipts, direction-diverse bounded NBV shortlist and selected-plan provenance publication
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/executor_recovery.py - typed retry/reacquire/replan/abort policy
 piper_ros_foxy/src/piper_mobile_manipulation/test/test_phase7_viewpoint_components.py - Phase 7 component and recovery-matrix regressions
