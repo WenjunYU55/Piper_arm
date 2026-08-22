@@ -157,8 +157,16 @@ class FixedBoardValidator(Node):
                     % (len(ids), len(self.expected_markers))
                 )
                 return
+            camera = self.camera_info
+            camera_matrix = np.asarray(camera.k, dtype=np.float64).reshape(3, 3)
+            distortion = np.asarray(camera.d, dtype=np.float64)
             count, corners, corner_ids = cv2.aruco.interpolateCornersCharuco(
-                marker_corners, marker_ids, gray, self.board
+                marker_corners,
+                marker_ids,
+                gray,
+                self.board,
+                cameraMatrix=camera_matrix,
+                distCoeffs=distortion,
             )
             if count != self.expected_corners:
                 self.reject_frame(
@@ -166,13 +174,10 @@ class FixedBoardValidator(Node):
                     % (count, self.expected_corners)
                 )
                 return
-            camera = self.camera_info
             object_points = np.asarray(self.board.chessboardCorners, dtype=np.float64)[
                 corner_ids.flatten().astype(int)
             ]
             image_points = corners.reshape(-1, 2).astype(np.float64)
-            camera_matrix = np.asarray(camera.k, dtype=np.float64).reshape(3, 3)
-            distortion = np.asarray(camera.d, dtype=np.float64)
             ok, rvec, tvec = cv2.solvePnP(
                 object_points, image_points, camera_matrix, distortion,
                 flags=cv2.SOLVEPNP_ITERATIVE,
@@ -222,17 +227,35 @@ class FixedBoardValidator(Node):
                 % (len(frames), self.args.frames_per_pose,
                    reason or "check board visibility and TF")
             )
-        return mean_transform([item[1] for item in frames]), float(np.mean([item[2] for item in frames]))
+        pose_mean = mean_transform([item[1] for item in frames])
+        translation_errors = np.asarray([
+            np.linalg.norm(item[1][:3, 3] - pose_mean[:3, 3]) * 1000.0
+            for item in frames
+        ])
+        rotation_errors = np.asarray([
+            rotation_error_deg(pose_mean, item[1]) for item in frames
+        ])
+        reprojection = np.asarray([item[2] for item in frames])
+        noise = {
+            "frame_count": len(frames),
+            "translation_rms_mm": float(np.sqrt(np.mean(translation_errors ** 2))),
+            "translation_max_mm": float(np.max(translation_errors)),
+            "rotation_rms_deg": float(np.sqrt(np.mean(rotation_errors ** 2))),
+            "rotation_max_deg": float(np.max(rotation_errors)),
+            "reprojection_mean_px": float(np.mean(reprojection)),
+            "reprojection_max_px": float(np.max(reprojection)),
+        }
+        return pose_mean, float(np.mean(reprojection)), noise
 
 
 def result_dict(poses, reprojection, translation_limit_mm, rotation_limit_deg,
-                validation_metadata):
+                validation_metadata, within_pose_noise=None):
     reference = mean_transform(poses)
     measurements = []
     for index, (pose, reprojection_rms) in enumerate(zip(poses, reprojection), 1):
         translation_error = float(np.linalg.norm(pose[:3, 3] - reference[:3, 3]) * 1000.0)
         rotation_error = float(rotation_error_deg(reference, pose))
-        measurements.append({
+        measurement = {
             "index": index,
             "position_m": pose[:3, 3].astype(float).tolist(),
             "quaternion_xyzw": Rotation.from_matrix(pose[:3, :3]).as_quat().astype(float).tolist(),
@@ -240,7 +263,10 @@ def result_dict(poses, reprojection, translation_limit_mm, rotation_limit_deg,
             "rotation_error_deg": rotation_error,
             "reprojection_rms_px": reprojection_rms,
             "passed": translation_error <= translation_limit_mm and rotation_error <= rotation_limit_deg,
-        })
+        }
+        if within_pose_noise is not None:
+            measurement["within_pose_noise"] = within_pose_noise[index - 1]
+        measurements.append(measurement)
     return {
         "status": "passed" if measurements and all(item["passed"] for item in measurements) else "failed",
         "validation": validation_metadata,
@@ -272,6 +298,11 @@ def main():
     parser.add_argument("--translation-limit-mm", type=float, default=15.0)
     parser.add_argument("--rotation-limit-deg", type=float, default=1.5)
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--stationary-noise-only",
+        action="store_true",
+        help="collect one multi-frame stationary pose without requiring arm movement",
+    )
     args = parser.parse_args()
     if not hasattr(cv2.aruco, args.dictionary):
         parser.error("unknown ArUco dictionary: %s" % args.dictionary)
@@ -288,21 +319,29 @@ def main():
     node = FixedBoardValidator(args)
     thread = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
     thread.start()
-    poses, reprojection = [], []
+    poses, reprojection, within_pose_noise = [], [], []
     print("Keep the board fixed. Stop the arm, then press Enter to measure each pose.")
-    print("Enter q when at least %d different arm poses have been measured." % args.minimum_poses)
+    if args.stationary_noise_only:
+        print("One stationary multi-frame diagnostic will be collected.")
+    else:
+        print("Enter q when at least %d different arm poses have been measured." % args.minimum_poses)
     try:
         while True:
+            if args.stationary_noise_only and poses:
+                break
             command = input("measure [Enter], finish [q]: ").strip().lower()
             if command == "q":
                 break
             try:
-                pose, rms = node.collect()
+                pose, rms, noise = node.collect()
                 poses.append(pose)
                 reprojection.append(rms)
+                within_pose_noise.append(noise)
                 print(
-                    "pose %d: base position [%.4f, %.4f, %.4f] m, reprojection %.3f px"
-                    % (len(poses), pose[0, 3], pose[1, 3], pose[2, 3], rms)
+                    "pose %d: base position [%.4f, %.4f, %.4f] m, "
+                    "reprojection %.3f px, within-pose %.3f mm / %.3f deg RMS"
+                    % (len(poses), pose[0, 3], pose[1, 3], pose[2, 3], rms,
+                       noise["translation_rms_mm"], noise["rotation_rms_deg"])
                 )
             except RuntimeError as error:
                 print("measurement rejected: %s" % error, file=sys.stderr)
@@ -313,9 +352,10 @@ def main():
         rclpy.shutdown()
         thread.join(timeout=2.0)
 
-    if len(poses) < args.minimum_poses:
+    required_poses = 1 if args.stationary_noise_only else args.minimum_poses
+    if len(poses) < required_poses:
         print(
-            "validation requires at least %d measured arm poses" % args.minimum_poses,
+            "validation requires at least %d measured arm poses" % required_poses,
             file=sys.stderr,
         )
         return 1
@@ -338,7 +378,9 @@ def main():
             "stationary_position_tolerance_rad": args.stationary_position_tolerance_rad,
             "base_frame": args.base_frame,
             "camera_frame": args.camera_frame,
+            "stationary_noise_only": args.stationary_noise_only,
         },
+        within_pose_noise,
     )
     for item in result["measurements"]:
         print(

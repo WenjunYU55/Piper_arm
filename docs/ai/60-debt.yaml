@@ -1,5 +1,11 @@
 schema_version: 1
 document: technical_debt
+hand_eye_accuracy_followup_2026_08_22:
+  status: tooling_repaired_candidate_not_qualified
+  evidence: The corrected-scale 12-pose session has strong image reprojection and useful rotational diversity, but approximately 8.69 mm translation and 1.30 degree fitting closure. PARK, TSAI, HORAUD and DANIILIDIS agree closely; same-session L515 RGB intrinsic refitting does not improve closure. Mode-0 FK agrees with controller end-pose diagnostics and matches firmware S-V1.5-8.
+  interpretation: Remaining error is more consistent with physical/robot repeatability, absolute kinematic/model bias, or camera/board pose bias than with OpenCV solver choice. Current samples alone cannot separate these sources.
+  next_cut: First collect stationary multi-frame noise with the complete rigid board visible; then prove return-to-pose repeatability and collect independent held-out stations. Only after those tests compare a new candidate against the unchanged deployed transform and command-free reconstruction. Do not add kinematic compensation or deploy from fitting residuals alone.
+  blocker: Current driver enable is safely rejected because the controller J6 positive-limit query returned unavailable; diagnose that existing startup contract before any calibration motion rather than bypassing it.
 offline_resegmentation_followup_2026_08_22:
   status: contamination_reduced_reconstruction_still_quality_fail
   implemented: Fresh independent GroundingDINO plus SAM2 masks are selectable for offline reconstruction, hash-bound to immutable inputs and exact model assets, and intersected with captured confidence-qualified target support without changing live perception or capture behavior.

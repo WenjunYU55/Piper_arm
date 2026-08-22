@@ -343,6 +343,21 @@ Validate the physical chain with the fixed ChArUco board left stationary:
 ./L515_camera/run_fixed_board_validation.sh
 ```
 
+For a command-free single-pose sensor/TF noise measurement, use at least 30 fresh frames:
+
+```bash
+python3 L515_camera/validate_fixed_board.py \
+  --stationary-noise-only --frames-per-pose 30 \
+  --output L515_camera/calibration/hand_eye/session_NAME/stationary_noise.yaml
+```
+
+Capture correlates the RGB image header with the nearest source-stamped joint feedback and rejects
+a pair farther apart than 0.100 seconds. Both capture and validation pass the current CameraInfo
+intrinsics and distortion to ChArUco interpolation. `solve_hand_eye.py` still defaults to PARK; its
+pose-geometry and cross-solver results are diagnostics and never deploy a transform. The installed
+PiPER firmware `S-V1.5-8` requires modified-DH mode 0. Do not choose mode 1 or another solver merely
+because it reduces a fitting residual.
+
 Stop the arm at each substantially different viewpoint, wait until all six measured joint positions
 remain within 0.001 rad for 0.75 seconds, then press Enter to average ten new strict full-board
 detections. Collect at least five poses, then enter `q`. Instantaneous SDK velocity is diagnostic only

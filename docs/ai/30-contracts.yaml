@@ -1,5 +1,11 @@
 schema_version: 1
 document: runtime_contracts
+hand_eye_accuracy_contract_2026_08_22:
+  sample: A sample requires the complete 5x5 board, CameraInfo-aware ChArUco interpolation, the unchanged 0.75-second/0.001-rad six-joint stability proof, and joint feedback whose source header is nearest the image source header by no more than 0.100 seconds. Persist both source stamps and their delta.
+  fk: Firmware S-V1.5-8 uses piper_sdk_modified_dh_mode_0. Controller end-pose feedback is diagnostic only and does not replace joint-derived capture-time FK.
+  solve: PARK remains the default candidate method. Pose geometry and TSAI/PARK/HORAUD/ANDREFF/DANIILIDIS comparison are diagnostics; method choice cannot bypass held-out limits or activate the result.
+  validate: Stationary-only collection reports within-pose translation, rotation and reprojection noise without commanding motion. Deployment still requires distinct fitting and held-out stations plus exact image-time base-to-camera validation.
+  compatibility: No topic, service, action, message, QoS, parameter, TF frame, motion, calibration path, home, shutdown, NBV, perception, or reconstruction interface changed.
 offline_resegmentation_contract_2026_08_22:
   selectable_mask_sources: [captured, offline_resegment]
   default_boundaries: {CLI_and_automatic_gateway: captured, command_free_GUI: offline_resegment}

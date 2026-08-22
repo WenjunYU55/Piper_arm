@@ -1,5 +1,15 @@
 schema_version: 1
 document: guardrails
+hand_eye_accuracy_guardrail_2026_08_22:
+  invariants:
+    - Keep firmware S-V1.5-8 on PiPER modified-DH mode 0; do not select mode 1 from a numerically attractive fit.
+    - Keep the board at exactly 0.017 m squares and 0.012 m markers and require the complete board.
+    - Correlate image and joint source timestamps within the existing 0.100-second bound; receipt time alone is not capture-time authority.
+    - Keep accepted historical capture geometry fixed in base_link; calibration diagnostics never rewrite datasets.
+    - Do not overwrite, symlink, or activate the deployed calibration from a fitting result. Require independent held-out and repeatability evidence plus explicit operator review.
+    - Do not relax stability, held-out, reconstruction, motion, home, shutdown, collision, or safety thresholds to make a calibration pass.
+    - Multi-solver comparison and intrinsic refitting are diagnostics, not a solver-shopping or self-calibration authority.
+  must_retest_if_changed: [L515_camera/test_validate_fixed_board.py, L515_camera/test_solve_hand_eye.py, YAML parse, stationary board noise, return-to-pose board repeatability, corrected-scale held-out solve, exact-image-time fixed-board validation, command-free reconstruction replay]
 offline_resegmentation_guardrail_2026_08_22:
   invariants:
     - Never overwrite or remove immutable RGB-D, live mask, metadata or manifest artifacts.

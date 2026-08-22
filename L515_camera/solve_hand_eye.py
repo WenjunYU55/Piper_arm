@@ -12,6 +12,15 @@ from scipy.spatial.transform import Rotation
 import yaml
 
 
+HAND_EYE_METHODS = {
+    "TSAI": cv2.CALIB_HAND_EYE_TSAI,
+    "PARK": cv2.CALIB_HAND_EYE_PARK,
+    "HORAUD": cv2.CALIB_HAND_EYE_HORAUD,
+    "ANDREFF": cv2.CALIB_HAND_EYE_ANDREFF,
+    "DANIILIDIS": cv2.CALIB_HAND_EYE_DANIILIDIS,
+}
+
+
 def transform(rotation=None, translation=None):
     result = np.eye(4, dtype=float)
     if rotation is not None:
@@ -130,7 +139,7 @@ def load_group(path, fk, joint6_reference_shift_rad=0.0):
     return [load_sample(file, fk, joint6_reference_shift_rad) for file in files]
 
 
-def solve(fitting):
+def solve(fitting, method=cv2.CALIB_HAND_EYE_PARK):
     rotations_gripper_to_base = [item["base_from_link6"][:3, :3] for item in fitting]
     translations_gripper_to_base = [item["base_from_link6"][:3, 3] for item in fitting]
     rotations_target_to_camera = [item["camera_from_target"][:3, :3] for item in fitting]
@@ -140,9 +149,78 @@ def solve(fitting):
         translations_gripper_to_base,
         rotations_target_to_camera,
         translations_target_to_camera,
-        method=cv2.CALIB_HAND_EYE_PARK,
+        method=method,
     )
-    return transform(rotation, translation.reshape(3))
+    result = transform(rotation, translation.reshape(3))
+    if not np.all(np.isfinite(result)):
+        raise RuntimeError("hand-eye solver produced a non-finite transform")
+    return result
+
+
+def pose_geometry(samples):
+    """Describe inter-station rotation magnitude and axis diversity."""
+    axes = []
+    angles = []
+    for first_index, first in enumerate(samples):
+        for second in samples[first_index + 1:]:
+            relative = (
+                first["base_from_link6"][:3, :3].T
+                @ second["base_from_link6"][:3, :3]
+            )
+            rotation_vector = Rotation.from_matrix(relative).as_rotvec()
+            angle = float(np.linalg.norm(rotation_vector))
+            if angle > 1e-9:
+                axes.append(rotation_vector / angle)
+                angles.append(math.degrees(angle))
+    if not angles:
+        return {
+            "pair_count": 0,
+            "relative_rotation_deg": {},
+            "rotation_axis_scatter_eigenvalues": [],
+        }
+    axis_array = np.asarray(axes)
+    angle_array = np.asarray(angles)
+    scatter = axis_array.T @ axis_array / len(axis_array)
+    return {
+        "pair_count": len(angles),
+        "relative_rotation_deg": {
+            "minimum": float(np.min(angle_array)),
+            "median": float(np.median(angle_array)),
+            "maximum": float(np.max(angle_array)),
+            "pairs_at_least_15_deg": int(np.sum(angle_array >= 15.0)),
+            "pairs_at_least_30_deg": int(np.sum(angle_array >= 30.0)),
+            "pairs_at_least_60_deg": int(np.sum(angle_array >= 60.0)),
+        },
+        "rotation_axis_scatter_eigenvalues": np.linalg.eigvalsh(scatter).astype(float).tolist(),
+    }
+
+
+def calibration_reference(samples, link6_from_camera):
+    return mean_transform([
+        item["base_from_link6"] @ link6_from_camera @ item["camera_from_target"]
+        for item in samples
+    ])
+
+
+def compare_solvers(fitting, validation):
+    """Report solver sensitivity without changing the selected authority."""
+    comparison = {}
+    for name, method in HAND_EYE_METHODS.items():
+        try:
+            candidate = solve(fitting, method)
+            reference = calibration_reference(fitting, candidate)
+            entry = {
+                "status": "completed",
+                "fitting": summary(evaluate(fitting, candidate, reference)),
+            }
+            if validation:
+                entry["held_out_validation"] = summary(
+                    evaluate(validation, candidate, reference)
+                )
+            comparison[name] = entry
+        except (RuntimeError, ValueError, cv2.error) as error:
+            comparison[name] = {"status": "failed", "reason": str(error)}
+    return comparison
 
 
 def evaluate(samples, link6_from_camera, reference):
@@ -186,6 +264,12 @@ def main():
         help="old J6 feedback at the new physical zero; subtracted from saved sample telemetry",
     )
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--method",
+        choices=sorted(HAND_EYE_METHODS),
+        default="PARK",
+        help="solver used for the candidate transform; all methods remain diagnostic",
+    )
     args = parser.parse_args()
     output = args.output or args.session_root / "calibration_result.yaml"
 
@@ -198,11 +282,8 @@ def main():
     if not validation:
         parser.error("at least 1 held-out validation sample is required")
 
-    link6_from_camera = solve(fitting)
-    fit_target_estimates = [
-        item["base_from_link6"] @ link6_from_camera @ item["camera_from_target"] for item in fitting
-    ]
-    base_from_target = mean_transform(fit_target_estimates)
+    link6_from_camera = solve(fitting, HAND_EYE_METHODS[args.method])
+    base_from_target = calibration_reference(fitting, link6_from_camera)
     fit_summary = summary(evaluate(fitting, link6_from_camera, base_from_target))
     held_out_summary = summary(evaluate(validation, link6_from_camera, base_from_target))
     accepted = all(
@@ -213,7 +294,7 @@ def main():
     result = {
         "status": "accepted" if accepted else "rejected_by_held_out_validation",
         "model": "eye_in_hand",
-        "method": "OpenCV CALIB_HAND_EYE_PARK",
+        "method": "OpenCV CALIB_HAND_EYE_%s" % args.method,
         "sample_count": {"fitting": len(fitting), "held_out_validation": len(validation)},
         "fk": {
             "model": "piper_sdk_modified_dh_mode_0",
@@ -222,6 +303,8 @@ def main():
         },
         "camera_to_link6": transform_dict(link6_from_camera),
         "target_to_base": transform_dict(base_from_target),
+        "pose_geometry": pose_geometry(fitting),
+        "solver_comparison": compare_solvers(fitting, validation),
         "fitting_residuals": fit_summary,
         "held_out_validation": {
             "accepted": accepted,

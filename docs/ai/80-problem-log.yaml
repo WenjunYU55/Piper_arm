@@ -1,6 +1,12 @@
 schema_version: 1
 document: consolidated_problem_and_incident_log
 last_reviewed: '2026-08-22'
+hand_eye_candidate_not_reconstruction_qualified_2026_08_22:
+  state: measurement_campaign_in_progress_no_runtime_tf_change
+  symptom: Reconstruction remains oversized/misaligned, while a new corrected-scale 12-pose hand-eye fitting set closes at approximately 8.69 mm translation RMS and 1.30 degrees rotation RMS despite subpixel ChArUco reprojection.
+  investigation: Installed piper_sdk 0.6.1 and controller firmware S-V1.5-8 confirm modified-DH mode 0. Controller end-pose and mode-0 joint FK agree closely. Reasonable OpenCV hand-eye methods return nearly identical closure and same-session RGB intrinsic refitting is worse, so neither mode switching, solver shopping nor intrinsic refitting is justified.
+  correction: Make capture image/joint source-stamp correlation explicit, use CameraInfo during ChArUco interpolation, add stationary within-pose noise and pose-diversity/multi-solver diagnostics. Do not deploy the candidate.
+  remaining: The first stationary trial saw only 2 of 12 board markers and correctly recorded no measurement. A complete-board stationary test, return-to-pose test, independent held-out set and reconstruction replay are still required. Driver enable is separately blocked by unavailable J6 positive-limit feedback and remains safely disabled.
 settled_capture_deadline_incident_2026_08_22:
   task_id: gui-sim-8733327f74f3455eb8656f01a6ceb66d
   symptom: One 20-frame burst succeeded in 1.031 seconds; a later settled request reached only 18/20 before the recorder's independent five-second deadline and terminated the mission as DEADLINE_EXPIRED. The executor's subsequent cancel log was internal failure cleanup, not an operator action.

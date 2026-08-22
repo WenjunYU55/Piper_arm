@@ -1,6 +1,11 @@
 schema_version: 1
 document: mission_goal_and_delivery_roadmap
 last_reviewed: '2026-08-22'
+hand_eye_accuracy_campaign_2026_08_22:
+  milestone: M6 reconstruction input accuracy
+  software_status: Exact source-stamp image/joint correlation, CameraInfo-aware ChArUco interpolation, within-pose noise reporting, stationary-only collection, pose-diversity reporting and diagnostic solver comparison are implemented and focused-tested.
+  evidence_status: Firmware S-V1.5-8 confirms modified-DH mode 0. The current 12 fitting poses remain unqualified at approximately 8.69 mm/1.30 degree closure and have no independent held-out set.
+  next_gate: Complete-board stationary noise, return-to-pose repeatability, diverse fitting plus held-out capture, exact-time validation, and command-free reconstruction comparison. Preserve the current runtime TF until an explicit reviewed deployment decision.
 offline_resegmented_reconstruction_2026_08_22:
   milestone: M6 target mesh reconstruction
   software_status: Command-free GUI and CLI can use fresh independent GroundingDINO/SAM2 masks while preserving immutable captured masks and confidence-qualified depth authority.

@@ -33,6 +33,23 @@ def stamp_dict(stamp):
     return {"sec": int(stamp.sec), "nanosec": int(stamp.nanosec)}
 
 
+def nearest_stamped_joint(samples, image_stamp_seconds, maximum_delta_seconds=0.10):
+    """Return the joint message nearest an image stamp, or fail closed."""
+    if not np.isfinite(image_stamp_seconds) or image_stamp_seconds <= 0.0:
+        return None, None
+    candidates = [
+        (abs(source_stamp - image_stamp_seconds), message)
+        for source_stamp, _received_at, message in samples
+        if np.isfinite(source_stamp) and source_stamp > 0.0
+    ]
+    if not candidates:
+        return None, None
+    delta, message = min(candidates, key=lambda item: item[0])
+    if delta > maximum_delta_seconds:
+        return None, float(delta)
+    return message, float(delta)
+
+
 class HandEyeCapture(Node):
     def __init__(self, output_root, timeout, squares_x, squares_y, square_length_m,
                  marker_length_m, dictionary_name, stationary_duration_sec,
@@ -55,6 +72,7 @@ class HandEyeCapture(Node):
         self.last_rejection = None
         self.last_checked_image_stamp = None
         self.joint_history = deque()
+        self.stamped_joint_history = deque()
         self.stationary_duration_sec = stationary_duration_sec
         self.stationary_position_tolerance_rad = stationary_position_tolerance_rad
         self.squares_x = squares_x
@@ -89,9 +107,14 @@ class HandEyeCapture(Node):
         positions = np.asarray(msg.position[:6], dtype=float)
         if positions.size == 6 and np.all(np.isfinite(positions)):
             self.joint_history.append((now, positions.copy()))
+            source_stamp = stamp_seconds(msg.header.stamp)
+            self.stamped_joint_history.append((source_stamp, now, msg))
             cutoff = now - max(2.0 * self.stationary_duration_sec, 1.0)
             while self.joint_history and self.joint_history[0][0] < cutoff:
                 self.joint_history.popleft()
+            while (self.stamped_joint_history
+                   and self.stamped_joint_history[0][1] < cutoff):
+                self.stamped_joint_history.popleft()
 
     def end_pose_cb(self, msg):
         self.end_pose = msg
@@ -131,8 +154,15 @@ class HandEyeCapture(Node):
                 "target rejected: expected marker IDs %s, detected %s"
                 % (self.expected_marker_ids, detected_marker_ids)
             )
+        camera_matrix = np.asarray(self.info.k, dtype=np.float64).reshape(3, 3)
+        distortion = np.asarray(self.info.d, dtype=np.float64)
         count, charuco_corners, charuco_ids = cv2.aruco.interpolateCornersCharuco(
-            marker_corners, marker_ids, gray, self.board
+            marker_corners,
+            marker_ids,
+            gray,
+            self.board,
+            cameraMatrix=camera_matrix,
+            distCoeffs=distortion,
         )
         if count != self.expected_corner_count:
             raise RuntimeError(
@@ -148,6 +178,16 @@ class HandEyeCapture(Node):
                 "target rejected: joint positions did not remain within %.6f rad for %.2f seconds"
                 % (self.stationary_position_tolerance_rad,
                    self.stationary_duration_sec)
+            )
+        image_stamp_seconds = stamp_seconds(self.image.header.stamp)
+        joint_message, joint_image_delta = nearest_stamped_joint(
+            self.stamped_joint_history, image_stamp_seconds)
+        if joint_message is None:
+            raise RuntimeError(
+                "target rejected: no joint state correlated within 0.100 seconds "
+                "of the image stamp%s"
+                % ("" if joint_image_delta is None
+                   else " (nearest %.6f seconds)" % joint_image_delta)
             )
 
         folder = self.output_root / ("capture_" + datetime.now().strftime("%Y%m%d_%H%M%S_%f"))
@@ -175,8 +215,9 @@ class HandEyeCapture(Node):
             },
             "synchronization": {
                 "image_stamp": stamp_dict(self.image.header.stamp),
-                "joint_stamp": stamp_dict(self.joints.header.stamp),
-                "header_clocks_are_not_compared": True,
+                "joint_stamp": stamp_dict(joint_message.header.stamp),
+                "image_to_joint_header_delta_seconds": joint_image_delta,
+                "header_clocks_are_not_compared": False,
                 "receipt_span_seconds": float(receipt_span),
             },
             "camera": {
@@ -190,10 +231,10 @@ class HandEyeCapture(Node):
                 "p": list(map(float, self.info.p)),
             },
             "joints": {
-                "name": list(self.joints.name),
-                "position_rad": list(map(float, self.joints.position)),
-                "velocity": list(map(float, self.joints.velocity)),
-                "effort": list(map(float, self.joints.effort)),
+                "name": list(joint_message.name),
+                "position_rad": list(map(float, joint_message.position)),
+                "velocity": list(map(float, joint_message.velocity)),
+                "effort": list(map(float, joint_message.effort)),
             },
             "controller_end_pose": {
                 "position_m": [

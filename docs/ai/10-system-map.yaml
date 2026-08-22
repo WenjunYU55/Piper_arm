@@ -1,5 +1,10 @@
 schema_version: 1
 document: system_map
+hand_eye_accuracy_campaign_2026_08_22:
+  pipeline: [strict full-board RGB image, CameraInfo-aware ChArUco interpolation, exact nearest source-stamped joint feedback, PiPER modified-DH mode-0 FK, diagnostic multi-solver hand-eye fit, independent held-out fixed-board validation, explicit deployment decision]
+  authorities: {board: 5x5 ChArUco with 0.017 m squares and 0.012 m markers, firmware: S-V1.5-8, fk_mode: piper_sdk_modified_dh_mode_0, runtime_tf: unchanged session_20260808_straight_mount mechanical registration}
+  evidence: The 12 current corrected-scale fitting poses have 0.105-through-0.349 px reprojection RMS and broad relative rotations, yet PARK closure is approximately 8.69 mm and 1.30 degrees. TSAI, HORAUD and DANIILIDIS agree closely, so solver selection is not the dominant error source.
+  deployment_gate: A candidate file remains non-authoritative until separately collected held-out poses pass and repeated stationary/return-to-pose board evidence is acceptable; solving never overwrites or activates runtime TF automatically.
 offline_resegmented_reconstruction_path_2026_08_22:
   sequence: [validate immutable scan manifest, bind target prompt and exact model hashes, copy only RGB plus aligned depth into temporary command-free model inputs, run fresh GroundingDINO target detection, run SAM2 image segmentation, reject any live-mask fallback, validate and clip to the GroundingDINO target box, persist derived binary mask plus comparison overlay and hashes, remove temporary model inputs, intersect fresh mask with captured confidence-qualified target support, run the selected existing TSDF and registration mode, report mask provenance and unchanged quality gates]
   ownership: {fresh_semantic_preprocessing: reconstruction/offline_resegment.py using existing GroundingDINO and SAM2 image utilities, derived_mask_validation_and_fusion: reconstruction/tsdf_reconstruct.py, GUI_selection: reconstruction/gui_support.py plus piper_gui_native.py, immutable_source: scan manifest and captured frame artifacts}

@@ -1,5 +1,9 @@
 schema_version: 1
 document: maintenance_routing
+hand_eye_accuracy_or_repeatability_2026_08_22:
+  inspect: [L515_camera/capture_hand_eye_sample.py synchronization metadata, L515_camera/validate_fixed_board.py within_pose_noise, L515_camera/solve_hand_eye.py pose_geometry and solver_comparison, session_20260822_recalibration fitting metadata, PiPER firmware and modified-DH mode]
+  rule: Keep the deployed datasheet/factory transform unchanged until a new 17 mm/12 mm session has independent held-out poses and improves fixed-board repeatability. Use firmware S-V1.5-8 with PiPER modified-DH mode 0. Treat solver agreement with poor closure as measurement/kinematic evidence, not permission to tune thresholds or choose the numerically best-looking solver.
+  required_retest: [calibration unit tests, YAML parse, stationary multi-frame board noise, return-to-pose board repeatability, diverse fitting plus held-out solve, exact image-time fixed-board validation, command-free reconstruction replay, explicit operator deployment review]
 offline_resegmented_mask_reconstruction_2026_08_22:
   inspect: [reconstruction/offline_resegment.py generation index and comparison overlays, reconstruction/tsdf_reconstruct.py prepare_offline_mask_context and load_offline_target_mask, reconstruction/gui_support.py mask-source command, piper_gui_native.py Reconstruction Validation target-mask selector]
   rule: Keep the captured live mask immutable and available for audit. A fresh offline mask must come from a real GroundingDINO target detection, be hash-bound to the exact source RGB and model assets, and may only intersect/narrow captured confidence-qualified support. Missing detection, invalid mask, insufficient retained support, stale hash or preprocessing failure must fail the selected reconstruction rather than fall back to the live mask.
