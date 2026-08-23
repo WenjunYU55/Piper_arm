@@ -35,6 +35,7 @@ MULTIWAY_MAX_CORRESPONDENCE_M = 0.015
 SCENE_REGISTRATION_VOXEL_M = 0.005
 SCENE_TARGET_EXCLUSION_RADIUS_PX = 6
 SCENE_MINIMUM_POINTS = 500
+MINIMUM_SIGNIFICANT_COMPONENT_AREA_FRACTION = 0.05
 
 
 def canonical_sha256(value):
@@ -938,6 +939,83 @@ def dimension_classification(maximum_absolute_error_m):
     return 'GOOD'
 
 
+def target_component_policy(component_triangle_counts, component_areas,
+                            minimum_area_fraction=(
+                                MINIMUM_SIGNIFICANT_COMPONENT_AREA_FRACTION)):
+    """Classify disconnected mesh surfaces without hiding substantial ones."""
+    counts = np.asarray(component_triangle_counts, dtype=int)
+    areas = np.asarray(component_areas, dtype=float)
+    fraction = float(minimum_area_fraction)
+    if counts.ndim != 1 or areas.ndim != 1 or counts.shape != areas.shape \
+            or not counts.size:
+        raise ValueError(
+            'mesh component counts and areas must be nonempty vectors')
+    if np.any(counts <= 0) or np.any(~np.isfinite(areas)) \
+            or np.any(areas < 0.0):
+        raise ValueError(
+            'mesh component counts and areas must be finite and positive')
+    if not np.isfinite(fraction) or not 0.0 < fraction < 1.0:
+        raise ValueError(
+            'component area fraction must be between zero and one')
+    dominant = int(np.argmax(areas))
+    dominant_area = float(areas[dominant])
+    if dominant_area <= 0.0:
+        raise ValueError('mesh components have no positive surface area')
+    threshold = dominant_area * fraction
+    retained = np.flatnonzero(areas >= threshold).astype(int)
+    removed = np.flatnonzero(areas < threshold).astype(int)
+    total_triangles = int(np.sum(counts))
+    total_area = float(np.sum(areas))
+    return {
+        'connected_target_assumption': True,
+        'minimum_relative_surface_area': fraction,
+        'surface_area_threshold_m2': threshold,
+        'original_component_count': int(counts.size),
+        'original_triangle_count': total_triangles,
+        'original_surface_area_m2': total_area,
+        'original_dominant_component_triangle_ratio': (
+            float(np.max(counts)) / float(total_triangles)),
+        'original_dominant_component_surface_area_ratio': (
+            dominant_area / total_area),
+        'retained_component_indices': retained.tolist(),
+        'retained_component_count': int(retained.size),
+        'retained_triangle_count': int(np.sum(counts[retained])),
+        'retained_surface_area_m2': float(np.sum(areas[retained])),
+        'removed_fragment_component_count': int(removed.size),
+        'removed_fragment_triangle_count': int(np.sum(counts[removed])),
+        'removed_fragment_surface_area_m2': float(np.sum(areas[removed])),
+        'connectivity_valid': bool(retained.size == 1),
+        'decision': (
+            'SINGLE_CONNECTED_TARGET'
+            if retained.size == 1 else 'MULTIPLE_SUBSTANTIAL_COMPONENTS'),
+    }
+
+
+def filter_target_mesh_components(mesh):
+    """Remove only tiny components and retain substantial split surfaces."""
+    filtered = copy.deepcopy(mesh)
+    filtered.remove_duplicated_triangles()
+    filtered.remove_degenerate_triangles()
+    filtered.remove_duplicated_vertices()
+    filtered.remove_unreferenced_vertices()
+    labels, counts, areas = filtered.cluster_connected_triangles()
+    report = target_component_policy(counts, areas)
+    retained = set(report['retained_component_indices'])
+    remove_mask = [int(label) not in retained for label in labels]
+    filtered.remove_triangles_by_mask(remove_mask)
+    filtered.remove_unreferenced_vertices()
+    filtered.compute_vertex_normals()
+    report['output_vertex_count'] = int(len(filtered.vertices))
+    report['output_triangle_count'] = int(len(filtered.triangles))
+    return filtered, report
+
+
+def raw_mesh_output_path(output_path):
+    """Return the adjacent raw-mesh path for one cleaned mesh output."""
+    output = Path(output_path)
+    return output.with_name(output.stem + '.raw' + output.suffix)
+
+
 def mesh_metrics(o3d, mesh, input_cloud, expected_dimensions):
     triangle_count = len(mesh.triangles)
     try:
@@ -1286,13 +1364,24 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
             convert_rgb_to_intensity=False)
         volume.integrate(
             rgbd, frame['intrinsic'], np.linalg.inv(refined_base_camera))
-    mesh = volume.extract_triangle_mesh()
-    mesh.compute_vertex_normals()
-    if len(mesh.vertices) < 100 or len(mesh.triangles) < 100:
+    extracted_mesh = volume.extract_triangle_mesh()
+    extracted_mesh.compute_vertex_normals()
+    if len(extracted_mesh.vertices) < 100 \
+            or len(extracted_mesh.triangles) < 100:
         raise ValueError(
             'reconstruction produced an unusably small mesh '
             '(%d vertices, %d triangles)'
+            % (len(extracted_mesh.vertices), len(extracted_mesh.triangles)))
+    raw_metrics = mesh_metrics(
+        o3d, extracted_mesh, accumulated, expected_dimensions)
+    mesh, component_filter = filter_target_mesh_components(extracted_mesh)
+    if len(mesh.vertices) < 100 or len(mesh.triangles) < 100:
+        raise ValueError(
+            'connected-target filtering produced an unusably small mesh '
+            '(%d vertices, %d triangles)'
             % (len(mesh.vertices), len(mesh.triangles)))
+    raw_output = _atomic_write_mesh(
+        o3d, extracted_mesh, raw_mesh_output_path(output_path))
     output = _atomic_write_mesh(o3d, mesh, output_path)
     input_cloud_path = _atomic_write_cloud(
         o3d, accumulated,
@@ -1322,12 +1411,14 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
         float(np.median(registration_rmse))
         if registration_rmse.size else float('inf'))
     structural = quality_classification(
-        median_rmse, metrics['dominant_component_triangle_ratio'])
+        median_rmse,
+        raw_metrics['dominant_component_triangle_ratio'],
+        usable_mesh=component_filter['connectivity_valid'])
     dimension_quality = None
     overall_quality = structural
-    if metrics['dimension_check'] is not None:
+    if raw_metrics['dimension_check'] is not None:
         dimension_quality = dimension_classification(
-            metrics['dimension_check']['maximum_absolute_error_m'])
+            raw_metrics['dimension_check']['maximum_absolute_error_m'])
         if dimension_quality == 'POOR':
             overall_quality = 'FAIL'
         elif dimension_quality == 'WARN' and overall_quality == 'PASS':
@@ -1351,6 +1442,11 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
         'semantic_mask_source': (
             'offline_resegment'
             if offline_mask_context is not None else 'captured'),
+        'connected_target_component_filter': {
+            'minimum_relative_surface_area':
+                MINIMUM_SIGNIFICANT_COMPONENT_AREA_FRACTION,
+            'substantial_components_are_never_discarded': True,
+        },
     }
     if offline_mask_context is not None:
         config['offline_resegment'] = {
@@ -1393,6 +1489,10 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
         'triangle_count': len(mesh.triangles),
         'mesh_path': str(output),
         'mesh_sha256': sha256_file(output),
+        'raw_mesh_path': str(raw_output),
+        'raw_mesh_sha256': sha256_file(raw_output),
+        'raw_vertex_count': len(extracted_mesh.vertices),
+        'raw_triangle_count': len(extracted_mesh.triangles),
         'input_cloud_path': str(input_cloud_path),
         'input_cloud_sha256': sha256_file(input_cloud_path),
         'configuration': config,
@@ -1411,12 +1511,14 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
                 float(min(registration_fitness))
                 if registration_fitness else 0.0),
         },
+        'component_filter': component_filter,
+        'raw_mesh_metrics': raw_metrics,
         'mesh_metrics': metrics,
         'structural_quality': structural,
         'dimension_quality': dimension_quality,
         'overall_quality': overall_quality,
         'overall_quality_is_provisional': bool(
-            metrics['dimension_check'] is not None),
+            raw_metrics['dimension_check'] is not None),
         'visual_review_required': True,
         'frame_inputs': frame_inputs,
     }
@@ -1428,25 +1530,36 @@ def _quality_rank(value):
     return {'FAIL': 0, 'WARN': 1, 'PASS': 2}.get(str(value), -1)
 
 
+def _registration_component_coherence(report):
+    """Use pre-cleanup coherence so fragment removal cannot launder quality."""
+    metrics = report.get('raw_mesh_metrics', report['mesh_metrics'])
+    return float(metrics['dominant_component_triangle_ratio'])
+
+
+def _registration_metrics(report):
+    """Return authoritative pre-cleanup reconstruction evidence."""
+    return report.get('raw_mesh_metrics', report['mesh_metrics'])
+
+
 def select_registration_report(robot_report, gicp_report):
-    robot_residual = float(robot_report['mesh_metrics'][
+    robot_metrics = _registration_metrics(robot_report)
+    gicp_metrics = _registration_metrics(gicp_report)
+    robot_residual = float(robot_metrics[
         'point_to_mesh_residual']['median_m'])
-    gicp_residual = float(gicp_report['mesh_metrics'][
+    gicp_residual = float(gicp_metrics[
         'point_to_mesh_residual']['median_m'])
     residual_improvement = (
         (robot_residual - gicp_residual) / robot_residual
         if np.isfinite(robot_residual) and robot_residual > 0.0 else 0.0)
-    robot_dimension = robot_report['mesh_metrics'].get('dimension_check')
-    gicp_dimension = gicp_report['mesh_metrics'].get('dimension_check')
+    robot_dimension = robot_metrics.get('dimension_check')
+    gicp_dimension = gicp_metrics.get('dimension_check')
     dimension_ok = True
     if robot_dimension and gicp_dimension:
         dimension_ok = (
             float(gicp_dimension['mean_absolute_error_m'])
             <= float(robot_dimension['mean_absolute_error_m']) + 0.002)
-    robot_component = float(robot_report['mesh_metrics'][
-        'dominant_component_triangle_ratio'])
-    gicp_component = float(gicp_report['mesh_metrics'][
-        'dominant_component_triangle_ratio'])
+    robot_component = _registration_component_coherence(robot_report)
+    gicp_component = _registration_component_coherence(gicp_report)
     component_ok = (
         gicp_component >= 0.95 and gicp_component >= robot_component - 0.01)
     quality_ok = _quality_rank(gicp_report['structural_quality']) >= _quality_rank(
@@ -1469,8 +1582,8 @@ def select_registration_report(robot_report, gicp_report):
 
 def registration_candidate_assessment(robot_report, candidate_report):
     """Decide whether one residual refinement safely improves the baseline."""
-    robot_metrics = robot_report['mesh_metrics']
-    candidate_metrics = candidate_report['mesh_metrics']
+    robot_metrics = _registration_metrics(robot_report)
+    candidate_metrics = _registration_metrics(candidate_report)
     robot_residual = float(
         robot_metrics['point_to_mesh_residual']['median_m'])
     candidate_residual = float(
@@ -1478,10 +1591,8 @@ def registration_candidate_assessment(robot_report, candidate_report):
     residual_improvement = (
         (robot_residual - candidate_residual) / robot_residual
         if np.isfinite(robot_residual) and robot_residual > 0.0 else 0.0)
-    robot_component = float(
-        robot_metrics['dominant_component_triangle_ratio'])
-    candidate_component = float(
-        candidate_metrics['dominant_component_triangle_ratio'])
+    robot_component = _registration_component_coherence(robot_report)
+    candidate_component = _registration_component_coherence(candidate_report)
     component_improvement = candidate_component - robot_component
     robot_dimension = robot_metrics.get('dimension_check')
     candidate_dimension = candidate_metrics.get('dimension_check')
@@ -1536,10 +1647,10 @@ def select_registration_reports(reports):
         assessment = registration_candidate_assessment(robot, report)
         assessments[mode] = assessment
         if assessment['eligible']:
-            metrics = report['mesh_metrics']
             eligible.append((
-                float(metrics['dominant_component_triangle_ratio']),
-                -float(metrics['point_to_mesh_residual']['median_m']),
+                _registration_component_coherence(report),
+                -float(_registration_metrics(report)[
+                    'point_to_mesh_residual']['median_m']),
                 mode))
     selected = max(eligible)[2] if eligible else 'robot_pose'
     return selected, {
@@ -1614,10 +1725,16 @@ def reconstruct(scan_dir, output_path, voxel_length=DEFAULT_VOXEL_LENGTH_M,
     temporary = output.with_name(output.name + '.partial')
     shutil.copy2(selected['mesh_path'], temporary)
     temporary.replace(output)
+    raw_output = raw_mesh_output_path(output)
+    raw_temporary = raw_output.with_name(raw_output.name + '.partial')
+    shutil.copy2(selected['raw_mesh_path'], raw_temporary)
+    raw_temporary.replace(raw_output)
     selected.update({
         'registration_mode': selected_mode,
         'mesh_path': str(output),
         'mesh_sha256': sha256_file(output),
+        'raw_mesh_path': str(raw_output),
+        'raw_mesh_sha256': sha256_file(raw_output),
         'auto_comparison': comparison,
         'candidate_reports': {
             key: value for key, value in reports.items()},

@@ -1,5 +1,11 @@
 schema_version: 1
 document: technical_debt
+connected_target_mesh_cleanup_followup_2026_08_23:
+  status: fragment_cleanup_implemented_underlying_alignment_failure_remains
+  implemented: Save both the untouched extracted TSDF and a separately filtered connected-target mesh from one run; remove only components below five percent of dominant surface area, retain and fail multiple substantial components, and preserve complete raw metrics for quality and registration selection. The GUI builds both and opens either one.
+  evidence: On scan_20260821_220003, captured multiway output changed from 197 components and 10764 triangles to one 9742-triangle component; offline-resegmented output changed from 176 components and 9862 triangles to one 8545-triangle component. Both remain FAIL. Cleaned point-to-mesh p90 residuals increased because the immutable input cloud still contains evidence assigned to removed fragments.
+  interpretation: The rule removes visual floaters but cannot repair cross-view registration, incomplete surfaces or calibration/pose disagreement. The larger residual tail is useful evidence that removed geometry was not merely cost-free display noise.
+  next_cut: Use Open Raw and Open Cleaned to compare the new PLY files, then obtain calibration-qualified overlapping captures. Do not raise the five-percent threshold, discard substantial components, exclude input points from residuals or relax dimensional gates to force a pass.
 hand_eye_accuracy_followup_2026_08_22:
   status: tooling_repaired_candidate_not_qualified
   evidence: The corrected-scale 12-pose session has strong image reprojection and useful rotational diversity, but approximately 8.69 mm translation and 1.30 degree fitting closure. PARK, TSAI, HORAUD and DANIILIDIS agree closely; same-session L515 RGB intrinsic refitting does not improve closure. Mode-0 FK agrees with controller end-pose diagnostics and matches firmware S-V1.5-8.

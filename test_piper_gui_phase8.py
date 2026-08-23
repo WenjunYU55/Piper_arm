@@ -246,6 +246,9 @@ def test_native_gui_defaults_reconstruction_reference_to_35mm_cube():
 
     assert "tk.StringVar(value='35') for _axis in range(3)" in source
     assert 'expected cube is 35 mm' in source
+    assert 'Build Raw + Cleaned' in source
+    assert 'Open Cleaned' in source
+    assert 'Open Raw' in source
 
 
 def test_native_gui_preserves_pre_home_when_other_stages_are_recorded():

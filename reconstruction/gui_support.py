@@ -81,7 +81,8 @@ def reconstruction_command(project_root, selection, dimensions_mm,
     return command, output
 
 
-def viewer_command(project_root, report_path, show_input=False):
+def viewer_command(project_root, report_path, show_input=False,
+                   mesh_variant='cleaned'):
     root = Path(project_root).resolve()
     python = reconstruction_python(root)
     report = Path(report_path).resolve()
@@ -92,9 +93,12 @@ def viewer_command(project_root, report_path, show_input=False):
         raise ValueError('quality report escapes datasets/active_scan') from exc
     if not python.is_file() or not report.is_file():
         raise ValueError('viewer environment or quality report is missing')
+    variant = str(mesh_variant)
+    if variant not in ('cleaned', 'raw'):
+        raise ValueError('mesh variant must be cleaned or raw')
     command = [
         str(python), str(root / 'reconstruction' / 'view_reconstruction.py'),
-        '--report', str(report),
+        '--report', str(report), '--mesh', variant,
     ]
     if show_input:
         command.append('--show-input')
@@ -125,7 +129,10 @@ def quality_summary(report):
     provenance = report.get('provenance', {})
     registration = report.get('registration_summary', {})
     mesh = report.get('mesh_metrics', {})
-    dimensions = mesh.get('dimension_check') or {}
+    raw_mesh = report.get('raw_mesh_metrics', mesh)
+    component_filter = report.get('component_filter', {})
+    dimensions = raw_mesh.get('dimension_check') or {}
+    cleaned_dimensions = mesh.get('dimension_check') or {}
     configuration = report.get('configuration', {})
     lines = [
         '%s / %s' % (
@@ -136,6 +143,14 @@ def quality_summary(report):
             report.get('registration_mode', 'unknown'),
             report.get('integrated_views', '?'), report.get('vertex_count', '?'),
             report.get('triangle_count', '?')),
+    ]
+    if report.get('raw_mesh_path'):
+        lines.append(
+            'Raw + cleaned outputs: %s raw components -> %s cleaned components'
+            % (
+                raw_mesh.get('connected_component_count', '?'),
+                mesh.get('connected_component_count', '?')))
+    lines.extend([
         'TSDF mesh voxel: %.2f mm (smaller permits more polygons)' % (
             1000.0 * float(configuration.get(
                 'voxel_length_m', float('nan')))),
@@ -143,9 +158,15 @@ def quality_summary(report):
             'semantic_mask_source', 'captured'),
         'Registration median RMSE: %.2f mm; dominant component: %.1f%%' % (
             1000.0 * float(registration.get('median_rmse_m', float('nan'))),
-            100.0 * float(mesh.get(
+            100.0 * float(raw_mesh.get(
                 'dominant_component_triangle_ratio', float('nan')))),
-    ]
+    ])
+    if component_filter.get('decision'):
+        lines.append(
+            'Connected-target cleanup: %s; removed %s tiny fragments' % (
+                component_filter['decision'],
+                component_filter.get(
+                    'removed_fragment_component_count', '?')))
     if dimensions:
         lines.append(
             'Provisional cube OBB: %s mm; maximum size error: %.2f mm (%s)' % (
@@ -154,5 +175,13 @@ def quality_summary(report):
                 1000.0 * float(dimensions.get(
                     'maximum_absolute_error_m', float('nan'))),
                 report.get('dimension_quality', 'UNKNOWN')))
+    if cleaned_dimensions and cleaned_dimensions != dimensions:
+        lines.append(
+            'Cleaned mesh OBB: %s mm; maximum size error: %.2f mm' % (
+                ' x '.join('%.2f' % (1000.0 * float(value))
+                           for value in cleaned_dimensions.get(
+                               'observed_obb_m', [])),
+                1000.0 * float(cleaned_dimensions.get(
+                    'maximum_absolute_error_m', float('nan')))))
     lines.append('Visual review is required before accepting this mesh.')
     return '\n'.join(lines)

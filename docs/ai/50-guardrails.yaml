@@ -1,5 +1,14 @@
 schema_version: 1
 document: guardrails
+connected_target_mesh_filter_guardrail_2026_08_23:
+  invariants:
+    - Persist the untouched extracted TSDF before deriving the cleaned copy; one output must never overwrite or masquerade as the other.
+    - Remove only disconnected components whose surface area is below five percent of the dominant component.
+    - Retain every substantial component; more than one substantial component is an explicit connectivity failure, not permission to select the visually preferred surface.
+    - Registration selection and terminal quality use complete raw_mesh_metrics. Cleanup never launders fragmented evidence into PASS.
+    - Keep immutable captures, input cloud, registration poses, expected dimensions, residuals, watertightness and visual-review requirements unchanged.
+    - Do not couple this command-free output cleanup to capture, target tracking, NBV, Tesseract, motion or hardware.
+  must_retest_if_changed: [reconstruction/test_tsdf_reconstruct.py, reconstruction/test_gui_support.py, test_piper_gui_phase8.py, GUI import, captured and offline-resegmented immutable replay, raw and cleaned mesh path/hash inspection, YAML parse]
 hand_eye_accuracy_guardrail_2026_08_22:
   invariants:
     - Keep firmware S-V1.5-8 on PiPER modified-DH mode 0; do not select mode 1 from a numerically attractive fit.

@@ -1,5 +1,9 @@
 schema_version: 1
 document: maintenance_routing
+disconnected_reconstruction_fragments_2026_08_23:
+  inspect: [reconstruction/tsdf_reconstruct.py target_component_policy filter_target_mesh_components and raw_mesh_output_path, mesh quality JSON raw_mesh_path raw_mesh_metrics component_filter and mesh_metrics, immutable input cloud, Reconstruction Validation Open Raw and Open Cleaned controls]
+  rule: Persist the untouched extracted TSDF beside the cleaned mesh. Treat the cleaned target as one connected object, remove only components below five percent of the dominant surface area, and retain/fail when two or more substantial components remain. Registration selection and pass/fail use raw pre-filter metrics so cleanup cannot hide poor alignment.
+  required_retest: [reconstruction unit tests, GUI support and import tests, captured-mask immutable replay, offline-resegmented immutable auto replay, both mesh paths and hashes, quality JSON inspection, YAML parse]
 hand_eye_accuracy_or_repeatability_2026_08_22:
   inspect: [L515_camera/capture_hand_eye_sample.py synchronization metadata, L515_camera/validate_fixed_board.py within_pose_noise, L515_camera/solve_hand_eye.py pose_geometry and solver_comparison, session_20260822_recalibration fitting metadata, PiPER firmware and modified-DH mode]
   rule: Keep the deployed datasheet/factory transform unchanged until a new 17 mm/12 mm session has independent held-out poses and improves fixed-board repeatability. Use firmware S-V1.5-8 with PiPER modified-DH mode 0. Treat solver agreement with poor closure as measurement/kinematic evidence, not permission to tune thresholds or choose the numerically best-looking solver.

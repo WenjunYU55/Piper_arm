@@ -31,12 +31,15 @@ def expected_wireframe(report, mesh):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--report', required=True)
+    parser.add_argument('--mesh', choices=('cleaned', 'raw'),
+                        default='cleaned')
     parser.add_argument('--show-input', action='store_true')
     args = parser.parse_args()
     report_path = Path(args.report).resolve()
     with open(report_path, 'r', encoding='utf-8') as stream:
         report = json.load(stream)
-    mesh_path = Path(str(report.get('mesh_path', ''))).resolve()
+    mesh_key = 'raw_mesh_path' if args.mesh == 'raw' else 'mesh_path'
+    mesh_path = Path(str(report.get(mesh_key, ''))).resolve()
     if not mesh_path.is_file():
         raise SystemExit('reported mesh is missing: %s' % mesh_path)
     mesh = o3d.io.read_triangle_mesh(str(mesh_path))
@@ -58,7 +61,7 @@ def main():
         geometries.append(cloud)
     o3d.visualization.draw_geometries(
         geometries,
-        window_name='PiPER Reconstruction Validation',
+        window_name='PiPER Reconstruction Validation (%s)' % args.mesh,
         mesh_show_back_face=True)
 
 

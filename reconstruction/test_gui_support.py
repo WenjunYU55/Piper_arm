@@ -82,6 +82,10 @@ def test_viewer_report_cannot_escape_dataset_root(tmp_path):
     report.write_text(json.dumps({}), encoding='utf-8')
     assert '--report' in viewer_command(root, report)
     assert '--show-input' in viewer_command(root, report, show_input=True)
+    raw_command = viewer_command(root, report, mesh_variant='raw')
+    assert raw_command[raw_command.index('--mesh') + 1] == 'raw'
+    with pytest.raises(ValueError, match='mesh variant'):
+        viewer_command(root, report, mesh_variant='unknown')
     outside = root / 'report.json'
     outside.write_text('{}', encoding='utf-8')
     with pytest.raises(ValueError, match='escapes'):
@@ -96,18 +100,35 @@ def test_quality_summary_calls_out_provisional_dimension_and_visual_review():
         'provenance': {'classification': 'DIAGNOSTIC_ONLY'},
         'registration_mode': 'robot_pose', 'integrated_views': 15,
         'vertex_count': 100, 'triangle_count': 200,
+        'raw_mesh_path': '/tmp/target_mesh.raw.ply',
         'configuration': {'voxel_length_m': 0.0005},
         'registration_summary': {'median_rmse_m': 0.006},
         'mesh_metrics': {
+            'connected_component_count': 1,
             'dominant_component_triangle_ratio': 0.9,
             'dimension_check': {
                 'observed_obb_m': [0.041, 0.04, 0.039],
                 'maximum_absolute_error_m': 0.001,
             },
         },
+        'raw_mesh_metrics': {
+            'connected_component_count': 12,
+            'dominant_component_triangle_ratio': 0.8,
+            'dimension_check': {
+                'observed_obb_m': [0.05, 0.048, 0.041],
+                'maximum_absolute_error_m': 0.015,
+            },
+        },
+        'component_filter': {
+            'decision': 'SINGLE_CONNECTED_TARGET',
+            'removed_fragment_component_count': 11,
+        },
     })
     assert 'FAIL / DIAGNOSTIC_ONLY' in summary
     assert 'Provisional cube OBB' in summary
     assert 'TSDF mesh voxel: 0.50 mm' in summary
     assert 'Target mask: captured' in summary
+    assert '12 raw components -> 1 cleaned components' in summary
+    assert 'removed 11 tiny fragments' in summary
+    assert 'Cleaned mesh OBB' in summary
     assert 'Visual review is required' in summary

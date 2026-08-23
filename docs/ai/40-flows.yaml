@@ -1,5 +1,11 @@
 schema_version: 1
 document: runtime_flows
+connected_target_mesh_cleanup_2026_08_23:
+  trigger: Any command-free TSDF reconstruction after mesh extraction.
+  flow: [extract TSDF mesh once, calculate raw metrics, atomically write adjacent raw mesh, cluster connected triangles in an in-memory copy, retain every component at least five percent of the dominant area, remove smaller fragments, atomically write cleaned mesh at the existing path, use raw metrics for registration selection and terminal quality, expose separate raw and cleaned viewers]
+  failures: [empty or invalid component evidence, unusably small retained mesh, more than one substantial disconnected component, existing registration dimension residual manifold or visual-review failure]
+  replay: scan_20260821_220003 retained one component for both captured and offline-resegmented masks but both remained FAIL; cleanup removed floaters without repairing the retained cross-view distortion.
+  manual_smoke_checks: [press Build Raw + Cleaned once, open each mesh separately, confirm source manifest and captures are unchanged, verify both mesh hashes and component_filter decision, confirm raw metrics retain the former FAIL and auto mode selection, confirm no ROS camera CAN or arm process starts]
 hand_eye_accuracy_campaign_2026_08_22:
   software_flow: [confirm installed firmware and FK mode, inspect immutable corrected-scale samples, compare reprojection pose diversity and solver sensitivity, collect stationary-only multi-frame board noise, collect return-to-pose repeatability, collect diverse fitting stations, collect separate held-out stations, solve candidate without deployment, validate exact image-time fixed-board repeatability, replay reconstruction command-free, request explicit deployment decision]
   current_state: Firmware S-V1.5-8 confirms mode 0. Twelve fitting samples exist, but no held-out directory exists and their approximately 8.69 mm/1.30 degree closure is not reconstruction-grade proof. Stationary collection was attempted read-only and correctly rejected because only 2 of 12 markers were visible.

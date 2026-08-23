@@ -1,5 +1,11 @@
 schema_version: 1
 document: ai_context_index
+connected_target_mesh_filter_2026_08_23:
+  behavior: Offline TSDF extraction assumes one physically connected target. Components with surface area below five percent of the dominant component are removed as tiny fragments; every component at or above that boundary is retained, and more than one retained component explicitly fails connectivity.
+  outputs: Every reconstruction writes the untouched extracted TSDF as an adjacent raw mesh and the filtered copy at the existing mesh path. The command-free GUI builds both in one run and exposes separate Open Raw and Open Cleaned controls.
+  quality_boundary: Registration selection and structural quality continue using pre-filter component coherence. Cleanup cannot convert fragmented evidence into a false quality pass, and dimensions, residuals, watertightness and visual review remain authoritative.
+  replay: On scan_20260821_220003, captured support was reduced from 197 components and 10764 triangles to one 9742-triangle component; offline-resegmented support was reduced from 176 components and 9862 triangles to one 8545-triangle component. Both outputs remain FAIL because the retained surface is still distorted or incomplete.
+  boundary: Reconstruction output, additive quality provenance and command-free GUI presentation only. No capture, tracking, NBV, Tesseract, ROS interface, motion, home, shutdown or hardware behavior changed.
 hand_eye_accuracy_campaign_2026_08_22:
   goal: Improve reconstruction-grade eye-in-hand evidence without changing or deploying the accepted runtime TF until a new corrected-scale candidate passes independent held-out validation.
   implementation: Capture now correlates each image to the nearest source-stamped joint sample within the existing 0.100-second contract and uses CameraInfo intrinsics/distortion during ChArUco interpolation. Validation reports within-pose multi-frame noise and supports a read-only stationary-only diagnostic. The solver reports pose diversity and cross-method sensitivity while PARK remains the default.

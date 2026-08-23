@@ -947,17 +947,23 @@ class PiperGuiApp:
         controls = ttk.Frame(parent)
         controls.grid(row=3, column=0, sticky='w', pady=(14, 8))
         self.reconstruction_build_button = ttk.Button(
-            controls, text='Build and Validate',
+            controls, text='Build Raw + Cleaned',
             command=self.start_reconstruction)
         self.reconstruction_build_button.grid(row=0, column=0)
         self.reconstruction_view_button = ttk.Button(
-            controls, text='Open 3D Viewer',
+            controls, text='Open Cleaned',
             command=self.open_reconstruction_viewer, state='disabled')
         self.reconstruction_view_button.grid(row=0, column=1, padx=(8, 0))
+        self.reconstruction_raw_view_button = ttk.Button(
+            controls, text='Open Raw',
+            command=lambda: self.open_reconstruction_viewer('raw'),
+            state='disabled')
+        self.reconstruction_raw_view_button.grid(
+            row=0, column=2, padx=(8, 0))
         ttk.Checkbutton(
             controls, text='Show accepted input clouds',
             variable=self.reconstruction_show_input_var).grid(
-                row=0, column=2, padx=(12, 0))
+                row=0, column=3, padx=(12, 0))
         result = ttk.LabelFrame(parent, text='Quality report', padding=12)
         result.grid(row=4, column=0, sticky='ew')
         ttk.Label(
@@ -1006,6 +1012,7 @@ class PiperGuiApp:
             return
         self.reconstruction_build_button.configure(state='disabled')
         self.reconstruction_view_button.configure(state='disabled')
+        self.reconstruction_raw_view_button.configure(state='disabled')
         self.reconstruction_status_var.set(
             'Reconstruction is running offline at %.1f mm mesh voxels using %s'
             % (
@@ -1029,6 +1036,7 @@ class PiperGuiApp:
                     'summary': quality_summary(report),
                     'report_path': report_path,
                     'output_path': output,
+                    'raw_output_path': report.get('raw_mesh_path', ''),
                 }))
             except (OSError, RuntimeError, ValueError) as exc:
                 self.events.put(('reconstruction_complete', {
@@ -1039,11 +1047,12 @@ class PiperGuiApp:
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def open_reconstruction_viewer(self) -> None:
+    def open_reconstruction_viewer(self, mesh_variant='cleaned') -> None:
         try:
             command = viewer_command(
                 PROJECT_ROOT, self.reconstruction_report_path,
-                show_input=bool(self.reconstruction_show_input_var.get()))
+                show_input=bool(self.reconstruction_show_input_var.get()),
+                mesh_variant=mesh_variant)
             start_viewer_process(command)
         except (OSError, TypeError, ValueError) as exc:
             self.reconstruction_status_var.set(str(exc))
@@ -1902,6 +1911,11 @@ class PiperGuiApp:
                         self.reconstruction_output_path = Path(
                             payload['output_path'])
                         self.reconstruction_view_button.configure(state='normal')
+                        raw_mesh_path = str(payload.get(
+                            'raw_output_path', ''))
+                        if raw_mesh_path and Path(raw_mesh_path).is_file():
+                            self.reconstruction_raw_view_button.configure(
+                                state='normal')
         except queue.Empty:
             pass
         self.root.after(100, self.drain_events)

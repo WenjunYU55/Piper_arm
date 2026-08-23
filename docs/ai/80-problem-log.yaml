@@ -1,6 +1,12 @@
 schema_version: 1
 document: consolidated_problem_and_incident_log
-last_reviewed: '2026-08-22'
+last_reviewed: '2026-08-23'
+disconnected_mesh_fragments_2026_08_23:
+  state: visual_fragments_filtered_metric_failure_retained
+  symptom: The seven-view cube meshes contained 176 to 197 connected components even though the physical cube is one object; full-mesh bounds were influenced by many tiny floating surfaces.
+  root_cause: TSDF extraction retained every disconnected surface created by residual cross-view disagreement and boundary support. The fragments were an output symptom, not the root registration defect.
+  correction: Persist the untouched raw TSDF and derive a separate cleaned mesh that removes only components below five percent of dominant surface area. Retain and fail multiple substantial components, and continue evaluating complete raw metrics for registration selection and terminal quality.
+  evidence: Captured and offline-resegmented replays now each output one connected surface, but both remain FAIL and residual tails increase against the unchanged input cloud. Cleanup therefore improves presentation without concealing the unresolved evidence mismatch.
 hand_eye_candidate_not_reconstruction_qualified_2026_08_22:
   state: measurement_campaign_in_progress_no_runtime_tf_change
   symptom: Reconstruction remains oversized/misaligned, while a new corrected-scale 12-pose hand-eye fitting set closes at approximately 8.69 mm translation RMS and 1.30 degrees rotation RMS despite subpixel ChArUco reprojection.

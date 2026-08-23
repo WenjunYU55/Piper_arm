@@ -360,6 +360,54 @@ def test_quality_thresholds_are_explicit():
     assert MODULE.dimension_classification(0.011) == 'POOR'
 
 
+def test_connected_target_policy_removes_only_tiny_fragments():
+    report = MODULE.target_component_policy(
+        [900, 30, 20], [0.009, 0.0003, 0.0001])
+    assert report['retained_component_indices'] == [0]
+    assert report['removed_fragment_component_count'] == 2
+    assert report['retained_triangle_count'] == 900
+    assert report['connectivity_valid'] is True
+    assert report['decision'] == 'SINGLE_CONNECTED_TARGET'
+
+
+def test_connected_target_policy_retains_and_rejects_substantial_split():
+    report = MODULE.target_component_policy(
+        [800, 160, 10], [0.008, 0.0016, 0.0001])
+    assert report['retained_component_indices'] == [0, 1]
+    assert report['removed_fragment_component_count'] == 1
+    assert report['connectivity_valid'] is False
+    assert report['decision'] == 'MULTIPLE_SUBSTANTIAL_COMPONENTS'
+
+
+def test_connected_target_policy_keeps_component_at_five_percent_boundary():
+    report = MODULE.target_component_policy(
+        [1000, 50], [0.010, 0.0005])
+    assert report['retained_component_indices'] == [0, 1]
+    assert report['connectivity_valid'] is False
+
+
+def test_registration_selection_uses_pre_cleanup_component_coherence():
+    robot = _selection_report(0.006, 0.004, component=1.0)
+    robot['raw_mesh_metrics'] = {
+        **robot['mesh_metrics'],
+        'dominant_component_triangle_ratio': 0.70,
+    }
+    gicp = _selection_report(0.004, 0.004, component=1.0)
+    gicp['raw_mesh_metrics'] = {
+        **gicp['mesh_metrics'],
+        'dominant_component_triangle_ratio': 0.90,
+    }
+    selected, comparison = MODULE.select_registration_report(robot, gicp)
+    assert selected == 'robot_pose'
+    assert comparison['component_coherence_acceptable'] is False
+
+
+def test_raw_mesh_path_is_adjacent_and_does_not_replace_cleaned_output():
+    output = Path('/tmp/scan/target_mesh.ply')
+    assert MODULE.raw_mesh_output_path(output) == \
+        Path('/tmp/scan/target_mesh.raw.ply')
+
+
 def test_known_target_dimensions_reject_aligned_depth_background():
     depth = np.asarray([
         [0, 400, 405],
