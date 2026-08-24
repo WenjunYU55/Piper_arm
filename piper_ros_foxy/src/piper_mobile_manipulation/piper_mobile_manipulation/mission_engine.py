@@ -173,6 +173,7 @@ def safe_view_exhaustion_after_capture(
         accepted >= 1
         and isinstance(feature_coverage, dict)
         and proved_accepted >= accepted
+        and feature_coverage.get('sufficient') is True
         and as_failure(reason).has(FailureTag.SAFE_VIEW_EXHAUSTED)
     )
 

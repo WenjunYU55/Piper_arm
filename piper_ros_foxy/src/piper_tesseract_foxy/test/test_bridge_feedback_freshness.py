@@ -11,6 +11,7 @@ from piper_tesseract_foxy.bridge_node import (
     bounded_nbv_candidates,
     bounded_current_look_direction,
     exact_target_aim_candidates,
+    information_ranked_ray_candidates,
     local_view_frontier_candidates,
     maximize_successive_view_distance,
     obstacle_scene_rejection_reason,
@@ -110,10 +111,13 @@ def test_only_ray_policy_reduces_direction_attempt_bound_to_six():
         view_policy_capabilities('voxel_nbv'), 12) == 12
 
 
-def test_tesseract_exhausted_rays_are_excluded_only_within_generation():
+def test_only_contextual_failures_reset_after_an_accepted_view():
     bridge = object.__new__(TesseractPlanBridge)
     bridge.tesseract_exhausted_ray_generation = None
     bridge.tesseract_exhausted_ray_ids = set()
+    bridge.remaining_ray_pool_session = None
+    bridge.remaining_ray_ids = set()
+    bridge.retired_ray_ids = set()
     bridge.get_logger = lambda: _Logger()
     candidates = [
         _policy_candidate('ray_nbv', 'target_ray', item_id=item_id)
@@ -127,9 +131,68 @@ def test_tesseract_exhausted_rays_are_excluded_only_within_generation():
         bridge, candidates, 'session-a', 2)
 
     assert [item['ray_id'] for item in available] == [11]
-    assert TesseractPlanBridge.exclude_tesseract_exhausted_rays(
-        bridge, candidates, 'session-a', 3) == candidates
+    bridge.remaining_ray_ids.discard(10)
+    bridge.retired_ray_ids.add(10)
+    available = TesseractPlanBridge.exclude_tesseract_exhausted_rays(
+        bridge, candidates, 'session-a', 3)
+    assert [item['ray_id'] for item in available] == [11, 12]
     assert bridge.tesseract_exhausted_ray_ids == set()
+    assert bridge.remaining_ray_ids == {11, 12}
+    assert bridge.retired_ray_ids == {10}
+    assert TesseractPlanBridge.exclude_tesseract_exhausted_rays(
+        bridge, candidates, 'session-b', 0) == candidates
+    assert bridge.remaining_ray_ids == {10, 11, 12}
+    assert bridge.retired_ray_ids == set()
+
+
+def test_successful_plan_remembers_static_failures_before_selected_ray():
+    bridge = object.__new__(TesseractPlanBridge)
+    bridge.remaining_ray_pool_session = 'session-a'
+    bridge.remaining_ray_ids = {10, 11}
+    bridge.retired_ray_ids = set()
+    bridge.get_logger = lambda: _Logger()
+    bridge.pending = {'request-a': {'request': {
+        'planning': {'shortlisted_ray_count': 2},
+        'scan_session': {'session_id': 'session-a', 'accepted_views': 2},
+        'scene': {'candidate_views': [
+            {'id': 100, 'ray_id': 10},
+            {'id': 101, 'ray_id': 10},
+            {'id': 110, 'ray_id': 11},
+        ]},
+    }}}
+    payload = {
+        'request_id': 'request-a',
+        'status': 'success',
+        'planning_diagnostics': {'permanent_infeasible_ray_ids': [10, 999]},
+    }
+
+    remembered = TesseractPlanBridge.remember_permanently_infeasible_rays(
+        bridge, payload)
+
+    assert remembered == [10]
+    assert bridge.remaining_ray_ids == {11}
+    assert bridge.retired_ray_ids == {10}
+
+
+def test_temporary_candidate_absence_does_not_delete_frozen_ray():
+    bridge = object.__new__(TesseractPlanBridge)
+    bridge.tesseract_exhausted_ray_generation = None
+    bridge.tesseract_exhausted_ray_ids = set()
+    bridge.remaining_ray_pool_session = None
+    bridge.remaining_ray_ids = set()
+    bridge.retired_ray_ids = set()
+    bridge.get_logger = lambda: _Logger()
+    candidates = [
+        _policy_candidate('ray_nbv', 'target_ray', item_id=item_id)
+        for item_id in (10, 11, 12)
+    ]
+
+    TesseractPlanBridge.exclude_tesseract_exhausted_rays(
+        bridge, candidates, 'session-a', 0)
+    assert TesseractPlanBridge.exclude_tesseract_exhausted_rays(
+        bridge, candidates[:1], 'session-a', 0) == candidates[:1]
+    assert TesseractPlanBridge.exclude_tesseract_exhausted_rays(
+        bridge, candidates, 'session-a', 0) == candidates
 
 
 def test_all_tesseract_exhausted_rays_end_the_true_ray_frontier():
@@ -164,6 +227,24 @@ def test_next_ray_shortlist_is_selected_from_full_untried_frontier():
 
     assert len(available) == 6
     assert {item['ray_id'] for item in shortlisted} == set(range(7, 13))
+
+
+def test_information_ray_shortlist_does_not_insert_nearby_fallback():
+    candidates = [
+        dict(
+            _policy_candidate(
+                'ray_nbv', 'target_ray', item_id=item_id),
+            nbv_rank=rank,
+            coverage_score=1.0 / rank,
+        )
+        for item_id, rank in (
+            (1, 99), (2, 1), (3, 2), (4, 3),
+            (5, 4), (6, 5), (7, 6))
+    ]
+
+    shortlisted = information_ranked_ray_candidates(candidates, 6)
+
+    assert [item['ray_id'] for item in shortlisted] == [2, 3, 4, 5, 6, 7]
 
 
 def test_worker_exhaustion_retires_only_attempted_request_rays():
@@ -475,7 +556,7 @@ def test_exact_target_aim_is_primary_and_fallback_is_bounded_to_five_degrees():
     assert len(bound['fallback_look_directions']) == 1
     offset = math.degrees(math.acos(float(np.clip(np.dot(
         exact, bound['fallback_look_directions'][0]), -1.0, 1.0))))
-    assert offset == pytest.approx(5.0)
+    assert offset == pytest.approx(4.0)
     assert bound['maximum_final_aim_offset_deg'] == 5.0
 
 

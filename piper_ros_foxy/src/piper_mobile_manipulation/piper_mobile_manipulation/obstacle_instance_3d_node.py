@@ -22,7 +22,7 @@ from tf2_ros import Buffer, TransformException, TransformListener
 
 from piper_mobile_manipulation.msg import ObstacleInstance3D, ObstacleInstance3DArray
 from piper_mobile_manipulation.obstacle_geometry import (
-    MOVABLE, UNSAFE, aabb_corners, effective_classification,
+    BLOCKED, MOVABLE, aabb_corners, effective_classification,
     normalize_label, obstacle_records, project_instance,
     target_occlusion_evidence, transform_points,
 )
@@ -219,7 +219,7 @@ class ObstacleInstance3DNode(Node):
                 instance.confidence = float(record.get('confidence', 0.0))
                 instance.classification = effective_classification(
                     instance.semantic_label,
-                    bool(record.get('unsafe', True)), whitelist)
+                    bool(record.get('unsafe', False)), whitelist)
                 instance.camera_frame = str(manifest.get('frame_id', ''))
                 instance.base_frame = out.header.frame_id
                 instance.transform_age_sec = 0.0
@@ -456,13 +456,13 @@ class ObstacleInstance3DNode(Node):
             instance.transform_age_sec = -1.0
             if record is None:
                 instance.semantic_label = 'unknown'
-                instance.classification = UNSAFE
+                instance.classification = BLOCKED
                 self.invalidate(instance, 'missing_object_metadata')
             else:
                 instance.semantic_label = normalize_label(record.get('label', 'unknown'))
                 instance.confidence = float(record.get('confidence', 0.0))
                 instance.classification = effective_classification(
-                    instance.semantic_label, bool(record.get('unsafe', True)), whitelist)
+                    instance.semantic_label, bool(record.get('unsafe', False)), whitelist)
                 reason = None
                 if source_stale:
                     reason = 'stale_source_data'

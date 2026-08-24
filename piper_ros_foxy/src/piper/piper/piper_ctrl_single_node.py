@@ -40,6 +40,10 @@ JOINT6_STARTUP_CONTROLLER_MAX_DEG = 545.0
 JOINT6_STARTUP_CONTROLLER_REQUIRED_DEG = 540.0
 JOINT6_STARTUP_CONTROLLER_LIMIT_TIMEOUT_SEC = 2.0
 PIPER_SETTING_UNCHANGED = 0x7FFF
+PIPER_CTRL_MODE_TEACHING = 0x02
+PIPER_CTRL_MODE_LINKED_TEACHING = 0x06
+PIPER_MOTION_OUTPUT_ROLE = 0xFC
+PIPER_ROLE_RESTORE_TIMEOUT_SEC = 2.0
 JOINT6_STARTUP_COMMAND_FRAME = 'piper_scan_executor_startup_wrist'
 JOINT6_HOLD_COMMAND_FRAME = 'piper_scan_executor_hold'
 JOINT6_COMMISSIONING_COMMAND_FRAME = 'piper_native_gui'
@@ -693,6 +697,90 @@ def qualify_startup_joint6_controller_limit(
         sleep_fn(min(0.05, remaining))
 
 
+def fresh_motor_driver_snapshot(piper):
+    """Return fresh complete six-motor state, or ``None``."""
+    try:
+        feedback = piper.GetArmLowSpdInfoMsgs()
+        if float(getattr(feedback, 'time_stamp', 0.0) or 0.0) <= 0.0:
+            return None
+        states = []
+        faults = []
+        for index in range(1, 7):
+            motor = getattr(feedback, 'motor_%d' % index)
+            if int(motor.can_id) != 0x260 + index:
+                return None
+            foc = motor.foc_status
+            states.append(bool(foc.driver_enable_status))
+            for field in MOTOR_DRIVER_FAULT_FIELDS:
+                if bool(getattr(foc, field, False)):
+                    faults.append('joint%d:%s' % (index, field))
+        return tuple(states), tuple(faults)
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def fresh_controller_mode(piper):
+    """Return the typed fresh controller mode value, or ``None``."""
+    try:
+        feedback = piper.GetArmStatus()
+        if float(getattr(feedback, 'time_stamp', 0.0) or 0.0) <= 0.0:
+            return None
+        return int(feedback.arm_status.ctrl_mode)
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def restore_motion_output_role_if_teaching(
+        piper,
+        timeout_sec=PIPER_ROLE_RESTORE_TIMEOUT_SEC,
+        monotonic_fn=time.monotonic,
+        sleep_fn=time.sleep):
+    """Leave calibration teaching mode only from fresh six-disabled state."""
+    snapshot = fresh_motor_driver_snapshot(piper)
+    if snapshot is None:
+        return False, 'fresh complete six-motor feedback is unavailable'
+    states, faults = snapshot
+    if any(states):
+        return False, (
+            'motion-output role change requires all six motors disabled')
+    if faults:
+        return False, 'motor faults block motion-output role change: %s' % (
+            ','.join(faults))
+    mode = fresh_controller_mode(piper)
+    if mode is None:
+        return False, 'fresh controller mode feedback is unavailable'
+    teaching_modes = (
+        PIPER_CTRL_MODE_TEACHING,
+        PIPER_CTRL_MODE_LINKED_TEACHING,
+    )
+    if mode not in teaching_modes:
+        return True, 'controller is not in teaching mode'
+    setter = getattr(piper, 'MasterSlaveConfig', None)
+    if not callable(setter):
+        return False, 'PiPER SDK lacks motion-output role configuration API'
+    setter(PIPER_MOTION_OUTPUT_ROLE, 0x00, 0x00, 0x00)
+    deadline = monotonic_fn() + max(0.0, float(timeout_sec))
+    while True:
+        snapshot = fresh_motor_driver_snapshot(piper)
+        if snapshot is None:
+            return False, (
+                'motor feedback became unavailable during role change')
+        states, faults = snapshot
+        if any(states):
+            return False, 'a motor enabled during motion-output role change'
+        if faults:
+            return False, (
+                'motor fault during motion-output role change: %s'
+                % ','.join(faults))
+        mode = fresh_controller_mode(piper)
+        if mode is not None and mode not in teaching_modes:
+            return True, 'restored motion-output role from teaching mode'
+        remaining = deadline - monotonic_fn()
+        if remaining <= 0.0:
+            return False, 'controller remained in teaching mode'
+        sleep_fn(min(0.05, remaining))
+
+
 class PiperRosNode(Node):
     """Run the ROS 2 node for the robotic arm."""
 
@@ -1047,10 +1135,10 @@ class PiperRosNode(Node):
             self._disable_required = False
             self._enable_transition_active = True
             try:
-                succeeded = request_piper_enable_state(
-                    self.piper, True, self.enable_timeout)
+                succeeded = self.prepare_enable_transition()
                 if succeeded:
-                    succeeded = self.qualify_startup_joint6_limit()
+                    succeeded = request_piper_enable_state(
+                        self.piper, True, self.enable_timeout)
                 if not succeeded:
                     self._disable_required = True
                     rollback_succeeded = request_piper_enable_state(
@@ -1083,6 +1171,18 @@ class PiperRosNode(Node):
             self.get_logger().error(
                 'Could not qualify positive-only startup range: %s' % reason)
         return succeeded
+
+    def prepare_enable_transition(self):
+        """Restore runtime role and prove J6 range before enabling motors."""
+        succeeded, reason = restore_motion_output_role_if_teaching(self.piper)
+        if succeeded:
+            self.get_logger().info(
+                'Controller role preflight passed: %s' % reason)
+        else:
+            self.get_logger().error(
+                'Controller role preflight failed: %s' % reason)
+            return False
+        return self.qualify_startup_joint6_limit()
 
     def publish_feedback(self):
         """Publish one executor-owned feedback sample from the robotic arm."""
@@ -1351,6 +1451,24 @@ class PiperRosNode(Node):
     def query_motion_limits(self):
         """Refresh SDK limit caches without blocking their 1 Hz publisher."""
         try:
+            # The controller does not answer the 0x472 limit queries while it
+            # remains in teaching/linked-teaching mode.  Production startup
+            # requires these read-only limits before motor enable, so restore
+            # the normal motion-output role here while fresh feedback proves
+            # that every motor is disabled.  The same helper remains in the
+            # enable transition as a final fail-closed check.
+            mode = fresh_controller_mode(self.piper)
+            if mode in (
+                    PIPER_CTRL_MODE_TEACHING,
+                    PIPER_CTRL_MODE_LINKED_TEACHING):
+                succeeded, reason = restore_motion_output_role_if_teaching(
+                    self.piper)
+                if not succeeded:
+                    self.get_logger().warn(
+                        'Controller-limit query blocked: %s' % reason)
+                    return
+                self.get_logger().info(
+                    'Controller role prepared for limit queries: %s' % reason)
             self.piper.SearchAllMotorMaxAngleSpd()
             self.piper.SearchAllMotorMaxAccLimit()
             if not getattr(self, 'motion_limits_first_query_logged', False):
@@ -1373,6 +1491,25 @@ class PiperRosNode(Node):
         )
         limits = controller_motion_limits(
             self.piper, maximum_age_sec=maximum_age)
+        signature = (
+            bool(limits['valid']),
+            str(limits['reason']),
+            str(limits['limits_sha256']),
+        )
+        if signature != getattr(self, '_motion_limits_last_signature', None):
+            self._motion_limits_last_signature = signature
+            detail = (
+                'Controller-limit state changed: valid=%s reason=%s hash=%s'
+                % (limits['valid'], limits['reason'],
+                   limits['limits_sha256']))
+            # Foxy binds one severity to each Python logger call site. Calling
+            # a dynamically selected bound method from the same line can
+            # crash when a valid limit record later becomes stale. Keep the
+            # two severities on distinct, fixed call sites.
+            if limits['valid']:
+                self.get_logger().info(detail)
+            else:
+                self.get_logger().warn(detail)
         if not getattr(self, 'motion_limits_first_result_logged', False):
             self.motion_limits_first_result_logged = True
             self.get_logger().info(
@@ -1682,11 +1819,15 @@ class PiperRosNode(Node):
             self._disable_required = not requested_enable
             self._enable_transition_active = requested_enable
             try:
-                succeeded = request_piper_enable_state(
-                    self.piper, requested_enable, self.enable_timeout)
                 rollback_succeeded = True
-                if succeeded and requested_enable:
-                    succeeded = self.qualify_startup_joint6_limit()
+                if requested_enable:
+                    succeeded = self.prepare_enable_transition()
+                    if succeeded:
+                        succeeded = request_piper_enable_state(
+                            self.piper, True, self.enable_timeout)
+                else:
+                    succeeded = request_piper_enable_state(
+                        self.piper, False, self.enable_timeout)
                 if not succeeded and requested_enable:
                     self._disable_required = True
                     rollback_succeeded = request_piper_enable_state(
@@ -1735,14 +1876,21 @@ class PiperRosNode(Node):
             self._disable_required = not requested_enable
             self._enable_transition_active = requested_enable
             try:
-                succeeded = request_piper_enable_state(
-                    self.piper,
-                    requested_enable,
-                    self.enable_timeout,
-                )
                 rollback_succeeded = True
-                if succeeded and requested_enable:
-                    succeeded = self.qualify_startup_joint6_limit()
+                if requested_enable:
+                    succeeded = self.prepare_enable_transition()
+                    if succeeded:
+                        succeeded = request_piper_enable_state(
+                            self.piper,
+                            True,
+                            self.enable_timeout,
+                        )
+                else:
+                    succeeded = request_piper_enable_state(
+                        self.piper,
+                        False,
+                        self.enable_timeout,
+                    )
                 if not succeeded and requested_enable:
                     # Keep the transition lock held until the failed enable is
                     # proved fully disabled; another caller must not re-enable

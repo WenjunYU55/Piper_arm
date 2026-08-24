@@ -139,6 +139,52 @@ class HeavyModelWorkerTest(unittest.TestCase):
             self.assertIn("inference failed", result["error"])
             self.assertTrue((spool / "failed" / "job_failure").is_dir())
 
+    def test_unknown_obstacle_does_not_default_to_human_unsafe(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            spool = Path(temporary)
+            job = spool / "requests" / "job_unknown"
+            job.mkdir(parents=True)
+            rgb = np.zeros((20, 30, 3), dtype=np.uint8)
+            cv2.imwrite(str(job / "rgb.png"), rgb)
+            with (job / "request.yaml").open("w", encoding="utf-8") as stream:
+                yaml.safe_dump({"request_id": 10}, stream)
+            (job / "READY").touch()
+
+            def unknown_obstacle(_capture_dir, output_dir, _device):
+                target = np.zeros((20, 30), dtype=np.uint8)
+                target[5:15, 5:15] = 255
+                target_path = output_dir / "target.png"
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                cv2.imwrite(str(target_path), target)
+                obstacle = np.zeros_like(target)
+                obstacle[7:13, 18:24] = 255
+                obstacle_path = output_dir / "unknown.png"
+                cv2.imwrite(str(obstacle_path), obstacle)
+                return {
+                    "status": "ok",
+                    "target_mask_png": str(target_path),
+                    "obstacle_masks": [{
+                        "label": "unknown depth foreground",
+                        "mask_png": str(obstacle_path),
+                    }],
+                }
+
+            worker = HeavyModelWorker(spool, inference=unknown_obstacle)
+            self.assertTrue(worker.process_one())
+            response = spool / "responses" / "job_unknown"
+            with (response / "result.yaml").open("r", encoding="utf-8") as stream:
+                result = yaml.safe_load(stream)
+
+            obstacle = result["tracked_objects"][1]
+            self.assertFalse(obstacle["unsafe"])
+            self.assertFalse(obstacle["candidate_movable"])
+            self.assertEqual(result["unsafe_obstacle_count"], 0)
+            self.assertEqual(
+                int(np.count_nonzero(cv2.imread(
+                    str(response / "unsafe_obstacle_mask.png"), 0))),
+                0,
+            )
+
     def test_target_missing_keeps_rgb_and_reserves_id_one_for_target(self):
         with tempfile.TemporaryDirectory() as temporary:
             spool = Path(temporary)

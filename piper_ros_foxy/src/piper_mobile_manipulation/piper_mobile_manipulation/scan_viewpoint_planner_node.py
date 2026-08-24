@@ -165,7 +165,7 @@ class ScanViewpointPlannerNode(Node):
         self.declare_parameter('duplicate_position_tolerance_m', 0.012)
         self.declare_parameter('duplicate_look_tolerance_deg', 2.0)
         self.declare_parameter(
-            'minimum_useful_direction_separation_deg', 6.0)
+            'minimum_useful_direction_separation_deg', 10.0)
         self.declare_parameter('target_replan_translation_m', 0.01)
         self.declare_parameter('target_replan_min_period_sec', 0.5)
         self.declare_parameter('target_plan_refresh_period_sec', 0.5)

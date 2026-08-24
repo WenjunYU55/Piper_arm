@@ -8,6 +8,7 @@ from piper_tesseract_foxy.worker import (
     attached_box_floor_clearance_rejection,
     camera_transform_path_rejection,
     CandidatePlanningError,
+    finalize_ray_endpoint_diagnostics,
     PlanningBudgetExceeded,
     planning_budgets_for_request,
     quiesce_bootstrap_recovery_prefix,
@@ -87,7 +88,7 @@ def test_worker_exhausts_exact_aim_before_one_fallback():
 def test_exhausted_candidate_retains_typed_exact_and_fallback_evidence():
     def plan_candidate(_start, _candidate, *_args):
         raise CandidatePlanningError(
-            'IK_FAILURE', 'synthetic unreachable target-facing pose')
+            'NO_RAW_IK', 'synthetic unreachable target-facing pose')
 
     backend = SimpleNamespace(
         plan_candidate=plan_candidate,
@@ -112,8 +113,192 @@ def test_exhausted_candidate_retains_typed_exact_and_fallback_evidence():
     assert [item['aim'] for item in caught.value.evidence] == [
         'exact', 'fallback']
     assert all(
-        item['stage'] == 'IK_FAILURE'
+        item['stage'] == 'NO_RAW_IK'
         for item in caught.value.evidence)
+
+
+def target_ray_candidate():
+    return {
+        'id': 100,
+        'candidate_geometry': 'target_ray',
+        'ray_id': 12,
+        'ray_direction': [1.0, 0.0, 0.0],
+        'ray_min_standoff_m': 0.28,
+        'ray_max_standoff_m': 0.50,
+        'ray_preferred_max_standoff_m': 0.50,
+        'ray_scoring_standoff_m': 0.39,
+        'ray_standoff_m': 0.40,
+        'camera_position_m': [0.80, 0.0, 0.10],
+        'look_direction': [-1.0, 0.0, 0.0],
+    }
+
+
+class FakeContinuousRayRobot:
+    """Small differentiable FK model for command-free ray-IK tests."""
+
+    @staticmethod
+    def fk(_group, joints, tip_link=None):
+        assert tip_link == 'camera_optical_frame'
+        joints = np.asarray(joints, dtype=float)
+        z_axis = np.asarray([-1.0, joints[2], joints[4]], dtype=float)
+        z_axis /= np.linalg.norm(z_axis)
+        helper = np.asarray([0.0, 0.0, 1.0], dtype=float)
+        if abs(float(np.dot(helper, z_axis))) > 0.95:
+            helper = np.asarray([0.0, 1.0, 0.0], dtype=float)
+        x_axis = np.cross(helper, z_axis)
+        x_axis /= np.linalg.norm(x_axis)
+        y_axis = np.cross(z_axis, x_axis)
+        cosine = np.cos(joints[5])
+        sine = np.sin(joints[5])
+        rotation = np.column_stack([
+            cosine * x_axis + sine * y_axis,
+            -sine * x_axis + cosine * y_axis,
+            z_axis,
+        ])
+        transform = np.eye(4)
+        transform[:3, :3] = rotation
+        transform[:3, 3] = [0.335, joints[1], joints[3]]
+        return SimpleNamespace(matrix=transform)
+
+
+def test_target_ray_ik_solves_continuous_standoff_and_free_roll():
+    backend = SimpleNamespace(
+        robot=FakeContinuousRayRobot(),
+        ensure_planning_time=lambda _context: None,
+    )
+    candidate = target_ray_candidate()
+    start = [0.1, 0.03, 0.04, -0.02, 0.03, 0.7]
+
+    solutions, reports = TesseractBackend.ray_ik_solutions(
+        backend, start, candidate, [0.0, 0.0, 0.0],
+        [-1.0, 0.0, 0.0], [[-2.0, 2.0]] * 6, 0.0)
+
+    selected = solutions[0]
+    assert selected['standoff_m'] == pytest.approx(0.335, abs=1e-4)
+    assert selected['candidate']['camera_position_m'] == pytest.approx(
+        [0.335, 0.0, 0.0], abs=1e-4)
+    assert selected['position_error_m'] <= 1e-4
+    assert selected['aim_error_deg'] <= np.degrees(1e-3)
+    assert selected['roll_rad'] == pytest.approx(0.7, abs=1e-3)
+    assert 1 <= len(reports) <= 9
+    assert all(item['function_evaluations'] <= 120 for item in reports)
+
+
+def test_target_ray_exact_solver_is_exhausted_before_fallback():
+    calls = []
+    candidate = target_ray_candidate()
+    fallback = [-0.996194698, -0.087155743, 0.0]
+    candidate['fallback_look_directions'] = [fallback]
+
+    def ray_ik_solutions(
+            _start, source, _target, look_direction, *_args):
+        calls.append(list(look_direction))
+        if look_direction == source['look_direction']:
+            raise CandidatePlanningError(
+                'RAY_IK_FAILURE', 'synthetic exact solve failure',
+                evidence=[{'seed_index': 0, 'accepted': False}])
+        attempt = dict(source)
+        attempt['look_direction'] = list(look_direction)
+        attempt['ray_standoff_m'] = 0.335
+        attempt['camera_position_m'] = [0.735, 0.0, 0.10]
+        attempt['_ray_ik_seed'] = [0.0] * 6
+        solution = {
+            'candidate': attempt,
+            'roll_rad': 0.0,
+            'joints': np.zeros(6),
+            'standoff_m': 0.335,
+        }
+        return [solution], [{'seed_index': 0, 'accepted': True}]
+
+    def plan_candidate(_start, attempt, *_args):
+        assert attempt['look_direction'] == fallback
+        return 0.0, [{'positions_rad': [0.0] * 6}], {
+            'minimum_clearance_m': 0.1,
+            'limiting_link_pair': 'none/none',
+        }
+
+    backend = SimpleNamespace(
+        ray_ik_solutions=ray_ik_solutions,
+        plan_candidate=plan_candidate,
+        last_planning_diagnostics={
+            'exact_aim_attempts': 0,
+            'fallback_aim_attempts': 0,
+            'failure_stage_counts': {},
+            'ray_ik_solver_attempts': 0,
+        },
+    )
+
+    selected, _roll, _points, _validation, fallback_used, offset = \
+        TesseractBackend.plan_candidate_aims(
+            backend, [0.0] * 6, candidate, [0.0], 0.05,
+            [[-1.0, 1.0]] * 6, 0.03,
+            visibility_target=[0.40, 0.0, 0.10])
+
+    assert calls == [candidate['look_direction'], fallback]
+    assert selected['ray_standoff_m'] == pytest.approx(0.335)
+    assert fallback_used
+    assert offset == pytest.approx(5.0, abs=1e-5)
+
+
+def test_static_endpoint_failure_marks_ray_only_after_every_probe_fails():
+    request = {'scene': {'candidate_views': [
+        {'id': 100, 'ray_id': 10},
+        {'id': 101, 'ray_id': 10},
+        {'id': 110, 'ray_id': 11},
+        {'id': 111, 'ray_id': 11},
+    ]}}
+    diagnostics = {'candidate_failures': [
+        {'id': 100, 'permanent_endpoint_failure': True},
+        {'id': 101, 'permanent_endpoint_failure': True},
+        {'id': 110, 'permanent_endpoint_failure': True},
+    ]}
+
+    assert finalize_ray_endpoint_diagnostics(
+        request, diagnostics) == [10]
+    assert diagnostics['permanent_infeasible_ray_ids'] == [10]
+
+
+def test_path_or_partial_probe_failure_is_not_permanently_cached():
+    request = {'scene': {'candidate_views': [
+        {'id': 100, 'ray_id': 10},
+        {'id': 101, 'ray_id': 10},
+    ]}}
+    diagnostics = {'candidate_failures': [
+        {'id': 100, 'permanent_endpoint_failure': True},
+        {'id': 101, 'permanent_endpoint_failure': False},
+    ]}
+
+    assert finalize_ray_endpoint_diagnostics(request, diagnostics) == []
+
+
+def test_candidate_without_raw_ik_has_specific_typed_stage():
+    def no_goals(_start, _candidate, roll, _limits, _margin, diagnostics):
+        diagnostics.append({
+            'roll_rad': float(roll),
+            'seed_attempts': 9,
+            'raw_ik_solutions': 0,
+            'accepted_ik_goals': 0,
+            'rejection_counts': {
+                'no_raw_ik': 9,
+                'nonfinite': 0,
+                'joint_limits': 0,
+                'duplicate': 0,
+                'external_floor': 0,
+                'endpoint_collision': 0,
+                'fk_mismatch': 0,
+            },
+        })
+        return []
+
+    backend = SimpleNamespace(ik_joint_goals=no_goals)
+    with pytest.raises(CandidatePlanningError) as caught:
+        TesseractBackend.plan_candidate(
+            backend, [0.0] * 6,
+            {'camera_position_m': [0.3, 0.0, 0.2]},
+            [0.0, 1.0], 0.05, [[-1.0, 1.0]] * 6, 0.03)
+
+    assert caught.value.stage == 'NO_RAW_IK'
+    assert 'no solution' in str(caught.value)
 
 
 def test_worker_attached_holder_box_rejects_floor_grazing_transform():

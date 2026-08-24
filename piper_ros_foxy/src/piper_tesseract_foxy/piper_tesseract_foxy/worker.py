@@ -17,6 +17,7 @@ import time
 import uuid
 
 import numpy as np
+from scipy.optimize import least_squares
 from scipy.spatial.transform import Rotation
 import yaml
 
@@ -46,6 +47,11 @@ PASS_THROUGH_BLEND_MAX_RADIUS_RAD = 0.06
 PASS_THROUGH_BLEND_FRACTION = 0.25
 PASS_THROUGH_BLEND_MIN_SAMPLES = 4
 MAX_BLEND_GEOMETRY_POINTS = 12000
+RAY_IK_POSITION_TOLERANCE_M = 1e-4
+RAY_IK_AIM_TOLERANCE_RAD = 1e-3
+RAY_IK_MAX_FUNCTION_EVALUATIONS = 120
+RAY_IK_MAX_SOLUTIONS = 3
+RAY_IK_SEED_COUNT = 9
 
 
 def planning_budgets_for_request(request):
@@ -83,6 +89,63 @@ class CandidateExhausted(ContractError):
 
 class PlanningBudgetExceeded(ContractError):
     """The bounded worker budget ended before another attempt could start."""
+
+
+PERMANENT_ENDPOINT_FAILURE_STAGES = frozenset((
+    'NO_RAW_IK',
+    'JOINT_LIMIT_FAILURE',
+))
+
+
+def candidate_at_ray_standoff(
+        candidate, target_center, standoff_m, search_index):
+    """Bind one internal exact pose on a request's target-ray interval."""
+    result = dict(candidate)
+    if standoff_m is None:
+        return result
+    target = np.asarray(target_center, dtype=float)
+    direction = np.asarray(candidate.get('ray_direction'), dtype=float)
+    if (
+            target.shape != (3,) or direction.shape != (3,)
+            or not np.all(np.isfinite(target))
+            or not np.all(np.isfinite(direction))):
+        raise ContractError('target-ray search geometry is invalid')
+    norm = float(np.linalg.norm(direction))
+    if norm <= 1e-9:
+        raise ContractError('target-ray search direction is zero')
+    direction /= norm
+    result['camera_position_m'] = (
+        target + direction * float(standoff_m)).tolist()
+    result['ray_standoff_m'] = float(standoff_m)
+    result['ray_probe_index'] = int(search_index)
+    result['ray_probe_phase'] = 'continuous_ray_ik'
+    return result
+
+
+def finalize_ray_endpoint_diagnostics(request, diagnostics):
+    """Record rays whose every transmitted probe has static IK failure."""
+    candidates = request.get('scene', {}).get('candidate_views', [])
+    probes_by_ray = {}
+    for candidate in candidates:
+        ray_id = candidate.get('ray_id')
+        if ray_id is None:
+            continue
+        probes_by_ray.setdefault(int(ray_id), set()).add(int(candidate['id']))
+    permanent_failures = {}
+    for failure in diagnostics.get('candidate_failures', []):
+        if not bool(failure.get('permanent_endpoint_failure', False)):
+            continue
+        permanent_failures[int(failure['id'])] = True
+    permanent_rays = sorted(
+        ray_id for ray_id, probe_ids in probes_by_ray.items()
+        if probe_ids and all(
+            permanent_failures.get(probe_id, False)
+            for probe_id in probe_ids)
+    )
+    diagnostics['permanent_infeasible_ray_ids'] = permanent_rays
+    diagnostics['permanent_endpoint_failure_stages'] = sorted(
+        PERMANENT_ENDPOINT_FAILURE_STAGES)
+    return permanent_rays
 
 
 def worker_rejection_code(error, planning_diagnostics):
@@ -1379,8 +1442,199 @@ class TesseractBackend:
         minimums = self.contact_minimums(joints, report)
         return not bool(self.clearance_violations(minimums))
 
+    def ray_ik_solutions(
+            self, start, candidate, target_center, look_direction,
+            position_limits, joint_margin):
+        """Solve joints and standoff together for one target-centred ray."""
+        start_array = finite_six(start, 'ray IK start')
+        target = np.asarray(target_center, dtype=float)
+        direction = np.asarray(candidate.get('ray_direction'), dtype=float)
+        desired_look = np.asarray(look_direction, dtype=float)
+        try:
+            minimum = float(candidate['ray_min_standoff_m'])
+            maximum = float(candidate['ray_max_standoff_m'])
+            representative = float(candidate['ray_standoff_m'])
+            scoring = float(candidate.get(
+                'ray_scoring_standoff_m', representative))
+        except (KeyError, TypeError, ValueError):
+            raise ContractError('target-ray IK interval is malformed')
+        if (
+                target.shape != (3,) or direction.shape != (3,)
+                or desired_look.shape != (3,)
+                or not np.all(np.isfinite(target))
+                or not np.all(np.isfinite(direction))
+                or not np.all(np.isfinite(desired_look))
+                or not all(math.isfinite(value) for value in (
+                    minimum, maximum, representative, scoring))
+                or minimum <= 0.0 or maximum < minimum
+                or representative < minimum or representative > maximum):
+            raise ContractError('target-ray IK geometry is invalid')
+        direction_norm = float(np.linalg.norm(direction))
+        look_norm = float(np.linalg.norm(desired_look))
+        if direction_norm <= 1e-9 or look_norm <= 1e-9:
+            raise ContractError('target-ray IK direction is zero')
+        direction /= direction_norm
+        desired_look /= look_norm
+
+        bounds = np.asarray(position_limits, dtype=float)
+        if bounds.shape != (6, 2) or not np.all(np.isfinite(bounds)):
+            raise ContractError('position limits must be a finite 6x2 array')
+        lower = bounds[:, 0] + float(joint_margin)
+        upper = bounds[:, 1] - float(joint_margin)
+        if np.any(lower >= upper):
+            raise ContractError('joint margin collapses a position limit')
+
+        neutral = np.asarray([0.0, 0.8, -0.7, 0.0, 0.7, 0.0])
+        scan_seed = np.asarray([
+            0.3189509166, 0.7800870124, -1.6258884709,
+            -0.6660237320, -0.2154052887, 0.0403545644,
+        ])
+        midpoint = 0.5 * (minimum + maximum)
+        seed_specs = [
+            (start_array, representative),
+            (neutral, min(maximum, max(minimum, scoring))),
+            (scan_seed, midpoint),
+        ]
+        rng = np.random.default_rng(42)
+        random_seed_count = RAY_IK_SEED_COUNT - len(seed_specs)
+        standoff_seeds = (representative, midpoint, maximum)
+        for index in range(random_seed_count):
+            seed_specs.append((
+                rng.uniform(lower, upper),
+                standoff_seeds[index % len(standoff_seeds)],
+            ))
+        variable_lower = np.concatenate([lower, [minimum]])
+        variable_upper = np.concatenate([upper, [maximum]])
+        interval_width = max(maximum - minimum, 1e-6)
+        reports = []
+        solutions = []
+
+        for seed_index, (joint_seed, standoff_seed) in enumerate(seed_specs):
+            self.ensure_planning_time('before a continuous target-ray IK solve')
+            clipped_joints = np.clip(joint_seed, lower, upper)
+            initial = np.concatenate([
+                clipped_joints,
+                [min(maximum, max(minimum, float(standoff_seed)))],
+            ])
+            evaluations = [0]
+
+            def residual(variables):
+                evaluations[0] += 1
+                if evaluations[0] % 16 == 1:
+                    self.ensure_planning_time(
+                        'during a continuous target-ray IK solve')
+                joints = np.asarray(variables[:6], dtype=float)
+                standoff = float(variables[6])
+                transform = np.asarray(self.robot.fk(
+                    'manipulator', joints,
+                    tip_link='camera_optical_frame').matrix)
+                desired_position = target + direction * standoff
+                return np.concatenate([
+                    (transform[:3, 3] - desired_position)
+                    / RAY_IK_POSITION_TOLERANCE_M,
+                    (transform[:3, 2] - desired_look)
+                    / RAY_IK_AIM_TOLERANCE_RAD,
+                    1e-3 * (joints - clipped_joints),
+                    [1e-3 * (standoff - float(standoff_seed))
+                     / interval_width],
+                ])
+
+            report = {
+                'seed_index': int(seed_index),
+                'initial_standoff_m': float(initial[6]),
+                'function_evaluations': 0,
+                'solver_success': False,
+                'accepted': False,
+            }
+            try:
+                result = least_squares(
+                    residual, initial,
+                    bounds=(variable_lower, variable_upper),
+                    max_nfev=RAY_IK_MAX_FUNCTION_EVALUATIONS,
+                    ftol=1e-10, xtol=1e-10, gtol=1e-10,
+                    diff_step=1e-5,
+                )
+            except PlanningBudgetExceeded:
+                raise
+            except (RuntimeError, TypeError, ValueError) as error:
+                report['detail'] = str(error)
+                report['function_evaluations'] = int(evaluations[0])
+                reports.append(report)
+                continue
+            report['function_evaluations'] = int(result.nfev)
+            report['solver_success'] = bool(result.success)
+            joints = np.asarray(result.x[:6], dtype=float)
+            standoff = float(result.x[6])
+            if (
+                    not np.all(np.isfinite(joints))
+                    or not math.isfinite(standoff)
+                    or np.any(joints < lower) or np.any(joints > upper)
+                    or standoff < minimum or standoff > maximum):
+                report['detail'] = 'solver result violated finite bounds'
+                reports.append(report)
+                continue
+            transform = np.asarray(self.robot.fk(
+                'manipulator', joints,
+                tip_link='camera_optical_frame').matrix)
+            desired_position = target + direction * standoff
+            position_error = float(np.linalg.norm(
+                transform[:3, 3] - desired_position))
+            aim_error = float(math.acos(np.clip(
+                np.dot(transform[:3, 2], desired_look), -1.0, 1.0)))
+            report.update({
+                'selected_standoff_m': standoff,
+                'position_error_m': position_error,
+                'aim_error_deg': math.degrees(aim_error),
+            })
+            if (
+                    position_error > RAY_IK_POSITION_TOLERANCE_M
+                    or aim_error > RAY_IK_AIM_TOLERANCE_RAD):
+                report['detail'] = 'solver result missed exact ray geometry'
+                reports.append(report)
+                continue
+            if any(
+                    float(np.max(np.abs(joints - item['joints']))) < 1e-5
+                    and abs(standoff - item['standoff_m']) < 1e-5
+                    for item in solutions):
+                report['detail'] = 'duplicate ray IK solution'
+                reports.append(report)
+                continue
+
+            zero_roll_rotation = Rotation.from_quat(
+                look_at_quaternion(desired_look, 0.0)).as_matrix()
+            actual_x = transform[:3, 0]
+            roll = math.atan2(
+                float(np.dot(actual_x, zero_roll_rotation[:, 1])),
+                float(np.dot(actual_x, zero_roll_rotation[:, 0])),
+            )
+            attempt = candidate_at_ray_standoff(
+                candidate, target, standoff, seed_index)
+            attempt['look_direction'] = desired_look.tolist()
+            attempt['_ray_ik_seed'] = joints.tolist()
+            report['accepted'] = True
+            reports.append(report)
+            solutions.append({
+                'candidate': attempt,
+                'joints': joints,
+                'standoff_m': standoff,
+                'roll_rad': float(roll),
+                'position_error_m': position_error,
+                'aim_error_deg': math.degrees(aim_error),
+            })
+
+        solutions.sort(key=lambda item: (
+            float(np.max(np.abs(item['joints'] - start_array))),
+            float(np.linalg.norm(item['joints'] - start_array)),
+        ))
+        if not solutions:
+            raise CandidatePlanningError(
+                'RAY_IK_FAILURE',
+                'continuous target-ray IK found no exact bounded solution',
+                evidence=reports)
+        return solutions[:RAY_IK_MAX_SOLUTIONS], reports
+
     def ik_joint_goals(self, start, candidate, roll, position_limits=None,
-                       joint_margin=0.0):
+                       joint_margin=0.0, diagnostics=None):
         """Return finite, bounded, collision-free IK branches nearest the start."""
         position = candidate['camera_position_m']
         quaternion = look_at_quaternion(candidate['look_direction'], roll)
@@ -1400,34 +1654,67 @@ class TesseractBackend:
             if np.any(lower >= upper):
                 raise ContractError('joint margin collapses a position limit')
             random_lower, random_upper = lower, upper
-        seeds = [
-            start_array,
-            np.clip(np.asarray([0.0, 0.8, -0.7, 0.0, 0.7, 0.0]),
-                    random_lower, random_upper),
-            np.clip(np.asarray([
-                0.3189509166, 0.7800870124, -1.6258884709,
-                -0.6660237320, -0.2154052887, 0.0403545644,
-            ]), random_lower, random_upper),
-        ]
-        rng = np.random.default_rng(42)
-        seeds.extend(rng.uniform(random_lower, random_upper) for _ in range(6))
+        ray_seed = candidate.get('_ray_ik_seed')
+        if ray_seed is not None:
+            ray_seed = finite_six(ray_seed, 'continuous ray IK seed')
+            if np.any(ray_seed < lower) or np.any(ray_seed > upper):
+                raise ContractError('continuous ray IK seed exceeds limits')
+            seeds = [ray_seed]
+        else:
+            seeds = [
+                start_array,
+                np.clip(np.asarray([0.0, 0.8, -0.7, 0.0, 0.7, 0.0]),
+                        random_lower, random_upper),
+                np.clip(np.asarray([
+                    0.3189509166, 0.7800870124, -1.6258884709,
+                    -0.6660237320, -0.2154052887, 0.0403545644,
+                ]), random_lower, random_upper),
+            ]
+            rng = np.random.default_rng(42)
+            seeds.extend(
+                rng.uniform(random_lower, random_upper) for _ in range(6))
         goals = []
         desired = np.asarray(pose.matrix)
+        report = {
+            'roll_rad': float(roll),
+            'seed_attempts': 0,
+            'raw_ik_solutions': 0,
+            'accepted_ik_goals': 0,
+            'rejection_counts': {
+                'no_raw_ik': 0,
+                'nonfinite': 0,
+                'joint_limits': 0,
+                'duplicate': 0,
+                'external_floor': 0,
+                'endpoint_collision': 0,
+                'fk_mismatch': 0,
+            },
+        }
         for seed in seeds:
+            report['seed_attempts'] += 1
             solution = self.robot.ik(
                 'manipulator', pose, seed=np.asarray(seed, dtype=float),
                 tip_link='camera_optical_frame', all_solutions=False,
             )
             if solution is None:
+                report['rejection_counts']['no_raw_ik'] += 1
                 continue
-            solution = finite_six(solution, 'IK solution')
+            report['raw_ik_solutions'] += 1
+            try:
+                solution = finite_six(solution, 'IK solution')
+            except ContractError:
+                report['rejection_counts']['nonfinite'] += 1
+                continue
             if np.any(solution < lower) or np.any(solution > upper):
+                report['rejection_counts']['joint_limits'] += 1
                 continue
             if any(float(np.max(np.abs(solution - existing))) < 1e-5
                    for existing in goals):
+                report['rejection_counts']['duplicate'] += 1
                 continue
             if self.external_floor_clearance_rejection(
                     solution, 'IK solution external-floor validation'):
+                report['rejection_counts']['external_floor'] += 1
                 continue
             # OMPL applies the qualified positive clearance margin, not merely
             # zero-penetration collision. Rejecting a below-margin IK endpoint
@@ -1435,6 +1722,7 @@ class TesseractBackend:
             # while preserving the same (slightly stricter, motion-bounded)
             # clearance rule used by final dense path validation.
             if not self.state_meets_required_clearance(solution):
+                report['rejection_counts']['endpoint_collision'] += 1
                 continue
             actual = np.asarray(self.robot.fk(
                 'manipulator', solution,
@@ -1444,8 +1732,12 @@ class TesseractBackend:
             angle_error = float(math.acos(np.clip(
                 (np.trace(rotation_error) - 1.0) * 0.5, -1.0, 1.0)))
             if position_error > 1e-4 or angle_error > 1e-3:
+                report['rejection_counts']['fk_mismatch'] += 1
                 continue
             goals.append(solution)
+        report['accepted_ik_goals'] = len(goals)
+        if diagnostics is not None:
+            diagnostics.append(report)
         goals.sort(key=lambda goal: (
             float(np.max(np.abs(goal - start_array))),
             float(np.linalg.norm(goal - start_array)),
@@ -1475,9 +1767,11 @@ class TesseractBackend:
         """Rank IK across every roll, then bound expensive planner attempts."""
         start_array = finite_six(start, 'candidate start')
         ranked = []
+        ik_reports = []
         for roll in rolls:
             goals = self.ik_joint_goals(
-                start_array, candidate, roll, position_limits, joint_margin)
+                start_array, candidate, roll, position_limits, joint_margin,
+                ik_reports)
             for goal in goals[:2]:
                 ranked.append((
                     float(np.max(np.abs(goal - start_array))),
@@ -1487,9 +1781,30 @@ class TesseractBackend:
                 ))
         ranked.sort(key=lambda item: (item[0], item[1]))
         if not ranked:
+            raw_solutions = sum(
+                int(item['raw_ik_solutions']) for item in ik_reports)
+            rejection_counts = {
+                key: sum(int(item['rejection_counts'][key])
+                         for item in ik_reports)
+                for key in next(iter(ik_reports), {
+                    'rejection_counts': {}})['rejection_counts']
+            }
+            if raw_solutions == 0:
+                stage = 'NO_RAW_IK'
+                detail = 'raw IK returned no solution for any roll or seed'
+            elif rejection_counts.get('joint_limits', 0) == raw_solutions:
+                stage = 'JOINT_LIMIT_FAILURE'
+                detail = 'every raw IK solution violated bounded joint limits'
+            elif (
+                    rejection_counts.get('external_floor', 0)
+                    + rejection_counts.get('endpoint_collision', 0) > 0):
+                stage = 'ENDPOINT_COLLISION'
+                detail = 'raw IK existed but no endpoint met collision clearance'
+            else:
+                stage = 'IK_VALIDATION_FAILURE'
+                detail = 'raw IK existed but no endpoint passed validation'
             raise CandidatePlanningError(
-                'IK_FAILURE',
-                'no finite bounded collision-free IK goal for any roll')
+                stage, detail, evidence=ik_reports)
         failures = []
         for _, _, roll, goal in ranked[:4]:
             self.ensure_planning_time(
@@ -1532,50 +1847,120 @@ class TesseractBackend:
             self, start, candidate, rolls, maximum_step,
             position_limits, joint_margin, bootstrap_recovery=None,
             visibility_target=None):
-        """Exhaust exact target aim before one contract-bound fallback."""
+        """Try exact aim first, solving a target ray continuously when used."""
         nominal = list(candidate['look_direction'])
         variants = [nominal] + list(
             candidate.get('fallback_look_directions', []))
         failures = []
         attempted = []
+        total_solver_attempts = 0
         diagnostics = getattr(self, 'last_planning_diagnostics', None)
+        is_target_ray = candidate.get('candidate_geometry') == 'target_ray'
+        if is_target_ray and visibility_target is None:
+            raise ContractError(
+                'continuous target-ray IK requires the target center')
         for variant_index, look_direction in enumerate(variants):
-            attempt = dict(candidate)
-            attempt['look_direction'] = list(look_direction)
             variant_name = 'exact' if variant_index == 0 else 'fallback'
             attempted.append(variant_name)
             if isinstance(diagnostics, dict):
                 key = '%s_aim_attempts' % variant_name
                 diagnostics[key] = int(diagnostics.get(key, 0)) + 1
-            try:
-                arguments = (
-                    start, attempt, rolls, maximum_step,
-                    position_limits, joint_margin, bootstrap_recovery)
-                if visibility_target is None:
-                    roll, points, validation = self.plan_candidate(*arguments)
-                else:
-                    roll, points, validation = self.plan_candidate(
-                        *arguments, visibility_target)
-                offset = angular_separation_deg(nominal, look_direction)
-                attempt['aim_attempt_diagnostics'] = {
-                    'attempted': list(attempted),
-                    'selected': variant_name,
-                    'failures': list(failures),
-                }
-                return (
-                    attempt, roll, points, validation,
-                    bool(variant_index > 0), float(offset))
-            except (ContractError, RuntimeError, ValueError) as error:
-                stage = str(getattr(error, 'stage', 'PLANNING_FAILURE'))
-                failure = {
-                    'aim': variant_name,
-                    'stage': stage,
-                    'detail': str(error),
-                }
-                failures.append(failure)
+            if is_target_ray:
+                try:
+                    solutions, solver_reports = self.ray_ik_solutions(
+                        start, candidate, visibility_target, look_direction,
+                        position_limits, joint_margin)
+                except PlanningBudgetExceeded:
+                    raise
+                except (ContractError, RuntimeError, ValueError) as error:
+                    stage = str(getattr(error, 'stage', 'RAY_IK_FAILURE'))
+                    evidence = [dict(item) for item in getattr(
+                        error, 'evidence', ())]
+                    solver_attempts = max(1, len(evidence))
+                    total_solver_attempts += solver_attempts
+                    failures.append({
+                        'aim': variant_name,
+                        'stage': stage,
+                        'detail': str(error),
+                        'ray_ik_reports': evidence,
+                    })
+                    if isinstance(diagnostics, dict):
+                        diagnostics['ray_ik_solver_attempts'] = int(
+                            diagnostics.get('ray_ik_solver_attempts', 0)
+                        ) + solver_attempts
+                        counts = diagnostics.setdefault(
+                            'failure_stage_counts', {})
+                        counts[stage] = int(counts.get(stage, 0)) + 1
+                    continue
+                total_solver_attempts += len(solver_reports)
                 if isinstance(diagnostics, dict):
-                    counts = diagnostics.setdefault('failure_stage_counts', {})
-                    counts[stage] = int(counts.get(stage, 0)) + 1
+                    diagnostics['ray_ik_solver_attempts'] = int(
+                        diagnostics.get('ray_ik_solver_attempts', 0)
+                    ) + len(solver_reports)
+                attempts = [
+                    (item['candidate'], [item['roll_rad']])
+                    for item in solutions
+                ]
+            else:
+                solver_reports = []
+                attempt = dict(candidate)
+                attempt['look_direction'] = list(look_direction)
+                attempts = [(attempt, rolls)]
+
+            variant_failures = []
+            for attempt, attempt_rolls in attempts:
+                try:
+                    arguments = (
+                        start, attempt, attempt_rolls, maximum_step,
+                        position_limits, joint_margin, bootstrap_recovery)
+                    if visibility_target is None:
+                        roll, points, validation = self.plan_candidate(
+                            *arguments)
+                    else:
+                        roll, points, validation = self.plan_candidate(
+                            *arguments, visibility_target)
+                    offset = angular_separation_deg(nominal, look_direction)
+                    attempt['aim_attempt_diagnostics'] = {
+                        'attempted': list(attempted),
+                        'selected': variant_name,
+                        'failures': list(failures),
+                        'ray_ik_solver_attempts': int(total_solver_attempts),
+                        'selected_standoff_m': (
+                            float(attempt['ray_standoff_m'])
+                            if is_target_ray else None),
+                        'ray_ik_reports': solver_reports,
+                    }
+                    return (
+                        attempt, roll, points, validation,
+                        bool(variant_index > 0), float(offset))
+                except PlanningBudgetExceeded:
+                    raise
+                except (ContractError, RuntimeError, ValueError) as error:
+                    stage = str(getattr(
+                        error, 'stage', 'PLANNING_FAILURE'))
+                    variant_failures.append({
+                        'stage': stage,
+                        'detail': str(error),
+                        'standoff_m': attempt.get('ray_standoff_m'),
+                    })
+                    if isinstance(diagnostics, dict):
+                        counts = diagnostics.setdefault(
+                            'failure_stage_counts', {})
+                        counts[stage] = int(counts.get(stage, 0)) + 1
+            stages = [item['stage'] for item in variant_failures]
+            stage = (
+                stages[0] if len(set(stages)) == 1 and stages
+                else 'RAY_PATH_EXHAUSTED' if is_target_ray
+                else 'PLANNING_FAILURE')
+            failures.append({
+                'aim': variant_name,
+                'stage': stage,
+                'detail': (
+                    'all %d geometry-valid solutions failed motion planning'
+                    % len(variant_failures)),
+                'solution_failures': variant_failures,
+                'ray_ik_reports': solver_reports,
+            })
         raise CandidatePlanningError(
             'AIM_VARIANTS_EXHAUSTED',
             'all target-aim variants failed: %s' % (
@@ -2125,6 +2510,7 @@ class TesseractBackend:
             'candidate_attempts': 0,
             'exact_aim_attempts': 0,
             'fallback_aim_attempts': 0,
+            'ray_ik_solver_attempts': 0,
             'failure_stage_counts': {},
             'candidate_failures': [],
             'attempted_ray_ids': [],
@@ -2252,7 +2638,8 @@ class TesseractBackend:
                  aim_fallback_used, aim_offset_deg) = accepted
                 selected.append({
                     'id': int(candidate['id']),
-                    'camera_position_m': candidate['camera_position_m'],
+                    'camera_position_m': selected_candidate[
+                        'camera_position_m'],
                     'look_direction': selected_candidate['look_direction'],
                     'nominal_look_direction': candidate['look_direction'],
                     'aim_fallback_used': bool(aim_fallback_used),
@@ -2261,7 +2648,7 @@ class TesseractBackend:
                         'aim_attempt_diagnostics', {}),
                     'roll_rad': roll,
                     **{
-                        key: candidate[key]
+                        key: selected_candidate[key]
                         for key in (
                             'view_selection_policy',
                             'view_selection_requested_policy',
@@ -2275,7 +2662,7 @@ class TesseractBackend:
                             'nbv_marginal_information_fraction',
                             'coverage_score',
                         )
-                        if key in candidate
+                        if key in selected_candidate
                     },
                 })
                 segments.append({
@@ -2324,6 +2711,14 @@ class TesseractBackend:
                 except (ContractError, RuntimeError, ValueError) as error:
                     failures[int(candidate['id'])] = str(error)
                     diagnostics = self.last_planning_diagnostics
+                    aim_failures = [dict(item) for item in getattr(
+                        error, 'evidence', ())]
+                    permanent_endpoint_failure = bool(
+                        aim_failures
+                        and all(
+                            str(item.get('stage', ''))
+                            in PERMANENT_ENDPOINT_FAILURE_STAGES
+                            for item in aim_failures))
                     if ray_id is not None:
                         ray_counts = diagnostics[
                             'ray_failure_stage_counts'].setdefault(
@@ -2341,8 +2736,9 @@ class TesseractBackend:
                                 candidate['camera_position_m']),
                             'stage': str(getattr(
                                 error, 'stage', 'PLANNING_FAILURE')),
-                            'aim_failures': [dict(item) for item in getattr(
-                                error, 'evidence', ())],
+                            'aim_failures': aim_failures,
+                            'permanent_endpoint_failure': bool(
+                                permanent_endpoint_failure),
                             'detail': str(error),
                         })
                     next_pending.append(candidate)
@@ -2351,7 +2747,8 @@ class TesseractBackend:
                  aim_fallback_used, aim_offset_deg) = accepted
                 selected.append({
                     'id': int(candidate['id']),
-                    'camera_position_m': candidate['camera_position_m'],
+                    'camera_position_m': selected_candidate[
+                        'camera_position_m'],
                     'look_direction': selected_candidate['look_direction'],
                     'nominal_look_direction': candidate['look_direction'],
                     'aim_fallback_used': bool(aim_fallback_used),
@@ -2360,7 +2757,7 @@ class TesseractBackend:
                         'aim_attempt_diagnostics', {}),
                     'roll_rad': roll,
                     **{
-                        key: candidate[key]
+                        key: selected_candidate[key]
                         for key in (
                             'view_selection_policy',
                             'view_selection_requested_policy',
@@ -2381,21 +2778,22 @@ class TesseractBackend:
                             'ray_probe_index',
                             'ray_probe_phase',
                         )
-                        if key in candidate
+                        if key in selected_candidate
                     },
                 })
                 self.last_planning_diagnostics['selected_candidate'] = {
                     'id': int(candidate['id']),
                     'nbv_rank': int(candidate.get('nbv_rank', 0)),
-                    'camera_position_m': list(candidate['camera_position_m']),
+                    'camera_position_m': list(
+                        selected_candidate['camera_position_m']),
                     'aim_fallback_used': bool(aim_fallback_used),
                     'aim_offset_deg': float(aim_offset_deg),
                     **{
-                        key: candidate[key]
+                        key: selected_candidate[key]
                         for key in (
                             'ray_id', 'ray_standoff_m', 'ray_probe_index',
                             'ray_probe_phase')
-                        if key in candidate
+                        if key in selected_candidate
                     },
                 }
                 segments.append({
@@ -2515,6 +2913,8 @@ class Worker:
                     'request deterministic seed %d does not match worker seed %d'
                     % (requested_seed, self.backend.deterministic_seed))
             selected, segments = self.backend.plan(request)
+            finalize_ray_endpoint_diagnostics(
+                request, self.backend.last_planning_diagnostics)
             binding = {
                 'request_sha256': request['request_sha256'],
                 'plan_kind': request['plan_kind'],
@@ -2561,6 +2961,9 @@ class Worker:
         except (
                 BackendUnavailable, ContractError, KeyError, OSError,
                 RuntimeError, ValueError) as error:
+            diagnostics = getattr(
+                self.backend, 'last_planning_diagnostics', {})
+            finalize_ray_endpoint_diagnostics(request, diagnostics)
             response = {
                 'schema_version': SCHEMA_VERSION,
                 'plan_kind': request.get('plan_kind', ''),
@@ -2572,11 +2975,10 @@ class Worker:
                 'backend_version': getattr(self.backend, 'version', 'unavailable'),
                 'rejection_codes': [worker_rejection_code(
                     error,
-                    getattr(self.backend, 'last_planning_diagnostics', {}),
+                    diagnostics,
                 )],
                 'diagnostic': str(error),
-                'planning_diagnostics': dict(getattr(
-                    self.backend, 'last_planning_diagnostics', {})),
+                'planning_diagnostics': dict(diagnostics),
             }
         response = attach_digest(response, 'response_sha256')
         self.spool.write('responses', request_id, response)

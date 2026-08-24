@@ -45,8 +45,9 @@ cd /home/prl/Piper_arm/AI_perception_tests
 groundingdino_test/envs/grounded_sam2_py310/bin/python test_sam2_live_worker.py
 ```
 
-The SAM2 tests cover multi-object propagation, empty-target recovery, semantic reseeding, and
-reduced-resolution inference with native-resolution mask output.
+The SAM2 tests cover multi-object propagation, empty-target recovery, trusted semantic reseeding,
+bounded history without prediction-to-prompt promotion, and reduced-resolution inference with
+native-resolution mask output.
 
 ## Offline captures
 

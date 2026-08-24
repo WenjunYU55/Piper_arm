@@ -11,9 +11,11 @@ hardware_qualification_scope: >-
   configured_home_direct_joint_move policy. Physical acceptance remains at 5
   percent; higher speeds require separate dynamic characterization.
 qualification_reason: >-
-  The generated model contains conservative L515 housing, mount, connector, and local strain-relief
-  envelopes. Link1, link2, and link5 use hash-verified overlapping 30 mm longitudinal pieces so
-  convexification no longer wraps each complete concave link in one hull. Mode-0 FK, free
+  The generated model contains the exact installed camera-holder/L515 visual surfaces assembled
+  in gripper_base coordinates, split into hash-verified 30 mm XY cells before convexification,
+  plus conservative connector/local strain-relief envelopes. Link1, link2, and link5 use
+  hash-verified overlapping 30 mm longitudinal pieces so convexification no longer wraps each
+  complete concave link in one hull. Mode-0 FK, free
   six-joint/J6 motion, finite ISP output, bounded adaptive exact-path validation, a
   clear-endpoints/midpoint-collision OMPL detour, an all-zero acquisition, and the recorded compact
   folded start all pass under pinned OMPL seed 42 in the isolated worker. The compact-start
@@ -27,16 +29,20 @@ qualification_reason: >-
   remains an explicit physical routing and operator-clearance control.
 robot_collision_source: >-
   Detailed PiPER STL meshes; link1, link2, and link5 are deterministically divided into
-  overlapping 30 mm longitudinal pieces before Tesseract convexifies each piece.
+  overlapping 30 mm longitudinal pieces. The installed camera_holder and l515_visual meshes are
+  transformed from their locked URDF visual poses into one gripper_base-frame collision surface
+  and divided into overlapping 30 mm XY cells. Tesseract convexifies each individual piece.
 collision_mesh_decomposition:
-  generator: longitudinal_triangle_slab_v1
+  generator: longitudinal_triangle_slab_v1+installed_visual_grid_v1
   manifest_uri: package://piper_description/meshes/planning_30mm/collision_mesh_manifest.json
-  manifest_sha256: 237c06f03ef248c535b28fbf588e65160325a5f8f48632a9f0237e59c7a10956
+  manifest_sha256: 695f812a9597117b133b0439cd4f0cbbb7d1cb84aea713ecddc7dd04eb7e1526
   mesh_uri_prefix: package://piper_description/meshes/planning_30mm
   containment_policy: >-
-    Every source triangle is copied to every longitudinal slab intersected by its local-axis
-    extent. Tesseract convexifies the individual overlapping pieces; source surface triangles
-    are never discarded.
+    Every source triangle is copied to every longitudinal slab or XY cell intersected by its
+    local-axis extent. Tesseract convexifies the individual overlapping pieces; source surface
+    triangles are never discarded. The camera assembly source retains every triangle of both
+    installed visual meshes after applying their exact fixed-joint, visual-origin and scale
+    transforms.
 configured_home_direct_joint_move:
   enabled: true
   plan_kind: RETURN_HOME

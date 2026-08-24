@@ -53,8 +53,9 @@ def test_builder_adds_validated_attached_envelope(tmp_path):
         }],
     }), encoding='utf-8')
     output = tmp_path / 'piper.urdf'
+    description = root / 'piper_ros_foxy/src/piper_description'
     build_planning_urdf(
-        root / 'piper_ros_foxy/src/piper_description/urdf/piper_description.xacro',
+        description / 'urdf/piper_description.xacro',
         root / 'L515_camera/calibration/hand_eye/session_20260808_straight_mount/'
         'calibration_result.yaml',
         manifest,
@@ -87,3 +88,38 @@ def test_builder_rejects_nonpositive_envelope_size(tmp_path, size):
             manifest,
             tmp_path / 'piper.urdf',
         )
+
+
+def test_production_builder_uses_decomposed_installed_l515_assembly(tmp_path):
+    root = Path(__file__).resolve().parents[4]
+    output = tmp_path / 'piper.urdf'
+    build_planning_urdf(
+        root / 'piper_ros_foxy/src/piper_description/urdf/piper_description.xacro',
+        root / 'L515_camera/calibration/hand_eye/session_20260808_straight_mount/'
+        'calibration_result.yaml',
+        root / 'piper_ros_foxy/src/piper_tesseract_foxy/model/'
+        'collision_model.yaml',
+        output,
+    )
+    tree = ET.parse(str(output))
+    links = {item.get('name'): item for item in tree.getroot().findall('link')}
+    joints = {
+        item.get('name'): item for item in tree.getroot().findall('joint')
+    }
+    assembly = links['l515_attached_assembly']
+    meshes = assembly.findall('collision/geometry/mesh')
+    assert len(meshes) == 17
+    assert all(
+        mesh.get('filename').startswith(
+            'package://piper_description/meshes/planning_30mm/'
+            'l515_attached_assembly_cell_')
+        for mesh in meshes
+    )
+    assert all(
+        mesh.get('filename') !=
+        'package://piper_description/meshes/l515_attached_assembly.STL'
+        for mesh in meshes
+    )
+    mount = joints['gripper_base_to_l515_attached_assembly']
+    assert mount.find('parent').get('link') == 'gripper_base'
+    assert mount.find('child').get('link') == 'l515_attached_assembly'

@@ -289,6 +289,13 @@ def test_reversed_physical_gripper_and_l515_visual_mount_are_explicit():
     )
 
 
+def test_generated_l515_collision_source_does_not_change_live_tf():
+    root = ET.parse(DESCRIPTION_ROOT / "urdf" / "piper_description.xacro").getroot()
+    links = {link.attrib["name"]: link for link in root.findall("link")}
+    assert "l515_attached_assembly" not in links
+    assert (DESCRIPTION_ROOT / "meshes" / "l515_attached_assembly.STL").is_file()
+
+
 def test_deployed_camera_optical_frame_matches_l515_depth_datum_and_factory_extrinsic():
     root = ET.parse(DESCRIPTION_ROOT / "urdf" / "piper_description.xacro").getroot()
     joints = {joint.attrib["name"]: joint for joint in root.findall("joint")}

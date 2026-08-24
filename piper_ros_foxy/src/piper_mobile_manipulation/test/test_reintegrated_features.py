@@ -234,7 +234,7 @@ def test_startup_wrist_bridge_advances_despite_nonowned_joint_residual():
 
 
 def test_startup_wrist_home_settle_proves_only_stationary_j6():
-    first = np.asarray([0.00, -0.048, 0.033, 0.00, 0.39, -0.020])
+    first = np.asarray([0.00, -0.048, 0.033, 0.00, 0.39, -0.031])
     second = np.asarray([0.31, 0.000, 0.000, -0.02, 0.35, -0.020])
     target = np.asarray([0.00, -0.048, 0.033, 0.00, 0.39, 0.000])
     executor = SimpleNamespace(
@@ -260,6 +260,34 @@ def test_startup_wrist_home_settle_proves_only_stationary_j6():
     executor.updated['joints'] = 2.0
     assert ScanViewpointExecutorNode.home_joints_settled(executor)
     assert executor.home_settle_previous_joints == pytest.approx(second)
+
+
+def test_ordinary_home_retains_configured_broad_tolerance():
+    first = np.asarray([0.00, 0.00, 0.00, 0.00, 0.00, -0.19])
+    second = first.copy()
+    target = np.zeros(6)
+    executor = SimpleNamespace(
+        latest_joint_state=SimpleNamespace(position=first.tolist()),
+        updated={'joints': 1.0},
+        command_target=target,
+        home_settle_previous_joints=None,
+        home_settle_last_joint_update=-1e9,
+        home_settle_last_sample_ok=False,
+        fresh=lambda key, timeout: key == 'joints' and timeout == 1.0,
+        current_joints=lambda: np.asarray(
+            executor.latest_joint_state.position, dtype=float),
+        is_startup_wrist_direct=lambda: False,
+        get_parameter=lambda name: SimpleNamespace(value={
+            'home_joint_feedback_timeout_sec': 1.0,
+            'home_goal_tolerance_rad': 0.2,
+            'home_motion_tolerance_rad': 0.3,
+        }[name]),
+    )
+
+    assert not ScanViewpointExecutorNode.home_joints_settled(executor)
+    executor.latest_joint_state.position = second.tolist()
+    executor.updated['joints'] = 2.0
+    assert ScanViewpointExecutorNode.home_joints_settled(executor)
 
 
 def test_startup_wrist_settle_publishes_no_intermediate_hold():

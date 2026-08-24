@@ -252,7 +252,7 @@ class HeavyModelWorker:
                         "role": "obstacle",
                         "label": str(obstacle.get("label", "unknown")),
                         "confidence": float(obstacle.get("confidence", 0.0)),
-                        "unsafe": bool(obstacle.get("unsafe", True)),
+                        "unsafe": bool(obstacle.get("unsafe", False)),
                         "candidate_movable": bool(obstacle.get("candidate_movable", False)),
                         "closer_than_target": bool(obstacle.get("closer_than_target", False)),
                         "mask_file": object_file,
@@ -262,7 +262,7 @@ class HeavyModelWorker:
                 all_obstacle_mask[obstacle_binary] = 255
                 if obstacle.get("candidate_movable", False):
                     movable_mask[obstacle_binary] = 255
-                if obstacle.get("unsafe", True):
+                if obstacle.get("unsafe", False):
                     unsafe_mask[obstacle_binary] = 255
             cv2.imwrite(str(response_tmp / "candidate_movable_obstacle_mask.png"), movable_mask)
             cv2.imwrite(str(response_tmp / "unsafe_obstacle_mask.png"), unsafe_mask)
@@ -289,7 +289,7 @@ class HeavyModelWorker:
                         for item in obstacle_records
                     ],
                     "unsafe_obstacle_count": sum(
-                        1 for item in obstacle_records if item.get("unsafe", True)),
+                        1 for item in obstacle_records if item.get("unsafe", False)),
                 }
             )
             atomic_yaml(response_tmp / "result.yaml", payload)

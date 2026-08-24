@@ -1,0 +1,45 @@
+status: passed
+validation:
+  board:
+    squares_x: 5
+    squares_y: 5
+    square_length_m: 0.017
+    marker_length_m: 0.012
+    dictionary: DICT_4X4_50
+  frames_per_pose: 30
+  minimum_poses: 5
+  stationary_duration_sec: 0.75
+  stationary_position_tolerance_rad: 0.001
+  base_frame: base_link
+  camera_frame: camera_color_optical_frame
+  stationary_noise_only: true
+limits:
+  translation_mm: 15.0
+  rotation_deg: 1.5
+reference_position_m:
+- 0.39356784800259037
+- 0.01588446869320141
+- 0.004779593221290596
+measurements:
+- index: 1
+  position_m:
+  - 0.39356784800259037
+  - 0.01588446869320141
+  - 0.004779593221290596
+  quaternion_xyzw:
+  - -0.2142971251490906
+  - 0.2354993360334092
+  - 0.6744392585681239
+  - -0.6661444973748097
+  translation_error_mm: 0.0
+  rotation_error_deg: 3.626890634772256e-14
+  reprojection_rms_px: 0.15135502414722163
+  passed: true
+  within_pose_noise:
+    frame_count: 30
+    translation_rms_mm: 0.27713326250115894
+    translation_max_mm: 0.6049726830970087
+    rotation_rms_deg: 0.09344615549779683
+    rotation_max_deg: 0.21814664530097633
+    reprojection_mean_px: 0.15135502414722163
+    reprojection_max_px: 0.17401102914653152

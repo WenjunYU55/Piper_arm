@@ -33,4 +33,10 @@
   <disable_collisions link1="l515_mount_envelope" link2="gripper_base" reason="Rigid attachment"/>
   <disable_collisions link1="l515_mount_envelope" link2="link7" reason="Rigid attachment"/>
   <disable_collisions link1="l515_mount_envelope" link2="link8" reason="Rigid attachment"/>
+  <disable_collisions link1="l515_attached_assembly" link2="l515_camera_cable_envelope" reason="Rigid attachment"/>
+  <disable_collisions link1="l515_attached_assembly" link2="l515_mount_envelope" reason="Rigid attachment"/>
+  <disable_collisions link1="l515_attached_assembly" link2="link6" reason="Rigid attachment"/>
+  <disable_collisions link1="l515_attached_assembly" link2="gripper_base" reason="Rigid attachment"/>
+  <disable_collisions link1="l515_attached_assembly" link2="link7" reason="Rigid attachment"/>
+  <disable_collisions link1="l515_attached_assembly" link2="link8" reason="Rigid attachment"/>
 </robot>

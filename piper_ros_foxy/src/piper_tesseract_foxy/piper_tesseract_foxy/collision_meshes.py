@@ -14,6 +14,9 @@ import json
 import math
 from pathlib import Path
 import struct
+import xml.etree.ElementTree as ET
+
+import numpy as np
 
 
 AXIS_INDEX = {'x': 0, 'y': 1, 'z': 2}
@@ -61,6 +64,157 @@ def write_binary_stl(path, records, label):
     header = header[:80].ljust(80, b'\0')
     output = header + struct.pack('<I', len(records)) + b''.join(records)
     Path(path).write_bytes(output)
+
+
+def _rpy_transform(xyz, rpy):
+    """Return the URDF fixed-axis transform for one origin element."""
+    roll, pitch, yaw = (float(value) for value in rpy)
+    cr, sr = math.cos(roll), math.sin(roll)
+    cp, sp = math.cos(pitch), math.sin(pitch)
+    cy, sy = math.cos(yaw), math.sin(yaw)
+    rotation_x = np.asarray([
+        [1.0, 0.0, 0.0],
+        [0.0, cr, -sr],
+        [0.0, sr, cr],
+    ])
+    rotation_y = np.asarray([
+        [cp, 0.0, sp],
+        [0.0, 1.0, 0.0],
+        [-sp, 0.0, cp],
+    ])
+    rotation_z = np.asarray([
+        [cy, -sy, 0.0],
+        [sy, cy, 0.0],
+        [0.0, 0.0, 1.0],
+    ])
+    transform = np.eye(4)
+    transform[:3, :3] = rotation_z @ rotation_y @ rotation_x
+    transform[:3, 3] = np.asarray(xyz, dtype=float)
+    return transform
+
+
+def _origin_transform(origin):
+    if origin is None:
+        return np.eye(4)
+    xyz = [float(value) for value in origin.get('xyz', '0 0 0').split()]
+    rpy = [float(value) for value in origin.get('rpy', '0 0 0').split()]
+    if len(xyz) != 3 or len(rpy) != 3:
+        raise ValueError(
+            'URDF origin must contain three xyz and three rpy values')
+    return _rpy_transform(xyz, rpy)
+
+
+def _fixed_link_transform(root, base_link, child_link):
+    joints = {}
+    for joint in root.findall('joint'):
+        parent = joint.find('parent')
+        child = joint.find('child')
+        if parent is None or child is None:
+            continue
+        joints[str(child.get('link'))] = (
+            str(parent.get('link')),
+            _origin_transform(joint.find('origin')),
+        )
+    transform = np.eye(4)
+    current = str(child_link)
+    visited = set()
+    while current != str(base_link):
+        if current in visited or current not in joints:
+            raise ValueError(
+                'no fixed URDF chain from %s to %s' % (base_link, child_link))
+        visited.add(current)
+        parent, parent_from_child = joints[current]
+        transform = parent_from_child @ transform
+        current = parent
+    return transform
+
+
+def _transformed_triangle_records(path, transform, scale):
+    records = []
+    rotation = np.asarray(transform, dtype=float)[:3, :3]
+    translation = np.asarray(transform, dtype=float)[:3, 3]
+    scale_values = np.asarray(scale, dtype=float)
+    for record in read_binary_stl(path):
+        values = TRIANGLE_STRUCT.unpack(record)
+        vertices = np.asarray([
+            values[3:6], values[6:9], values[9:12],
+        ], dtype=float)
+        vertices = (rotation @ (vertices * scale_values).T).T + translation
+        normal = np.cross(vertices[1] - vertices[0], vertices[2] - vertices[0])
+        length = float(np.linalg.norm(normal))
+        if length > 0.0:
+            normal /= length
+        else:
+            normal = np.zeros(3)
+        records.append(TRIANGLE_STRUCT.pack(
+            *(normal.tolist()
+              + vertices[0].tolist()
+              + vertices[1].tolist()
+              + vertices[2].tolist()
+              + [int(values[12])]),
+        ))
+    return records
+
+
+def build_visual_assembly_stl(
+        urdf_path, output_path, base_link, visual_links):
+    """Merge installed visual meshes into one deterministic base-frame STL."""
+    urdf_path = Path(urdf_path)
+    tree = ET.parse(str(urdf_path))
+    root = tree.getroot()
+    links = {
+        str(link.get('name')): link for link in root.findall('link')
+        if link.get('name')
+    }
+    package_root = urdf_path.resolve().parents[1]
+    records = []
+    sources = []
+    for link_name in visual_links:
+        if link_name not in links:
+            raise ValueError(
+                'assembly names unknown visual link %s' % link_name)
+        visual = links[link_name].find('visual')
+        mesh = None if visual is None else visual.find('geometry/mesh')
+        if mesh is None:
+            raise ValueError('%s has no visual mesh' % link_name)
+        uri = str(mesh.get('filename', ''))
+        prefix = 'package://piper_description/'
+        if not uri.startswith(prefix):
+            raise ValueError(
+                '%s visual mesh is outside piper_description' % link_name)
+        source = (package_root / uri[len(prefix):]).resolve()
+        if package_root not in source.parents:
+            raise ValueError(
+                '%s visual mesh escapes piper_description' % link_name)
+        scale = [
+            float(value)
+            for value in mesh.get('scale', '1 1 1').split()
+        ]
+        if len(scale) != 3 or not all(
+                math.isfinite(value) and value > 0.0 for value in scale):
+            raise ValueError('%s visual mesh scale is invalid' % link_name)
+        transform = (
+            _fixed_link_transform(root, base_link, link_name)
+            @ _origin_transform(visual.find('origin'))
+        )
+        transformed = _transformed_triangle_records(source, transform, scale)
+        records.extend(transformed)
+        sources.append({
+            'link': str(link_name),
+            'mesh_uri': uri,
+            'mesh_sha256': sha256_file(source),
+            'triangle_count': len(transformed),
+            'scale': scale,
+            'base_from_mesh': np.asarray(transform, dtype=float).tolist(),
+        })
+    write_binary_stl(output_path, records, 'installed L515 assembly')
+    return {
+        'base_link': str(base_link),
+        'visual_links': [str(value) for value in visual_links],
+        'sources': sources,
+        'triangle_count': len(records),
+        'sha256': sha256_file(output_path),
+    }
 
 
 def split_binary_stl(source_path, output_dir, link_name, axis,
@@ -120,6 +274,90 @@ def split_binary_stl(source_path, output_dir, link_name, axis,
     }
 
 
+def split_binary_stl_grid(
+        source_path, output_dir, link_name, axes, slab_thickness_m):
+    """Split a concave mesh on several axes without dropping triangles."""
+    axes = tuple(str(value) for value in axes)
+    thicknesses = tuple(float(value) for value in slab_thickness_m)
+    if not axes or len(axes) != len(thicknesses):
+        raise ValueError(
+            'axes and slab_thickness_m must be nonempty and equal length')
+    if len(set(axes)) != len(axes) or any(
+            axis not in AXIS_INDEX for axis in axes):
+        raise ValueError('axes must contain unique x, y, or z values')
+    if any(
+            not math.isfinite(value) or value <= 0.0
+            for value in thicknesses):
+        raise ValueError('slab_thickness_m values must be positive and finite')
+    records = read_binary_stl(source_path)
+    if not records:
+        raise ValueError('%s contains no triangles' % source_path)
+    per_axis_bounds = [
+        [triangle_axis_bounds(record, AXIS_INDEX[axis]) for record in records]
+        for axis in axes
+    ]
+    mesh_mins = [
+        min(item[0] for item in bounds) for bounds in per_axis_bounds]
+    mesh_maxs = [
+        max(item[1] for item in bounds) for bounds in per_axis_bounds]
+    counts = [
+        max(1, int(math.ceil((maximum - minimum) / thickness)))
+        for minimum, maximum, thickness in zip(
+            mesh_mins, mesh_maxs, thicknesses)
+    ]
+    cells = {}
+    epsilon = 1e-9
+    assignments = 0
+    for record_index, record in enumerate(records):
+        ranges = []
+        for axis_index, thickness in enumerate(thicknesses):
+            triangle_min, triangle_max = (
+                per_axis_bounds[axis_index][record_index])
+            first = int(math.floor(max(
+                0.0, triangle_min - mesh_mins[axis_index] - epsilon)
+                / thickness))
+            last = int(math.floor(max(
+                0.0, triangle_max - mesh_mins[axis_index] + epsilon)
+                / thickness))
+            first = min(max(first, 0), counts[axis_index] - 1)
+            last = min(max(last, first), counts[axis_index] - 1)
+            ranges.append(range(first, last + 1))
+        indices = [()]
+        for values in ranges:
+            indices = [
+                prefix + (value,)
+                for prefix in indices
+                for value in values
+            ]
+        for index in indices:
+            cells.setdefault(index, []).append(record)
+            assignments += 1
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    pieces = []
+    for index, cell_records in sorted(cells.items()):
+        suffix = '_'.join('%03d' % value for value in index)
+        name = '%s_cell_%s.stl' % (link_name, suffix)
+        path = output_dir / name
+        write_binary_stl(path, cell_records, '%s %s' % (link_name, suffix))
+        pieces.append({
+            'filename': name,
+            'grid_index': list(index),
+            'sha256': sha256_file(path),
+            'triangle_count': len(cell_records),
+        })
+    return {
+        'link': str(link_name),
+        'axes': list(axes),
+        'slab_thickness_m': list(thicknesses),
+        'source_sha256': sha256_file(source_path),
+        'source_triangle_count': len(records),
+        'triangle_assignments': assignments,
+        'pieces': pieces,
+    }
+
+
 def generate_default_assets(mesh_root, output_dir, thickness=0.02):
     """Generate the reviewed PiPER folded-arm decomposition candidates."""
     specifications = (
@@ -145,13 +383,36 @@ def main(argv=None):
     parser.add_argument('--output-dir', required=True)
     parser.add_argument('--slab-thickness-m', type=float, default=0.02)
     parser.add_argument('--manifest-output')
+    parser.add_argument('--xacro')
+    parser.add_argument('--assembly-output')
     args = parser.parse_args(argv)
     result = generate_default_assets(
         args.mesh_root, args.output_dir, args.slab_thickness_m)
+    assembly = None
+    if bool(args.xacro) != bool(args.assembly_output):
+        parser.error('--xacro and --assembly-output must be supplied together')
+    if args.xacro:
+        assembly = build_visual_assembly_stl(
+            args.xacro,
+            args.assembly_output,
+            'gripper_base',
+            ('camera_holder', 'l515_visual'),
+        )
+        entry = split_binary_stl_grid(
+            args.assembly_output,
+            args.output_dir,
+            'l515_attached_assembly',
+            ('x', 'y'),
+            (args.slab_thickness_m, args.slab_thickness_m),
+        )
+        entry['assembly'] = assembly
+        result.append(entry)
     if args.manifest_output:
         document = {
             'schema_version': 1,
-            'generator': 'longitudinal_triangle_slab_v1',
+            'generator': (
+                'longitudinal_triangle_slab_v1+'
+                'installed_visual_grid_v1'),
             'links': result,
         }
         Path(args.manifest_output).write_text(

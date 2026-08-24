@@ -130,42 +130,28 @@ def decoded_ray_id(viewpoint_id):
     return (value - RAY_PROBE_ID_BASE) // RAY_PROBE_ID_STRIDE
 
 
-def _distinct_standoffs(values, tolerance_m):
-    selected = []
-    for value in values:
-        candidate = float(value)
-        if not any(abs(candidate - previous) <= tolerance_m
-                   for previous in selected):
-            selected.append(candidate)
-    return selected
-
-
-def expand_shortlisted_rays(
-        candidates, start_camera_position, target_center,
-        standoff_tolerance_m=0.005):
+def bind_shortlisted_ray_intervals(
+        candidates, start_camera_position, target_center):
     """
-    Expand only shortlisted rays into bounded exact Tesseract endpoints.
+    Bind each shortlisted ray to one bounded Tesseract search interval.
 
-    Keep every probe for one information-ranked ray adjacent.  The worker can
-    therefore exhaust that direction before attempting the next ray without
-    changing the existing exact-pose Tesseract contract or restoring the
-    planner's former full radial lattice.
+    The representative point keeps the existing request/provenance contract,
+    but it is not the only endpoint the worker may select.  The isolated
+    worker solves for a continuous standoff inside this interval while
+    preserving the ray direction and target-facing aim.
     """
     start = np.asarray(start_camera_position, dtype=float)
     target = np.asarray(target_center, dtype=float)
-    tolerance = float(standoff_tolerance_m)
     if start.shape != (3,) or not np.all(np.isfinite(start)):
         raise ValueError('ray expansion camera start is invalid')
     if target.shape != (3,) or not np.all(np.isfinite(target)):
         raise ValueError('ray expansion target center is invalid')
-    if not math.isfinite(tolerance) or tolerance < 0.0:
-        raise ValueError('ray standoff tolerance is invalid')
 
-    expanded = []
+    bound = []
     for item in candidates:
         candidate = dict(item)
         if candidate.get('candidate_geometry') != 'target_ray':
-            expanded.append(candidate)
+            bound.append(candidate)
             continue
         ray_id = int(candidate['ray_id'])
         direction = np.asarray(candidate.get('ray_direction'), dtype=float)
@@ -187,34 +173,17 @@ def expand_shortlisted_rays(
             raise ValueError('ray standoff interval is invalid')
         projected = float(np.dot(start - target, direction))
         primary = min(preferred_maximum, max(minimum, projected))
-        preferred_values = _distinct_standoffs(
-            (primary, minimum, preferred_maximum), tolerance)
-        reserve_values = _distinct_standoffs(
-            (
-                0.5 * (preferred_maximum + maximum),
-                maximum,
-            ) if maximum > preferred_maximum + tolerance else (),
-            tolerance,
-        )
-
-        def exact_probe(standoff, probe_index, phase):
-            result = dict(candidate)
-            result['id'] = ray_probe_id(ray_id, probe_index)
-            result['camera_position_m'] = (
-                target + direction * float(standoff)).tolist()
-            result['look_direction'] = (-direction).tolist()
-            result['ray_id'] = ray_id
-            result['ray_standoff_m'] = float(standoff)
-            result['ray_probe_index'] = int(probe_index)
-            result['ray_probe_phase'] = str(phase)
-            result['ray_direction'] = direction.tolist()
-            return result
-
-        for probe_index, standoff in enumerate(preferred_values):
-            expanded.append(exact_probe(
-                standoff, probe_index, 'preferred'))
-        reserve_offset = len(preferred_values)
-        for offset, standoff in enumerate(reserve_values):
-            expanded.append(exact_probe(
-                standoff, reserve_offset + offset, 'reserve'))
-    return expanded
+        # Preserve the current-pose projection as the first numerical seed.
+        # The worker owns the rest of the one-dimensional interval search.
+        representative = primary
+        candidate['id'] = ray_probe_id(ray_id, 0)
+        candidate['camera_position_m'] = (
+            target + direction * float(representative)).tolist()
+        candidate['look_direction'] = (-direction).tolist()
+        candidate['ray_id'] = ray_id
+        candidate['ray_standoff_m'] = float(representative)
+        candidate['ray_probe_index'] = 0
+        candidate['ray_probe_phase'] = 'interval_search'
+        candidate['ray_direction'] = direction.tolist()
+        bound.append(candidate)
+    return bound

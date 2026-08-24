@@ -1,0 +1,55 @@
+schema_version: 1
+name: straight_l515_fixed_hand_eye_sequence_20260812
+joint_names: [joint1, joint2, joint3, joint4, joint5, joint6]
+source_session: session_20260812_recalibration
+source_note: >-
+  Repeatable poses physically used with the straight L515 mount and fixed
+  board on 2026-08-12. Poses with out-of-range J6 feedback were omitted. The
+  sequence crosses from positive to negative J6 only through neutral_transit.
+recommended_calibration_profile: {width: 1920, height: 1080, fps: 30}
+board:
+  squares_x: 5
+  squares_y: 5
+  square_length_m: 0.017
+  marker_length_m: 0.012
+  dictionary: DICT_4X4_50
+poses:
+  - id: fit_neutral_01
+    group: fitting
+    positions_rad: [-0.047814004, 1.102338692, -0.698771752, -0.007954464, 0.842440536, 0.000000000]
+  - id: fit_positive_01
+    group: fitting
+    positions_rad: [0.010693172, 1.580129852, -1.138412884, 0.027003312, 1.055030564, 0.009332540]
+  - id: validation_positive_01
+    group: validation
+    positions_rad: [0.279819204, 1.273673660, -0.981294776, -0.088231752, 0.877188984, 1.684863628]
+  - id: fit_positive_02
+    group: fitting
+    positions_rad: [0.598468752, 2.085970964, -1.499939784, -0.544776120, 1.193466148, 2.068579296]
+  - id: fit_positive_03
+    group: fitting
+    positions_rad: [0.710982552, 1.856460256, -1.380064616, -0.563580752, 1.167457144, 2.131883572]
+  - id: fit_positive_04
+    group: fitting
+    positions_rad: [0.708139180, 1.730846012, -1.268719564, -0.593357660, 1.139599076, 2.651522888]
+  - id: neutral_transit
+    capture: false
+    positions_rad: [-0.047814004, 1.102338692, -0.698771752, -0.007954464, 0.842440536, 0.000000000]
+  - id: fit_negative_01
+    group: fitting
+    positions_rad: [-0.377854484, 1.714117216, -1.219161160, 0.230557348, 0.841864884, -1.606103968]
+  - id: validation_negative_01
+    group: validation
+    positions_rad: [-0.443688140, 1.710506308, -0.940231600, 0.506538872, 0.661197376, -1.670001340]
+  - id: fit_negative_02
+    group: fitting
+    positions_rad: [-1.035615392, 1.295984536, -0.870595152, 0.681484748, 1.181848444, -1.736288540]
+  - id: fit_negative_03
+    group: fitting
+    positions_rad: [-0.774879924, 1.853250560, -1.208764536, 0.785730092, 1.051018444, -2.327849468]
+  - id: fit_negative_04
+    group: fitting
+    positions_rad: [-0.576524200, 2.230302620, -1.638078820, 0.673983828, 1.189872684, -2.724630692]
+  - id: fit_negative_05
+    group: fitting
+    positions_rad: [-0.922979484, 1.210648488, -1.019200588, 0.721710612, 1.158770032, -3.064684028]

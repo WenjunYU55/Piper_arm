@@ -51,6 +51,13 @@ class EmptyThenRecoverPredictor(FakePredictor):
 class ShiftOnInferencePredictor(FakePredictor):
     """Move every mask one column per propagated frame."""
 
+    def __init__(self):
+        self.initializations = 0
+
+    def init_state(self, **kwargs):
+        self.initializations += 1
+        return super().init_state(**kwargs)
+
     def infer_single_frame(self, state, frame_idx):
         state['masks'] = {
             key: np.roll(mask, 1, axis=1)
@@ -238,11 +245,12 @@ class Sam2LiveWorkerTest(unittest.TestCase):
             self.assertIsNotNone(worker.state)
             self.assertEqual(set(np.unique(ids)), {0, 2})
 
-    def test_rolling_reset_uses_mask_propagated_to_current_frame(self):
+    def test_history_bound_does_not_promote_propagated_mask_to_seed(self):
         with tempfile.TemporaryDirectory() as temporary:
             spool = Path(temporary)
             worker = Sam2LiveWorker(spool, device='cpu', max_session_frames=2)
-            worker.predictor = ShiftOnInferencePredictor()
+            predictor = ShiftOnInferencePredictor()
+            worker.predictor = predictor
             rgb = np.zeros((12, 16, 3), dtype=np.uint8)
             target = np.zeros((12, 16), dtype=np.uint8)
             target[4:8, 2:5] = 255
@@ -261,7 +269,53 @@ class Sam2LiveWorkerTest(unittest.TestCase):
             expected = np.zeros_like(target)
             expected[4:8, 4:7] = 255
             np.testing.assert_array_equal(mask, expected)
-            self.assertEqual(worker.session_frames, 1)
+            self.assertEqual(worker.session_frames, 3)
+            self.assertEqual(predictor.initializations, 1)
+            with (spool / 'results' / '0003' / 'result.yaml').open(
+                    'r', encoding='utf-8') as stream:
+                result = yaml.safe_load(stream)
+            self.assertFalse(result['prediction_promoted_to_conditioning'])
+
+    def test_predictor_history_compaction_retains_conditioning_and_recent_memory(self):
+        def records(indices):
+            return {index: 'frame-%d' % index for index in indices}
+
+        state = {
+            'images': torch.arange(6, dtype=torch.float32).reshape(6, 1),
+            'num_frames': 6,
+            'cached_features': records(range(6)),
+            'frames_already_tracked': records(range(6)),
+            'output_dict': {
+                'cond_frame_outputs': records([0]),
+                'non_cond_frame_outputs': records([1, 2, 3, 4, 5]),
+            },
+            'output_dict_per_obj': {0: {
+                'cond_frame_outputs': records([0]),
+                'non_cond_frame_outputs': records([1, 2, 3, 4, 5]),
+            }},
+            'temp_output_dict_per_obj': {0: {
+                'cond_frame_outputs': {},
+                'non_cond_frame_outputs': {},
+            }},
+            'point_inputs_per_obj': {0: {}},
+            'mask_inputs_per_obj': {0: records([0])},
+            'consolidated_frame_inds': {
+                'cond_frame_outputs': {0},
+                'non_cond_frame_outputs': {1, 2, 3, 4, 5},
+            },
+        }
+
+        retained = Sam2LiveWorker.compact_predictor_history(state, 3)
+
+        self.assertEqual(retained, 3)
+        self.assertEqual(state['num_frames'], 3)
+        self.assertEqual(state['images'].flatten().tolist(), [0.0, 4.0, 5.0])
+        self.assertEqual(state['output_dict']['cond_frame_outputs'], {0: 'frame-0'})
+        self.assertEqual(
+            state['output_dict']['non_cond_frame_outputs'],
+            {1: 'frame-4', 2: 'frame-5'},
+        )
+        self.assertEqual(state['consolidated_frame_inds']['cond_frame_outputs'], {0})
 
 
 if __name__ == '__main__':

@@ -1,15 +1,20 @@
 """Characterize single-flight heavy-refresh request retention."""
 
 import json
+from pathlib import Path
+import tempfile
 import time
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
+import cv2
+import yaml
 
 from piper_mobile_manipulation.heavy_refresh_bridge_node import (
     HeavyRefreshBridgeNode,
     masked_depth_range_diagnostic,
+    target_seed_allowed,
 )
 from piper_mobile_manipulation.scan_execution_modes import (
     heavy_refresh_status_action,
@@ -123,3 +128,44 @@ def test_mixed_or_insufficient_masked_depth_does_not_claim_too_far():
     assert masked_depth_range_diagnostic(
         mask, invalid, 4, 0.5, 1.20)['target_depth_status'] == (
             'INSUFFICIENT')
+
+
+def test_live_target_seed_requires_successful_semantics_and_existing_depth_gate():
+    assert target_seed_allowed('ok', {'target_depth_status': 'VALID'})
+    assert not target_seed_allowed('ok', {'target_depth_status': 'INSUFFICIENT'})
+    assert not target_seed_allowed('ok', {'target_depth_status': 'UNCHECKED'})
+    assert not target_seed_allowed('target_not_found', {
+        'target_depth_status': 'VALID'})
+
+
+def test_unqualified_target_is_removed_from_obstacle_only_seed_manifest():
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        response = root / 'heavy-result'
+        response.mkdir()
+        cv2.imwrite(str(response / 'rgb.jpg'), np.zeros((8, 8, 3), np.uint8))
+        target = np.zeros((8, 8), np.uint8)
+        target[1:4, 1:4] = 255
+        obstacle = np.zeros((8, 8), np.uint8)
+        obstacle[4:7, 4:7] = 255
+        cv2.imwrite(str(response / 'target.png'), target)
+        cv2.imwrite(str(response / 'obstacle.png'), obstacle)
+        live_spool = root / 'live'
+        statuses = []
+        bridge = SimpleNamespace(
+            get_parameter=lambda _name: SimpleNamespace(value=str(live_spool)),
+            publish_status=lambda state, **fields: statuses.append((state, fields)),
+        )
+        result = {'tracked_objects': [
+            {'object_id': 1, 'role': 'target', 'mask_file': 'target.png'},
+            {'object_id': 2, 'role': 'obstacle', 'mask_file': 'obstacle.png'},
+        ]}
+
+        assert HeavyRefreshBridgeNode.queue_sam2_live_seed(
+            bridge, response, result, include_target=False)
+
+        manifest = yaml.safe_load(
+            (live_spool / 'seeds' / response.name / 'seed.yaml').read_text())
+        assert [item['object_id'] for item in manifest['objects']] == [2]
+        assert not manifest['trusted_target_seed']
+        assert not manifest['target_validation']['semantic']

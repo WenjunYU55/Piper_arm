@@ -326,6 +326,21 @@ def test_rejected_view_is_filtered_without_incrementing_accepted_count():
     assert [item['index'] for item in remaining] == [2]
 
 
+def test_six_degree_accepted_view_floor_removes_only_redundant_ray():
+    target = {'x': 0.0, 'y': 0.0, 'z': 0.0}
+    accepted = [spherical_entry(180.0, 20.0)]
+    adjacent = dict(spherical_entry(184.0, 20.0), index=1)
+    distinct = dict(spherical_entry(190.0, 20.0), index=2)
+
+    remaining = filter_and_order_viewpoints(
+        [adjacent, distinct], accepted,
+        accepted_entries=accepted,
+        direction_target_center=target,
+        minimum_direction_separation_deg=6.0)
+
+    assert [item['index'] for item in remaining] == [2]
+
+
 def test_motion_limit_change_requires_persistence_and_cancels_on_recovery():
     class Limits:
         valid = True

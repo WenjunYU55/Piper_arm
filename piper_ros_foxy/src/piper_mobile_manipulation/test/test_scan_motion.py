@@ -56,6 +56,7 @@ from piper_mobile_manipulation.safety_evaluator import (
     SafetyMode,
 )
 from piper_mobile_manipulation.scan_viewpoint_executor_node import (
+    MAX_RGBD_CAPTURE_READINESS_RETRIES,
     bootstrap_abort_retrace_uses_static_scene,
     configured_home_endpoint_rejection,
     abort_return_home_blocker,
@@ -2039,6 +2040,38 @@ def test_capture_heavy_refresh_waits_for_idle_and_retries_only_once():
     assert 'one bounded retry' in events[-1][1]
 
 
+def test_successful_capture_refresh_starts_a_new_readiness_retry_epoch():
+    events = []
+    executor = SimpleNamespace(
+        state='WAITING_FOR_CAPTURE_REFRESH',
+        capture_heavy_refresh_request_id='scan-view-3-refresh',
+        capture_heavy_refresh_min_image_stamp_ns=10_000_000_000,
+        capture_heavy_refresh_publish_attempts=1,
+        capture_heavy_refresh_waiting_for_worker=False,
+        capture_rejection_reason='target depth invalid',
+        rgbd_capture_future=object(),
+        rgbd_capture_attempts=MAX_RGBD_CAPTURE_READINESS_RETRIES,
+        set_state=lambda state, reason: events.append(
+            ('state', state, reason)),
+        abort_motion=lambda reason: events.append(('abort', reason)),
+        reject_achieved_capture_view=lambda reason: events.append(
+            ('reject', reason)),
+    )
+    detected = SimpleNamespace(data=json.dumps({
+        'state': 'published',
+        'request_id': executor.capture_heavy_refresh_request_id,
+        'image_stamp': {'sec': 11, 'nanosec': 0},
+    }))
+
+    ScanViewpointExecutorNode.heavy_refresh_status_cb(executor, detected)
+
+    assert executor.rgbd_capture_future is None
+    assert executor.rgbd_capture_attempts == 0
+    assert executor.capture_heavy_refresh_request_id == 'scan-view-3-refresh'
+    assert events[0][0:2] == ('state', 'CAPTURING_RGBD')
+    assert not any(event[0] in ('abort', 'reject') for event in events)
+
+
 def test_correlated_acquisition_scene_may_age_during_its_exact_segment():
     health = SimpleNamespace(
         lifecycle_state='TRACKING',
@@ -2373,26 +2406,56 @@ def test_executor_streams_due_tesseract_samples_without_waiting_at_each_one():
     assert fake.last_stream_achieved_rate_hz == pytest.approx(1.0 / 0.101)
 
 
-def test_executor_aborts_instead_of_bursting_or_shortcutting_overdue_path():
+def test_executor_stretches_schedule_without_bursting_or_skipping_path():
+    published = []
     aborts = []
+    parameters = {
+        'trajectory_following_error_grace_sec': 1.0,
+        'trajectory_following_error_rad': 0.30,
+    }
     fake = SimpleNamespace(
         motion_started_at=0.0,
+        stream_last_tick_at=0.05,
+        stream_schedule_paused_sec=0.0,
+        stream_following_hold_started_at=None,
         command_target=None,
         path_index=0,
         current_path=[np.full(6, 0.01), np.full(6, 0.02)],
         current_path_times=[0.05, 0.10],
+        current_waypoint_error=0.0,
+        max_waypoint_error=0.0,
         dropped_command_samples=0,
+        command_sent_at=0.0,
+        command_samples_sent=0,
+        max_command_interval_sec=0.0,
+        stream_schedule_completion_logged=False,
+        last_stream_planned_duration_sec=0.0,
+        last_stream_actual_duration_sec=0.0,
+        last_stream_achieved_rate_hz=0.0,
         last_motion_status_at=0.0,
+        waypoint_started_at=None,
+        waypoint_last_progress_at=None,
+        waypoint_best_error=math.inf,
+        max_joint_error=lambda _target: 0.01,
+        total_joint_error=lambda _target: 0.01,
+        get_parameter=lambda name: SimpleNamespace(value=parameters[name]),
+        publish_joint_command=lambda value: published.append(
+            np.asarray(value).copy()),
         publish_status=lambda: None,
+        get_logger=lambda: SimpleNamespace(
+            info=lambda _message: None,
+            warning=lambda _message: None),
         abort_or_finish_captures=aborts.append,
     )
 
     ScanViewpointExecutorNode.streaming_moving_tick(fake, 0.101)
 
-    assert len(aborts) == 1
-    assert 'refusing to burst or shortcut' in aborts[0]
-    assert fake.path_index == 0
-    assert fake.dropped_command_samples == 1
+    assert aborts == []
+    assert len(published) == 1
+    np.testing.assert_allclose(published[0], np.full(6, 0.01))
+    assert fake.path_index == 1
+    assert fake.dropped_command_samples == 0
+    assert fake.stream_schedule_paused_sec == pytest.approx(0.051)
 
 
 def test_executor_holds_stream_until_feedback_catches_up():

@@ -63,6 +63,7 @@ class Sam2LiveWorker:
         self.objects = []
         self.last_frame_key = ""
         self.session_frames = 0
+        self.conditioning_source = ""
         self.tracking_state = "WAITING_FOR_SEED"
 
     def inference_image(self, image: np.ndarray, is_mask: bool = False) -> np.ndarray:
@@ -153,6 +154,73 @@ class Sam2LiveWorker:
         self.tracking_state = "TRACKING"
 
     @staticmethod
+    def compact_predictor_history(state: dict, maximum_frames: int) -> int:
+        """Bound SAM2 history without turning a propagated mask into a prompt.
+
+        The streaming predictor retains every input image even though temporal
+        inference only needs the conditioning frames and a short recent memory.
+        Re-keying those retained records keeps the original semantic conditioning
+        frame authoritative while bounding GPU/state growth.  No predicted mask is
+        added to ``cond_frame_outputs`` by this operation.
+        """
+        if not isinstance(state, dict):
+            return 0
+        images = state.get("images")
+        output_dict = state.get("output_dict")
+        if not isinstance(images, torch.Tensor) or not isinstance(output_dict, dict):
+            return int(state.get("num_frames", 0))
+        frame_count = int(images.shape[0])
+        maximum_frames = max(2, int(maximum_frames))
+        if frame_count <= maximum_frames:
+            return frame_count
+
+        conditioning = sorted(
+            int(index) for index in output_dict.get("cond_frame_outputs", {}))
+        non_conditioning = sorted(
+            int(index) for index in output_dict.get("non_cond_frame_outputs", {}))
+        recent_limit = max(1, maximum_frames - len(conditioning))
+        retained = sorted(set(conditioning + non_conditioning[-recent_limit:]))
+        if not retained or retained[-1] != frame_count - 1:
+            retained = sorted(set(retained + [frame_count - 1]))
+        # Conditioning frames are never discarded, so an unusual multi-prompt
+        # session may legitimately retain slightly more than the requested bound.
+        mapping = {old: new for new, old in enumerate(retained)}
+        indices = torch.as_tensor(retained, device=images.device, dtype=torch.long)
+        state["images"] = torch.index_select(images, 0, indices)
+        state["num_frames"] = len(retained)
+
+        def remap_dictionary(value):
+            if not isinstance(value, dict):
+                return value
+            return {
+                mapping[int(index)]: record
+                for index, record in value.items()
+                if int(index) in mapping
+            }
+
+        state["cached_features"] = remap_dictionary(
+            state.get("cached_features", {}))
+        state["frames_already_tracked"] = remap_dictionary(
+            state.get("frames_already_tracked", {}))
+        for key in ("cond_frame_outputs", "non_cond_frame_outputs"):
+            output_dict[key] = remap_dictionary(output_dict.get(key, {}))
+        for owner_key in ("output_dict_per_obj", "temp_output_dict_per_obj"):
+            for owner in state.get(owner_key, {}).values():
+                for key in ("cond_frame_outputs", "non_cond_frame_outputs"):
+                    owner[key] = remap_dictionary(owner.get(key, {}))
+        for owner_key in ("point_inputs_per_obj", "mask_inputs_per_obj"):
+            for object_index, records in list(state.get(owner_key, {}).items()):
+                state[owner_key][object_index] = remap_dictionary(records)
+        consolidated = state.get("consolidated_frame_inds", {})
+        for key in ("cond_frame_outputs", "non_cond_frame_outputs"):
+            consolidated[key] = {
+                mapping[int(index)]
+                for index in consolidated.get(key, set())
+                if int(index) in mapping
+            }
+        return len(retained)
+
+    @staticmethod
     def masks_from_logits(object_ids, logits) -> dict[int, np.ndarray]:
         return {
             int(object_id): (logits[index] > 0.0).detach().cpu().numpy().squeeze()
@@ -180,6 +248,7 @@ class Sam2LiveWorker:
             if mask is not None:
                 masks[int(record.get("object_id", 0))] = self.inference_image(mask, is_mask=True)
         self.reset(inference_rgb, masks, objects, seed.name)
+        self.conditioning_source = str(manifest.get("source", "semantic_seed"))
         # Frames captured before the new semantic seed are no longer useful and
         # must not be replayed into the recovered tracking session.
         for stale_frame in self.ready_directories(self.frames):
@@ -206,27 +275,13 @@ class Sam2LiveWorker:
             # Consume this frame and wait for a semantic seed instead of
             # retrying the same empty session forever.
             predictions = {}
-        elif self.session_frames >= self.max_session_frames:
-            # First propagate the old session onto this image.  Reusing
-            # ``last_masks`` directly here would apply masks expressed in the
-            # previous image coordinates to the current image.  That is mostly
-            # invisible with a static camera, but it is destructive for an
-            # eye-in-hand camera during fast motion.
-            predictions = self.infer_current_frame(inference_rgb)
-            if any(np.count_nonzero(mask) for mask in predictions.values()):
-                # Bound SAM2 memory by starting the new rolling session on the
-                # same image and with masks predicted for this image.
-                self.reset(inference_rgb, predictions, self.objects, frame.name)
-                predictions = dict(self.last_masks)
-            else:
-                self.last_masks = predictions
-                self.last_frame_key = frame.name
-                self.session_frames += 1
         else:
             predictions = self.infer_current_frame(inference_rgb)
             self.last_masks = predictions
             self.last_frame_key = frame.name
             self.session_frames += 1
+            self.compact_predictor_history(
+                self.state, self.max_session_frames)
         elapsed = time.perf_counter() - started
         result_tmp = self.results / (frame.name + ".tmp")
         result = self.results / frame.name
@@ -256,7 +311,7 @@ class Sam2LiveWorker:
             object_ids_image[prediction] = np.uint16(object_id)
             if record.get("role") == "obstacle":
                 all_obstacles |= prediction
-                if bool(record.get("unsafe", True)):
+                if bool(record.get("unsafe", False)):
                     unsafe_obstacles |= prediction
                 if bool(record.get("candidate_movable", False)):
                     movable_obstacles |= prediction
@@ -269,6 +324,8 @@ class Sam2LiveWorker:
             "frame_key": frame.name,
             "image_stamp": metadata.get("image_stamp", {}),
             "frame_id": metadata.get("frame_id", ""),
+            "arm_moving": bool(metadata.get("arm_moving", False)),
+            "camera_settled": bool(metadata.get("camera_settled", True)),
             "mask_area_px": int(np.count_nonzero(target_mask)),
             "object_count": len(result_objects),
             "objects": result_objects,
@@ -276,6 +333,10 @@ class Sam2LiveWorker:
             "inference_fps": float(1.0 / elapsed) if elapsed else 0.0,
             "device": self.device,
             "session_frames": self.session_frames,
+            "retained_session_frames": int(
+                self.state.get("num_frames", 0)) if self.state is not None else 0,
+            "conditioning_source": self.conditioning_source,
+            "prediction_promoted_to_conditioning": False,
             "inference_size": [int(inference_rgb.shape[1]), int(inference_rgb.shape[0])],
             "output_size": [int(rgb.shape[1]), int(rgb.shape[0])],
             "dry_run": True,

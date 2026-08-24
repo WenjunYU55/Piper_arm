@@ -36,6 +36,11 @@
     # statistically ordinary after a short perception gap.
     process_noise: 0.01
     measurement_noise: 0.02
+    tracking_health_topic: "/piper/tracking_health"
+    # Fresh explicit motion health suppresses visual correction. A stale health
+    # sample leaves the legacy estimator path unchanged; mission safety still
+    # rejects stale TrackingHealth independently.
+    motion_health_timeout_s: 1.0
     use_tf_transform: true
     piper_base_frame: "base_link"
     camera_frame: "camera_color_optical_frame"

@@ -1,5 +1,5 @@
 {
-  "generator": "longitudinal_triangle_slab_v1",
+  "generator": "longitudinal_triangle_slab_v1+installed_visual_grid_v1",
   "links": [
     {
       "axis": "y",
@@ -125,6 +125,260 @@
       "source_sha256": "a1c69d1c7f6f8c60e2c82331c0f444725200ed4053d3e5ec23aa82cb5db5b29f",
       "source_triangle_count": 16672,
       "triangle_assignments": 17872
+    },
+    {
+      "assembly": {
+        "base_link": "gripper_base",
+        "sha256": "ea4e84574cd10ec8d21e021863b34d897470c35a57e4305eca3d906dbbf1f062",
+        "sources": [
+          {
+            "base_from_mesh": [
+              [
+                6.123233995736766e-17,
+                -6.123233995736766e-17,
+                -1.0,
+                0.14049999999999999
+              ],
+              [
+                1.0,
+                3.749399456654644e-33,
+                6.123233995736766e-17,
+                -0.0565314679146
+              ],
+              [
+                0.0,
+                -1.0,
+                6.123233995736766e-17,
+                0.10527895355219999
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ],
+            "link": "camera_holder",
+            "mesh_sha256": "a68851c67c3c631b3176d1038478a37acd5b2ebc6aa6189793df4b6ee68478b2",
+            "mesh_uri": "package://piper_description/meshes/camera_holder.STL",
+            "scale": [
+              0.001,
+              0.001,
+              0.001
+            ],
+            "triangle_count": 47580
+          },
+          {
+            "base_from_mesh": [
+              [
+                -6.123233995736766e-17,
+                1.0,
+                -1.2246467991473532e-16,
+                0.033496591000000006
+              ],
+              [
+                -1.0,
+                -6.123233995736767e-17,
+                -1.2246467991473532e-16,
+                0.030503129000000007
+              ],
+              [
+                -1.2246467991473532e-16,
+                1.2246467991473532e-16,
+                1.0,
+                0.014371445999999996
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ],
+            "link": "l515_visual",
+            "mesh_sha256": "8da72869225af4826ed8b059361109b9e18df5295624d629109e32a906f02d6f",
+            "mesh_uri": "package://piper_description/meshes/Intel_RealSense_L515_CAD_external.STL",
+            "scale": [
+              0.001,
+              0.001,
+              0.001
+            ],
+            "triangle_count": 150542
+          }
+        ],
+        "triangle_count": 198122,
+        "visual_links": [
+          "camera_holder",
+          "l515_visual"
+        ]
+      },
+      "axes": [
+        "x",
+        "y"
+      ],
+      "link": "l515_attached_assembly",
+      "pieces": [
+        {
+          "filename": "l515_attached_assembly_cell_000_000.stl",
+          "grid_index": [
+            0,
+            0
+          ],
+          "sha256": "63d29d2d1f675e0867a2be3bb2b5d5d357c529e788529474ee9b4a12257b5f85",
+          "triangle_count": 554
+        },
+        {
+          "filename": "l515_attached_assembly_cell_000_001.stl",
+          "grid_index": [
+            0,
+            1
+          ],
+          "sha256": "618083b75f4dac2bc4472edcef3abf72a6710b62a1a66dfa84a47678ffdd04aa",
+          "triangle_count": 2051
+        },
+        {
+          "filename": "l515_attached_assembly_cell_000_002.stl",
+          "grid_index": [
+            0,
+            2
+          ],
+          "sha256": "412b147f55427ff2c28e18d4a317615830993ea4b6778d144db57e804eaf4429",
+          "triangle_count": 1800
+        },
+        {
+          "filename": "l515_attached_assembly_cell_001_000.stl",
+          "grid_index": [
+            1,
+            0
+          ],
+          "sha256": "7e7f37561532b9630a27188ee72339533db5027d259df4b24e829eca6ce8e69c",
+          "triangle_count": 4004
+        },
+        {
+          "filename": "l515_attached_assembly_cell_001_001.stl",
+          "grid_index": [
+            1,
+            1
+          ],
+          "sha256": "096b8094fca510eb5bbadfd882141b17fe5a0f1ce8350698ae2a4e3427b0cdc2",
+          "triangle_count": 86
+        },
+        {
+          "filename": "l515_attached_assembly_cell_001_002.stl",
+          "grid_index": [
+            1,
+            2
+          ],
+          "sha256": "0690e71fde90e865444d65f958cb2a29fe6c0f0f0dc89ff4901b7211af083188",
+          "triangle_count": 3780
+        },
+        {
+          "filename": "l515_attached_assembly_cell_001_003.stl",
+          "grid_index": [
+            1,
+            3
+          ],
+          "sha256": "d36cfb997bea89666b5a7795db7a55c69be71386bd9c0e42b196c2baee9d90ae",
+          "triangle_count": 669
+        },
+        {
+          "filename": "l515_attached_assembly_cell_002_000.stl",
+          "grid_index": [
+            2,
+            0
+          ],
+          "sha256": "1c8b0db921ba6be5547fc26b8bc86635acb462ed1d5699759e379c8994d5ccf2",
+          "triangle_count": 3983
+        },
+        {
+          "filename": "l515_attached_assembly_cell_002_001.stl",
+          "grid_index": [
+            2,
+            1
+          ],
+          "sha256": "0169b9ae4001bae34e09aabeff261fddaac3e08fa88c655e9b485dc8a12fad9a",
+          "triangle_count": 22365
+        },
+        {
+          "filename": "l515_attached_assembly_cell_002_002.stl",
+          "grid_index": [
+            2,
+            2
+          ],
+          "sha256": "c6bf805164e55baac174cc79fe0b3fc7b5730405d93e9592b37399705d4ba7f4",
+          "triangle_count": 15396
+        },
+        {
+          "filename": "l515_attached_assembly_cell_003_000.stl",
+          "grid_index": [
+            3,
+            0
+          ],
+          "sha256": "bed3f3df4618e6dfcf052f8f397b17f7597e250bc5bad8b9a0971860190ffce8",
+          "triangle_count": 14312
+        },
+        {
+          "filename": "l515_attached_assembly_cell_003_001.stl",
+          "grid_index": [
+            3,
+            1
+          ],
+          "sha256": "0a524525df7ed47cdfcf69f7d48c956b575cdc693ad323f4196a83d1311090f0",
+          "triangle_count": 39009
+        },
+        {
+          "filename": "l515_attached_assembly_cell_003_002.stl",
+          "grid_index": [
+            3,
+            2
+          ],
+          "sha256": "29eea0298900d8b8af1df6cc468f895b30e1a17d0e8fce22434d5446ec05815d",
+          "triangle_count": 65682
+        },
+        {
+          "filename": "l515_attached_assembly_cell_003_003.stl",
+          "grid_index": [
+            3,
+            3
+          ],
+          "sha256": "9e9eb3b9fdbac8b20a70607ee594e3881755e933dd552f4f2acb898b7a7258da",
+          "triangle_count": 795
+        },
+        {
+          "filename": "l515_attached_assembly_cell_004_000.stl",
+          "grid_index": [
+            4,
+            0
+          ],
+          "sha256": "d01b70761aff2090436a330ca78195494c551857bcd23dfc7fd158545c3775ad",
+          "triangle_count": 864
+        },
+        {
+          "filename": "l515_attached_assembly_cell_004_001.stl",
+          "grid_index": [
+            4,
+            1
+          ],
+          "sha256": "8a454854c3fe09151a45c40050563d8cc61df0c05ee0930c4853c505474b6e61",
+          "triangle_count": 26014
+        },
+        {
+          "filename": "l515_attached_assembly_cell_004_002.stl",
+          "grid_index": [
+            4,
+            2
+          ],
+          "sha256": "06f2fea9945693b552c85103c3f6269c076166a61016e44df3dbb28f99910c32",
+          "triangle_count": 6401
+        }
+      ],
+      "slab_thickness_m": [
+        0.03,
+        0.03
+      ],
+      "source_sha256": "ea4e84574cd10ec8d21e021863b34d897470c35a57e4305eca3d906dbbf1f062",
+      "source_triangle_count": 198122,
+      "triangle_assignments": 207765
     }
   ],
   "schema_version": 1

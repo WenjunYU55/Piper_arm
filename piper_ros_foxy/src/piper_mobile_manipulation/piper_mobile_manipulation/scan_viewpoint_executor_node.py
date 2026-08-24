@@ -91,6 +91,12 @@ from piper_mobile_manipulation.scan_trajectory import (
     validate_sdk_movej_waypoint_path,
     validate_tesseract_point,
 )
+
+
+# Private driver/executor handoff contract.  Ordinary configured-home stages
+# retain ``home_goal_tolerance_rad``; STARTUP_WRIST alone must reach the
+# driver's ready-zero window before ROUGH_HOME may send ordinary J6 commands.
+STARTUP_WRIST_READY_TOLERANCE_RAD = 0.03
 from piper_mobile_manipulation.safety_evaluator import (
     ObstacleAuthority,
     RuntimeGatePolicy,
@@ -1401,6 +1407,12 @@ class ScanViewpointExecutorNode(Node):
                 return
             if action == 'detected':
                 self.rgbd_capture_future = None
+                # The correlated refresh starts a new evidence epoch.  The
+                # bounded readiness retries consumed while waiting for the
+                # pre-refresh mask/depth status must not make the first
+                # refreshed capture fail immediately.  Keep the refresh ID so
+                # a second heavy refresh is still impossible for this view.
+                self.rgbd_capture_attempts = 0
                 self.set_state(
                     'CAPTURING_RGBD',
                     'matching heavy refresh found the target; validating '
@@ -2446,6 +2458,20 @@ class ScanViewpointExecutorNode(Node):
                     'refusing to burst or shortcut the approved path'
                     % stream_decision.missed_samples)
                 return
+            if stream_decision.missed_samples:
+                # Preserve every collision-qualified point.  A late executor
+                # tick stretches the remaining schedule instead of bursting
+                # multiple commands, skipping path corners, or aborting a
+                # valid trajectory because Linux scheduling slipped once.
+                delay = float(stream_decision.schedule_delay_sec)
+                self.stream_schedule_paused_sec = float(getattr(
+                    self, 'stream_schedule_paused_sec', 0.0)) + delay
+                elapsed = max(0.0, elapsed - delay)
+                self.get_logger().warning(
+                    'Tesseract stream tick was late by %.4fs (%d later '
+                    'samples were already due); stretching the unchanged '
+                    'schedule and publishing the next unsent point'
+                    % (delay, stream_decision.missed_samples))
             # Never burst stale goals and never shortcut collision-qualified
             # path corners. The pure runner returns exactly one due index.
             due_index = int(stream_decision.sample_index)
@@ -4161,11 +4187,16 @@ class ScanViewpointExecutorNode(Node):
                 selected_previous[5] = np.asarray(
                     previous, dtype=float)[5]
                 previous = selected_previous
+        target_tolerance = float(configured_value(
+            self, 'home_goal_tolerance_rad'))
+        if self.is_startup_wrist_direct():
+            target_tolerance = min(
+                target_tolerance, STARTUP_WRIST_READY_TOLERANCE_RAD)
         settled = home_position_sample_settled(
             current,
             target,
             previous,
-            float(configured_value(self, 'home_goal_tolerance_rad')),
+            target_tolerance,
             float(configured_value(self, 'home_motion_tolerance_rad')),
         )
         # Retain the complete measured pose so a stage change can never reuse

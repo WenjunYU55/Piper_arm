@@ -58,7 +58,27 @@ def apply_collision_decomposition(root, package_root, policy):
     for entry in decomposition.get('links', []):
         name = str(entry.get('link', ''))
         if name not in links:
-            raise ValueError('collision decomposition names unknown link %s' % name)
+            assembly = entry.get('assembly')
+            parent = '' if not isinstance(assembly, dict) else str(
+                assembly.get('base_link', ''))
+            if not parent or parent not in links:
+                raise ValueError(
+                    'collision decomposition names unknown link %s' % name)
+            link = ET.SubElement(root, 'link', {'name': name})
+            collision = ET.SubElement(link, 'collision')
+            geometry = ET.SubElement(collision, 'geometry')
+            ET.SubElement(geometry, 'mesh', {
+                'filename': (
+                    'package://piper_description/meshes/%s.STL' % name),
+            })
+            joint = ET.SubElement(root, 'joint', {
+                'name': '%s_to_%s' % (parent, name),
+                'type': 'fixed',
+            })
+            origin_element(joint, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+            ET.SubElement(joint, 'parent', {'link': parent})
+            ET.SubElement(joint, 'child', {'link': name})
+            links[name] = link
         source = Path(package_root) / 'meshes' / (name + '.STL')
         if sha256_file(source) != str(entry.get('source_sha256', '')):
             raise ValueError('%s source collision mesh hash mismatch' % name)

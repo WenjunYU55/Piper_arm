@@ -193,6 +193,31 @@ def expanded_ray_request(ray_ids):
     return attach_digest(request, 'request_sha256')
 
 
+def target_ray_request():
+    request = request_fixture('MULTIVIEW_SCAN')
+    request['scene']['candidate_views'] = [{
+        'id': 100,
+        'camera_position_m': [0.80, 0.0, 0.20],
+        'look_direction': [-1.0, 0.0, 0.0],
+        'candidate_geometry': 'target_ray',
+        'ray_id': 12,
+        'ray_direction': [1.0, 0.0, 0.0],
+        'ray_min_standoff_m': 0.28,
+        'ray_max_standoff_m': 0.50,
+        'ray_preferred_max_standoff_m': 0.50,
+        'ray_scoring_standoff_m': 0.39,
+        'ray_standoff_m': 0.30,
+        'ray_probe_index': 0,
+        'ray_probe_phase': 'interval_search',
+    }]
+    request['planning'].update({
+        'shortlisted_ray_count': 1,
+        'expanded_ray_candidate_count': 1,
+        'ray_direction_attempt_limit': 6,
+    })
+    return attach_digest(request, 'request_sha256')
+
+
 def test_expanded_ray_request_requires_direction_contiguous_attempts():
     assert validate_request(expanded_ray_request([3, 3, 9, 9]))
 
@@ -205,6 +230,38 @@ def test_expanded_ray_request_cannot_exceed_direction_attempt_bound():
 
     with pytest.raises(ContractError, match='bounds'):
         validate_request(request)
+
+
+def test_target_ray_response_may_select_another_point_on_bound_interval():
+    request = target_ray_request()
+    assert validate_request(request) is request
+    response = response_fixture(request)
+    response['selected_viewpoints'][0].update({
+        'camera_position_m': [0.835, 0.0, 0.20],
+        'ray_standoff_m': 0.335,
+    })
+    response = attach_digest(response, 'response_sha256')
+
+    assert validate_response(response, request) is response
+
+
+@pytest.mark.parametrize('position, standoff', (
+    ([0.835, 0.01, 0.20], 0.335),
+    ([1.01, 0.0, 0.20], 0.51),
+    ([0.835, 0.0, 0.20], 0.34),
+))
+def test_target_ray_response_cannot_leave_requested_interval(
+        position, standoff):
+    request = target_ray_request()
+    response = response_fixture(request)
+    response['selected_viewpoints'][0].update({
+        'camera_position_m': position,
+        'ray_standoff_m': standoff,
+    })
+    response = attach_digest(response, 'response_sha256')
+
+    with pytest.raises(ContractError, match='does not match request'):
+        validate_response(response, request)
 
 
 def test_closed_loop_one_view_response_omits_unused_embedded_home():

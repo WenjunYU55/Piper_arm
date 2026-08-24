@@ -1598,11 +1598,22 @@ class TargetScanMissionNode(Node):
                 failure_code='NO_REACHABLE_PLAN', retryable=True)
         return np.asarray(transformed, dtype=float).tolist()
 
-    def authorize_mission(self, session, revoke=False):
+    def authorize_mission(
+            self, session, revoke=False, terminal_home=False):
         request = AuthorizeMission.Request()
         request.task_id = session.task_id
         request.mission_sha256 = session.mission_sha256
-        expires = time.time() + session.remaining()
+        if terminal_home and not revoke:
+            # A scan deadline ends scan authority, but it must not prevent the
+            # already-established terminal home sequence.  Give each direct
+            # home stage one fresh, bounded execution window using the
+            # existing queue/result limits.  No scan phase is resumed here.
+            workflow = workflow_config_for(self)
+            expires = time.time() + (
+                workflow.plan_request_queue_timeout_sec
+                + workflow.plan_result_timeout_sec + 10.0)
+        else:
+            expires = time.time() + session.remaining()
         request.expires_at.sec = int(expires)
         request.expires_at.nanosec = int((expires - int(expires)) * 1e9)
         request.revoke = bool(revoke)
@@ -1864,7 +1875,12 @@ class TargetScanMissionNode(Node):
                     'all captures persisted; settling at approved home')
                 self.write_status(session)
             if state in failures:
-                raise MissionFailure('%s: %s' % (state, status.reason))
+                raise MissionFailure(
+                    '%s: %s' % (state, status.reason),
+                    failure_code=(
+                        'MISSION_FAILED' if state == 'ABORTED'
+                        else 'NO_REACHABLE_PLAN'),
+                )
             return state in successes
 
         self.wait_for(
@@ -2050,6 +2066,18 @@ class TargetScanMissionNode(Node):
                 self.require_fresh_joint_feedback()
             except MissionFailure as exc:
                 return fail_home(exc)
+
+        # Terminal recovery is intentionally non-interrupting.  The original
+        # scan authorization may have expired (that is what led us here), so
+        # renew it after the terminal path has either stopped/held scan motion
+        # or refreshed the static-startup joint state.  Startup motion keeps
+        # its original interruptible mission authorization.
+        if goal_handle is None:
+            try:
+                self.authorize_mission(session, terminal_home=True)
+            except MissionFailure as exc:
+                return fail_home(
+                    'terminal home authorization failed: %s' % exc)
 
         request = ExecuteHomeStage.Request()
         request.task_id = session.task_id

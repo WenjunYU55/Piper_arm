@@ -45,8 +45,10 @@
     duplicate_position_tolerance_m: 0.012
     duplicate_look_tolerance_deg: 2.0
     # This is accepted-view redundancy only. It is not a maximum transition
-    # angle and cannot prevent a globally informative 60/80-degree NBV.
-    minimum_useful_direction_separation_deg: 6.0
+    # angle and cannot prevent a globally informative 60/80-degree NBV. The
+    # ten-degree floor rejects effectively repeated accepted directions while
+    # still allowing the next genuinely informative direction to compete.
+    minimum_useful_direction_separation_deg: 10.0
 
     min_reach_m: 0.20
     max_reach_m: 0.75

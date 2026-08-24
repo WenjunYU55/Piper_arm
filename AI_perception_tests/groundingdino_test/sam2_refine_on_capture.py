@@ -320,17 +320,23 @@ def depth_occluder_mask(
     if target_x.size == 0 or target_y.size == 0:
         return None
 
-    # A depth-only occluder must intrude into the target's observed image
-    # envelope.  Merely being near the mask is insufficient: support surfaces
-    # and their shadows commonly form a closer-depth component immediately
-    # below a resting target.  Keep the whole connected component so downstream
-    # geometry still describes a real crossing occluder, but require meaningful
-    # support inside the target envelope before retaining it.
-    target_envelope = np.zeros_like(closer_u8, dtype=bool)
-    target_envelope[
-        int(target_y.min()):int(target_y.max()) + 1,
-        int(target_x.min()):int(target_x.max()) + 1,
-    ] = True
+    # A depth-only occluder must intrude into the target's observed silhouette.
+    # A rectangular bounding box is not sufficient: empty corners around a
+    # target admit the L515's depth-discontinuity halo and support/background
+    # pixels as false foreground.  The one-pixel-eroded filled hull preserves a
+    # genuine component crossing a split/holed target mask while excluding
+    # components that merely wrap around the exterior target boundary.
+    target_points = np.column_stack((target_x, target_y)).astype(np.int32)
+    target_envelope_u8 = np.zeros_like(closer_u8, dtype=np.uint8)
+    cv2.fillConvexPoly(
+        target_envelope_u8,
+        cv2.convexHull(target_points),
+        1,
+    )
+    target_envelope = cv2.erode(
+        target_envelope_u8,
+        np.ones((3, 3), np.uint8),
+    ) > 0
     component_count, labels, stats, _ = cv2.connectedComponentsWithStats(
         closer_u8, connectivity=8)
     retained = np.zeros_like(closer_u8, dtype=bool)
@@ -612,7 +618,9 @@ def refine_capture(
             "sam2_score": 0.0,
             "box_xyxy_pixels": [],
             "is_target_candidate": False,
-            "is_unsafe_candidate": True,
+            # Depth alone proves foreground geometry, not a human hazard.
+            # Explicit hand/person semantics are the only unsafe authority.
+            "is_unsafe_candidate": False,
             "is_candidate_safe_class": False,
             "mask_png": str(mask_path),
         }

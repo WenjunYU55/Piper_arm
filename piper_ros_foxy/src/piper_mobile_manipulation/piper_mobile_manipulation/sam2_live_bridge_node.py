@@ -25,6 +25,20 @@ from piper_mobile_manipulation.msg import (
 )
 
 
+def tracking_is_prediction_only(
+        target_lost, arm_moving, camera_settled, target_status,
+        measurement_age_sec, measurement_stale_sec, camera_reason):
+    """Return the bridge's explicit visual-measurement authority state."""
+    return bool(
+        target_lost
+        or arm_moving
+        or not camera_settled
+        or str(target_status).upper() == 'LOW_CONFIDENCE'
+        or float(measurement_age_sec) > float(measurement_stale_sec)
+        or camera_reason is not None
+    )
+
+
 class Sam2LiveBridgeNode(Node):
     def __init__(self):
         super().__init__('sam2_live_bridge_node')
@@ -248,6 +262,8 @@ class Sam2LiveBridgeNode(Node):
                     'nanosec': int(self.latest_msg.header.stamp.nanosec),
                 },
                 'frame_id': self.latest_msg.header.frame_id,
+                'arm_moving': bool(self.arm_moving),
+                'camera_settled': bool(self.camera_settled()),
             }, stream, sort_keys=False)
         (temporary / 'READY').touch()
         os.replace(str(temporary), str(final))
@@ -270,33 +286,19 @@ class Sam2LiveBridgeNode(Node):
             self.latest_motion_prompt = mask
             self.latest_motion_prompt_key = self.stamp_key(msg.header.stamp)
             self.latest_motion_prompt_at = time.monotonic()
-            if (
-                self.loss_episode_active
-                and not self.motion_prompt_seeded_episode
-                and not self.heavy_refresh_in_flight
-            ):
-                self.try_motion_prompt_seed()
         except Exception as exc:
             self.publish_status('motion_prompt_rejected', error=str(exc))
 
     def try_motion_prompt_seed(self):
-        if self.latest_motion_prompt is None or self.latest_motion_prompt_key is None:
-            return False
-        if time.monotonic() - self.latest_motion_prompt_at > float(
-            self.get_parameter('motion_prompt_max_age_sec').value
-        ):
-            return False
-        queued = self.queue_seed(
-            self.latest_motion_prompt_key,
-            self.latest_motion_prompt,
-            'motion_compensated',
-        )
-        if queued:
-            self.motion_prompt_seeded_episode = True
-            self.motion_prompt_seeded_at = time.monotonic()
-            self.lifecycle_state = 'DEGRADED'
-            self.publish_status('motion_prompt_recovery_started')
-        return queued
+        """
+        Retain motion prompts as diagnostics, never as semantic seeds.
+
+        A projected mask is useful evidence for where the old target estimate
+        should appear, but it has not passed a new semantic/depth measurement.
+        Promoting it to a SAM2 conditioning frame can preserve a drifted mask.
+        Recovery therefore uses the existing settled heavy-refresh path.
+        """
+        return False
 
     @staticmethod
     def joint_stamp_seconds(msg):
@@ -397,10 +399,14 @@ class Sam2LiveBridgeNode(Node):
             float(self.get_parameter(
                 'tracking_measurement_stale_sec').value),
         )
-        prediction_only = (
-            self.target_lost
-            or measurement_age > measurement_stale
-            or camera_reason is not None
+        prediction_only = tracking_is_prediction_only(
+            self.target_lost,
+            self.arm_moving,
+            settled,
+            self.last_target_status,
+            measurement_age,
+            measurement_stale,
+            camera_reason,
         )
         if lifecycle_state == 'TRACKING' and not prediction_only:
             speed_scale = (
@@ -510,8 +516,6 @@ class Sam2LiveBridgeNode(Node):
         self.target_lost = True
         if not new_episode:
             return
-        if allow_motion_prompt and self.try_motion_prompt_seed():
-            return
         if not self.camera_settled():
             self.lifecycle_state = 'WAITING_TO_REACQUIRE'
             self.publish_status('reacquisition_waiting_for_motion', reason=self.loss_reason)
@@ -523,6 +527,14 @@ class Sam2LiveBridgeNode(Node):
         area = int(result.get('mask_area_px', 0))
         minimum = max(1, int(self.get_parameter('min_target_area_px').value))
         self.measurement_quality = float(np.clip(area / float(4 * minimum), 0.0, 1.0))
+        if not self.camera_settled():
+            # The mask remains available for display while the timestamped
+            # base-frame estimator intentionally runs prediction-only.
+            self.publish_status(
+                'tracking_prediction_only_motion',
+                mask_area_px=area,
+            )
+            return
         if self.loss_episode_active:
             self.recovery_valid_frames += 1
             self.lifecycle_state = 'DEGRADED'
@@ -756,10 +768,6 @@ class Sam2LiveBridgeNode(Node):
 
     def retry_loss_episode(self, reason, now=None):
         now = time.monotonic() if now is None else now
-        if self.motion_prompt_seeded_episode and now - self.motion_prompt_seeded_at < float(
-            self.get_parameter('motion_prompt_recovery_grace_sec').value
-        ):
-            return False
         maximum = max(1, int(self.get_parameter('max_reacquisition_attempts').value))
         attempt_limit_reached = self.heavy_attempt_count >= maximum
         if attempt_limit_reached:

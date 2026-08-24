@@ -400,8 +400,8 @@
        raw STL correction is followed by the required 180-degree X and then
        180-degree Z rotation.
        Keep this link visual-only:
-       planning continues to use the separately qualified conservative L515
-       mount/camera/cable envelopes. -->
+       planning injects a generated collision assembly from this visual and
+       l515_visual only into the isolated Tesseract model. -->
   <link
     name="camera_holder">
     <visual>

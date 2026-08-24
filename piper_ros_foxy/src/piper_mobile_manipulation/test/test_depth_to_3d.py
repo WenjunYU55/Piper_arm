@@ -12,6 +12,7 @@ from piper_mobile_manipulation.depth_to_3d_node import (
 )
 from piper_mobile_manipulation.target_tracker_node import (
     finite_target_measurement,
+    motion_measurement_rejection,
     prediction_only_is_valid,
     TargetTrackerNode,
 )
@@ -398,6 +399,23 @@ def test_short_prediction_only_outage_retains_state_and_grows_uncertainty():
 def test_long_prediction_only_outage_expires_track():
     assert prediction_only_is_valid(True, 5, 5, 3.89, 5.0)
     assert not prediction_only_is_valid(True, 5, 5, 5.01, 5.0)
+
+
+def test_fresh_explicit_camera_motion_forces_prediction_only_correction_gate():
+    moving = SimpleNamespace(arm_moving=True, camera_settled=False)
+    settling = SimpleNamespace(arm_moving=False, camera_settled=False)
+    settled = SimpleNamespace(arm_moving=False, camera_settled=True)
+
+    assert 'moving' in motion_measurement_rejection(moving, 0.1, 1.0)
+    assert 'not settled' in motion_measurement_rejection(settling, 0.1, 1.0)
+    assert motion_measurement_rejection(settled, 0.1, 1.0) is None
+
+
+def test_missing_or_stale_motion_health_does_not_create_an_impossible_gate():
+    stale_moving = SimpleNamespace(arm_moving=True, camera_settled=False)
+
+    assert motion_measurement_rejection(None, float('inf'), 1.0) is None
+    assert motion_measurement_rejection(stale_moving, 1.01, 1.0) is None
 
 
 def test_stationary_gate_rejects_bad_measurement_after_bursty_gpu_gap():

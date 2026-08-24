@@ -322,12 +322,14 @@ def test_only_proved_post_capture_safe_view_exhaustion_completes_adaptively():
         'PLANNING_FAILED: only 0 viewpoints planned; require at least 1 of 1 '
         '(view 7: no finite bounded collision-free IK goal for any roll)')
     complete_history = {
-        'sufficient': False,
+        'sufficient': True,
         'accepted_achieved_views': 7,
     }
     assert REQUIRED_CAPTURES == 8
     assert safe_view_exhaustion_after_capture(
         reason, 7, complete_history)
+    assert not safe_view_exhaustion_after_capture(
+        reason, 7, dict(complete_history, sufficient=False))
     assert not safe_view_exhaustion_after_capture(
         reason, 7, {'accepted_achieved_views': 6})
     assert not safe_view_exhaustion_after_capture(
@@ -498,6 +500,7 @@ def test_shutdown_holds_current_state_then_uses_dedicated_home_plan():
     cancel_client = object()
     execute_client = object()
     state = {'at_home': False, 'approved': False}
+    events = []
     node = SimpleNamespace(
         cancel_client=cancel_client,
         execute_home_stage_client=execute_client,
@@ -508,15 +511,19 @@ def test_shutdown_holds_current_state_then_uses_dedicated_home_plan():
         at_configured_home=lambda _session, **_kwargs: state['at_home'],
         require_fresh_joint_feedback=lambda: None,
         wait_for_stable_joint_stream=lambda *_args: None,
+        authorize_mission=lambda _session, terminal_home=False: events.append(
+            'terminal_authority' if terminal_home else 'mission_authority'),
     )
 
     def call_service(client, *_args, **_kwargs):
         if client is cancel_client:
+            events.append('stop_hold')
             return SimpleNamespace(
                 success=True,
                 message=('proposal cancelled; current joint hold requested '
                          'before dedicated current-state return-home replanning'))
         assert client is execute_client
+        events.append('direct_home')
         state['approved'] = True
         state['at_home'] = True
         node.latest_execution = SimpleNamespace(
@@ -531,6 +538,32 @@ def test_shutdown_holds_current_state_then_uses_dedicated_home_plan():
     assert TargetScanMissionNode.prove_return_home_for_shutdown(node, session)
     assert state['approved']
     assert session.return_home_proved
+    assert events == ['stop_hold', 'terminal_authority', 'direct_home']
+
+
+def test_terminal_home_authority_outlives_expired_scan_deadline(monkeypatch):
+    requests = []
+    node = SimpleNamespace(
+        authorize_client=object(),
+        call_service=lambda _client, request, _timeout, _label: (
+            requests.append(request) or SimpleNamespace(
+                accepted=True, message='accepted')),
+    )
+    session = SimpleNamespace(
+        task_id='expired-scan', mission_sha256='a' * 64,
+        remaining=lambda: -1.0,
+    )
+    monkeypatch.setattr(mission_node.time, 'time', lambda: 1000.0)
+
+    TargetScanMissionNode.authorize_mission(
+        node, session, terminal_home=True)
+
+    assert len(requests) == 1
+    expiry = (
+        float(requests[0].expires_at.sec)
+        + float(requests[0].expires_at.nanosec) * 1e-9)
+    assert expiry == pytest.approx(1207.0)
+    assert not requests[0].revoke
 
 
 def test_startup_home_uses_nonterminal_hold_and_static_plan_service():
@@ -548,6 +581,7 @@ def test_startup_home_uses_nonterminal_hold_and_static_plan_service():
         processes=SimpleNamespace(failed=lambda: {}),
         at_configured_home=lambda _session, **_kwargs: state['at_home'],
         require_fresh_joint_feedback=lambda: None,
+        guard=lambda *_args: None,
     )
 
     def call_service(client, *_args, **_kwargs):
@@ -564,7 +598,7 @@ def test_startup_home_uses_nonterminal_hold_and_static_plan_service():
     node.call_service = call_service
 
     assert TargetScanMissionNode.prove_return_home_for_shutdown(
-        node, session, startup=True)
+        node, session, startup=True, goal_handle=object())
     assert state['approved']
     assert session.return_home_proved
 
@@ -957,8 +991,9 @@ def test_startup_home_returns_immediately_on_non_success_abort():
         return_home_proved=False, home_positions_rad=[0.0] * 6,
         task_id='task-startup-abort', mission_sha256='d' * 64)
 
+    harness.guard = lambda *_args: None
     proved = TargetScanMissionNode.prove_return_home_for_shutdown(
-        harness, session, startup=True)
+        harness, session, startup=True, goal_handle=object())
 
     assert not proved
     assert 'home execution aborted' in harness.last_return_home_diagnostic

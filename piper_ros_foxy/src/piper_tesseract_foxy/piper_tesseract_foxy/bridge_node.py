@@ -39,7 +39,7 @@ from piper_mobile_manipulation.view_generation import (
     view_policy_capabilities,
 )
 from piper_mobile_manipulation.viewpoint_rays import (
-    expand_shortlisted_rays,
+    bind_shortlisted_ray_intervals,
 )
 from piper_mobile_manipulation.motion_limit_stability import MotionLimitStability
 from piper_mobile_manipulation.srv import RequestTesseractPlan
@@ -59,6 +59,7 @@ from piper_tesseract_foxy.contract import (
 
 
 RAY_DIRECTION_ATTEMPT_LIMIT = 6
+FINAL_AIM_EXECUTION_MARGIN_DEG = 1.0
 
 
 def obstacle_scene_rejection_reason(scene):
@@ -156,6 +157,19 @@ def bounded_candidate_attempt_limit(capabilities, configured_limit):
     if capabilities is not None and capabilities.ray_expansion:
         return min(limit, RAY_DIRECTION_ATTEMPT_LIMIT)
     return limit
+
+
+def information_ranked_ray_candidates(candidates, candidate_limit):
+    """Return the best ray directions without inserting travel fallbacks."""
+    limit = max(1, int(candidate_limit))
+    return sorted(
+        (dict(item) for item in candidates),
+        key=lambda item: (
+            int(item.get('nbv_rank', 2 ** 31 - 1)),
+            -float(item.get('coverage_score', 0.0)),
+            int(item['id']),
+        ),
+    )[:limit]
 
 
 def local_view_frontier_candidates(
@@ -283,9 +297,17 @@ def exact_target_aim_candidates(
         if norm <= 1e-9:
             raise ValueError('target-centred aim camera coincides with target')
         nominal /= norm
+        # Leave physical following/calibration margin inside the public final
+        # aim limit. Exact aim remains first and there is still only one
+        # current-look-biased fallback.
+        fallback_limit = max(
+            0.0,
+            float(maximum_fallback_offset_deg)
+            - FINAL_AIM_EXECUTION_MARGIN_DEG,
+        )
         fallback = np.asarray(bounded_current_look_direction(
             nominal, current_look_direction,
-            maximum_fallback_offset_deg), dtype=float)
+            fallback_limit), dtype=float)
         cosine = float(np.clip(np.dot(nominal, fallback), -1.0, 1.0))
         offset = math.degrees(math.acos(cosine))
         candidate['look_direction'] = nominal.tolist()
@@ -790,6 +812,9 @@ class TesseractPlanBridge(Node):
         self.pending = {}
         self.tesseract_exhausted_ray_generation = None
         self.tesseract_exhausted_ray_ids = set()
+        self.remaining_ray_pool_session = None
+        self.remaining_ray_ids = set()
+        self.retired_ray_ids = set()
         self.state = 'IDLE'
         self.reason = 'waiting for an explicit plan request'
         self.worker_generation_id = ''
@@ -1350,8 +1375,15 @@ class TesseractPlanBridge(Node):
                 if authoritative_nbv:
                     effective_limit = bounded_candidate_attempt_limit(
                         candidate_capabilities, candidate_limit)
-                    candidates = bounded_nbv_candidates(
-                        candidates, current_camera, center, effective_limit)
+                    if (
+                            candidate_capabilities is not None
+                            and candidate_capabilities.ray_expansion):
+                        candidates = information_ranked_ray_candidates(
+                            candidates, effective_limit)
+                    else:
+                        candidates = bounded_nbv_candidates(
+                            candidates, current_camera, center,
+                            effective_limit)
                 else:
                     effective_limit = bounded_candidate_attempt_limit(
                         candidate_capabilities, candidate_limit)
@@ -1367,7 +1399,7 @@ class TesseractPlanBridge(Node):
                     if shortlisted_ray_count != len(candidates):
                         raise ContractError(
                             'ray policy produced mixed candidate geometry')
-                    candidates = expand_shortlisted_rays(
+                    candidates = bind_shortlisted_ray_intervals(
                         candidates, current_camera, center)
                     expanded_ray_candidate_count = len(candidates)
                 candidates = exact_target_aim_candidates(
@@ -1601,20 +1633,38 @@ class TesseractPlanBridge(Node):
 
     def exclude_tesseract_exhausted_rays(
             self, candidates, session_id, accepted_views):
-        """Retain untried rays for one accepted-coverage generation."""
-        generation = (str(session_id), int(accepted_views))
+        """Exclude static mission failures and current-generation failures."""
+        session = str(session_id)
+        generation = (session, int(accepted_views))
+        candidate_ids = {
+            int(item.get('ray_id', item.get('id', -1)))
+            for item in candidates
+        }
+        if getattr(self, 'remaining_ray_pool_session', None) != session:
+            self.remaining_ray_pool_session = session
+            self.remaining_ray_ids = set(candidate_ids)
+            self.retired_ray_ids = set()
+        else:
+            # A temporarily absent planner candidate must not erase a frozen
+            # mission ray.  Current accepted coverage still controls the
+            # candidates presented below, while proven static failures stay
+            # retired for the whole session.
+            self.remaining_ray_ids.update(
+                candidate_ids.difference(self.retired_ray_ids))
         if getattr(
                 self, 'tesseract_exhausted_ray_generation', None
         ) != generation:
             self.tesseract_exhausted_ray_generation = generation
             self.tesseract_exhausted_ray_ids = set()
-        exhausted = set(getattr(
+        transient = set(getattr(
             self, 'tesseract_exhausted_ray_ids', set()))
-        if not exhausted:
-            return candidates
         available = [
             item for item in candidates
-            if int(item.get('ray_id', item.get('id', -1))) not in exhausted
+            if (
+                int(item.get('ray_id', item.get('id', -1)))
+                in self.remaining_ray_ids
+                and int(item.get('ray_id', item.get('id', -1)))
+                not in transient)
         ]
         if not available:
             raise ContractError(
@@ -1622,12 +1672,47 @@ class TesseractPlanBridge(Node):
                 'rejected by Tesseract for accepted-view generation %d'
                 % (len(candidates), int(accepted_views)))
         self.get_logger().info(
-            'excluded %d Tesseract-infeasible rays from session=%s '
-            'accepted=%d; %d candidates remain'
+            'mission ray pool session=%s accepted=%d: pool=%d, '
+            'transiently exhausted=%d, available=%d'
             % (
-                len(candidates) - len(available), str(session_id),
-                int(accepted_views), len(available)))
+                str(session_id), int(accepted_views),
+                len(self.remaining_ray_ids), len(transient),
+                len(available)))
         return available
+
+    def remember_permanently_infeasible_rays(self, payload):
+        """Retire endpoint failures for the frozen target-ray session."""
+        request_id = str(payload.get('request_id', ''))
+        pending = getattr(self, 'pending', {}).get(request_id, {})
+        request = pending.get('request', {})
+        if int(request.get('planning', {}).get(
+                'shortlisted_ray_count', 0)) < 1:
+            return []
+        session = request.get('scan_session', {})
+        session_id = str(session.get('session_id', ''))
+        if not session_id:
+            return []
+        if getattr(self, 'remaining_ray_pool_session', None) != session_id:
+            return []
+        request_ray_ids = {
+            int(item['ray_id'])
+            for item in request.get('scene', {}).get('candidate_views', [])
+            if item.get('ray_id') is not None
+        }
+        reported = {
+            int(value) for value in payload.get(
+                'planning_diagnostics', {}).get(
+                    'permanent_infeasible_ray_ids', [])
+        }.intersection(request_ray_ids)
+        newly_infeasible = sorted(
+            reported.intersection(self.remaining_ray_ids))
+        self.remaining_ray_ids.difference_update(newly_infeasible)
+        self.retired_ray_ids.update(newly_infeasible)
+        if newly_infeasible:
+            self.get_logger().info(
+                'retired static endpoint-infeasible rays for session=%s: %s'
+                % (session_id, newly_infeasible))
+        return newly_infeasible
 
     def remember_tesseract_exhausted_rays(self, payload):
         """Retire only rays actually attempted by one failed worker request."""
@@ -1708,6 +1793,7 @@ class TesseractPlanBridge(Node):
             self.mark('motion_limits')
 
     def publish_plan(self, payload):
+        self.remember_permanently_infeasible_rays(payload)
         if payload.get('status') != 'success':
             codes = payload.get('rejection_codes') or ['PLANNING_FAILED']
             exhausted_rays = self.remember_tesseract_exhausted_rays(payload)

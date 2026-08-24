@@ -149,12 +149,20 @@ def test_successful_streaming_trajectory_progression():
      TrajectoryAction.FAILED_STALLED),
     (TrajectoryRunner.following_decision(1.0, 0.31, 1.0, 0.30),
      TrajectoryAction.FAILED_FOLLOWING),
-    (TrajectoryRunner.stream_decision(0, (0.05, 0.10), 0.101),
-     TrajectoryAction.FAILED_OVERRUN),
 ])
 def test_failed_trajectory_decisions(decision, expected):
     """Report every monitored trajectory failure as a typed action."""
     assert decision.action is expected
+
+
+def test_late_stream_tick_preserves_next_unsent_sample_and_reports_delay():
+    decision = TrajectoryRunner.stream_decision(
+        0, (0.05, 0.10), 0.101)
+
+    assert decision.action is TrajectoryAction.PUBLISH
+    assert decision.sample_index == 0
+    assert decision.missed_samples == 1
+    assert decision.schedule_delay_sec == pytest.approx(0.051)
 
 
 def test_trajectory_cancellation_is_explicit():

@@ -112,6 +112,34 @@ def angular_separation_deg(first, second):
     return math.degrees(math.acos(max(-1.0, min(1.0, cosine))))
 
 
+def target_ray_position_matches(candidate, selected, target_center):
+    """Validate that a selected endpoint lies on its requested ray interval."""
+    target = finite_vector(target_center, 3, 'target-ray center')
+    direction = finite_vector(
+        candidate.get('ray_direction'), 3, 'target-ray direction')
+    norm = math.sqrt(sum(value * value for value in direction))
+    if norm <= 1e-12:
+        raise ContractError('target-ray direction must be non-zero')
+    direction = [value / norm for value in direction]
+    position = finite_vector(
+        selected.get('camera_position_m'), 3,
+        'selected target-ray camera position')
+    relative = [value - origin for value, origin in zip(position, target)]
+    standoff = sum(value * axis for value, axis in zip(relative, direction))
+    residual = math.sqrt(sum(
+        (value - standoff * axis) ** 2
+        for value, axis in zip(relative, direction)))
+    minimum = float(candidate.get('ray_min_standoff_m'))
+    maximum = float(candidate.get('ray_max_standoff_m'))
+    reported = float(selected.get('ray_standoff_m', standoff))
+    return bool(
+        math.isfinite(standoff)
+        and math.isfinite(reported)
+        and minimum - 1e-9 <= standoff <= maximum + 1e-9
+        and abs(reported - standoff) <= 1e-6
+        and residual <= 1e-6)
+
+
 def require_sha256(value, label):
     if not isinstance(value, str) or re.fullmatch(r'[a-f0-9]{64}', value) is None:
         raise ContractError('%s must be a lowercase SHA-256 digest' % label)
@@ -222,7 +250,8 @@ def validate_request(payload, now_ns=None):
         raise ContractError('start_state joint order must be joint1 through joint6')
     positions = finite_vector(start.get('positions_rad'), 6, 'start_state.positions_rad')
     scene = payload.get('scene', {})
-    finite_vector(scene.get('target_center_m'), 3, 'scene.target_center_m')
+    target_center = finite_vector(
+        scene.get('target_center_m'), 3, 'scene.target_center_m')
     if scene.get('target_provenance') != provenance:
         raise ContractError(
             'scene.target_provenance must match target_provenance')
@@ -283,6 +312,40 @@ def validate_request(payload, now_ns=None):
         if plan_kind != 'ROUGH_ACQUISITION' and required_first:
             raise ContractError(
                 'required_first candidate is acquisition-only')
+        if candidate.get('candidate_geometry') == 'target_ray':
+            if plan_kind != 'MULTIVIEW_SCAN':
+                raise ContractError('target-ray candidate is scan-only')
+            try:
+                ray_id = int(candidate.get('ray_id', -1))
+                minimum = float(candidate.get('ray_min_standoff_m'))
+                maximum = float(candidate.get('ray_max_standoff_m'))
+                standoff = float(candidate.get('ray_standoff_m'))
+            except (TypeError, ValueError):
+                raise ContractError('target-ray interval fields are malformed')
+            ray_direction = finite_vector(
+                candidate.get('ray_direction'), 3, 'target-ray direction')
+            ray_direction_norm = math.sqrt(sum(
+                value * value for value in ray_direction))
+            if (
+                    ray_id < 0
+                    or not all(math.isfinite(value) for value in (
+                        minimum, maximum, standoff))
+                    or minimum <= 0.0 or maximum < minimum
+                    or standoff < minimum or standoff > maximum
+                    or abs(ray_direction_norm - 1.0) > 1e-6):
+                raise ContractError('target-ray interval fields are invalid')
+            expected_position = [
+                origin + axis * standoff
+                for origin, axis in zip(target_center, ray_direction)]
+            if any(
+                    abs(actual - expected) > 1e-6
+                    for actual, expected in zip(
+                        finite_vector(
+                            candidate.get('camera_position_m'), 3,
+                            'target-ray representative position'),
+                        expected_position)):
+                raise ContractError(
+                    'target-ray representative position is inconsistent')
     if (
             plan_kind == 'ROUGH_ACQUISITION'
             and not any(candidate.get('required_first', False)
@@ -860,8 +923,17 @@ def validate_response(payload, request=None):
                 [candidate['look_direction']]
                 + list(candidate.get('fallback_look_directions', []))
                 if candidate is not None else [])
+            position_matches = bool(
+                candidate is not None
+                and (
+                    target_ray_position_matches(
+                        candidate, viewpoint,
+                        request['scene']['target_center_m'])
+                    if candidate.get('candidate_geometry') == 'target_ray'
+                    else viewpoint['camera_position_m']
+                    == candidate['camera_position_m']))
             if candidate is None \
-                    or viewpoint['camera_position_m'] != candidate['camera_position_m'] \
+                    or not position_matches \
                     or viewpoint['look_direction'] not in allowed_looks:
                 raise ContractError(
                     'response selected viewpoint does not match request')

@@ -41,6 +41,7 @@ class TrajectoryDecision:
     action: TrajectoryAction
     sample_index: Optional[int] = None
     missed_samples: int = 0
+    schedule_delay_sec: float = 0.0
 
 
 class TrajectoryRunner:
@@ -82,7 +83,7 @@ class TrajectoryRunner:
 
     @staticmethod
     def stream_decision(path_index, times_sec, elapsed_sec):
-        """Select exactly one due sample and refuse burst/shortcut behavior."""
+        """Select the next unsent sample without bursting or skipping it."""
         index = int(path_index)
         schedule = tuple(float(value) for value in times_sec)
         elapsed = float(elapsed_sec)
@@ -96,14 +97,13 @@ class TrajectoryRunner:
                 and schedule[due_index + 1] <= elapsed + 1e-6):
             due_index += 1
         missed = due_index - index
-        if missed:
-            return TrajectoryDecision(
-                TrajectoryAction.FAILED_OVERRUN,
-                sample_index=due_index,
-                missed_samples=missed,
-            )
         return TrajectoryDecision(
-            TrajectoryAction.PUBLISH, sample_index=due_index)
+            TrajectoryAction.PUBLISH,
+            sample_index=index,
+            missed_samples=missed,
+            schedule_delay_sec=(
+                max(0.0, elapsed - schedule[index]) if missed else 0.0),
+        )
 
     @staticmethod
     def following_decision(

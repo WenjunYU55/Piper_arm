@@ -15,7 +15,10 @@ from piper_mobile_manipulation.obstacle_instance_3d_node import (
     tf_listener_recovery_due,
 )
 from piper_mobile_manipulation.safe_servo_node import SafeServoNode
-from piper_mobile_manipulation.sam2_live_bridge_node import Sam2LiveBridgeNode
+from piper_mobile_manipulation.sam2_live_bridge_node import (
+    Sam2LiveBridgeNode,
+    tracking_is_prediction_only,
+)
 from piper_mobile_manipulation.target_tracker_node import TargetTrackerNode
 
 
@@ -38,6 +41,17 @@ class FakePublisher:
 
     def publish(self, message):
         self.messages.append(message)
+
+
+def test_tracking_health_marks_motion_and_settling_as_prediction_only():
+    common = (False, 'TRACKING', 0.1, 0.75, None)
+
+    assert tracking_is_prediction_only(common[0], True, False, *common[1:])
+    assert tracking_is_prediction_only(common[0], False, False, *common[1:])
+    assert not tracking_is_prediction_only(
+        common[0], False, True, *common[1:])
+    assert tracking_is_prediction_only(
+        common[0], False, True, 'LOW_CONFIDENCE', 0.1, 0.75, None)
 
 
 def test_live_target_only_scene_publishes_without_waiting_for_tf():
@@ -675,6 +689,41 @@ def test_loss_during_arm_motion_waits_without_heavy_request():
     assert requested == []
     assert bridge.lifecycle_state == 'WAITING_TO_REACQUIRE'
     assert statuses[0][0] == 'reacquisition_waiting_for_motion'
+
+
+def test_motion_projection_is_not_promoted_to_a_semantic_conditioning_seed():
+    queued = []
+    bridge = SimpleNamespace(
+        latest_motion_prompt=np.ones((4, 4), dtype=np.uint8),
+        latest_motion_prompt_key='0001',
+        latest_motion_prompt_at=1.0,
+        queue_seed=lambda *args: queued.append(args),
+    )
+
+    assert not Sam2LiveBridgeNode.try_motion_prompt_seed(bridge)
+    assert queued == []
+
+
+def test_valid_live_mask_during_motion_does_not_complete_recovery():
+    statuses = []
+    bridge = SimpleNamespace(
+        has_ever_tracked=False,
+        measurement_quality=0.0,
+        loss_episode_active=True,
+        recovery_valid_frames=0,
+        lifecycle_state='WAITING_TO_REACQUIRE',
+        camera_settled=lambda: False,
+        get_parameter=lambda _name: SimpleNamespace(value=100),
+        publish_status=lambda state, **values: statuses.append((state, values)),
+    )
+
+    Sam2LiveBridgeNode.record_valid_mask(
+        bridge, {'mask_area_px': 5000})
+
+    assert bridge.has_ever_tracked
+    assert bridge.recovery_valid_frames == 0
+    assert bridge.lifecycle_state == 'WAITING_TO_REACQUIRE'
+    assert statuses[0][0] == 'tracking_prediction_only_motion'
 
 
 def test_initial_lost_status_waits_for_explicit_acquisition_seed():

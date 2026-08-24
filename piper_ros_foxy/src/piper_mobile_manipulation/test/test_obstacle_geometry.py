@@ -22,8 +22,13 @@ def test_whitelist_is_effective_not_advisory():
     assert effective_classification('marker', False, ['pen']) == MOVABLE
     assert effective_classification('whiteboard marker', False, ['pen']) == MOVABLE
     assert effective_classification('paper', False, ['pen']) == BLOCKED
-    assert effective_classification('marker', True, ['pen']) == UNSAFE
-    assert effective_classification('unknown', False, ['pen']) == UNSAFE
+    assert effective_classification('marker', True, ['pen']) == BLOCKED
+    assert effective_classification('unknown', False, ['pen']) == BLOCKED
+    assert effective_classification(
+        'unknown depth foreground', False, ['pen']) == BLOCKED
+    assert effective_classification('hand finger', False, ['pen']) == UNSAFE
+    assert effective_classification(
+        'depth foreground (human hand)', False, ['pen']) == UNSAFE
 
 
 def test_explained_depth_duplicate_is_suppressed():

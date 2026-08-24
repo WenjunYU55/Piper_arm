@@ -89,6 +89,23 @@ class TargetSelectionTest(unittest.TestCase):
 
         self.assertIsNone(result)
 
+    def test_exterior_depth_halo_inside_bbox_is_not_an_occluder(self):
+        target_mask = np.zeros((120, 160), dtype=bool)
+        target_mask[35:85, 55:105] = True
+        depth = np.full(target_mask.shape, 0.50, dtype=np.float32)
+        depth[target_mask] = 0.40
+        # Reproduce a three-sided L515 discontinuity halo. Parts of this
+        # component occupy the target bounding box's empty edge pixels, but it
+        # never crosses the interior target silhouette.
+        depth[29:35, 49:111] = 0.32
+        depth[29:60, 49:55] = 0.32
+        depth[29:60, 105:111] = 0.32
+
+        result = depth_occluder_mask(
+            Path('/unused'), depth, 0.40, target_mask)
+
+        self.assertIsNone(result)
+
     def test_foreground_crossing_target_envelope_is_a_depth_occluder(self):
         target_mask = np.zeros((120, 160), dtype=bool)
         target_mask[30:80, 50:110] = True

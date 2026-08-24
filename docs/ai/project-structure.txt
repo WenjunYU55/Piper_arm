@@ -6,7 +6,7 @@ Piper_arm/
 ├── piper_ros_foxy/                  ROS 2 Foxy colcon workspace
 │   └── src/
 │       ├── piper/                   Real PiPER CAN driver with all-six FOC enable/disable proof, failed-partial-enable rollback, per-motor fail-closed watchdog and typed six-axis motor authority/fault publication; one hardware launch and no command-coupled RViz compatibility launch
-│       ├── piper_description/       Production mode-0 URDF/meshes including the physical 180-degree gripper installation offset and fixed visual-only camera holder/L515 CAD branches, plus hash-verified planning_30mm link1/link2/link5 collision pieces, feedback-only live TF/RViz, and preview joint editor
+│       ├── piper_description/       Production mode-0 URDF/meshes including the physical 180-degree gripper installation offset, fixed visual camera holder/L515 CAD branches, their generated gripper_base collision assembly and seventeen planning_30mm cells, plus hash-verified link1/link2/link5 pieces, feedback-only live TF/RViz, and preview joint editor
 │       ├── piper_msgs/              Vendor arm messages, typed hash-bound read-only controller motion limits, and Enable service
 │       ├── piper_mobile_manipulation/
 │           ├── msg/                 Project custom ROS messages

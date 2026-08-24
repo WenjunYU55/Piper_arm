@@ -77,8 +77,9 @@ correlated target detection only after the arm reaches a viewpoint and the camer
 validated seed exists, SAM2 tracks it continuously and GroundingDINO runs again on loss, sustained
 low confidence, or a separately correlated post-settle scan-capture refinement. Both
 models are required to run on CUDA; the workers fail instead of silently falling back to CPU. The
-rolling SAM2 state resets every eight frames using the latest masks, bounding GPU memory on the
-validated RTX 3090. Live SAM2 inference defaults to 384 pixels wide and its masks are restored to the
+SAM2 keeps the last accepted semantic seed as its conditioning authority. Its rolling history is
+compacted to eight retained frames without converting propagated masks into new prompts, bounding
+GPU memory on the validated RTX 3090. Live SAM2 inference defaults to 384 pixels wide and its masks are restored to the
 native 640x480 RGB-D resolution with nearest-neighbour resizing. Override this with
 `PIPER_SAM2_INFERENCE_WIDTH`; use `640` for native-resolution live inference.
 
@@ -357,6 +358,15 @@ intrinsics and distortion to ChArUco interpolation. `solve_hand_eye.py` still de
 pose-geometry and cross-solver results are diagnostics and never deploy a transform. The installed
 PiPER firmware `S-V1.5-8` requires modified-DH mode 0. Do not choose mode 1 or another solver merely
 because it reduces a fitting residual.
+
+For a new candidate, keep fitting and held-out captures in separate directories. Collect roughly
+12–15 fitting stations plus at least 3 held-out stations. Move slowly, keep the rigid board fully
+visible, well lit, and large enough in the RGB frame for accurate corners; vary wrist orientation
+around at least two independent axes as well as
+camera-to-board distance. Repeating nearly the same fronto-parallel pose adds little calibration
+information. Held-out stations must not be copied into fitting or selected after seeing their error.
+This follows the sampling guidance from AgileX's PiPER hand-eye package and MoveIt Calibration;
+image quality alone is not a substitute for robot-pose diversity.
 
 Stop the arm at each substantially different viewpoint, wait until all six measured joint positions
 remain within 0.001 rad for 0.75 seconds, then press Enter to average ten new strict full-board

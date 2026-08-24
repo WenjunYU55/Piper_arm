@@ -1,6 +1,43 @@
 schema_version: 1
 document: consolidated_problem_and_incident_log
-last_reviewed: '2026-08-23'
+expired_scan_authorization_blocked_pre_home_2026_08_24:
+  state: software_repaired_physical_requalification_pending
+  symptom: Task gui-sim-f525ea2a7d654f2a9ae06077088c5cf4 timed out after four captures, entered shutdown, then failed PRE_HOME with mission authorization is missing or expired. The arm remained enabled in a current-position hold and command-owning processes were retained.
+  root_cause: Scan authorization expiry and mission deadline were identical. Terminal recovery correctly ignored the expired scan deadline in its guard, but ExecuteHomeStage still required that same expired authorization and no renewal occurred after stop/hold.
+  correction: After terminal scan stop/hold acknowledgement, or fresh static-startup feedback, renew the same mission identity for one existing queue/result-bounded direct-home stage and retain the established PRE_HOME, ROUGH_HOME, STORAGE_WRIST, disable and cleanup sequence.
+  evidence: [new expired-deadline authorization regression, stop-hold-renew-home ordering regression, 57 mission-core tests pass, 356 focused shutdown and safety tests pass, 748 complete mobile tests pass]
+  remaining: Perform one explicitly supervised timeout-to-home test; no physical command was issued for this repair.
+camera_assembly_to_joint1_collision_model_gap_2026_08_24:
+  state: software_repaired_physical_requalification_pending
+  symptom: During supervised acquisition the detailed camera/holder assembly physically contacted joint1 even though the requested path had passed Tesseract.
+  root_cause: The accurate aligned holder and L515 CAD meshes existed only as RViz visuals. General Tesseract self-collision used small camera/mount/cable proxies; the full transformed AABB was checked only against the support plane/external boxes and could not represent camera-to-arm contact.
+  correction: Generate one collision surface automatically from the existing locked visual transforms, split it into seventeen hash-bound overlapping 30 mm XY cells, attach it rigidly to gripper_base, and retain normal collision against nonadjacent arm links. Original visuals, optical TF, calibration, motion, home and safety thresholds are unchanged.
+  evidence: [198122 source triangles retained, exact 139.5 x 105.7267 x 53 mm bounds, 4 generator tests pass, 11 description tests pass, 141 Tesseract tests pass, affected build passes, installed assets match, rootless core PASS, rootless compact PASS, no physical command]
+  remaining: The exact incident joint pose was not persisted and cannot honestly be replayed. Begin supervised qualification with one low-speed planned viewpoint only after operator authorization.
+repeated_unreachable_high_information_rays_2026_08_23:
+  state: software_qualified_physical_retest_pending
+  symptom: scan_20260823_181223 accepted fifteen captures but selected ranks 322 through 358 near the already reachable sector, achieving only 42.9 degrees azimuth and no negative-Y views.
+  root_cause: The coarse workspace correctly claimed only prequalification, but the bridge then represented each direction by only a few exact standoff probes. A feasible point between those probes could therefore be missed, and earlier fully failed rays were also forgotten whenever accepted_views changed.
+  correction: Keep global NBV scoring authoritative, transmit one bounded interval per shortlisted ray, jointly solve joints plus continuous standoff in the worker with exact aim first, validate the actual returned endpoint, keep bounded local-solver failures generation-contextual, and reject accepted-direction neighbors below ten degrees.
+  evidence: [synthetic 0.335 m reachable endpoint is selected despite lying between the old probe locations, off-ray and out-of-interval responses fail contract validation, 196 focused tests pass, 747 complete mobile tests pass, 148 complete Tesseract tests pass]
+last_reviewed: '2026-08-24'
+target_local_depth_halo_false_unsafe_2026_08_23:
+  status: software_fixed_recorded_replay_passed
+  symptom: After four accepted captures, task gui-sim-8b46fd14bf5d4d4184a1cc84a066d92f failed NO_REACHABLE_PLAN because a U-shaped unknown-depth-foreground component was reported unsafe.
+  root_cause: The target-relevance gate used a rectangular target bounding envelope, which admitted an exterior L515 depth-discontinuity halo through empty rectangle support. The depth record then hardcoded unsafe true, contradicting the semantic rule that only hands or people are unsafe.
+  correction: Use a one-pixel-eroded filled target silhouette for intrusion, reserve UNSAFE for explicit hand/finger/person/human semantics, keep unknown or inconsistent evidence BLOCKED, and preserve the pen/marker/stick movable whitelist.
+  evidence: Archived failing RGB-D replay returns zero retained halo pixels; focused halo, crossing-occluder, human-unsafe, unknown-blocked, heavy-worker and live-worker tests pass.
+  follow_up: One supervised clear-scene E2E remains required; do not conflate this resolved depth-halo defect with deferred SAM2 temporal semantic drift.
+e2e_startup_limits_and_capture_refresh_2026_08_23:
+  startup_symptom: A GUI E2E failed before enable because controller limits were unavailable while arm status reported teaching mode.
+  startup_root_cause: The controller does not answer the existing limit queries in teaching mode, while the prior driver restored motion-output role only later inside enable after readiness had already failed.
+  startup_correction: Restore the documented motion-output role before disabled-arm limit readiness only after fresh complete feedback proves all six motors disabled and fault-free; retain the same proof before enable. Command-free validation received controller replies and valid limits without enabling.
+  capture_symptom: A later E2E accepted three NBV captures, performed its one correlated heavy refresh at the fourth achieved pose, then immediately aborted on stale scan quality.
+  capture_root_cause: Pre-refresh readiness retries had exhausted the shared attempt counter; successful fresh semantic evidence did not begin a new bounded readiness epoch.
+  capture_correction: Reset only the RGB-D readiness-attempt counter when the matching heavy refresh succeeds, while retaining its request ID so no second refresh is possible. Coverage, NBV, Tesseract, thresholds and shutdown are unchanged.
+  validation_run: Task gui-sim-8b46fd14bf5d4d4184a1cc84a066d92f passed startup, acquisition, target lock, NBV motion and four durable captures. A refreshed invalid observation exhausted its new bounded readiness window, returned VIEW_REJECTED without changing coverage and replanned from achieved state, proving the corrected handoff physically.
+  terminal_result: The same run later failed for a separate perception defect. Heavy refinement retained a 4324-pixel U-shaped exterior L515 depth halo because 909 pixels entered empty support inside the target's rectangular bounding envelope. It then mislabeled depth-only evidence as unsafe and returned retryable NO_REACHABLE_PLAN. The archived replay now returns zero halo pixels using eroded filled-silhouette intrusion; explicit human semantics alone are UNSAFE and unknown remains BLOCKED.
+  safety_evidence: The terminal mission completed PRE_HOME, ROUGH_HOME and STORAGE_WRIST, disabled all motors, removed all mission-owned processes and reported safe_shutdown true. Focused executor tests pass and protect the new evidence boundary.
 disconnected_mesh_fragments_2026_08_23:
   state: visual_fragments_filtered_metric_failure_retained
   symptom: The seven-view cube meshes contained 176 to 197 connected components even though the physical cube is one object; full-mesh bounds were influenced by many tiny floating surfaces.
@@ -11,8 +48,10 @@ hand_eye_candidate_not_reconstruction_qualified_2026_08_22:
   state: measurement_campaign_in_progress_no_runtime_tf_change
   symptom: Reconstruction remains oversized/misaligned, while a new corrected-scale 12-pose hand-eye fitting set closes at approximately 8.69 mm translation RMS and 1.30 degrees rotation RMS despite subpixel ChArUco reprojection.
   investigation: Installed piper_sdk 0.6.1 and controller firmware S-V1.5-8 confirm modified-DH mode 0. Controller end-pose and mode-0 joint FK agree closely. Reasonable OpenCV hand-eye methods return nearly identical closure and same-session RGB intrinsic refitting is worse, so neither mode switching, solver shopping nor intrinsic refitting is justified.
+  sample_influence: Leaving out the first, darkest and smallest-board capture lowers fitting translation RMS from approximately 8.69 to 7.33 mm, but that omitted sample then misses by 18.85 mm and substantial residual remains. Future collection should keep the complete board larger and consistently exposed without treating removal of one sample as the full repair.
   correction: Make capture image/joint source-stamp correlation explicit, use CameraInfo during ChArUco interpolation, add stationary within-pose noise and pose-diversity/multi-solver diagnostics. Do not deploy the candidate.
   remaining: The first stationary trial saw only 2 of 12 board markers and correctly recorded no measurement. A complete-board stationary test, return-to-pose test, independent held-out set and reconstruction replay are still required. Driver enable is separately blocked by unavailable J6 positive-limit feedback and remains safely disabled.
+  startup_evidence: Passive CAN observed 0x474 J6 limit configuration and repeated 0x472 queries but no 0x473 response. The same absence and an all-zero/timestamp-zero getter occurred with the ROS driver stopped and piper_sdk 0.6.1 as sole CAN owner, so this is not caused by ROS result parsing or duplicate CAN command ownership.
 settled_capture_deadline_incident_2026_08_22:
   task_id: gui-sim-8733327f74f3455eb8656f01a6ceb66d
   symptom: One 20-frame burst succeeded in 1.031 seconds; a later settled request reached only 18/20 before the recorder's independent five-second deadline and terminated the mission as DEADLINE_EXPIRED. The executor's subsequent cancel log was internal failure cleanup, not an operator action.
@@ -65,7 +104,7 @@ ray_policy_attempt_cost_and_low_value_candidates_2026_08_21:
   state: software_fixed_physical_retest_pending
   symptom: Frozen ray_nbv still handed a broad twelve-direction batch to Tesseract and allowed arbitrarily small positive predicted information, so expensive exact standoff attempts could be spent on low-value or later-ranked directions.
   root_cause: Exact-point voxel and target-ray policies shared one candidate limit, and ray expansion ordered probe phases globally rather than exhausting one ranked direction before moving to the next.
-  correction: Bind policy to candidate geometry, require 0.02 normalized predicted marginal information for both authoritative NBV policies, retain twelve exact points for voxel_nbv, cap ray_nbv at six directions and keep each direction's preferred then reserve probes contiguous. Private request validation fails closed on mixed policies, interleaved rays or bound mismatches.
+  correction: Bind policy to candidate geometry, require 0.02 normalized predicted marginal information for both authoritative NBV policies, retain twelve exact points for voxel_nbv, and cap ray_nbv at six bounded intervals searched completely by the worker. Private request validation fails closed on mixed policies, malformed intervals or selected endpoints outside the requested ray.
   boundary: [NBV gain formula unchanged, ranking unchanged, accepted-only coverage unchanged, Tesseract remains feasibility owner, no ROS interface motion speed safety capture home or shutdown change]
 tesseract_detour_controller_lead_2026_08_21:
   state: software_fixed_physical_retest_pending
@@ -144,6 +183,15 @@ target_jump_from_unmasked_roi_depth_2026_08_20:
   correction: Target3D now requires a fresh correlated nonempty mask; the existing base_link tracker predicts without correction on invalid input and applies a Mahalanobis gate to valid measurements under a near-static model.
   software_evidence: [60 focused depth/tracker tests pass, 680 mobile functional tests pass, 115 Tesseract tests pass unchanged, 120 repository tests pass with one hardware-dependent skip, 11 isolated AI worker tests pass, five-package Foxy build passes, changed tracking files pass flake8 and pep257, AI YAML parsing passes]
   deferred: Later fresh SAM2 masks in the same log drift from about 0.365 m toward 0.478 m. Gradual semantic drift is not fully separable by a Kalman gate and remains a SAM2/reseed follow-up.
+  physical_action_during_fix: none
+sam2_prediction_feedback_drift_2026_08_23:
+  state: software_fixed_physical_replay_pending
+  symptom: A propagated target mask could gradually expand from roughly 5000 to 17000 pixels and move masked depth toward a background layer while the stationary cube appeared to move in base_link.
+  root_cause: The live worker reset every eight frames by turning its latest propagated prediction into a new conditioning mask. Motion-compensated projected masks could also become conditioning seeds, and otherwise valid target measurements could correct the base_link filter while the eye-in-hand camera was moving.
+  correction: The heavy semantic seed remains the conditioning authority; predictor state is compacted to the trusted conditioning frame plus recent non-conditioning memory; projected masks have no seed authority; fresh moving or unsettled camera health forces prediction-only correction; moving masks cannot complete recovery; and heavy target reseeding requires the existing successful semantic result plus its permissive correlated aligned-depth check.
+  permissive_boundary: No hard area, IoU, colour, known-size or appearance check was added. Existing depth support remains 25 pixels and 5 percent, existing settle is 0.5 seconds, existing innovation threshold is 5.0 and existing prediction timeout is five seconds.
+  software_evidence: [7 isolated SAM2 worker tests pass, 73 focused ROS tracking and heavy-refresh tests pass, 745 piper_mobile_manipulation tests pass, piper_msgs and piper_mobile_manipulation build pass, 80-frame real CUDA replay retained eight frames with zero prediction promotion across old reset boundaries]
+  remaining: Perform a supervised display-only moving-camera qualification before using the repaired tracking in autonomous motion.
   physical_action_during_fix: none
 stale_target_aim_and_local_nbv_frontier_2026_08_20:
   state: software_fixed_physical_validation_pending
@@ -725,3 +773,13 @@ latest_nbv_incidents_2026_08_17:
     root_cause: The occlusion checker continued publishing fresh CLEAR evidence roughly every 0.4 seconds, but scan_capture's single-threaded executor serviced high-rate RGB-D entities ahead of its final low-rate occlusion subscription. Scan quality arrived while the local occlusion receipt timestamp stopped advancing.
     correction: Give scan-quality and occlusion subscriptions one dedicated mutually-exclusive callback group and spin the command-free recorder with a two-thread executor. Preserve the one-second freshness threshold and all capture rules.
     evidence: [task codex-e2e-20260821-1811-shortlistfix, scan_20260821_181024, vision.log CLEAR publications 1787332296.529 through 1787332300.137, scan_stack capture rejection at 1787332300.369, safe staged home disable and owned-child cleanup]
+
+latest_hardware_diagnostics_2026_08_23:
+  - id: periodic_enabled_arm_jitter_requires_can_correlation
+    status: investigation_deferred_by_operator
+    symptom: At an apparently settled calibration pose, the physically enabled PiPER exhibits small periodic jitter. A previous unsafe experiment that mechanically removed the installed end load while leaving the wired tool connected caused severe powered flailing; it must not be repeated.
+    current_evidence: The installed legacy piper_sdk uses can.interface.Bus while its receive thread and the four-thread ROS driver can access the same SDK instance concurrently. Upstream piper_sdk issue 67 reports periodic twitching under the same non-thread-safe CAN arrangement. Normal project motion uses MoveJ rather than the report's strongest MIT-mode case, so this is a credible hypothesis rather than a confirmed root cause. The driver also issues motion-limit queries every five seconds; the fixed hand-eye runner sends each pose only once.
+    next_safe_test: Passively correlate physical twitch timestamps with CAN control IDs 0x151, 0x155 through 0x157, 0x471, 0x472 and 0x477 plus joint position, velocity and current feedback while one supervised static pose is held. Do not change payload, gains, calibration or motion behavior during the measurement.
+    interpretation: A five-second correlation with 0x472 or 0x477 implicates the periodic limit-query/concurrent-SDK path; correlation with 0x155 through 0x157 implicates repeated host targets; no coincident command implicates firmware servo/load compensation or mechanical limit cycling. Only after evidence should a tracked reversible ThreadSafeBus or complete SDK-send serialization repair be considered.
+    invariants: [do not remove or dangle the installed load while powered, do not tune MIT gains, do not change payload presets before measurement, do not run unsupervised movement]
+    evidence: [https://github.com/agilexrobotics/piper_sdk/issues/67, piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py, L515_camera/run_fixed_hand_eye_calibration.py]

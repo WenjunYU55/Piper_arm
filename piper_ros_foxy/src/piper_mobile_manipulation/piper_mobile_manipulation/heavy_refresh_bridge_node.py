@@ -64,6 +64,15 @@ def masked_depth_range_diagnostic(
     return result
 
 
+def target_seed_allowed(worker_status, depth_diagnostic):
+    """Admit a target conditioning mask using existing semantic/depth gates."""
+    return bool(
+        str(worker_status) == 'ok'
+        and isinstance(depth_diagnostic, dict)
+        and str(depth_diagnostic.get('target_depth_status', '')) == 'VALID'
+    )
+
+
 class HeavyRefreshBridgeNode(Node):
     def __init__(self):
         super().__init__('heavy_refresh_bridge_node')
@@ -358,7 +367,12 @@ class HeavyRefreshBridgeNode(Node):
                     if (
                             bool(self.get_parameter('seed_sam2_live').value)
                             and result.get('tracked_objects')):
-                        self.queue_sam2_live_seed(response, result)
+                        # A rejected heavy target must never become a live target
+                        # conditioning prompt.  Independently detected obstacle
+                        # masks may still retain their established obstacle-only
+                        # session semantics.
+                        self.queue_sam2_live_seed(
+                            response, result, include_target=False)
                 else:
                     depth_diagnostic = self.publish_target_depth_diagnostic(
                         mask, response.name, result)
@@ -395,7 +409,18 @@ class HeavyRefreshBridgeNode(Node):
                         **depth_diagnostic,
                     )
                     if bool(self.get_parameter('seed_sam2_live').value):
-                        self.queue_sam2_live_seed(response, result)
+                        allow_target = target_seed_allowed(
+                            result.get('status'), depth_diagnostic)
+                        self.queue_sam2_live_seed(
+                            response, result, include_target=allow_target)
+                        if not allow_target:
+                            self.publish_status(
+                                'sam2_target_seed_skipped',
+                                job_id=response.name,
+                                request_id=request_id,
+                                reason='target depth was not qualified',
+                                **depth_diagnostic,
+                            )
                 destination = self.spool / 'consumed' / response.name
                 shutil.rmtree(destination, ignore_errors=True)
                 os.replace(str(response), str(destination))
@@ -506,12 +531,12 @@ class HeavyRefreshBridgeNode(Node):
             )
         return diagnostic
 
-    def queue_sam2_live_seed(self, response, result):
+    def queue_sam2_live_seed(self, response, result, include_target=True):
         rgb_path = response / 'rgb.jpg'
         objects = result.get('tracked_objects', [])
         if not rgb_path.is_file() or not isinstance(objects, list) or not objects:
             self.publish_status('sam2_seed_skipped', job_id=response.name, error='missing RGB or objects')
-            return
+            return False
         live_spool = Path(str(self.get_parameter('sam2_live_spool_dir').value))
         seed_root = live_spool / 'seeds'
         seed_root.mkdir(parents=True, exist_ok=True)
@@ -525,6 +550,12 @@ class HeavyRefreshBridgeNode(Node):
             for record in objects:
                 if not isinstance(record, dict):
                     continue
+                is_target = (
+                    str(record.get('role', '')).lower() == 'target'
+                    or int(record.get('object_id', 0)) == 1
+                )
+                if is_target and not include_target:
+                    continue
                 source = response / str(record.get('mask_file', ''))
                 if not source.is_file():
                     continue
@@ -534,10 +565,23 @@ class HeavyRefreshBridgeNode(Node):
                 copied['mask_file'] = destination_name
                 copied_objects.append(copied)
             if not copied_objects:
-                raise ValueError('no valid object masks')
+                shutil.rmtree(temporary, ignore_errors=True)
+                self.publish_status(
+                    'sam2_seed_skipped', job_id=response.name,
+                    error='no qualified object masks')
+                return False
+            trusted_target = bool(include_target and any(
+                str(item.get('role', '')).lower() == 'target'
+                or int(item.get('object_id', 0)) == 1
+                for item in copied_objects))
             manifest = {
                 'frame_key': response.name,
                 'source': 'groundingdino_sam2',
+                'trusted_target_seed': trusted_target,
+                'target_validation': {
+                    'semantic': trusted_target,
+                    'aligned_depth': trusted_target,
+                },
                 'image_stamp': result.get('image_stamp', {}),
                 'frame_id': result.get('frame_id', ''),
                 'objects': copied_objects,
@@ -549,9 +593,11 @@ class HeavyRefreshBridgeNode(Node):
                 shutil.rmtree(final)
             os.replace(str(temporary), str(final))
             self.publish_status('sam2_seed_queued', job_id=response.name, object_count=len(copied_objects))
+            return True
         except Exception as exc:
             shutil.rmtree(temporary, ignore_errors=True)
             self.publish_status('sam2_seed_failed', job_id=response.name, error='%s: %s' % (type(exc).__name__, exc))
+            return False
 
     def publish_status(self, state, **values):
         payload = {'state': state, 'dry_run': True, 'real_arm_motion': False}

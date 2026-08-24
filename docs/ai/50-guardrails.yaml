@@ -1,5 +1,43 @@
 schema_version: 1
 document: guardrails
+deadline_terminal_home_authorization_guardrail_2026_08_24:
+  invariants:
+    - A mission deadline immediately ends acquisition, NBV, planning and capture work but must still enter the established terminal home sequence.
+    - Renew only the same task ID and mission digest, only after scan stop/hold acknowledgement or fresh static-startup feedback, and only for one bounded direct-home stage window derived from existing queue/result limits.
+    - Renewal cannot restart scan phases, change a home target, bypass executor stage checks or bypass fresh all-six motor authority.
+    - Fresh motor-control loss remains the sole no-command exception and must never be hidden by authorization renewal.
+  must_retest_if_changed: [test_mission_core.py, test_mission_engine.py, test_phase1_mission_characterization.py, test_phase1_executor_characterization.py, test_scan_motion.py, test_safety_evaluator.py, test_reintegrated_features.py, complete mobile suite, package build, colcon test, supervised timeout-to-home requalification]
+ray_endpoint_feasibility_guardrail_2026_08_23:
+  invariants:
+    - Every accepted capture still updates cumulative accepted-only coverage and triggers global ranking of the remaining frozen ray pool.
+    - One shortlisted target direction carries one bounded standoff interval; the worker jointly solves joints plus continuous standoff and the returned endpoint must remain on that interval.
+    - A bounded local nonlinear solve does not prove complete-ray global infeasibility. Keep RAY_IK_FAILURE contextual and never infer permanence from human-readable text.
+    - Endpoint collision, path, visibility, timeout and partial-interval failures must not enter the session-persistent cache.
+    - The ten-degree accepted-direction floor rejects redundant observations only; it cannot cap travel or override information ranking.
+    - Keep the six-ray bound, exact-first five-degree fallback, worker feasibility authority and every executor safety validation unchanged.
+  blast_radius: [ray eligibility after accepted captures, time spent repeating impossible IK, accepted-view diversity, terminal frontier exhaustion]
+  must_retest_if_changed: [test_viewpoint_rays.py, test_scan_session_memory.py, test_bridge_feedback_freshness.py, test_contract.py, test_worker_validation.py, test_failure_model.py, test_mission_engine.py, complete mobile and Tesseract suites, package build, command-free rootless qualification, motors-disabled provenance before physical motion]
+target_local_occluder_classification_guardrail_2026_08_23:
+  invariants:
+    - Only explicit hand, finger, person or human semantics may produce classification UNSAFE or populate the unsafe-obstacle mask.
+    - Unknown, missing, contradictory or unqualified obstacle metadata must remain fail-closed as BLOCKED and must never become MOVABLE by default.
+    - Target relevance and safety classification are separate decisions; an irrelevant observation is ignored regardless of semantic class, while a relevant observation still requires classification.
+    - A target-local depth component must cross the eroded filled target silhouette; rectangular-box intrusion alone is insufficient because L515 discontinuity halos can wrap around the target exterior.
+    - Preserve genuine crossing-occluder detection and the existing pen, marker and stick contact qualification. Do not whitelist unknown foreground.
+  must_retest_if_changed: [test_groundingdino_target_selection.py depth halo and crossing tests, test_heavy_model_worker.py unknown unsafe default, test_sam2_live_worker.py, test_obstacle_geometry.py, test_tracking_recovery.py, recorded heavy-refresh replay]
+startup_limit_role_guardrail_2026_08_23:
+  invariants:
+    - Restore motion-output role for controller-limit readiness only from fresh complete feedback proving all six motors disabled and fault-free.
+    - Never send the role command or continue limit queries when that proof fails; repeat the proof at enable time.
+    - Do not change controller limits, startup J6 mapping, motor speeds or public ROS interfaces through this recovery.
+  must_retest_if_changed: [test_enable_handshake.py teaching-role and limit-query tests, command-free controller-limit publication, passive six-disabled feedback, startup characterization]
+capture_refresh_retry_epoch_guardrail_2026_08_23:
+  invariants:
+    - A matching successful heavy refresh may reset only the bounded RGB-D readiness attempt count for the refreshed evidence at the held pose.
+    - Retain the heavy-refresh request ID so no second heavy refresh can be requested for that achieved viewpoint.
+    - Never modify accepted coverage or reconstruction until the refreshed capture is durably accepted.
+    - Preserve the existing capture timeout, readiness retry maximum, visual rejection, worker failure and shutdown behavior.
+  must_retest_if_changed: [test_scan_motion.py successful capture refresh evidence epoch, test_phase7_viewpoint_components.py capture decision matrix, mission shutdown characterization, one supervised capture-refresh E2E]
 connected_target_mesh_filter_guardrail_2026_08_23:
   invariants:
     - Persist the untouched extracted TSDF before deriving the cleaned copy; one output must never overwrite or masquerade as the other.
@@ -64,7 +102,7 @@ ray_shortlist_exhaustion_guardrail_2026_08_21:
   invariants:
     - Never add a Tesseract-rejected ray to accepted coverage or capture history.
     - Retire only IDs supplied by a validated worker response and present in the exact pending request.
-    - Scope retirement to session_id plus accepted_views; clear it after accepted coverage changes.
+    - Scope contextual retirement to session_id plus accepted_views; clear it after accepted coverage changes. Complete-ray NO_RAW_IK and JOINT_LIMIT_FAILURE use the newer session-static cache contract above.
     - Retry only typed RAY_SHORTLIST_EXHAUSTED. Do not make generic voxel or legacy TESSERACT_EXHAUSTED retry.
     - Do not alter NBV scores, ray generation, six-ray shortlist size, Tesseract feasibility, motion, capture thresholds or shutdown.
   must_retest_if_changed: [bridge feedback freshness and policy tests, failure model, MissionEngine characterization, complete mobile tests, complete Tesseract tests, build, supervised ray exhaustion and staged shutdown]
@@ -80,7 +118,7 @@ exchangeable_nbv_policy_guardrail_2026_08_21:
   invariants:
     - One validated view policy is frozen for the active planner process. A GUI change is next-mission only and cannot mix candidate geometry inside a MULTIVIEW_SCAN batch.
     - Only authoritative voxel_nbv and ray_nbv apply the 0.02 normalized predicted marginal-information floor. Raw marginal pixels cannot override it; legacy, shadow and seed scoring remain unchanged. ray_nbv_seed still requires target-ray geometry and bounded ray expansion.
-    - voxel_nbv retains at most twelve exact-point candidates. ray_nbv retains at most six information-ranked directions and every preferred then reserve probe for a direction must be attempted contiguously before the next direction.
+    - voxel_nbv retains at most twelve exact-point candidates. ray_nbv retains at most six information-ranked bounded intervals and the worker must complete one exact-first continuous joint-plus-standoff solve before the next direction.
     - Cheap generation, prequalification and useful-information filtering never claim reachability. The worker remains the only IK, collision, path and visibility authority.
     - Candidate-policy validation and private ray metadata add no ROS interface and cannot alter speed, capture, safety, home, disable or shutdown behavior.
   must_retest_if_changed: [test_view_generation.py, test_nbv_coverage.py, test_viewpoint_rays.py, test_bridge_feedback_freshness.py, test_contract.py, test_worker_validation.py, test_piper_gui_scan_policy.py, complete mobile and Tesseract suites, colcon build, colcon test]
@@ -119,6 +157,16 @@ target_tracking_measurement_guardrail_2026_08_20:
     - A missing or rejected measurement advances the existing estimator prediction only. It must not create another estimate, immediately discard a mature track, or continue beyond lost_timeout_s.
     - NBV, Tesseract, accepted coverage, reconstruction, motion, home and shutdown remain outside this repair.
   must_retest_if_changed: [test_depth_to_3d.py mask qualification background innovation and outage cases, test_tracking_recovery.py, full piper_mobile_manipulation functional suite, colcon build, colcon test]
+sam2_trusted_conditioning_guardrail_2026_08_23:
+  invariants:
+    - A propagated SAM2 mask may be published for display and normal qualified depth processing, but it must never be promoted into a new semantic conditioning prompt merely because a frame-count boundary was reached.
+    - Predictor history may be compacted only by retaining the trusted conditioning output and recent non-conditioning outputs; compaction must not change output ownership or create a second target estimate.
+    - A heavy target seed requires the existing successful GroundingDINO/SAM result and the existing correlated aligned-depth qualification of at least 25 pixels and 5 percent target-mask support. Missing, unchecked, insufficient or too-far target depth cannot seed the live target session.
+    - Motion-compensated projections remain diagnostic and have no semantic seed authority.
+    - Fresh explicit moving or unsettled camera health makes target_tracker prediction-only. Missing or stale motion health does not add a new estimator deadlock; the independent mission TrackingHealth gate remains authoritative for stale health.
+    - Do not add hard mask-area, IoU, colour, known-dimension or appearance gates without recorded evidence and separate qualification.
+    - NBV, Tesseract, capture acceptance, home, shutdown, motion speeds and public ROS message definitions remain unchanged.
+  must_retest_if_changed: [test_sam2_live_worker.py, test_depth_to_3d.py, test_tracking_recovery.py, test_heavy_refresh_bridge.py, full piper_mobile_manipulation functional suite, piper_mobile_manipulation build and colcon test]
 tesseract_worker_readiness_guardrail_2026_08_20:
   invariants:
     - Never advertise worker_ready before qualified URDF/SRDF Robot construction succeeds.
@@ -139,7 +187,7 @@ global_nbv_target_estimator_guardrail_2026_08_20:
     - Information gain is lexicographically primary. Motion distance can order equivalent radial or utility alternatives but cannot defeat materially greater unknown or novel-surface gain.
     - Preliminary geometry status must be called prequalified. Only the worker may prove finite bounded IK, collision-free path and dense visibility.
     - Every authoritative voxel_nbv shortlist candidate aims exactly at the frozen mission target. Exact aim is tried through roll and IK alternatives before at most one hash-bound fallback no more than five degrees away. The separate dense-path visibility cone remains twenty degrees.
-    - A transient fresh visual capture rejection receives exactly one correlated heavy refresh while held. A busy single-flight worker retains that request in the bridge and queues it exactly once after idle and fresh-frame gates pass, bounded by the original capture timeout; no second perception job or independent retry layer may amplify it. A second visual rejection replans from achieved FK, and perception worker failure or timeout remains a mission failure.
+    - A transient fresh visual capture rejection receives exactly one correlated heavy refresh while held. A busy single-flight worker retains that request in the bridge and queues it exactly once after idle and fresh-frame gates pass, bounded by the original capture timeout; no second perception job or independent retry layer may amplify it. A successful refresh starts a new bounded transport-readiness evidence epoch while retaining the same refresh ID. A second visual rejection replans from achieved FK, and perception worker failure or timeout remains a mission failure.
     - Never average target coordinates across eye-in-hand motion in camera space. Qualify finite component depth, transform using the measurement timestamp and filter in base_link. Kalman filtering must not be used to hide systematic geometry bias.
     - Keep diagnostics with the stage that measured them. Planner counts do not grant Tesseract feasibility, and capture validation must not choose retry or NBV recovery policy.
     - The diagnostic target_landmark must not request heavy perception in the production gpu_geometry launch. A semantic refresh that can change target or obstacle authority belongs to motion-gated tracking or an explicitly settled acquisition, workflow, or capture transaction.
@@ -268,7 +316,7 @@ telemetry_snapshot_guardrail_2026_08_14:
 hard_invariants:
   - Real-arm motion is opt-in; start_piper defaults auto_enable=false and perception/workflow defaults enable_real_arm_motion=false.
   - Never run the ROS PiPER driver and a direct piper_sdk calibration/reset process against CAN simultaneously.
-  - The physical gripper's wrong-way-round installation is exactly the fixed link6-to-gripper_base yaw-pi transform. Never add that offset to joint6 feedback, controller commands, mode-0 link6 FK, or camera calibration. The detailed camera-holder and converted L515 STLs remain visual-only for general robot self/environment collision and inertia, but their exact transformed union establishes the mandatory conservative link6 external-support envelope center [-0.029750002,0,0.0375] m and size [0.1395,0.10572671,0.053] m. The camera-holder visual origin [0.1765,-0.0565314679146,0.0612789535522] and ordered X-then-Z orientation are user-locked and must not move; its nominal close-hole datum retains the intentional -4 mm visual Z trim. The operator-confirmed l515_visual remains fixed at camera_holder [0.1,0,0] m with rpy [-pi,pi,pi/2], mesh offset [-0.030503129,-0.030503409,-0.029628554] m, transverse 40 mm screw-axis alignment and +2.5 mm installed axial seating trim; the 87.763214 mm lateral tab pair is explicitly not the camera datum. Intel Rev 003's 4.5 mm depth offset constrains depth optical to l515_visual [0,0,-0.008224997] m, and the factory extrinsic from device f1120648 constrains colour optical to [-0.0002000813,0.0141312284,-0.0040001602] m with a 1.322466-degree relative skew. Never restore the superseded [0,0.014,-0.008694998] m mixed RGB-X/Y/depth-Z anchor. Preserve the raw PARK solve as provenance, keep the qualified conservative L515 housing/mount/cable envelopes, require at least 0.005 m external support-plane clearance for every motion including direct home, and require complete offline plus stationary physical revalidation after any visual or optical change.
+  - The physical gripper's wrong-way-round installation is exactly the fixed link6-to-gripper_base yaw-pi transform. Never add that offset to joint6 feedback, controller commands, mode-0 link6 FK, or camera calibration. camera_holder and l515_visual remain visual-only links, but their deterministic exact transformed union is the gripper_base-fixed collision-only l515_attached_assembly. It must retain every source triangle, metre units, bounds [-0.04,-0.05286335,0.011] through [0.0995,0.05286335,0.064] m, hash-bound overlapping 30 mm XY pieces and normal collision against all non-rigid/non-adjacent robot links and the environment. Never disable it against link1, link2, link3, link4, link5 or base_link. The camera-holder visual origin [0.1765,-0.0565314679146,0.0612789535522] and ordered X-then-Z orientation are user-locked and must not move; its nominal close-hole datum retains the intentional -4 mm visual Z trim. The operator-confirmed l515_visual remains fixed at camera_holder [0.1,0,0] m with rpy [-pi,pi,pi/2], mesh offset [-0.030503129,-0.030503409,-0.029628554] m, transverse 40 mm screw-axis alignment and +2.5 mm installed axial seating trim. Keep conservative connector/cable/mount padding, the independent complete-AABB support-plane guard, and complete rootless plus supervised physical revalidation after any visual, generated collision or optical change.
   - Physical emergency stop/power procedure is authoritative; disable_piper.sh is not an emergency stop.
   - Motor enable/disable must serialize through the installed SDK handshake, return success only after all six low-speed FOC driver_enable_status flags match, and never trust an aggregate return or arm err_code as proof. Any per-motor FOC fault aborts enable. A failed partial enable must remain transition-lock-held until explicit all-axis DisableArm(7) proves six false flags. Outside a fault-free bounded enable transition, any powered fault or persistent partial enable must make the 200 Hz watchdog disable every axis. Do not interleave gripper commands with motor-enable retries.
   - Fresh typed all-six-enabled motor proof is continuous powered-motion authority, not only an enable-service postcondition. If any axis drops, a fault appears, or motor status becomes invalid/stale, executor and mission must revoke authorization immediately. The motor-loss terminal path must send no hold, home, storage or disable command; it may only wait read-only for the driver watchdog's six-false proof, stop owned children and report NEEDS_OPERATOR with safe_shutdown=false. Never infer safe automatic home from aggregate err_code zero or from manual recovery.

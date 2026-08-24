@@ -12,7 +12,7 @@ from rclpy.time import Time
 from std_msgs.msg import String
 from tf2_ros import Buffer, TransformException, TransformListener
 
-from piper_mobile_manipulation.msg import Target3D, TrackedTarget
+from piper_mobile_manipulation.msg import Target3D, TrackedTarget, TrackingHealth
 from piper_mobile_manipulation.utils.kalman_filter import ConstantVelocityKalmanFilter
 
 
@@ -38,12 +38,36 @@ def prediction_only_is_valid(
     )
 
 
+def motion_measurement_rejection(health, health_age_sec, health_timeout_sec):
+    """
+    Reject correction only from a fresh, explicit camera-motion state.
+
+    Missing/stale health retains the legacy measurement path.  The mission's
+    existing tracking-health safety gate remains responsible for rejecting a
+    stale health stream; this local rule must not make ordinary perception
+    impossible merely because callback ordering is temporarily sparse.
+    """
+    if health is None:
+        return None
+    if (
+            not math.isfinite(float(health_age_sec))
+            or float(health_age_sec) > float(health_timeout_sec)):
+        return None
+    if bool(health.arm_moving):
+        return 'camera is moving; target correction deferred'
+    if not bool(health.camera_settled):
+        return 'camera is not settled; target correction deferred'
+    return None
+
+
 class TargetTrackerNode(Node):
     def __init__(self):
         super().__init__('target_tracker_node')
         self.declare_parameter('target_topic', '/piper/target_3d')
         self.declare_parameter('tracked_topic', '/piper/tracked_target')
         self.declare_parameter('target_status_topic', '/piper/target_status')
+        self.declare_parameter('tracking_health_topic', '/piper/tracking_health')
+        self.declare_parameter('motion_health_timeout_s', 1.0)
         self.declare_parameter('prediction_horizon_s', 0.3)
         self.declare_parameter('max_missed_frames', 10)
         self.declare_parameter('min_track_frames', 5)
@@ -94,6 +118,8 @@ class TargetTrackerNode(Node):
         self.prediction_only = False
         self.last_stable = False
         self.status = 'SEARCHING'
+        self.latest_tracking_health = None
+        self.latest_tracking_health_time = None
 
         self.pub = self.create_publisher(
             TrackedTarget, self.get_parameter('tracked_topic').value, 10
@@ -103,6 +129,12 @@ class TargetTrackerNode(Node):
         )
         self.sub = self.create_subscription(
             Target3D, self.get_parameter('target_topic').value, self.target_cb, 10
+        )
+        self.tracking_health_sub = self.create_subscription(
+            TrackingHealth,
+            self.get_parameter('tracking_health_topic').value,
+            self.tracking_health_cb,
+            10,
         )
         self.status_timer = self.create_timer(0.1, self.status_timer_cb)
         self.get_logger().info(
@@ -132,6 +164,12 @@ class TargetTrackerNode(Node):
             self.publish_prediction_only(
                 out, measurement_time, now,
                 str(msg.depth_source or 'no_valid_target_measurement'))
+            return
+
+        motion_reason = self.motion_rejection_reason(now)
+        if motion_reason:
+            self.publish_prediction_only(
+                out, measurement_time, now, motion_reason)
             return
 
         measurement_confidence = float(msg.measurement_confidence)
@@ -258,6 +296,24 @@ class TargetTrackerNode(Node):
                 innovation_score, self.filter.maximum_position_stddev,
                 out.confidence,
             )
+        )
+
+    def tracking_health_cb(self, message):
+        self.latest_tracking_health = message
+        self.latest_tracking_health_time = self.get_clock().now()
+
+    def motion_rejection_reason(self, now):
+        if self.latest_tracking_health_time is None:
+            age = float('inf')
+        else:
+            age = max(
+                0.0,
+                (now - self.latest_tracking_health_time).nanoseconds * 1e-9,
+            )
+        return motion_measurement_rejection(
+            self.latest_tracking_health,
+            age,
+            self.get_parameter('motion_health_timeout_s').value,
         )
 
     @staticmethod

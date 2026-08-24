@@ -79,7 +79,7 @@ def compact_result(entry: dict[str, Any], result: dict[str, Any]) -> dict[str, A
     unsafe_obstacles = [
         mask
         for mask in obstacle_masks
-        if mask.get("is_unsafe_candidate") or mask not in candidate_safe_obstacles
+        if mask.get("is_unsafe_candidate", False)
     ]
     target_prompt_source = str(target_masks[0].get("prompt_source", "")) if target_masks else ""
     return {

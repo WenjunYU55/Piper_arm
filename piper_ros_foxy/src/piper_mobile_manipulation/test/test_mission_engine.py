@@ -585,7 +585,7 @@ def test_complete_ray_frontier_exhaustion_is_terminal_and_adds_blockers():
     assert context.session.disabled_proved
 
 
-def test_proved_ray_frontier_exhaustion_after_valid_captures_is_complete():
+def test_ray_frontier_exhaustion_with_incomplete_coverage_is_terminal():
     operations = FakeMissionOperations()
 
     def request_plan(context):
@@ -606,7 +606,9 @@ def test_proved_ray_frontier_exhaustion_after_valid_captures_is_complete():
 
     operations, context, result = _execute(operations)
 
-    assert result.succeeded
+    assert not result.succeeded
+    assert result.failure.failure_code == 'INSUFFICIENT_CAPTURE_QUALITY'
+    assert 'coverage incomplete' in result.reason
     assert context.session.accepted_captures == 7
     assert context.session.disabled_proved
 

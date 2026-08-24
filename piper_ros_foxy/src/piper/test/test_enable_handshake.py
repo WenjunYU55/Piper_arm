@@ -15,9 +15,12 @@ from piper.piper_ctrl_single_node import (
     JOINT6_STARTUP_CONTROLLER_REQUIRED_DEG,
     motor_driver_faults,
     motion_limits_sha256,
+    PIPER_CTRL_MODE_TEACHING,
+    PIPER_MOTION_OUTPUT_ROLE,
     PiperRosNode,
     motor_driver_enable_states,
     qualify_startup_joint6_controller_limit,
+    restore_motion_output_role_if_teaching,
     reset_startup_joint6_transaction,
     request_piper_enable_state,
 )
@@ -95,6 +98,138 @@ def test_positive_only_startup_controller_limit_fails_closed_at_310_deg():
     )
     assert succeeded is False
     assert 'got 310.0 deg' in reason
+
+
+class FakeRolePiper:
+    def __init__(self, mode=PIPER_CTRL_MODE_TEACHING, states=None,
+                 faults=(), fresh=True):
+        self.mode = mode
+        self.states = list(states or [False] * 6)
+        self.faults = set(faults)
+        self.fresh = fresh
+        self.role_calls = []
+
+    def GetArmStatus(self):
+        return SimpleNamespace(
+            time_stamp=1.0 if self.fresh else 0.0,
+            arm_status=SimpleNamespace(ctrl_mode=self.mode),
+        )
+
+    def GetArmLowSpdInfoMsgs(self):
+        return SimpleNamespace(
+            time_stamp=1.0 if self.fresh else 0.0,
+            **{
+                'motor_%d' % index: SimpleNamespace(
+                    can_id=0x260 + index,
+                    foc_status=SimpleNamespace(
+                        driver_enable_status=self.states[index - 1],
+                        **{
+                            field: ('joint%d:%s' % (index, field))
+                            in self.faults
+                            for field in (
+                                'voltage_too_low', 'motor_overheating',
+                                'driver_overcurrent', 'driver_overheating',
+                                'collision_status', 'driver_error_status',
+                                'stall_status')
+                        },
+                    ),
+                )
+                for index in range(1, 7)
+            }
+        )
+
+    def MasterSlaveConfig(self, *command):
+        self.role_calls.append(command)
+        self.mode = 0
+
+
+def test_teaching_mode_restores_motion_output_role_only_while_disabled():
+    piper = FakeRolePiper()
+    succeeded, reason = restore_motion_output_role_if_teaching(piper)
+    assert succeeded is True
+    assert 'restored motion-output role' in reason
+    assert piper.role_calls == [(PIPER_MOTION_OUTPUT_ROLE, 0, 0, 0)]
+
+
+def test_teaching_mode_role_restore_rejects_enabled_or_stale_feedback():
+    enabled = FakeRolePiper(states=[False, False, True, False, False, False])
+    succeeded, reason = restore_motion_output_role_if_teaching(enabled)
+    assert succeeded is False
+    assert 'all six motors disabled' in reason
+    assert enabled.role_calls == []
+
+    stale = FakeRolePiper(fresh=False)
+    succeeded, reason = restore_motion_output_role_if_teaching(stale)
+    assert succeeded is False
+    assert 'fresh complete six-motor feedback' in reason
+    assert stale.role_calls == []
+
+
+def test_non_teaching_mode_does_not_reconfigure_controller_role():
+    piper = FakeRolePiper(mode=0)
+    succeeded, reason = restore_motion_output_role_if_teaching(piper)
+    assert succeeded is True
+    assert 'not in teaching mode' in reason
+    assert piper.role_calls == []
+
+
+def test_limit_query_restores_teaching_role_before_requesting_limits():
+    events = []
+
+    class QueryPiper(FakeRolePiper):
+        def MasterSlaveConfig(self, *command):
+            events.append(('role', command))
+            super().MasterSlaveConfig(*command)
+
+        def SearchAllMotorMaxAngleSpd(self):
+            events.append(('speed',))
+
+        def SearchAllMotorMaxAccLimit(self):
+            events.append(('acceleration',))
+
+    messages = []
+    node = SimpleNamespace(
+        piper=QueryPiper(),
+        get_logger=lambda: SimpleNamespace(
+            info=messages.append,
+            warn=messages.append,
+        ),
+    )
+
+    PiperRosNode.query_motion_limits(node)
+
+    assert events == [
+        ('role', (PIPER_MOTION_OUTPUT_ROLE, 0, 0, 0)),
+        ('speed',),
+        ('acceleration',),
+    ]
+    assert any('prepared for limit queries' in message for message in messages)
+
+
+def test_limit_query_does_not_change_role_while_any_motor_is_enabled():
+    events = []
+
+    class QueryPiper(FakeRolePiper):
+        def SearchAllMotorMaxAngleSpd(self):
+            events.append(('speed',))
+
+        def SearchAllMotorMaxAccLimit(self):
+            events.append(('acceleration',))
+
+    messages = []
+    node = SimpleNamespace(
+        piper=QueryPiper(states=[False, False, False, False, True, False]),
+        get_logger=lambda: SimpleNamespace(
+            info=messages.append,
+            warn=messages.append,
+        ),
+    )
+
+    PiperRosNode.query_motion_limits(node)
+
+    assert node.piper.role_calls == []
+    assert events == []
+    assert any('all six motors disabled' in message for message in messages)
 
 
 class FakePiper:
@@ -466,6 +601,7 @@ def test_failed_partial_enable_service_rolls_every_axis_back_to_disabled():
         _disable_required=False,
         _enable_transition_active=False,
         _enable_transition_lock=threading.Lock(),
+        prepare_enable_transition=lambda: True,
         reset_command_cache=lambda: None,
         get_logger=lambda: SimpleNamespace(
             info=messages.append,
@@ -482,6 +618,43 @@ def test_failed_partial_enable_service_rolls_every_axis_back_to_disabled():
     assert piper.states == [False] * 6
     assert piper.disable_calls >= 1
     assert any('rolled back' in message for message in messages)
+
+
+def test_service_prepares_controller_before_enabling_any_motor():
+    events = []
+
+    class OrderedPiper(FakePiper):
+        def EnablePiper(self):
+            events.append('enable')
+            self.states = [True] * 6
+            return True
+
+    piper = OrderedPiper()
+    node = SimpleNamespace(
+        piper=piper,
+        enable_timeout=0.1,
+        gripper_exist=False,
+        _PiperRosNode__enable_flag=False,
+        _disable_required=False,
+        _enable_transition_active=False,
+        _enable_transition_lock=threading.Lock(),
+        prepare_enable_transition=lambda: events.append('prepare') or True,
+        reset_command_cache=lambda: None,
+        send_gripper_if_changed=lambda *_args: False,
+        get_logger=lambda: SimpleNamespace(
+            info=lambda _message: None,
+            error=lambda _message: None,
+            fatal=lambda _message: None,
+        ),
+    )
+    request = SimpleNamespace(enable_request=True)
+    response = SimpleNamespace(enable_response=None)
+
+    PiperRosNode.handle_enable_service(node, request, response)
+
+    assert response.enable_response is True
+    assert events[:2] == ['prepare', 'enable']
+    assert piper.states == [True] * 6
 
 
 def test_disable_requires_every_motor_feedback_flag_to_clear():

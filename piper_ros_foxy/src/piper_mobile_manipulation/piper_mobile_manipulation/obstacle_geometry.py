@@ -9,6 +9,7 @@ import numpy as np
 BLOCKED = 0
 MOVABLE = 1
 UNSAFE = 2
+HUMAN_LABELS = frozenset(('hand', 'finger', 'person', 'human'))
 
 
 def normalize_label(label):
@@ -49,9 +50,15 @@ def obstacle_records(records):
 
 def effective_classification(label, upstream_unsafe, whitelist):
     normalized = canonical_label(label)
+    words = set(
+        normalize_label(label).replace('(', ' ').replace(')', ' ').split())
     allowed = {canonical_label(item) for item in whitelist}
-    if upstream_unsafe or normalized in ('', 'unknown'):
+    if words.intersection(HUMAN_LABELS):
         return UNSAFE
+    # Contradictory upstream metadata still fails closed, but it must not turn
+    # a non-human or unknown object into a reported human hazard.
+    if upstream_unsafe or normalized in ('', 'unknown'):
+        return BLOCKED
     if normalized in allowed:
         return MOVABLE
     return BLOCKED

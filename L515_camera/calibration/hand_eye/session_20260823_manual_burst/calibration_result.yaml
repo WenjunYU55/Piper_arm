@@ -1,0 +1,4005 @@
+status: rejected_by_held_out_validation
+model: eye_in_hand
+method: OpenCV CALIB_HAND_EYE_PARK
+sample_count:
+  fitting: 130
+  held_out_validation: 30
+fk:
+  model: piper_sdk_modified_dh_mode_0
+  units: metres and radians
+  note: Mode 0 matches the live controller /end_pose; mode 1 applies optional 2-degree
+    J2/J3 offsets.
+camera_to_link6:
+  translation_m:
+  - -0.07719616628569428
+  - -0.0006196881544470061
+  - 0.03976072500411295
+  quaternion_xyzw:
+  - -0.00664358193144619
+  - 0.009110396035002098
+  - 0.7168972779093881
+  - -0.6970876246422077
+  matrix:
+  - - -0.02804941277960635
+    - 0.999359389815667
+    - -0.022227020267620745
+    - -0.07719616628569428
+  - - -0.9996014924656027
+    - -0.027971688509533535
+    - 0.0038001187409253943
+    - -0.0006196881544470061
+  - - 0.003175957058733768
+    - 0.02232475373175242
+    - 0.9997457270064111
+    - 0.03976072500411295
+  - - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+target_to_base:
+  translation_m:
+  - 0.3951511631857812
+  - 0.01877942153902211
+  - 0.008881544603556371
+  quaternion_xyzw:
+  - 0.20810660708353243
+  - -0.23769464807775278
+  - -0.6689413525828813
+  - 0.6728375444102083
+  matrix:
+  - - -0.007962557840442919
+    - 0.8012460605858671
+    - -0.5982819971119522
+    - 0.3951511631857812
+  - - -0.9991093675193687
+    - 0.018418213785531046
+    - 0.037963681802439864
+    - 0.01877942153902211
+  - - 0.0414375362163828
+    - 0.5980514357449356
+    - 0.8003857887267469
+    - 0.008881544603556371
+  - - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+pose_geometry:
+  pair_count: 8197
+  relative_rotation_deg:
+    minimum: 0.0009994675778255305
+    median: 93.15416582852176
+    maximum: 177.51239027887553
+    pairs_at_least_15_deg: 7700
+    pairs_at_least_30_deg: 7400
+    pairs_at_least_60_deg: 5890
+  rotation_axis_scatter_eigenvalues:
+  - 0.0693307397137105
+  - 0.13772788865963934
+  - 0.7929413716266502
+solver_comparison:
+  TSAI:
+    status: completed
+    fitting:
+      translation_rms_mm: 10.728851562384982
+      translation_max_mm: 14.387072701222332
+      rotation_rms_deg: 1.9082706410048664
+      rotation_max_deg: 2.7880124812391878
+      per_sample:
+      - name: capture_20260823_142206_476713
+        translation_error_mm: 8.431068251000411
+        rotation_error_deg: 0.5301055385695268
+        reprojection_rms_px: 0.13891239100444444
+      - name: capture_20260823_142218_218466
+        translation_error_mm: 7.768427282683364
+        rotation_error_deg: 0.6588531608415501
+        reprojection_rms_px: 0.13567526095597746
+      - name: capture_20260823_142219_859122
+        translation_error_mm: 7.757594138748493
+        rotation_error_deg: 0.7945052325027148
+        reprojection_rms_px: 0.15488259757106385
+      - name: capture_20260823_142221_415158
+        translation_error_mm: 7.716187251455996
+        rotation_error_deg: 0.7130379033497797
+        reprojection_rms_px: 0.12681667897861912
+      - name: capture_20260823_142223_023656
+        translation_error_mm: 7.429417429609683
+        rotation_error_deg: 0.6209097655369364
+        reprojection_rms_px: 0.139976810834707
+      - name: capture_20260823_142224_705222
+        translation_error_mm: 7.481750034835117
+        rotation_error_deg: 0.6316014442302216
+        reprojection_rms_px: 0.11853218194450468
+      - name: capture_20260823_142226_335510
+        translation_error_mm: 7.003714765356996
+        rotation_error_deg: 0.7399816615264377
+        reprojection_rms_px: 0.13200835658876955
+      - name: capture_20260823_142227_934286
+        translation_error_mm: 7.8544684284109945
+        rotation_error_deg: 0.6841171604203818
+        reprojection_rms_px: 0.1678181027925125
+      - name: capture_20260823_142229_599668
+        translation_error_mm: 7.887559378161584
+        rotation_error_deg: 0.6247470560885262
+        reprojection_rms_px: 0.1505275883226135
+      - name: capture_20260823_142231_206502
+        translation_error_mm: 7.842103439080577
+        rotation_error_deg: 0.7451806926091757
+        reprojection_rms_px: 0.11823649753671049
+      - name: capture_20260823_142328_117738
+        translation_error_mm: 7.640916682977286
+        rotation_error_deg: 0.9463321453194362
+        reprojection_rms_px: 0.12941643495124772
+      - name: capture_20260823_142329_826004
+        translation_error_mm: 7.669334308881527
+        rotation_error_deg: 0.94960874595544
+        reprojection_rms_px: 0.13053412976928117
+      - name: capture_20260823_142331_465206
+        translation_error_mm: 7.632770364460913
+        rotation_error_deg: 0.9810071905624953
+        reprojection_rms_px: 0.1320157343408858
+      - name: capture_20260823_142333_037086
+        translation_error_mm: 7.553180451227456
+        rotation_error_deg: 0.987873664597696
+        reprojection_rms_px: 0.1252995669925929
+      - name: capture_20260823_142334_656203
+        translation_error_mm: 7.536223464904769
+        rotation_error_deg: 1.0793698043944266
+        reprojection_rms_px: 0.12760722440644942
+      - name: capture_20260823_142336_237441
+        translation_error_mm: 7.606734227935987
+        rotation_error_deg: 0.9577561055313855
+        reprojection_rms_px: 0.1254423429230322
+      - name: capture_20260823_142337_891930
+        translation_error_mm: 7.69878040438086
+        rotation_error_deg: 0.9774513107764643
+        reprojection_rms_px: 0.13621942436878384
+      - name: capture_20260823_142339_530434
+        translation_error_mm: 7.669426246307313
+        rotation_error_deg: 0.9547393538311506
+        reprojection_rms_px: 0.14570016495540025
+      - name: capture_20260823_142341_158583
+        translation_error_mm: 7.680949912155983
+        rotation_error_deg: 0.9920117331684225
+        reprojection_rms_px: 0.1570825155670064
+      - name: capture_20260823_142342_762304
+        translation_error_mm: 7.781680105273353
+        rotation_error_deg: 1.0400714284349266
+        reprojection_rms_px: 0.15972099323745553
+      - name: capture_20260823_142442_678921
+        translation_error_mm: 6.2565420420860836
+        rotation_error_deg: 1.4138699261847534
+        reprojection_rms_px: 0.16761844221517486
+      - name: capture_20260823_142444_306381
+        translation_error_mm: 6.228718876851427
+        rotation_error_deg: 1.5051943492579536
+        reprojection_rms_px: 0.17302064263047331
+      - name: capture_20260823_142445_911409
+        translation_error_mm: 6.271175084203621
+        rotation_error_deg: 1.4660042422789419
+        reprojection_rms_px: 0.15687025171028376
+      - name: capture_20260823_142447_502743
+        translation_error_mm: 6.4699254200749055
+        rotation_error_deg: 1.4951695935721172
+        reprojection_rms_px: 0.16304965821746353
+      - name: capture_20260823_142449_168106
+        translation_error_mm: 6.44168293269352
+        rotation_error_deg: 1.4754250541312228
+        reprojection_rms_px: 0.14894508351696734
+      - name: capture_20260823_142450_739098
+        translation_error_mm: 6.38025324126723
+        rotation_error_deg: 1.5165687037473423
+        reprojection_rms_px: 0.14503084638702135
+      - name: capture_20260823_142452_364447
+        translation_error_mm: 6.44033471893816
+        rotation_error_deg: 1.4609885459595102
+        reprojection_rms_px: 0.1695091411041457
+      - name: capture_20260823_142453_999900
+        translation_error_mm: 6.682606572225543
+        rotation_error_deg: 1.4087814752707675
+        reprojection_rms_px: 0.17012433050733172
+      - name: capture_20260823_142455_574250
+        translation_error_mm: 6.604192422842319
+        rotation_error_deg: 1.5093621593726847
+        reprojection_rms_px: 0.1724847318996796
+      - name: capture_20260823_142457_114901
+        translation_error_mm: 6.503498698491914
+        rotation_error_deg: 1.4658010152647558
+        reprojection_rms_px: 0.13416064690931306
+      - name: capture_20260823_142556_838366
+        translation_error_mm: 14.351467899752027
+        rotation_error_deg: 2.039866910212081
+        reprojection_rms_px: 0.26101129178901583
+      - name: capture_20260823_142558_459218
+        translation_error_mm: 14.387072701222332
+        rotation_error_deg: 1.9978192518891154
+        reprojection_rms_px: 0.23462255632070483
+      - name: capture_20260823_142600_102370
+        translation_error_mm: 14.110304757407159
+        rotation_error_deg: 1.9771433677976775
+        reprojection_rms_px: 0.21239656421377995
+      - name: capture_20260823_142601_694037
+        translation_error_mm: 14.16327759263349
+        rotation_error_deg: 2.0352952225132768
+        reprojection_rms_px: 0.18931978274025288
+      - name: capture_20260823_142603_259346
+        translation_error_mm: 14.038747546166364
+        rotation_error_deg: 2.0470917935427457
+        reprojection_rms_px: 0.22731722172690566
+      - name: capture_20260823_142604_880620
+        translation_error_mm: 14.179552066388549
+        rotation_error_deg: 2.009895417602107
+        reprojection_rms_px: 0.19783439478977008
+      - name: capture_20260823_142606_448800
+        translation_error_mm: 14.189900512701259
+        rotation_error_deg: 2.0135216590220066
+        reprojection_rms_px: 0.21016342083651374
+      - name: capture_20260823_142608_053141
+        translation_error_mm: 14.16469194849592
+        rotation_error_deg: 2.0548085346595686
+        reprojection_rms_px: 0.213689801319768
+      - name: capture_20260823_142609_673702
+        translation_error_mm: 14.187411020049897
+        rotation_error_deg: 2.032855931444343
+        reprojection_rms_px: 0.2147984180604797
+      - name: capture_20260823_142611_284270
+        translation_error_mm: 14.174008966550906
+        rotation_error_deg: 2.033743178377294
+        reprojection_rms_px: 0.1986076663453943
+      - name: capture_20260823_142722_871889
+        translation_error_mm: 13.665859614004056
+        rotation_error_deg: 2.16053669503985
+        reprojection_rms_px: 0.19357707118152356
+      - name: capture_20260823_142724_529484
+        translation_error_mm: 13.097296073757532
+        rotation_error_deg: 2.3483087517747023
+        reprojection_rms_px: 0.22061884302857593
+      - name: capture_20260823_142726_195614
+        translation_error_mm: 13.499264162596516
+        rotation_error_deg: 2.175177832477414
+        reprojection_rms_px: 0.20887609682375405
+      - name: capture_20260823_142727_837439
+        translation_error_mm: 13.625235575934397
+        rotation_error_deg: 2.1268201563922244
+        reprojection_rms_px: 0.25895416447035685
+      - name: capture_20260823_142729_483057
+        translation_error_mm: 13.428462774805423
+        rotation_error_deg: 2.1098850166889096
+        reprojection_rms_px: 0.22733068353335448
+      - name: capture_20260823_142731_122574
+        translation_error_mm: 13.320627248530965
+        rotation_error_deg: 2.219417214857999
+        reprojection_rms_px: 0.23368894273504634
+      - name: capture_20260823_142732_782919
+        translation_error_mm: 13.53220973427962
+        rotation_error_deg: 2.0347555042620225
+        reprojection_rms_px: 0.2222111538959804
+      - name: capture_20260823_142734_374907
+        translation_error_mm: 13.643272612992293
+        rotation_error_deg: 2.169501195563466
+        reprojection_rms_px: 0.23209907978516198
+      - name: capture_20260823_142735_943004
+        translation_error_mm: 13.533802284493465
+        rotation_error_deg: 2.139497628289872
+        reprojection_rms_px: 0.20724334738781766
+      - name: capture_20260823_142737_559708
+        translation_error_mm: 13.725108941447733
+        rotation_error_deg: 2.142777730692845
+        reprojection_rms_px: 0.231992620943263
+      - name: capture_20260823_142841_216425
+        translation_error_mm: 11.361161889487235
+        rotation_error_deg: 2.4432613975796813
+        reprojection_rms_px: 0.19655327839837514
+      - name: capture_20260823_142842_813016
+        translation_error_mm: 11.414539117827022
+        rotation_error_deg: 2.4105122105323007
+        reprojection_rms_px: 0.18654275262314646
+      - name: capture_20260823_142844_426212
+        translation_error_mm: 11.254894514428031
+        rotation_error_deg: 2.460802374788151
+        reprojection_rms_px: 0.20722205126924872
+      - name: capture_20260823_142846_017748
+        translation_error_mm: 11.431723757152769
+        rotation_error_deg: 2.354817196016183
+        reprojection_rms_px: 0.19917141098863972
+      - name: capture_20260823_142847_619787
+        translation_error_mm: 11.402042858279097
+        rotation_error_deg: 2.3747401731296187
+        reprojection_rms_px: 0.22447722542113774
+      - name: capture_20260823_142849_228020
+        translation_error_mm: 11.26911238351671
+        rotation_error_deg: 2.4459239203761958
+        reprojection_rms_px: 0.19269040618905417
+      - name: capture_20260823_142850_830466
+        translation_error_mm: 11.603391521964534
+        rotation_error_deg: 2.460371107371007
+        reprojection_rms_px: 0.19164292096781774
+      - name: capture_20260823_142852_390481
+        translation_error_mm: 11.318802747962899
+        rotation_error_deg: 2.375527506870801
+        reprojection_rms_px: 0.19730663086754927
+      - name: capture_20260823_142853_994314
+        translation_error_mm: 11.479438503387447
+        rotation_error_deg: 2.392541355835834
+        reprojection_rms_px: 0.225539506648925
+      - name: capture_20260823_142855_563664
+        translation_error_mm: 11.216422305947463
+        rotation_error_deg: 2.3855320919510383
+        reprojection_rms_px: 0.1732151747692052
+      - name: capture_20260823_142955_231474
+        translation_error_mm: 13.782611031519046
+        rotation_error_deg: 1.3314072941615744
+        reprojection_rms_px: 0.11412304407258886
+      - name: capture_20260823_142956_865257
+        translation_error_mm: 13.865075822031839
+        rotation_error_deg: 1.2998774368625428
+        reprojection_rms_px: 0.12736999507561475
+      - name: capture_20260823_142958_462462
+        translation_error_mm: 13.84051086424561
+        rotation_error_deg: 1.3278536854944711
+        reprojection_rms_px: 0.11768576827057588
+      - name: capture_20260823_143000_051592
+        translation_error_mm: 13.789399133051242
+        rotation_error_deg: 1.4532181700803979
+        reprojection_rms_px: 0.14492632034528516
+      - name: capture_20260823_143001_611993
+        translation_error_mm: 13.704111534675986
+        rotation_error_deg: 1.3406498059784824
+        reprojection_rms_px: 0.11912595454286747
+      - name: capture_20260823_143003_216766
+        translation_error_mm: 13.74970377190532
+        rotation_error_deg: 1.2575127938847939
+        reprojection_rms_px: 0.11985039458127081
+      - name: capture_20260823_143004_813120
+        translation_error_mm: 13.723228914792726
+        rotation_error_deg: 1.3590354126620539
+        reprojection_rms_px: 0.11434528352139356
+      - name: capture_20260823_143006_412996
+        translation_error_mm: 13.76901516997836
+        rotation_error_deg: 1.3886704062685769
+        reprojection_rms_px: 0.142722047720988
+      - name: capture_20260823_143008_020754
+        translation_error_mm: 13.800387617181178
+        rotation_error_deg: 1.373511692252148
+        reprojection_rms_px: 0.14945083660604097
+      - name: capture_20260823_143009_652799
+        translation_error_mm: 13.748328100501174
+        rotation_error_deg: 1.3034962448879885
+        reprojection_rms_px: 0.12910356638520792
+      - name: capture_20260823_143053_828079
+        translation_error_mm: 6.863093875187188
+        rotation_error_deg: 1.82457522298923
+        reprojection_rms_px: 0.155915894594214
+      - name: capture_20260823_143055_461761
+        translation_error_mm: 6.9236207278127875
+        rotation_error_deg: 1.8673983448957543
+        reprojection_rms_px: 0.1451331362863667
+      - name: capture_20260823_143057_086407
+        translation_error_mm: 6.905473375645889
+        rotation_error_deg: 1.8819017691934403
+        reprojection_rms_px: 0.15840120790468964
+      - name: capture_20260823_143058_660429
+        translation_error_mm: 6.910965583882306
+        rotation_error_deg: 1.8284082511703283
+        reprojection_rms_px: 0.15228752368017337
+      - name: capture_20260823_143100_216216
+        translation_error_mm: 6.859194739596926
+        rotation_error_deg: 1.8041220331000307
+        reprojection_rms_px: 0.1584950572770693
+      - name: capture_20260823_143101_876246
+        translation_error_mm: 6.908449151113209
+        rotation_error_deg: 1.8270931872064011
+        reprojection_rms_px: 0.17731155007078636
+      - name: capture_20260823_143103_497779
+        translation_error_mm: 6.894821937206347
+        rotation_error_deg: 1.7883818046147204
+        reprojection_rms_px: 0.13280358106743334
+      - name: capture_20260823_143105_043553
+        translation_error_mm: 6.932912845036524
+        rotation_error_deg: 1.827723775558851
+        reprojection_rms_px: 0.14190275698721963
+      - name: capture_20260823_143106_639058
+        translation_error_mm: 6.934342057397581
+        rotation_error_deg: 1.8758636671941962
+        reprojection_rms_px: 0.17247269275834745
+      - name: capture_20260823_143108_236063
+        translation_error_mm: 6.914604288087767
+        rotation_error_deg: 1.7898963429449886
+        reprojection_rms_px: 0.14638691143707802
+      - name: capture_20260823_143156_581484
+        translation_error_mm: 14.116741916087182
+        rotation_error_deg: 2.6852758732207116
+        reprojection_rms_px: 0.1369074953739145
+      - name: capture_20260823_143158_215247
+        translation_error_mm: 13.740132864010237
+        rotation_error_deg: 2.7880124812391878
+        reprojection_rms_px: 0.1575215093774944
+      - name: capture_20260823_143159_901809
+        translation_error_mm: 13.562900380268063
+        rotation_error_deg: 2.678280285491519
+        reprojection_rms_px: 0.15661479229296532
+      - name: capture_20260823_143201_471090
+        translation_error_mm: 13.862778946039123
+        rotation_error_deg: 2.7171835025255446
+        reprojection_rms_px: 0.14308519332971203
+      - name: capture_20260823_143203_026829
+        translation_error_mm: 14.370693343544513
+        rotation_error_deg: 2.785081883974987
+        reprojection_rms_px: 0.13264995459114182
+      - name: capture_20260823_143204_558938
+        translation_error_mm: 14.213133649837289
+        rotation_error_deg: 2.732654416782702
+        reprojection_rms_px: 0.17070443752998962
+      - name: capture_20260823_143206_161369
+        translation_error_mm: 13.63654052307097
+        rotation_error_deg: 2.6630150043291807
+        reprojection_rms_px: 0.146587867766209
+      - name: capture_20260823_143207_705550
+        translation_error_mm: 13.559191987430491
+        rotation_error_deg: 2.57055470378137
+        reprojection_rms_px: 0.15754284217402753
+      - name: capture_20260823_143209_417675
+        translation_error_mm: 13.585036390872393
+        rotation_error_deg: 2.590552307531724
+        reprojection_rms_px: 0.20612694332280407
+      - name: capture_20260823_143211_061425
+        translation_error_mm: 14.06144956299103
+        rotation_error_deg: 2.651161255979214
+        reprojection_rms_px: 0.16840718949303146
+      - name: capture_20260823_143250_170365
+        translation_error_mm: 6.288571145648625
+        rotation_error_deg: 1.9725959191661775
+        reprojection_rms_px: 0.2461573513666684
+      - name: capture_20260823_143251_809954
+        translation_error_mm: 6.4736646558330975
+        rotation_error_deg: 2.0558649572005168
+        reprojection_rms_px: 0.23133970225303518
+      - name: capture_20260823_143253_386535
+        translation_error_mm: 6.720583193589308
+        rotation_error_deg: 2.1280079798564233
+        reprojection_rms_px: 0.20993090339877157
+      - name: capture_20260823_143255_005107
+        translation_error_mm: 6.0987690025677574
+        rotation_error_deg: 1.9106423903250729
+        reprojection_rms_px: 0.2037769780695858
+      - name: capture_20260823_143256_616761
+        translation_error_mm: 6.334698481950346
+        rotation_error_deg: 1.9730281270958634
+        reprojection_rms_px: 0.20067246476173975
+      - name: capture_20260823_143258_190916
+        translation_error_mm: 6.539172323974021
+        rotation_error_deg: 1.966651072048808
+        reprojection_rms_px: 0.20700870131946783
+      - name: capture_20260823_143259_785694
+        translation_error_mm: 6.4918888954119485
+        rotation_error_deg: 2.0337853834285404
+        reprojection_rms_px: 0.2397421447442009
+      - name: capture_20260823_143301_469174
+        translation_error_mm: 6.167127321036974
+        rotation_error_deg: 2.0095024478943295
+        reprojection_rms_px: 0.2231798632554871
+      - name: capture_20260823_143303_216232
+        translation_error_mm: 6.435867313239705
+        rotation_error_deg: 2.021258520824539
+        reprojection_rms_px: 0.2562337616370283
+      - name: capture_20260823_143304_836738
+        translation_error_mm: 6.502358510468338
+        rotation_error_deg: 1.9849186390943638
+        reprojection_rms_px: 0.2049482754918694
+      - name: capture_20260823_143401_001423
+        translation_error_mm: 7.431305985233858
+        rotation_error_deg: 1.902639192009137
+        reprojection_rms_px: 0.23095910284379478
+      - name: capture_20260823_143402_602779
+        translation_error_mm: 7.531555549638375
+        rotation_error_deg: 1.9336386637115714
+        reprojection_rms_px: 0.2735037845711414
+      - name: capture_20260823_143404_285518
+        translation_error_mm: 7.182592594089683
+        rotation_error_deg: 1.8530996779051279
+        reprojection_rms_px: 0.23292704642107892
+      - name: capture_20260823_143405_918489
+        translation_error_mm: 7.153744748745471
+        rotation_error_deg: 1.8257878871094901
+        reprojection_rms_px: 0.25026377508315284
+      - name: capture_20260823_143407_550870
+        translation_error_mm: 7.355898990501223
+        rotation_error_deg: 1.8459129170489363
+        reprojection_rms_px: 0.2073397969302527
+      - name: capture_20260823_143409_154911
+        translation_error_mm: 7.539427018307811
+        rotation_error_deg: 1.9230007608749695
+        reprojection_rms_px: 0.29688936660802995
+      - name: capture_20260823_143410_786937
+        translation_error_mm: 7.468353760033686
+        rotation_error_deg: 1.9111899602090365
+        reprojection_rms_px: 0.1812096880793984
+      - name: capture_20260823_143412_463373
+        translation_error_mm: 7.29055827800828
+        rotation_error_deg: 1.8914774769895826
+        reprojection_rms_px: 0.25919191186009627
+      - name: capture_20260823_143414_089101
+        translation_error_mm: 7.215568491264149
+        rotation_error_deg: 1.829624852370931
+        reprojection_rms_px: 0.268076157844809
+      - name: capture_20260823_143415_703597
+        translation_error_mm: 7.3643140350182845
+        rotation_error_deg: 1.8946811972556823
+        reprojection_rms_px: 0.25555669280708726
+      - name: capture_20260823_143458_998668
+        translation_error_mm: 11.17153883703128
+        rotation_error_deg: 2.6619043960118822
+        reprojection_rms_px: 0.1392490921487775
+      - name: capture_20260823_143500_640667
+        translation_error_mm: 11.183079410623053
+        rotation_error_deg: 2.693015160702656
+        reprojection_rms_px: 0.1573083627739939
+      - name: capture_20260823_143502_221884
+        translation_error_mm: 11.173441763553631
+        rotation_error_deg: 2.684195952671676
+        reprojection_rms_px: 0.17089579255821447
+      - name: capture_20260823_143503_857931
+        translation_error_mm: 11.137840359341622
+        rotation_error_deg: 2.678779218882349
+        reprojection_rms_px: 0.21078616835667754
+      - name: capture_20260823_143505_438895
+        translation_error_mm: 11.121998222511348
+        rotation_error_deg: 2.619210007486026
+        reprojection_rms_px: 0.181728695038637
+      - name: capture_20260823_143507_073100
+        translation_error_mm: 11.141878896205633
+        rotation_error_deg: 2.7088987442425028
+        reprojection_rms_px: 0.19657623127873328
+      - name: capture_20260823_143508_628245
+        translation_error_mm: 11.116846957217081
+        rotation_error_deg: 2.6686965136898246
+        reprojection_rms_px: 0.183518299699111
+      - name: capture_20260823_143510_272686
+        translation_error_mm: 11.13512291515835
+        rotation_error_deg: 2.66714424758538
+        reprojection_rms_px: 0.15257396952973085
+      - name: capture_20260823_143511_871465
+        translation_error_mm: 11.055887961279398
+        rotation_error_deg: 2.631418854073471
+        reprojection_rms_px: 0.17746152260467124
+      - name: capture_20260823_143513_465068
+        translation_error_mm: 11.081900530556025
+        rotation_error_deg: 2.6842246750910213
+        reprojection_rms_px: 0.18074409314365883
+      - name: capture_20260823_143555_732127
+        translation_error_mm: 13.198421029207617
+        rotation_error_deg: 1.4503133697900428
+        reprojection_rms_px: 0.15588899827063335
+      - name: capture_20260823_143557_359610
+        translation_error_mm: 13.244761751951794
+        rotation_error_deg: 1.4038753246281728
+        reprojection_rms_px: 0.1651880397302085
+      - name: capture_20260823_143558_976597
+        translation_error_mm: 13.177346631892998
+        rotation_error_deg: 1.4006258425416336
+        reprojection_rms_px: 0.1559624710501101
+      - name: capture_20260823_143600_611562
+        translation_error_mm: 13.178646300627943
+        rotation_error_deg: 1.4287436745183988
+        reprojection_rms_px: 0.16311601886022958
+      - name: capture_20260823_143602_208993
+        translation_error_mm: 13.22812656754607
+        rotation_error_deg: 1.3926823054675184
+        reprojection_rms_px: 0.13712665825296205
+      - name: capture_20260823_143603_924624
+        translation_error_mm: 13.183439711981007
+        rotation_error_deg: 1.4308459672556644
+        reprojection_rms_px: 0.1919080425523113
+      - name: capture_20260823_143605_522924
+        translation_error_mm: 13.244586625187212
+        rotation_error_deg: 1.438172131604293
+        reprojection_rms_px: 0.1922965008056291
+      - name: capture_20260823_143607_130287
+        translation_error_mm: 13.198562675161615
+        rotation_error_deg: 1.463418220798905
+        reprojection_rms_px: 0.19962690266822383
+      - name: capture_20260823_143608_719035
+        translation_error_mm: 13.22078244458469
+        rotation_error_deg: 1.4538208428943535
+        reprojection_rms_px: 0.11073896156142439
+      - name: capture_20260823_143610_350297
+        translation_error_mm: 13.220091252882591
+        rotation_error_deg: 1.511666015219465
+        reprojection_rms_px: 0.1400676859164778
+    held_out_validation:
+      translation_rms_mm: 5.082845541572494
+      translation_max_mm: 7.111917568658879
+      rotation_rms_deg: 1.5651256674266407
+      rotation_max_deg: 2.1210925057588073
+      per_sample:
+      - name: capture_20260823_143648_795032
+        translation_error_mm: 6.607266575720109
+        rotation_error_deg: 0.9850208522222201
+        reprojection_rms_px: 0.14795443696478194
+      - name: capture_20260823_143650_504448
+        translation_error_mm: 6.636007406567004
+        rotation_error_deg: 1.1592478664527064
+        reprojection_rms_px: 0.13786926749350004
+      - name: capture_20260823_143652_120494
+        translation_error_mm: 6.449554321764277
+        rotation_error_deg: 1.00030307614457
+        reprojection_rms_px: 0.1498850011032385
+      - name: capture_20260823_143653_759185
+        translation_error_mm: 6.788945590727018
+        rotation_error_deg: 1.0870023007282394
+        reprojection_rms_px: 0.1828407634123958
+      - name: capture_20260823_143655_435902
+        translation_error_mm: 6.718001980270144
+        rotation_error_deg: 1.1885659876485817
+        reprojection_rms_px: 0.146359208401678
+      - name: capture_20260823_143657_062183
+        translation_error_mm: 6.543263953890878
+        rotation_error_deg: 0.9841088327234552
+        reprojection_rms_px: 0.1506009732328837
+      - name: capture_20260823_143658_669171
+        translation_error_mm: 6.740662207622451
+        rotation_error_deg: 1.1665150369710202
+        reprojection_rms_px: 0.18105030119076465
+      - name: capture_20260823_143700_242629
+        translation_error_mm: 7.111917568658879
+        rotation_error_deg: 1.010750735115293
+        reprojection_rms_px: 0.29017997086663105
+      - name: capture_20260823_143701_848618
+        translation_error_mm: 6.367566467277798
+        rotation_error_deg: 0.7594066390795531
+        reprojection_rms_px: 0.1359746120497821
+      - name: capture_20260823_143703_495523
+        translation_error_mm: 6.657375413626427
+        rotation_error_deg: 1.0128752363348332
+        reprojection_rms_px: 0.14387847390700473
+      - name: capture_20260823_143730_337123
+        translation_error_mm: 4.944192466521244
+        rotation_error_deg: 2.079718221499105
+        reprojection_rms_px: 0.1402395079598648
+      - name: capture_20260823_143731_977960
+        translation_error_mm: 5.079984132410326
+        rotation_error_deg: 1.985037037749961
+        reprojection_rms_px: 0.11750393349268758
+      - name: capture_20260823_143733_583077
+        translation_error_mm: 5.228261458389074
+        rotation_error_deg: 2.1171670335837875
+        reprojection_rms_px: 0.12828726837922488
+      - name: capture_20260823_143735_168423
+        translation_error_mm: 4.923546182749119
+        rotation_error_deg: 2.028057411723977
+        reprojection_rms_px: 0.10929017284270953
+      - name: capture_20260823_143736_773946
+        translation_error_mm: 4.854552166733742
+        rotation_error_deg: 2.0673486895892412
+        reprojection_rms_px: 0.14125389353676804
+      - name: capture_20260823_143738_364276
+        translation_error_mm: 5.030460991484897
+        rotation_error_deg: 1.9873010484966378
+        reprojection_rms_px: 0.11632642340885724
+      - name: capture_20260823_143739_943496
+        translation_error_mm: 5.111724978115733
+        rotation_error_deg: 2.1210925057588073
+        reprojection_rms_px: 0.1259642244877503
+      - name: capture_20260823_143741_564146
+        translation_error_mm: 4.796529236295876
+        rotation_error_deg: 2.048622521113675
+        reprojection_rms_px: 0.10267081114650876
+      - name: capture_20260823_143743_153521
+        translation_error_mm: 5.054934077199825
+        rotation_error_deg: 2.0148571168420677
+        reprojection_rms_px: 0.123672596980797
+      - name: capture_20260823_143744_789870
+        translation_error_mm: 4.983800994853582
+        rotation_error_deg: 1.857283321792232
+        reprojection_rms_px: 0.113669258145724
+      - name: capture_20260823_143818_730907
+        translation_error_mm: 2.8043564238769374
+        rotation_error_deg: 1.408204241931292
+        reprojection_rms_px: 0.08997833787520086
+      - name: capture_20260823_143820_354273
+        translation_error_mm: 3.0015121624564114
+        rotation_error_deg: 1.491691782715543
+        reprojection_rms_px: 0.11368164163733402
+      - name: capture_20260823_143821_901248
+        translation_error_mm: 2.369199759425941
+        rotation_error_deg: 1.4585772463653819
+        reprojection_rms_px: 0.10192960786019276
+      - name: capture_20260823_143823_532725
+        translation_error_mm: 2.9505122978127685
+        rotation_error_deg: 1.4212556797188103
+        reprojection_rms_px: 0.09259903809505501
+      - name: capture_20260823_143825_109911
+        translation_error_mm: 2.8174625252057273
+        rotation_error_deg: 1.423545297094434
+        reprojection_rms_px: 0.12979015725607035
+      - name: capture_20260823_143826_688745
+        translation_error_mm: 2.654641866113981
+        rotation_error_deg: 1.6322082612262694
+        reprojection_rms_px: 0.10104232428002424
+      - name: capture_20260823_143828_268689
+        translation_error_mm: 2.9279334749627624
+        rotation_error_deg: 1.4409129744815792
+        reprojection_rms_px: 0.09621585849410737
+      - name: capture_20260823_143829_915345
+        translation_error_mm: 2.9214628720979086
+        rotation_error_deg: 1.4641198130933355
+        reprojection_rms_px: 0.08585028679165316
+      - name: capture_20260823_143831_557967
+        translation_error_mm: 2.794497249455935
+        rotation_error_deg: 1.3724990562030326
+        reprojection_rms_px: 0.10379052115729649
+      - name: capture_20260823_143833_159251
+        translation_error_mm: 3.0872796497218706
+        rotation_error_deg: 1.4788301075590942
+        reprojection_rms_px: 0.11200615846935769
+  PARK:
+    status: completed
+    fitting:
+      translation_rms_mm: 10.758491642013537
+      translation_max_mm: 14.49402561076243
+      rotation_rms_deg: 1.9078322159558432
+      rotation_max_deg: 2.7857257332282725
+      per_sample:
+      - name: capture_20260823_142206_476713
+        translation_error_mm: 8.280623711258086
+        rotation_error_deg: 0.5380651658214275
+        reprojection_rms_px: 0.13891239100444444
+      - name: capture_20260823_142218_218466
+        translation_error_mm: 7.618027244133329
+        rotation_error_deg: 0.6580122875410749
+        reprojection_rms_px: 0.13567526095597746
+      - name: capture_20260823_142219_859122
+        translation_error_mm: 7.606629499846226
+        rotation_error_deg: 0.7888393566469392
+        reprojection_rms_px: 0.15488259757106385
+      - name: capture_20260823_142221_415158
+        translation_error_mm: 7.565941001299765
+        rotation_error_deg: 0.707665405745935
+        reprojection_rms_px: 0.12681667897861912
+      - name: capture_20260823_142223_023656
+        translation_error_mm: 7.277981756811103
+        rotation_error_deg: 0.6162327561012921
+        reprojection_rms_px: 0.139976810834707
+      - name: capture_20260823_142224_705222
+        translation_error_mm: 7.332250637104882
+        rotation_error_deg: 0.6298057825867474
+        reprojection_rms_px: 0.11853218194450468
+      - name: capture_20260823_142226_335510
+        translation_error_mm: 6.855948602493478
+        rotation_error_deg: 0.7309952740076745
+        reprojection_rms_px: 0.13200835658876955
+      - name: capture_20260823_142227_934286
+        translation_error_mm: 7.705501469165722
+        rotation_error_deg: 0.6868915110848379
+        reprojection_rms_px: 0.1678181027925125
+      - name: capture_20260823_142229_599668
+        translation_error_mm: 7.735856575028216
+        rotation_error_deg: 0.6248757451215561
+        reprojection_rms_px: 0.1505275883226135
+      - name: capture_20260823_142231_206502
+        translation_error_mm: 7.692544707951822
+        rotation_error_deg: 0.7397160684655987
+        reprojection_rms_px: 0.11823649753671049
+      - name: capture_20260823_142328_117738
+        translation_error_mm: 7.684611345399135
+        rotation_error_deg: 0.9516452672152887
+        reprojection_rms_px: 0.12941643495124772
+      - name: capture_20260823_142329_826004
+        translation_error_mm: 7.712958281871547
+        rotation_error_deg: 0.9549142487039833
+        reprojection_rms_px: 0.13053412976928117
+      - name: capture_20260823_142331_465206
+        translation_error_mm: 7.677372662626129
+        rotation_error_deg: 0.986051993000395
+        reprojection_rms_px: 0.1320157343408858
+      - name: capture_20260823_142333_037086
+        translation_error_mm: 7.597171128552811
+        rotation_error_deg: 0.992878087463969
+        reprojection_rms_px: 0.1252995669925929
+      - name: capture_20260823_142334_656203
+        translation_error_mm: 7.580896819141279
+        rotation_error_deg: 1.0845097678629212
+        reprojection_rms_px: 0.12760722440644942
+      - name: capture_20260823_142336_237441
+        translation_error_mm: 7.651344082370133
+        rotation_error_deg: 0.9629596637083983
+        reprojection_rms_px: 0.1254423429230322
+      - name: capture_20260823_142337_891930
+        translation_error_mm: 7.742216589327555
+        rotation_error_deg: 0.9827864597967578
+        reprojection_rms_px: 0.13621942436878384
+      - name: capture_20260823_142339_530434
+        translation_error_mm: 7.71223975629732
+        rotation_error_deg: 0.9597903474361906
+        reprojection_rms_px: 0.14570016495540025
+      - name: capture_20260823_142341_158583
+        translation_error_mm: 7.723865402895095
+        rotation_error_deg: 0.9973100543397976
+        reprojection_rms_px: 0.1570825155670064
+      - name: capture_20260823_142342_762304
+        translation_error_mm: 7.822807461452944
+        rotation_error_deg: 1.0453850756179937
+        reprojection_rms_px: 0.15972099323745553
+      - name: capture_20260823_142442_678921
+        translation_error_mm: 6.269985940892254
+        rotation_error_deg: 1.4085819592386808
+        reprojection_rms_px: 0.16761844221517486
+      - name: capture_20260823_142444_306381
+        translation_error_mm: 6.241757849133781
+        rotation_error_deg: 1.4991849159124755
+        reprojection_rms_px: 0.17302064263047331
+      - name: capture_20260823_142445_911409
+        translation_error_mm: 6.283368692103259
+        rotation_error_deg: 1.4600299351360133
+        reprojection_rms_px: 0.15687025171028376
+      - name: capture_20260823_142447_502743
+        translation_error_mm: 6.4822587472677435
+        rotation_error_deg: 1.4886004957379493
+        reprojection_rms_px: 0.16304965821746353
+      - name: capture_20260823_142449_168106
+        translation_error_mm: 6.453773255401965
+        rotation_error_deg: 1.4689256162003967
+        reprojection_rms_px: 0.14894508351696734
+      - name: capture_20260823_142450_739098
+        translation_error_mm: 6.392766734410226
+        rotation_error_deg: 1.5103299586914014
+        reprojection_rms_px: 0.14503084638702135
+      - name: capture_20260823_142452_364447
+        translation_error_mm: 6.452963942373142
+        rotation_error_deg: 1.455151910988777
+        reprojection_rms_px: 0.1695091411041457
+      - name: capture_20260823_142453_999900
+        translation_error_mm: 6.694682875880069
+        rotation_error_deg: 1.4024531359452794
+        reprojection_rms_px: 0.17012433050733172
+      - name: capture_20260823_142455_574250
+        translation_error_mm: 6.616454230012835
+        rotation_error_deg: 1.5030892893274803
+        reprojection_rms_px: 0.1724847318996796
+      - name: capture_20260823_142457_114901
+        translation_error_mm: 6.515513660384829
+        rotation_error_deg: 1.4596590629536228
+        reprojection_rms_px: 0.13416064690931306
+      - name: capture_20260823_142556_838366
+        translation_error_mm: 14.458504545025173
+        rotation_error_deg: 2.0282249126634344
+        reprojection_rms_px: 0.26101129178901583
+      - name: capture_20260823_142558_459218
+        translation_error_mm: 14.49402561076243
+        rotation_error_deg: 1.987455612103445
+        reprojection_rms_px: 0.23462255632070483
+      - name: capture_20260823_142600_102370
+        translation_error_mm: 14.217241045327654
+        rotation_error_deg: 1.967499757126965
+        reprojection_rms_px: 0.21239656421377995
+      - name: capture_20260823_142601_694037
+        translation_error_mm: 14.270211856237689
+        rotation_error_deg: 2.0246230940532643
+        reprojection_rms_px: 0.18931978274025288
+      - name: capture_20260823_142603_259346
+        translation_error_mm: 14.145730401010645
+        rotation_error_deg: 2.036067567681361
+        reprojection_rms_px: 0.22731722172690566
+      - name: capture_20260823_142604_880620
+        translation_error_mm: 14.286412223294372
+        rotation_error_deg: 2.001438914928977
+        reprojection_rms_px: 0.19783439478977008
+      - name: capture_20260823_142606_448800
+        translation_error_mm: 14.296596478050827
+        rotation_error_deg: 2.0059302496137437
+        reprojection_rms_px: 0.21016342083651374
+      - name: capture_20260823_142608_053141
+        translation_error_mm: 14.271594564592405
+        rotation_error_deg: 2.0450122245717597
+        reprojection_rms_px: 0.213689801319768
+      - name: capture_20260823_142609_673702
+        translation_error_mm: 14.294289086066788
+        rotation_error_deg: 2.0233556866874634
+        reprojection_rms_px: 0.2147984180604797
+      - name: capture_20260823_142611_284270
+        translation_error_mm: 14.280992267691602
+        rotation_error_deg: 2.0235321635879084
+        reprojection_rms_px: 0.1986076663453943
+      - name: capture_20260823_142722_871889
+        translation_error_mm: 13.74934523686677
+        rotation_error_deg: 2.163503534194466
+        reprojection_rms_px: 0.19357707118152356
+      - name: capture_20260823_142724_529484
+        translation_error_mm: 13.180048262252729
+        rotation_error_deg: 2.34585121015486
+        reprojection_rms_px: 0.22061884302857593
+      - name: capture_20260823_142726_195614
+        translation_error_mm: 13.583429367035402
+        rotation_error_deg: 2.1770073523714126
+        reprojection_rms_px: 0.20887609682375405
+      - name: capture_20260823_142727_837439
+        translation_error_mm: 13.710329972966866
+        rotation_error_deg: 2.12634835653122
+        reprojection_rms_px: 0.25895416447035685
+      - name: capture_20260823_142729_483057
+        translation_error_mm: 13.513380627583127
+        rotation_error_deg: 2.109611525508865
+        reprojection_rms_px: 0.22733068353335448
+      - name: capture_20260823_142731_122574
+        translation_error_mm: 13.405445086896146
+        rotation_error_deg: 2.217706184810411
+        reprojection_rms_px: 0.23368894273504634
+      - name: capture_20260823_142732_782919
+        translation_error_mm: 13.615043077595384
+        rotation_error_deg: 2.037664073391898
+        reprojection_rms_px: 0.2222111538959804
+      - name: capture_20260823_142734_374907
+        translation_error_mm: 13.727318138227314
+        rotation_error_deg: 2.17011369500695
+        reprojection_rms_px: 0.23209907978516198
+      - name: capture_20260823_142735_943004
+        translation_error_mm: 13.618531213556967
+        rotation_error_deg: 2.1408033016502666
+        reprojection_rms_px: 0.20724334738781766
+      - name: capture_20260823_142737_559708
+        translation_error_mm: 13.810210062092674
+        rotation_error_deg: 2.143810042457913
+        reprojection_rms_px: 0.231992620943263
+      - name: capture_20260823_142841_216425
+        translation_error_mm: 11.369486149814069
+        rotation_error_deg: 2.426184221261844
+        reprojection_rms_px: 0.19655327839837514
+      - name: capture_20260823_142842_813016
+        translation_error_mm: 11.422648144793856
+        rotation_error_deg: 2.3896880593775176
+        reprojection_rms_px: 0.18654275262314646
+      - name: capture_20260823_142844_426212
+        translation_error_mm: 11.263179470287879
+        rotation_error_deg: 2.4426867502207865
+        reprojection_rms_px: 0.20722205126924872
+      - name: capture_20260823_142846_017748
+        translation_error_mm: 11.438638673902355
+        rotation_error_deg: 2.340453285147584
+        reprojection_rms_px: 0.19917141098863972
+      - name: capture_20260823_142847_619787
+        translation_error_mm: 11.410689494540025
+        rotation_error_deg: 2.357909868625603
+        reprojection_rms_px: 0.22447722542113774
+      - name: capture_20260823_142849_228020
+        translation_error_mm: 11.277550131186395
+        rotation_error_deg: 2.4291989537396956
+        reprojection_rms_px: 0.19269040618905417
+      - name: capture_20260823_142850_830466
+        translation_error_mm: 11.61211574090637
+        rotation_error_deg: 2.4434649816795386
+        reprojection_rms_px: 0.19164292096781774
+      - name: capture_20260823_142852_390481
+        translation_error_mm: 11.32720351747483
+        rotation_error_deg: 2.3581207342594306
+        reprojection_rms_px: 0.19730663086754927
+      - name: capture_20260823_142853_994314
+        translation_error_mm: 11.488241592113887
+        rotation_error_deg: 2.37379530616802
+        reprojection_rms_px: 0.225539506648925
+      - name: capture_20260823_142855_563664
+        translation_error_mm: 11.225001199075159
+        rotation_error_deg: 2.3684089783159266
+        reprojection_rms_px: 0.1732151747692052
+      - name: capture_20260823_142955_231474
+        translation_error_mm: 13.925482412298322
+        rotation_error_deg: 1.3584312312579765
+        reprojection_rms_px: 0.11412304407258886
+      - name: capture_20260823_142956_865257
+        translation_error_mm: 14.007950283243169
+        rotation_error_deg: 1.327286376770778
+        reprojection_rms_px: 0.12736999507561475
+      - name: capture_20260823_142958_462462
+        translation_error_mm: 13.983561624230397
+        rotation_error_deg: 1.3545665254767503
+        reprojection_rms_px: 0.11768576827057588
+      - name: capture_20260823_143000_051592
+        translation_error_mm: 13.931748594398458
+        rotation_error_deg: 1.4797699913705682
+        reprojection_rms_px: 0.14492632034528516
+      - name: capture_20260823_143001_611993
+        translation_error_mm: 13.846791104000953
+        rotation_error_deg: 1.3672722209885333
+        reprojection_rms_px: 0.11912595454286747
+      - name: capture_20260823_143003_216766
+        translation_error_mm: 13.892340429208616
+        rotation_error_deg: 1.2840596612111557
+        reprojection_rms_px: 0.11985039458127081
+      - name: capture_20260823_143004_813120
+        translation_error_mm: 13.8657393132152
+        rotation_error_deg: 1.3855109231881917
+        reprojection_rms_px: 0.11434528352139356
+      - name: capture_20260823_143006_412996
+        translation_error_mm: 13.91142283790742
+        rotation_error_deg: 1.414856393229168
+        reprojection_rms_px: 0.142722047720988
+      - name: capture_20260823_143008_020754
+        translation_error_mm: 13.942727650089978
+        rotation_error_deg: 1.3999071020641058
+        reprojection_rms_px: 0.14945083660604097
+      - name: capture_20260823_143009_652799
+        translation_error_mm: 13.890846193293772
+        rotation_error_deg: 1.3296300440651074
+        reprojection_rms_px: 0.12910356638520792
+      - name: capture_20260823_143053_828079
+        translation_error_mm: 7.062770477629777
+        rotation_error_deg: 1.8069586248109868
+        reprojection_rms_px: 0.155915894594214
+      - name: capture_20260823_143055_461761
+        translation_error_mm: 7.127063360654597
+        rotation_error_deg: 1.8476159766980302
+        reprojection_rms_px: 0.1451331362863667
+      - name: capture_20260823_143057_086407
+        translation_error_mm: 7.108633434552339
+        rotation_error_deg: 1.861266412668892
+        reprojection_rms_px: 0.15840120790468964
+      - name: capture_20260823_143058_660429
+        translation_error_mm: 7.120003201722789
+        rotation_error_deg: 1.8099704090431388
+        reprojection_rms_px: 0.15228752368017337
+      - name: capture_20260823_143100_216216
+        translation_error_mm: 7.0664844937516165
+        rotation_error_deg: 1.7850971261897932
+        reprojection_rms_px: 0.1584950572770693
+      - name: capture_20260823_143101_876246
+        translation_error_mm: 7.110684634488651
+        rotation_error_deg: 1.8103327265197902
+        reprojection_rms_px: 0.17731155007078636
+      - name: capture_20260823_143103_497779
+        translation_error_mm: 7.1002602056500566
+        rotation_error_deg: 1.7710530380775462
+        reprojection_rms_px: 0.13280358106743334
+      - name: capture_20260823_143105_043553
+        translation_error_mm: 7.137127491733615
+        rotation_error_deg: 1.8086582938212863
+        reprojection_rms_px: 0.14190275698721963
+      - name: capture_20260823_143106_639058
+        translation_error_mm: 7.140229449912613
+        rotation_error_deg: 1.8581574059756154
+        reprojection_rms_px: 0.17247269275834745
+      - name: capture_20260823_143108_236063
+        translation_error_mm: 7.121700614472768
+        rotation_error_deg: 1.7711688929501863
+        reprojection_rms_px: 0.14638691143707802
+      - name: capture_20260823_143156_581484
+        translation_error_mm: 14.178147791277869
+        rotation_error_deg: 2.6842456913241692
+        reprojection_rms_px: 0.1369074953739145
+      - name: capture_20260823_143158_215247
+        translation_error_mm: 13.801408002132975
+        rotation_error_deg: 2.7857257332282725
+        reprojection_rms_px: 0.1575215093774944
+      - name: capture_20260823_143159_901809
+        translation_error_mm: 13.623672087156075
+        rotation_error_deg: 2.6768018682833574
+        reprojection_rms_px: 0.15661479229296532
+      - name: capture_20260823_143201_471090
+        translation_error_mm: 13.924301089329523
+        rotation_error_deg: 2.7157233292529326
+        reprojection_rms_px: 0.14308519332971203
+      - name: capture_20260823_143203_026829
+        translation_error_mm: 14.431834536541635
+        rotation_error_deg: 2.7838003528308186
+        reprojection_rms_px: 0.13264995459114182
+      - name: capture_20260823_143204_558938
+        translation_error_mm: 14.274718337768126
+        rotation_error_deg: 2.7306120949299024
+        reprojection_rms_px: 0.17070443752998962
+      - name: capture_20260823_143206_161369
+        translation_error_mm: 13.69741237013839
+        rotation_error_deg: 2.66168698826863
+        reprojection_rms_px: 0.146587867766209
+      - name: capture_20260823_143207_705550
+        translation_error_mm: 13.620577274351108
+        rotation_error_deg: 2.569918341528796
+        reprojection_rms_px: 0.15754284217402753
+      - name: capture_20260823_143209_417675
+        translation_error_mm: 13.646229010198867
+        rotation_error_deg: 2.589252559624058
+        reprojection_rms_px: 0.20612694332280407
+      - name: capture_20260823_143211_061425
+        translation_error_mm: 14.122369100894412
+        rotation_error_deg: 2.6498381966620337
+        reprojection_rms_px: 0.16840718949303146
+      - name: capture_20260823_143250_170365
+        translation_error_mm: 6.217533145967459
+        rotation_error_deg: 1.9771379314524722
+        reprojection_rms_px: 0.2461573513666684
+      - name: capture_20260823_143251_809954
+        translation_error_mm: 6.403976899541934
+        rotation_error_deg: 2.061535974571315
+        reprojection_rms_px: 0.23133970225303518
+      - name: capture_20260823_143253_386535
+        translation_error_mm: 6.65020956475028
+        rotation_error_deg: 2.130655547273385
+        reprojection_rms_px: 0.20993090339877157
+      - name: capture_20260823_143255_005107
+        translation_error_mm: 6.026951419488836
+        rotation_error_deg: 1.913354317301849
+        reprojection_rms_px: 0.2037769780695858
+      - name: capture_20260823_143256_616761
+        translation_error_mm: 6.265303867182592
+        rotation_error_deg: 1.9780784875073625
+        reprojection_rms_px: 0.20067246476173975
+      - name: capture_20260823_143258_190916
+        translation_error_mm: 6.4690306175646635
+        rotation_error_deg: 1.9697373271595655
+        reprojection_rms_px: 0.20700870131946783
+      - name: capture_20260823_143259_785694
+        translation_error_mm: 6.420965634941834
+        rotation_error_deg: 2.03868958101316
+        reprojection_rms_px: 0.2397421447442009
+      - name: capture_20260823_143301_469174
+        translation_error_mm: 6.094799300588196
+        rotation_error_deg: 2.0156211219635716
+        reprojection_rms_px: 0.2231798632554871
+      - name: capture_20260823_143303_216232
+        translation_error_mm: 6.367740522737197
+        rotation_error_deg: 2.0254686610403643
+        reprojection_rms_px: 0.2562337616370283
+      - name: capture_20260823_143304_836738
+        translation_error_mm: 6.432656030441218
+        rotation_error_deg: 1.9892484442825848
+        reprojection_rms_px: 0.2049482754918694
+      - name: capture_20260823_143401_001423
+        translation_error_mm: 7.356983168150504
+        rotation_error_deg: 1.922261776095728
+        reprojection_rms_px: 0.23095910284379478
+      - name: capture_20260823_143402_602779
+        translation_error_mm: 7.456929360331417
+        rotation_error_deg: 1.9540551410426785
+        reprojection_rms_px: 0.2735037845711414
+      - name: capture_20260823_143404_285518
+        translation_error_mm: 7.1101550864322745
+        rotation_error_deg: 1.873823898521974
+        reprojection_rms_px: 0.23292704642107892
+      - name: capture_20260823_143405_918489
+        translation_error_mm: 7.081471550033519
+        rotation_error_deg: 1.8468491877897615
+        reprojection_rms_px: 0.25026377508315284
+      - name: capture_20260823_143407_550870
+        translation_error_mm: 7.281626784590096
+        rotation_error_deg: 1.862767739563694
+        reprojection_rms_px: 0.2073397969302527
+      - name: capture_20260823_143409_154911
+        translation_error_mm: 7.4648326197001955
+        rotation_error_deg: 1.94363687189516
+        reprojection_rms_px: 0.29688936660802995
+      - name: capture_20260823_143410_786937
+        translation_error_mm: 7.393769471960793
+        rotation_error_deg: 1.93073848193159
+        reprojection_rms_px: 0.1812096880793984
+      - name: capture_20260823_143412_463373
+        translation_error_mm: 7.217589432332721
+        rotation_error_deg: 1.9109895459040585
+        reprojection_rms_px: 0.25919191186009627
+      - name: capture_20260823_143414_089101
+        translation_error_mm: 7.143518805276003
+        rotation_error_deg: 1.8514697628945165
+        reprojection_rms_px: 0.268076157844809
+      - name: capture_20260823_143415_703597
+        translation_error_mm: 7.290130573599858
+        rotation_error_deg: 1.913843041333518
+        reprojection_rms_px: 0.25555669280708726
+      - name: capture_20260823_143458_998668
+        translation_error_mm: 11.172877071372035
+        rotation_error_deg: 2.655719789994914
+        reprojection_rms_px: 0.1392490921487775
+      - name: capture_20260823_143500_640667
+        translation_error_mm: 11.184173898986174
+        rotation_error_deg: 2.687160469610745
+        reprojection_rms_px: 0.1573083627739939
+      - name: capture_20260823_143502_221884
+        translation_error_mm: 11.174849383562174
+        rotation_error_deg: 2.678122882926531
+        reprojection_rms_px: 0.17089579255821447
+      - name: capture_20260823_143503_857931
+        translation_error_mm: 11.13932763456445
+        rotation_error_deg: 2.6728117971447523
+        reprojection_rms_px: 0.21078616835667754
+      - name: capture_20260823_143505_438895
+        translation_error_mm: 11.124671899732714
+        rotation_error_deg: 2.613613009789226
+        reprojection_rms_px: 0.181728695038637
+      - name: capture_20260823_143507_073100
+        translation_error_mm: 11.142703048303074
+        rotation_error_deg: 2.7029372174125466
+        reprojection_rms_px: 0.19657623127873328
+      - name: capture_20260823_143508_628245
+        translation_error_mm: 11.118497285958297
+        rotation_error_deg: 2.663080431356637
+        reprojection_rms_px: 0.183518299699111
+      - name: capture_20260823_143510_272686
+        translation_error_mm: 11.136695957166332
+        rotation_error_deg: 2.6614230261951985
+        reprojection_rms_px: 0.15257396952973085
+      - name: capture_20260823_143511_871465
+        translation_error_mm: 11.05711181528952
+        rotation_error_deg: 2.6255253784211576
+        reprojection_rms_px: 0.17746152260467124
+      - name: capture_20260823_143513_465068
+        translation_error_mm: 11.08370903899104
+        rotation_error_deg: 2.677720092839947
+        reprojection_rms_px: 0.18074409314365883
+      - name: capture_20260823_143555_732127
+        translation_error_mm: 13.109157244672243
+        rotation_error_deg: 1.4681646390716776
+        reprojection_rms_px: 0.15588899827063335
+      - name: capture_20260823_143557_359610
+        translation_error_mm: 13.15554137915433
+        rotation_error_deg: 1.4237080247076068
+        reprojection_rms_px: 0.1651880397302085
+      - name: capture_20260823_143558_976597
+        translation_error_mm: 13.087431195649302
+        rotation_error_deg: 1.4203871957751573
+        reprojection_rms_px: 0.1559624710501101
+      - name: capture_20260823_143600_611562
+        translation_error_mm: 13.089560849404656
+        rotation_error_deg: 1.4473312425764127
+        reprojection_rms_px: 0.16311601886022958
+      - name: capture_20260823_143602_208993
+        translation_error_mm: 13.139156003579613
+        rotation_error_deg: 1.4078800693583255
+        reprojection_rms_px: 0.13712665825296205
+      - name: capture_20260823_143603_924624
+        translation_error_mm: 13.094207185651547
+        rotation_error_deg: 1.447390153300852
+        reprojection_rms_px: 0.1919080425523113
+      - name: capture_20260823_143605_522924
+        translation_error_mm: 13.155157101042562
+        rotation_error_deg: 1.4553839391790553
+        reprojection_rms_px: 0.1922965008056291
+      - name: capture_20260823_143607_130287
+        translation_error_mm: 13.108550091372592
+        rotation_error_deg: 1.4845565939582328
+        reprojection_rms_px: 0.19962690266822383
+      - name: capture_20260823_143608_719035
+        translation_error_mm: 13.131663394752056
+        rotation_error_deg: 1.472598463186348
+        reprojection_rms_px: 0.11073896156142439
+      - name: capture_20260823_143610_350297
+        translation_error_mm: 13.130652126875876
+        rotation_error_deg: 1.5284086270701454
+        reprojection_rms_px: 0.1400676859164778
+    held_out_validation:
+      translation_rms_mm: 5.125021865587704
+      translation_max_mm: 7.150520391485051
+      rotation_rms_deg: 1.5791467217196333
+      rotation_max_deg: 2.132225843444488
+      per_sample:
+      - name: capture_20260823_143648_795032
+        translation_error_mm: 6.6441465033093845
+        rotation_error_deg: 1.0104764450697934
+        reprojection_rms_px: 0.14795443696478194
+      - name: capture_20260823_143650_504448
+        translation_error_mm: 6.674063431947835
+        rotation_error_deg: 1.199841521711902
+        reprojection_rms_px: 0.13786926749350004
+      - name: capture_20260823_143652_120494
+        translation_error_mm: 6.487541085946917
+        rotation_error_deg: 1.0367214096384698
+        reprojection_rms_px: 0.1498850011032385
+      - name: capture_20260823_143653_759185
+        translation_error_mm: 6.8283997831982015
+        rotation_error_deg: 1.1295276458212882
+        reprojection_rms_px: 0.1828407634123958
+      - name: capture_20260823_143655_435902
+        translation_error_mm: 6.755551521228484
+        rotation_error_deg: 1.2234919765946186
+        reprojection_rms_px: 0.146359208401678
+      - name: capture_20260823_143657_062183
+        translation_error_mm: 6.580899820915402
+        rotation_error_deg: 1.0279140205003252
+        reprojection_rms_px: 0.1506009732328837
+      - name: capture_20260823_143658_669171
+        translation_error_mm: 6.778974050346881
+        rotation_error_deg: 1.2109767646126912
+        reprojection_rms_px: 0.18105030119076465
+      - name: capture_20260823_143700_242629
+        translation_error_mm: 7.150520391485051
+        rotation_error_deg: 1.0500604468925683
+        reprojection_rms_px: 0.29017997086663105
+      - name: capture_20260823_143701_848618
+        translation_error_mm: 6.406583622535038
+        rotation_error_deg: 0.795900209365292
+        reprojection_rms_px: 0.1359746120497821
+      - name: capture_20260823_143703_495523
+        translation_error_mm: 6.698646670422501
+        rotation_error_deg: 1.0571916186655197
+        reprojection_rms_px: 0.14387847390700473
+      - name: capture_20260823_143730_337123
+        translation_error_mm: 5.064696470298373
+        rotation_error_deg: 2.0900144193961547
+        reprojection_rms_px: 0.1402395079598648
+      - name: capture_20260823_143731_977960
+        translation_error_mm: 5.201516561416946
+        rotation_error_deg: 1.9951241860198108
+        reprojection_rms_px: 0.11750393349268758
+      - name: capture_20260823_143733_583077
+        translation_error_mm: 5.347948872745802
+        rotation_error_deg: 2.128494878924173
+        reprojection_rms_px: 0.12828726837922488
+      - name: capture_20260823_143735_168423
+        translation_error_mm: 5.045748030196704
+        rotation_error_deg: 2.037895755349953
+        reprojection_rms_px: 0.10929017284270953
+      - name: capture_20260823_143736_773946
+        translation_error_mm: 4.9768530217044304
+        rotation_error_deg: 2.077571679948741
+        reprojection_rms_px: 0.14125389353676804
+      - name: capture_20260823_143738_364276
+        translation_error_mm: 5.151538554207143
+        rotation_error_deg: 1.9969394368247926
+        reprojection_rms_px: 0.11632642340885724
+      - name: capture_20260823_143739_943496
+        translation_error_mm: 5.23222626498643
+        rotation_error_deg: 2.132225843444488
+        reprojection_rms_px: 0.1259642244877503
+      - name: capture_20260823_143741_564146
+        translation_error_mm: 4.9176484100011
+        rotation_error_deg: 2.0574586322164063
+        reprojection_rms_px: 0.10267081114650876
+      - name: capture_20260823_143743_153521
+        translation_error_mm: 5.175960881105289
+        rotation_error_deg: 2.0255022636653313
+        reprojection_rms_px: 0.123672596980797
+      - name: capture_20260823_143744_789870
+        translation_error_mm: 5.106243692839084
+        rotation_error_deg: 1.8655041246476585
+        reprojection_rms_px: 0.113669258145724
+      - name: capture_20260823_143818_730907
+        translation_error_mm: 2.72128483209065
+        rotation_error_deg: 1.410823021949638
+        reprojection_rms_px: 0.08997833787520086
+      - name: capture_20260823_143820_354273
+        translation_error_mm: 2.921160701631349
+        rotation_error_deg: 1.4949038180833711
+        reprojection_rms_px: 0.11368164163733402
+      - name: capture_20260823_143821_901248
+        translation_error_mm: 2.295109093192481
+        rotation_error_deg: 1.461667987823337
+        reprojection_rms_px: 0.10192960786019276
+      - name: capture_20260823_143823_532725
+        translation_error_mm: 2.866594713242557
+        rotation_error_deg: 1.423493937702496
+        reprojection_rms_px: 0.09259903809505501
+      - name: capture_20260823_143825_109911
+        translation_error_mm: 2.7315159579965305
+        rotation_error_deg: 1.427244801204285
+        reprojection_rms_px: 0.12979015725607035
+      - name: capture_20260823_143826_688745
+        translation_error_mm: 2.5901003050752083
+        rotation_error_deg: 1.6368566230594863
+        reprojection_rms_px: 0.10104232428002424
+      - name: capture_20260823_143828_268689
+        translation_error_mm: 2.848868860264719
+        rotation_error_deg: 1.4429007604340465
+        reprojection_rms_px: 0.09621585849410737
+      - name: capture_20260823_143829_915345
+        translation_error_mm: 2.8393924889349034
+        rotation_error_deg: 1.467015148348234
+        reprojection_rms_px: 0.08585028679165316
+      - name: capture_20260823_143831_557967
+        translation_error_mm: 2.70711887699992
+        rotation_error_deg: 1.3759643572028422
+        reprojection_rms_px: 0.10379052115729649
+      - name: capture_20260823_143833_159251
+        translation_error_mm: 3.0046503057072638
+        rotation_error_deg: 1.4818446898085174
+        reprojection_rms_px: 0.11200615846935769
+  HORAUD:
+    status: completed
+    fitting:
+      translation_rms_mm: 10.763889367324863
+      translation_max_mm: 14.494923052748
+      rotation_rms_deg: 1.9077354728216251
+      rotation_max_deg: 2.78307155874352
+      per_sample:
+      - name: capture_20260823_142206_476713
+        translation_error_mm: 8.275373129442327
+        rotation_error_deg: 0.5200803025050478
+        reprojection_rms_px: 0.13891239100444444
+      - name: capture_20260823_142218_218466
+        translation_error_mm: 7.613114202342577
+        rotation_error_deg: 0.6408428492365035
+        reprojection_rms_px: 0.13567526095597746
+      - name: capture_20260823_142219_859122
+        translation_error_mm: 7.601415209689697
+        rotation_error_deg: 0.7728411949544297
+        reprojection_rms_px: 0.15488259757106385
+      - name: capture_20260823_142221_415158
+        translation_error_mm: 7.564627754258212
+        rotation_error_deg: 0.691814159575426
+        reprojection_rms_px: 0.12681667897861912
+      - name: capture_20260823_142223_023656
+        translation_error_mm: 7.276370631912027
+        rotation_error_deg: 0.5999019743886415
+        reprojection_rms_px: 0.139976810834707
+      - name: capture_20260823_142224_705222
+        translation_error_mm: 7.333669598144405
+        rotation_error_deg: 0.613024919237669
+        reprojection_rms_px: 0.11853218194450468
+      - name: capture_20260823_142226_335510
+        translation_error_mm: 6.859638362827303
+        rotation_error_deg: 0.7160545275300714
+        reprojection_rms_px: 0.13200835658876955
+      - name: capture_20260823_142227_934286
+        translation_error_mm: 7.7027057318282095
+        rotation_error_deg: 0.6696057749460987
+        reprojection_rms_px: 0.1678181027925125
+      - name: capture_20260823_142229_599668
+        translation_error_mm: 7.729617759583465
+        rotation_error_deg: 0.6073909101998516
+        reprojection_rms_px: 0.1505275883226135
+      - name: capture_20260823_142231_206502
+        translation_error_mm: 7.688901981464545
+        rotation_error_deg: 0.7237686301790727
+        reprojection_rms_px: 0.11823649753671049
+      - name: capture_20260823_142328_117738
+        translation_error_mm: 7.772239825277994
+        rotation_error_deg: 0.9654856669953432
+        reprojection_rms_px: 0.12941643495124772
+      - name: capture_20260823_142329_826004
+        translation_error_mm: 7.800624473823994
+        rotation_error_deg: 0.9688227433201037
+        reprojection_rms_px: 0.13053412976928117
+      - name: capture_20260823_142331_465206
+        translation_error_mm: 7.76494790846842
+        rotation_error_deg: 1.000204835059999
+        reprojection_rms_px: 0.1320157343408858
+      - name: capture_20260823_142333_037086
+        translation_error_mm: 7.684653836800853
+        rotation_error_deg: 1.0071698626967431
+        reprojection_rms_px: 0.1252995669925929
+      - name: capture_20260823_142334_656203
+        translation_error_mm: 7.668290323160147
+        rotation_error_deg: 1.0982880791966516
+        reprojection_rms_px: 0.12760722440644942
+      - name: capture_20260823_142336_237441
+        translation_error_mm: 7.73887082128341
+        rotation_error_deg: 0.9765857471433983
+        reprojection_rms_px: 0.1254423429230322
+      - name: capture_20260823_142337_891930
+        translation_error_mm: 7.829882506092959
+        rotation_error_deg: 0.9965361229217314
+        reprojection_rms_px: 0.13621942436878384
+      - name: capture_20260823_142339_530434
+        translation_error_mm: 7.79996332023919
+        rotation_error_deg: 0.9740378671894098
+        reprojection_rms_px: 0.14570016495540025
+      - name: capture_20260823_142341_158583
+        translation_error_mm: 7.811565236562295
+        rotation_error_deg: 1.0108864581171744
+        reprojection_rms_px: 0.1570825155670064
+      - name: capture_20260823_142342_762304
+        translation_error_mm: 7.91048736873973
+        rotation_error_deg: 1.0594268219986815
+        reprojection_rms_px: 0.15972099323745553
+      - name: capture_20260823_142442_678921
+        translation_error_mm: 6.266213111355274
+        rotation_error_deg: 1.4048885947888512
+        reprojection_rms_px: 0.16761844221517486
+      - name: capture_20260823_142444_306381
+        translation_error_mm: 6.236688037518881
+        rotation_error_deg: 1.49321104159425
+        reprojection_rms_px: 0.17302064263047331
+      - name: capture_20260823_142445_911409
+        translation_error_mm: 6.2755970019203255
+        rotation_error_deg: 1.4545464408712558
+        reprojection_rms_px: 0.15687025171028376
+      - name: capture_20260823_142447_502743
+        translation_error_mm: 6.4749964120578
+        rotation_error_deg: 1.4823941460372492
+        reprojection_rms_px: 0.16304965821746353
+      - name: capture_20260823_142449_168106
+        translation_error_mm: 6.4457421971367275
+        rotation_error_deg: 1.4631062571535467
+        reprojection_rms_px: 0.14894508351696734
+      - name: capture_20260823_142450_739098
+        translation_error_mm: 6.386081715889212
+        rotation_error_deg: 1.503628339800314
+        reprojection_rms_px: 0.14503084638702135
+      - name: capture_20260823_142452_364447
+        translation_error_mm: 6.446589527071847
+        rotation_error_deg: 1.4500678228746808
+        reprojection_rms_px: 0.1695091411041457
+      - name: capture_20260823_142453_999900
+        translation_error_mm: 6.686546962147105
+        rotation_error_deg: 1.3975753559618578
+        reprojection_rms_px: 0.17012433050733172
+      - name: capture_20260823_142455_574250
+        translation_error_mm: 6.608898361547179
+        rotation_error_deg: 1.496556207136264
+        reprojection_rms_px: 0.1724847318996796
+      - name: capture_20260823_142457_114901
+        translation_error_mm: 6.507174248034421
+        rotation_error_deg: 1.4540068166847504
+        reprojection_rms_px: 0.13416064690931306
+      - name: capture_20260823_142556_838366
+        translation_error_mm: 14.459270007118954
+        rotation_error_deg: 2.041365808557137
+        reprojection_rms_px: 0.26101129178901583
+      - name: capture_20260823_142558_459218
+        translation_error_mm: 14.494923052748
+        rotation_error_deg: 2.0003392266225126
+        reprojection_rms_px: 0.23462255632070483
+      - name: capture_20260823_142600_102370
+        translation_error_mm: 14.217920763172993
+        rotation_error_deg: 1.9799198785139747
+        reprojection_rms_px: 0.21239656421377995
+      - name: capture_20260823_142601_694037
+        translation_error_mm: 14.270865001115826
+        rotation_error_deg: 2.0373266321803603
+        reprojection_rms_px: 0.18931978274025288
+      - name: capture_20260823_142603_259346
+        translation_error_mm: 14.146388885509788
+        rotation_error_deg: 2.048875246018385
+        reprojection_rms_px: 0.22731722172690566
+      - name: capture_20260823_142604_880620
+        translation_error_mm: 14.286930923488054
+        rotation_error_deg: 2.0133554696159996
+        reprojection_rms_px: 0.19783439478977008
+      - name: capture_20260823_142606_448800
+        translation_error_mm: 14.296793663539091
+        rotation_error_deg: 2.0179096199685636
+        reprojection_rms_px: 0.21016342083651374
+      - name: capture_20260823_142608_053141
+        translation_error_mm: 14.272359672897544
+        rotation_error_deg: 2.0576272253513754
+        reprojection_rms_px: 0.213689801319768
+      - name: capture_20260823_142609_673702
+        translation_error_mm: 14.295034814560488
+        rotation_error_deg: 2.0359008431261283
+        reprojection_rms_px: 0.2147984180604797
+      - name: capture_20260823_142611_284270
+        translation_error_mm: 14.28184500255066
+        rotation_error_deg: 2.036274199356548
+        reprojection_rms_px: 0.1986076663453943
+      - name: capture_20260823_142722_871889
+        translation_error_mm: 13.684967461397356
+        rotation_error_deg: 2.1565645222034937
+        reprojection_rms_px: 0.19357707118152356
+      - name: capture_20260823_142724_529484
+        translation_error_mm: 13.116124712904368
+        rotation_error_deg: 2.3402161961608012
+        reprojection_rms_px: 0.22061884302857593
+      - name: capture_20260823_142726_195614
+        translation_error_mm: 13.51950681668104
+        rotation_error_deg: 2.1702980891224177
+        reprojection_rms_px: 0.20887609682375405
+      - name: capture_20260823_142727_837439
+        translation_error_mm: 13.648596663181818
+        rotation_error_deg: 2.1199391784839827
+        reprojection_rms_px: 0.25895416447035685
+      - name: capture_20260823_142729_483057
+        translation_error_mm: 13.451997248204638
+        rotation_error_deg: 2.1037053487272153
+        reprojection_rms_px: 0.22733068353335448
+      - name: capture_20260823_142731_122574
+        translation_error_mm: 13.340756000454203
+        rotation_error_deg: 2.2102740838812345
+        reprojection_rms_px: 0.23368894273504634
+      - name: capture_20260823_142732_782919
+        translation_error_mm: 13.549342016641972
+        rotation_error_deg: 2.0314899772295627
+        reprojection_rms_px: 0.2222111538959804
+      - name: capture_20260823_142734_374907
+        translation_error_mm: 13.663276384840307
+        rotation_error_deg: 2.163195147218883
+        reprojection_rms_px: 0.23209907978516198
+      - name: capture_20260823_142735_943004
+        translation_error_mm: 13.554405861911514
+        rotation_error_deg: 2.1338783263625847
+        reprojection_rms_px: 0.20724334738781766
+      - name: capture_20260823_142737_559708
+        translation_error_mm: 13.746476717320604
+        rotation_error_deg: 2.1367752352141895
+        reprojection_rms_px: 0.231992620943263
+      - name: capture_20260823_142841_216425
+        translation_error_mm: 11.339772970469259
+        rotation_error_deg: 2.4174253042593095
+        reprojection_rms_px: 0.19655327839837514
+      - name: capture_20260823_142842_813016
+        translation_error_mm: 11.397874934489538
+        rotation_error_deg: 2.381882134723032
+        reprojection_rms_px: 0.18654275262314646
+      - name: capture_20260823_142844_426212
+        translation_error_mm: 11.233532209395033
+        rotation_error_deg: 2.434231895169614
+        reprojection_rms_px: 0.20722205126924872
+      - name: capture_20260823_142846_017748
+        translation_error_mm: 11.409812104111946
+        rotation_error_deg: 2.330866186339251
+        reprojection_rms_px: 0.19917141098863972
+      - name: capture_20260823_142847_619787
+        translation_error_mm: 11.380039100551299
+        rotation_error_deg: 2.348669393027143
+        reprojection_rms_px: 0.22447722542113774
+      - name: capture_20260823_142849_228020
+        translation_error_mm: 11.247098698548646
+        rotation_error_deg: 2.4205012293572166
+        reprojection_rms_px: 0.19269040618905417
+      - name: capture_20260823_142850_830466
+        translation_error_mm: 11.58734839195864
+        rotation_error_deg: 2.4342775960214413
+        reprojection_rms_px: 0.19164292096781774
+      - name: capture_20260823_142852_390481
+        translation_error_mm: 11.30233751808578
+        rotation_error_deg: 2.350472792531063
+        reprojection_rms_px: 0.19730663086754927
+      - name: capture_20260823_142853_994314
+        translation_error_mm: 11.458625685371029
+        rotation_error_deg: 2.366241546028997
+        reprojection_rms_px: 0.225539506648925
+      - name: capture_20260823_142855_563664
+        translation_error_mm: 11.19557069322756
+        rotation_error_deg: 2.3597882270791577
+        reprojection_rms_px: 0.1732151747692052
+      - name: capture_20260823_142955_231474
+        translation_error_mm: 14.014770143251594
+        rotation_error_deg: 1.3631503592320577
+        reprojection_rms_px: 0.11412304407258886
+      - name: capture_20260823_142956_865257
+        translation_error_mm: 14.097004799564669
+        rotation_error_deg: 1.3312222847211945
+        reprojection_rms_px: 0.12736999507561475
+      - name: capture_20260823_142958_462462
+        translation_error_mm: 14.072884710163997
+        rotation_error_deg: 1.3596093823558801
+        reprojection_rms_px: 0.11768576827057588
+      - name: capture_20260823_143000_051592
+        translation_error_mm: 14.021367360842891
+        rotation_error_deg: 1.484818814244761
+        reprojection_rms_px: 0.14492632034528516
+      - name: capture_20260823_143001_611993
+        translation_error_mm: 13.93666965937119
+        rotation_error_deg: 1.3717272219267347
+        reprojection_rms_px: 0.11912595454286747
+      - name: capture_20260823_143003_216766
+        translation_error_mm: 13.982129693746932
+        rotation_error_deg: 1.2885484221111594
+        reprojection_rms_px: 0.11985039458127081
+      - name: capture_20260823_143004_813120
+        translation_error_mm: 13.955623470148964
+        rotation_error_deg: 1.3903651337209728
+        reprojection_rms_px: 0.11434528352139356
+      - name: capture_20260823_143006_412996
+        translation_error_mm: 14.001228456084576
+        rotation_error_deg: 1.4200833476196006
+        reprojection_rms_px: 0.142722047720988
+      - name: capture_20260823_143008_020754
+        translation_error_mm: 14.032350725594178
+        rotation_error_deg: 1.4052334949918082
+        reprojection_rms_px: 0.14945083660604097
+      - name: capture_20260823_143009_652799
+        translation_error_mm: 13.980504386629542
+        rotation_error_deg: 1.3347797633979634
+        reprojection_rms_px: 0.12910356638520792
+      - name: capture_20260823_143053_828079
+        translation_error_mm: 7.0370416720744045
+        rotation_error_deg: 1.8119720977221376
+        reprojection_rms_px: 0.155915894594214
+      - name: capture_20260823_143055_461761
+        translation_error_mm: 7.099750269884573
+        rotation_error_deg: 1.8537260468256933
+        reprojection_rms_px: 0.1451331362863667
+      - name: capture_20260823_143057_086407
+        translation_error_mm: 7.081052769037963
+        rotation_error_deg: 1.8678481287398505
+        reprojection_rms_px: 0.15840120790468964
+      - name: capture_20260823_143058_660429
+        translation_error_mm: 7.0893135433655985
+        rotation_error_deg: 1.815873588361723
+        reprojection_rms_px: 0.15228752368017337
+      - name: capture_20260823_143100_216216
+        translation_error_mm: 7.036712030022273
+        rotation_error_deg: 1.7908026730125972
+        reprojection_rms_px: 0.1584950572770693
+      - name: capture_20260823_143101_876246
+        translation_error_mm: 7.083253180523607
+        rotation_error_deg: 1.815236487333207
+        reprojection_rms_px: 0.17731155007078636
+      - name: capture_20260823_143103_497779
+        translation_error_mm: 7.071914873213536
+        rotation_error_deg: 1.7760347663922305
+        reprojection_rms_px: 0.13280358106743334
+      - name: capture_20260823_143105_043553
+        translation_error_mm: 7.109009917228403
+        rotation_error_deg: 1.81440418896506
+        reprojection_rms_px: 0.14190275698721963
+      - name: capture_20260823_143106_639058
+        translation_error_mm: 7.111333908456781
+        rotation_error_deg: 1.86378898504458
+        reprojection_rms_px: 0.17247269275834745
+      - name: capture_20260823_143108_236063
+        translation_error_mm: 7.092038055456651
+        rotation_error_deg: 1.7767807011567727
+        reprojection_rms_px: 0.14638691143707802
+      - name: capture_20260823_143156_581484
+        translation_error_mm: 14.125030474606143
+        rotation_error_deg: 2.6820919292400096
+        reprojection_rms_px: 0.1369074953739145
+      - name: capture_20260823_143158_215247
+        translation_error_mm: 13.747323881267148
+        rotation_error_deg: 2.78307155874352
+        reprojection_rms_px: 0.1575215093774944
+      - name: capture_20260823_143159_901809
+        translation_error_mm: 13.570346653197648
+        rotation_error_deg: 2.6742100437591048
+        reprojection_rms_px: 0.15661479229296532
+      - name: capture_20260823_143201_471090
+        translation_error_mm: 13.870401685978704
+        rotation_error_deg: 2.713130083121455
+        reprojection_rms_px: 0.14308519332971203
+      - name: capture_20260823_143203_026829
+        translation_error_mm: 14.377557374388896
+        rotation_error_deg: 2.7812863775067638
+        reprojection_rms_px: 0.13264995459114182
+      - name: capture_20260823_143204_558938
+        translation_error_mm: 14.220681557139413
+        rotation_error_deg: 2.7277275982457474
+        reprojection_rms_px: 0.17070443752998962
+      - name: capture_20260823_143206_161369
+        translation_error_mm: 13.643353169570085
+        rotation_error_deg: 2.6589087753151937
+        reprojection_rms_px: 0.146587867766209
+      - name: capture_20260823_143207_705550
+        translation_error_mm: 13.566799038134617
+        rotation_error_deg: 2.5674776910023134
+        reprojection_rms_px: 0.15754284217402753
+      - name: capture_20260823_143209_417675
+        translation_error_mm: 13.593020837028924
+        rotation_error_deg: 2.586459603995828
+        reprojection_rms_px: 0.20612694332280407
+      - name: capture_20260823_143211_061425
+        translation_error_mm: 14.068681223965044
+        rotation_error_deg: 2.6472317833130066
+        reprojection_rms_px: 0.16840718949303146
+      - name: capture_20260823_143250_170365
+        translation_error_mm: 6.163023519480125
+        rotation_error_deg: 1.9692640026586623
+        reprojection_rms_px: 0.2461573513666684
+      - name: capture_20260823_143251_809954
+        translation_error_mm: 6.349431683531626
+        rotation_error_deg: 2.053227496537812
+        reprojection_rms_px: 0.23133970225303518
+      - name: capture_20260823_143253_386535
+        translation_error_mm: 6.597375437522406
+        rotation_error_deg: 2.122331242329405
+        reprojection_rms_px: 0.20993090339877157
+      - name: capture_20260823_143255_005107
+        translation_error_mm: 5.972901114695786
+        rotation_error_deg: 1.9052802811559022
+        reprojection_rms_px: 0.2037769780695858
+      - name: capture_20260823_143256_616761
+        translation_error_mm: 6.210788913113319
+        rotation_error_deg: 1.9694117107532543
+        reprojection_rms_px: 0.20067246476173975
+      - name: capture_20260823_143258_190916
+        translation_error_mm: 6.415100084300302
+        rotation_error_deg: 1.961685080116682
+        reprojection_rms_px: 0.20700870131946783
+      - name: capture_20260823_143259_785694
+        translation_error_mm: 6.366819665919125
+        rotation_error_deg: 2.0299058703373927
+        reprojection_rms_px: 0.2397421447442009
+      - name: capture_20260823_143301_469174
+        translation_error_mm: 6.0408341993418615
+        rotation_error_deg: 2.00712647206599
+        reprojection_rms_px: 0.2231798632554871
+      - name: capture_20260823_143303_216232
+        translation_error_mm: 6.313515254986982
+        rotation_error_deg: 2.017036920486853
+        reprojection_rms_px: 0.2562337616370283
+      - name: capture_20260823_143304_836738
+        translation_error_mm: 6.37827408657938
+        rotation_error_deg: 1.9807255598678761
+        reprojection_rms_px: 0.2049482754918694
+      - name: capture_20260823_143401_001423
+        translation_error_mm: 7.321052803978861
+        rotation_error_deg: 1.9110284865104434
+        reprojection_rms_px: 0.23095910284379478
+      - name: capture_20260823_143402_602779
+        translation_error_mm: 7.4211611304365
+        rotation_error_deg: 1.9424899299404597
+        reprojection_rms_px: 0.2735037845711414
+      - name: capture_20260823_143404_285518
+        translation_error_mm: 7.076524674752289
+        rotation_error_deg: 1.8630421509143653
+        reprojection_rms_px: 0.23292704642107892
+      - name: capture_20260823_143405_918489
+        translation_error_mm: 7.046988498928687
+        rotation_error_deg: 1.8363035482634538
+        reprojection_rms_px: 0.25026377508315284
+      - name: capture_20260823_143407_550870
+        translation_error_mm: 7.246084646011916
+        rotation_error_deg: 1.8524092974578534
+        reprojection_rms_px: 0.2073397969302527
+      - name: capture_20260823_143409_154911
+        translation_error_mm: 7.428520343952504
+        rotation_error_deg: 1.9322803406550413
+        reprojection_rms_px: 0.29688936660802995
+      - name: capture_20260823_143410_786937
+        translation_error_mm: 7.357529977838594
+        rotation_error_deg: 1.919600709018904
+        reprojection_rms_px: 0.1812096880793984
+      - name: capture_20260823_143412_463373
+        translation_error_mm: 7.183271136057181
+        rotation_error_deg: 1.8999331818790002
+        reprojection_rms_px: 0.25919191186009627
+      - name: capture_20260823_143414_089101
+        translation_error_mm: 7.109865263645958
+        rotation_error_deg: 1.8403313106512889
+        reprojection_rms_px: 0.268076157844809
+      - name: capture_20260823_143415_703597
+        translation_error_mm: 7.255077536356837
+        rotation_error_deg: 1.9028578922774229
+        reprojection_rms_px: 0.25555669280708726
+      - name: capture_20260823_143458_998668
+        translation_error_mm: 11.244997689644444
+        rotation_error_deg: 2.6698654310973113
+        reprojection_rms_px: 0.1392490921487775
+      - name: capture_20260823_143500_640667
+        translation_error_mm: 11.256393656651186
+        rotation_error_deg: 2.701389817943885
+        reprojection_rms_px: 0.1573083627739939
+      - name: capture_20260823_143502_221884
+        translation_error_mm: 11.24698752721796
+        rotation_error_deg: 2.6923044175418998
+        reprojection_rms_px: 0.17089579255821447
+      - name: capture_20260823_143503_857931
+        translation_error_mm: 11.211370612583854
+        rotation_error_deg: 2.6869914387286533
+        reprojection_rms_px: 0.21078616835667754
+      - name: capture_20260823_143505_438895
+        translation_error_mm: 11.196350932463028
+        rotation_error_deg: 2.627653931967766
+        reprojection_rms_px: 0.181728695038637
+      - name: capture_20260823_143507_073100
+        translation_error_mm: 11.214794585332253
+        rotation_error_deg: 2.7173142359174967
+        reprojection_rms_px: 0.19657623127873328
+      - name: capture_20260823_143508_628245
+        translation_error_mm: 11.19056287948125
+        rotation_error_deg: 2.677305178046506
+        reprojection_rms_px: 0.183518299699111
+      - name: capture_20260823_143510_272686
+        translation_error_mm: 11.208716373481067
+        rotation_error_deg: 2.6755215181837384
+        reprojection_rms_px: 0.15257396952973085
+      - name: capture_20260823_143511_871465
+        translation_error_mm: 11.129668359500155
+        rotation_error_deg: 2.639522487381362
+        reprojection_rms_px: 0.17746152260467124
+      - name: capture_20260823_143513_465068
+        translation_error_mm: 11.155465694850209
+        rotation_error_deg: 2.6920094828379044
+        reprojection_rms_px: 0.18074409314365883
+      - name: capture_20260823_143555_732127
+        translation_error_mm: 13.170476472260916
+        rotation_error_deg: 1.4695521994053207
+        reprojection_rms_px: 0.15588899827063335
+      - name: capture_20260823_143557_359610
+        translation_error_mm: 13.216817547793934
+        rotation_error_deg: 1.4256591174137483
+        reprojection_rms_px: 0.1651880397302085
+      - name: capture_20260823_143558_976597
+        translation_error_mm: 13.149203877470681
+        rotation_error_deg: 1.4222546580850717
+        reprojection_rms_px: 0.1559624710501101
+      - name: capture_20260823_143600_611562
+        translation_error_mm: 13.150687513027426
+        rotation_error_deg: 1.4487481399300304
+        reprojection_rms_px: 0.16311601886022958
+      - name: capture_20260823_143602_208993
+        translation_error_mm: 13.200254156151026
+        rotation_error_deg: 1.4081728113941978
+        reprojection_rms_px: 0.13712665825296205
+      - name: capture_20260823_143603_924624
+        translation_error_mm: 13.155523436175145
+        rotation_error_deg: 1.4482575748347346
+        reprojection_rms_px: 0.1919080425523113
+      - name: capture_20260823_143605_522924
+        translation_error_mm: 13.216724852603464
+        rotation_error_deg: 1.4565523949144492
+        reprojection_rms_px: 0.1922965008056291
+      - name: capture_20260823_143607_130287
+        translation_error_mm: 13.170228614511615
+        rotation_error_deg: 1.486982187291149
+        reprojection_rms_px: 0.19962690266822383
+      - name: capture_20260823_143608_719035
+        translation_error_mm: 13.19286399582105
+        rotation_error_deg: 1.4742963806486564
+        reprojection_rms_px: 0.11073896156142439
+      - name: capture_20260823_143610_350297
+        translation_error_mm: 13.192372451486523
+        rotation_error_deg: 1.5296535966171232
+        reprojection_rms_px: 0.1400676859164778
+    held_out_validation:
+      translation_rms_mm: 5.091501438292416
+      translation_max_mm: 7.131429908857288
+      rotation_rms_deg: 1.5708444211478167
+      rotation_max_deg: 2.1201783666847667
+      per_sample:
+      - name: capture_20260823_143648_795032
+        translation_error_mm: 6.623806925217177
+        rotation_error_deg: 0.9890865581815884
+        reprojection_rms_px: 0.14795443696478194
+      - name: capture_20260823_143650_504448
+        translation_error_mm: 6.654698025217352
+        rotation_error_deg: 1.17582055117991
+        reprojection_rms_px: 0.13786926749350004
+      - name: capture_20260823_143652_120494
+        translation_error_mm: 6.468192068933316
+        rotation_error_deg: 1.0134881523946926
+        reprojection_rms_px: 0.1498850011032385
+      - name: capture_20260823_143653_759185
+        translation_error_mm: 6.810664484239394
+        rotation_error_deg: 1.1059092790816019
+        reprojection_rms_px: 0.1828407634123958
+      - name: capture_20260823_143655_435902
+        translation_error_mm: 6.736150064670413
+        rotation_error_deg: 1.1999161966347092
+        reprojection_rms_px: 0.146359208401678
+      - name: capture_20260823_143657_062183
+        translation_error_mm: 6.560970142860357
+        rotation_error_deg: 1.0046262486719124
+        reprojection_rms_px: 0.1506009732328837
+      - name: capture_20260823_143658_669171
+        translation_error_mm: 6.759987592023162
+        rotation_error_deg: 1.18688162064184
+        reprojection_rms_px: 0.18105030119076465
+      - name: capture_20260823_143700_242629
+        translation_error_mm: 7.131429908857288
+        rotation_error_deg: 1.0261976583411863
+        reprojection_rms_px: 0.29017997086663105
+      - name: capture_20260823_143701_848618
+        translation_error_mm: 6.388573193068461
+        rotation_error_deg: 0.7731160406627444
+        reprojection_rms_px: 0.1359746120497821
+      - name: capture_20260823_143703_495523
+        translation_error_mm: 6.682793215379038
+        rotation_error_deg: 1.033213056421744
+        reprojection_rms_px: 0.14387847390700473
+      - name: capture_20260823_143730_337123
+        translation_error_mm: 4.955975772462308
+        rotation_error_deg: 2.078396616959544
+        reprojection_rms_px: 0.1402395079598648
+      - name: capture_20260823_143731_977960
+        translation_error_mm: 5.091682455260804
+        rotation_error_deg: 1.9833561680433778
+        reprojection_rms_px: 0.11750393349268758
+      - name: capture_20260823_143733_583077
+        translation_error_mm: 5.240505966424707
+        rotation_error_deg: 2.1163205978193353
+        reprojection_rms_px: 0.12828726837922488
+      - name: capture_20260823_143735_168423
+        translation_error_mm: 4.934930943996362
+        rotation_error_deg: 2.0257443759306124
+        reprojection_rms_px: 0.10929017284270953
+      - name: capture_20260823_143736_773946
+        translation_error_mm: 4.865986205351066
+        rotation_error_deg: 2.0653777409030454
+        reprojection_rms_px: 0.14125389353676804
+      - name: capture_20260823_143738_364276
+        translation_error_mm: 5.041961394113958
+        rotation_error_deg: 1.9857451510258026
+        reprojection_rms_px: 0.11632642340885724
+      - name: capture_20260823_143739_943496
+        translation_error_mm: 5.123632456450559
+        rotation_error_deg: 2.1201783666847667
+        reprojection_rms_px: 0.1259642244877503
+      - name: capture_20260823_143741_564146
+        translation_error_mm: 4.807987736534343
+        rotation_error_deg: 2.0465286797764533
+        reprojection_rms_px: 0.10267081114650876
+      - name: capture_20260823_143743_153521
+        translation_error_mm: 5.066622542505654
+        rotation_error_deg: 2.0137259834646786
+        reprojection_rms_px: 0.123672596980797
+      - name: capture_20260823_143744_789870
+        translation_error_mm: 4.995169623522882
+        rotation_error_deg: 1.8550843134727166
+        reprojection_rms_px: 0.113669258145724
+      - name: capture_20260823_143818_730907
+        translation_error_mm: 2.780191957933286
+        rotation_error_deg: 1.4170942965177935
+        reprojection_rms_px: 0.08997833787520086
+      - name: capture_20260823_143820_354273
+        translation_error_mm: 2.9813961506817197
+        rotation_error_deg: 1.5021794463005644
+        reprojection_rms_px: 0.11368164163733402
+      - name: capture_20260823_143821_901248
+        translation_error_mm: 2.3401420302130096
+        rotation_error_deg: 1.4682066996539997
+        reprojection_rms_px: 0.10192960786019276
+      - name: capture_20260823_143823_532725
+        translation_error_mm: 2.9347323297193633
+        rotation_error_deg: 1.430669834572365
+        reprojection_rms_px: 0.09259903809505501
+      - name: capture_20260823_143825_109911
+        translation_error_mm: 2.7885760631318055
+        rotation_error_deg: 1.4321622102506006
+        reprojection_rms_px: 0.12979015725607035
+      - name: capture_20260823_143826_688745
+        translation_error_mm: 2.6241660001062064
+        rotation_error_deg: 1.6430659953879572
+        reprojection_rms_px: 0.10104232428002424
+      - name: capture_20260823_143828_268689
+        translation_error_mm: 2.9215251062203156
+        rotation_error_deg: 1.4507847320840521
+        reprojection_rms_px: 0.09621585849410737
+      - name: capture_20260823_143829_915345
+        translation_error_mm: 2.906122586235947
+        rotation_error_deg: 1.473072300212021
+        reprojection_rms_px: 0.08585028679165316
+      - name: capture_20260823_143831_557967
+        translation_error_mm: 2.7773186770671576
+        rotation_error_deg: 1.3806887610753595
+        reprojection_rms_px: 0.10379052115729649
+      - name: capture_20260823_143833_159251
+        translation_error_mm: 3.067830226082035
+        rotation_error_deg: 1.4885573408918897
+        reprojection_rms_px: 0.11200615846935769
+  ANDREFF:
+    status: completed
+    fitting:
+      translation_rms_mm: 22.650885069729934
+      translation_max_mm: 33.18478102537992
+      rotation_rms_deg: 1.9079478383200779
+      rotation_max_deg: 2.7860398491973783
+      per_sample:
+      - name: capture_20260823_142206_476713
+        translation_error_mm: 20.46603437591628
+        rotation_error_deg: 0.5066270847565226
+        reprojection_rms_px: 0.13891239100444444
+      - name: capture_20260823_142218_218466
+        translation_error_mm: 19.949143459344548
+        rotation_error_deg: 0.6332636008814242
+        reprojection_rms_px: 0.13567526095597746
+      - name: capture_20260823_142219_859122
+        translation_error_mm: 19.95631193369305
+        rotation_error_deg: 0.7687506151510198
+        reprojection_rms_px: 0.15488259757106385
+      - name: capture_20260823_142221_415158
+        translation_error_mm: 19.86859728672626
+        rotation_error_deg: 0.6874843716856216
+        reprojection_rms_px: 0.12681667897861912
+      - name: capture_20260823_142223_023656
+        translation_error_mm: 19.71857164083212
+        rotation_error_deg: 0.595187958464719
+        reprojection_rms_px: 0.139976810834707
+      - name: capture_20260823_142224_705222
+        translation_error_mm: 19.56352980781395
+        rotation_error_deg: 0.6061249692360272
+        reprojection_rms_px: 0.11853218194450468
+      - name: capture_20260823_142226_335510
+        translation_error_mm: 19.029383621964826
+        rotation_error_deg: 0.7145641382086333
+        reprojection_rms_px: 0.13200835658876955
+      - name: capture_20260823_142227_934286
+        translation_error_mm: 19.868079291444033
+        rotation_error_deg: 0.659559870886628
+        reprojection_rms_px: 0.1678181027925125
+      - name: capture_20260823_142229_599668
+        translation_error_mm: 20.126369684770324
+        rotation_error_deg: 0.5991876574581547
+        reprojection_rms_px: 0.1505275883226135
+      - name: capture_20260823_142231_206502
+        translation_error_mm: 19.911457036198648
+        rotation_error_deg: 0.7194890350144905
+        reprojection_rms_px: 0.11823649753671049
+      - name: capture_20260823_142328_117738
+        translation_error_mm: 7.17315718874264
+        rotation_error_deg: 0.9681296242712115
+        reprojection_rms_px: 0.12941643495124772
+      - name: capture_20260823_142329_826004
+        translation_error_mm: 7.299222404716143
+        rotation_error_deg: 0.9715416752181426
+        reprojection_rms_px: 0.13053412976928117
+      - name: capture_20260823_142331_465206
+        translation_error_mm: 7.203481138228794
+        rotation_error_deg: 1.0032477790478622
+        reprojection_rms_px: 0.1320157343408858
+      - name: capture_20260823_142333_037086
+        translation_error_mm: 7.02077031008133
+        rotation_error_deg: 1.0103772918432836
+        reprojection_rms_px: 0.1252995669925929
+      - name: capture_20260823_142334_656203
+        translation_error_mm: 6.956987837195555
+        rotation_error_deg: 1.1009142563805185
+        reprojection_rms_px: 0.12760722440644942
+      - name: capture_20260823_142336_237441
+        translation_error_mm: 7.1629978563432966
+        rotation_error_deg: 0.9790576392181586
+        reprojection_rms_px: 0.1254423429230322
+      - name: capture_20260823_142337_891930
+        translation_error_mm: 7.2402675798595695
+        rotation_error_deg: 0.9990802885431452
+        reprojection_rms_px: 0.13621942436878384
+      - name: capture_20260823_142339_530434
+        translation_error_mm: 7.28154546439219
+        rotation_error_deg: 0.9771869775890025
+        reprojection_rms_px: 0.14570016495540025
+      - name: capture_20260823_142341_158583
+        translation_error_mm: 7.222730515698491
+        rotation_error_deg: 1.0132734128620944
+        reprojection_rms_px: 0.1570825155670064
+      - name: capture_20260823_142342_762304
+        translation_error_mm: 7.174789178846265
+        rotation_error_deg: 1.0622754544622504
+        reprojection_rms_px: 0.15972099323745553
+      - name: capture_20260823_142442_678921
+        translation_error_mm: 7.794325264290293
+        rotation_error_deg: 1.4034282391768031
+        reprojection_rms_px: 0.16761844221517486
+      - name: capture_20260823_142444_306381
+        translation_error_mm: 7.736399994175829
+        rotation_error_deg: 1.4915060208832072
+        reprojection_rms_px: 0.17302064263047331
+      - name: capture_20260823_142445_911409
+        translation_error_mm: 7.792212996073634
+        rotation_error_deg: 1.453002309684974
+        reprojection_rms_px: 0.15687025171028376
+      - name: capture_20260823_142447_502743
+        translation_error_mm: 7.78579008341042
+        rotation_error_deg: 1.4811832029125982
+        reprojection_rms_px: 0.16304965821746353
+      - name: capture_20260823_142449_168106
+        translation_error_mm: 7.779809296700498
+        rotation_error_deg: 1.4619702928935225
+        reprojection_rms_px: 0.14894508351696734
+      - name: capture_20260823_142450_739098
+        translation_error_mm: 7.716942791301072
+        rotation_error_deg: 1.5018810564825442
+        reprojection_rms_px: 0.14503084638702135
+      - name: capture_20260823_142452_364447
+        translation_error_mm: 7.8246484417610285
+        rotation_error_deg: 1.4485478349160832
+        reprojection_rms_px: 0.1695091411041457
+      - name: capture_20260823_142453_999900
+        translation_error_mm: 8.000378699792156
+        rotation_error_deg: 1.396639084609266
+        reprojection_rms_px: 0.17012433050733172
+      - name: capture_20260823_142455_574250
+        translation_error_mm: 7.954222102248358
+        rotation_error_deg: 1.4949081083599467
+        reprojection_rms_px: 0.1724847318996796
+      - name: capture_20260823_142457_114901
+        translation_error_mm: 7.912907237632608
+        rotation_error_deg: 1.4525656055594738
+        reprojection_rms_px: 0.13416064690931306
+      - name: capture_20260823_142556_838366
+        translation_error_mm: 26.188564700115503
+        rotation_error_deg: 2.0525257426312904
+        reprojection_rms_px: 0.26101129178901583
+      - name: capture_20260823_142558_459218
+        translation_error_mm: 26.092937090318944
+        rotation_error_deg: 2.010732280560321
+        reprojection_rms_px: 0.23462255632070483
+      - name: capture_20260823_142600_102370
+        translation_error_mm: 26.17996153602643
+        rotation_error_deg: 1.9896924073008062
+        reprojection_rms_px: 0.21239656421377995
+      - name: capture_20260823_142601_694037
+        translation_error_mm: 26.186407270460283
+        rotation_error_deg: 2.0477605055472594
+        reprojection_rms_px: 0.18931978274025288
+      - name: capture_20260823_142603_259346
+        translation_error_mm: 26.216013342227434
+        rotation_error_deg: 2.0595401982888757
+        reprojection_rms_px: 0.22731722172690566
+      - name: capture_20260823_142604_880620
+        translation_error_mm: 26.205160647556742
+        rotation_error_deg: 2.022259456511449
+        reprojection_rms_px: 0.19783439478977008
+      - name: capture_20260823_142606_448800
+        translation_error_mm: 26.260786929704818
+        rotation_error_deg: 2.026436202585525
+        reprojection_rms_px: 0.21016342083651374
+      - name: capture_20260823_142608_053141
+        translation_error_mm: 26.126169522509826
+        rotation_error_deg: 2.067588037775556
+        reprojection_rms_px: 0.213689801319768
+      - name: capture_20260823_142609_673702
+        translation_error_mm: 26.12120675436436
+        rotation_error_deg: 2.0456784073135315
+        reprojection_rms_px: 0.2147984180604797
+      - name: capture_20260823_142611_284270
+        translation_error_mm: 26.128084309391152
+        rotation_error_deg: 2.0465102782473243
+        reprojection_rms_px: 0.1986076663453943
+      - name: capture_20260823_142722_871889
+        translation_error_mm: 32.318213780966296
+        rotation_error_deg: 2.1538202307473715
+        reprojection_rms_px: 0.19357707118152356
+      - name: capture_20260823_142724_529484
+        translation_error_mm: 32.450916509050074
+        rotation_error_deg: 2.3402173527255625
+        reprojection_rms_px: 0.22061884302857593
+      - name: capture_20260823_142726_195614
+        translation_error_mm: 32.52531411286607
+        rotation_error_deg: 2.1681134644441133
+        reprojection_rms_px: 0.20887609682375405
+      - name: capture_20260823_142727_837439
+        translation_error_mm: 33.10018345162512
+        rotation_error_deg: 2.118801022267542
+        reprojection_rms_px: 0.25895416447035685
+      - name: capture_20260823_142729_483057
+        translation_error_mm: 33.18478102537992
+        rotation_error_deg: 2.1027023886338236
+        reprojection_rms_px: 0.22733068353335448
+      - name: capture_20260823_142731_122574
+        translation_error_mm: 32.52524230815573
+        rotation_error_deg: 2.209199965403589
+        reprojection_rms_px: 0.23368894273504634
+      - name: capture_20260823_142732_782919
+        translation_error_mm: 32.15978755064648
+        rotation_error_deg: 2.0290870708188105
+        reprojection_rms_px: 0.2222111538959804
+      - name: capture_20260823_142734_374907
+        translation_error_mm: 32.454150875547434
+        rotation_error_deg: 2.161405446432616
+        reprojection_rms_px: 0.23209907978516198
+      - name: capture_20260823_142735_943004
+        translation_error_mm: 32.53165460932902
+        rotation_error_deg: 2.1318084619075353
+        reprojection_rms_px: 0.20724334738781766
+      - name: capture_20260823_142737_559708
+        translation_error_mm: 32.5983885558809
+        rotation_error_deg: 2.13476535909462
+        reprojection_rms_px: 0.231992620943263
+      - name: capture_20260823_142841_216425
+        translation_error_mm: 27.960441936792478
+        rotation_error_deg: 2.4200252149879633
+        reprojection_rms_px: 0.19655327839837514
+      - name: capture_20260823_142842_813016
+        translation_error_mm: 28.723557824924022
+        rotation_error_deg: 2.3863819250912264
+        reprojection_rms_px: 0.18654275262314646
+      - name: capture_20260823_142844_426212
+        translation_error_mm: 27.97857156616979
+        rotation_error_deg: 2.437372190312002
+        reprojection_rms_px: 0.20722205126924872
+      - name: capture_20260823_142846_017748
+        translation_error_mm: 28.14376176742998
+        rotation_error_deg: 2.3320284680535086
+        reprojection_rms_px: 0.19917141098863972
+      - name: capture_20260823_142847_619787
+        translation_error_mm: 27.771814846789557
+        rotation_error_deg: 2.3508762590254877
+        reprojection_rms_px: 0.22447722542113774
+      - name: capture_20260823_142849_228020
+        translation_error_mm: 27.862918498197548
+        rotation_error_deg: 2.4230140058673024
+        reprojection_rms_px: 0.19269040618905417
+      - name: capture_20260823_142850_830466
+        translation_error_mm: 28.649869205034502
+        rotation_error_deg: 2.436555711224169
+        reprojection_rms_px: 0.19164292096781774
+      - name: capture_20260823_142852_390481
+        translation_error_mm: 28.713963596868968
+        rotation_error_deg: 2.353883612271111
+        reprojection_rms_px: 0.19730663086754927
+      - name: capture_20260823_142853_994314
+        translation_error_mm: 27.932085514418738
+        rotation_error_deg: 2.3701555624882946
+        reprojection_rms_px: 0.225539506648925
+      - name: capture_20260823_142855_563664
+        translation_error_mm: 28.018821337350456
+        rotation_error_deg: 2.362491349025
+        reprojection_rms_px: 0.1732151747692052
+      - name: capture_20260823_142955_231474
+        translation_error_mm: 13.58010051852681
+        rotation_error_deg: 1.3503471698223455
+        reprojection_rms_px: 0.11412304407258886
+      - name: capture_20260823_142956_865257
+        translation_error_mm: 13.698993915680832
+        rotation_error_deg: 1.317741527888686
+        reprojection_rms_px: 0.12736999507561475
+      - name: capture_20260823_142958_462462
+        translation_error_mm: 13.647198642137997
+        rotation_error_deg: 1.3471501675457767
+        reprojection_rms_px: 0.11768576827057588
+      - name: capture_20260823_143000_051592
+        translation_error_mm: 13.473865548981431
+        rotation_error_deg: 1.4724190026246113
+        reprojection_rms_px: 0.14492632034528516
+      - name: capture_20260823_143001_611993
+        translation_error_mm: 13.436120621415515
+        rotation_error_deg: 1.358894715346818
+        reprojection_rms_px: 0.11912595454286747
+      - name: capture_20260823_143003_216766
+        translation_error_mm: 13.475780921234875
+        rotation_error_deg: 1.2757745968741612
+        reprojection_rms_px: 0.11985039458127081
+      - name: capture_20260823_143004_813120
+        translation_error_mm: 13.397567524298701
+        rotation_error_deg: 1.377864686745252
+        reprojection_rms_px: 0.11434528352139356
+      - name: capture_20260823_143006_412996
+        translation_error_mm: 13.418853164206423
+        rotation_error_deg: 1.407956271437678
+        reprojection_rms_px: 0.142722047720988
+      - name: capture_20260823_143008_020754
+        translation_error_mm: 13.475508872518573
+        rotation_error_deg: 1.3930959581589875
+        reprojection_rms_px: 0.14945083660604097
+      - name: capture_20260823_143009_652799
+        translation_error_mm: 13.485232317270402
+        rotation_error_deg: 1.3226252655318356
+        reprojection_rms_px: 0.12910356638520792
+      - name: capture_20260823_143053_828079
+        translation_error_mm: 29.7361139505251
+        rotation_error_deg: 1.8235736888214356
+        reprojection_rms_px: 0.155915894594214
+      - name: capture_20260823_143055_461761
+        translation_error_mm: 29.775413247430237
+        rotation_error_deg: 1.8667432835546363
+        reprojection_rms_px: 0.1451331362863667
+      - name: capture_20260823_143057_086407
+        translation_error_mm: 29.75955245401444
+        rotation_error_deg: 1.88147187808463
+        reprojection_rms_px: 0.15840120790468964
+      - name: capture_20260823_143058_660429
+        translation_error_mm: 29.70372564129361
+        rotation_error_deg: 1.8284488329848834
+        reprojection_rms_px: 0.15228752368017337
+      - name: capture_20260823_143100_216216
+        translation_error_mm: 29.689761873394225
+        rotation_error_deg: 1.8033247665357242
+        reprojection_rms_px: 0.1584950572770693
+      - name: capture_20260823_143101_876246
+        translation_error_mm: 29.747197762997722
+        rotation_error_deg: 1.8265735720981247
+        reprojection_rms_px: 0.17731155007078636
+      - name: capture_20260823_143103_497779
+        translation_error_mm: 29.73935396372908
+        rotation_error_deg: 1.787552479486391
+        reprojection_rms_px: 0.13280358106743334
+      - name: capture_20260823_143105_043553
+        translation_error_mm: 29.782210299186264
+        rotation_error_deg: 1.8269664339584093
+        reprojection_rms_px: 0.14190275698721963
+      - name: capture_20260823_143106_639058
+        translation_error_mm: 29.747291036063917
+        rotation_error_deg: 1.8759566460474346
+        reprojection_rms_px: 0.17247269275834745
+      - name: capture_20260823_143108_236063
+        translation_error_mm: 29.74247190007706
+        rotation_error_deg: 1.78916153388359
+        reprojection_rms_px: 0.14638691143707802
+      - name: capture_20260823_143156_581484
+        translation_error_mm: 14.496726364349447
+        rotation_error_deg: 2.684703459454296
+        reprojection_rms_px: 0.1369074953739145
+      - name: capture_20260823_143158_215247
+        translation_error_mm: 14.289673421888153
+        rotation_error_deg: 2.7860398491973783
+        reprojection_rms_px: 0.1575215093774944
+      - name: capture_20260823_143159_901809
+        translation_error_mm: 14.063805381036836
+        rotation_error_deg: 2.6767561070215486
+        reprojection_rms_px: 0.15661479229296532
+      - name: capture_20260823_143201_471090
+        translation_error_mm: 14.30837192639848
+        rotation_error_deg: 2.7156581154119275
+        reprojection_rms_px: 0.14308519332971203
+      - name: capture_20260823_143203_026829
+        translation_error_mm: 14.662959710914256
+        rotation_error_deg: 2.7837581193166687
+        reprojection_rms_px: 0.13264995459114182
+      - name: capture_20260823_143204_558938
+        translation_error_mm: 14.563589697287407
+        rotation_error_deg: 2.7303517809399556
+        reprojection_rms_px: 0.17070443752998962
+      - name: capture_20260823_143206_161369
+        translation_error_mm: 14.228311558785398
+        rotation_error_deg: 2.661202413348296
+        reprojection_rms_px: 0.146587867766209
+      - name: capture_20260823_143207_705550
+        translation_error_mm: 14.18293411378223
+        rotation_error_deg: 2.569623671445942
+        reprojection_rms_px: 0.15754284217402753
+      - name: capture_20260823_143209_417675
+        translation_error_mm: 14.14279174730705
+        rotation_error_deg: 2.5887161912703633
+        reprojection_rms_px: 0.20612694332280407
+      - name: capture_20260823_143211_061425
+        translation_error_mm: 14.48157090806027
+        rotation_error_deg: 2.649649014800623
+        reprojection_rms_px: 0.16840718949303146
+      - name: capture_20260823_143250_170365
+        translation_error_mm: 16.706373211832087
+        rotation_error_deg: 1.9620707081444175
+        reprojection_rms_px: 0.2461573513666684
+      - name: capture_20260823_143251_809954
+        translation_error_mm: 16.499064770592085
+        rotation_error_deg: 2.0454013949579584
+        reprojection_rms_px: 0.23133970225303518
+      - name: capture_20260823_143253_386535
+        translation_error_mm: 15.803733435225505
+        rotation_error_deg: 2.1155813617312162
+        reprojection_rms_px: 0.20993090339877157
+      - name: capture_20260823_143255_005107
+        translation_error_mm: 16.83942967915226
+        rotation_error_deg: 1.8986505429174974
+        reprojection_rms_px: 0.2037769780695858
+      - name: capture_20260823_143256_616761
+        translation_error_mm: 16.685495778221437
+        rotation_error_deg: 1.9616174695693638
+        reprojection_rms_px: 0.20067246476173975
+      - name: capture_20260823_143258_190916
+        translation_error_mm: 16.232554212536392
+        rotation_error_deg: 1.9549295772061785
+        reprojection_rms_px: 0.20700870131946783
+      - name: capture_20260823_143259_785694
+        translation_error_mm: 16.36743350062854
+        rotation_error_deg: 2.022111307270595
+        reprojection_rms_px: 0.2397421447442009
+      - name: capture_20260823_143301_469174
+        translation_error_mm: 16.5962499619528
+        rotation_error_deg: 1.9990393313285337
+        reprojection_rms_px: 0.2231798632554871
+      - name: capture_20260823_143303_216232
+        translation_error_mm: 16.46156162996681
+        rotation_error_deg: 2.009660850671164
+        reprojection_rms_px: 0.2562337616370283
+      - name: capture_20260823_143304_836738
+        translation_error_mm: 16.504041186807857
+        rotation_error_deg: 1.9732693334317741
+        reprojection_rms_px: 0.2049482754918694
+      - name: capture_20260823_143401_001423
+        translation_error_mm: 28.485208091549215
+        rotation_error_deg: 1.8961889120402207
+        reprojection_rms_px: 0.23095910284379478
+      - name: capture_20260823_143402_602779
+        translation_error_mm: 28.345989385602756
+        rotation_error_deg: 1.927171894073338
+        reprojection_rms_px: 0.2735037845711414
+      - name: capture_20260823_143404_285518
+        translation_error_mm: 29.063325750514007
+        rotation_error_deg: 1.847996010179801
+        reprojection_rms_px: 0.23292704642107892
+      - name: capture_20260823_143405_918489
+        translation_error_mm: 29.112778218983827
+        rotation_error_deg: 1.821249791417922
+        reprojection_rms_px: 0.25026377508315284
+      - name: capture_20260823_143407_550870
+        translation_error_mm: 28.522855398347573
+        rotation_error_deg: 1.8390979196233725
+        reprojection_rms_px: 0.2073397969302527
+      - name: capture_20260823_143409_154911
+        translation_error_mm: 28.371754540066313
+        rotation_error_deg: 1.9169837167537978
+        reprojection_rms_px: 0.29688936660802995
+      - name: capture_20260823_143410_786937
+        translation_error_mm: 28.424239450951973
+        rotation_error_deg: 1.904840017411149
+        reprojection_rms_px: 0.1812096880793984
+      - name: capture_20260823_143412_463373
+        translation_error_mm: 28.85359734266378
+        rotation_error_deg: 1.8852194711721728
+        reprojection_rms_px: 0.25919191186009627
+      - name: capture_20260823_143414_089101
+        translation_error_mm: 29.18517481271677
+        rotation_error_deg: 1.8246669100145012
+        reprojection_rms_px: 0.268076157844809
+      - name: capture_20260823_143415_703597
+        translation_error_mm: 28.577735297222855
+        rotation_error_deg: 1.8883228561702596
+        reprojection_rms_px: 0.25555669280708726
+      - name: capture_20260823_143458_998668
+        translation_error_mm: 23.096742437298317
+        rotation_error_deg: 2.6808406617603344
+        reprojection_rms_px: 0.1392490921487775
+      - name: capture_20260823_143500_640667
+        translation_error_mm: 23.06140124648282
+        rotation_error_deg: 2.7122206820075454
+        reprojection_rms_px: 0.1573083627739939
+      - name: capture_20260823_143502_221884
+        translation_error_mm: 23.10726204523625
+        rotation_error_deg: 2.703233510250752
+        reprojection_rms_px: 0.17089579255821447
+      - name: capture_20260823_143503_857931
+        translation_error_mm: 23.128587615241287
+        rotation_error_deg: 2.6978636925640265
+        reprojection_rms_px: 0.21078616835667754
+      - name: capture_20260823_143505_438895
+        translation_error_mm: 23.292594929643553
+        rotation_error_deg: 2.638277391131152
+        reprojection_rms_px: 0.181728695038637
+      - name: capture_20260823_143507_073100
+        translation_error_mm: 23.03293732656401
+        rotation_error_deg: 2.7282577936849286
+        reprojection_rms_px: 0.19657623127873328
+      - name: capture_20260823_143508_628245
+        translation_error_mm: 23.16296062406105
+        rotation_error_deg: 2.688007743838653
+        reprojection_rms_px: 0.183518299699111
+      - name: capture_20260823_143510_272686
+        translation_error_mm: 23.141164268118295
+        rotation_error_deg: 2.6862319811628956
+        reprojection_rms_px: 0.15257396952973085
+      - name: capture_20260823_143511_871465
+        translation_error_mm: 23.154444288443187
+        rotation_error_deg: 2.6502866545441606
+        reprojection_rms_px: 0.17746152260467124
+      - name: capture_20260823_143513_465068
+        translation_error_mm: 23.1833767369084
+        rotation_error_deg: 2.703209374576756
+        reprojection_rms_px: 0.18074409314365883
+      - name: capture_20260823_143555_732127
+        translation_error_mm: 26.811311740714032
+        rotation_error_deg: 1.4603782975678825
+        reprojection_rms_px: 0.15588899827063335
+      - name: capture_20260823_143557_359610
+        translation_error_mm: 26.856858224866684
+        rotation_error_deg: 1.4161130951032734
+        reprojection_rms_px: 0.1651880397302085
+      - name: capture_20260823_143558_976597
+        translation_error_mm: 26.810136875961458
+        rotation_error_deg: 1.4127392923829523
+        reprojection_rms_px: 0.1559624710501101
+      - name: capture_20260823_143600_611562
+        translation_error_mm: 26.80166148946062
+        rotation_error_deg: 1.4394793068707645
+        reprojection_rms_px: 0.16311601886022958
+      - name: capture_20260823_143602_208993
+        translation_error_mm: 26.834525738460417
+        rotation_error_deg: 1.3996385955105464
+        reprojection_rms_px: 0.13712665825296205
+      - name: capture_20260823_143603_924624
+        translation_error_mm: 26.792176671379227
+        rotation_error_deg: 1.4393848491253785
+        reprojection_rms_px: 0.1919080425523113
+      - name: capture_20260823_143605_522924
+        translation_error_mm: 26.831948210665413
+        rotation_error_deg: 1.4475155995208167
+        reprojection_rms_px: 0.1922965008056291
+      - name: capture_20260823_143607_130287
+        translation_error_mm: 26.8665732114905
+        rotation_error_deg: 1.477192700116178
+        reprojection_rms_px: 0.19962690266822383
+      - name: capture_20260823_143608_719035
+        translation_error_mm: 26.832113943682963
+        rotation_error_deg: 1.4649319527242517
+        reprojection_rms_px: 0.11073896156142439
+      - name: capture_20260823_143610_350297
+        translation_error_mm: 26.777824270554454
+        rotation_error_deg: 1.5206803030703828
+        reprojection_rms_px: 0.1400676859164778
+    held_out_validation:
+      translation_rms_mm: 15.979572964475015
+      translation_max_mm: 24.571477256793866
+      rotation_rms_deg: 1.5623171434635403
+      rotation_max_deg: 2.1116253169931736
+      per_sample:
+      - name: capture_20260823_143648_795032
+        translation_error_mm: 24.50697328083356
+        rotation_error_deg: 0.9681261880200918
+        reprojection_rms_px: 0.14795443696478194
+      - name: capture_20260823_143650_504448
+        translation_error_mm: 24.494390612687564
+        rotation_error_deg: 1.1450058761014248
+        reprojection_rms_px: 0.13786926749350004
+      - name: capture_20260823_143652_120494
+        translation_error_mm: 24.571477256793866
+        rotation_error_deg: 0.9855140619062824
+        reprojection_rms_px: 0.1498850011032385
+      - name: capture_20260823_143653_759185
+        translation_error_mm: 24.040923761174067
+        rotation_error_deg: 1.0742073075262049
+        reprojection_rms_px: 0.1828407634123958
+      - name: capture_20260823_143655_435902
+        translation_error_mm: 24.313586105416288
+        rotation_error_deg: 1.1724571434766073
+        reprojection_rms_px: 0.146359208401678
+      - name: capture_20260823_143657_062183
+        translation_error_mm: 24.55314660686681
+        rotation_error_deg: 0.9724643472589981
+        reprojection_rms_px: 0.1506009732328837
+      - name: capture_20260823_143658_669171
+        translation_error_mm: 24.5115410262088
+        rotation_error_deg: 1.1538105802766034
+        reprojection_rms_px: 0.18105030119076465
+      - name: capture_20260823_143700_242629
+        translation_error_mm: 24.54852199636511
+        rotation_error_deg: 0.9962384498196174
+        reprojection_rms_px: 0.29017997086663105
+      - name: capture_20260823_143701_848618
+        translation_error_mm: 24.203361519073802
+        rotation_error_deg: 0.7453318201316669
+        reprojection_rms_px: 0.1359746120497821
+      - name: capture_20260823_143703_495523
+        translation_error_mm: 23.85818953390372
+        rotation_error_deg: 1.0002062210312894
+        reprojection_rms_px: 0.14387847390700473
+      - name: capture_20260823_143730_337123
+        translation_error_mm: 8.539540508149877
+        rotation_error_deg: 2.0703498402255973
+        reprojection_rms_px: 0.1402395079598648
+      - name: capture_20260823_143731_977960
+        translation_error_mm: 8.372545664133533
+        rotation_error_deg: 1.9752698717236212
+        reprojection_rms_px: 0.11750393349268758
+      - name: capture_20260823_143733_583077
+        translation_error_mm: 8.291298191768165
+        rotation_error_deg: 2.1076323557771843
+        reprojection_rms_px: 0.12828726837922488
+      - name: capture_20260823_143735_168423
+        translation_error_mm: 8.506573061095114
+        rotation_error_deg: 2.0174655213308212
+        reprojection_rms_px: 0.10929017284270953
+      - name: capture_20260823_143736_773946
+        translation_error_mm: 8.57203144531803
+        rotation_error_deg: 2.0569687659961464
+        reprojection_rms_px: 0.14125389353676804
+      - name: capture_20260823_143738_364276
+        translation_error_mm: 8.439588081531618
+        rotation_error_deg: 1.978154739703447
+        reprojection_rms_px: 0.11632642340885724
+      - name: capture_20260823_143739_943496
+        translation_error_mm: 8.374316236546111
+        rotation_error_deg: 2.1116253169931736
+        reprojection_rms_px: 0.1259642244877503
+      - name: capture_20260823_143741_564146
+        translation_error_mm: 8.677393985963525
+        rotation_error_deg: 2.03931718955339
+        reprojection_rms_px: 0.10267081114650876
+      - name: capture_20260823_143743_153521
+        translation_error_mm: 8.413333891050527
+        rotation_error_deg: 2.005486356638703
+        reprojection_rms_px: 0.123672596980797
+      - name: capture_20260823_143744_789870
+        translation_error_mm: 8.439958796648538
+        rotation_error_deg: 1.8483791053376462
+        reprojection_rms_px: 0.113669258145724
+      - name: capture_20260823_143818_730907
+        translation_error_mm: 10.011754716355897
+        rotation_error_deg: 1.4218034186842774
+        reprojection_rms_px: 0.08997833787520086
+      - name: capture_20260823_143820_354273
+        translation_error_mm: 10.084612494957296
+        rotation_error_deg: 1.5071994845319039
+        reprojection_rms_px: 0.11368164163733402
+      - name: capture_20260823_143821_901248
+        translation_error_mm: 9.583808820930757
+        rotation_error_deg: 1.4729408609018644
+        reprojection_rms_px: 0.10192960786019276
+      - name: capture_20260823_143823_532725
+        translation_error_mm: 10.276994856650198
+        rotation_error_deg: 1.4359217743953208
+        reprojection_rms_px: 0.09259903809505501
+      - name: capture_20260823_143825_109911
+        translation_error_mm: 10.001580778147506
+        rotation_error_deg: 1.4358882783539468
+        reprojection_rms_px: 0.12979015725607035
+      - name: capture_20260823_143826_688745
+        translation_error_mm: 9.378708862940291
+        rotation_error_deg: 1.6471796437965696
+        reprojection_rms_px: 0.10104232428002424
+      - name: capture_20260823_143828_268689
+        translation_error_mm: 10.363289051014952
+        rotation_error_deg: 1.456447169358458
+        reprojection_rms_px: 0.09621585849410737
+      - name: capture_20260823_143829_915345
+        translation_error_mm: 10.24352670081519
+        rotation_error_deg: 1.4775816107853716
+        reprojection_rms_px: 0.08585028679165316
+      - name: capture_20260823_143831_557967
+        translation_error_mm: 10.298649565602195
+        rotation_error_deg: 1.384390001115948
+        reprojection_rms_px: 0.10379052115729649
+      - name: capture_20260823_143833_159251
+        translation_error_mm: 10.177448209283616
+        rotation_error_deg: 1.493365964458136
+        reprojection_rms_px: 0.11200615846935769
+  DANIILIDIS:
+    status: completed
+    fitting:
+      translation_rms_mm: 10.784313416511122
+      translation_max_mm: 14.155605025461554
+      rotation_rms_deg: 1.9081294174545052
+      rotation_max_deg: 2.790901711351405
+      per_sample:
+      - name: capture_20260823_142206_476713
+        translation_error_mm: 7.928531252504644
+        rotation_error_deg: 0.5362434928484128
+        reprojection_rms_px: 0.13891239100444444
+      - name: capture_20260823_142218_218466
+        translation_error_mm: 7.265957148659265
+        rotation_error_deg: 0.6643866656077749
+        reprojection_rms_px: 0.13567526095597746
+      - name: capture_20260823_142219_859122
+        translation_error_mm: 7.255864158145336
+        rotation_error_deg: 0.7994790441241929
+        reprojection_rms_px: 0.15488259757106385
+      - name: capture_20260823_142221_415158
+        translation_error_mm: 7.208376001761935
+        rotation_error_deg: 0.717846342409953
+        reprojection_rms_px: 0.12681667897861912
+      - name: capture_20260823_142223_023656
+        translation_error_mm: 6.922543107533796
+        rotation_error_deg: 0.6260394229499489
+        reprojection_rms_px: 0.139976810834707
+      - name: capture_20260823_142224_705222
+        translation_error_mm: 6.971390061329159
+        rotation_error_deg: 0.6368826771477717
+        reprojection_rms_px: 0.11853218194450468
+      - name: capture_20260823_142226_335510
+        translation_error_mm: 6.492386711076214
+        rotation_error_deg: 0.7444858812099785
+        reprojection_rms_px: 0.13200835658876955
+      - name: capture_20260823_142227_934286
+        translation_error_mm: 7.349055816578801
+        rotation_error_deg: 0.6897284332194406
+        reprojection_rms_px: 0.1678181027925125
+      - name: capture_20260823_142229_599668
+        translation_error_mm: 7.3871699204460155
+        rotation_error_deg: 0.6304984499677508
+        reprojection_rms_px: 0.1505275883226135
+      - name: capture_20260823_142231_206502
+        translation_error_mm: 7.337869249474901
+        rotation_error_deg: 0.7500642034430939
+        reprojection_rms_px: 0.11823649753671049
+      - name: capture_20260823_142328_117738
+        translation_error_mm: 7.731537382096004
+        rotation_error_deg: 0.9412500325845117
+        reprojection_rms_px: 0.12941643495124772
+      - name: capture_20260823_142329_826004
+        translation_error_mm: 7.758797776592918
+        rotation_error_deg: 0.9445308058476682
+        reprojection_rms_px: 0.13053412976928117
+      - name: capture_20260823_142331_465206
+        translation_error_mm: 7.721190709803235
+        rotation_error_deg: 0.9758817280577822
+        reprojection_rms_px: 0.1320157343408858
+      - name: capture_20260823_142333_037086
+        translation_error_mm: 7.644075829565998
+        rotation_error_deg: 0.9827540686784618
+        reprojection_rms_px: 0.1252995669925929
+      - name: capture_20260823_142334_656203
+        translation_error_mm: 7.626400903386838
+        rotation_error_deg: 1.0742491243548984
+        reprojection_rms_px: 0.12760722440644942
+      - name: capture_20260823_142336_237441
+        translation_error_mm: 7.695249961014858
+        rotation_error_deg: 0.9526482375884018
+        reprojection_rms_px: 0.1254423429230322
+      - name: capture_20260823_142337_891930
+        translation_error_mm: 7.789547752753215
+        rotation_error_deg: 0.9723715835783725
+        reprojection_rms_px: 0.13621942436878384
+      - name: capture_20260823_142339_530434
+        translation_error_mm: 7.7606922012037645
+        rotation_error_deg: 0.9496264084829159
+        reprojection_rms_px: 0.14570016495540025
+      - name: capture_20260823_142341_158583
+        translation_error_mm: 7.772818765443968
+        rotation_error_deg: 0.9869218023880878
+        reprojection_rms_px: 0.1570825155670064
+      - name: capture_20260823_142342_762304
+        translation_error_mm: 7.878002480057971
+        rotation_error_deg: 1.035006011840137
+        reprojection_rms_px: 0.15972099323745553
+      - name: capture_20260823_142442_678921
+        translation_error_mm: 6.77852179573812
+        rotation_error_deg: 1.4129191176142055
+        reprojection_rms_px: 0.16761844221517486
+      - name: capture_20260823_142444_306381
+        translation_error_mm: 6.749051576822834
+        rotation_error_deg: 1.505265608491172
+        reprojection_rms_px: 0.17302064263047331
+      - name: capture_20260823_142445_911409
+        translation_error_mm: 6.79059852164397
+        rotation_error_deg: 1.4658769043970559
+        reprojection_rms_px: 0.15687025171028376
+      - name: capture_20260823_142447_502743
+        translation_error_mm: 6.984220090533237
+        rotation_error_deg: 1.495486029974153
+        reprojection_rms_px: 0.16304965821746353
+      - name: capture_20260823_142449_168106
+        translation_error_mm: 6.955953463687857
+        rotation_error_deg: 1.4755678963897405
+        reprojection_rms_px: 0.14894508351696734
+      - name: capture_20260823_142450_739098
+        translation_error_mm: 6.895016691031195
+        rotation_error_deg: 1.516990497157712
+        reprojection_rms_px: 0.14503084638702135
+      - name: capture_20260823_142452_364447
+        translation_error_mm: 6.9574491262132145
+        rotation_error_deg: 1.4606746061651674
+        reprojection_rms_px: 0.1695091411041457
+      - name: capture_20260823_142453_999900
+        translation_error_mm: 7.197918043887409
+        rotation_error_deg: 1.4085141693406575
+        reprojection_rms_px: 0.17012433050733172
+      - name: capture_20260823_142455_574250
+        translation_error_mm: 7.120503716692535
+        rotation_error_deg: 1.5097254973565482
+        reprojection_rms_px: 0.1724847318996796
+      - name: capture_20260823_142457_114901
+        translation_error_mm: 7.020515168318083
+        rotation_error_deg: 1.4657817405793103
+        reprojection_rms_px: 0.13416064690931306
+      - name: capture_20260823_142556_838366
+        translation_error_mm: 14.116650128991708
+        rotation_error_deg: 2.0334889038635255
+        reprojection_rms_px: 0.26101129178901583
+      - name: capture_20260823_142558_459218
+        translation_error_mm: 14.155605025461554
+        rotation_error_deg: 1.9916401968181319
+        reprojection_rms_px: 0.23462255632070483
+      - name: capture_20260823_142600_102370
+        translation_error_mm: 13.877851664731706
+        rotation_error_deg: 1.9711565442912078
+        reprojection_rms_px: 0.21239656421377995
+      - name: capture_20260823_142601_694037
+        translation_error_mm: 13.930544165585287
+        rotation_error_deg: 2.0291306940978493
+        reprojection_rms_px: 0.18931978274025288
+      - name: capture_20260823_142603_259346
+        translation_error_mm: 13.804981886639741
+        rotation_error_deg: 2.0408641885731904
+        reprojection_rms_px: 0.22731722172690566
+      - name: capture_20260823_142604_880620
+        translation_error_mm: 13.946901544758406
+        rotation_error_deg: 2.0041669153420756
+        reprojection_rms_px: 0.19783439478977008
+      - name: capture_20260823_142606_448800
+        translation_error_mm: 13.95705791548808
+        rotation_error_deg: 2.0078723631919044
+        reprojection_rms_px: 0.21016342083651374
+      - name: capture_20260823_142608_053141
+        translation_error_mm: 13.933968831602614
+        rotation_error_deg: 2.0487629932780056
+        reprojection_rms_px: 0.213689801319768
+      - name: capture_20260823_142609_673702
+        translation_error_mm: 13.95699668082658
+        rotation_error_deg: 2.0268583370079587
+        reprojection_rms_px: 0.2147984180604797
+      - name: capture_20260823_142611_284270
+        translation_error_mm: 13.942494039491262
+        rotation_error_deg: 2.027619535076962
+        reprojection_rms_px: 0.1986076663453943
+      - name: capture_20260823_142722_871889
+        translation_error_mm: 14.076295831465895
+        rotation_error_deg: 2.164424192186645
+        reprojection_rms_px: 0.19357707118152356
+      - name: capture_20260823_142724_529484
+        translation_error_mm: 13.502911229112684
+        rotation_error_deg: 2.3508101998066024
+        reprojection_rms_px: 0.22061884302857593
+      - name: capture_20260823_142726_195614
+        translation_error_mm: 13.910885692412723
+        rotation_error_deg: 2.178791196843274
+        reprojection_rms_px: 0.20887609682375405
+      - name: capture_20260823_142727_837439
+        translation_error_mm: 14.042723528782695
+        rotation_error_deg: 2.129920030231634
+        reprojection_rms_px: 0.25895416447035685
+      - name: capture_20260823_142729_483057
+        translation_error_mm: 13.843820482370552
+        rotation_error_deg: 2.1128339277005668
+        reprojection_rms_px: 0.22733068353335448
+      - name: capture_20260823_142731_122574
+        translation_error_mm: 13.737248676833833
+        rotation_error_deg: 2.222689766094683
+        reprojection_rms_px: 0.23368894273504634
+      - name: capture_20260823_142732_782919
+        translation_error_mm: 13.942233839652365
+        rotation_error_deg: 2.0383372677007032
+        reprojection_rms_px: 0.2222111538959804
+      - name: capture_20260823_142734_374907
+        translation_error_mm: 14.055936295539524
+        rotation_error_deg: 2.1729786368936463
+        reprojection_rms_px: 0.23209907978516198
+      - name: capture_20260823_142735_943004
+        translation_error_mm: 13.9478795150144
+        rotation_error_deg: 2.1430954940753737
+        reprojection_rms_px: 0.20724334738781766
+      - name: capture_20260823_142737_559708
+        translation_error_mm: 14.141437968435723
+        rotation_error_deg: 2.1463664684893584
+        reprojection_rms_px: 0.231992620943263
+      - name: capture_20260823_142841_216425
+        translation_error_mm: 11.9103089670597
+        rotation_error_deg: 2.442874185544728
+        reprojection_rms_px: 0.19655327839837514
+      - name: capture_20260823_142842_813016
+        translation_error_mm: 11.957625857590875
+        rotation_error_deg: 2.4091229133030816
+        reprojection_rms_px: 0.18654275262314646
+      - name: capture_20260823_142844_426212
+        translation_error_mm: 11.805135100170228
+        rotation_error_deg: 2.460123908635665
+        reprojection_rms_px: 0.20722205126924872
+      - name: capture_20260823_142846_017748
+        translation_error_mm: 11.983796560710882
+        rotation_error_deg: 2.3551863208711037
+        reprojection_rms_px: 0.19917141098863972
+      - name: capture_20260823_142847_619787
+        translation_error_mm: 11.956465959953874
+        rotation_error_deg: 2.3744975083468423
+        reprojection_rms_px: 0.22447722542113774
+      - name: capture_20260823_142849_228020
+        translation_error_mm: 11.820114553231218
+        rotation_error_deg: 2.4455949672308757
+        reprojection_rms_px: 0.19269040618905417
+      - name: capture_20260823_142850_830466
+        translation_error_mm: 12.144667340044794
+        rotation_error_deg: 2.460121611110165
+        reprojection_rms_px: 0.19164292096781774
+      - name: capture_20260823_142852_390481
+        translation_error_mm: 11.865279231175558
+        rotation_error_deg: 2.3748112937506995
+        reprojection_rms_px: 0.19730663086754927
+      - name: capture_20260823_142853_994314
+        translation_error_mm: 12.036027945932315
+        rotation_error_deg: 2.3915119738261454
+        reprojection_rms_px: 0.225539506648925
+      - name: capture_20260823_142855_563664
+        translation_error_mm: 11.767272514564146
+        rotation_error_deg: 2.3850957749943733
+        reprojection_rms_px: 0.1732151747692052
+      - name: capture_20260823_142955_231474
+        translation_error_mm: 14.000581688423528
+        rotation_error_deg: 1.3313774612934492
+        reprojection_rms_px: 0.11412304407258886
+      - name: capture_20260823_142956_865257
+        translation_error_mm: 14.083448195741905
+        rotation_error_deg: 1.3000797750425162
+        reprojection_rms_px: 0.12736999507561475
+      - name: capture_20260823_142958_462462
+        translation_error_mm: 14.056731087365886
+        rotation_error_deg: 1.3277043943636815
+        reprojection_rms_px: 0.11768576827057588
+      - name: capture_20260823_143000_051592
+        translation_error_mm: 14.006601614202916
+        rotation_error_deg: 1.4530402375175797
+        reprojection_rms_px: 0.14492632034528516
+      - name: capture_20260823_143001_611993
+        translation_error_mm: 13.918056750052308
+        rotation_error_deg: 1.3406011787438257
+        reprojection_rms_px: 0.11912595454286747
+      - name: capture_20260823_143003_216766
+        translation_error_mm: 13.96421743232504
+        rotation_error_deg: 1.257444477853141
+        reprojection_rms_px: 0.11985039458127081
+      - name: capture_20260823_143004_813120
+        translation_error_mm: 13.938547528152835
+        rotation_error_deg: 1.3588816270566437
+        reprojection_rms_px: 0.11434528352139356
+      - name: capture_20260823_143006_412996
+        translation_error_mm: 13.985244748834324
+        rotation_error_deg: 1.3883957690204518
+        reprojection_rms_px: 0.142722047720988
+      - name: capture_20260823_143008_020754
+        translation_error_mm: 14.017632196570347
+        rotation_error_deg: 1.3732543445971146
+        reprojection_rms_px: 0.14945083660604097
+      - name: capture_20260823_143009_652799
+        translation_error_mm: 13.964190980399978
+        rotation_error_deg: 1.3032275582871933
+        reprojection_rms_px: 0.12910356638520792
+      - name: capture_20260823_143053_828079
+        translation_error_mm: 6.390547275540447
+        rotation_error_deg: 1.8210414588242574
+        reprojection_rms_px: 0.155915894594214
+      - name: capture_20260823_143055_461761
+        translation_error_mm: 6.45299687460973
+        rotation_error_deg: 1.8631703775904858
+        reprojection_rms_px: 0.1451331362863667
+      - name: capture_20260823_143057_086407
+        translation_error_mm: 6.432600298795756
+        rotation_error_deg: 1.8774081081568068
+        reprojection_rms_px: 0.15840120790468964
+      - name: capture_20260823_143058_660429
+        translation_error_mm: 6.450721701397781
+        rotation_error_deg: 1.8246033332588134
+        reprojection_rms_px: 0.15228752368017337
+      - name: capture_20260823_143100_216216
+        translation_error_mm: 6.387522821234862
+        rotation_error_deg: 1.8001403622230918
+        reprojection_rms_px: 0.1584950572770693
+      - name: capture_20260823_143101_876246
+        translation_error_mm: 6.4431208757814495
+        rotation_error_deg: 1.8238320277106594
+        reprojection_rms_px: 0.17731155007078636
+      - name: capture_20260823_143103_497779
+        translation_error_mm: 6.423025842487619
+        rotation_error_deg: 1.7849319567725435
+        reprojection_rms_px: 0.13280358106743334
+      - name: capture_20260823_143105_043553
+        translation_error_mm: 6.45910437917843
+        rotation_error_deg: 1.823730450645135
+        reprojection_rms_px: 0.14190275698721963
+      - name: capture_20260823_143106_639058
+        translation_error_mm: 6.472983117334836
+        rotation_error_deg: 1.8722904331889751
+        reprojection_rms_px: 0.17247269275834745
+      - name: capture_20260823_143108_236063
+        translation_error_mm: 6.443980605548157
+        rotation_error_deg: 1.7860080298207763
+        reprojection_rms_px: 0.14638691143707802
+      - name: capture_20260823_143156_581484
+        translation_error_mm: 13.834671562690348
+        rotation_error_deg: 2.6881514332272456
+        reprojection_rms_px: 0.1369074953739145
+      - name: capture_20260823_143158_215247
+        translation_error_mm: 13.460257548943275
+        rotation_error_deg: 2.790901711351405
+        reprojection_rms_px: 0.1575215093774944
+      - name: capture_20260823_143159_901809
+        translation_error_mm: 13.281293612593233
+        rotation_error_deg: 2.681200763462839
+        reprojection_rms_px: 0.15661479229296532
+      - name: capture_20260823_143201_471090
+        translation_error_mm: 13.582703883901075
+        rotation_error_deg: 2.7200993599278074
+        reprojection_rms_px: 0.14308519332971203
+      - name: capture_20260823_143203_026829
+        translation_error_mm: 14.091011441486943
+        rotation_error_deg: 2.78798365339085
+        reprojection_rms_px: 0.13264995459114182
+      - name: capture_20260823_143204_558938
+        translation_error_mm: 13.932696605018883
+        rotation_error_deg: 2.7355681071188576
+        reprojection_rms_px: 0.17070443752998962
+      - name: capture_20260823_143206_161369
+        translation_error_mm: 13.358505197400815
+        rotation_error_deg: 2.665951357745382
+        reprojection_rms_px: 0.146587867766209
+      - name: capture_20260823_143207_705550
+        translation_error_mm: 13.280412420867874
+        rotation_error_deg: 2.573477430370526
+        reprojection_rms_px: 0.15754284217402753
+      - name: capture_20260823_143209_417675
+        translation_error_mm: 13.304116996942314
+        rotation_error_deg: 2.593487452285746
+        reprojection_rms_px: 0.20612694332280407
+      - name: capture_20260823_143211_061425
+        translation_error_mm: 13.781206102486163
+        rotation_error_deg: 2.654071482089085
+        reprojection_rms_px: 0.16840718949303146
+      - name: capture_20260823_143250_170365
+        translation_error_mm: 6.481801849375783
+        rotation_error_deg: 1.9746567760321356
+        reprojection_rms_px: 0.2461573513666684
+      - name: capture_20260823_143251_809954
+        translation_error_mm: 6.673727499459744
+        rotation_error_deg: 2.058294416130862
+        reprojection_rms_px: 0.23133970225303518
+      - name: capture_20260823_143253_386535
+        translation_error_mm: 6.941507196075754
+        rotation_error_deg: 2.1298397882297126
+        reprojection_rms_px: 0.20993090339877157
+      - name: capture_20260823_143255_005107
+        translation_error_mm: 6.285400958506476
+        rotation_error_deg: 1.9123945253580028
+        reprojection_rms_px: 0.2037769780695858
+      - name: capture_20260823_143256_616761
+        translation_error_mm: 6.532879383938613
+        rotation_error_deg: 1.9754277136009923
+        reprojection_rms_px: 0.20067246476173975
+      - name: capture_20260823_143258_190916
+        translation_error_mm: 6.747929408984564
+        rotation_error_deg: 1.9684802239113115
+        reprojection_rms_px: 0.20700870131946783
+      - name: capture_20260823_143259_785694
+        translation_error_mm: 6.6900254112442
+        rotation_error_deg: 2.0362070790020597
+        reprojection_rms_px: 0.2397421447442009
+      - name: capture_20260823_143301_469174
+        translation_error_mm: 6.3629421609905545
+        rotation_error_deg: 2.0120720952205966
+        reprojection_rms_px: 0.2231798632554871
+      - name: capture_20260823_143303_216232
+        translation_error_mm: 6.65012967238442
+        rotation_error_deg: 2.023417453844949
+        reprojection_rms_px: 0.2562337616370283
+      - name: capture_20260823_143304_836738
+        translation_error_mm: 6.701483170193715
+        rotation_error_deg: 1.9871343993637787
+        reprojection_rms_px: 0.2049482754918694
+      - name: capture_20260823_143401_001423
+        translation_error_mm: 7.462212594521944
+        rotation_error_deg: 1.908241296010705
+        reprojection_rms_px: 0.23095910284379478
+      - name: capture_20260823_143402_602779
+        translation_error_mm: 7.56635835992788
+        rotation_error_deg: 1.9394957987149783
+        reprojection_rms_px: 0.2735037845711414
+      - name: capture_20260823_143404_285518
+        translation_error_mm: 7.179979229611836
+        rotation_error_deg: 1.858739214290124
+        reprojection_rms_px: 0.23292704642107892
+      - name: capture_20260823_143405_918489
+        translation_error_mm: 7.151839816632128
+        rotation_error_deg: 1.8314103750955755
+        reprojection_rms_px: 0.25026377508315284
+      - name: capture_20260823_143407_550870
+        translation_error_mm: 7.387246758564359
+        rotation_error_deg: 1.8507280850518115
+        reprojection_rms_px: 0.2073397969302527
+      - name: capture_20260823_143409_154911
+        translation_error_mm: 7.5733871488901165
+        rotation_error_deg: 1.9288302933452899
+        reprojection_rms_px: 0.29688936660802995
+      - name: capture_20260823_143410_786937
+        translation_error_mm: 7.50172986795082
+        rotation_error_deg: 1.916751458139689
+        reprojection_rms_px: 0.1812096880793984
+      - name: capture_20260823_143412_463373
+        translation_error_mm: 7.299946585752015
+        rotation_error_deg: 1.8969931190718488
+        reprojection_rms_px: 0.25919191186009627
+      - name: capture_20260823_143414_089101
+        translation_error_mm: 7.2015784649140535
+        rotation_error_deg: 1.835576653699463
+        reprojection_rms_px: 0.268076157844809
+      - name: capture_20260823_143415_703597
+        translation_error_mm: 7.388880072518853
+        rotation_error_deg: 1.9001178811632824
+        reprojection_rms_px: 0.25555669280708726
+      - name: capture_20260823_143458_998668
+        translation_error_mm: 10.96525233489763
+        rotation_error_deg: 2.657180527289266
+        reprojection_rms_px: 0.1392490921487775
+      - name: capture_20260823_143500_640667
+        translation_error_mm: 10.977726253677856
+        rotation_error_deg: 2.6882832192709802
+        reprojection_rms_px: 0.1573083627739939
+      - name: capture_20260823_143502_221884
+        translation_error_mm: 10.967136776085962
+        rotation_error_deg: 2.6794668732835882
+        reprojection_rms_px: 0.17089579255821447
+      - name: capture_20260823_143503_857931
+        translation_error_mm: 10.930926221155529
+        rotation_error_deg: 2.674058335271959
+        reprojection_rms_px: 0.21078616835667754
+      - name: capture_20260823_143505_438895
+        translation_error_mm: 10.911311166000928
+        rotation_error_deg: 2.614568700027332
+        reprojection_rms_px: 0.181728695038637
+      - name: capture_20260823_143507_073100
+        translation_error_mm: 10.936376026165057
+        rotation_error_deg: 2.7041006000773264
+        reprojection_rms_px: 0.19657623127873328
+      - name: capture_20260823_143508_628245
+        translation_error_mm: 10.909827169641371
+        rotation_error_deg: 2.663982608121313
+        reprojection_rms_px: 0.183518299699111
+      - name: capture_20260823_143510_272686
+        translation_error_mm: 10.927949894517827
+        rotation_error_deg: 2.6624731418015704
+        reprojection_rms_px: 0.15257396952973085
+      - name: capture_20260823_143511_871465
+        translation_error_mm: 10.852375587317326
+        rotation_error_deg: 2.62677401290788
+        reprojection_rms_px: 0.17746152260467124
+      - name: capture_20260823_143513_465068
+        translation_error_mm: 10.872966326957664
+        rotation_error_deg: 2.679421104244594
+        reprojection_rms_px: 0.18074409314365883
+      - name: capture_20260823_143555_732127
+        translation_error_mm: 13.452203008303858
+        rotation_error_deg: 1.4511170360441243
+        reprojection_rms_px: 0.15588899827063335
+      - name: capture_20260823_143557_359610
+        translation_error_mm: 13.49863696095207
+        rotation_error_deg: 1.4049277889538707
+        reprojection_rms_px: 0.1651880397302085
+      - name: capture_20260823_143558_976597
+        translation_error_mm: 13.429844639107088
+        rotation_error_deg: 1.4017251035441545
+        reprojection_rms_px: 0.1559624710501101
+      - name: capture_20260823_143600_611562
+        translation_error_mm: 13.432843359513933
+        rotation_error_deg: 1.4297933476919515
+        reprojection_rms_px: 0.16311601886022958
+      - name: capture_20260823_143602_208993
+        translation_error_mm: 13.482484705089988
+        rotation_error_deg: 1.393491801222989
+        reprojection_rms_px: 0.13712665825296205
+      - name: capture_20260823_143603_924624
+        translation_error_mm: 13.437263056615537
+        rotation_error_deg: 1.431629100764882
+        reprojection_rms_px: 0.1919080425523113
+      - name: capture_20260823_143605_522924
+        translation_error_mm: 13.49789981843269
+        rotation_error_deg: 1.4389348057600415
+        reprojection_rms_px: 0.1922965008056291
+      - name: capture_20260823_143607_130287
+        translation_error_mm: 13.450955207079348
+        rotation_error_deg: 1.4645580347659852
+        reprojection_rms_px: 0.19962690266822383
+      - name: capture_20260823_143608_719035
+        translation_error_mm: 13.474859434212494
+        rotation_error_deg: 1.4546953760313146
+        reprojection_rms_px: 0.11073896156142439
+      - name: capture_20260823_143610_350297
+        translation_error_mm: 13.473198232572352
+        rotation_error_deg: 1.512204498217217
+        reprojection_rms_px: 0.1400676859164778
+    held_out_validation:
+      translation_rms_mm: 5.364952069684262
+      translation_max_mm: 7.289401293124952
+      rotation_rms_deg: 1.5708117132317767
+      rotation_max_deg: 2.128054474787175
+      per_sample:
+      - name: capture_20260823_143648_795032
+        translation_error_mm: 6.787979631616442
+        rotation_error_deg: 0.9957768495710929
+        reprojection_rms_px: 0.14795443696478194
+      - name: capture_20260823_143650_504448
+        translation_error_mm: 6.8166284281227085
+        rotation_error_deg: 1.1719967439221566
+        reprojection_rms_px: 0.13786926749350004
+      - name: capture_20260823_143652_120494
+        translation_error_mm: 6.625989039147302
+        rotation_error_deg: 1.0125397664191935
+        reprojection_rms_px: 0.1498850011032385
+      - name: capture_20260823_143653_759185
+        translation_error_mm: 6.9891128404808995
+        rotation_error_deg: 1.0997577794653106
+        reprojection_rms_px: 0.1828407634123958
+      - name: capture_20260823_143655_435902
+        translation_error_mm: 6.896337724246329
+        rotation_error_deg: 1.200731480990618
+        reprojection_rms_px: 0.146359208401678
+      - name: capture_20260823_143657_062183
+        translation_error_mm: 6.728365033525338
+        rotation_error_deg: 0.996897658013577
+        reprojection_rms_px: 0.1506009732328837
+      - name: capture_20260823_143658_669171
+        translation_error_mm: 6.914909206777236
+        rotation_error_deg: 1.1795328246118497
+        reprojection_rms_px: 0.18105030119076465
+      - name: capture_20260823_143700_242629
+        translation_error_mm: 7.289401293124952
+        rotation_error_deg: 1.0233831521483918
+        reprojection_rms_px: 0.29017997086663105
+      - name: capture_20260823_143701_848618
+        translation_error_mm: 6.557936300505964
+        rotation_error_deg: 0.7714783926427331
+        reprojection_rms_px: 0.1359746120497821
+      - name: capture_20260823_143703_495523
+        translation_error_mm: 6.86458622905393
+        rotation_error_deg: 1.0258102254562882
+        reprojection_rms_px: 0.14387847390700473
+      - name: capture_20260823_143730_337123
+        translation_error_mm: 5.332886608753233
+        rotation_error_deg: 2.0863645778213233
+        reprojection_rms_px: 0.1402395079598648
+      - name: capture_20260823_143731_977960
+        translation_error_mm: 5.477192764456352
+        rotation_error_deg: 1.9916564343273333
+        reprojection_rms_px: 0.11750393349268758
+      - name: capture_20260823_143733_583077
+        translation_error_mm: 5.61866567238015
+        rotation_error_deg: 2.124207535006858
+        reprojection_rms_px: 0.12828726837922488
+      - name: capture_20260823_143735_168423
+        translation_error_mm: 5.321072814880573
+        rotation_error_deg: 2.034688915053591
+        reprojection_rms_px: 0.10929017284270953
+      - name: capture_20260823_143736_773946
+        translation_error_mm: 5.254057063386293
+        rotation_error_deg: 2.0740943119047244
+        reprojection_rms_px: 0.14125389353676804
+      - name: capture_20260823_143738_364276
+        translation_error_mm: 5.418827193139522
+        rotation_error_deg: 1.9936791818734043
+        reprojection_rms_px: 0.11632642340885724
+      - name: capture_20260823_143739_943496
+        translation_error_mm: 5.503200236288171
+        rotation_error_deg: 2.128054474787175
+        reprojection_rms_px: 0.1259642244877503
+      - name: capture_20260823_143741_564146
+        translation_error_mm: 5.182662274411921
+        rotation_error_deg: 2.054728764233211
+        reprojection_rms_px: 0.10267081114650876
+      - name: capture_20260823_143743_153521
+        translation_error_mm: 5.446942807915122
+        rotation_error_deg: 2.0216295019769572
+        reprojection_rms_px: 0.123672596980797
+      - name: capture_20260823_143744_789870
+        translation_error_mm: 5.383713382873721
+        rotation_error_deg: 1.8631102566045024
+        reprojection_rms_px: 0.113669258145724
+      - name: capture_20260823_143818_730907
+        translation_error_mm: 3.189177858957213
+        rotation_error_deg: 1.4083960798742565
+        reprojection_rms_px: 0.08997833787520086
+      - name: capture_20260823_143820_354273
+        translation_error_mm: 3.3728641037438742
+        rotation_error_deg: 1.4917037881925541
+        reprojection_rms_px: 0.11368164163733402
+      - name: capture_20260823_143821_901248
+        translation_error_mm: 2.7552422136092383
+        rotation_error_deg: 1.4588229093230112
+        reprojection_rms_px: 0.10192960786019276
+      - name: capture_20260823_143823_532725
+        translation_error_mm: 3.320410015935479
+        rotation_error_deg: 1.4210554697529258
+        reprojection_rms_px: 0.09259903809505501
+      - name: capture_20260823_143825_109911
+        translation_error_mm: 3.2122496106186396
+        rotation_error_deg: 1.4244372825293183
+        reprojection_rms_px: 0.12979015725607035
+      - name: capture_20260823_143826_688745
+        translation_error_mm: 3.022303082451453
+        rotation_error_deg: 1.632948124747641
+        reprojection_rms_px: 0.10104232428002424
+      - name: capture_20260823_143828_268689
+        translation_error_mm: 3.2748064193237925
+        rotation_error_deg: 1.4404176905507036
+        reprojection_rms_px: 0.09621585849410737
+      - name: capture_20260823_143829_915345
+        translation_error_mm: 3.286637340799016
+        rotation_error_deg: 1.4644425949912236
+        reprojection_rms_px: 0.08585028679165316
+      - name: capture_20260823_143831_557967
+        translation_error_mm: 3.17225301790663
+        rotation_error_deg: 1.373393232839931
+        reprojection_rms_px: 0.10379052115729649
+      - name: capture_20260823_143833_159251
+        translation_error_mm: 3.4612097666776442
+        rotation_error_deg: 1.4789797619554796
+        reprojection_rms_px: 0.11200615846935769
+fitting_residuals:
+  translation_rms_mm: 10.758491642013537
+  translation_max_mm: 14.49402561076243
+  rotation_rms_deg: 1.9078322159558432
+  rotation_max_deg: 2.7857257332282725
+  per_sample:
+  - name: capture_20260823_142206_476713
+    translation_error_mm: 8.280623711258086
+    rotation_error_deg: 0.5380651658214275
+    reprojection_rms_px: 0.13891239100444444
+  - name: capture_20260823_142218_218466
+    translation_error_mm: 7.618027244133329
+    rotation_error_deg: 0.6580122875410749
+    reprojection_rms_px: 0.13567526095597746
+  - name: capture_20260823_142219_859122
+    translation_error_mm: 7.606629499846226
+    rotation_error_deg: 0.7888393566469392
+    reprojection_rms_px: 0.15488259757106385
+  - name: capture_20260823_142221_415158
+    translation_error_mm: 7.565941001299765
+    rotation_error_deg: 0.707665405745935
+    reprojection_rms_px: 0.12681667897861912
+  - name: capture_20260823_142223_023656
+    translation_error_mm: 7.277981756811103
+    rotation_error_deg: 0.6162327561012921
+    reprojection_rms_px: 0.139976810834707
+  - name: capture_20260823_142224_705222
+    translation_error_mm: 7.332250637104882
+    rotation_error_deg: 0.6298057825867474
+    reprojection_rms_px: 0.11853218194450468
+  - name: capture_20260823_142226_335510
+    translation_error_mm: 6.855948602493478
+    rotation_error_deg: 0.7309952740076745
+    reprojection_rms_px: 0.13200835658876955
+  - name: capture_20260823_142227_934286
+    translation_error_mm: 7.705501469165722
+    rotation_error_deg: 0.6868915110848379
+    reprojection_rms_px: 0.1678181027925125
+  - name: capture_20260823_142229_599668
+    translation_error_mm: 7.735856575028216
+    rotation_error_deg: 0.6248757451215561
+    reprojection_rms_px: 0.1505275883226135
+  - name: capture_20260823_142231_206502
+    translation_error_mm: 7.692544707951822
+    rotation_error_deg: 0.7397160684655987
+    reprojection_rms_px: 0.11823649753671049
+  - name: capture_20260823_142328_117738
+    translation_error_mm: 7.684611345399135
+    rotation_error_deg: 0.9516452672152887
+    reprojection_rms_px: 0.12941643495124772
+  - name: capture_20260823_142329_826004
+    translation_error_mm: 7.712958281871547
+    rotation_error_deg: 0.9549142487039833
+    reprojection_rms_px: 0.13053412976928117
+  - name: capture_20260823_142331_465206
+    translation_error_mm: 7.677372662626129
+    rotation_error_deg: 0.986051993000395
+    reprojection_rms_px: 0.1320157343408858
+  - name: capture_20260823_142333_037086
+    translation_error_mm: 7.597171128552811
+    rotation_error_deg: 0.992878087463969
+    reprojection_rms_px: 0.1252995669925929
+  - name: capture_20260823_142334_656203
+    translation_error_mm: 7.580896819141279
+    rotation_error_deg: 1.0845097678629212
+    reprojection_rms_px: 0.12760722440644942
+  - name: capture_20260823_142336_237441
+    translation_error_mm: 7.651344082370133
+    rotation_error_deg: 0.9629596637083983
+    reprojection_rms_px: 0.1254423429230322
+  - name: capture_20260823_142337_891930
+    translation_error_mm: 7.742216589327555
+    rotation_error_deg: 0.9827864597967578
+    reprojection_rms_px: 0.13621942436878384
+  - name: capture_20260823_142339_530434
+    translation_error_mm: 7.71223975629732
+    rotation_error_deg: 0.9597903474361906
+    reprojection_rms_px: 0.14570016495540025
+  - name: capture_20260823_142341_158583
+    translation_error_mm: 7.723865402895095
+    rotation_error_deg: 0.9973100543397976
+    reprojection_rms_px: 0.1570825155670064
+  - name: capture_20260823_142342_762304
+    translation_error_mm: 7.822807461452944
+    rotation_error_deg: 1.0453850756179937
+    reprojection_rms_px: 0.15972099323745553
+  - name: capture_20260823_142442_678921
+    translation_error_mm: 6.269985940892254
+    rotation_error_deg: 1.4085819592386808
+    reprojection_rms_px: 0.16761844221517486
+  - name: capture_20260823_142444_306381
+    translation_error_mm: 6.241757849133781
+    rotation_error_deg: 1.4991849159124755
+    reprojection_rms_px: 0.17302064263047331
+  - name: capture_20260823_142445_911409
+    translation_error_mm: 6.283368692103259
+    rotation_error_deg: 1.4600299351360133
+    reprojection_rms_px: 0.15687025171028376
+  - name: capture_20260823_142447_502743
+    translation_error_mm: 6.4822587472677435
+    rotation_error_deg: 1.4886004957379493
+    reprojection_rms_px: 0.16304965821746353
+  - name: capture_20260823_142449_168106
+    translation_error_mm: 6.453773255401965
+    rotation_error_deg: 1.4689256162003967
+    reprojection_rms_px: 0.14894508351696734
+  - name: capture_20260823_142450_739098
+    translation_error_mm: 6.392766734410226
+    rotation_error_deg: 1.5103299586914014
+    reprojection_rms_px: 0.14503084638702135
+  - name: capture_20260823_142452_364447
+    translation_error_mm: 6.452963942373142
+    rotation_error_deg: 1.455151910988777
+    reprojection_rms_px: 0.1695091411041457
+  - name: capture_20260823_142453_999900
+    translation_error_mm: 6.694682875880069
+    rotation_error_deg: 1.4024531359452794
+    reprojection_rms_px: 0.17012433050733172
+  - name: capture_20260823_142455_574250
+    translation_error_mm: 6.616454230012835
+    rotation_error_deg: 1.5030892893274803
+    reprojection_rms_px: 0.1724847318996796
+  - name: capture_20260823_142457_114901
+    translation_error_mm: 6.515513660384829
+    rotation_error_deg: 1.4596590629536228
+    reprojection_rms_px: 0.13416064690931306
+  - name: capture_20260823_142556_838366
+    translation_error_mm: 14.458504545025173
+    rotation_error_deg: 2.0282249126634344
+    reprojection_rms_px: 0.26101129178901583
+  - name: capture_20260823_142558_459218
+    translation_error_mm: 14.49402561076243
+    rotation_error_deg: 1.987455612103445
+    reprojection_rms_px: 0.23462255632070483
+  - name: capture_20260823_142600_102370
+    translation_error_mm: 14.217241045327654
+    rotation_error_deg: 1.967499757126965
+    reprojection_rms_px: 0.21239656421377995
+  - name: capture_20260823_142601_694037
+    translation_error_mm: 14.270211856237689
+    rotation_error_deg: 2.0246230940532643
+    reprojection_rms_px: 0.18931978274025288
+  - name: capture_20260823_142603_259346
+    translation_error_mm: 14.145730401010645
+    rotation_error_deg: 2.036067567681361
+    reprojection_rms_px: 0.22731722172690566
+  - name: capture_20260823_142604_880620
+    translation_error_mm: 14.286412223294372
+    rotation_error_deg: 2.001438914928977
+    reprojection_rms_px: 0.19783439478977008
+  - name: capture_20260823_142606_448800
+    translation_error_mm: 14.296596478050827
+    rotation_error_deg: 2.0059302496137437
+    reprojection_rms_px: 0.21016342083651374
+  - name: capture_20260823_142608_053141
+    translation_error_mm: 14.271594564592405
+    rotation_error_deg: 2.0450122245717597
+    reprojection_rms_px: 0.213689801319768
+  - name: capture_20260823_142609_673702
+    translation_error_mm: 14.294289086066788
+    rotation_error_deg: 2.0233556866874634
+    reprojection_rms_px: 0.2147984180604797
+  - name: capture_20260823_142611_284270
+    translation_error_mm: 14.280992267691602
+    rotation_error_deg: 2.0235321635879084
+    reprojection_rms_px: 0.1986076663453943
+  - name: capture_20260823_142722_871889
+    translation_error_mm: 13.74934523686677
+    rotation_error_deg: 2.163503534194466
+    reprojection_rms_px: 0.19357707118152356
+  - name: capture_20260823_142724_529484
+    translation_error_mm: 13.180048262252729
+    rotation_error_deg: 2.34585121015486
+    reprojection_rms_px: 0.22061884302857593
+  - name: capture_20260823_142726_195614
+    translation_error_mm: 13.583429367035402
+    rotation_error_deg: 2.1770073523714126
+    reprojection_rms_px: 0.20887609682375405
+  - name: capture_20260823_142727_837439
+    translation_error_mm: 13.710329972966866
+    rotation_error_deg: 2.12634835653122
+    reprojection_rms_px: 0.25895416447035685
+  - name: capture_20260823_142729_483057
+    translation_error_mm: 13.513380627583127
+    rotation_error_deg: 2.109611525508865
+    reprojection_rms_px: 0.22733068353335448
+  - name: capture_20260823_142731_122574
+    translation_error_mm: 13.405445086896146
+    rotation_error_deg: 2.217706184810411
+    reprojection_rms_px: 0.23368894273504634
+  - name: capture_20260823_142732_782919
+    translation_error_mm: 13.615043077595384
+    rotation_error_deg: 2.037664073391898
+    reprojection_rms_px: 0.2222111538959804
+  - name: capture_20260823_142734_374907
+    translation_error_mm: 13.727318138227314
+    rotation_error_deg: 2.17011369500695
+    reprojection_rms_px: 0.23209907978516198
+  - name: capture_20260823_142735_943004
+    translation_error_mm: 13.618531213556967
+    rotation_error_deg: 2.1408033016502666
+    reprojection_rms_px: 0.20724334738781766
+  - name: capture_20260823_142737_559708
+    translation_error_mm: 13.810210062092674
+    rotation_error_deg: 2.143810042457913
+    reprojection_rms_px: 0.231992620943263
+  - name: capture_20260823_142841_216425
+    translation_error_mm: 11.369486149814069
+    rotation_error_deg: 2.426184221261844
+    reprojection_rms_px: 0.19655327839837514
+  - name: capture_20260823_142842_813016
+    translation_error_mm: 11.422648144793856
+    rotation_error_deg: 2.3896880593775176
+    reprojection_rms_px: 0.18654275262314646
+  - name: capture_20260823_142844_426212
+    translation_error_mm: 11.263179470287879
+    rotation_error_deg: 2.4426867502207865
+    reprojection_rms_px: 0.20722205126924872
+  - name: capture_20260823_142846_017748
+    translation_error_mm: 11.438638673902355
+    rotation_error_deg: 2.340453285147584
+    reprojection_rms_px: 0.19917141098863972
+  - name: capture_20260823_142847_619787
+    translation_error_mm: 11.410689494540025
+    rotation_error_deg: 2.357909868625603
+    reprojection_rms_px: 0.22447722542113774
+  - name: capture_20260823_142849_228020
+    translation_error_mm: 11.277550131186395
+    rotation_error_deg: 2.4291989537396956
+    reprojection_rms_px: 0.19269040618905417
+  - name: capture_20260823_142850_830466
+    translation_error_mm: 11.61211574090637
+    rotation_error_deg: 2.4434649816795386
+    reprojection_rms_px: 0.19164292096781774
+  - name: capture_20260823_142852_390481
+    translation_error_mm: 11.32720351747483
+    rotation_error_deg: 2.3581207342594306
+    reprojection_rms_px: 0.19730663086754927
+  - name: capture_20260823_142853_994314
+    translation_error_mm: 11.488241592113887
+    rotation_error_deg: 2.37379530616802
+    reprojection_rms_px: 0.225539506648925
+  - name: capture_20260823_142855_563664
+    translation_error_mm: 11.225001199075159
+    rotation_error_deg: 2.3684089783159266
+    reprojection_rms_px: 0.1732151747692052
+  - name: capture_20260823_142955_231474
+    translation_error_mm: 13.925482412298322
+    rotation_error_deg: 1.3584312312579765
+    reprojection_rms_px: 0.11412304407258886
+  - name: capture_20260823_142956_865257
+    translation_error_mm: 14.007950283243169
+    rotation_error_deg: 1.327286376770778
+    reprojection_rms_px: 0.12736999507561475
+  - name: capture_20260823_142958_462462
+    translation_error_mm: 13.983561624230397
+    rotation_error_deg: 1.3545665254767503
+    reprojection_rms_px: 0.11768576827057588
+  - name: capture_20260823_143000_051592
+    translation_error_mm: 13.931748594398458
+    rotation_error_deg: 1.4797699913705682
+    reprojection_rms_px: 0.14492632034528516
+  - name: capture_20260823_143001_611993
+    translation_error_mm: 13.846791104000953
+    rotation_error_deg: 1.3672722209885333
+    reprojection_rms_px: 0.11912595454286747
+  - name: capture_20260823_143003_216766
+    translation_error_mm: 13.892340429208616
+    rotation_error_deg: 1.2840596612111557
+    reprojection_rms_px: 0.11985039458127081
+  - name: capture_20260823_143004_813120
+    translation_error_mm: 13.8657393132152
+    rotation_error_deg: 1.3855109231881917
+    reprojection_rms_px: 0.11434528352139356
+  - name: capture_20260823_143006_412996
+    translation_error_mm: 13.91142283790742
+    rotation_error_deg: 1.414856393229168
+    reprojection_rms_px: 0.142722047720988
+  - name: capture_20260823_143008_020754
+    translation_error_mm: 13.942727650089978
+    rotation_error_deg: 1.3999071020641058
+    reprojection_rms_px: 0.14945083660604097
+  - name: capture_20260823_143009_652799
+    translation_error_mm: 13.890846193293772
+    rotation_error_deg: 1.3296300440651074
+    reprojection_rms_px: 0.12910356638520792
+  - name: capture_20260823_143053_828079
+    translation_error_mm: 7.062770477629777
+    rotation_error_deg: 1.8069586248109868
+    reprojection_rms_px: 0.155915894594214
+  - name: capture_20260823_143055_461761
+    translation_error_mm: 7.127063360654597
+    rotation_error_deg: 1.8476159766980302
+    reprojection_rms_px: 0.1451331362863667
+  - name: capture_20260823_143057_086407
+    translation_error_mm: 7.108633434552339
+    rotation_error_deg: 1.861266412668892
+    reprojection_rms_px: 0.15840120790468964
+  - name: capture_20260823_143058_660429
+    translation_error_mm: 7.120003201722789
+    rotation_error_deg: 1.8099704090431388
+    reprojection_rms_px: 0.15228752368017337
+  - name: capture_20260823_143100_216216
+    translation_error_mm: 7.0664844937516165
+    rotation_error_deg: 1.7850971261897932
+    reprojection_rms_px: 0.1584950572770693
+  - name: capture_20260823_143101_876246
+    translation_error_mm: 7.110684634488651
+    rotation_error_deg: 1.8103327265197902
+    reprojection_rms_px: 0.17731155007078636
+  - name: capture_20260823_143103_497779
+    translation_error_mm: 7.1002602056500566
+    rotation_error_deg: 1.7710530380775462
+    reprojection_rms_px: 0.13280358106743334
+  - name: capture_20260823_143105_043553
+    translation_error_mm: 7.137127491733615
+    rotation_error_deg: 1.8086582938212863
+    reprojection_rms_px: 0.14190275698721963
+  - name: capture_20260823_143106_639058
+    translation_error_mm: 7.140229449912613
+    rotation_error_deg: 1.8581574059756154
+    reprojection_rms_px: 0.17247269275834745
+  - name: capture_20260823_143108_236063
+    translation_error_mm: 7.121700614472768
+    rotation_error_deg: 1.7711688929501863
+    reprojection_rms_px: 0.14638691143707802
+  - name: capture_20260823_143156_581484
+    translation_error_mm: 14.178147791277869
+    rotation_error_deg: 2.6842456913241692
+    reprojection_rms_px: 0.1369074953739145
+  - name: capture_20260823_143158_215247
+    translation_error_mm: 13.801408002132975
+    rotation_error_deg: 2.7857257332282725
+    reprojection_rms_px: 0.1575215093774944
+  - name: capture_20260823_143159_901809
+    translation_error_mm: 13.623672087156075
+    rotation_error_deg: 2.6768018682833574
+    reprojection_rms_px: 0.15661479229296532
+  - name: capture_20260823_143201_471090
+    translation_error_mm: 13.924301089329523
+    rotation_error_deg: 2.7157233292529326
+    reprojection_rms_px: 0.14308519332971203
+  - name: capture_20260823_143203_026829
+    translation_error_mm: 14.431834536541635
+    rotation_error_deg: 2.7838003528308186
+    reprojection_rms_px: 0.13264995459114182
+  - name: capture_20260823_143204_558938
+    translation_error_mm: 14.274718337768126
+    rotation_error_deg: 2.7306120949299024
+    reprojection_rms_px: 0.17070443752998962
+  - name: capture_20260823_143206_161369
+    translation_error_mm: 13.69741237013839
+    rotation_error_deg: 2.66168698826863
+    reprojection_rms_px: 0.146587867766209
+  - name: capture_20260823_143207_705550
+    translation_error_mm: 13.620577274351108
+    rotation_error_deg: 2.569918341528796
+    reprojection_rms_px: 0.15754284217402753
+  - name: capture_20260823_143209_417675
+    translation_error_mm: 13.646229010198867
+    rotation_error_deg: 2.589252559624058
+    reprojection_rms_px: 0.20612694332280407
+  - name: capture_20260823_143211_061425
+    translation_error_mm: 14.122369100894412
+    rotation_error_deg: 2.6498381966620337
+    reprojection_rms_px: 0.16840718949303146
+  - name: capture_20260823_143250_170365
+    translation_error_mm: 6.217533145967459
+    rotation_error_deg: 1.9771379314524722
+    reprojection_rms_px: 0.2461573513666684
+  - name: capture_20260823_143251_809954
+    translation_error_mm: 6.403976899541934
+    rotation_error_deg: 2.061535974571315
+    reprojection_rms_px: 0.23133970225303518
+  - name: capture_20260823_143253_386535
+    translation_error_mm: 6.65020956475028
+    rotation_error_deg: 2.130655547273385
+    reprojection_rms_px: 0.20993090339877157
+  - name: capture_20260823_143255_005107
+    translation_error_mm: 6.026951419488836
+    rotation_error_deg: 1.913354317301849
+    reprojection_rms_px: 0.2037769780695858
+  - name: capture_20260823_143256_616761
+    translation_error_mm: 6.265303867182592
+    rotation_error_deg: 1.9780784875073625
+    reprojection_rms_px: 0.20067246476173975
+  - name: capture_20260823_143258_190916
+    translation_error_mm: 6.4690306175646635
+    rotation_error_deg: 1.9697373271595655
+    reprojection_rms_px: 0.20700870131946783
+  - name: capture_20260823_143259_785694
+    translation_error_mm: 6.420965634941834
+    rotation_error_deg: 2.03868958101316
+    reprojection_rms_px: 0.2397421447442009
+  - name: capture_20260823_143301_469174
+    translation_error_mm: 6.094799300588196
+    rotation_error_deg: 2.0156211219635716
+    reprojection_rms_px: 0.2231798632554871
+  - name: capture_20260823_143303_216232
+    translation_error_mm: 6.367740522737197
+    rotation_error_deg: 2.0254686610403643
+    reprojection_rms_px: 0.2562337616370283
+  - name: capture_20260823_143304_836738
+    translation_error_mm: 6.432656030441218
+    rotation_error_deg: 1.9892484442825848
+    reprojection_rms_px: 0.2049482754918694
+  - name: capture_20260823_143401_001423
+    translation_error_mm: 7.356983168150504
+    rotation_error_deg: 1.922261776095728
+    reprojection_rms_px: 0.23095910284379478
+  - name: capture_20260823_143402_602779
+    translation_error_mm: 7.456929360331417
+    rotation_error_deg: 1.9540551410426785
+    reprojection_rms_px: 0.2735037845711414
+  - name: capture_20260823_143404_285518
+    translation_error_mm: 7.1101550864322745
+    rotation_error_deg: 1.873823898521974
+    reprojection_rms_px: 0.23292704642107892
+  - name: capture_20260823_143405_918489
+    translation_error_mm: 7.081471550033519
+    rotation_error_deg: 1.8468491877897615
+    reprojection_rms_px: 0.25026377508315284
+  - name: capture_20260823_143407_550870
+    translation_error_mm: 7.281626784590096
+    rotation_error_deg: 1.862767739563694
+    reprojection_rms_px: 0.2073397969302527
+  - name: capture_20260823_143409_154911
+    translation_error_mm: 7.4648326197001955
+    rotation_error_deg: 1.94363687189516
+    reprojection_rms_px: 0.29688936660802995
+  - name: capture_20260823_143410_786937
+    translation_error_mm: 7.393769471960793
+    rotation_error_deg: 1.93073848193159
+    reprojection_rms_px: 0.1812096880793984
+  - name: capture_20260823_143412_463373
+    translation_error_mm: 7.217589432332721
+    rotation_error_deg: 1.9109895459040585
+    reprojection_rms_px: 0.25919191186009627
+  - name: capture_20260823_143414_089101
+    translation_error_mm: 7.143518805276003
+    rotation_error_deg: 1.8514697628945165
+    reprojection_rms_px: 0.268076157844809
+  - name: capture_20260823_143415_703597
+    translation_error_mm: 7.290130573599858
+    rotation_error_deg: 1.913843041333518
+    reprojection_rms_px: 0.25555669280708726
+  - name: capture_20260823_143458_998668
+    translation_error_mm: 11.172877071372035
+    rotation_error_deg: 2.655719789994914
+    reprojection_rms_px: 0.1392490921487775
+  - name: capture_20260823_143500_640667
+    translation_error_mm: 11.184173898986174
+    rotation_error_deg: 2.687160469610745
+    reprojection_rms_px: 0.1573083627739939
+  - name: capture_20260823_143502_221884
+    translation_error_mm: 11.174849383562174
+    rotation_error_deg: 2.678122882926531
+    reprojection_rms_px: 0.17089579255821447
+  - name: capture_20260823_143503_857931
+    translation_error_mm: 11.13932763456445
+    rotation_error_deg: 2.6728117971447523
+    reprojection_rms_px: 0.21078616835667754
+  - name: capture_20260823_143505_438895
+    translation_error_mm: 11.124671899732714
+    rotation_error_deg: 2.613613009789226
+    reprojection_rms_px: 0.181728695038637
+  - name: capture_20260823_143507_073100
+    translation_error_mm: 11.142703048303074
+    rotation_error_deg: 2.7029372174125466
+    reprojection_rms_px: 0.19657623127873328
+  - name: capture_20260823_143508_628245
+    translation_error_mm: 11.118497285958297
+    rotation_error_deg: 2.663080431356637
+    reprojection_rms_px: 0.183518299699111
+  - name: capture_20260823_143510_272686
+    translation_error_mm: 11.136695957166332
+    rotation_error_deg: 2.6614230261951985
+    reprojection_rms_px: 0.15257396952973085
+  - name: capture_20260823_143511_871465
+    translation_error_mm: 11.05711181528952
+    rotation_error_deg: 2.6255253784211576
+    reprojection_rms_px: 0.17746152260467124
+  - name: capture_20260823_143513_465068
+    translation_error_mm: 11.08370903899104
+    rotation_error_deg: 2.677720092839947
+    reprojection_rms_px: 0.18074409314365883
+  - name: capture_20260823_143555_732127
+    translation_error_mm: 13.109157244672243
+    rotation_error_deg: 1.4681646390716776
+    reprojection_rms_px: 0.15588899827063335
+  - name: capture_20260823_143557_359610
+    translation_error_mm: 13.15554137915433
+    rotation_error_deg: 1.4237080247076068
+    reprojection_rms_px: 0.1651880397302085
+  - name: capture_20260823_143558_976597
+    translation_error_mm: 13.087431195649302
+    rotation_error_deg: 1.4203871957751573
+    reprojection_rms_px: 0.1559624710501101
+  - name: capture_20260823_143600_611562
+    translation_error_mm: 13.089560849404656
+    rotation_error_deg: 1.4473312425764127
+    reprojection_rms_px: 0.16311601886022958
+  - name: capture_20260823_143602_208993
+    translation_error_mm: 13.139156003579613
+    rotation_error_deg: 1.4078800693583255
+    reprojection_rms_px: 0.13712665825296205
+  - name: capture_20260823_143603_924624
+    translation_error_mm: 13.094207185651547
+    rotation_error_deg: 1.447390153300852
+    reprojection_rms_px: 0.1919080425523113
+  - name: capture_20260823_143605_522924
+    translation_error_mm: 13.155157101042562
+    rotation_error_deg: 1.4553839391790553
+    reprojection_rms_px: 0.1922965008056291
+  - name: capture_20260823_143607_130287
+    translation_error_mm: 13.108550091372592
+    rotation_error_deg: 1.4845565939582328
+    reprojection_rms_px: 0.19962690266822383
+  - name: capture_20260823_143608_719035
+    translation_error_mm: 13.131663394752056
+    rotation_error_deg: 1.472598463186348
+    reprojection_rms_px: 0.11073896156142439
+  - name: capture_20260823_143610_350297
+    translation_error_mm: 13.130652126875876
+    rotation_error_deg: 1.5284086270701454
+    reprojection_rms_px: 0.1400676859164778
+held_out_validation:
+  accepted: false
+  acceptance_limits:
+    translation_mm_per_sample: 15.0
+    rotation_deg_per_sample: 1.5
+  translation_rms_mm: 5.125021865587704
+  translation_max_mm: 7.150520391485051
+  rotation_rms_deg: 1.5791467217196333
+  rotation_max_deg: 2.132225843444488
+  per_sample:
+  - name: capture_20260823_143648_795032
+    translation_error_mm: 6.6441465033093845
+    rotation_error_deg: 1.0104764450697934
+    reprojection_rms_px: 0.14795443696478194
+  - name: capture_20260823_143650_504448
+    translation_error_mm: 6.674063431947835
+    rotation_error_deg: 1.199841521711902
+    reprojection_rms_px: 0.13786926749350004
+  - name: capture_20260823_143652_120494
+    translation_error_mm: 6.487541085946917
+    rotation_error_deg: 1.0367214096384698
+    reprojection_rms_px: 0.1498850011032385
+  - name: capture_20260823_143653_759185
+    translation_error_mm: 6.8283997831982015
+    rotation_error_deg: 1.1295276458212882
+    reprojection_rms_px: 0.1828407634123958
+  - name: capture_20260823_143655_435902
+    translation_error_mm: 6.755551521228484
+    rotation_error_deg: 1.2234919765946186
+    reprojection_rms_px: 0.146359208401678
+  - name: capture_20260823_143657_062183
+    translation_error_mm: 6.580899820915402
+    rotation_error_deg: 1.0279140205003252
+    reprojection_rms_px: 0.1506009732328837
+  - name: capture_20260823_143658_669171
+    translation_error_mm: 6.778974050346881
+    rotation_error_deg: 1.2109767646126912
+    reprojection_rms_px: 0.18105030119076465
+  - name: capture_20260823_143700_242629
+    translation_error_mm: 7.150520391485051
+    rotation_error_deg: 1.0500604468925683
+    reprojection_rms_px: 0.29017997086663105
+  - name: capture_20260823_143701_848618
+    translation_error_mm: 6.406583622535038
+    rotation_error_deg: 0.795900209365292
+    reprojection_rms_px: 0.1359746120497821
+  - name: capture_20260823_143703_495523
+    translation_error_mm: 6.698646670422501
+    rotation_error_deg: 1.0571916186655197
+    reprojection_rms_px: 0.14387847390700473
+  - name: capture_20260823_143730_337123
+    translation_error_mm: 5.064696470298373
+    rotation_error_deg: 2.0900144193961547
+    reprojection_rms_px: 0.1402395079598648
+  - name: capture_20260823_143731_977960
+    translation_error_mm: 5.201516561416946
+    rotation_error_deg: 1.9951241860198108
+    reprojection_rms_px: 0.11750393349268758
+  - name: capture_20260823_143733_583077
+    translation_error_mm: 5.347948872745802
+    rotation_error_deg: 2.128494878924173
+    reprojection_rms_px: 0.12828726837922488
+  - name: capture_20260823_143735_168423
+    translation_error_mm: 5.045748030196704
+    rotation_error_deg: 2.037895755349953
+    reprojection_rms_px: 0.10929017284270953
+  - name: capture_20260823_143736_773946
+    translation_error_mm: 4.9768530217044304
+    rotation_error_deg: 2.077571679948741
+    reprojection_rms_px: 0.14125389353676804
+  - name: capture_20260823_143738_364276
+    translation_error_mm: 5.151538554207143
+    rotation_error_deg: 1.9969394368247926
+    reprojection_rms_px: 0.11632642340885724
+  - name: capture_20260823_143739_943496
+    translation_error_mm: 5.23222626498643
+    rotation_error_deg: 2.132225843444488
+    reprojection_rms_px: 0.1259642244877503
+  - name: capture_20260823_143741_564146
+    translation_error_mm: 4.9176484100011
+    rotation_error_deg: 2.0574586322164063
+    reprojection_rms_px: 0.10267081114650876
+  - name: capture_20260823_143743_153521
+    translation_error_mm: 5.175960881105289
+    rotation_error_deg: 2.0255022636653313
+    reprojection_rms_px: 0.123672596980797
+  - name: capture_20260823_143744_789870
+    translation_error_mm: 5.106243692839084
+    rotation_error_deg: 1.8655041246476585
+    reprojection_rms_px: 0.113669258145724
+  - name: capture_20260823_143818_730907
+    translation_error_mm: 2.72128483209065
+    rotation_error_deg: 1.410823021949638
+    reprojection_rms_px: 0.08997833787520086
+  - name: capture_20260823_143820_354273
+    translation_error_mm: 2.921160701631349
+    rotation_error_deg: 1.4949038180833711
+    reprojection_rms_px: 0.11368164163733402
+  - name: capture_20260823_143821_901248
+    translation_error_mm: 2.295109093192481
+    rotation_error_deg: 1.461667987823337
+    reprojection_rms_px: 0.10192960786019276
+  - name: capture_20260823_143823_532725
+    translation_error_mm: 2.866594713242557
+    rotation_error_deg: 1.423493937702496
+    reprojection_rms_px: 0.09259903809505501
+  - name: capture_20260823_143825_109911
+    translation_error_mm: 2.7315159579965305
+    rotation_error_deg: 1.427244801204285
+    reprojection_rms_px: 0.12979015725607035
+  - name: capture_20260823_143826_688745
+    translation_error_mm: 2.5901003050752083
+    rotation_error_deg: 1.6368566230594863
+    reprojection_rms_px: 0.10104232428002424
+  - name: capture_20260823_143828_268689
+    translation_error_mm: 2.848868860264719
+    rotation_error_deg: 1.4429007604340465
+    reprojection_rms_px: 0.09621585849410737
+  - name: capture_20260823_143829_915345
+    translation_error_mm: 2.8393924889349034
+    rotation_error_deg: 1.467015148348234
+    reprojection_rms_px: 0.08585028679165316
+  - name: capture_20260823_143831_557967
+    translation_error_mm: 2.70711887699992
+    rotation_error_deg: 1.3759643572028422
+    reprojection_rms_px: 0.10379052115729649
+  - name: capture_20260823_143833_159251
+    translation_error_mm: 3.0046503057072638
+    rotation_error_deg: 1.4818446898085174
+    reprojection_rms_px: 0.11200615846935769
