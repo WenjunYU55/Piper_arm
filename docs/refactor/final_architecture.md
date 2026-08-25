@@ -54,12 +54,17 @@ algorithm, or Tesseract behavior changed during Phase 10.
 | `configuration.py` | Typed immutable startup configuration for the mission coordinator and viewpoint executor, preserving all ROS names/defaults/overrides. |
 | `mission_core.py` | Mission phases, session state, queue/deduplication records, and result primitives. |
 | `mission_engine.py` | The admitted autonomous mission sequence and terminal shutdown sequence. |
+| `mission_artifacts.py` | Calibration identity plus guarded identity-matched failed-dataset discovery and zero-capture deletion. |
+| `mission_ros_operations.py` | Engine-facing ROS/process/readiness/home/service operations adapter; no mission sequencing. |
 | `process_supervisor.py` | Exact owned-process generations, environment construction, health checks, reverse-order group shutdown, and shutdown reports. |
 | `safety_evaluator.py` | Pure named immutable runtime-gate policy mapping. It contains no ROS, thresholds, telemetry evaluator, command or second permission authority. |
 | `plan_authorizer.py` | Exact mission/plan identity, expiry, target drift, dependency evidence, typed authorization decisions, and configured-home stage/endpoint policy. |
 | `trajectory_runner.py` | Pure scheduling and feedback decisions for one already-authorized Tesseract trajectory. |
 | `capture_coordinator.py` | Settling-to-capture sequencing and typed capture retry/replacement/abort decisions. |
 | `executor_recovery.py` | Typed retry, reacquire, replan, and abort policy. |
+| `executor_session.py` | Sole mutable executor application-state owner for plan, motion, acquisition, capture, recovery, achieved pose, home, and authorization. |
+| Executor plan/safety/home helpers | Pure SDK-path normalization, approval-bound scene/path classifications, and home-settling decisions. |
+| Tesseract focused modules | Candidate/NBV policy, schema core, canonical hashing, atomic spool mechanics, and explicit worker composition behind stable façades. |
 | Scan/perception helpers | Geometry, acquisition, coverage, scan history, motion validation, occlusion policy, capture persistence, and reconstruction job contracts. |
 
 ### ROS boundary layer
@@ -67,8 +72,8 @@ algorithm, or Tesseract behavior changed during Phase 10.
 | Boundary | Ownership |
 |---|---|
 | `target_scan_gateway_node.py` | Always-on external action/service endpoint, durable spool handoff, result replay, and deferred reconstruction trigger. |
-| `target_scan_mission_node.py` | ROS action admission/queueing, message conversion, feedback/result publication, service adapters, telemetry callbacks, and dependency injection into `MissionEngine`. |
-| `scan_viewpoint_executor_node.py` | Sole optional autonomous joint-command publisher; ROS plan normalization, exact path/geometry revalidation, mission-authorized direct home service, telemetry adapters, command publication, capture service calls, and status/history publication. |
+| `target_scan_mission_node.py` | ROS action admission/queueing, message conversion, feedback/result publication, spool processing, telemetry callbacks, node lifecycle, and dependency injection into `MissionEngine`. |
+| `scan_viewpoint_executor_node.py` | Sole optional autonomous joint-command publisher; ROS entities/conversion, service futures, exact path/geometry revalidation orchestration, command publication, capture calls, and status/history publication. |
 | Acquisition/planning/perception/capture nodes | Their existing topic/service adapters and subsystem-specific algorithms; they do not own the mission sequence. |
 | PiPER driver | CAN/SDK authority, arm enable service, command input, and low-level feedback/limit publication. |
 | Tesseract bridge/worker | Typed spool planning contract, collision/IK/path qualification, bounded pass-through smoothing with dense fallback, and DIRECT_MOVEJ-versus-streamed-detour evidence. It no longer owns production configured-home planning. |

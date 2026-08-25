@@ -142,6 +142,9 @@ if(BUILD_TESTING)
   ament_add_pytest_test(
     test_phase7_viewpoint_components
     test/test_phase7_viewpoint_components.py)
+  ament_add_pytest_test(
+    test_core_stack_modularization
+    test/test_core_stack_modularization.py)
   ament_add_pytest_test(test_nbv_coverage test/test_nbv_coverage.py)
   ament_add_pytest_test(
     test_nbv_regression_replay test/test_nbv_regression_replay.py)

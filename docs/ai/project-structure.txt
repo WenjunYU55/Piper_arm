@@ -67,7 +67,9 @@ piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/surface_c
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/reconstruction_jobs.py - durable mesh job identity, base-home correlation and state transitions
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/process_supervisor.py - exact mission-owned process-group startup, health, generation logs and bounded policy-driven shutdown
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission_engine.py - sole mission/shutdown authority including non-command release during operator recovery
-piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_scan_mission_node.py - ROS adapter and fresh-six-disabled reconciliation of exact previous-generation process handles before admission
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission_artifacts.py - guarded calibration identity and identity-matched zero-capture dataset cleanup
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission_ros_operations.py - MissionEngine-facing ROS/process/readiness/service/home adapter
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_scan_mission_node.py - ROS action/queue/spool/callback/lifecycle façade
 piper_ros_foxy/src/piper_mobile_manipulation/test/test_process_supervisor.py - fake-process startup/crash/escalation/repeated-generation/ownership regressions
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/safety_evaluator.py - pure named immutable runtime evidence policies; no ROS, thresholds, telemetry evaluation or second permission authority
 piper_ros_foxy/src/piper_mobile_manipulation/test/test_safety_evaluator.py - all-mode named-policy boundary and immutability regressions
@@ -83,7 +85,19 @@ piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_cl
 reconstruction/offline_resegment.py - command-free per-capture fresh GroundingDINO/SAM2 target masks, exact manifest/model generation identity, no live-mask fallback, compact comparison overlays and temporary-input cleanup
 reconstruction/tsdf_reconstruct.py - immutable target-only TSDF fusion with selectable captured or offline-resegmented semantic support, robot-pose, bounded target GICP and target-excluded static-scene RGB-D pose-graph options; atomically emits untouched raw plus connected-target cleaned meshes, retains/fails substantial splits and uses raw quality evidence; 1 mm voxel and 5 mm truncation defaults; NBV resolution is separate
 piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/bridge_node.py - command-free snapshot bridge, post-cache view-generation receipts, direction-diverse bounded NBV shortlist and selected-plan provenance publication
+piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/bridge_candidates.py - ROS-free candidate policy, target-envelope adaptation and bounded information-ranked ray selection
+piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/contract_core.py - shared ContractError identity
+piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/contract_hashing.py - canonical JSON bytes and stable SHA-256 binding
+piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/contract_request.py - schema-v5 request validation
+piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/contract_response.py - schema-v5 response validation
+piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/contract_spool.py - guarded atomic request/response/health queues
+piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/contract_validation.py - shared schema constants and validation primitives
+piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/worker_components.py - explicit collision-scene, aim/IK, trajectory and top-level worker composition
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/executor_recovery.py - typed retry/reacquire/replan/abort policy
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/executor_session.py - sole production executor plan/motion/acquisition/capture/recovery/achieved-pose/home state
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/executor_plan_normalization.py - pure validated SDK command-path normalization
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/executor_safety_validation.py - pure approval-bound scene and path classifications
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/executor_home_handling.py - pure terminal-home and settling classifications
 piper_ros_foxy/src/piper_mobile_manipulation/test/test_phase7_viewpoint_components.py - Phase 7 component and recovery-matrix regressions
 piper_ros_foxy/src/piper_mobile_manipulation/test/test_gpu_geometry_launch.py - critical GPU-geometry child-exit supervision contract
 piper_ros_foxy/src/piper_mobile_manipulation/test/test_heavy_refresh_bridge.py - correlated busy-worker retention and exactly-once deferred refresh regressions

@@ -1,5 +1,10 @@
 schema_version: 1
 document: system_map
+core_stack_internal_boundaries_2026_08_25:
+  mission: {sequence_and_shutdown: mission_engine.py, artifacts: mission_artifacts.py, engine_ros_operations: mission_ros_operations.py, ROS_action_queue_spool_lifecycle: target_scan_mission_node.py}
+  executor: {application_state: executor_session.py, pure_plan_safety_home_decisions: [executor_plan_normalization.py, executor_safety_validation.py, executor_home_handling.py], ROS_services_futures_commands_status: scan_viewpoint_executor_node.py}
+  tesseract: {candidate_policy: bridge_candidates.py, ROS_bridge: bridge_node.py, request_validation: contract_request.py, response_validation: contract_response.py, shared_validation: contract_validation.py, canonical_hashing: contract_hashing.py, atomic_spool: contract_spool.py, compatibility_facade: contract.py, explicit_composition: worker_components.py, feasibility_backend: worker.py}
+  stable_facades: [target_scan_mission_node.py, scan_viewpoint_executor_node.py, bridge_node.py, contract.py, worker.py]
 trusted_silhouette_envelope_flow_2026_08_25:
   sequence: [fresh correlated SAM2 mask and qualified target depth, bounded contour projection in the camera frame, private exact-stamp shape publication, authoritative tracked target at the same source stamp, exact-time camera-to-base transform, silhouette cross-axis midpoint plus half-width depth origin, one mission-frozen 360-degree revolution envelope, envelope-aware ray interval prequalification, unchanged information ranking and shortlist, existing Tesseract box-obstacle feasibility, achieved motion and capture validation, accepted-only coverage update]
   load_order_contracts:

@@ -1,5 +1,21 @@
 schema_version: 1
 document: module_ownership
+core_stack_modularization_2026_08_25:
+  owners:
+    mission_sequence_and_shutdown: piper_mobile_manipulation/mission_engine.py
+    mission_artifacts: piper_mobile_manipulation/mission_artifacts.py
+    mission_engine_ros_operations: piper_mobile_manipulation/mission_ros_operations.py
+    executor_application_state: piper_mobile_manipulation/executor_session.py
+    executor_ros_and_command_facade: piper_mobile_manipulation/scan_viewpoint_executor_node.py
+    bridge_candidate_policy: piper_tesseract_foxy/bridge_candidates.py
+    contract_validation: [piper_tesseract_foxy/contract_validation.py, piper_tesseract_foxy/contract_request.py, piper_tesseract_foxy/contract_response.py]
+    contract_hashing_and_spool: [piper_tesseract_foxy/contract_hashing.py, piper_tesseract_foxy/contract_spool.py]
+    contract_compatibility_facade: piper_tesseract_foxy/contract.py
+    motion_feasibility: piper_tesseract_foxy/worker.py
+    worker_composition: piper_tesseract_foxy/worker_components.py
+  compatibility_facades: [target_scan_mission_node.py, scan_viewpoint_executor_node.py, bridge_node.py, contract.py, worker.py]
+  unchanged: [ROS actions services topics messages QoS and parameters, process commands, TF semantics, mission phases, 20 Hz execution, motion speeds and thresholds, accepted-capture-only coverage, schema-v5 canonical bytes and errors, executable entrypoints]
+  required_retests: [Phase-1 golden mission and executor characterization, legacy import tests, complete mobile and Tesseract suites, five-package build, colcon test, command-free core and compact Tesseract qualification, staged supervised physical checklist]
 trusted_target_envelope_2026_08_25:
   owners:
     target_shape_measurement: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/depth_to_3d_node.py

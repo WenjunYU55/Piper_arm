@@ -50,19 +50,19 @@ The ROS workspace contains five packages: `piper`, `piper_description`,
 | `piper_ctrl_single_node` | `piper_single_ctrl` / `piper_ctrl_single_node.py` | Sole PiPER SDK/CAN adapter; enable/disable, MoveJ input, 200 Hz feedback and controller-derived limits |
 | `piper_live_robot_state_publisher` | `robot_state_publisher` | Publishes the live robot model from `/joint_states_single` |
 | `piper_gui_joint_editor` | `piper_joint_preview_node.py` | Preview-only joint-state bridge |
-| `tesseract_plan_bridge` | `tesseract_plan_bridge` / `bridge_node.py` | Snapshots current ROS state, validates readiness, hashes requests, exchanges typed spool jobs with the isolated worker |
-| `tesseract_plan_worker` | `worker.py` in isolated runtime | OMPL/ISP planning, IK, collision validation and timing |
+| `tesseract_plan_bridge` | `tesseract_plan_bridge` / `bridge_node.py` plus `bridge_candidates.py` | Snapshots current ROS state and owns lifecycle; focused pure code validates candidate policy and bounded NBV handoff; stable contract code hashes and spools requests |
+| `tesseract_plan_worker` | `worker.py` plus `worker_components.py` in isolated runtime | Explicitly composed OMPL/ISP planning, IK, collision validation and timing |
 
 ### Mission, acquisition and scan
 
 | Node | Source | Role |
 |---|---|---|
 | `target_scan_gateway` | `target_scan_gateway_node.py` | Always-on tracked-robot-facing action/service gateway, disk spool and deferred reconstruction trigger |
-| `target_scan_mission` | `target_scan_mission_node.py` plus pure `mission_engine.py` | Node owns ROS queue/action/feedback/result and durable boundaries; MissionEngine owns the existing admitted startup, retry, acquisition, scan and terminal shutdown sequence through injected operations |
+| `target_scan_mission` | mission-node façade, `mission_engine.py`, `mission_ros_operations.py`, and `mission_artifacts.py` | Node owns ROS queue/action/feedback/result and durable boundaries; MissionEngine owns the sequence; focused modules own its ROS operations and guarded artifacts |
 | `scan_target_acquisition` | `scan_target_acquisition_node.py` | Converts one typed rough target request into centered then compact cardinal looks |
 | `scan_viewpoint_planner` | `scan_viewpoint_planner_node.py` | Generates target-centered scan candidates and coverage payloads |
 | `viewpoint_reachability_filter` | `viewpoint_reachability_filter_node.py` | Command-free coarse filtering; Tesseract remains authoritative |
-| `scan_viewpoint_executor` | `scan_viewpoint_executor_node.py` | Sole optional `/joint_ctrl_single` publisher for scans; validates/approves/streams plans, holds, settles and invokes capture |
+| `scan_viewpoint_executor` | executor-node façade plus `executor_session.py` and focused decision modules | Sole optional `/joint_ctrl_single` publisher for scans; one session owns application state while the node validates/approves/streams plans, holds, settles and invokes capture |
 | `scan_capture` | `scan_capture_node.py` | Persists synchronized RGB, depth, mask, camera info, TF, joints and metadata after service-mode acceptance |
 | `scan_quality` | `scan_quality_node.py` | Scores settled RGB-D/mask observations |
 | `active_scan_debug_overlay` | `active_scan_debug_overlay_node.py` | Visual diagnostics only |

@@ -1,5 +1,11 @@
 schema_version: 1
 document: implemented_features_bookmark
+core_stack_modularization_2026_08_25:
+  state: software_implemented_physical_requalification_pending
+  authority: [mission_engine.py, mission_artifacts.py, mission_ros_operations.py, executor_session.py, scan_viewpoint_executor_node.py, bridge_candidates.py, bridge_node.py, contract_validation.py, contract_request.py, contract_response.py, contract_hashing.py, contract_spool.py, contract.py, worker_components.py, worker.py]
+  unchanged: [public ROS interfaces and defaults, mission and shutdown behavior, 20 Hz command order, NBV and accepted-coverage policy, schema-v5 bytes and errors, worker feasibility, executable entrypoints]
+  worker_integration: WorkerOrchestrator owns the live request flow through collision-scene aim/IK and trajectory components; TesseractBackend.plan remains only as a compatibility delegate.
+  physical_status: No hardware process or autonomous command was started by this ownership refactor; use the staged supervised checklist after all software gates pass.
 trusted_silhouette_revolution_envelope_2026_08_25:
   status: software_implemented_physical_qualification_pending
   capability: A fresh qualified target silhouette is centred across its measured cross-axis width, placed one exact half-width behind the visible surface and revolved once into a conservative mission-frozen planning envelope. It raises or removes unsafe target-ray standoff intervals, enforces 250 mm camera-to-surface clearance and passes bounded collision boxes to the unchanged Tesseract feasibility path.

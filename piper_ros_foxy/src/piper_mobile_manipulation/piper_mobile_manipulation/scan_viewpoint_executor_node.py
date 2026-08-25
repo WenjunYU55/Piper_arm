@@ -25,7 +25,6 @@ from piper_mobile_manipulation.msg import (
 )
 from piper_mobile_manipulation.failure_model import (
     as_failure,
-    FailureTag,
 )
 from piper_mobile_manipulation.configuration import (
     configured_value,
@@ -44,6 +43,27 @@ from piper_mobile_manipulation.executor_recovery import (
     RecoveryPolicy,
     runtime_gate_action as _runtime_gate_action,
     runtime_refresh_action,
+)
+from piper_mobile_manipulation.executor_session import (
+    EXECUTOR_SESSION_FIELDS,
+    ExecutorSession,
+    SessionField,
+)
+from piper_mobile_manipulation.executor_home_handling import (
+    abort_return_home_blocker as _home_abort_return_blocker,
+    home_position_sample_settled as _home_position_sample_settled,
+    terminal_home_hold_required as _terminal_home_hold_required,
+)
+from piper_mobile_manipulation.executor_plan_normalization import (
+    sdk_command_path as _sdk_command_path,
+)
+from piper_mobile_manipulation.executor_safety_validation import (
+    approved_multiview_motion_obstacle_snapshot as _approved_multiview_scene,
+    approved_retrace_validation_reasons as _approved_retrace_reasons,
+    approved_return_home_obstacle_snapshot as _approved_home_scene,
+    bootstrap_abort_retrace_uses_static_scene as _bootstrap_static_scene,
+    missing_obstacles_can_wait as _missing_obstacles_can_wait,
+    obstacle_scene_runtime_reasons as _obstacle_scene_runtime_reasons,
 )
 from piper_mobile_manipulation.plan_authorizer import (
     configured_home_endpoint_rejection,
@@ -93,10 +113,6 @@ from piper_mobile_manipulation.scan_trajectory import (
 )
 
 
-# Private driver/executor handoff contract.  Ordinary configured-home stages
-# retain ``home_goal_tolerance_rad``; STARTUP_WRIST alone must reach the
-# driver's ready-zero window before ROUGH_HOME may send ordinary J6 commands.
-STARTUP_WRIST_READY_TOLERANCE_RAD = 0.03
 from piper_mobile_manipulation.safety_evaluator import (
     ObstacleAuthority,
     RuntimeGatePolicy,
@@ -117,6 +133,10 @@ from piper_mobile_manipulation.trajectory_runner import (
 )
 
 
+# Private driver/executor handoff contract.  Ordinary configured-home stages
+# retain ``home_goal_tolerance_rad``; STARTUP_WRIST alone must reach the
+# driver's ready-zero window before ROUGH_HOME may send ordinary J6 commands.
+STARTUP_WRIST_READY_TOLERANCE_RAD = 0.03
 ACTIVE_STATES = {
     'WAITING_FOR_RUNTIME_REFRESH',
     'MOVING', 'SETTLING', 'SETTLING_HOME',
@@ -127,30 +147,6 @@ ACTIVE_STATES = {
 }
 MAX_RGBD_CAPTURE_READINESS_RETRIES = 10
 MAX_FINAL_CAPTURE_AIM_ERROR_DEG = 5.0
-
-
-def sdk_command_path(path, velocities, accelerations, times, execution_mode,
-                     direct_home=False):
-    """Collapse a fully validated straight chord to one PiPER MoveJ goal."""
-    command_path = [np.asarray(item, dtype=float).copy() for item in path[1:]]
-    command_velocities = [
-        np.asarray(item, dtype=float).copy() for item in velocities[1:]]
-    command_accelerations = [
-        np.asarray(item, dtype=float).copy() for item in accelerations[1:]]
-    command_times = [float(item) for item in times[1:]]
-    mode = str(execution_mode).strip().upper()
-    if mode == 'DIRECT_MOVEJ' and not bool(direct_home):
-        return (
-            [np.asarray(path[-1], dtype=float).copy()],
-            [np.zeros(6, dtype=float)],
-            [np.zeros(6, dtype=float)],
-            [float(times[-1])],
-            False,
-        )
-    return (
-        command_path, command_velocities, command_accelerations,
-        command_times, bool(not direct_home and mode == 'TESSERACT_STREAM'))
-
 
 # Preserve Phase 1/downstream pure-helper imports while their implementation
 # lives in the focused Phase 7 application components.
@@ -209,88 +205,6 @@ def mark_callback_observation(owner, key):
     return observed_at, telemetry_store
 
 
-def approved_return_home_obstacle_snapshot(
-        returning_home, collision_model_qualified, obstacles):
-    """Keep the approval-time scene for the exact planned home segment."""
-    return bool(
-        returning_home
-        and collision_model_qualified
-        and obstacles is not None
-    )
-
-
-def approved_multiview_motion_obstacle_snapshot(
-        plan_kind, state, collision_model_qualified, obstacles):
-    """
-    Keep the approval-time scene only while one exact scan target moves.
-
-    The eye-in-hand SAM2 stream can pause or request a new seed under motion
-    blur.  It is not a dynamic safety scanner.  A MULTIVIEW_SCAN target reaches
-    MOVING only after the current scene was fresh, valid, collision-qualified
-    and bound into the approved direct segment.  Permit that existing snapshot
-    to age until the endpoint; any newly received blocked/invalid scene is still
-    evaluated immediately, and the next target still requires a fresh scene.
-    """
-    return bool(
-        plan_kind == MULTIVIEW_SCAN
-        and state == 'MOVING'
-        and collision_model_qualified
-        and obstacles is not None
-    )
-
-
-def bootstrap_abort_retrace_uses_static_scene(
-        plan_kind, viewpoint_index, collision_model_qualified):
-    """
-    Mirror the approval scene for the exact first acquisition retrace.
-
-    The first rough-acquisition segment is deliberately planned and validated
-    before perception obstacle geometry exists.  A benign operator cancel may
-    reverse only endpoints already executed from that approval; requiring a
-    newly-created obstacle array for the reverse would strand the arm at the
-    acquisition look even though the outward segment used the qualified static
-    robot scene.  This exception never applies to later acquisition looks or
-    multiview motion.
-    """
-    return bool(
-        collision_model_qualified
-        and uses_bootstrap_static_scene(plan_kind, viewpoint_index)
-    )
-
-
-def terminal_home_hold_required(state, reason):
-    """Recognize an abort that has already completed its bounded home retrace."""
-    return bool(
-        str(state) == 'ABORTED'
-        and as_failure(reason).has(FailureTag.TERMINAL_HOME_REACHED)
-    )
-
-
-def home_position_sample_settled(
-        current, target, previous, target_tolerance, motion_tolerance):
-    """Prove a home sample from position, independent of noisy SDK speed."""
-    current_values = np.asarray(current, dtype=float)
-    target_values = np.asarray(target, dtype=float)
-    if (
-            current_values.shape != (6,)
-            or target_values.shape != (6,)
-            or not np.all(np.isfinite(current_values))
-            or not np.all(np.isfinite(target_values))):
-        return False
-    if float(np.max(np.abs(current_values - target_values))) > float(
-            target_tolerance):
-        return False
-    if previous is None:
-        return False
-    previous_values = np.asarray(previous, dtype=float)
-    if (
-            previous_values.shape != (6,)
-            or not np.all(np.isfinite(previous_values))):
-        return False
-    return float(np.max(np.abs(
-        current_values - previous_values))) <= float(motion_tolerance)
-
-
 def target_position_window_sample_settled(
         current, target, anchor, target_tolerance, motion_tolerance):
     """Prove endpoint stability without trusting noisy SDK speed samples."""
@@ -316,80 +230,31 @@ def target_position_window_sample_settled(
     return True, anchor_values.copy()
 
 
-def obstacle_scene_runtime_reasons(scene):
-    """Classify temporary transform gaps separately from unsafe geometry."""
-    instances = list(getattr(scene, 'instances', []))
-    if bool(getattr(scene, 'scene_blocked', True)) and not instances:
-        return ['scene_blocked: %s' % str(
-            getattr(scene, 'blocking_reason', 'unknown reason'))]
-    invalid = [item for item in instances if not bool(
-        getattr(item, 'valid', False))]
-    if not invalid:
-        return []
-    validity_failures = [
-        as_failure(getattr(item, 'validity_reason', ''))
-        for item in invalid
-    ]
-    if validity_failures and all(
-            failure.has(FailureTag.OBSTACLE_TRANSFORM_TRANSIENT)
-            for failure in validity_failures):
-        return ['obstacles data missing or stale']
-    return ['invalid obstacle geometry is present']
-
-
-def abort_return_home_blocker(reason):
-    """Block direct home only when command/feedback authority is untrusted."""
-    return as_failure(reason).blocker
-
-
-def approved_retrace_validation_reasons(reasons):
-    """
-    Keep changing-scene checks without re-rejecting an executed path.
-
-    Every target in the abort history is an endpoint that this executor has
-    already reached from an approval-bound, collision-qualified Tesseract
-    path.  Reversing those same SDK MoveJ segments cannot introduce a new
-    robot self-collision.  The generic validator can nevertheless report the
-    folded-home contact again because it does not have the proposal's bounded
-    recovery metadata.  Ignore only that static self-clearance duplicate;
-    obstacle, floor, limit and malformed-path failures remain blockers.
-    """
-    return [
-        str(reason) for reason in reasons
-        if not as_failure(reason).has(
-            FailureTag.SELF_COLLISION_CLEARANCE_DUPLICATE)
-    ]
-
-
-def missing_obstacles_can_wait(
-        plan_kind, viewpoint_index, state,
-        bootstrap_abort_retrace=False):
-    """
-    Let stationary phases reach the bounded pre-motion refresh.
-
-    Heavy refinement can briefly reseed the live instance stream after an
-    accepted capture. Missing geometry still blocks the next command, but it
-    must not consume the exact approval while the arm is already stopped.
-    """
-    if bool(bootstrap_abort_retrace):
-        return True
-    if (
-            plan_kind == ROUGH_ACQUISITION
-            and (
-                uses_bootstrap_static_scene(plan_kind, viewpoint_index)
-                or state == 'WAITING_FOR_OBSTACLE_SCENE')):
-        return True
-    return (
-        plan_kind == MULTIVIEW_SCAN
-        and state in (
-            'SETTLING', 'CAPTURING', 'CAPTURING_RGBD', 'WAIT_CAPTURE',
-            'WAITING_FOR_CAPTURE_REFRESH'))
+# Stable executor-node import façade for established tests and tooling.
+sdk_command_path = _sdk_command_path
+terminal_home_hold_required = _terminal_home_hold_required
+home_position_sample_settled = _home_position_sample_settled
+abort_return_home_blocker = _home_abort_return_blocker
+approved_return_home_obstacle_snapshot = _approved_home_scene
+approved_multiview_motion_obstacle_snapshot = _approved_multiview_scene
+bootstrap_abort_retrace_uses_static_scene = _bootstrap_static_scene
+obstacle_scene_runtime_reasons = _obstacle_scene_runtime_reasons
+approved_retrace_validation_reasons = _approved_retrace_reasons
+missing_obstacles_can_wait = _missing_obstacles_can_wait
 
 
 class ScanViewpointExecutorNode(Node):
+    # Existing internal attribute names remain available to characterization
+    # harnesses, while production stores each value only in ExecutorSession.
+    for _session_field_name in EXECUTOR_SESSION_FIELDS:
+        locals()[_session_field_name] = SessionField(_session_field_name)
+    del _session_field_name
+
     def __init__(self):
         super().__init__('scan_viewpoint_executor')
         self.configuration = load_executor_configuration(self)
+        self.executor_session = ExecutorSession(
+            self.now(), MAX_RGBD_CAPTURE_READINESS_RETRIES)
 
         calibration_path = self.configuration.interfaces.hand_eye_calibration_path
         bounds_path = self.configuration.interfaces.joint_bounds_path
@@ -405,11 +270,6 @@ class ScanViewpointExecutorNode(Node):
         self.kinematics = PiperScanKinematics(load_accepted_hand_eye(calibration_path))
         self.joint_limits, ignored_bounds = load_conservative_joint_limits(bounds_path)
         self.telemetry_store = TelemetryStore(clock=self.now)
-        self.plan_authorizer = PlanAuthorizer()
-        self.trajectory_runner = TrajectoryRunner()
-        self.capture_coordinator = CaptureCoordinator(
-            MAX_RGBD_CAPTURE_READINESS_RETRIES)
-        self.recovery_policy = RecoveryPolicy()
         self.latest_scan = None
         self.latest_joint_state = None
         self.latest_arm_status = None
@@ -424,118 +284,7 @@ class ScanViewpointExecutorNode(Node):
         self.latest_target_status = 'UNKNOWN'
         self.latest_obstacles = None
         self.latest_workflow = None
-        self.scan_session_id = ''
-        self.scan_history = []
-        self.scan_rejections = []
-        self.latest_achieved_scan_view = None
-        self.scan_coverage_target_center = None
         self.updated = {}
-        self.state = 'IDLE'
-        self.reason = 'waiting for a validated viewpoint proposal'
-        self.plan_id = ''
-        self.plan_kind = MULTIVIEW_SCAN
-        self.plan_source_request_id = ''
-        self.plan_created = 0.0
-        self.plan_targets = []
-        self.plan_paths = []
-        self.plan_path_velocities = []
-        self.plan_path_accelerations = []
-        self.plan_path_times = []
-        self.plan_bootstrap_recovery_end_points = []
-        self.plan_bootstrap_recovery_joints = []
-        self.plan_bootstrap_recovery_joint_sets = []
-        self.plan_powered_start_recovery_end_points = []
-        self.plan_powered_start_recovery_joint_sets = []
-        self.plan_startup_home_static = []
-        self.plan_configured_home_direct = []
-        self.plan_configured_home_stages = []
-        self.plan_segment_execution_modes = []
-        self.plan_viewpoints = []
-        self.plan_candidate_count = 0
-        self.plan_capture_count = 0
-        self.plan_returns_home = False
-        self.plan_target_center = None
-        self.plan_source_trajectory_sha256 = ''
-        self.plan_trajectory_sha256 = ''
-        self.plan_execution_speed_percent = 0.0
-        self.plan_motion_limits_sha256 = ''
-        self.runtime_motion_limits_sha256 = ''
-        self.plan_collision_model_qualified = False
-        self.pending_limit_refresh_plan = None
-        self.pending_limit_refresh_deadline = 0.0
-        self.current_view = 0
-        self.current_path = []
-        self.current_path_velocities = []
-        self.current_path_accelerations = []
-        self.current_path_times = []
-        self.current_path_streaming = False
-        self.current_trajectory = None
-        self.path_index = 0
-        self.command_target = None
-        self.command_sent_at = 0.0
-        self.command_samples_sent = 0
-        self.max_command_interval_sec = 0.0
-        self.dropped_command_samples = 0
-        self.motion_started_at = None
-        self.stream_last_tick_at = None
-        self.stream_schedule_paused_sec = 0.0
-        self.stream_following_hold_started_at = None
-        self.stream_schedule_completion_logged = False
-        self.last_stream_planned_duration_sec = 0.0
-        self.last_stream_actual_duration_sec = 0.0
-        self.last_stream_achieved_rate_hz = 0.0
-        self.last_motion_status_at = 0.0
-        self.waypoint_started_at = None
-        self.waypoint_last_progress_at = None
-        self.waypoint_best_error = math.inf
-        self.current_waypoint_error = 0.0
-        self.max_waypoint_error = 0.0
-        self.pending_motion_reason = ''
-        self.runtime_refresh_require_workflow = False
-        self.runtime_refresh_allow_missing_obstacles = False
-        self.runtime_refresh_resume_state = ''
-        self.runtime_recovery_started_at = None
-        self.settle_started = None
-        self.settle_position_anchor = None
-        self.settle_last_joint_update = -1e9
-        self.settle_last_sample_ok = False
-        self.settle_diagnostic = 'settle proof has not sampled joint feedback'
-        self.settle_reset_count = 0
-        self.settle_longest_window_sec = 0.0
-        self.settle_last_reset_reason = ''
-        self.home_settle_previous_joints = None
-        self.home_settle_last_joint_update = -1e9
-        self.home_settle_last_sample_ok = False
-        self.state_started = self.now()
-        self.capture_future = None
-        self.rgbd_capture_future = None
-        self.rgbd_capture_attempts = 0
-        self.capture_heavy_refresh_started = None
-        self.capture_heavy_refresh_request_id = ''
-        self.capture_heavy_refresh_min_image_stamp_ns = 0
-        self.capture_heavy_refresh_publish_attempts = 0
-        self.capture_heavy_refresh_waiting_for_worker = False
-        self.capture_rejection_reason = ''
-        self.finish_scan_future = None
-        self.return_home_warning = ''
-        self.abort_return_in_progress = False
-        self.abort_return_reason = ''
-        self.abort_return_bootstrap_static_scene = False
-        self.retrace_joint_targets = []
-        self.capture_accepted_before = 0
-        self.acquisition_refresh_started = None
-        self.acquisition_request_id = ''
-        self.acquisition_request_attempt = 0
-        self.acquisition_min_image_stamp_ns = 0
-        self.acquisition_job_image_stamp_ns = 0
-        self.acquisition_job_started = None
-        self.acquisition_detection_completed = None
-        self.acquisition_waiting_for_worker = False
-        self.pending_acquisition_heavy_status = None
-        self.acquisition_scene_snapshot_validated = False
-        self.mission_task_id = ''
-        self.mission_sha256 = ''
-        self.mission_expires_at_sec = 0.0
 
         history_qos = QoSProfile(
             depth=1,

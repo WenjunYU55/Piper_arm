@@ -1,5 +1,11 @@
 schema_version: 1
 document: runtime_contracts
+core_stack_modularization_contract_2026_08_25:
+  public_surface: unchanged
+  private_tesseract_wire: schema-v5 canonical bytes, request and response validation order, hashes, error text and atomic spool behavior remain unchanged
+  mission_boundary: MissionEngine alone sequences missions and shutdown; mission_ros_operations binds ROS effects; target_scan_mission_node owns action admission queueing spool callbacks results and lifecycle
+  executor_boundary: ExecutorSession is the single application-state store; scan_viewpoint_executor_node remains the sole ROS command publisher and owns ROS entities conversion and service futures
+  compatibility: Established imports and bridge worker executable entrypoints are re-exported by their original modules
 target_shape_measurement_contract_2026_08_25:
   topic: {name: /piper/target_shape_measurement, type: std_msgs/String JSON, qos: sensor-data best-effort volatile, public_api: false}
   producer: depth_to_3d_node.py after fresh-mask and qualified-depth success

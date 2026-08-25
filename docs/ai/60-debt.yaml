@@ -1,5 +1,12 @@
 schema_version: 1
 document: technical_debt
+core_stack_modularization_2026_08_25:
+  status: software_refactor_complete_release_qualification_blocked
+  implemented: [mission artifact and ROS-operation ownership modules, one authoritative executor session, focused executor normalization safety and home policies, bridge candidate-policy owner, separate contract request response shared-validation hashing and spool owners, explicitly composed Tesseract worker boundaries, compatibility re-exports]
+  software_evidence: [943 complete mobile and Tesseract tests pass, 165 registered Tesseract package tests pass, live worker component-routing regression passes, 149 GUI reconstruction and calibration tests pass with one hardware skip, 38 perception tests pass, five-package build passes, changed-file flake8 and pep257 pass, compact rootless Tesseract qualification passes]
+  inherited_blocker: The rootless core suite's synthetic dual-limit acquisition exhausts its 150-second internal planning budget before starting a candidate; the exact failure reproduces at the untouched bfd0686 baseline and therefore is not attributed to the extraction, but core qualification is not a pass.
+  remaining: [motors-disabled ROS graph, enabled arm without autonomous motion, one supervised low-speed viewpoint, return-home and cancellation, short scan, complete scan, repeated mission]
+  publication: Do not advance or push reintegrate/selected-archived-features until the inherited command-free blocker is resolved or formally dispositioned and every supervised physical gate passes.
 trusted_silhouette_envelope_followup_2026_08_25:
   status: initial_conservative_axisymmetric_planning_prior_software_only
   current_limitations: [A single silhouette cannot recover non-axisymmetric hidden geometry, the visible masked-depth centroid can be viewpoint-biased, conservative AABB sections may reject a narrow feasible path, a deforming or moving target invalidates the frozen-shape assumption, exact-stamp DDS ordering relies on a bounded planner cache]
@@ -278,18 +285,19 @@ deferred_cleanup:
       consolidate equal numeric literals without semantic proof.
     required_retests: [test_configuration.py, subsystem characterization, public parameter catalog, full mobile-manipulation tests, normal build]
   - id: phase7_remaining_executor_orchestration_2026_08_14
-    status: focused_application_decisions_extracted_ros_orchestration_retained
+    status: authoritative_session_and_pure_decisions_extracted_ros_orchestration_retained
     issue: >-
       Exact plan authorization, one-trajectory monitoring, settled capture
       sequencing and typed recovery selection now live in four ROS-free
-      components. The node still owns the large Tesseract ROS normalization,
-      geometry/path revalidation, acquisition correlation, scan-history
-      persistence and explicit state dispatch. Moving those together remains a
-      high-risk change even though the obsolete safety-shadow observation
-      points no longer exist.
+      components. ExecutorSession now solely owns production plan, motion,
+      acquisition, capture, recovery, achieved-pose, home and authorization
+      state. SDK-path normalization plus safety/home classifications have
+      focused ROS-free owners. The node still owns ROS conversion and service
+      futures, geometry/path revalidation orchestration, acquisition callbacks,
+      scan-history publication and explicit state dispatch.
     next_cut: >-
-      Characterize proposal normalization and acquisition-correlation data as
-      immutable domain inputs, then extract them one subsystem at a time.
+      Extract remaining acquisition and capture ROS orchestration only when
+      service-future/effect traces cover every timeout and cancellation edge.
       Preserve the node as the sole command/status publisher, use the named
       RuntimeGatePolicy boundary, and do not combine geometry authority,
       session history or home semantics merely to reduce line count.
