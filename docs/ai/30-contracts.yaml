@@ -1,5 +1,20 @@
 schema_version: 1
 document: runtime_contracts
+target_shape_measurement_contract_2026_08_25:
+  topic: {name: /piper/target_shape_measurement, type: std_msgs/String JSON, qos: sensor-data best-effort volatile, public_api: false}
+  producer: depth_to_3d_node.py after fresh-mask and qualified-depth success
+  consumer: scan_viewpoint_planner_node.py
+  required_fields: [schema_version, valid, header, source, silhouette_points_camera_m, near_depth_m, mask_pixel_count, qualified_depth_pixel_count, measurement_confidence, camera_info, measurement_sha256]
+  validity: The record is valid only when its canonical hash matches, all geometry is finite and bounded, the contour has at least three points and the source stamp exactly matches the authoritative tracked target used to freeze the mission.
+  missing_or_invalid: No target envelope and no ray candidate; publish private diagnostic TARGET_SHAPE_UNAVAILABLE. Never use an unmasked ROI or stale mask to synthesize the shape.
+target_revolution_envelope_contract_2026_08_25:
+  transport: Private fields inside existing scan-view JSON and Tesseract scene JSON; no ROS message or service definition changes.
+  construction: Transform the trusted silhouette at its source timestamp into base_link, choose the silhouette PCA major axis only when anisotropy is at least 1.2, otherwise use projected base_link vertical with camera-image vertical as a degenerate fallback. Centre the axis on the silhouette cross-axis midpoint and place it exactly visible_transverse_span_m divided by two behind visible_surface_center_m along the capture-time camera normal, then revolve 360 degrees, inflate by 0.010 m and bound to 24 profile sections.
+  geometry_authority: The transformed silhouette determines conservative shape geometry while planning_anchor_m remains exactly the authoritative tracked target point. The envelope may constrain candidate standoff, FOV and collision clearance but may not replace target tracking or move historical captures.
+  camera_clearance_m: 0.250
+  lifecycle: Frozen with the first ray pool of a mission and cleared on session change. Later measurements, rejected views and accepted captures do not mutate it.
+  tesseract_binding: Every candidate carries the envelope hash. The bridge validates the hash and target anchor, converts the stored conservative boxes to the existing obstacle contract, includes them in the existing request hash and rejects overflow beyond MAX_OBSTACLES=256.
+  diagnostic_outcomes: [TARGET_SHAPE_UNAVAILABLE, NO_SAFE_TARGET_STANDOFF, NO_POSITIVE_INFORMATION_CANDIDATE, TESSERACT_EXHAUSTED]
 generation_zero_ray_seed_contract_2026_08_25:
   applies_when: policy ray_nbv_seed and accepted_views equals zero
   ordering: Ascending Euclidean travel from the actual current FK camera position to the closest permitted point on each bounded target-ray interval; stable existing tie-breakers remain private.

@@ -17,6 +17,7 @@ from piper_tesseract_foxy.bridge_node import (
     obstacle_scene_rejection_reason,
     relax_closed_loop_candidate_aims,
     select_diverse_smooth_view_path,
+    target_envelope_obstacles,
     TesseractPlanBridge,
     uses_authoritative_nbv_order,
     validate_candidate_policy_batch,
@@ -24,6 +25,10 @@ from piper_tesseract_foxy.bridge_node import (
 from piper_tesseract_foxy.contract import ContractError
 from piper_mobile_manipulation.view_generation import view_policy_capabilities
 from piper_mobile_manipulation.motion_limit_stability import MotionLimitStability
+from piper_mobile_manipulation.target_envelope import (
+    build_revolution_envelope,
+    trusted_silhouette_measurement,
+)
 
 
 class _Recorder:
@@ -40,6 +45,61 @@ class _Logger:
 
     def info(self, message):
         self.messages.append(message)
+
+
+def _target_envelope_fixture():
+    mask = np.zeros((80, 100), dtype=np.uint8)
+    mask[20:55, 30:65] = 255
+    support = np.ones((35, 35), dtype=bool)
+    depth = np.full((35, 35), 0.40, dtype=float)
+    header = SimpleNamespace(
+        stamp=SimpleNamespace(sec=1, nanosec=2),
+        frame_id='camera_color_optical_frame')
+    shape = trusted_silhouette_measurement(
+        mask, support, (30, 20), depth,
+        np.asarray([
+            [100.0, 0.0, 50.0],
+            [0.0, 100.0, 40.0],
+            [0.0, 0.0, 1.0],
+        ]),
+        header, 0.9)
+    return build_revolution_envelope(
+        shape, np.eye(4), [0.0, 0.0, 0.40])
+
+
+def test_target_envelope_reuses_existing_box_contract_and_hash_binding():
+    envelope = _target_envelope_fixture()
+    payload = {
+        'target_envelope': envelope,
+        'viewpoints': [{
+            'candidate_geometry': 'target_ray',
+            'target_envelope_sha256': envelope['envelope_sha256'],
+        }],
+    }
+
+    validated, boxes = target_envelope_obstacles(
+        payload, [0.0, 0.0, 0.40])
+
+    assert validated['envelope_sha256'] == envelope['envelope_sha256']
+    assert boxes == envelope['collision_boxes']
+    assert all(box['type'] == 'box' for box in boxes)
+
+
+def test_target_envelope_rejects_wrong_anchor_or_unbound_ray():
+    envelope = _target_envelope_fixture()
+    payload = {
+        'target_envelope': envelope,
+        'viewpoints': [{
+            'candidate_geometry': 'target_ray',
+            'target_envelope_sha256': '0' * 64,
+        }],
+    }
+    with pytest.raises(ContractError, match='not bound'):
+        target_envelope_obstacles(payload, [0.0, 0.0, 0.40])
+    payload['viewpoints'][0]['target_envelope_sha256'] = (
+        envelope['envelope_sha256'])
+    with pytest.raises(ContractError, match='anchor disagrees'):
+        target_envelope_obstacles(payload, [0.1, 0.0, 0.40])
 
 
 def test_point_and_ray_nbv_share_ranking_but_seed_and_legacy_do_not():

@@ -1,5 +1,20 @@
 schema_version: 1
 document: runtime_flows
+trusted_shape_to_nbv_flow_2026_08_25:
+  trigger: The mission has a fresh valid tracked target and ray-NBV requests its first pool.
+  steps:
+    - Depth-to-3D publishes a bounded exact-stamp silhouette only after the same fresh mask and qualified depth that produce Target3D.
+    - The target tracker remains the only authoritative filtered base_link target position.
+    - The planner correlates exact source stamps, transforms the silhouette at capture time, moves the rotation origin one measured silhouette half-width behind the visible surface, then builds and freezes one conservative revolution envelope and ray pool.
+    - Envelope distance, camera FOV, configured standoff, analytic workspace and capability-map constraints cheaply remove unsafe or unsupported ray intervals.
+    - Existing cumulative accepted-coverage information gain ranks the surviving fixed ray identities; only the short existing shortlist reaches Tesseract.
+    - The bridge adds the frozen envelope as existing box obstacles; the worker remains authoritative for exact aim, IK, collision and path feasibility.
+    - Rejected captures retain the achieved physical camera pose but do not update accepted coverage or the envelope; accepted captures update only existing coverage.
+  failure_modes:
+    missing_correlated_shape: TARGET_SHAPE_UNAVAILABLE with no commanded view
+    no_clear_standoff: NO_SAFE_TARGET_STANDOFF with no Tesseract request
+    informative_but_unreachable: TESSERACT_EXHAUSTED through the existing mission failure and staged-shutdown route
+  manual_smoke_checks: [software replay shows one envelope hash for all views in a mission, next mission receives a new hash, selected camera point stays at least 0.250 m from the inflated envelope, exact target point in plan messages remains the tracked estimate, rejected view changes neither coverage nor envelope, first supervised qualification is one low-speed view only]
 generation_zero_nearest_ray_seed_flow_2026_08_25:
   trigger: A ray_nbv mission requests its first view with accepted_views zero.
   sequence: [use the frozen prequalified ray pool, measure travel from current FK to the nearest permitted point of every bounded interval, order the six-ray seed shortlist nearest first, let Tesseract test exact target-facing feasibility, execute and validate one view, on acceptance transition to cumulative-information NBV]

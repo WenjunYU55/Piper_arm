@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import json
 import math
 
 import numpy as np
@@ -8,8 +9,12 @@ from message_filters import ApproximateTimeSynchronizer, Subscriber
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CameraInfo, Image
+from std_msgs.msg import String
 
 from piper_mobile_manipulation.msg import Detection2D, Target3D
+from piper_mobile_manipulation.target_envelope import (
+    trusted_silhouette_measurement,
+)
 from piper_mobile_manipulation.utils.target_depth import (
     select_target_depth_component,
 )
@@ -115,6 +120,8 @@ class DepthTo3DNode(Node):
         self.declare_parameter('camera_info_topic', '/camera/color/camera_info')
         self.declare_parameter('mask_topic', '/piper/sam2_target_mask')
         self.declare_parameter('target_topic', '/piper/target_3d')
+        self.declare_parameter(
+            'target_shape_topic', '/piper/target_shape_measurement')
         self.declare_parameter('depth_min_m', 0.25)
         self.declare_parameter('depth_max_m', 1.0)
         self.declare_parameter('min_depth_m', 0.25)
@@ -154,6 +161,9 @@ class DepthTo3DNode(Node):
         self.sync_slop_sec = float(self.get_parameter('sync_slop_sec').value)
 
         self.pub = self.create_publisher(Target3D, self.get_parameter('target_topic').value, 10)
+        self.shape_pub = self.create_publisher(
+            String, self.get_parameter('target_shape_topic').value,
+            qos_profile_sensor_data)
         self.det_sub = Subscriber(
             self, Detection2D, self.get_parameter('detection_topic').value, qos_profile=10
         )
@@ -375,6 +385,27 @@ class DepthTo3DNode(Node):
         out.measurement_confidence = self.measurement_confidence(
             detection_msg.confidence, valid_count, depth_stddev)
         out.valid = True
+        try:
+            shape = trusted_silhouette_measurement(
+                mask,
+                valid,
+                (x0, y0),
+                crop,
+                np.asarray(camera_info.k, dtype=float).reshape(3, 3),
+                depth_msg.header,
+                out.measurement_confidence,
+            )
+        except (TypeError, ValueError) as exc:
+            self.log_debug(
+                'Target shape measurement rejected: %s' % exc,
+                warn=True)
+        else:
+            shape_msg = String()
+            shape_msg.data = json.dumps(shape, sort_keys=True)
+            # Publish the shape first so the downstream tracked-target sample
+            # with the same source timestamp can freeze it without an ordering
+            # race.  The shape is private planning geometry, not target state.
+            self.shape_pub.publish(shape_msg)
         self.pub.publish(out)
         self.log_debug(
             'Target3D source=%s camera_frame=(%.3f, %.3f, %.3f) '

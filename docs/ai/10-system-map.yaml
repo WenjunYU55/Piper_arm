@@ -1,5 +1,13 @@
 schema_version: 1
 document: system_map
+trusted_silhouette_envelope_flow_2026_08_25:
+  sequence: [fresh correlated SAM2 mask and qualified target depth, bounded contour projection in the camera frame, private exact-stamp shape publication, authoritative tracked target at the same source stamp, exact-time camera-to-base transform, silhouette cross-axis midpoint plus half-width depth origin, one mission-frozen 360-degree revolution envelope, envelope-aware ray interval prequalification, unchanged information ranking and shortlist, existing Tesseract box-obstacle feasibility, achieved motion and capture validation, accepted-only coverage update]
+  load_order_contracts:
+    - Depth-to-3D must publish the private shape record before the matching Target3D so the tracked target callback can bind it without a DDS ordering race.
+    - The planner may freeze a ray pool only after both the exact-stamp shape and a valid tracked target exist; absence produces TARGET_SHAPE_UNAVAILABLE and no candidate motion.
+    - The bridge must validate the envelope hash, candidate binding and planning anchor before adding its boxes to the existing obstacle request.
+  fixed_state: {historical_reconstruction_frame: base_link, authoritative_target: target_tracker_node.py, frozen_mission_envelope: scan_viewpoint_planner_node.py, physical_achieved_pose: scan_viewpoint_executor_node.py, accepted_coverage: existing accepted history and nbv_coverage.py}
+  unchanged: [public ROS interfaces, target drift semantics, NBV gain and ranking, ray identities, shortlist policy, Tesseract worker authority, motion speed, capture acceptance, home and shutdown]
 generation_zero_ray_seed_order_2026_08_25:
   sequence: [receive prequalified ray_nbv_seed pool, compute current-FK travel to each bounded ray interval, shortlist the six nearest rays, let Tesseract choose the first exactly feasible target-facing endpoint]
   authority: {seed_order: bridge_node.py, current_physical_pose: latest achieved FK, exact_feasibility: Tesseract worker, post_capture_information_order: accepted-only NBV coverage path}

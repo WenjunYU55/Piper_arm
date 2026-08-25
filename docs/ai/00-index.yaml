@@ -1,5 +1,11 @@
 schema_version: 1
 document: ai_context_index
+trusted_silhouette_envelope_2026_08_25:
+  behavior: A fresh mask-qualified depth observation publishes one private timestamp-bound silhouette. The ray planner correlates it with the tracked target, places the revolution origin at the cross-axis silhouette midpoint and exactly one half-width behind the visible surface, revolves it once into a conservative axisymmetric envelope, freezes that envelope and the ray pool for the mission, and uses the envelope only for future view geometry, clearance and collision obstacles.
+  authority: {target_measurement: depth_to_3d_node.py, envelope_geometry: target_envelope.py, target_position: target_tracker_node.py, ray_selection: scan_viewpoint_planner_node.py, exact_motion_feasibility: piper_tesseract_foxy bridge and worker, accepted_coverage: existing executor and NBV coverage path}
+  invariant: Historical captures stay fixed in base_link; the envelope never replaces the authoritative tracked point; only accepted captures change coverage; rejected captures do not reshape the envelope; no public ROS schema changed.
+  defaults: {inflation_m: 0.010, camera_surface_clearance_m: 0.250, silhouette_points_max: 256, revolution_sections_max: 24}
+  validation: [target-envelope pure tests, ray-planner regression, Tesseract bridge contract tests, package build and tests, no hardware command]
 generation_zero_nearest_ray_seed_2026_08_25:
   behavior: Before the first accepted capture, ray_nbv_seed has no measured coverage gain and the six-ray bridge shortlist is ordered only by travel from the actual current FK camera position to the closest point on each bounded ray interval.
   boundary: After one accepted capture, cumulative measured-information NBV ranking remains authoritative. Ray generation, capability/workspace culling, shortlist size, Tesseract feasibility, motion, capture, home and shutdown are unchanged.

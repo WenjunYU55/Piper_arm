@@ -1,5 +1,15 @@
 schema_version: 1
 document: module_ownership
+trusted_target_envelope_2026_08_25:
+  owners:
+    target_shape_measurement: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/depth_to_3d_node.py
+    envelope_geometry_and_validation: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_envelope.py
+    mission_freeze_and_ray_interval_cull: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_planner_node.py
+    existing_obstacle_contract_adaptation: piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/bridge_node.py
+  allowed_edit_paths: [the four owner modules above, piper_mobile_manipulation/config/camera_params.yaml, piper_mobile_manipulation/config/scan_planning_params.yaml, piper_mobile_manipulation/CMakeLists.txt test registration, related target-envelope planner bridge tests, docs/ai]
+  owns: One trusted exact-stamp silhouette, deterministic axis selection, conservative revolved profile and boxes, mission freeze/reset, target-surface clearance and FOV ray interval culling, private provenance and obstacle adaptation.
+  does_not_own: [authoritative tracked target, SAM2 propagation policy, NBV gain or ordering, accepted coverage, achieved physical pose, exact IK collision or path feasibility, capture acceptance, reconstruction registration, home or shutdown]
+  must_not_move_without: [fresh mask and depth contract, exact timestamp and TF semantics, target_tracker authority, frozen ray-pool session identity, existing MAX_OBSTACLES limit, target drift contract, Tesseract request hash, accepted-only coverage]
 generation_zero_ray_seed_order_2026_08_25:
   owner_module: piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/bridge_node.py
   allowed_edit_paths: [piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/bridge_node.py, piper_ros_foxy/src/piper_tesseract_foxy/test/test_bridge_feedback_freshness.py, docs/ai]

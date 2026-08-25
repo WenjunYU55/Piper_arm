@@ -34,6 +34,7 @@ from piper_mobile_manipulation.scan_motion import (
 from piper_mobile_manipulation.scan_execution_modes import (
     commanded_speed_percent,
 )
+from piper_mobile_manipulation.target_envelope import validate_envelope
 from piper_mobile_manipulation.view_generation import (
     parse_view_generation,
     view_policy_capabilities,
@@ -48,6 +49,7 @@ from piper_tesseract_foxy.contract import (
     attach_digest,
     ContractError,
     JOINT_NAMES,
+    MAX_OBSTACLES,
     MAX_CONFIGURED_HOME_START_LIMIT_TOLERANCE_RAD,
     PLAN_KINDS,
     SCHEMA_VERSION,
@@ -60,6 +62,34 @@ from piper_tesseract_foxy.contract import (
 
 RAY_DIRECTION_ATTEMPT_LIMIT = 6
 FINAL_AIM_EXECUTION_MARGIN_DEG = 1.0
+
+
+def target_envelope_obstacles(scan, target_center):
+    """Validate one frozen envelope and return its existing box contract."""
+    supplied = scan.get('target_envelope') if isinstance(scan, dict) else None
+    if supplied is None:
+        return None, []
+    try:
+        envelope = validate_envelope(supplied)
+    except ValueError as error:
+        raise ContractError('target envelope is invalid: %s' % error)
+    anchor = [float(value) for value in envelope['planning_anchor_m']]
+    center = [float(value) for value in target_center]
+    if any(
+            abs(actual - expected) > 1e-6
+            for actual, expected in zip(anchor, center)):
+        raise ContractError(
+            'target envelope planning anchor disagrees with tracked '
+            'target center')
+    envelope_hash = str(envelope.get('envelope_sha256', ''))
+    if any(
+            item.get('candidate_geometry') == 'target_ray'
+            and str(item.get('target_envelope_sha256', '')) != envelope_hash
+            for item in scan.get('viewpoints', [])
+            if isinstance(item, dict)):
+        raise ContractError('target ray is not bound to the frozen envelope')
+    return envelope, [
+        dict(item) for item in envelope['collision_boxes']]
 
 
 def obstacle_scene_rejection_reason(scene):
@@ -1470,6 +1500,11 @@ class TesseractPlanBridge(Node):
             if plan_kind == 'ROUGH_ACQUISITION'
             else 'perception_snapshot')
         obstacles = []
+        target_envelope = None
+        if plan_kind == 'MULTIVIEW_SCAN':
+            target_envelope, target_boxes = target_envelope_obstacles(
+                scan, center)
+            obstacles.extend(target_boxes)
         if (
                 plan_kind != 'RETURN_HOME'
                 and observation_mode == 'perception_snapshot'
@@ -1489,6 +1524,9 @@ class TesseractPlanBridge(Node):
                         float(item.base_bounds_max.z),
                     ],
                 })
+        if len(obstacles) > MAX_OBSTACLES:
+            raise ContractError(
+                'target envelope and scene exceed the obstacle contract')
         identity = {
             'created_at_ns': now_ns,
             'joint_positions': [round(value, 9) for value in joints],
@@ -1529,6 +1567,7 @@ class TesseractPlanBridge(Node):
             'scene': {
                 'target_center_m': center,
                 'target_provenance': provenance,
+                'target_envelope': target_envelope,
                 'observation_mode': observation_mode,
                 'startup_home_static': bool(startup_home),
                 'candidate_views': candidates,

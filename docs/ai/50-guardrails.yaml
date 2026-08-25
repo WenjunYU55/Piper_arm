@@ -1,5 +1,18 @@
 schema_version: 1
 document: guardrails
+trusted_target_envelope_guardrails_2026_08_25:
+  invariants:
+    - A stale, missing, invalid or unqualified mask/depth sample cannot create or update an envelope.
+    - The envelope is immutable within a mission and resets between missions.
+    - The rotation-origin depth must equal exactly half the measured cross-axis silhouette width and must be hash-bound with the visible-surface centre.
+    - The target tracker remains the sole authoritative target point; envelope geometry cannot alter drift checks or historical base_link reconstruction.
+    - Rejected captures never change accepted coverage or the frozen envelope.
+    - Candidate ray IDs, directions, information gain and shortlist semantics remain owned by the existing NBV path.
+    - Prequalification never claims exact reachability; Tesseract still proves aim, IK, collision, path and visibility.
+    - Target-envelope collision boxes use the existing request/hash contract and count toward MAX_OBSTACLES.
+  blast_radius: [depth mask and confidence semantics, camera intrinsics, exact-time TF, target tracking stamps, ray standoff intervals, camera FOV, Tesseract obstacle serialization and hashing, session reset]
+  must_retest_if_changed: {target_envelope.py: [test_target_envelope.py, test_scan_viewpoint_angles.py, test_bridge_feedback_freshness.py], depth_to_3d_node.py: [depth measurement tests, target-envelope tests, tracking tests], scan_viewpoint_planner_node.py: [NBV, ray, session-memory and planner tests], bridge_node.py: [bridge contract and worker validation tests]}
+  prohibited: [public ROS schema expansion for the envelope, online envelope mutation from later views, target-specific reconstruction movement, treating an AABB profile as exact object geometry, bypassing Tesseract because a ray passed the envelope cull]
 generation_zero_nearest_ray_seed_guardrail_2026_08_25:
   invariants:
     - With accepted_views zero, ray_nbv_seed has no measured information-gain authority; order its shortlist only by current-FK travel to the complete bounded interval.

@@ -1,5 +1,11 @@
 schema_version: 1
 document: implemented_features_bookmark
+trusted_silhouette_revolution_envelope_2026_08_25:
+  status: software_implemented_physical_qualification_pending
+  capability: A fresh qualified target silhouette is centred across its measured cross-axis width, placed one exact half-width behind the visible surface and revolved once into a conservative mission-frozen planning envelope. It raises or removes unsafe target-ray standoff intervals, enforces 250 mm camera-to-surface clearance and passes bounded collision boxes to the unchanged Tesseract feasibility path.
+  authority: [depth_to_3d_node.py qualified shape source, target_envelope.py geometry, target_tracker_node.py unchanged target point, scan_viewpoint_planner_node.py freeze and cull, bridge_node.py existing obstacle adaptation]
+  preserved: [public ROS interfaces, tracked target authority, frozen ray identities, cumulative accepted-only NBV scoring, Tesseract exact feasibility, achieved FK state, capture validation, historical base_link reconstruction, speed, home, disable and shutdown]
+  evidence: [pure target-envelope tests, frozen-pool regression, bridge hash and obstacle-contract tests, no hardware command]
 generation_zero_nearest_ray_seed_2026_08_25:
   capability: The first ray_nbv request orders the existing six-ray prequalified shortlist by minimum physical camera travel to each continuous bounded interval. It no longer treats legacy negative-Y preference as measured information before any capture exists.
   authority: [bridge_node.py generation-zero shortlist ordering, latest achieved FK physical start, Tesseract exact endpoint feasibility]

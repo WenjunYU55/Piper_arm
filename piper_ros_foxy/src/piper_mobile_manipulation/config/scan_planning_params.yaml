@@ -38,6 +38,9 @@
     # frame. Raw camera-optical /piper/target_3d observations must first pass
     # through the base-frame tracker; they are never a coordinate fallback.
     planning_frame_id: "base_link"
+    # Private trusted silhouette handoff from synchronized mask/depth
+    # projection. The ray pool freezes one matching envelope per mission.
+    target_shape_topic: "/piper/target_shape_measurement"
     # A retried scan excludes only a camera pose that is close in both
     # translation and viewing direction to an achieved accepted capture.
     # The next view persistently targets missing -Y/+Y face observations,

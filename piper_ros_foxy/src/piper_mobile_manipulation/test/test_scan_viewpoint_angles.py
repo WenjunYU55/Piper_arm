@@ -113,6 +113,42 @@ def test_ray_pool_is_generated_once_and_ignores_later_target_shift():
     assert len(calls) == 2
 
 
+def test_target_envelope_culls_once_before_the_ray_pool_is_frozen():
+    calls = []
+    harness = SimpleNamespace(
+        ray_pool_session_id='',
+        ray_pool_target_center=None,
+        ray_pool_frame_id='',
+        ray_pool=None,
+        ray_pool_target_envelope=None,
+        ray_pool_envelope_rejected_rays=0,
+    )
+
+    def make_ray(ray_id, angle, center, frame_id, pitch, envelope=None):
+        calls.append((ray_id, envelope))
+        if ray_id == 0:
+            return None
+        return {'ray_id': ray_id, 'target_object_center': dict(center)}
+
+    harness.make_ray_viewpoint = make_ray
+    history = {'session_id': 'envelope-session'}
+    envelope = {'envelope_sha256': 'a' * 64}
+    center = {'x': 0.4, 'y': 0.0, 'z': 0.0}
+
+    _frozen, first = ScanViewpointPlannerNode.frozen_ray_pool(
+        harness, history, center, 'base_link',
+        [(0.0, 0.0), (180.0, 0.0)], envelope=envelope)
+    _reused, second = ScanViewpointPlannerNode.frozen_ray_pool(
+        harness, history, {'x': 0.5, 'y': 0.0, 'z': 0.0}, 'base_link',
+        [(90.0, 0.0)], envelope={'envelope_sha256': 'b' * 64})
+
+    assert first == second
+    assert [item['ray_id'] for item in first] == [1]
+    assert len(calls) == 2
+    assert harness.ray_pool_envelope_rejected_rays == 1
+    assert harness.ray_pool_target_envelope == envelope
+
+
 def test_tracker_rate_duplicates_do_not_regenerate_candidates():
     center = {'x': 0.4, 'y': 0.0, 'z': 0.05}
     assert not viewpoint_replan_required(

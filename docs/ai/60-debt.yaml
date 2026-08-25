@@ -1,5 +1,11 @@
 schema_version: 1
 document: technical_debt
+trusted_silhouette_envelope_followup_2026_08_25:
+  status: initial_conservative_axisymmetric_planning_prior_software_only
+  current_limitations: [A single silhouette cannot recover non-axisymmetric hidden geometry, the visible masked-depth centroid can be viewpoint-biased, conservative AABB sections may reject a narrow feasible path, a deforming or moving target invalidates the frozen-shape assumption, exact-stamp DDS ordering relies on a bounded planner cache]
+  intentionally_deferred: [multiview shape fusion, non-axisymmetric visual hull, moving-target envelope updates, semantic size priors, mesh collision primitives, public ROS messages, changes to NBV scoring or tracking]
+  next_cut: First replay representative small and large static targets and compare retained-ray recall, Tesseract attempt count, true camera-to-surface clearance and false-rejection rate. Only then decide whether the axisymmetric prior needs refinement.
+  physical_status: Not physically qualified; use the staged one-view then three-view then full-mission sequence only after all software checks pass and the operator explicitly authorizes motion.
 generation_zero_ray_seed_qualification_2026_08_25:
   status: software_repaired_physical_requalification_pending
   correction: Removed legacy negative-Y/speculative coverage influence from generation-zero ray ordering and used current-FK distance to the continuous bounded ray rather than its representative scoring point.

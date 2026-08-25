@@ -1,5 +1,10 @@
 schema_version: 1
 document: maintenance_routing
+trusted_target_envelope_2026_08_25:
+  inspect: [depth_to_3d_node.py target_shape_pub, target_envelope.py, scan_viewpoint_planner_node.py target_shape_cb and frozen_ray_pool, bridge_node.py target_envelope_obstacles, camera_params.yaml, scan_planning_params.yaml]
+  rule: Preserve exact image timestamps from the qualified mask/depth measurement, correlate the silhouette with the matching tracked target, place the rotation origin at the silhouette cross-axis midpoint and one exact half-width into the assumed object depth, freeze one envelope per mission, keep the tracked point authoritative, and express the frozen envelope through the existing private scan JSON and standard box-obstacle request contract. Never update coverage from the envelope or alter accepted historical geometry.
+  regeneration: A new session must clear the frozen envelope and ray pool. A rejected capture or later perception sample must not mutate either. Changing inflation, clearance, profile construction, camera intrinsics, hand-eye TF or obstacle serialization requires the complete retest set.
+  required_retests: [test_target_envelope.py, test_scan_viewpoint_angles.py, test_viewpoint_rays.py, test_bridge_feedback_freshness.py, complete mobile and Tesseract suites, colcon build, colcon test, software-only replay before physical qualification]
 generation_zero_nearest_ray_seed_2026_08_25:
   inspect: [piper_tesseract_foxy/bridge_node.py balanced_closed_loop_candidates, test_bridge_feedback_freshness.py]
   rule: When compact_first denotes accepted_views zero, order prequalified seed rays by distance from latest achieved FK camera position to each complete bounded ray interval. Do not use legacy face preference or speculative coverage score before measured coverage exists. After capture one, retain the existing information-ranked NBV path.
