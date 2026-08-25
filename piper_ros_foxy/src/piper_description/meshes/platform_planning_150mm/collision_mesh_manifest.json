@@ -1,0 +1,674 @@
+{
+  "generator": "transformed_platform_grid_v1",
+  "links": [
+    {
+      "assembly": {
+        "base_link": "base_link",
+        "source": {
+          "base_from_mesh": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              -0.39
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              -0.016
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "sha256": "ff1495901808280e438b3db3db9067e00e2aa397765e9b4cb404541fe6893853",
+          "source_sha256": "aa9f81c3d75c28e6720fda247bc01d052d17d9343b1e050d13ea2f7a5e60ce9d",
+          "source_triangle_count": 62388
+        }
+      },
+      "axes": [
+        "x",
+        "y"
+      ],
+      "link": "bunker_chassis_collision",
+      "pieces": [
+        {
+          "filename": "bunker_chassis_collision_cell_000_000.stl",
+          "grid_index": [
+            0,
+            0
+          ],
+          "sha256": "28e6d1ae2be1adfcdc87b890c6e0b9ee8ea89dfe02280feb5aad8bd2c9ffc52a",
+          "triangle_count": 940
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_000_001.stl",
+          "grid_index": [
+            0,
+            1
+          ],
+          "sha256": "21c0ed0d155f8028ea6173fe8eae813d0b1cb3eb67e02384189cc32d13dd6fe9",
+          "triangle_count": 402
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_000_002.stl",
+          "grid_index": [
+            0,
+            2
+          ],
+          "sha256": "f7f69b4dbf28fa288da60e8477661573ff6342f99d6b428069af4bc8bbba6e11",
+          "triangle_count": 34876
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_000_003.stl",
+          "grid_index": [
+            0,
+            3
+          ],
+          "sha256": "35759154afb8c9784e9c6863a5b9ad1196aea6525f743a03620f0d2ca87c192e",
+          "triangle_count": 382
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_000_004.stl",
+          "grid_index": [
+            0,
+            4
+          ],
+          "sha256": "2ad295940fdf63fd6e4d207a91dc7fc50ed089b155d79e7142aee81690155b91",
+          "triangle_count": 497
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_000_005.stl",
+          "grid_index": [
+            0,
+            5
+          ],
+          "sha256": "4e4c25c133287d6063b39d74334a8e795a58f3aeb1dfaac433a16f8434454bf2",
+          "triangle_count": 667
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_001_000.stl",
+          "grid_index": [
+            1,
+            0
+          ],
+          "sha256": "c235c9bd91637d6b3243980aff4b4ee12488ea70c01bd2df44cfdabf4b632095",
+          "triangle_count": 1377
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_001_001.stl",
+          "grid_index": [
+            1,
+            1
+          ],
+          "sha256": "3a1ec41e74fc7ab63a0234acfc29b52b0215ae520908ea84c8e275029f3c7be1",
+          "triangle_count": 2241
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_001_002.stl",
+          "grid_index": [
+            1,
+            2
+          ],
+          "sha256": "dd5c8549affbb789f7c26963035b7adcb8504fffa5abde0e81ea22d09ec87b7e",
+          "triangle_count": 4012
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_001_003.stl",
+          "grid_index": [
+            1,
+            3
+          ],
+          "sha256": "ebb5aeb5169e72e30830e770e569f31b90cd26a9ad04ef50a23a531aa0baf6b2",
+          "triangle_count": 3993
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_001_004.stl",
+          "grid_index": [
+            1,
+            4
+          ],
+          "sha256": "cc9b9067841ad9c57f62ff5aaf07abd2657d44e5c79d380ddfd752ff41a6b29a",
+          "triangle_count": 1037
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_001_005.stl",
+          "grid_index": [
+            1,
+            5
+          ],
+          "sha256": "6121883139d4c3ef9e5428815f6b0bc189aade807b2c2a484e374818b02178d2",
+          "triangle_count": 620
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_002_000.stl",
+          "grid_index": [
+            2,
+            0
+          ],
+          "sha256": "6998d51bd00c949cf74e48d2323eaee093283cbecd8e4761fcea608bd73c08e7",
+          "triangle_count": 744
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_002_001.stl",
+          "grid_index": [
+            2,
+            1
+          ],
+          "sha256": "e7c032dad63c9c8a918e5dc3d57f49081c30d73db5f5c13f1832df23a0703fab",
+          "triangle_count": 425
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_002_002.stl",
+          "grid_index": [
+            2,
+            2
+          ],
+          "sha256": "70a7a510bd08dd491c3dc20402aab4bd03a2329a81e8b09e00638246720e99c3",
+          "triangle_count": 57
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_002_003.stl",
+          "grid_index": [
+            2,
+            3
+          ],
+          "sha256": "ba6a946d408956d53b602d6f87a9a46d570ad99a6665b0f3f684233a95cd3cb6",
+          "triangle_count": 353
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_002_004.stl",
+          "grid_index": [
+            2,
+            4
+          ],
+          "sha256": "e3f0db2e1c0a27eb24e2bea37dc88013c68e52a52059824b3112403ebb0ce18b",
+          "triangle_count": 227
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_002_005.stl",
+          "grid_index": [
+            2,
+            5
+          ],
+          "sha256": "342488a46eecd01b76778507479f87215b00baa26e703a7b13c7895f8b7f39a2",
+          "triangle_count": 594
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_003_000.stl",
+          "grid_index": [
+            3,
+            0
+          ],
+          "sha256": "9684b195d4f4072cddb6162c8f886b7e87815945e45d0d08eda0de1f9977d7e8",
+          "triangle_count": 698
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_003_001.stl",
+          "grid_index": [
+            3,
+            1
+          ],
+          "sha256": "a8b11fae692ba6b6f1aeb500a34cae4126ad09513ccff2b3140c5ae76e4271a2",
+          "triangle_count": 794
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_003_002.stl",
+          "grid_index": [
+            3,
+            2
+          ],
+          "sha256": "74c0d84de3f3c63ee9dccb58e58ded70fc7110fbe8dbb15f2067fe584fd9972e",
+          "triangle_count": 81
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_003_003.stl",
+          "grid_index": [
+            3,
+            3
+          ],
+          "sha256": "23d8bfb40c85c20f082df9dcbb8933569910107b5feb1e17de39e1e196312ddb",
+          "triangle_count": 746
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_003_004.stl",
+          "grid_index": [
+            3,
+            4
+          ],
+          "sha256": "822d0c3ff51b76b97512f88e0ba5f0d7c360381bdf8909bd9a56a8f76ed25fad",
+          "triangle_count": 164
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_003_005.stl",
+          "grid_index": [
+            3,
+            5
+          ],
+          "sha256": "32022c5d773de28291e6a90009a8b033f19789e8686ff65ef01ef2b852ed18ac",
+          "triangle_count": 585
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_004_000.stl",
+          "grid_index": [
+            4,
+            0
+          ],
+          "sha256": "f00fab3cdadc51b2f0472fa280b3c70730cd8d92a39dad001ba90d80c230a76f",
+          "triangle_count": 386
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_004_001.stl",
+          "grid_index": [
+            4,
+            1
+          ],
+          "sha256": "b2b32bbbfefa67d570ba5dd7ea5872654b2dcc4295b479fdd476e6f4e588563e",
+          "triangle_count": 424
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_004_002.stl",
+          "grid_index": [
+            4,
+            2
+          ],
+          "sha256": "a6c130f9ff3de3dee8460285b6eb16d91e1ded9287309c913267b219de8d9413",
+          "triangle_count": 124
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_004_003.stl",
+          "grid_index": [
+            4,
+            3
+          ],
+          "sha256": "92912e56fcd97f1bafc61f802505701d14295aad9031865c0d64b0d2605d4a41",
+          "triangle_count": 413
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_004_004.stl",
+          "grid_index": [
+            4,
+            4
+          ],
+          "sha256": "5d8a11632226d73dc263467263e34ab62aff21cfe2021391d86f01d21577c4f2",
+          "triangle_count": 168
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_004_005.stl",
+          "grid_index": [
+            4,
+            5
+          ],
+          "sha256": "5ebb7f8a51d40c290ca6595eca4bfd7b2e3c7429a7ae7284bbdf35cd09cb1955",
+          "triangle_count": 282
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_005_000.stl",
+          "grid_index": [
+            5,
+            0
+          ],
+          "sha256": "08d2fb18c01c81c1a863a8795ed63c36635e0efefb4f5c2e89bc8cb096e94a54",
+          "triangle_count": 277
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_005_001.stl",
+          "grid_index": [
+            5,
+            1
+          ],
+          "sha256": "9b39457bcced1170db6d16183d054efea84d8e1b481c23f3d9aaefb058412c08",
+          "triangle_count": 286
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_005_002.stl",
+          "grid_index": [
+            5,
+            2
+          ],
+          "sha256": "42d207045507355f349fedf7b1d8ed5b16518ad29b1fb2ddbda93a319ef909db",
+          "triangle_count": 57
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_005_003.stl",
+          "grid_index": [
+            5,
+            3
+          ],
+          "sha256": "240bbe6ea51a18bd2e9c3f55b3b22fcce44d271b960b5b41fb477d9253b05e2f",
+          "triangle_count": 254
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_005_004.stl",
+          "grid_index": [
+            5,
+            4
+          ],
+          "sha256": "f85e3a4a411e7a539acd259fefd16f90dbda194080b7cdd7dc4edbaab88ecf30",
+          "triangle_count": 154
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_005_005.stl",
+          "grid_index": [
+            5,
+            5
+          ],
+          "sha256": "606c60cd7dc46bbcde317a01095be4193533cab83b7646a6c7a7d40805e4258f",
+          "triangle_count": 186
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_006_000.stl",
+          "grid_index": [
+            6,
+            0
+          ],
+          "sha256": "1297b6f4be182228a172da19e0455284e0bcb4a1eb8540c0adc2125cec22c251",
+          "triangle_count": 409
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_006_001.stl",
+          "grid_index": [
+            6,
+            1
+          ],
+          "sha256": "6bbe81409d9ac82104ff2e3a9a51d806a1b53beac5483292a48c1393f9f68cf9",
+          "triangle_count": 2862
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_006_002.stl",
+          "grid_index": [
+            6,
+            2
+          ],
+          "sha256": "164baec977d9986ed15f8c82c3b222483cee2c8c934dd58fe385bc44ba93dee3",
+          "triangle_count": 338
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_006_003.stl",
+          "grid_index": [
+            6,
+            3
+          ],
+          "sha256": "357ce64edb8e8a2df37b788f54d4650671758df8155f06c2e818c5491503f415",
+          "triangle_count": 2278
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_006_004.stl",
+          "grid_index": [
+            6,
+            4
+          ],
+          "sha256": "d7e43179babf315399dbe5c4172af30b36f5e81f5528cdfbef357c95df91c51f",
+          "triangle_count": 1094
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_006_005.stl",
+          "grid_index": [
+            6,
+            5
+          ],
+          "sha256": "d4daa8cd6a06fc08299bcaaa5fbc9ddc7278baefa22789cdf4023e230160a0f2",
+          "triangle_count": 52
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_007_001.stl",
+          "grid_index": [
+            7,
+            1
+          ],
+          "sha256": "65333f04f628d4d7af59b5eb35f6c51bf2f752eafe81c429cf5268e800a4b113",
+          "triangle_count": 558
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_007_002.stl",
+          "grid_index": [
+            7,
+            2
+          ],
+          "sha256": "ce974f1acd8561fe05288f60cb198b33a7014420160ca745aa816a449475130c",
+          "triangle_count": 1177
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_007_003.stl",
+          "grid_index": [
+            7,
+            3
+          ],
+          "sha256": "73b3e91189b4e1224ffd5806fc18ee10740c0e6929b873b65e45ab6392e24348",
+          "triangle_count": 768
+        },
+        {
+          "filename": "bunker_chassis_collision_cell_007_004.stl",
+          "grid_index": [
+            7,
+            4
+          ],
+          "sha256": "c719645022ef4ae384ba36d02a31c08ef441f0884e8498aaf91ce33c3fbeb9f6",
+          "triangle_count": 150
+        }
+      ],
+      "slab_thickness_m": [
+        0.15,
+        0.15
+      ],
+      "source_sha256": "ff1495901808280e438b3db3db9067e00e2aa397765e9b4cb404541fe6893853",
+      "source_triangle_count": 62388,
+      "triangle_assignments": 69209
+    },
+    {
+      "assembly": {
+        "base_link": "base_link",
+        "source": {
+          "base_from_mesh": [
+            [
+              -1.0,
+              0.0,
+              0.0,
+              -0.33375
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              -0.2335
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          ],
+          "scale": [
+            0.001,
+            0.001,
+            0.001
+          ],
+          "sha256": "32034aeff85f217e975fac3f4db09f7d8d38f88dd6ed40d0a05d58ec424f8b71",
+          "source_sha256": "62148eb78b3e3294210e01cab448c4b0f099aacecfbe38d4409f8c2bf8bdd8d5",
+          "source_triangle_count": 194524
+        }
+      },
+      "axes": [
+        "x",
+        "y"
+      ],
+      "link": "bunker_sensor_station_collision",
+      "pieces": [
+        {
+          "filename": "bunker_sensor_station_collision_cell_000_000.stl",
+          "grid_index": [
+            0,
+            0
+          ],
+          "sha256": "026e9d35cb986adf5f53f2cabf1ed627f13af24a165d71cde95ff72aff735e8b",
+          "triangle_count": 3375
+        },
+        {
+          "filename": "bunker_sensor_station_collision_cell_000_001.stl",
+          "grid_index": [
+            0,
+            1
+          ],
+          "sha256": "959eaecaf22441fa10473f77a96f2ef0dd66d1b4a47ec5130d9d096a490fd5d1",
+          "triangle_count": 790
+        },
+        {
+          "filename": "bunker_sensor_station_collision_cell_000_002.stl",
+          "grid_index": [
+            0,
+            2
+          ],
+          "sha256": "594d3655e9782302d80505cab1e495dde795bdb4a82b886c8dcf748f4ca6065d",
+          "triangle_count": 3159
+        },
+        {
+          "filename": "bunker_sensor_station_collision_cell_000_003.stl",
+          "grid_index": [
+            0,
+            3
+          ],
+          "sha256": "3348959481f6a177a1b49a2ab56d8fd88fab77a5735a857f29c480a0918fca37",
+          "triangle_count": 664
+        },
+        {
+          "filename": "bunker_sensor_station_collision_cell_001_000.stl",
+          "grid_index": [
+            1,
+            0
+          ],
+          "sha256": "11024f65d1cbf250e88043b886a0d66612724ad1b9abeba9cc56dec5161c65d7",
+          "triangle_count": 409
+        },
+        {
+          "filename": "bunker_sensor_station_collision_cell_001_001.stl",
+          "grid_index": [
+            1,
+            1
+          ],
+          "sha256": "64c140e96adb4757cd6aca3cc4decd10de3a546e8b88e337af3477d3350cbc93",
+          "triangle_count": 90641
+        },
+        {
+          "filename": "bunker_sensor_station_collision_cell_001_002.stl",
+          "grid_index": [
+            1,
+            2
+          ],
+          "sha256": "e1f49583720384288cdfdc440cf73f518e5d08b368823e156967a82e4c082240",
+          "triangle_count": 231
+        },
+        {
+          "filename": "bunker_sensor_station_collision_cell_001_003.stl",
+          "grid_index": [
+            1,
+            3
+          ],
+          "sha256": "c13bf020d9deb7b72ca36d77daee9949206f679da6b0a113386b9ef1b1ea56ef",
+          "triangle_count": 232
+        },
+        {
+          "filename": "bunker_sensor_station_collision_cell_002_000.stl",
+          "grid_index": [
+            2,
+            0
+          ],
+          "sha256": "248f36e5e269605dce8c2326e35acb6a5b3b0aebf01cfa53faf95c39094a34a9",
+          "triangle_count": 1626
+        },
+        {
+          "filename": "bunker_sensor_station_collision_cell_002_001.stl",
+          "grid_index": [
+            2,
+            1
+          ],
+          "sha256": "62cf1de3b50b468d7871983d5009468680d8a121116c9ee123bf169d32519173",
+          "triangle_count": 31474
+        },
+        {
+          "filename": "bunker_sensor_station_collision_cell_002_002.stl",
+          "grid_index": [
+            2,
+            2
+          ],
+          "sha256": "369b94273ea6e3af14850063f07d925eec371ad4b53d090608b1bd755c6113a5",
+          "triangle_count": 4682
+        },
+        {
+          "filename": "bunker_sensor_station_collision_cell_002_003.stl",
+          "grid_index": [
+            2,
+            3
+          ],
+          "sha256": "c6052e4745759f7e01791c659840611bbf3c75682ca490fbeab0a22f0eba8622",
+          "triangle_count": 235
+        },
+        {
+          "filename": "bunker_sensor_station_collision_cell_003_000.stl",
+          "grid_index": [
+            3,
+            0
+          ],
+          "sha256": "12e0dc966fe8214908476fff07faf57b1b4321de4a0562e41ec8edac1c22ac55",
+          "triangle_count": 4316
+        },
+        {
+          "filename": "bunker_sensor_station_collision_cell_003_001.stl",
+          "grid_index": [
+            3,
+            1
+          ],
+          "sha256": "8169e96eb34f7054da4690977d24c7603ec45ee13dd4271db4d9fd2cb4ad9ff3",
+          "triangle_count": 48319
+        },
+        {
+          "filename": "bunker_sensor_station_collision_cell_003_002.stl",
+          "grid_index": [
+            3,
+            2
+          ],
+          "sha256": "1c7e03651724e6cc9e40f09b62f8d6baff89e3bdbfef3f50629fb669053d8413",
+          "triangle_count": 11582
+        },
+        {
+          "filename": "bunker_sensor_station_collision_cell_003_003.stl",
+          "grid_index": [
+            3,
+            3
+          ],
+          "sha256": "34c923edcbbc3457d1c4d935089a7375ca50e6ea04e3f6042e3cbc24961432c3",
+          "triangle_count": 608
+        }
+      ],
+      "slab_thickness_m": [
+        0.15,
+        0.15
+      ],
+      "source_sha256": "32034aeff85f217e975fac3f4db09f7d8d38f88dd6ed40d0a05d58ec424f8b71",
+      "source_triangle_count": 194524,
+      "triangle_assignments": 202343
+    }
+  ],
+  "schema_version": 1
+}

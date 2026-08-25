@@ -1,5 +1,39 @@
 schema_version: 1
 document: technical_debt
+generation_zero_ray_seed_qualification_2026_08_25:
+  status: software_repaired_physical_requalification_pending
+  correction: Removed legacy negative-Y/speculative coverage influence from generation-zero ray ordering and used current-FK distance to the continuous bounded ray rather than its representative scoring point.
+  remaining: Confirm in a later explicitly authorized supervised scan that the first attempted ray is the nearest prequalified interval and that capture one transitions to measured-information NBV. No hardware command was issued for this repair.
+startup_first_sample_and_terminal_order_incident_2026_08_24:
+  status: software_fixed_supervised_requalification_required
+  evidence: Task gui-sim-f29a8240fb7240bc9189103f2dbdc5d3 logged STARTUP_WRIST rejection at 1787607381.954, direct PRE_HOME start at 1787607406.460 and J3 collision/driver faults at 1787607407.579; the operator observed camera-holder contact with joint1.
+  root_cause: The August mission refactor made startup arming depend permanently on the first coherent J6 sample and independently simplified every enabled failure into PRE_HOME. It did not encode STARTUP_WRIST as a prerequisite of terminal PRE_HOME.
+  correction: Re-arm only an explicit unfinished positive-direction STARTUP_WRIST from current coherent negative feedback, and make terminal recovery prove that stage before PRE_HOME whenever startup completion is absent.
+  remaining: Perform one supervised five-percent configured storage-to-ready startup with camera clearance observation, then cancel after rough startup home and verify distinct PRE_HOME ROUGH_HOME STORAGE_WRIST disable cleanup. Do not run a full E2E first.
+  software_evidence: [146 focused driver mission and shutdown tests pass, 834 complete behavior tests pass, five-package build passes, piper colcon 69 pass with one copyright skip, all mobile functional colcon targets pass, only historical package-wide mobile flake8 and pep257 remain red]
+  required_retests: [supervised five-percent STARTUP_WRIST, supervised cancel after rough startup home, inspect distinct PRE_HOME ROUGH_HOME STORAGE_WRIST disable cleanup]
+camera_capability_map_2026_08_24:
+  status: generated_converged_and_software_integrated_physical_requalification_pending
+  implemented: [deterministic 2M Halton study, combined PiPER L515 Bunker endpoint collision qualification, 20 mm XYZ and 10 degree direction atlas, selected-floor tool clearance, packed compressed artifact, source-hash invalidation, coarse fallback, target-ray-only enforcement, additive timing and cull diagnostics]
+  evidence: [1685619 of 2000000 configurations collision-qualified, 1479561 occupied 5D bins, all 87 recorded achieved poses retained, 344 of 2520 representative rays supported, median per-ray lookup 0.286 ms, artifact 8130829 bytes]
+  convergence: One million samples retained every recorded pose but only 90.41 percent of final supported validation rays, so the two-million reference was correctly selected under the 99 percent rule.
+  remaining: [measure Tesseract attempt and wall-time reduction on command-free recorded requests, improve the fail-closed synthetic dual-limit recovery runtime without weakening collision checks, keep the tracked-ground manifest hardware-unqualified until assembled-platform qualification]
+  not_claimed: [exact IK reachability, path feasibility, dynamic-obstacle clearance, solid workspace volume, physical qualification]
+tracked_description_distribution_2026_08_24:
+  status: generated_drop_in_available_not_published_to_friend_repository
+  debt: The ready bundle is stored in this repository because no write authority to the friend's repository was assumed. Future upstream PiPER description changes require regeneration and replacement of both descriptor files.
+  next_cut: After the friend adopts the bundle, pin the accepted bundle manifest hash in their repository and exercise a recorded odom target through the command-free gateway before physical integration.
+bunker_collision_profile_qualification_2026_08_24:
+  status: tabletop_qualified_tracked_ground_blocked
+  implemented: [hash-locked Bunker source assets, permanent RViz platform visuals, arm-base fixed transforms, 150 mm no-drop collision cells, invariant combined geometry, idle-only GUI tabletop-or-ground selection, per-mission floor snapshot, executor/worker floor agreement, worker/bridge hash mismatch gate]
+  evidence: [Bunker model loads in rootless Tesseract, neutral arm has no required-clearance violation and reports 85.2 mm nearest chassis clearance, contact query is 2.905 ms versus tabletop 1.985 ms]
+  blocker: >-
+    The generic core qualification's synthetic dual-limit acquisition scenario
+    exhausts its 150-second planning budget with the combined platform
+    environment. This is a fail-closed availability limitation: no candidate
+    or motion is produced. Tabletop is qualified for plans that individually
+    pass all unchanged gates; tracked-ground remains unqualified.
+  next_cut: Profile the dual-limit recovery without tuning planning or disabling platform collisions merely to force a pass. Qualify tracked-ground only on the assembled platform. Capability-map generation remains separate.
 ray_prequalification_fidelity_and_cost_2026_08_24:
   status: explicitly_deferred_by_operator
   current_boundary: Coarse workspace prequalification still reasons about bounded ray/workspace intersection before the bridge. It does not prove IK, camera visibility, self collision or path feasibility.

@@ -1,0 +1,4 @@
+schema_version: 1
+# The complete PiPER/L515/Bunker geometry is always loaded. This setting
+# changes only the support plane captured when the next mission starts.
+floor_profile: "tabletop"

@@ -1,15 +1,14 @@
 schema_version: 1
+collision_profile: combined_platform_tabletop_floor
 model: piper_l515_planning
 qualified_for_hardware: true
-qualification_date: '2026-08-10'
+qualification_date: '2026-08-24'
 hardware_qualification_scope: >-
-  Collision-aware PiPER acquisition, scan and manipulation proposals through
-  the sole guarded Foxy executor, with exact trajectory-hash approval,
-  incremental feedback convergence, normal joint limits, runtime health gates,
-  and all six joints freely planned. Dedicated zero-capture RETURN_HOME is
-  explicitly outside collision qualification and uses the separately declared
-  configured_home_direct_joint_move policy. Physical acceptance remains at 5
-  percent; higher speeds require separate dynamic characterization.
+  Hardware-qualified complete PiPER/L515/Bunker model using the raised
+  tabletop support plane. Qualification permits only trajectories that pass
+  the unchanged exact IK, collision, path, visibility, hash and runtime
+  approval checks. The tracked-robot ground-floor profile remains separately
+  unqualified.
 qualification_reason: >-
   The generated model contains the exact installed camera-holder/L515 visual surfaces assembled
   in gripper_base coordinates, split into hash-verified 30 mm XY cells before convexification,
@@ -26,23 +25,40 @@ qualification_reason: >-
   2026-08-10 the exact saved profile passed core/compact regression using its
   explicit two-point, stage-bound home self-collision exemption plus mandatory
   dense camera-holder support-plane clearance. The nonlocal cable run
-  remains an explicit physical routing and operator-clearance control.
+  remains an explicit physical routing and operator-clearance control. The
+  hash-locked Bunker chassis and sensor station are always present; this file
+  differs from the ground-floor profile only in support-plane height. The
+  2026-08-24 command-free qualification passed model, timing, thin-obstacle,
+  zero-start and centerline acquisition stages. Its synthetic dual-limit
+  recovery case exhausted the unchanged 150-second budget before producing a
+  candidate; this is a fail-closed availability limitation and cannot produce
+  or authorize motion.
 robot_collision_source: >-
   Detailed PiPER STL meshes; link1, link2, and link5 are deterministically divided into
   overlapping 30 mm longitudinal pieces. The installed camera_holder and l515_visual meshes are
   transformed from their locked URDF visual poses into one gripper_base-frame collision surface
-  and divided into overlapping 30 mm XY cells. Tesseract convexifies each individual piece.
-collision_mesh_decomposition:
-  generator: longitudinal_triangle_slab_v1+installed_visual_grid_v1
-  manifest_uri: package://piper_description/meshes/planning_30mm/collision_mesh_manifest.json
-  manifest_sha256: 695f812a9597117b133b0439cd4f0cbbb7d1cb84aea713ecddc7dd04eb7e1526
-  mesh_uri_prefix: package://piper_description/meshes/planning_30mm
-  containment_policy: >-
-    Every source triangle is copied to every longitudinal slab or XY cell intersected by its
-    local-axis extent. Tesseract convexifies the individual overlapping pieces; source surface
-    triangles are never discarded. The camera assembly source retains every triangle of both
-    installed visual meshes after applying their exact fixed-joint, visual-origin and scale
-    transforms.
+  and divided into overlapping 30 mm XY cells. The Bunker chassis and sensor
+  station are transformed into arm-base coordinates and divided into
+  overlapping 150 mm XY cells. Tesseract convexifies each individual piece.
+collision_mesh_decompositions:
+  - generator: longitudinal_triangle_slab_v1+installed_visual_grid_v1
+    manifest_uri: package://piper_description/meshes/planning_30mm/collision_mesh_manifest.json
+    manifest_sha256: 695f812a9597117b133b0439cd4f0cbbb7d1cb84aea713ecddc7dd04eb7e1526
+    mesh_uri_prefix: package://piper_description/meshes/planning_30mm
+    containment_policy: >-
+      Every source triangle is copied to every longitudinal slab or XY cell intersected by its
+      local-axis extent. Tesseract convexifies the individual overlapping pieces; source surface
+      triangles are never discarded. The camera assembly source retains every triangle of both
+      installed visual meshes after applying their exact fixed-joint, visual-origin and scale
+      transforms.
+  - generator: transformed_platform_grid_v1
+    manifest_uri: package://piper_description/meshes/platform_planning_150mm/collision_mesh_manifest.json
+    manifest_sha256: 58d79534efba2ae68ea1e409a0f3c07321561f5622ceb9177f1b2c3c7d89fcdf
+    mesh_uri_prefix: package://piper_description/meshes/platform_planning_150mm
+    containment_policy: >-
+      Every chassis and sensor-station source triangle is transformed once
+      into the arm-base planning frame and copied to every 150 mm XY cell
+      intersected by its extent. No source triangle is discarded.
 configured_home_direct_joint_move:
   enabled: true
   plan_kind: RETURN_HOME

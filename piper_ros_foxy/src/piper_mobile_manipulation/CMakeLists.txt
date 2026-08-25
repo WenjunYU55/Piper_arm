@@ -97,6 +97,8 @@ install(FILES
 if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)
   ament_add_pytest_test(test_obstacle_geometry test/test_obstacle_geometry.py)
+  ament_add_pytest_test(
+    test_collision_environment test/test_collision_environment.py)
   ament_add_pytest_test(test_target_landmark_geometry test/test_target_landmark_geometry.py)
   ament_add_pytest_test(test_supervised_workflow test/test_supervised_workflow.py)
   ament_add_pytest_test(
@@ -144,6 +146,8 @@ if(BUILD_TESTING)
   ament_add_pytest_test(
     test_nbv_regression_replay test/test_nbv_regression_replay.py)
   ament_add_pytest_test(test_view_generation test/test_view_generation.py)
+  ament_add_pytest_test(
+    test_capability_map test/test_capability_map.py)
   ament_add_pytest_test(test_configuration test/test_configuration.py)
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)

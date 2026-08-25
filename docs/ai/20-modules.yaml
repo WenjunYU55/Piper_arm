@@ -1,5 +1,28 @@
 schema_version: 1
 document: module_ownership
+generation_zero_ray_seed_order_2026_08_25:
+  owner_module: piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/bridge_node.py
+  allowed_edit_paths: [piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/bridge_node.py, piper_ros_foxy/src/piper_tesseract_foxy/test/test_bridge_feedback_freshness.py, docs/ai]
+  owns: Generation-zero ordering of already generated and prequalified bounded target rays by actual current-camera travel.
+  must_not_move_without: [ray_nbv_seed policy label, six-ray bound, latest achieved FK source, post-capture information ranking, worker exact-feasibility authority]
+camera_capability_map_2026_08_24:
+  owner_module: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/capability_map.py
+  allowed_edit_paths: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/capability_map.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/viewpoint_reachability_filter_node.py, piper_ros_foxy/src/piper_mobile_manipulation/config/piper_camera_capability_map.npz, piper_ros_foxy/src/piper_mobile_manipulation/config/capability_map_convergence.json, piper_ros_foxy/src/piper_mobile_manipulation/config/scan_planning_params.yaml, piper_ros_foxy/src/piper_mobile_manipulation/launch/supervised_viewpoint_execution.launch.py, piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/capability_map_generator.py, motion_planning/tesseract/generate_capability_map.sh, tools/validate_capability_map.py, related tests and docs]
+  owns: Pickle-free sparse 5D camera occupancy artifact, source-hash validation, floor-aware bounded-ray lookup, shadow/enforce/fallback state, convergence generation and report.
+  does_not_own: [NBV generation or gain, accepted coverage, exact IK, collision path planning, dynamic obstacles, execution, capture, home or shutdown]
+  must_not_move_without: [viewpoint reachability filter target-ray boundary, combined collision model hashes, hand-eye transform, conservative joint limits, floor profiles, six-ray bridge shortlist, worker exact-feasibility authority]
+tracked_robot_drop_in_2026_08_24:
+  owner_module: tools/build_track_robot_description_bundle.py
+  allowed_edit_paths: [tools/build_track_robot_description_bundle.py, integration/track_robot_description, piper_ros_foxy/src/piper_description/test/test_tracked_robot_drop_in.py, piper_ros_foxy/src/piper_description/CMakeLists.txt, docs/ai]
+  owns: Deterministic filtered arm-only Xacro, tracked-root combined URDF, pinned upstream provenance, piper_base_link identity gateway alias and replacement instructions.
+  does_not_own: [tracked localization and odometry, tracked sensor drivers, arm-local planning base_link semantics, Tesseract platform collision injection, target gateway business logic]
+  must_not_move_without: [friend base_link -> arm_base_link mount, piper_base_link gateway default, both descriptor outputs, duplicate-platform exclusion, subtree equality tests]
+bunker_platform_collision_2026_08_24:
+  owner_module: piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/collision_meshes.py
+  allowed_edit_paths: [piper_ros_foxy/src/piper_description/urdf/piper_description.xacro, piper_ros_foxy/src/piper_description/meshes/platform_sources, piper_ros_foxy/src/piper_description/meshes/bunker_chassis_collision.STL, piper_ros_foxy/src/piper_description/meshes/bunker_sensor_station_collision.STL, piper_ros_foxy/src/piper_description/meshes/platform_planning_150mm, piper_ros_foxy/src/piper_mobile_manipulation/config/collision_environment.yaml, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/collision_environment.py, piper_gui_native.py, piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/collision_meshes.py, piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/model_builder.py, piper_ros_foxy/src/piper_tesseract_foxy/model/collision_model.yaml, piper_ros_foxy/src/piper_tesseract_foxy/model/collision_model_ground.yaml, piper_ros_foxy/src/piper_tesseract_foxy/model/piper_bunker.srdf, startup launch and rootless wrappers, related tests and docs]
+  owns: Hash-locked external platform provenance, permanent visual branches, fixed arm-base transforms, no-drop 150 mm XY decomposition, saved next-mission floor selection and bridge-worker model identity.
+  separate_owners: {piper_and_l515_geometry: installed_l515_collision_assembly_2026_08_24 plus piper_description.xacro, motion_feasibility: worker.py, runtime_external_floor: worker.py plus scan_viewpoint_executor_node.py, configured_home: existing direct-home policy}
+  must_not_move_without: [permanent combined geometry, external source hashes, platform transform/bounds tests, rigid-pair-only SRDF policy, per-mission floor immutability, worker/bridge hash agreement, software qualification then supervised physical qualification]
 deadline_terminal_home_authorization_2026_08_24:
   owner_module: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission_engine.py
   ros_boundary: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_scan_mission_node.py

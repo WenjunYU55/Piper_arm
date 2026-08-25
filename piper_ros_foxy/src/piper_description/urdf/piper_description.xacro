@@ -38,6 +38,47 @@
       </geometry>
     </collision>
   </link>
+
+  <!--
+    The tracked platform is a permanent part of the installed assembly.  The
+    source meshes below are already transformed into base_link coordinates, so
+    their fixed joints are identities.  These links are visual-only here;
+    model_builder.py installs the hash-verified decomposed collision pieces for
+    Tesseract without creating a second platform representation.
+  -->
+  <link name="bunker_chassis_collision">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://piper_description/meshes/bunker_chassis_collision.STL" />
+      </geometry>
+      <material name="bunker_dark">
+        <color rgba="0.16 0.18 0.20 1" />
+      </material>
+    </visual>
+  </link>
+  <joint name="base_link_to_bunker_chassis_collision" type="fixed">
+    <origin xyz="0 0 0" rpy="0 0 0" />
+    <parent link="base_link" />
+    <child link="bunker_chassis_collision" />
+  </joint>
+
+  <link name="bunker_sensor_station_collision">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://piper_description/meshes/bunker_sensor_station_collision.STL" />
+      </geometry>
+      <material name="bunker_station">
+        <color rgba="0.28 0.34 0.40 1" />
+      </material>
+    </visual>
+  </link>
+  <joint name="base_link_to_bunker_sensor_station_collision" type="fixed">
+    <origin xyz="0 0 0" rpy="0 0 0" />
+    <parent link="base_link" />
+    <child link="bunker_sensor_station_collision" />
+  </joint>
   <link
     name="link1">
     <inertial>

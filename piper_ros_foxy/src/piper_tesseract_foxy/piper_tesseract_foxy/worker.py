@@ -28,6 +28,7 @@ from piper_tesseract_foxy.contract import (
     JOINT_NAMES,
     SCHEMA_VERSION,
     Spool,
+    sha256_file,
     trajectory_digest,
     validate_request,
 )
@@ -2860,9 +2861,19 @@ class TesseractBackend:
 class Worker:
     def __init__(self, spool_root, urdf_path, srdf_path, manifest_path):
         self.spool = Spool(spool_root)
+        self.urdf_path = str(urdf_path)
+        self.srdf_path = str(srdf_path)
+        self.manifest_path = str(manifest_path)
+        self.model_hashes = {}
         self.backend_error = None
         try:
             self.backend = TesseractBackend(urdf_path, srdf_path, manifest_path)
+            self.model_hashes = {
+                'urdf_sha256': sha256_file(Path(self.urdf_path)),
+                'srdf_sha256': sha256_file(Path(self.srdf_path)),
+                'collision_manifest_sha256': sha256_file(
+                    Path(self.manifest_path)),
+            }
         except (BackendUnavailable, ContractError, OSError, RuntimeError, ValueError) as error:
             self.backend = None
             self.backend_error = str(error)
@@ -2887,6 +2898,7 @@ class Worker:
             'backend_version': getattr(
                 self.backend, 'version', 'unavailable'),
             'backend_error': self.backend_error or '',
+            **self.model_hashes,
         })
         self.last_heartbeat_at = time.monotonic()
 
@@ -3020,7 +3032,7 @@ def arguments(argv=None):
     parser.add_argument('--urdf', default=os.environ.get(
         'PIPER_TESSERACT_URDF', '/models/piper_planning.urdf'))
     parser.add_argument('--srdf', default=os.environ.get(
-        'PIPER_TESSERACT_SRDF', '/models/piper.srdf'))
+        'PIPER_TESSERACT_SRDF', '/models/piper_bunker.srdf'))
     parser.add_argument('--collision-manifest', default=os.environ.get(
         'PIPER_TESSERACT_COLLISION_MANIFEST', '/models/collision_model.yaml'))
     parser.add_argument('--once', action='store_true')

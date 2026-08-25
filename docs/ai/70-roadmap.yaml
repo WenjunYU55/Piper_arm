@@ -1,5 +1,27 @@
 schema_version: 1
 document: mission_goal_and_delivery_roadmap
+generation_zero_nearest_ray_seed_2026_08_25:
+  milestone: M5 efficient closed-loop ray NBV
+  software_status: Generation zero now spends its bounded Tesseract shortlist nearest to the actual current camera because no accepted coverage exists yet; generation one and later retain the existing cumulative information ranking.
+  next_gate: Software regressions and build, then inspect provenance in a later explicitly authorized supervised mission. No physical motion is part of this change.
+startup_wrist_terminal_order_repair_2026_08_24:
+  milestone: M1 safe staged startup and terminal recovery
+  software_status: Fresh-reboot STARTUP_WRIST can re-arm only from current coherent negative J6 at the explicit command boundary, and terminal recovery now blocks PRE_HOME until STARTUP_WRIST or complete rough startup home is proved.
+  incident_status: The prior task issued PRE_HOME with J6 near -3.125 rad after startup rejection and the camera contacted joint1. Software regressions are repaired; physical qualification is invalidated until a supervised startup-only check passes.
+  next_gate: Run full build and tests, then one explicitly authorized five-percent storage-to-ready STARTUP_WRIST with direct visual clearance observation. Only after that succeeds, cancel after rough startup home and verify PRE_HOME, ROUGH_HOME, STORAGE_WRIST and disable. Do not start with a full E2E.
+camera_capability_map_2026_08_24:
+  milestone: M5 cheap collision-aware frozen-ray prequalification
+  software_status: Complete. The two-million reference was selected because smaller checkpoints did not reach 99 percent practical supported-ray recall. The committed 8.13 MB sparse atlas retains all 87 recorded achieved poses and reduces representative rays to 344 of 2520 before Tesseract.
+  next: Run one explicitly authorized supervised tabletop viewpoint using the qualified profile, then measure capability-map culling and Tesseract wall time. Keep tracked-ground blocked until assembled-platform qualification.
+  unchanged: [NBV score and ranking, six-ray shortlist, Tesseract exact planning, motion, capture, home, shutdown, public ROS interfaces]
+tracked_robot_description_adoption_2026_08_24:
+  status: drop_in_generated_and_software_validated
+  next: Friend replaces both descriptor files, rebuilds bunker_pro2 and piper_description, verifies odom -> piper_base_link while stationary, then replays one command-free odom target through the gateway before supervised physical qualification.
+bunker_collision_profile_2026_08_24:
+  milestone: M5 prerequisite collision environment for later capability-map work
+  software_status: One permanent combined PiPER/L515/Bunker visual and collision model is integrated. The GUI selects only tabletop or tracked-ground support height for the next mission, and mixed worker/bridge hashes fail closed.
+  qualification_status: Tabletop is qualified_for_hardware true after model/timing, obstacle, zero-start and centerline cases passed; the synthetic dual-limit recovery remains a fail-closed timeout. Tracked-ground remains qualified_for_hardware false pending assembled-platform qualification.
+  deferred: [tracked-ground hardware profile qualification, target-specific capability slicing, tracked-base TF integration]
 ray_endpoint_feasibility_repair_2026_08_23:
   milestone: M5 make global NBV choose the best actually feasible information-bearing ray without repeated static IK waste
   software_status: Each shortlisted direction is now one bounded interval solved continuously over joints and standoff by the worker; local solver failure remains generation-contextual rather than falsely entering the frozen-session permanent cache. Accepted directions below ten degrees are redundant while the six-ray bound and global accepted-coverage rescore remain unchanged.
@@ -109,7 +131,7 @@ mission_goal: >-
 
 current_integration_status_2026_08_17:
   status: software_complete_physical_pending
-  completed: [MissionEngine sole mission/shutdown authority, fresh direct-home qualification on every owned controllable failure, motor-loss-only no-command exception, named immutable executor runtime gates, redundant autonomous startup and terminal hold-service calls removed, obsolete frozen mission and duplicate shadow evaluator removed]
+  completed: [MissionEngine sole mission/shutdown authority, unfinished STARTUP_WRIST prerequisite before terminal PRE_HOME, fresh direct-home qualification on every owned controllable failure, motor-loss-only no-command exception, named immutable executor runtime gates, redundant autonomous startup and terminal hold-service calls removed, obsolete frozen mission and duplicate shadow evaluator removed]
   unchanged: [scan trajectory paths/timing/speed, Tesseract and perception algorithms, public ROS contracts, numeric limits and thresholds, TF/calibration, configured home targets]
   next: Run full software/build/rootless qualifications, push the reviewed branch, then perform the supervised physical checklist beginning with staged direct home and one injected non-motor failure-to-home case.
 
@@ -147,7 +169,7 @@ system_behavior_required:
   terminal_behavior:
     - Success, controllable failure and manual Cancel/Home first stop and hold the measured current pose.
     - Request a fresh direct ROUGH_HOME target and then a direct J6-only STORAGE_WRIST target.
-    - Dedicated PRE_HOME, ROUGH_HOME and STORAGE_WRIST stages never retrace an old path and bypass the Tesseract worker plus robot self-collision, camera/tracking/obstacle freshness and Tesseract motion-limit telemetry. The CAD-derived installed holder/L515 envelope must retain at least 0.005 m support-plane/external clearance; hard limits, fresh trusted feedback/control, motor health, independent stage proof, the operator-authorized 0.2-rad per-joint configured-home endpoint acceptance and disable proof remain mandatory. The controller retains each proved target; autonomous startup and shutdown do not request a second hold acknowledgement.
+    - Dedicated PRE_HOME, ROUGH_HOME and STORAGE_WRIST stages never retrace an old path and bypass the Tesseract worker plus robot self-collision, camera/tracking/obstacle freshness and Tesseract motion-limit telemetry. Therefore unfinished STARTUP_WRIST must be proved before PRE_HOME. The CAD-derived installed holder/L515 envelope must retain at least 0.005 m support-plane/external clearance; hard limits, fresh trusted feedback/control, motor health, independent stage proof, the operator-authorized 0.2-rad per-joint configured-home endpoint acceptance and disable proof remain mandatory. The controller retains each proved target; autonomous startup and shutdown do not request a second hold acknowledgement.
     - Stop all mission-owned nodes after disable while keeping coordinator and RViz ready.
     - Return outcome, stable failure code, retryable flag, safe_shutdown, capture result and mesh job identity to the tracked robot or GUI emulator.
   reconstruction:

@@ -59,6 +59,11 @@
     # Target rays always require some bounded standoff to intersect this coarse
     # camera workspace before Tesseract performs authoritative feasibility.
     enforce_static_reach_bounds: false
+    # Collision-qualified sparse 5D camera atlas. Only target rays use it.
+    # Missing, stale-hash or unqualified artifacts retain the proven coarse
+    # workspace cull and leave exact feasibility to Tesseract.
+    capability_map_mode: "enforce"
+    floor_z_m: 0.005
     arm_status_timeout_sec: 1.0
 
     min_good_scan_quality: 0.65

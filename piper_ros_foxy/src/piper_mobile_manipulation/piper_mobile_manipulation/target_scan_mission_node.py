@@ -37,6 +37,10 @@ from piper_mobile_manipulation.configuration import (
     MissionMotionConfig,
     MissionWorkflowConfig,
 )
+from piper_mobile_manipulation.collision_environment import (
+    default_collision_environment_path,
+    read_collision_environment,
+)
 from piper_mobile_manipulation.home_pose import (
     load_home_pose,
     staged_home_targets as _staged_home_targets,
@@ -1255,6 +1259,14 @@ class TargetScanMissionNode(Node):
         if not self.param_bool('manage_processes'):
             return
         root = Path(str(configured_value(self, 'project_root'))).resolve()
+        floor_profile = self.configuration.process.floor_profile
+        if floor_profile == 'saved':
+            configured_path = self.configuration.process.floor_profile_path
+            selection_path = (
+                Path(configured_path).resolve() if configured_path
+                else default_collision_environment_path(root))
+            floor_profile = read_collision_environment(
+                selection_path).floor_profile
         environment = ProcessSupervisor.build_environment({
             'PIPER_ARM_ROOT': str(root),
             'PIPER_AUTO_ENABLE': 'false',
@@ -1268,6 +1280,7 @@ class TargetScanMissionNode(Node):
                 configured_value(self, 'maximum_captures')),
             'PIPER_VIEWPOINT_MIN_VIEWS': str(
                 configured_value(self, 'required_captures')),
+            'PIPER_FLOOR_PROFILE': floor_profile,
             'PIPER_RETURN_HOME_POSITIONS_RAD': json.dumps(
                 list(session.home_positions_rad), separators=(',', ':')),
             'PIPER_PRE_HOME_POSITIONS_RAD': json.dumps(

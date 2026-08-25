@@ -5,6 +5,8 @@ IMAGE="${PIPER_TESSERACT_IMAGE:-localhost/piper-tesseract:0.35.0.6-dev}"
 RUNTIME_ROOT="${XDG_RUNTIME_DIR:-/tmp}"
 SPOOL="${PIPER_TESSERACT_SPOOL:-$RUNTIME_ROOT/piper_tesseract_plans}"
 LOCK_FILE="$RUNTIME_ROOT/piper_tesseract_worker.lock"
+# shellcheck disable=SC1091
+source "$(dirname "${BASH_SOURCE[0]}")/floor_profile.sh"
 
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
@@ -18,7 +20,7 @@ if ! command -v podman >/dev/null 2>&1; then
     python3 -m piper_tesseract_foxy.model_builder \
     --xacro "$ROOT/piper_ros_foxy/src/piper_description/urdf/piper_description.xacro" \
     --calibration "$ROOT/L515_camera/calibration/hand_eye/session_20260808_straight_mount/calibration_result.yaml" \
-    --manifest "$ROOT/piper_ros_foxy/src/piper_tesseract_foxy/model/collision_model.yaml" \
+    --manifest "$COLLISION_MANIFEST_HOST" \
     --output "$RUNTIME/piper_planning.urdf"
   # Keep this shell alive as Bubblewrap's direct parent.  The GUI launches this
   # wrapper from a short-lived Python startup thread; exec'ing bwrap there made
@@ -41,4 +43,8 @@ exec podman run --rm \
   --memory 4g \
   --tmpfs /tmp:rw,noexec,nosuid,size=256m \
   --volume "$SPOOL:/spool:rw" \
+  --env PIPER_FLOOR_PROFILE="$FLOOR_PROFILE" \
+  --env PIPER_TESSERACT_URDF="/models/share/piper_description/urdf/$COLLISION_URDF_NAME" \
+  --env PIPER_TESSERACT_SRDF="/models/$COLLISION_SRDF_NAME" \
+  --env PIPER_TESSERACT_COLLISION_MANIFEST="/models/$COLLISION_MANIFEST_NAME" \
   "$IMAGE"

@@ -1,5 +1,51 @@
 schema_version: 1
 document: guardrails
+generation_zero_nearest_ray_seed_guardrail_2026_08_25:
+  invariants:
+    - With accepted_views zero, ray_nbv_seed has no measured information-gain authority; order its shortlist only by current-FK travel to the complete bounded interval.
+    - The seed rule must not affect candidate generation, culling, the six-ray cap, Tesseract feasibility or any generation after an accepted capture.
+    - Accepted captures alone enable cumulative coverage and information-ranked ray_nbv behavior.
+  must_retest_if_changed: [test_bridge_feedback_freshness.py, complete Tesseract and mobile suites, build, colcon test]
+startup_wrist_before_pre_home_guardrail_2026_08_24:
+  invariants:
+    - Never issue PRE_HOME from an enabled mission while both startup_wrist_completed and startup_home_completed are false.
+    - Re-arm only at an explicitly tagged STARTUP_WRIST command using the latest finite coherent nonpositive J6 feedback and a nondecreasing target toward ready zero.
+    - Preserve the existing J6-only command scope, raw controller mapping, positive-direction watchdog and controller-limit proof.
+    - If terminal STARTUP_WRIST fails without motor loss, retain the command owner at the current position; do not continue to PRE_HOME or disable.
+    - If motor authority is lost, issue no automatic motion and retain the existing six-disabled feedback proof path.
+    - Direct configured home still bypasses Tesseract by operator policy; do not treat the camera collision mesh as protection for an invalid stage order.
+  blast_radius: [powered startup, cancellation or failure before rough startup home, camera-to-joint1 clearance, terminal home and disable eligibility]
+  must_retest_if_changed: [test_enable_handshake.py, test_mission_engine.py, test_mission_core.py, phase1 startup and cancellation characterization, scan executor direct-home tests, full piper and mobile suites, colcon build and test, supervised storage-to-ready startup before another E2E]
+camera_capability_map_guardrail_2026_08_24:
+  invariants:
+    - Apply the atlas only after the existing coarse check and only to target_ray candidates. Rough acquisition and exact-point policies are unchanged.
+    - Query the complete permitted standoff interval. Never reject a ray from only its scoring point.
+    - An occupied bin is prequalification only. Tesseract retains exact IK, joint-limit, self/environment collision, path, final aim and dense visibility authority.
+    - Accepted captures alone modify coverage. Capability support or rejection changes no NBV score, rank, capture history or reconstruction.
+    - Verify every recorded source hash before enforcement. Missing, corrupt, stale or unqualified artifacts fall back to the coarse filter.
+    - Floor selection uses the same startup-frozen tabletop or ground Z as executor and worker. The map stores the best attached-tool minimum Z per occupied bin; dynamic obstacles remain Tesseract-only.
+    - Never store or use map joint samples as motion commands or IK seeds in this cull-only implementation.
+  blast_radius: [which target rays can enter the six-ray shortlist, Tesseract planning attempts and latency, reachable-frontier exhaustion]
+  must_retest_if_changed: [test_capability_map.py, test_capability_map_generator.py, test_viewpoint_feedback_freshness.py, test_viewpoint_rays.py, test_bridge_feedback_freshness.py, complete mobile and Tesseract suites, colcon build, colcon test, rootless command-free qualification, recorded achieved-pose recall]
+tracked_robot_drop_in_guardrail_2026_08_24:
+  invariants:
+    - The tracked robot owns robot_bottom, chassis base_link, sensor_station_link and odom localization. The arm model never replaces these frame semantics.
+    - Keep base_link -> arm_base_link at [0.39, 0, 0.016] metres with zero rotation unless the physical mount is remeasured and both repositories are requalified.
+    - piper_base_link is an empty identity alias of arm_base_link for the gateway. Never attach a second visual, collision or inertial body to it.
+    - Replace the generated arm Xacro and combined Bunker URDF together; their arm subtrees must remain structurally identical after base_link is renamed arm_base_link.
+    - Never copy bunker_chassis_collision or bunker_sensor_station_collision into the tracked master; its own chassis and station are already authoritative.
+    - Incoming network targets remain timestamped odom observations. The gateway transforms them once at admission; physical arm dispatch requires the tracked base to remain stationary.
+  must_retest_if_changed: [test_tracked_robot_drop_in.py, upstream friend description tests, check_urdf, piper_description build/test, command-free timestamped TF/goal handoff]
+bunker_collision_profile_guardrail_2026_08_24:
+  invariants:
+    - The combined PiPER/L515/Bunker geometry is invariant across floor choices and is always visible in RViz. Never import the friend's PiPER xacro, joint limits, camera transform or collision policy.
+    - Keep platform triangles in arm-base base_link and retain every source triangle through deterministic 150 mm XY decomposition.
+    - Disable collisions only for base_link/chassis rigid mount and chassis/station rigid assembly. Never disable an arm or camera link against the platform.
+    - Tabletop floor is 0.005 m and tracked-robot ground is -0.466 m; the chosen value must agree between Tesseract and executor. Configured-home collision bypass remains exactly stage-bounded and unchanged.
+    - The GUI may change only the saved next-mission floor while idle. The coordinator snapshots it before children start; a running mission cannot be mutated.
+    - Bridge and worker SRDF/manifest hashes must agree before readiness. Tabletop is qualified_for_hardware true; tracked-ground remains false until explicit qualification on the assembled platform.
+  blast_radius: [all collision feasibility, platform self-collision protection, external floor clearance, worker startup and readiness, planning cost]
+  must_retest_if_changed: [test_collision_environment.py, test_collision_profiles.py, test_collision_meshes.py, test_model_builder.py, test_bridge_feedback_freshness.py, test_configuration.py, piper_description and GUI tests, complete mobile and Tesseract functional suites, five-package build, rootless model load, collision-query timing, motors-disabled inspection before physical qualification]
 deadline_terminal_home_authorization_guardrail_2026_08_24:
   invariants:
     - A mission deadline immediately ends acquisition, NBV, planning and capture work but must still enter the established terminal home sequence.
@@ -677,7 +723,7 @@ target_depth_and_schema2_guardrail_2026_08_16:
 
 live_voxel_nbv_guardrail_2026_08_17:
   invariants:
-    - The first view remains the established compact bootstrap; unknown predicted geometry is never fused into reconstruction or treated as a captured surface.
+    - The first view remains a bootstrap ordered by nearest prequalified bounded ray interval; unknown predicted geometry is never fused into reconstruction or treated as a captured surface.
     - Only committed schema-2 target support and depth update coverage. Missing, mismatched, escaping or incomplete artifacts fail closed in authoritative mode.
     - Information gain is compared before travel cost. Radial IK fallbacks must not fill the shortlist ahead of all distinct higher-information directions.
     - The model is planning evidence only. Tesseract IK, robot/environment collision, target visibility, authorization and executor runtime gates remain authoritative for motion.

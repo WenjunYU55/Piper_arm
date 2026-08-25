@@ -1,8 +1,30 @@
 schema_version: 1
 document: runtime_flows
+generation_zero_nearest_ray_seed_flow_2026_08_25:
+  trigger: A ray_nbv mission requests its first view with accepted_views zero.
+  sequence: [use the frozen prequalified ray pool, measure travel from current FK to the nearest permitted point of every bounded interval, order the six-ray seed shortlist nearest first, let Tesseract test exact target-facing feasibility, execute and validate one view, on acceptance transition to cumulative-information NBV]
+  manual_smoke_checks: [with motion disabled verify nearest interval is first regardless of legacy face score, verify scoring-point distance cannot defeat a ray interval containing the current camera, verify capture one switches to information-ranked ray_nbv]
+reboot_startup_failure_to_home_2026_08_24:
+  observed_failure: The fresh driver never armed its negative J6 transaction, rejected STARTUP_WRIST, and the terminal path then started PRE_HOME with J6 still near -3.125 rad. Camera-to-joint1 contact followed about 1.1 seconds later.
+  repaired_startup: [read coherent feedback, enable, accept only explicitly tagged STARTUP_WRIST, re-arm from latest finite nonpositive J6 if the first sample was ambiguous, preserve measured J1-J5, command only increasing J6, prove ready zero, execute rough startup home]
+  repaired_terminal: [if startup wrist and rough startup home are both unproved then retry the same bounded J6-only STARTUP_WRIST prerequisite, on proof continue PRE_HOME then ROUGH_HOME then STORAGE_WRIST then disable and cleanup, on failure issue no PRE_HOME and retain command ownership, on motor loss issue no automatic motion]
+  manual_smoke_checks: [build and software tests first, motors-disabled inspect the startup branch diagnostic, supervised startup from configured storage at five percent, confirm STARTUP_WRIST precedes every PRE_HOME, abort before PRE_HOME if STARTUP_WRIST is rejected, inspect camera clearance, then perform normal staged shutdown]
+camera_capability_map_flow_2026_08_24:
+  offline: [sample deterministic joint configuration, reject endpoint collision or clearance violation, calculate camera optical pose and attached-tool minimum Z, merge into sparse 5D cell, write convergence checkpoint, compare practical rays and recorded achieved poses against 2M reference, commit selected artifact]
+  runtime: [planner emits frozen information-ranked target rays, reachability filter applies existing analytic interval cull, hash-qualified atlas tests the complete bounded ray, unsupported ray remains diagnostic but cannot reach bridge, surviving rays retain NBV order, bridge shortlists at most six, Tesseract runs unchanged exact continuous-standoff planning]
+  failure_modes: [artifact missing or corrupt -> coarse fallback, source hash mismatch -> coarse fallback, convergence unqualified -> coarse fallback, no occupied intersecting cell in enforce mode -> typed private prequalification rejection, atlas false positive -> ordinary Tesseract rejection]
+  manual_smoke_checks: [inspect capability map status in reachable-viewpoint JSON, verify frozen 360-ray pool is materially reduced, verify recorded achieved rays remain supported, compare Tesseract attempted ray IDs and planning time, do not command hardware during map qualification]
+tracked_robot_odom_target_handoff_2026_08_24:
+  steps: [tracked localization publishes odom -> base_link, combined robot_state_publisher publishes base_link -> arm_base_link -> piper_base_link, tracked client submits timestamped odom target and label, gateway snapshots odom -> piper_base_link and rotates covariance, private spool stores arm-local base_link target, local coordinator admits and executes the ordinary mission]
+  failure_modes: [missing timestamped odom transform rejects admission, stale or mismatched descriptions fail TF inspection, base movement after admission does not move the snapshotted arm target]
+  manual_smoke_checks: [check one TF root, tf2_echo odom piper_base_link while stationary, submit command-free gateway goal and verify transformed coordinates, do not enable hardware during description qualification]
+bunker_collision_profile_startup_2026_08_24:
+  sequence: [RViz always loads fixed platform visuals, idle GUI saves tabletop or ground, coordinator snapshots the saved floor at the next mission boundary, exports PIPER_FLOOR_PROFILE, worker and bridge load identical combined geometry plus matching floor manifest, executor receives the same floor height, bridge publishes readiness only when model hashes agree]
+  failure_behavior: Missing or invalid saved selection starts no owned process. Mixed worker/bridge model blocks readiness. Tabletop reports collision_model_qualified true; tracked-ground reports false and cannot execute hardware motion.
+  manual_smoke_checks: [inspect RViz combined model, switch GUI floor while idle, verify active mission controls disable selector, start command-free generation and compare worker bridge manifest hashes, confirm floor 0.005 or -0.466 matches executor, verify tabletop readiness is qualified and tracked-ground remains proposal-only]
 deadline_to_home_flow_2026_08_24:
   observed_failure: The 1200-second scan deadline expired before terminal recovery. PRE_HOME was then rejected because the executor still held the now-expired mission authorization.
-  repaired_sequence: [deadline terminates scanning, enter MissionEngine.shutdown, request executor stop/hold, require acknowledgement and fresh joints, renew matching task and digest for one bounded direct-home stage, execute and prove PRE_HOME, repeat bounded renewal and proof for ROUGH_HOME and STORAGE_WRIST, disable all six motors, revoke, stop owned processes]
+  repaired_sequence: [deadline terminates scanning, enter MissionEngine.shutdown, if startup remains incomplete prove STARTUP_WRIST first, otherwise request executor stop/hold, require acknowledgement and fresh joints, renew matching task and digest for one bounded direct-home stage, execute and prove PRE_HOME, repeat bounded renewal and proof for ROUGH_HOME and STORAGE_WRIST, disable all six motors, revoke, stop owned processes]
   failure_behavior: Renewal rejection or any unchanged home proof failure retains the command owner and reports NEEDS_OPERATOR. Fresh motor-control loss still issues no home command.
   manual_smoke_checks: [software tests first, supervised short deadline while already in a clear qualified posture, confirm no scan resumes, confirm PRE_HOME then ROUGH_HOME then STORAGE_WRIST, confirm all-six disable and exact cleanup]
 ray_endpoint_feasibility_flow_2026_08_23:
@@ -605,8 +627,8 @@ flexible_camera_region_after_exact_ik_exhaustion_2026_08_06:
   manual_smoke_checks: [verify planner reports 1050 before achieved-pose exclusion and reachability republishes without static workspace filtering, verify the off-grid 195.6-degree replay retains a 202.5-degree continuity option inside the 6-to-30-degree frontier, verify bridge request contains no more than 36 candidates, verify intermediate azimuth/pitch/range samples appear, require every executed result pose/hash to match one exact request candidate]
 compact_first_scan_entry_2026_08_06:
   trigger: GUI task using the dense region reached measured lock and CLEAR scene, then lost target confidence during the first multiview move before any capture. The 45-degree frontier let the worker take an ambitious boundary pose first. The executor stopped and the mission proved current-state home, disable and cleanup with zero captures.
-  change: Cap automatic measured-view progress at 30 degrees. When accepted_views is zero, order the closest non-regressing candidate before the coverage leader; after the first persisted view, restore coverage-first/compact-fallback interleaving. Every accepted capture still needs at least six degrees of new target direction.
-  manual_smoke_checks: [first request candidate is the closest non-regressing member, no candidate exceeds 30 target-centred degrees, second request returns to coverage-first ordering, target remains measured/nonprediction through the first capture]
+  change: Historical behavior, superseded on 2026-08-25. Generation zero now orders the complete prequalified seed shortlist solely by current-camera travel to each bounded ray interval; no 30-degree local frontier remains. After the first persisted view, measured coverage-first NBV is authoritative. Every accepted capture still needs the configured minimum useful direction separation.
+  manual_smoke_checks: [first ray request is ordered by nearest bounded interval, no maximum local movement frontier is applied, second request uses coverage-first NBV ordering, target remains measured/nonprediction through the first capture]
 feature_driven_bounded_completion_2026_08_06:
   trigger: GUI scan scan_20260806_210547 recovered two between-view target-status transitions and persisted thirteen GOOD/CLEAR records, but achieved audit still had zero -Y views, only 46.5 degrees azimuth and 18.9 degrees elevation. It correctly failed and proved configured home, disable and exact cleanup.
   sequence:
@@ -810,7 +832,7 @@ commissioning_control_flow_2026_08_16:
 live_voxel_nbv_flow_2026_08_17:
   current_operator_authorization: The operator explicitly requested voxel_nbv become authoritative for their next supervised E2E. The prior motors-disabled shadow and isolated one-view stages remain recommended checks but were not claimed as completed.
   sequence:
-    - Use the established compact first view because no measured model exists yet.
+    - Before measured coverage exists, use the nearest prequalified bounded ray interval from actual current FK; do not invent seed information gain.
     - Commit one GOOD/CLEAR schema-2 RGB-D/mask capture and accepted achieved pose.
     - Wait until capture status, history generation, session identity and manifest agree.
     - Rebuild immutable object-centric free, unknown and observed-surface voxel evidence around the frozen measured target center.

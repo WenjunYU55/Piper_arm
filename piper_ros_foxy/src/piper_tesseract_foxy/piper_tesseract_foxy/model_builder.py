@@ -188,11 +188,14 @@ def build_planning_urdf(xacro_path, calibration_path, manifest_path, output_path
         raise ValueError('camera_to_link6 must be a finite 4x4 matrix')
     with open(manifest_path, 'r', encoding='utf-8') as stream:
         manifest = yaml.safe_load(stream)
-    apply_collision_decomposition(
-        root,
-        Path(xacro_path).resolve().parents[1],
-        manifest.get('collision_mesh_decomposition'),
-    )
+    package_root = Path(xacro_path).resolve().parents[1]
+    policies = manifest.get('collision_mesh_decompositions')
+    if policies is None:
+        policies = [manifest.get('collision_mesh_decomposition')]
+    if not isinstance(policies, list):
+        raise ValueError('collision_mesh_decompositions must be a list')
+    for policy in policies:
+        apply_collision_decomposition(root, package_root, policy)
 
     camera = ET.SubElement(root, 'link', {'name': 'camera_optical_frame'})
     camera_joint = ET.SubElement(

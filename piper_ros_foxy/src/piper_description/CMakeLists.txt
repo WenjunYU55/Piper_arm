@@ -16,6 +16,10 @@ install(PROGRAMS scripts/piper_joint_preview_node.py
 if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)
   ament_add_pytest_test(test_robot_description test/test_robot_description.py)
+  ament_add_pytest_test(
+    test_tracked_robot_drop_in
+    test/test_tracked_robot_drop_in.py
+  )
 endif()
 
 # 包的描述

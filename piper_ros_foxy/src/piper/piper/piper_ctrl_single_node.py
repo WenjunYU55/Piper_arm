@@ -1593,6 +1593,36 @@ class PiperRosNode(Node):
         explicit_hold_command = command_frame == JOINT6_HOLD_COMMAND_FRAME
         commissioning_command = (
             command_frame == JOINT6_COMMISSIONING_COMMAND_FRAME)
+        # Do not make the startup-only transaction depend permanently on the
+        # driver's first feedback sample.  A fresh process can observe one
+        # transiently ambiguous J6 sample before the coherent negative branch
+        # is established.  Re-arm only at the explicit STARTUP_WRIST boundary,
+        # from the latest finite coherent feedback, and only for a
+        # nondecreasing target toward ready zero.  The existing controller
+        # mapping and direction watchdog remain authoritative after this gate.
+        if (
+                startup_stage_command
+                and not bool(getattr(self, '_startup_joint6_finished', True))
+                and not bool(getattr(self, '_startup_joint6_active', False))
+                and not bool(getattr(self, '_startup_joint6_armed', False))
+                and getattr(self, '_raw_joint6_feedback', None) is not None
+                and getattr(self, '_published_joint6_feedback', None) is not None
+                and math.isfinite(float(self._raw_joint6_feedback))
+                and math.isfinite(float(self._published_joint6_feedback))
+                and float(self._published_joint6_feedback) <= 1e-9
+                and requested_joint_6 <= 1e-9
+                and requested_joint_6 >= (
+                    float(self._published_joint6_feedback)
+                    - JOINT6_STARTUP_COMMAND_EPSILON_RAD)):
+            self._startup_joint6_armed = True
+            self.get_logger().info(
+                'Re-armed startup-only negative J6 branch at the explicit '
+                'STARTUP_WRIST command boundary from raw feedback %.6f rad '
+                'as %.6f rad'
+                % (
+                    self._raw_joint6_feedback,
+                    self._published_joint6_feedback,
+                ))
         startup_transaction_available = bool(
             getattr(self, '_startup_joint6_active', False)
             or getattr(self, '_startup_joint6_armed', False))

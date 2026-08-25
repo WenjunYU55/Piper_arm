@@ -37,6 +37,11 @@ local `/tmp` path is only for one computer. Automatic leaf/branch contact remain
 fail-closed until the installed gripper/contact collision model passes physical
 qualification; a hand/person is always a terminal blocker.
 
+The ready-to-copy tracked-root robot description and its installation contract
+are in `integration/track_robot_description/`. It preserves the tracked
+robot's `odom -> base_link`, mounts the PiPER at `arm_base_link`, and exposes a
+geometry-free identity `piper_base_link` frame for the gateway.
+
 For the current whole-system architecture, validated behavior, limitations, safety boundaries, and
 recommended continuation point, see [`SYSTEM_HANDOFF.md`](SYSTEM_HANDOFF.md).
 

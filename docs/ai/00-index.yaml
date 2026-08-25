@@ -1,5 +1,42 @@
 schema_version: 1
 document: ai_context_index
+generation_zero_nearest_ray_seed_2026_08_25:
+  behavior: Before the first accepted capture, ray_nbv_seed has no measured coverage gain and the six-ray bridge shortlist is ordered only by travel from the actual current FK camera position to the closest point on each bounded ray interval.
+  boundary: After one accepted capture, cumulative measured-information NBV ranking remains authoritative. Ray generation, capability/workspace culling, shortlist size, Tesseract feasibility, motion, capture, home and shutdown are unchanged.
+  validation: [focused bridge regression, complete mobile and Tesseract suites, package build, colcon test, no hardware command]
+tabletop_collision_qualification_2026_08_24:
+  incident: Task gui-sim-ab7526fa81ac4869b5bf2c3112de60db completed startup and received a valid collision-checked rough-acquisition plan, but execution was rejected solely because the newly combined tabletop manifest remained marked qualified_for_hardware false.
+  correction: The tabletop manifest is hardware-qualified for trajectories that individually pass the unchanged IK, collision, path, visibility, hash, approval and runtime checks. The tracked-robot ground manifest remains unqualified.
+  evidence: [combined model and timing load pass, thin-obstacle detour pass, zero-start acquisition pass, centerline zero-start acquisition pass, latest real startup and staged shutdown pass]
+  limitation: The synthetic dual-limit recovery case can exhaust the unchanged 150-second planning budget before producing a candidate. This remains a fail-closed availability result and does not authorize motion.
+  unchanged: [collision geometry and hashes, SRDF pairs, floor and clearance margins, planner budgets, motion speed, home and shutdown, public ROS interfaces]
+startup_wrist_terminal_order_repair_2026_08_24:
+  incident: After a clean PC reboot, task gui-sim-f29a8240fb7240bc9189103f2dbdc5d3 enabled all six axes but the driver rejected STARTUP_WRIST because its one-time first-sample branch had not armed. MissionEngine then incorrectly issued direct PRE_HOME while J6 remained near -3.125 rad; the attached camera contacted joint1 and J3 then J5 reported collision/driver faults.
+  correction: An explicit authenticated STARTUP_WRIST command may re-arm the unfinished transaction from the latest finite coherent nonpositive J6 feedback, while the existing nondecreasing positive-direction mapper and watchdog remain authoritative. Terminal recovery must prove STARTUP_WRIST before PRE_HOME whenever neither startup-wrist nor rough startup-home completion has been proved.
+  failure_boundary: If terminal STARTUP_WRIST cannot be proved, PRE_HOME, ROUGH_HOME, STORAGE_WRIST and disable are not commanded; command ownership is retained for operator recovery. Confirmed motor-control loss retains the existing read-only six-disabled path.
+  unchanged: [home targets, 0.2 rad endpoint tolerance, motion speeds, J6 direction and limits, direct-home Tesseract bypass, NBV, perception, capture, collision policy, public ROS interfaces]
+  validation: [146 focused driver mission and shutdown tests pass, 834 complete driver and mobile behavior tests pass, five-package build passes, every registered functional colcon target passes, changed-file ament lint passes, no hardware command]
+camera_capability_map_2026_08_24:
+  behavior: One deterministic command-free Halton study samples the complete PiPER/L515/Bunker endpoint space and compresses collision-qualified camera XYZ plus optical-direction occupancy into a sparse 5D atlas. The atlas prequalifies only frozen target rays; it is neither a solid workspace hull nor an IK/path proof.
+  artifact: piper_ros_foxy/src/piper_mobile_manipulation/config/piper_camera_capability_map.npz
+  selected_checkpoint: {samples: 2000000, collision_qualified_configurations: 1685619, occupied_pose_direction_bins: 1479561, compressed_bytes: 8130829}
+  convergence: The 100k, 250k, 500k and 1M checkpoints retained 60.17, 70.35, 77.62 and 90.41 percent of final supported validation rays; only 2M met the 99 percent rule and retained all 87 recorded achieved poses.
+  artifact_binding: The tabletop qualification promotion changed no geometry input. The selected 2M arrays were retained exactly and rebound to the new full-manifest hash with explicit non_geometric_source_rebind provenance; the enforcement loader and nine artifact tests pass.
+  runtime: Existing coarse analytic bounds run first. Hash-valid capability lookup then culls unsupported target rays; missing, corrupt, stale-hash or unqualified maps fall back to the old coarse filter. Tesseract remains authoritative for exact IK, collision, path, aim and visibility.
+  boundary: No NBV score/order, six-ray shortlist, worker behavior, motion, capture, home, shutdown, public ROS message or hardware command changed.
+tracked_robot_drop_in_description_2026_08_24:
+  behavior: A deterministic two-file drop-in keeps the tracked robot as the master description while synchronizing the current PiPER/gripper/holder/L515 subtree. An empty identity piper_base_link beneath arm_base_link exposes the gateway frame without duplicate geometry or renaming the friend's established arm root.
+  tf_chain: odom -> tracked base_link -> arm_base_link -> piper_base_link, with the PiPER chain remaining beneath arm_base_link and the external odom edge owned by tracked localization.
+  target_handoff: The tracked-facing gateway snapshots odom to piper_base_link at the goal timestamp, rotates covariance, and emits the private mission target in the arm-local base_link convention.
+  deliverable: integration/track_robot_description/drop_in plus tools/build_track_robot_description_bundle.py
+  validation: [generated URDF check, unique one-root tree, exact arm-subtree equality, friend repository 18-test description contract, gateway-frame contract, no hardware command]
+bunker_collision_profile_2026_08_24:
+  behavior: The hash-locked Bunker Pro 2 chassis and sensor station are permanent visual and planning parts of the PiPER/L515 model. The GUI selects only tabletop or tracked-robot-ground support height for the next mission; the coordinator snapshots that choice before starting owned children.
+  sources: {repository: https://github.com/ZZY5825/Track-robot-workspace, commit: c8bf4db35c7a196aa26c0add0f2549fa1c973980, chassis_sha256: aa9f81c3d75c28e6720fda247bc01d052d17d9343b1e050d13ea2f7a5e60ce9d, station_sha256: 62148eb78b3e3294210e01cab448c4b0f099aacecfbe38d4409f8c2bf8bdd8d5}
+  floor_profiles: {tabletop: {floor_z_m: 0.005}, ground: {floor_z_m: -0.466}}
+  profile_state: Both floor profiles use identical combined geometry. The tabletop profile is hardware-qualified; the tracked-robot ground profile remains software-only pending qualification on the assembled platform.
+  invariant: The current PiPER joints, J6 limits, exact L515/holder assembly, hand-eye TF, normal motion rules and configured-home bypass are unchanged. Capability-map and NBV work is explicitly not part of this change.
+  validation: [combined URDF model load, invariant platform decomposition, GUI floor persistence tests, worker-bridge hash agreement tests, no hardware command]
 deadline_terminal_home_authorization_repair_2026_08_24:
   incident: Task gui-sim-f525ea2a7d654f2a9ae06077088c5cf4 reached its 1200-second mission deadline after four captures. MissionEngine entered terminal recovery, but PRE_HOME reused the expired scan authorization and was rejected before motion, leaving the arm enabled in the existing current-position hold.
   correction: Each non-interruptible terminal home stage renews the same task ID and mission digest after scan stop/hold acknowledgement or fresh static-startup feedback, using one bounded window derived from the unchanged 12-second service-queue and 185-second direct-home result limits plus 10 seconds. The existing PRE_HOME, ROUGH_HOME, STORAGE_WRIST, disable and owned-process cleanup order is unchanged.

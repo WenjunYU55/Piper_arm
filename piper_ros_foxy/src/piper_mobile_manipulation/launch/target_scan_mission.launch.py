@@ -9,6 +9,13 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('project_root', default_value='/home/prl/Piper_arm'),
         DeclareLaunchArgument('manage_processes', default_value='true'),
+        DeclareLaunchArgument(
+            'floor_profile', default_value='saved',
+            choices=['saved', 'tabletop', 'ground'],
+            description=(
+                'Next-mission support floor. saved reads the GUI selection.'),
+        ),
+        DeclareLaunchArgument('floor_profile_path', default_value=''),
         DeclareLaunchArgument('enable_real_arm_motion', default_value='false'),
         DeclareLaunchArgument(
             'motion_speed_profile_qualified', default_value='false'),
@@ -50,6 +57,9 @@ def generate_launch_description():
                 'project_root': LaunchConfiguration('project_root'),
                 'manage_processes': ParameterValue(
                     LaunchConfiguration('manage_processes'), value_type=bool),
+                'floor_profile': LaunchConfiguration('floor_profile'),
+                'floor_profile_path': LaunchConfiguration(
+                    'floor_profile_path'),
                 'enable_real_arm_motion': ParameterValue(
                     LaunchConfiguration('enable_real_arm_motion'), value_type=bool),
                 'motion_speed_profile_qualified': ParameterValue(

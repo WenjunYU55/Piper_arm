@@ -18,18 +18,26 @@ COPY piper_ros_foxy/src/piper_description /models/share/piper_description
 COPY L515_camera/calibration/hand_eye/session_20260808_straight_mount/calibration_result.yaml \
      /models/calibration_result.yaml
 COPY piper_ros_foxy/src/piper_tesseract_foxy/model/piper.srdf /models/piper.srdf
+COPY piper_ros_foxy/src/piper_tesseract_foxy/model/piper_bunker.srdf /models/piper_bunker.srdf
 COPY piper_ros_foxy/src/piper_tesseract_foxy/model/collision_model.yaml \
      /models/collision_model.yaml
+COPY piper_ros_foxy/src/piper_tesseract_foxy/model/collision_model_ground.yaml \
+     /models/collision_model_ground.yaml
 
 RUN /opt/tesseract/bin/python -m piper_tesseract_foxy.model_builder \
       --xacro /models/share/piper_description/urdf/piper_description.xacro \
       --calibration /models/calibration_result.yaml \
       --manifest /models/collision_model.yaml \
       --output /models/share/piper_description/urdf/piper_planning.urdf
+RUN /opt/tesseract/bin/python -m piper_tesseract_foxy.model_builder \
+      --xacro /models/share/piper_description/urdf/piper_description.xacro \
+      --calibration /models/calibration_result.yaml \
+      --manifest /models/collision_model_ground.yaml \
+      --output /models/share/piper_description/urdf/piper_planning_ground.urdf
 
 ENV TESSERACT_RESOURCE_PATH=/models/share
 ENV PIPER_TESSERACT_URDF=/models/share/piper_description/urdf/piper_planning.urdf
-ENV PIPER_TESSERACT_SRDF=/models/piper.srdf
+ENV PIPER_TESSERACT_SRDF=/models/piper_bunker.srdf
 ENV PIPER_TESSERACT_COLLISION_MANIFEST=/models/collision_model.yaml
 ENV PIPER_TESSERACT_SPOOL=/spool
 

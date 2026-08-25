@@ -31,6 +31,8 @@ from piper_mobile_manipulation.mission_engine import MissionEngine
 LEGACY_MISSION_DEFAULTS = {
     'project_root': '/home/prl/Piper_arm',
     'manage_processes': True,
+    'floor_profile': 'saved',
+    'floor_profile_path': '',
     'enable_real_arm_motion': False,
     'motion_speed_profile_qualified': False,
     'free_motion_speed_percent': 30.0,
@@ -210,7 +212,17 @@ def test_mission_configuration_is_grouped_typed_and_read_once():
     assert config.capture.required_captures == 9
     assert config.capture.maximum_captures == 21
     assert config.motion.free_motion_speed_percent == 42.0
+    assert config.process.floor_profile == 'saved'
+    assert config.process.floor_profile_path == ''
     assert set(node.read_counts.values()) == {1}
+
+
+def test_mission_configuration_rejects_unknown_floor_profile():
+    with pytest.raises(ConfigurationError, match='saved, tabletop or ground'):
+        load_mission_configuration(
+            FakeParameterNode({'floor_profile': 'unknown'}),
+            {'XDG_RUNTIME_DIR': '/phase9'},
+        )
 
 
 def test_executor_configuration_preserves_overrides_and_units():

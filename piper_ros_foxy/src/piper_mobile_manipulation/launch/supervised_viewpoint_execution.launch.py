@@ -12,7 +12,11 @@ from launch.actions import (
 )
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import (
+    LaunchConfiguration,
+    PathJoinSubstitution,
+    PythonExpression,
+)
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -78,6 +82,25 @@ def generate_launch_description():
         default_value='false',
         description='Plan one observation/capture before measured-state replanning.',
     )
+    floor_profile = DeclareLaunchArgument(
+        'floor_profile',
+        default_value=os.environ.get('PIPER_FLOOR_PROFILE', 'tabletop'),
+        choices=['tabletop', 'ground'],
+        description=(
+            'Startup-only support plane; combined platform geometry is invariant.'),
+    )
+    profile_is_ground = [
+        "'", LaunchConfiguration('floor_profile'), "' == 'ground'",
+    ]
+    manifest_name = PythonExpression([
+        "'collision_model_ground.yaml' if ", *profile_is_ground,
+        " else 'collision_model.yaml'",
+    ])
+    profile_floor = PythonExpression([
+        "'-0.466' if ", *profile_is_ground, " else '0.005'",
+    ])
+    tesseract_model_dir = os.path.join(
+        get_package_share_directory('piper_tesseract_foxy'), 'model')
     scan_params = cfg('scan_planning_params.yaml')
     quality_params = cfg('scan_quality_params.yaml')
     capture_params = cfg('scan_capture_params.yaml')
@@ -107,12 +130,10 @@ def generate_launch_description():
                 'robot_xacro_path': os.path.join(
                     root,
                     'piper_ros_foxy/src/piper_description/urdf/piper_description.xacro'),
-                'srdf_path': os.path.join(
-                    get_package_share_directory('piper_tesseract_foxy'),
-                    'model', 'piper.srdf'),
-                'collision_manifest_path': os.path.join(
-                    get_package_share_directory('piper_tesseract_foxy'),
-                    'model', 'collision_model.yaml'),
+                'srdf_path': PathJoinSubstitution([
+                    tesseract_model_dir, 'piper_bunker.srdf']),
+                'collision_manifest_path': PathJoinSubstitution([
+                    tesseract_model_dir, manifest_name]),
                 'speed_percent': ParameterValue(
                     LaunchConfiguration('speed_percent'), value_type=float),
                 'max_execution_viewpoints': ParameterValue(
@@ -130,7 +151,9 @@ def generate_launch_description():
         executable='viewpoint_reachability_filter_node.py',
         name='viewpoint_reachability_filter',
         output='screen',
-        parameters=[scan_params],
+        parameters=[scan_params, {
+            'floor_z_m': ParameterValue(profile_floor, value_type=float),
+        }],
     )
     workflow = Node(
         package='piper_mobile_manipulation',
@@ -173,6 +196,7 @@ def generate_launch_description():
                     'session_20260808_straight_mount/'
                     'calibration_result.yaml')),
             'joint_bounds_path': os.path.join(root, 'piper_joint_bounds.json'),
+            'floor_z_m': ParameterValue(profile_floor, value_type=float),
             **selected_home,
         }],
     )
@@ -243,6 +267,7 @@ def generate_launch_description():
         auto_capture,
         mission_policy,
         closed_loop_one_view,
+        floor_profile,
         *shutdown_handlers,
         TimerAction(period=2.5, actions=[bridge]),
         # Foxy/Fast DDS can expose endpoints without delivering callbacks when

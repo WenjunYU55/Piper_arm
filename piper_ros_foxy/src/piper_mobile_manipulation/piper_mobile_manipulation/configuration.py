@@ -85,6 +85,8 @@ class ProcessConfig:
     manage_processes: bool
     mission_spool_root: str
     process_log_root: str
+    floor_profile: str
+    floor_profile_path: str
 
 
 @dataclass(frozen=True)
@@ -299,6 +301,8 @@ def mission_parameter_defaults(environ=None):
     return {
         'project_root': '/home/prl/Piper_arm',
         'manage_processes': True,
+        'floor_profile': 'saved',
+        'floor_profile_path': '',
         'enable_real_arm_motion': False,
         'motion_speed_profile_qualified': False,
         'free_motion_speed_percent': 30.0,
@@ -447,7 +451,13 @@ def load_mission_configuration(node, environ=None):
             'mission_spool_root', values['mission_spool_root']),
         process_log_root=_nonempty(
             'process_log_root', values['process_log_root']),
+        floor_profile=_nonempty(
+            'floor_profile', values['floor_profile']).lower(),
+        floor_profile_path=str(values['floor_profile_path']).strip(),
     )
+    if process.floor_profile not in ('saved', 'tabletop', 'ground'):
+        raise ConfigurationError(
+            'floor_profile must be exactly saved, tabletop or ground')
     motion = MissionMotionConfig(
         enable_real_arm_motion=_as_bool(values['enable_real_arm_motion']),
         motion_speed_profile_qualified=_as_bool(

@@ -59,6 +59,13 @@ from piper_mobile_manipulation.msg import (
     TrackingHealth,
 )
 from piper_mobile_manipulation.action import RunTargetScan
+from piper_mobile_manipulation.collision_environment import (
+    FLOOR_PROFILE_LABELS,
+    SELECTABLE_FLOOR_PROFILES,
+    default_collision_environment_path,
+    read_collision_environment,
+    write_collision_environment,
+)
 from piper_mobile_manipulation.home_pose import (
     load_home_pose,
     save_home_pose,
@@ -480,6 +487,23 @@ class PiperGuiApp:
         self.scan_ray_count_var = tk.StringVar(
             value=str(saved_ray_count))
         self.scan_policy_status_var = tk.StringVar(value=policy_status)
+        self.collision_environment_path = default_collision_environment_path(
+            PROJECT_ROOT)
+        try:
+            saved_environment = read_collision_environment(
+                self.collision_environment_path)
+            floor_status = (
+                'Saved for next mission: %s; combined PiPER/L515/Bunker '
+                'geometry is always active.'
+                % FLOOR_PROFILE_LABELS[saved_environment.floor_profile])
+            saved_floor_profile = saved_environment.floor_profile
+        except (OSError, ValueError) as exc:
+            saved_floor_profile = SELECTABLE_FLOOR_PROFILES[0]
+            floor_status = (
+                'Floor configuration unavailable: %s' % exc)
+        self.floor_profile_var = tk.StringVar(
+            value=FLOOR_PROFILE_LABELS[saved_floor_profile])
+        self.floor_profile_status_var = tk.StringVar(value=floor_status)
         self.camera_profile_path = default_camera_profile_path(PROJECT_ROOT)
         try:
             saved_camera_profile = read_camera_profile(
@@ -715,9 +739,46 @@ class PiperGuiApp:
             justify="left",
         ).grid(row=2, column=0, columnspan=5, sticky="w", pady=(4, 0))
 
+        environment = ttk.LabelFrame(
+            parent, text='Collision environment for next mission', padding=12)
+        environment.grid(row=4, column=0, sticky='ew', pady=(12, 0))
+        self.floor_profile_combo = ttk.Combobox(
+            environment,
+            textvariable=self.floor_profile_var,
+            values=tuple(
+                FLOOR_PROFILE_LABELS[item]
+                for item in SELECTABLE_FLOOR_PROFILES),
+            state='readonly',
+            width=38,
+        )
+        self.floor_profile_combo.grid(row=0, column=0, sticky='w')
+        self.floor_profile_apply_button = ttk.Button(
+            environment,
+            text='Apply for Next Mission',
+            command=self.apply_floor_profile,
+        )
+        self.floor_profile_apply_button.grid(row=0, column=1, padx=(8, 0))
+        ttk.Label(
+            environment,
+            textvariable=self.floor_profile_status_var,
+            foreground='#52606d',
+            wraplength=760,
+            justify='left',
+        ).grid(row=1, column=0, columnspan=2, sticky='w', pady=(8, 0))
+        ttk.Label(
+            environment,
+            text=(
+                'The Bunker chassis and sensor station remain visible and '
+                'collision-active in both modes. Only the support-floor '
+                'height changes, and it is frozen when the next mission starts.'),
+            foreground='#52606d',
+            wraplength=760,
+            justify='left',
+        ).grid(row=2, column=0, columnspan=2, sticky='w', pady=(4, 0))
+
         camera = ttk.LabelFrame(
             parent, text="L515 RGB profile for next mission", padding=12)
-        camera.grid(row=4, column=0, sticky="ew", pady=(12, 0))
+        camera.grid(row=5, column=0, sticky="ew", pady=(12, 0))
         self.camera_resolution_combo = ttk.Combobox(
             camera,
             textvariable=self.camera_resolution_var,
@@ -763,7 +824,7 @@ class PiperGuiApp:
         self._camera_resolution_changed()
 
         controls = ttk.Frame(parent)
-        controls.grid(row=5, column=0, sticky="w", pady=(18, 10))
+        controls.grid(row=6, column=0, sticky="w", pady=(18, 10))
         self.mission_start_button = ttk.Button(
             controls,
             text="Start Complete Automated Scan",
@@ -786,7 +847,7 @@ class PiperGuiApp:
         self.report_base_home_button.grid(row=0, column=2, padx=(8, 0))
 
         status = ttk.LabelFrame(parent, text="Mission status", padding=12)
-        status.grid(row=6, column=0, sticky="ew", pady=(6, 0))
+        status.grid(row=7, column=0, sticky="ew", pady=(6, 0))
         status.columnconfigure(0, weight=1)
         ttk.Label(
             status,
@@ -814,7 +875,7 @@ class PiperGuiApp:
             foreground="#8a3b12",
             wraplength=820,
             justify="left",
-        ).grid(row=7, column=0, sticky="ew", pady=(18, 0))
+        ).grid(row=8, column=0, sticky="ew", pady=(18, 0))
 
         ttk.Label(
             parent,
@@ -828,7 +889,7 @@ class PiperGuiApp:
             foreground="#52606d",
             wraplength=820,
             justify="left",
-        ).grid(row=8, column=0, sticky="ew", pady=(12, 0))
+        ).grid(row=9, column=0, sticky="ew", pady=(12, 0))
 
     def _camera_resolution_changed(self, _event=None):
         try:
@@ -1346,6 +1407,30 @@ class PiperGuiApp:
             "Saved for next scan stack: %s; %s; %d rays"
             % (selected_label, self.scan_ray_region_var.get(), ray_count))
 
+    def apply_floor_profile(self):
+        if not self.mission_view_model.state.can_start:
+            self.floor_profile_status_var.set(
+                'Floor was not changed: wait for the active mission to finish.')
+            return
+        label_to_profile = {
+            label: profile for profile, label in FLOOR_PROFILE_LABELS.items()}
+        selected_profile = label_to_profile.get(self.floor_profile_var.get())
+        if selected_profile is None:
+            self.floor_profile_status_var.set(
+                'Floor was not changed: invalid selection.')
+            return
+        try:
+            environment = write_collision_environment(
+                self.collision_environment_path, selected_profile)
+        except (OSError, ValueError) as exc:
+            self.floor_profile_status_var.set(
+                'Floor was not changed: %s' % exc)
+            return
+        self.floor_profile_status_var.set(
+            'Saved for next mission: %s; combined PiPER/L515/Bunker '
+            'geometry remains active.'
+            % FLOOR_PROFILE_LABELS[environment.floor_profile])
+
     def cancel_automated_scan(self):
         if self.ros_node.cancel_mission():
             self.mission_view_model.cancellation_requested()
@@ -1370,6 +1455,10 @@ class PiperGuiApp:
             state="normal" if state.can_start else "disabled")
         self.scan_policy_apply_button.configure(
             state="normal" if state.can_start else "disabled")
+        self.floor_profile_combo.configure(
+            state='readonly' if state.can_start else 'disabled')
+        self.floor_profile_apply_button.configure(
+            state='normal' if state.can_start else 'disabled')
         self.camera_resolution_combo.configure(
             state="readonly" if state.can_start else "disabled")
         self.camera_fps_combo.configure(

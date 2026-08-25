@@ -156,6 +156,28 @@ def _transformed_triangle_records(path, transform, scale):
     return records
 
 
+def transform_binary_stl(source_path, output_path, transform, scale, label):
+    """Write one source STL in a declared fixed planning-frame transform."""
+    transform_array = np.asarray(transform, dtype=float)
+    scale_array = np.asarray(scale, dtype=float)
+    if transform_array.shape != (4, 4) or not np.all(
+            np.isfinite(transform_array)):
+        raise ValueError('transform must be a finite 4x4 matrix')
+    if scale_array.shape != (3,) or not np.all(np.isfinite(scale_array)) or \
+            np.any(scale_array <= 0.0):
+        raise ValueError('scale must contain three positive finite values')
+    records = _transformed_triangle_records(
+        source_path, transform_array, scale_array)
+    write_binary_stl(output_path, records, label)
+    return {
+        'source_sha256': sha256_file(source_path),
+        'source_triangle_count': len(records),
+        'scale': scale_array.tolist(),
+        'base_from_mesh': transform_array.tolist(),
+        'sha256': sha256_file(output_path),
+    }
+
+
 def build_visual_assembly_stl(
         urdf_path, output_path, base_link, visual_links):
     """Merge installed visual meshes into one deterministic base-frame STL."""
@@ -377,6 +399,52 @@ def generate_default_assets(mesh_root, output_dir, thickness=0.02):
     ]
 
 
+def generate_bunker_assets(mesh_root, output_dir, thickness=0.15):
+    """Build the locked Bunker chassis/station collision decomposition."""
+    mesh_root = Path(mesh_root)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    description_meshes = output_dir.parent
+    specifications = (
+        (
+            'bunker_chassis_collision',
+            mesh_root / 'bunker_pro2_base_link.STL',
+            np.asarray([
+                [1.0, 0.0, 0.0, -0.390],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, -0.016],
+                [0.0, 0.0, 0.0, 1.0],
+            ]),
+            (1.0, 1.0, 1.0),
+        ),
+        (
+            'bunker_sensor_station_collision',
+            mesh_root / 'bunker_pro2_FullCase.STL',
+            np.asarray([
+                [-1.0, 0.0, 0.0, -0.33375],
+                [0.0, 0.0, 1.0, -0.2335],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ]),
+            (0.001, 0.001, 0.001),
+        ),
+    )
+    result = []
+    for link_name, source, transform, scale in specifications:
+        transformed = description_meshes / (link_name + '.STL')
+        provenance = transform_binary_stl(
+            source, transformed, transform, scale, link_name)
+        entry = split_binary_stl_grid(
+            transformed, output_dir, link_name, ('x', 'y'),
+            (thickness, thickness))
+        entry['assembly'] = {
+            'base_link': 'base_link',
+            'source': provenance,
+        }
+        result.append(entry)
+    return result
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--mesh-root', required=True)
@@ -385,9 +453,16 @@ def main(argv=None):
     parser.add_argument('--manifest-output')
     parser.add_argument('--xacro')
     parser.add_argument('--assembly-output')
+    parser.add_argument(
+        '--bunker-platform', action='store_true',
+        help='Generate the locked Bunker chassis/station collision assets.')
     args = parser.parse_args(argv)
-    result = generate_default_assets(
-        args.mesh_root, args.output_dir, args.slab_thickness_m)
+    if args.bunker_platform:
+        result = generate_bunker_assets(
+            args.mesh_root, args.output_dir, args.slab_thickness_m)
+    else:
+        result = generate_default_assets(
+            args.mesh_root, args.output_dir, args.slab_thickness_m)
     assembly = None
     if bool(args.xacro) != bool(args.assembly_output):
         parser.error('--xacro and --assembly-output must be supplied together')
@@ -411,6 +486,8 @@ def main(argv=None):
         document = {
             'schema_version': 1,
             'generator': (
+                'transformed_platform_grid_v1'
+                if args.bunker_platform else
                 'longitudinal_triangle_slab_v1+'
                 'installed_visual_grid_v1'),
             'links': result,

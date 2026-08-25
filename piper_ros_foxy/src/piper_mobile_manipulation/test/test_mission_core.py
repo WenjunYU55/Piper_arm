@@ -914,6 +914,18 @@ def test_pre_acquisition_shutdown_reuses_static_startup_home_authority():
         transition=lambda *_args, **_kwargs: None,
         prove_return_home_for_shutdown=prove_home,
         last_return_home_diagnostic='startup home plan was unavailable',
+        current_home_profile={
+            'positions_rad': [0.0] * 6,
+            'pre_home_configured': True,
+            'pre_home_positions_rad': [0.0] * 6,
+            'mission_ready_joint6_rad': 0.0,
+            'storage_joint6_rad': -3.13,
+            'staged_home_configured': True,
+            'startup_wrist_direction': 'increasing',
+            'storage_wrist_direction': 'decreasing',
+        },
+        latest_joints=SimpleNamespace(
+            position=[0.0, 0.0, 0.0, 0.0, 0.0, -3.13]),
     )
 
     failure = TargetScanMissionNode.safe_shutdown(

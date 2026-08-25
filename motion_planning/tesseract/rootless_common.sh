@@ -6,6 +6,12 @@ RUNTIME="${PIPER_TESSERACT_RUNTIME:-$ROOT/motion_planning/tesseract/.runtime}"
 ROOTFS="$RUNTIME/rootfs"
 RUNTIME_ROOT="${XDG_RUNTIME_DIR:-/tmp}"
 SPOOL="${PIPER_TESSERACT_SPOOL:-$RUNTIME_ROOT/piper_tesseract_plans}"
+# shellcheck disable=SC1091
+source "$(dirname "${BASH_SOURCE[0]}")/floor_profile.sh"
+COLLISION_MANIFEST_HOST="$ROOT/piper_ros_foxy/src/piper_tesseract_foxy/model/$COLLISION_MANIFEST_NAME"
+COLLISION_SRDF_HOST="$ROOT/piper_ros_foxy/src/piper_tesseract_foxy/model/$COLLISION_SRDF_NAME"
+COLLISION_MANIFEST_CONTAINER="/workspace/piper_ros_foxy/src/piper_tesseract_foxy/model/$COLLISION_MANIFEST_NAME"
+COLLISION_SRDF_CONTAINER="/workspace/piper_ros_foxy/src/piper_tesseract_foxy/model/$COLLISION_SRDF_NAME"
 
 if [[ ! -x "$ROOTFS/opt/tesseract/bin/python" ]]; then
   echo "Rootless worker is not installed. Run setup_rootless_worker.sh first." >&2
@@ -35,7 +41,8 @@ ROOTLESS_BWRAP=(
   --setenv PYTHONPATH /workspace/piper_ros_foxy/src/piper_tesseract_foxy:/workspace/piper_ros_foxy/src/piper_mobile_manipulation
   --setenv TESSERACT_RESOURCE_PATH /workspace/piper_ros_foxy/src
   --setenv PIPER_TESSERACT_URDF /workspace/motion_planning/tesseract/.runtime/piper_planning.urdf
-  --setenv PIPER_TESSERACT_SRDF /workspace/piper_ros_foxy/src/piper_tesseract_foxy/model/piper.srdf
-  --setenv PIPER_TESSERACT_COLLISION_MANIFEST /workspace/piper_ros_foxy/src/piper_tesseract_foxy/model/collision_model.yaml
+  --setenv PIPER_FLOOR_PROFILE "$FLOOR_PROFILE"
+  --setenv PIPER_TESSERACT_SRDF "$COLLISION_SRDF_CONTAINER"
+  --setenv PIPER_TESSERACT_COLLISION_MANIFEST "$COLLISION_MANIFEST_CONTAINER"
   --setenv PIPER_TESSERACT_SPOOL /spool
 )

@@ -805,7 +805,7 @@ def test_closed_loop_shortlist_keeps_proven_local_fallback_under_diversity_bias(
     assert selected[1]['id'] == 7
 
 
-def test_first_closed_loop_view_tries_compact_progress_before_ambitious_leader():
+def test_first_closed_loop_view_orders_seed_only_by_current_camera_travel():
     candidates = [
         {
             'id': item_id,
@@ -819,8 +819,32 @@ def test_first_closed_loop_view_tries_compact_progress_before_ambitious_leader()
     selected = balanced_closed_loop_candidates(
         candidates, [0.0, 0.0, 0.0], 4, compact_first=True)
 
-    assert selected[0]['id'] == 3
-    assert selected[1]['id'] == 0
+    assert [item['id'] for item in selected] == [3, 2, 1, 0]
+
+
+def test_first_ray_seed_uses_distance_to_bounded_interval_not_scoring_point():
+    candidates = [
+        {
+            'id': 1,
+            'camera_position_m': [0.06, 0.0, 0.0],
+            'coverage_score': 1000.0,
+            'candidate_geometry': 'target_ray',
+            'ray_direction': [-1.0, 0.0, 0.0],
+            'ray_scoring_standoff_m': 0.34,
+            'ray_min_standoff_m': 0.10,
+            'ray_max_standoff_m': 0.30,
+        },
+        {
+            'id': 2,
+            'camera_position_m': [0.19, 0.0, 0.0],
+            'coverage_score': -1000.0,
+        },
+    ]
+
+    selected = balanced_closed_loop_candidates(
+        candidates, [0.20, 0.0, 0.0], 2, compact_first=True)
+
+    assert [item['id'] for item in selected] == [1, 2]
 
 
 def test_closed_loop_fallback_steps_toward_missing_feature_leader():
@@ -1004,6 +1028,9 @@ def test_fresh_worker_heartbeat_is_required_for_readiness(monkeypatch):
     monkeypatch.setattr(
         'piper_tesseract_foxy.bridge_node.time.time_ns',
         lambda: now_ns)
+    monkeypatch.setattr(
+        'piper_tesseract_foxy.bridge_node.sha256_file',
+        lambda path: {'srdf': 's' * 64, 'manifest': 'm' * 64}[str(path)])
     bridge = SimpleNamespace(
         spool=SimpleNamespace(read_health=lambda: {
             'schema_version': 5,
@@ -1013,11 +1040,17 @@ def test_fresh_worker_heartbeat_is_required_for_readiness(monkeypatch):
             'backend': 'tesseract',
             'backend_version': '0.35.0.6',
             'backend_error': '',
+            'srdf_sha256': 's' * 64,
+            'collision_manifest_sha256': 'm' * 64,
         }),
         worker_generation_id='',
         get_parameter=lambda name: SimpleNamespace(value={
             'worker_heartbeat_timeout_sec': 1.5,
         }[name]),
+        parameter_path=lambda name: {
+            'srdf_path': 'srdf',
+            'collision_manifest_path': 'manifest',
+        }[name],
     )
 
     assert TesseractPlanBridge.worker_health_reasons(bridge) == []
@@ -1032,6 +1065,31 @@ def test_fresh_worker_heartbeat_is_required_for_readiness(monkeypatch):
     })
     assert TesseractPlanBridge.worker_health_reasons(bridge) == [
         'Tesseract worker heartbeat is stale']
+
+
+def test_worker_collision_profile_hash_mismatch_blocks_readiness(monkeypatch):
+    now_ns = 20_000_000_000
+    monkeypatch.setattr(
+        'piper_tesseract_foxy.bridge_node.time.time_ns', lambda: now_ns)
+    monkeypatch.setattr(
+        'piper_tesseract_foxy.bridge_node.sha256_file', lambda path: 'a' * 64)
+    bridge = SimpleNamespace(
+        spool=SimpleNamespace(read_health=lambda: {
+            'schema_version': 5,
+            'generation_id': '3' * 32,
+            'written_at_ns': now_ns,
+            'worker_ready': True,
+            'backend': 'tesseract',
+            'srdf_sha256': 'b' * 64,
+            'collision_manifest_sha256': 'a' * 64,
+        }),
+        worker_generation_id='',
+        get_parameter=lambda name: SimpleNamespace(value=1.5),
+        parameter_path=lambda name: name,
+    )
+    assert TesseractPlanBridge.worker_health_reasons(bridge) == [
+        'Tesseract worker collision profile does not match bridge: '
+        'srdf_sha256']
 
 
 def test_poll_keeps_stale_subscription_entities_stable():

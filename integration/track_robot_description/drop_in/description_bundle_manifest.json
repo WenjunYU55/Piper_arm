@@ -1,0 +1,28 @@
+{
+  "local_arm_source": "piper_ros_foxy/src/piper_description/urdf/piper_description.xacro",
+  "local_arm_source_sha256": "9a9617578d666caa64982838ce6a81645b2d7682563024187c017d76646d8b04",
+  "outputs": {
+    "src/bunker_pro2/urdf/bunker_pro2.urdf": "7901ff3b61cff53a4dcf02d1e23ce11eec4bb8da771e8178a299fc891b5bf12e",
+    "src/piper_description/urdf/piper_description.xacro": "a934e3f6bf66fa584cb80bab5f0678b9d8514833b7c84b66280d619dc80cf1f2"
+  },
+  "schema_version": 1,
+  "tf_contract": {
+    "arm_model_root": "arm_base_link",
+    "base_to_arm_rpy_rad": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "base_to_arm_xyz_m": [
+      0.39,
+      0.0,
+      0.016
+    ],
+    "gateway_arm_frame": "piper_base_link",
+    "tracked_base": "base_link",
+    "tracked_root": "robot_bottom"
+  },
+  "tracked_source_commit": "c8bf4db35c7a196aa26c0add0f2549fa1c973980",
+  "tracked_source_repository": "https://github.com/ZZY5825/Track-robot-workspace",
+  "tracked_source_sha256": "d0410abe74a352882a3d8735e77f74087307cf93b3062d8ee3e6990b45df2bad"
+}

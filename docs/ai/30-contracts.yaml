@@ -1,10 +1,48 @@
 schema_version: 1
 document: runtime_contracts
+generation_zero_ray_seed_contract_2026_08_25:
+  applies_when: policy ray_nbv_seed and accepted_views equals zero
+  ordering: Ascending Euclidean travel from the actual current FK camera position to the closest permitted point on each bounded target-ray interval; stable existing tie-breakers remain private.
+  transition: The first accepted capture ends seed ordering. Later ray_nbv generations use cumulative accepted-only marginal information ranking.
+  compatibility: No public ROS schema, topic, service, action, parameter, timing or motion contract changes.
+startup_wrist_terminal_prerequisite_contract_2026_08_24:
+  public_surface_change: none
+  startup_rearm: Only an explicitly tagged STARTUP_WRIST command may re-arm an unfinished inactive transaction, and only from finite coherent nonpositive logical J6 feedback toward a finite nondecreasing target no greater than ready zero.
+  direction_authority: Existing controller-coordinate mapping, positive high-water watchdog, controller limit proof and J6-only J1-J5 preservation remain unchanged.
+  terminal_order: If an enabled mission has proved neither startup_wrist_completed nor startup_home_completed, terminal recovery must prove STARTUP_WRIST before issuing PRE_HOME. A proved rough startup home is backward-compatible proof that its wrist prerequisite occurred.
+  failure: Unproved terminal STARTUP_WRIST retains the enabled command owner and emits no later home or disable stage. Fresh motor-control loss continues to suppress all automatic motion and wait for six-disabled feedback.
+  compatibility: [ExecuteHomeStage schema unchanged, action result schema unchanged, topics services QoS parameters targets tolerances speeds and J6 limits unchanged]
+camera_capability_map_contract_2026_08_24:
+  public_ros_interface_change: none
+  private_parameters: {capability_map_mode: {values: [off, shadow, enforce], default: enforce}, capability_map_project_root: {default: PIPER_ARM_ROOT or /home/prl/Piper_arm}, capability_map_path: {default: config/piper_camera_capability_map.npz beneath project root}, floor_z_m: {startup_override: selected tabletop 0.005 or ground -0.466}}
+  artifact_schema: {version: 1, position_voxel_m: 0.02, direction_bin_deg: 10.0, direction_tolerance_deg: 15.0, spatial_dilation_cells: 1, stores_joint_positions: false}
+  acceptance: One ray is retained when any point over its complete already-configured standoff interval intersects a nearby occupied pose-direction bin whose stored best attached-tool minimum Z clears the selected floor by the unchanged 0.005 m.
+  invalid_artifact_behavior: Fall back to the existing coarse bounded-ray intersection and never bypass Tesseract.
+  diagnostics: Existing private JSON adds map status, per-ray support, checked and matched key counts, query time and CAPABILITY_MAP_NO_SUPPORT without changing a public message definition.
+tracked_robot_description_contract_2026_08_24:
+  tree: {external_dynamic_edge: odom -> base_link, tracked_root: robot_bottom, tracked_base: base_link, arm_model_root: arm_base_link, gateway_arm_frame: piper_base_link, gateway_alias_transform: identity}
+  mount: {parent: base_link, child: arm_base_link, xyz_m: [0.39, 0.0, 0.016], rpy_rad: [0.0, 0.0, 0.0]}
+  target_goal: {frame: odom, stamp: source observation time, transform_at_admission: odom -> piper_base_link, private_output_frame: base_link}
+  geometry: The tracked description owns the chassis and sensor station exactly once. The exported arm Xacro excludes the arm-planning description's embedded Bunker visual links; piper_base_link is geometry-free.
+  replacement_unit: [drop_in/src/piper_description/urdf/piper_description.xacro, drop_in/src/bunker_pro2/urdf/bunker_pro2.urdf]
+  public_ros_change: none
+bunker_collision_profile_contract_2026_08_24:
+  public_ros_interface_change: none
+  coordinator_parameters: {floor_profile: {values: [saved, tabletop, ground], default: saved}, floor_profile_path: {default: empty_means_project_config}}
+  environment: {name: PIPER_FLOOR_PROFILE, values: [tabletop, ground], producer: coordinator mission-generation snapshot}
+  gui_config: {path: piper_mobile_manipulation/config/collision_environment.yaml, key: floor_profile, values: [tabletop, ground], mutation: atomic and idle-only}
+  model_binding: The bridge-selected SRDF and collision-manifest SHA-256 values must equal the worker heartbeat values before readiness. Unknown, missing legacy hash, or mixed profile fails closed.
+  frame: Existing arm base_link remains the planning frame. Bunker source geometry is transformed into that frame before model construction.
+  geometry: {chassis_cells: 46, station_cells: 16, xy_cell_m: 0.15, triangle_policy: retain every source triangle}
+  floors: {tabletop_m: 0.005, ground_m: -0.466}
+  invariant: Both floor profiles use the same piper_bunker.srdf and the same PiPER/L515/Bunker collision decompositions; only external_floor_clearance.floor_z_m differs.
+  compatibility: [no topic service action or message changes, no speed or limit changes, no hand-eye or TF semantic changes, no home-policy changes]
 deadline_terminal_home_authorization_contract_2026_08_24:
   public_surface_change: none
   trigger: A deadline-expired mission has entered the existing non-interruptible terminal recovery path and has either acknowledged scan stop/hold or refreshed static-startup joint feedback.
   authorization: Reuse the same task ID and mission SHA-256 with a fresh expiry of plan_request_queue_timeout_sec plus plan_result_timeout_sec plus 10 seconds for each direct-home stage. This does not restart scan phases.
-  unchanged_sequence: [PRE_HOME, ROUGH_HOME, STORAGE_WRIST, feedback-confirmed all-six disable, authorization revoke, owned-process cleanup]
+  unchanged_sequence_after_startup_ready: [PRE_HOME, ROUGH_HOME, STORAGE_WRIST, feedback-confirmed all-six disable, authorization revoke, owned-process cleanup]
+  startup_exception: Before startup readiness is proved, STARTUP_WRIST is a mandatory prerequisite to that unchanged terminal sequence.
   exception: Freshly confirmed motor-control loss remains the sole no-command route and never receives terminal-home renewal.
   compatibility: [AuthorizeMission service schema unchanged, ExecuteHomeStage service schema unchanged, action result unchanged, home targets tolerances speeds and motion validation unchanged]
 ray_endpoint_failure_contract_2026_08_23:

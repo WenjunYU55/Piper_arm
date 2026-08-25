@@ -64,8 +64,8 @@ all of them in the required order.
 
 ```bash
 cd /home/prl/Piper_arm
-PIPER_MISSION_ENABLE_REAL_MOTION=1 \
-PIPER_MISSION_SPEEDS_QUALIFIED=1 \
+PIPER_MISSION_ENABLE_REAL_MOTION=0 \
+PIPER_MISSION_SPEEDS_QUALIFIED=0 \
 PIPER_MISSION_FREE_MOTION_SPEED_PERCENT=5 \
 PIPER_MISSION_CONTACT_SPEED_PERCENT=5 \
 ./run_target_scan_mission.sh
@@ -74,6 +74,17 @@ PIPER_MISSION_CONTACT_SPEED_PERCENT=5 \
 This launcher is a singleton. A second invocation exits with code 73 before
 starting ROS nodes or mission children. Before submitting a GUI goal, require
 exactly one `/piper/run_target_scan` action server.
+
+The combined PiPER/L515/Bunker model is always loaded and shown in RViz. In the
+GUI, **Collision environment for next mission** selects only the support plane:
+`Tabletop floor (z = +0.005 m)` or `Tracked-robot ground (z = -0.466 m)`.
+Apply the selection while idle; the coordinator snapshots it when the next
+mission starts. Both choices deliberately report
+`collision_model_qualified=false`, so keep real motion disabled until the
+combined platform model completes supervised physical qualification. For a
+command-line override, start the coordinator with
+`PIPER_FLOOR_PROFILE=tabletop` or `PIPER_FLOOR_PROFILE=ground`; omit it to use
+the saved GUI choice.
 
 ### Terminal 2 — GUI
 
@@ -98,7 +109,8 @@ ros2 launch piper_description display_live_robot.launch.py \
 
 RViz is feedback-only. Before a mission starts the driver, its RobotModel can
 show missing transforms or a collapsed arm. This is expected; it should become
-live during the driver-start phase.
+live during the driver-start phase. The fixed Bunker chassis and sensor station
+remain visible even while the arm driver is stopped.
 
 ## Run one scan
 

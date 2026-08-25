@@ -110,6 +110,35 @@ def test_live_launch_pins_driver_domain_and_udp_transport():
     ).is_file()
 
 
+def test_live_model_always_contains_visual_only_bunker_platform():
+    root = ET.parse(
+        DESCRIPTION_ROOT / 'urdf' / 'piper_description.xacro').getroot()
+    links = {link.attrib['name']: link for link in root.findall('link')}
+    joints = {joint.attrib['name']: joint for joint in root.findall('joint')}
+
+    expected = {
+        'bunker_chassis_collision': 'bunker_chassis_collision.STL',
+        'bunker_sensor_station_collision':
+            'bunker_sensor_station_collision.STL',
+    }
+    for link_name, filename in expected.items():
+        link = links[link_name]
+        assert link.find('collision') is None
+        assert link.find('visual/geometry/mesh').attrib['filename'] == (
+            'package://piper_description/meshes/' + filename)
+
+    for joint_name, child_name in (
+            ('base_link_to_bunker_chassis_collision',
+             'bunker_chassis_collision'),
+            ('base_link_to_bunker_sensor_station_collision',
+             'bunker_sensor_station_collision')):
+        joint = joints[joint_name]
+        assert joint.attrib['type'] == 'fixed'
+        assert joint.find('parent').attrib['link'] == 'base_link'
+        assert joint.find('child').attrib['link'] == child_name
+        assert joint.find('origin').attrib['xyz'] == '0 0 0'
+
+
 def test_camera_holder_mesh_is_fixed_visual_only_and_scaled_from_mm():
     root = ET.parse(DESCRIPTION_ROOT / "urdf" / "piper_description.xacro").getroot()
     links = {link.attrib["name"]: link for link in root.findall("link")}

@@ -21,7 +21,6 @@ from piper_mobile_manipulation.home_pose import (
 )
 from piper_mobile_manipulation.mission_core import (
     MissionPhase,
-    REQUIRED_CAPTURES,
 )
 
 
@@ -729,6 +728,52 @@ class MissionEngine:
                             'one or more PiPER-owned processes remain alive',
                             True))
                 return None
+            if (
+                    not session.startup_wrist_completed
+                    and not session.startup_home_completed):
+                # PRE_HOME is safe only after the startup-only positive J6
+                # transaction has placed the wrist on its mission-ready
+                # branch.  A startup failure used to fall straight through to
+                # the six-joint PRE_HOME endpoint while J6 could still be near
+                # its folded storage angle, allowing the attached camera to
+                # contact Joint 1.  Re-run that required J6-only prerequisite
+                # once from fresh terminal telemetry; if it cannot be proved,
+                # retain control in place and never issue PRE_HOME.
+                self._transition(
+                    context, MissionPhase.RETURNING_HOME,
+                    'terminal recovery requires startup wrist normalization '
+                    'before any configured pre-home motion')
+                try:
+                    startup_targets = staged_home_targets(
+                        self.operations.current_home_profile(context),
+                        self.operations.current_joint_positions(context))
+                except (TypeError, ValueError) as exc:
+                    return self._retain_command_owner_for_recovery(
+                        context, MissionFailure(
+                            'startup wrist recovery target is invalid; '
+                            'PRE_HOME was not commanded and the arm remains '
+                            'enabled in its current position: %s' % exc,
+                            True))
+                if not self.operations.prove_home(
+                        context, startup=True,
+                        target_positions=(
+                            startup_targets['startup_wrist_positions_rad']),
+                        home_stage='STARTUP_WRIST'):
+                    if session.motor_control_lost_reason:
+                        return self.shutdown(
+                            context, normal_completion=False, failure=failure)
+                    diagnostic = self.operations.return_home_diagnostic(
+                        context).strip()
+                    return self._retain_command_owner_for_recovery(
+                        context, MissionFailure(
+                            'startup wrist normalization was not proved '
+                            'during terminal recovery; PRE_HOME was not '
+                            'commanded and the arm remains enabled in its '
+                            'current position'
+                            + (': ' + diagnostic if diagnostic else ''),
+                            True))
+                session.startup_wrist_completed = True
+                session.return_home_proved = False
             if not session.pre_home_completed:
                 # The failure that ended scanning is not authority for the
                 # shutdown motion.  Re-qualify the dedicated direct-home

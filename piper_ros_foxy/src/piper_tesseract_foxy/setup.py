@@ -15,9 +15,11 @@ setup(
         ('share/' + package_name + '/launch', ['launch/tesseract_foxy.launch.py']),
         ('share/' + package_name + '/model', [
             'model/piper.srdf',
+            'model/piper_bunker.srdf',
             'model/piper_plugins.yaml',
             'model/contact_manager_plugins.yaml',
             'model/collision_model.yaml',
+            'model/collision_model_ground.yaml',
         ]),
     ],
     install_requires=['setuptools'],
@@ -31,6 +33,8 @@ setup(
         'console_scripts': [
             'tesseract_plan_bridge = piper_tesseract_foxy.bridge_node:main',
             'tesseract_plan_worker = piper_tesseract_foxy.worker:main',
+            'piper_capability_map_generator = '
+            'piper_tesseract_foxy.capability_map_generator:main',
         ],
     },
 )

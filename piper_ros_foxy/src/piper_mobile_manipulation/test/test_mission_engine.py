@@ -401,6 +401,65 @@ def test_original_failure_cannot_prevent_fresh_direct_home_qualification():
         'disable')
 
 
+def test_failed_startup_wrist_is_retried_before_terminal_pre_home():
+    class Operations(FakeMissionOperations):
+        def __init__(self):
+            super().__init__()
+            self.home_stages = []
+
+        def prove_home(
+                self, context, startup=False, target_positions=None,
+                home_stage='ROUGH_HOME', interruptible=False):
+            self.home_stages.append(home_stage)
+            return super().prove_home(
+                context, startup=startup,
+                target_positions=target_positions,
+                home_stage=home_stage, interruptible=interruptible)
+
+    operations = Operations()
+    operations.failure_stage = 'startup_wrist'
+
+    operations, context, result = _execute(operations)
+
+    assert not result.succeeded
+    assert operations.home_stages == [
+        'STARTUP_WRIST', 'STARTUP_WRIST', 'PRE_HOME', 'ROUGH_HOME',
+        'STORAGE_WRIST']
+    assert context.session.startup_wrist_completed
+    assert context.session.pre_home_completed
+    assert context.session.return_home_proved
+    assert context.session.storage_wrist_proved
+    assert context.session.disabled_proved
+    assert context.session.processes_stopped
+
+
+def test_unproved_terminal_startup_wrist_never_commands_pre_home():
+    class Operations(FakeMissionOperations):
+        def prove_home(
+                self, context, startup=False, target_positions=None,
+                home_stage='ROUGH_HOME', interruptible=False):
+            if home_stage == 'STARTUP_WRIST':
+                self._record('startup_wrist', context)
+                return False
+            return super().prove_home(
+                context, startup=startup,
+                target_positions=target_positions,
+                home_stage=home_stage, interruptible=interruptible)
+
+    operations, context, result = _execute(Operations())
+
+    assert not result.succeeded
+    assert result.outcome == 'NEEDS_OPERATOR'
+    assert operations.events.count('startup_wrist') == 2
+    assert 'pre_home' not in operations.events
+    assert 'return_home' not in operations.events
+    assert 'storage_wrist' not in operations.events
+    assert not context.session.startup_wrist_completed
+    assert context.session.arm_enabled
+    assert not context.session.disabled_proved
+    assert 'PRE_HOME was not commanded' in result.reason
+
+
 def test_autonomous_path_does_not_call_redundant_hold_services():
     class Operations(FakeMissionOperations):
         def prove_current_hold(self, context):

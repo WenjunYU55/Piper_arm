@@ -1,5 +1,31 @@
 schema_version: 1
 document: implemented_features_bookmark
+generation_zero_nearest_ray_seed_2026_08_25:
+  capability: The first ray_nbv request orders the existing six-ray prequalified shortlist by minimum physical camera travel to each continuous bounded interval. It no longer treats legacy negative-Y preference as measured information before any capture exists.
+  authority: [bridge_node.py generation-zero shortlist ordering, latest achieved FK physical start, Tesseract exact endpoint feasibility]
+  preserved: [frozen ray pool, capability and analytic culling, six-ray cap, accepted-only coverage, post-capture NBV scoring and ranking, motion, capture, home, shutdown, public ROS interfaces]
+  evidence: [focused bridge regressions, no hardware command]
+startup_wrist_terminal_prerequisite_2026_08_24:
+  status: software_qualified_physical_retest_pending
+  capability: A reboot-time ambiguous first J6 observation can no longer permanently reject an otherwise valid explicit negative-branch STARTUP_WRIST. Terminal recovery cannot enter six-joint PRE_HOME until that positive-only J6 prerequisite or the complete rough startup home has been proved.
+  authority: [piper_ctrl_single_node.py explicit re-arm and direction watchdog, mission_engine.py terminal stage ordering, target_scan_mission_node.py existing direct-stage adapter]
+  preserved: [positive-only startup direction, J6 range and controller mapping, measured J1-J5 preservation, configured targets, tolerance, speed, motor-loss no-motion path, direct-home Tesseract bypass, public ROS interfaces]
+  evidence: [146 focused driver mission and shutdown tests pass, 834 complete behavior tests pass, five-package build passes, all registered functional colcon targets pass, no hardware command]
+camera_capability_map_2026_08_24:
+  feature: Deterministic collision-aware sparse camera capability atlas used as an exchangeable target-ray prequalification layer before the unchanged Tesseract bridge.
+  authority: [capability_map.py, viewpoint_reachability_filter_node.py, capability_map_generator.py, generate_capability_map.sh, validate_capability_map.py, piper_camera_capability_map.npz, capability_map_convergence.json]
+  proven: [2M deterministic samples, zero malformed states, 1479561 occupied 5D bins, all 87 recorded achieved poses supported, practical convergence report, source-hash rejection, explicit non-geometric manifest-hash rebind provenance, floor-profile lookup, coarse fallback, target-ray-only enforcement, 29 focused tests]
+  not_changed: [NBV generation scoring ranking and coverage, bridge six-ray shortlist, worker IK collision path aim and visibility, motion speed, capture, home, disable, shutdown, ROS schemas]
+  physical_status: The tabletop collision profile is qualified for plans that individually pass all existing safety gates. The tracked-ground profile remains explicitly unqualified for physical motion.
+tracked_robot_drop_in_description_2026_08_24:
+  implemented: [deterministic tracked-root description generator, ready two-file replacement bundle, geometry-free piper_base_link gateway alias, exact current arm-subtree synchronization, duplicate Bunker exclusion, pinned source and output hashes, installation guide]
+  proven: [single robot_bottom root, tracked base and sensor frames preserved, PiPER camera chain present, current J6 pi limits retained, friend description contract 18 tests pass, odom gateway frame matches existing default]
+  boundary: No ROS interface, gateway behavior, planner, motion, calibration or hardware command changed.
+bunker_collision_profile_2026_08_24:
+  feature: Permanent combined PiPER/L515/Bunker visual and collision model with an idle-GUI-selectable next-mission support-floor height.
+  authority: [piper_description.xacro, collision_environment.yaml, collision_environment.py, piper_gui_native.py, collision_model.yaml, collision_model_ground.yaml, piper_bunker.srdf, floor_profile.sh, platform_sources/PROVENANCE.md, platform_planning_150mm/collision_mesh_manifest.json, collision_meshes.py, model_builder.py]
+  proven: [exact external source hashes, deterministic transforms and bounds, every source triangle retained, visual-only platform links become decomposed planning collision links, atomic GUI floor persistence, per-mission snapshot, model load, positive neutral clearance, mixed worker/bridge model blocks readiness]
+  not_yet_proven: [generic core acquisition qualification, motors-disabled visual inspection, physical collision accuracy, supervised motion]
 deadline_terminal_home_authorization_2026_08_24:
   status: software_qualified_physical_retest_pending
   capability: Deadline expiry terminates scanning but no longer consumes the authorization needed by terminal recovery. After scan stop/hold, or fresh static-startup feedback, each existing direct-home stage receives a bounded same-identity authorization window and the normal staged home, disable and cleanup sequence continues.
@@ -320,8 +346,9 @@ active_rollback_features:
     status: [ACTIVE, SOFTWARE_QUALIFIED]
     summary: >-
       MissionEngine is the only admitted mission/shutdown state machine. Every
-      owned controllable failure independently re-qualifies PRE_HOME,
-      ROUGH_HOME and STORAGE_WRIST from current control evidence; only current
+      owned controllable failure first proves unfinished STARTUP_WRIST when
+      required, then independently re-qualifies PRE_HOME, ROUGH_HOME and
+      STORAGE_WRIST from current control evidence; only current
       motor authority loss forbids all commands. Autonomous startup and
       terminal shutdown do not call the redundant hold service. Executor runtime evidence is selected by one
       immutable named RuntimeGatePolicy rather than interacting booleans or a

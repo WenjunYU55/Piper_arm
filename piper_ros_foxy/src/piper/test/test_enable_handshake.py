@@ -905,6 +905,71 @@ def test_startup_joint6_callback_never_commands_negative_before_raw_wrap():
     assert after_wrap > round(-3.13 * 57324.840764)
 
 
+def test_explicit_startup_command_rearms_from_later_coherent_negative_feedback():
+    """A transient first sample must not permanently reject startup."""
+    class StartupNode(FakeCommandNode):
+        enforce_joint_bound = PiperRosNode.enforce_joint_bound
+        get_joint_value = PiperRosNode.get_joint_value
+        get_joint_velocity = PiperRosNode.get_joint_velocity
+        get_joint_effort = PiperRosNode.get_joint_effort
+        send_motion_ctrl_2_if_changed = PiperRosNode.send_motion_ctrl_2_if_changed
+        send_gripper_if_changed = PiperRosNode.send_gripper_if_changed
+
+        def __init__(self):
+            super().__init__()
+            self.joint_bounds = dict(DEFAULT_JOINT_BOUNDS)
+            self.gripper_exist = False
+            self._joint_feedback_lock = threading.Lock()
+            self.last_commanded_joint_positions = None
+            self.last_command_feedback_best_error = None
+            self.last_joint_commanded_at = 0.0
+            self.last_joint_feedback_positions = None
+            self._startup_joint6_finished = False
+            self._startup_joint6_armed = False
+            self._startup_joint6_active = False
+            self._startup_joint6_last_target = None
+            self._raw_joint6_feedback = -3.125
+            self._published_joint6_feedback = -3.125
+            self._latest_raw_arm_positions = (
+                -0.019, -0.061, -0.002, -0.045, 0.471, -3.125)
+            self.infos = []
+            self.errors = []
+            self.logger = SimpleNamespace(
+                debug=lambda *_args: None,
+                info=self.infos.append,
+                warn=lambda *_args: None,
+                error=self.errors.append,
+            )
+
+        def GetEnableFlag(self):
+            return True
+
+        def get_logger(self):
+            return self.logger
+
+    node = StartupNode()
+    command = SimpleNamespace(
+        header=SimpleNamespace(
+            frame_id='piper_scan_executor_startup_wrist'),
+        name=['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6'],
+        position=[-0.019, -0.061, -0.002, -0.045, 0.471, 0.0],
+        velocity=[0.0] * 6,
+        effort=[],
+    )
+
+    PiperRosNode.joint_callback(node, command)
+
+    assert node.errors == []
+    assert node._startup_joint6_armed
+    assert node._startup_joint6_active
+    assert len(node.piper.joint_commands) == 1
+    commanded_joint6 = node.piper.joint_commands[-1][5]
+    assert commanded_joint6 == 0
+    assert commanded_joint6 > round(-3.125 * 57324.840764)
+    assert any('Re-armed startup-only negative J6 branch' in message
+               for message in node.infos)
+
+
 def test_startup_wrap_bridge_continues_positive_to_raw_two_pi():
     class StartupNode(FakeCommandNode):
         enforce_joint_bound = PiperRosNode.enforce_joint_bound

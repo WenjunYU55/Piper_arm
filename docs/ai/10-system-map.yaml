@@ -1,5 +1,33 @@
 schema_version: 1
 document: system_map
+generation_zero_ray_seed_order_2026_08_25:
+  sequence: [receive prequalified ray_nbv_seed pool, compute current-FK travel to each bounded ray interval, shortlist the six nearest rays, let Tesseract choose the first exactly feasible target-facing endpoint]
+  authority: {seed_order: bridge_node.py, current_physical_pose: latest achieved FK, exact_feasibility: Tesseract worker, post_capture_information_order: accepted-only NBV coverage path}
+  invariant: Nearest-ray ordering applies only before the first accepted capture; it never replaces measured marginal information gain afterward.
+startup_wrist_terminal_prerequisite_2026_08_24:
+  sequence: [coherent disabled feedback, mission enable, explicit STARTUP_WRIST re-arms from the latest valid negative branch if the first sample was ambiguous, positive-only J6 normalization is proved, rough startup home may execute, mission work begins]
+  terminal_sequence_before_startup_complete: [fresh motor authority, prove positive-only STARTUP_WRIST, PRE_HOME, ROUGH_HOME, STORAGE_WRIST, all-six disable, authorization revoke, owned-process cleanup]
+  authority: {mission_order: mission_engine.py, terminal service adapter: target_scan_mission_node.py, direct stage execution: scan_viewpoint_executor_node.py, positive-only controller mapping and re-arm: piper_ctrl_single_node.py}
+  invariant: PRE_HOME is never an alternative to unfinished STARTUP_WRIST. Direct home still bypasses Tesseract, so stage ordering is the safety boundary for the folded camera posture.
+camera_capability_prequalification_2026_08_24:
+  offline_load_order: [build hash-locked combined planning URDF, deterministic Halton joint sampling within conservative limits plus 0.03 rad margin, full endpoint collision and clearance query, camera and link6 FK, 20 mm XYZ plus 10 degree optical-direction quantization, checkpoint convergence validation, commit selected compressed artifact]
+  runtime_load_order: [load artifact once, verify schema and every source hash, apply existing coarse bounded-ray intersection, query sparse atlas over the complete permitted standoff interval and selected floor, preserve unsupported rays in diagnostics, forward only prequalified information-ranked rays to the unchanged six-ray bridge shortlist, Tesseract proves exact feasibility]
+  data_shape: {stored: [sorted packed uint64 5D keys, maximum attached-tool minimum Z per key, immutable metadata and hashes], not_stored: [raw joint samples, IK seeds, solid workspace volume, trajectories]}
+  authority: {capability_map: cheap endpoint prequalification, tesseract_worker: exact IK collision path aim and visibility, nbv: information score and ordering}
+tracked_robot_description_boundary_2026_08_24:
+  tracked_master: {root: robot_bottom, localization_edge: odom -> base_link, arm_mount: "base_link -> arm_base_link xyz [0.39, 0, 0.016] rpy [0, 0, 0]"}
+  gateway_alias: {edge: arm_base_link -> piper_base_link, transform: identity, geometry: none}
+  arm_private_frame: base_link
+  handoff: target_scan_gateway snapshots odom -> piper_base_link before writing the local mission target; the tracked robot must be stationary before arm dispatch.
+  generated_bundle: integration/track_robot_description/drop_in
+bunker_collision_profile_path_2026_08_24:
+  sequence: [GUI atomically saves floor_profile while no mission is active, persistent coordinator snapshots saved choice before creating a process generation, mission exports PIPER_FLOOR_PROFILE to owned children, supervised launch chooses the matching floor manifest and executor floor, both choices load piper_bunker.srdf and identical combined geometry, worker heartbeat publishes model hashes, bridge blocks readiness on mismatch]
+  profiles:
+    tabletop: {manifest: collision_model.yaml, srdf: piper_bunker.srdf, floor_z_m: 0.005, hardware_qualified: false}
+    ground: {manifest: collision_model_ground.yaml, srdf: piper_bunker.srdf, floor_z_m: -0.466, hardware_qualified: false}
+  frame_contract: Platform triangles are pretransformed into the existing arm planning base_link. No tracked-base TF semantics are introduced.
+  visual_contract: piper_description.xacro always exposes visual-only fixed platform links; model_builder replaces their empty collision sets with the authoritative decomposed collision pieces.
+  load_order_contract: The floor choice is immutable within one mission process generation. GUI changes affect only a later mission and never mutate a running worker, bridge or executor.
 deadline_terminal_recovery_2026_08_24:
   sequence: [mission deadline rejects further scan work, MissionEngine enters its existing shutdown path, executor stop/hold is acknowledged, ROS adapter renews the same task and digest for one bounded direct-home stage, executor revalidates current motor and stage evidence, PRE_HOME then ROUGH_HOME then STORAGE_WRIST execute, all-six disable is proved, authorization is revoked, owned processes stop]
   authority: {shutdown_order: mission_engine.py, bounded_authorization_renewal: target_scan_mission_node.py, direct_stage_validation_and_execution: scan_viewpoint_executor_node.py}
@@ -263,7 +291,7 @@ runtime_surfaces:
   isolated_tesseract_worker:
     process: piper_tesseract_foxy.worker inside the pinned rootless Ubuntu 24.04 Bubblewrap userspace or equivalent OCI image
     role: ROS-free CPU proposal worker using Tesseract 0.35, hash-verified collision pieces, free six-joint look-at IK, request-bound OMPL seed 42, OMPL/ISP goal establishment, one direct SDK MoveJ target per viewpoint, an optional manual-batch contingency home, a distinct zero-capture RETURN_HOME route, and adaptive exact-segment Bullet validation. Automatic one-view MULTIVIEW_SCAN plans deliberately omit the unused contingency home. MoveJ derivative arrays remain exact zeros. Bounded recovery exists only for the first bootstrap_static acquisition segment or terminal folded-home corridor. The internal budget is 150 seconds; global clearance remains 0.005 m and no pair is globally disabled.
-    current_status: On 2026-08-24 the rebuilt model replaced the simplified holder/camera self-collision representation with the exact installed visual union split into seventeen 30 mm XY collision cells. Both command-free rootless suites pass with collision_model_qualified_for_hardware=true and real_arm_motion=false, including compact start, obstacle detour, folded direct home and recorded support-plane incident rejection. J6 remains fully free. The nanobind continuous manager is disabled after a repeatable segfault, so no output claims BulletCast or FCL validation. The current model has software/rootless evidence only and still requires supervised physical requalification.
+    current_status: On 2026-08-24 the rebuilt model replaced the simplified holder/camera self-collision representation with the exact installed visual union split into seventeen 30 mm XY collision cells. Command-free tabletop validation passes model/timing load, obstacle detour, zero-start and centerline acquisition, while a synthetic dual-limit recovery can fail closed on the unchanged planning budget. The tabletop manifest is hardware-qualified for individually validated plans; the tracked-ground manifest remains unqualified. J6 remains fully free. The nanobind continuous manager is disabled after a repeatable segfault, so no output claims BulletCast or FCL validation.
   operator_ui:
     process: piper_gui_native.py
     role: RunTargetScan client plus explicitly labelled commissioning controls. Automatic Scan accepts rough base_link XYZ plus an editable label, submits/cancels the production action and displays feedback/results. A bounded configuration control atomically selects legacy, exact-point voxel_nbv or frozen ray_nbv plus ray region/count in scan_planning_params.yaml for the next mission-owned scan-stack launch; it contains no planner implementation and cannot alter an active mission. Diagnostics is read-only. Manual and Graphical tabs provide direct operator commissioning and the draggable RViz twin.

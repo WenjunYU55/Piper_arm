@@ -328,11 +328,12 @@ def balanced_closed_loop_candidates(
     Session history deliberately scores distant directions highest.  Taking a
     prefix of that ordering can remove every pose near the current, already
     proven reachable configuration before the worker gets a chance to solve
-    IK.  The first observation still alternates compact and ambitious options.
-    Once achieved history identifies a missing feature axis, the worker sees
-    a block of materially advancing candidates before compact non-regressing
-    fallbacks.  This retains IK escape candidates without letting comfortable
-    radius/elevation variants consume the bounded feature-capture budget.
+    IK.  Before any capture has established measured coverage, order the seed
+    shortlist only by motion from the achieved camera pose.  Once history
+    identifies a missing feature axis, the worker sees a block of materially
+    advancing candidates before compact non-regressing fallbacks.  This
+    retains IK escape candidates without letting comfortable radius/elevation
+    variants consume the bounded feature-capture budget.
     """
     start = np.asarray(start_camera_position, dtype=float)
     if start.shape != (3,) or not np.all(np.isfinite(start)):
@@ -362,11 +363,39 @@ def balanced_closed_loop_candidates(
         or float(item['coverage_progress_score']) >= -1e-9
     ]
     coverage_order = progress_candidates
+
+    def camera_travel(item):
+        position = np.asarray(item['camera_position_m'], dtype=float)
+        if item.get('candidate_geometry') != 'target_ray':
+            return float(np.linalg.norm(position - start))
+        try:
+            direction = np.asarray(item['ray_direction'], dtype=float)
+            direction_norm = float(np.linalg.norm(direction))
+            scoring_standoff = float(item['ray_scoring_standoff_m'])
+            minimum = float(item['ray_min_standoff_m'])
+            maximum = float(item['ray_max_standoff_m'])
+            if (
+                    direction.shape != (3,)
+                    or not np.all(np.isfinite(direction))
+                    or not math.isfinite(direction_norm)
+                    or direction_norm <= 1e-9
+                    or not all(math.isfinite(value) for value in (
+                        scoring_standoff, minimum, maximum))
+                    or minimum > maximum):
+                raise ValueError('invalid bounded target ray')
+            direction /= direction_norm
+            target = position - direction * scoring_standoff
+            closest_standoff = float(np.clip(
+                np.dot(start - target, direction), minimum, maximum))
+            closest = target + direction * closest_standoff
+            return float(np.linalg.norm(closest - start))
+        except (KeyError, TypeError, ValueError, FloatingPointError):
+            return float(np.linalg.norm(position - start))
+
     fallback_order = sorted(
         (dict(item) for item in progress_candidates),
         key=lambda item: (
-            float(np.linalg.norm(
-                np.asarray(item['camera_position_m'], dtype=float) - start)),
+            camera_travel(item),
             float(np.linalg.norm(
                 np.asarray(item['camera_position_m'], dtype=float)
                 - leader_position)),
@@ -393,13 +422,13 @@ def balanced_closed_loop_candidates(
         if float(item.get('coverage_progress_score', 0.0))
         >= progress_threshold(item)
     ]
+    if compact_first:
+        return fallback_order[:min(limit, len(fallback_order))]
     selected = []
     selected_ids = set()
     target_count = min(limit, len(progress_candidates))
     for coverage, fallback in zip(coverage_order, fallback_order):
-        pair = (
-            (fallback, coverage) if bool(compact_first)
-            else (coverage, fallback))
+        pair = (coverage, fallback)
         for item in pair:
             item_id = int(item['id'])
             if item_id in selected_ids:
@@ -1024,6 +1053,21 @@ class TesseractPlanBridge(Node):
             return [
                 'Tesseract worker is not ready'
                 + (': ' + detail if detail else '')
+            ]
+        expected_hashes = {
+            'srdf_sha256': sha256_file(self.parameter_path('srdf_path')),
+            'collision_manifest_sha256': sha256_file(
+                self.parameter_path('collision_manifest_path')),
+        }
+        mismatches = [
+            name for name, expected in expected_hashes.items()
+            if health.get(name) != expected
+        ]
+        if mismatches:
+            self.worker_generation_id = generation
+            return [
+                'Tesseract worker collision profile does not match bridge: '
+                + ', '.join(mismatches)
             ]
         self.worker_generation_id = generation
         return []

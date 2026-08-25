@@ -123,3 +123,31 @@ def test_production_builder_uses_decomposed_installed_l515_assembly(tmp_path):
     mount = joints['gripper_base_to_l515_attached_assembly']
     assert mount.find('parent').get('link') == 'gripper_base'
     assert mount.find('child').get('link') == 'l515_attached_assembly'
+
+
+def test_bunker_builder_adds_platform_without_replacing_piper_or_l515(tmp_path):
+    root = Path(__file__).resolve().parents[4]
+    output = tmp_path / 'piper_bunker.urdf'
+    build_planning_urdf(
+        root / 'piper_ros_foxy/src/piper_description/urdf/piper_description.xacro',
+        root / 'L515_camera/calibration/hand_eye/session_20260808_straight_mount/'
+        'calibration_result.yaml',
+        root / 'piper_ros_foxy/src/piper_tesseract_foxy/model/'
+        'collision_model_ground.yaml',
+        output,
+    )
+    tree = ET.parse(str(output))
+    links = {item.get('name'): item for item in tree.getroot().findall('link')}
+    joints = {item.get('name'): item for item in tree.getroot().findall('joint')}
+
+    assert len(links['bunker_chassis_collision'].findall('collision')) == 46
+    assert len(links['bunker_sensor_station_collision'].findall('collision')) == 16
+    assert len(links['l515_attached_assembly'].findall('collision')) == 17
+    assert joints['base_link_to_bunker_chassis_collision'].find(
+        'parent').get('link') == 'base_link'
+    assert joints['base_link_to_bunker_sensor_station_collision'].find(
+        'parent').get('link') == 'base_link'
+    assert math.isclose(
+        float(joints['joint6'].find('limit').get('lower')), -math.pi)
+    assert math.isclose(
+        float(joints['joint6'].find('limit').get('upper')), math.pi)

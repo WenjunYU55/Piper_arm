@@ -223,10 +223,20 @@ def test_process_startup_order_and_environment_are_characterized(
         / 'session_20260808_straight_mount' / 'calibration_result.yaml')
     calibration.parent.mkdir(parents=True)
     calibration.write_text('status: accepted\n', encoding='utf-8')
+    floor_selection = (
+        tmp_path / 'piper_ros_foxy/src/piper_mobile_manipulation/config/'
+        'collision_environment.yaml')
+    floor_selection.parent.mkdir(parents=True)
+    floor_selection.write_text(
+        'schema_version: 1\nfloor_profile: "ground"\n', encoding='utf-8')
     harness = SimpleNamespace(
         get_parameter=lambda name: SimpleNamespace(value=values[name]),
         param_bool=lambda name: bool(values[name]),
         processes=Processes(),
+        configuration=SimpleNamespace(
+            process=SimpleNamespace(
+                floor_profile='saved', floor_profile_path=''),
+            value=lambda name: values[name]),
         _lock=threading.RLock(),
         get_clock=lambda: SimpleNamespace(
             now=lambda: SimpleNamespace(nanoseconds=123456789)),
@@ -265,6 +275,7 @@ def test_process_startup_order_and_environment_are_characterized(
     assert environment['PIPER_VIEWPOINT_SPEED_PERCENT'] == '30.0'
     assert environment['PIPER_VIEWPOINT_MIN_VIEWS'] == '8'
     assert environment['PIPER_VIEWPOINT_MAX_VIEWS'] == '24'
+    assert environment['PIPER_FLOOR_PROFILE'] == 'ground'
     assert environment['PIPER_MISSION_TASK_ID'] == session.task_id
     assert environment['PIPER_MISSION_SHA256'] == session.mission_sha256
     assert environment['PIPER_HAND_EYE_CALIBRATION'] == str(calibration)

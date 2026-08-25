@@ -1,5 +1,28 @@
 schema_version: 1
 document: consolidated_problem_and_incident_log
+generation_zero_seed_used_legacy_face_bias_2026_08_25:
+  state: software_repaired_physical_requalification_pending
+  symptom: Before capture one, every ray had zero measured marginal information but the bridge interleaved the nearest option with a legacy negative-Y face-score leader, so adjacent or unnecessarily ambitious initial attempts could appear to be NBV decisions.
+  correction: Order the full generation-zero shortlist solely by distance from actual current FK to the nearest permitted point on each bounded ray interval. Keep post-capture information ranking unchanged.
+  evidence: [focused regression proves score-independent nearest ordering, bounded-interval regression prevents representative-point bias, no hardware command]
+startup_rejection_then_pre_home_camera_collision_2026_08_24:
+  state: software_repaired_physical_requalification_pending
+  symptom: After a full PC restart, the ordinary startup routine did not occur. The camera holder then contacted joint1 and the driver reported J3 then J5 collision and driver errors.
+  root_cause: The driver rejected STARTUP_WRIST because the fresh-process transaction was not armed, but MissionEngine terminal recovery treated PRE_HOME as unconditional for every enabled failure and issued it with J6 still near -3.125 rad. Direct configured home bypasses Tesseract, so the detailed camera collision mesh could not prevent this invalid stage transition.
+  correction: Explicit STARTUP_WRIST can re-arm from the latest coherent finite negative J6 feedback after an ambiguous first sample. MissionEngine now requires STARTUP_WRIST proof before PRE_HOME whenever startup readiness was never proved; failed proof retains control and commands no later home stage.
+  evidence: [/run/user/1000/piper_target_scan_logs/driver.log, /run/user/1000/piper_target_scan_logs/scan_stack.log, gui-sim-f29a8240fb7240bc9189103f2dbdc5d3 result, test_enable_handshake.py, test_mission_engine.py, test_mission_core.py]
+  remaining: Software build and complete regression first, then one explicitly supervised low-speed storage-to-ready startup and cancel-to-home sequence. No physical command was issued for the repair.
+repeated_infeasible_ray_planning_cost_2026_08_24:
+  symptom: Coarse analytic workspace bounds retained roughly 350 of 360 full-sphere rays, so successive six-ray Tesseract shortlists repeatedly spent nonlinear IK attempts on directions unsupported by the integrated arm camera and platform geometry.
+  correction: Generate one source-hash-bound sparse 5D camera capability atlas offline and apply it only as a target-ray prefilter over the complete standoff interval. Preserve exact Tesseract and every downstream safety gate.
+  convergence: 100k through 1M maps retained only 60.17 through 90.41 percent of the final supported validation rays. The 2M map retained all 87 recorded achieved poses and was selected.
+  expected_effect: Representative full-sphere support falls to 344 of 2520 rays. The previously inspected four-view run's theoretical IK seed solves fall from 126 toward 36 when unsupported shortlisted rays are removed; exact request timing still requires command-free replay.
+  unresolved: The capability map remains command-free evidence only. Tabletop planning is qualified independently; tracked-ground remains unqualified, and exact IK/path proof still belongs to Tesseract.
+bunker_collision_profile_integration_2026_08_24:
+  request: Merge only the friend's Bunker Pro 2 and sensor-station geometry with this repository's newer PiPER/L515 collision model before capability-map work.
+  correction: The first implementation incorrectly treated tabletop and Bunker as alternate geometry profiles. The corrected implementation keeps the combined PiPER/L515/Bunker geometry permanently visible and collision-active, while the idle GUI selects only the next mission's 0.005 m tabletop or -0.466 m tracked-ground support plane. The coordinator snapshots the selection before starting children and worker/bridge hashes must agree.
+  evidence: Rootless model load passes; neutral platform clearance passes; repeated collision query averages 2.905 ms versus 1.985 ms tabletop.
+  unresolved: The synthetic dual-limit recovery still times out before candidate planning and therefore fails closed. The tabletop manifest is qualified for individually validated plans; tracked-ground remains unqualified pending assembled-platform qualification.
 expired_scan_authorization_blocked_pre_home_2026_08_24:
   state: software_repaired_physical_requalification_pending
   symptom: Task gui-sim-f525ea2a7d654f2a9ae06077088c5cf4 timed out after four captures, entered shutdown, then failed PRE_HOME with mission authorization is missing or expired. The arm remained enabled in a current-position hold and command-owning processes were retained.

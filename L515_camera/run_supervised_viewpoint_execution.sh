@@ -37,6 +37,14 @@ MIN_VIEWS="${PIPER_VIEWPOINT_MIN_VIEWS:-13}"
 AUTO_CAPTURE="${PIPER_VIEWPOINT_AUTO_CAPTURE:-1}"
 MISSION_POLICY="${PIPER_VIEWPOINT_MISSION_POLICY:-0}"
 CLOSED_LOOP_ONE_VIEW="${PIPER_VIEWPOINT_CLOSED_LOOP_ONE_VIEW:-0}"
+FLOOR_PROFILE="${PIPER_FLOOR_PROFILE:-tabletop}"
+case "$FLOOR_PROFILE" in
+  tabletop|ground) ;;
+  *)
+    echo "PIPER_FLOOR_PROFILE must be exactly tabletop or ground." >&2
+    exit 2
+    ;;
+esac
 case "$AUTO_CAPTURE" in
   0) ROS_AUTO_CAPTURE=false ;;
   1) ROS_AUTO_CAPTURE=true ;;
@@ -75,4 +83,5 @@ exec ros2 launch piper_mobile_manipulation supervised_viewpoint_execution.launch
   min_execution_viewpoints:="$MIN_VIEWS" \
   auto_capture:="$ROS_AUTO_CAPTURE" \
   allow_mission_policy:="$ROS_MISSION_POLICY" \
-  closed_loop_one_view:="$ROS_CLOSED_LOOP_ONE_VIEW"
+  closed_loop_one_view:="$ROS_CLOSED_LOOP_ONE_VIEW" \
+  floor_profile:="$FLOOR_PROFILE"

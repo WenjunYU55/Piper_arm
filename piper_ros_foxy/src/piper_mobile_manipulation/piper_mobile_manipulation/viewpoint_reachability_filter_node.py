@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import json
 import math
+import os
+from pathlib import Path
 import time
 
 import rclpy
@@ -11,11 +13,16 @@ from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
 from piper_mobile_manipulation.scan_motion import motor_control_reasons
+from piper_mobile_manipulation.capability_map import load_capability_map
 
 
 ROUGH_ACQUISITION = 'ROUGH_ACQUISITION'
 RAY_WORKSPACE_REJECTION = (
     'bounded ray does not intersect configured camera workspace')
+CAPABILITY_MAP_REJECTION = (
+    'CAPABILITY_MAP_NO_SUPPORT: bounded ray has no nearby '
+    'collision-qualified camera capability cell')
+CAPABILITY_MAP_MODES = ('off', 'shadow', 'enforce')
 
 
 def target_status_rejection_reason(target_status, plan_kind):
@@ -128,6 +135,14 @@ class ViewpointReachabilityFilterNode(Node):
         # always use these bounds as a cheap interval-intersection cull before
         # Tesseract; this does not claim IK or collision feasibility.
         self.declare_parameter('enforce_static_reach_bounds', False)
+        project_root = os.environ.get('PIPER_ARM_ROOT', '/home/prl/Piper_arm')
+        self.declare_parameter('capability_map_mode', 'enforce')
+        self.declare_parameter('capability_map_project_root', project_root)
+        self.declare_parameter(
+            'capability_map_path', str(Path(project_root) / (
+                'piper_ros_foxy/src/piper_mobile_manipulation/'
+                'config/piper_camera_capability_map.npz')))
+        self.declare_parameter('floor_z_m', 0.005)
         self.declare_parameter('arm_status_timeout_sec', 1.0)
         self.declare_parameter('dry_run', False)
         self.declare_parameter('debug', True)
@@ -136,6 +151,12 @@ class ViewpointReachabilityFilterNode(Node):
         self.arm_status_at = None
         self.target_status = 'UNKNOWN'
         self.latest_joint_state = None
+        self.capability_map = None
+        self.capability_map_error = ''
+        self.capability_map_requested_mode = str(
+            self.get_parameter('capability_map_mode').value).strip().lower()
+        self.capability_map_effective_mode = 'off'
+        self.initialize_capability_map()
 
         self.pub = self.create_publisher(
             String,
@@ -192,6 +213,51 @@ class ViewpointReachabilityFilterNode(Node):
             '/piper/servo_cmd or move the arm.'
         )
 
+    def initialize_capability_map(self):
+        """Load one hash-bound atlas without making it a safety authority."""
+        requested = self.capability_map_requested_mode
+        if requested not in CAPABILITY_MAP_MODES:
+            self.capability_map_error = (
+                'unsupported capability_map_mode=%s' % requested)
+            self.get_logger().error(self.capability_map_error)
+            return
+        if requested == 'off':
+            self.capability_map_effective_mode = 'off'
+            return
+        try:
+            self.capability_map = load_capability_map(
+                self.get_parameter('capability_map_path').value,
+                self.get_parameter('capability_map_project_root').value,
+                verify_sources=True,
+            )
+        except (OSError, TypeError, ValueError) as error:
+            self.capability_map_error = str(error)
+            self.capability_map_effective_mode = 'fallback_coarse'
+            self.get_logger().warn(
+                'Capability map unavailable; retaining coarse ray cull: %s'
+                % error)
+            return
+        qualified = bool(self.capability_map.metadata.get(
+            'qualified_for_enforcement', False))
+        if requested == 'enforce' and not qualified:
+            self.capability_map_error = (
+                'capability map convergence is not qualified for enforcement')
+            self.capability_map_effective_mode = 'fallback_coarse'
+            self.get_logger().warn(self.capability_map_error)
+            return
+        self.capability_map_effective_mode = requested
+        self.get_logger().info(
+            'Capability map loaded in %s mode: '
+            '%d occupied 5D bins from %d samples'
+            % (
+                requested,
+                len(self.capability_map.keys),
+                int(self.capability_map.metadata.get(
+                    'selected_checkpoint_samples',
+                    self.capability_map.metadata.get(
+                        'checkpoint_samples', 0))),
+            ))
+
     def joint_cb(self, msg):
         self.latest_joint_state = msg
 
@@ -244,13 +310,23 @@ class ViewpointReachabilityFilterNode(Node):
         safe_count = 0
         ray_candidate_count = 0
         workspace_rejected_rays = 0
+        capability_supported_rays = 0
+        capability_rejected_rays = 0
+        capability_query_ms = 0.0
         for viewpoint in viewpoints:
             if not isinstance(viewpoint, dict):
                 continue
             result = dict(viewpoint)
             if result.get('candidate_geometry') == 'target_ray':
                 ray_candidate_count += 1
-            reasons = self.reject_reasons(result, plan_kind)
+            reasons, capability = self.evaluate_viewpoint(result, plan_kind)
+            if capability is not None:
+                result['capability_map_prequalification'] = capability
+                capability_query_ms += float(capability['elapsed_ms'])
+                if capability['supported']:
+                    capability_supported_rays += 1
+                else:
+                    capability_rejected_rays += 1
             accepted = len(reasons) == 0
             result['prequalified'] = bool(accepted)
             # Compatibility aliases consumed by the unchanged bridge and
@@ -270,7 +346,11 @@ class ViewpointReachabilityFilterNode(Node):
         output['filter'] = {
             'node': 'viewpoint_reachability_filter_node',
             'mode': (
-                'ray_workspace_cull_then_tesseract'
+                'ray_workspace_and_capability_cull_then_tesseract'
+                if (
+                    ray_candidate_count
+                    and self.capability_map_effective_mode == 'enforce')
+                else 'ray_workspace_cull_then_tesseract'
                 if ray_candidate_count else (
                     'legacy_static_reach_check'
                     if self.param_bool('enforce_static_reach_bounds')
@@ -282,6 +362,10 @@ class ViewpointReachabilityFilterNode(Node):
             'safe_viewpoints': safe_count,
             'ray_candidates': ray_candidate_count,
             'workspace_rejected_rays': workspace_rejected_rays,
+            'capability_supported_rays': capability_supported_rays,
+            'capability_rejected_rays': capability_rejected_rays,
+            'capability_query_total_ms': capability_query_ms,
+            'capability_map': self.capability_map_summary(),
             'reachable_field_semantics': 'prequalified_compatibility_alias',
             'arm_status': self.arm_status_summary(),
             'target_status': self.target_status,
@@ -300,6 +384,13 @@ class ViewpointReachabilityFilterNode(Node):
             )
 
     def reject_reasons(self, viewpoint, plan_kind='MULTIVIEW_SCAN'):
+        """Compatibility wrapper for existing pure characterization tests."""
+        reasons, _capability = \
+            ViewpointReachabilityFilterNode.evaluate_viewpoint(
+                self, viewpoint, plan_kind)
+        return reasons
+
+    def evaluate_viewpoint(self, viewpoint, plan_kind='MULTIVIEW_SCAN'):
         reasons = []
         if not self.param_bool('dry_run'):
             reasons.append('dry_run safety config missing or false')
@@ -315,14 +406,14 @@ class ViewpointReachabilityFilterNode(Node):
         target_center = viewpoint.get('target_object_center')
         if not self.valid_vector(camera_position):
             reasons.append('missing desired camera position')
-            return reasons
+            return reasons, None
         if not self.valid_vector(target_center):
             reasons.append('missing target object center')
-            return reasons
+            return reasons, None
 
         ray_geometry = viewpoint.get('candidate_geometry') == 'target_ray'
         if ray_geometry:
-            if not bounded_ray_intersects_workspace(
+            coarse_supported = bounded_ray_intersects_workspace(
                     viewpoint,
                     self.get_parameter('min_reach_m').value,
                     self.get_parameter('max_reach_m').value,
@@ -330,9 +421,20 @@ class ViewpointReachabilityFilterNode(Node):
                         'min_camera_object_distance_m').value,
                     self.get_parameter(
                         'max_camera_object_distance_m').value,
-                    self.get_parameter('max_height_change_m').value):
+                    self.get_parameter('max_height_change_m').value)
+            if not coarse_supported:
                 reasons.append(RAY_WORKSPACE_REJECTION)
-            return reasons
+                return reasons, None
+            capability = ViewpointReachabilityFilterNode.capability_query(
+                self, viewpoint)
+            if (
+                    capability is not None
+                    and not capability['supported']
+                    and getattr(
+                        self, 'capability_map_effective_mode', 'off')
+                    == 'enforce'):
+                reasons.append(CAPABILITY_MAP_REJECTION)
+            return reasons, capability
 
         if self.param_bool('enforce_static_reach_bounds'):
             reach = self.vector_norm(camera_position)
@@ -373,7 +475,79 @@ class ViewpointReachabilityFilterNode(Node):
                     'height change too large %.3fm > %.3fm'
                     % (height_change, max_height_change))
 
-        return reasons
+        return reasons, None
+
+    def capability_query(self, viewpoint):
+        """Return additive atlas evidence for one already-coarse-valid ray."""
+        capability_map = getattr(self, 'capability_map', None)
+        if capability_map is None:
+            return None
+        try:
+            target_record = viewpoint['target_object_center']
+            target = [float(target_record[key]) for key in ('x', 'y', 'z')]
+            direction_record = viewpoint['ray_direction']
+            direction = (
+                [float(direction_record[key]) for key in ('x', 'y', 'z')]
+                if isinstance(direction_record, dict)
+                else [float(value) for value in direction_record])
+            minimum = max(
+                float(viewpoint['ray_min_standoff_m']),
+                float(self.get_parameter(
+                    'min_camera_object_distance_m').value),
+            )
+            maximum = min(
+                float(viewpoint['ray_max_standoff_m']),
+                float(self.get_parameter(
+                    'max_camera_object_distance_m').value),
+            )
+            clearance = float(capability_map.metadata[
+                'tool_floor_clearance_m'])
+            floor_z = float(self.get_parameter('floor_z_m').value)
+            result = capability_map.intersects_ray(
+                target, direction, minimum, maximum, floor_z, clearance)
+        except (KeyError, TypeError, ValueError) as error:
+            return {
+                'available': True,
+                'supported': False,
+                'checked_keys': 0,
+                'matching_keys': 0,
+                'elapsed_ms': 0.0,
+                'reason': str(error),
+                'effective_mode': getattr(
+                    self, 'capability_map_effective_mode', 'off'),
+            }
+        return {
+            'available': True,
+            'supported': bool(result.supported),
+            'checked_keys': int(result.checked_keys),
+            'matching_keys': int(result.matching_keys),
+            'elapsed_ms': float(result.elapsed_ms),
+            'reason': str(result.reason),
+            'effective_mode': getattr(
+                self, 'capability_map_effective_mode', 'off'),
+        }
+
+    def capability_map_summary(self):
+        capability_map = getattr(self, 'capability_map', None)
+        summary = {
+            'requested_mode': getattr(
+                self, 'capability_map_requested_mode', 'off'),
+            'effective_mode': getattr(
+                self, 'capability_map_effective_mode', 'off'),
+            'available': capability_map is not None,
+            'error': getattr(self, 'capability_map_error', ''),
+        }
+        if capability_map is not None:
+            summary.update({
+                'occupied_pose_direction_bins': int(len(capability_map.keys)),
+                'checkpoint_samples': int(capability_map.metadata.get(
+                    'selected_checkpoint_samples',
+                    capability_map.metadata.get('checkpoint_samples', 0))),
+                'qualified_for_enforcement': bool(
+                    capability_map.metadata.get(
+                        'qualified_for_enforcement', False)),
+            })
+        return summary
 
     def publish_rejected_payload(
             self, reason, publisher=None, plan_kind='MULTIVIEW_SCAN'):
@@ -391,6 +565,7 @@ class ViewpointReachabilityFilterNode(Node):
                     'safe_viewpoints': 0,
                     'reachable_field_semantics': (
                         'prequalified_compatibility_alias'),
+                    'capability_map': self.capability_map_summary(),
                     'reject_reasons': [reason],
                     'dry_run_config_loaded': self.param_bool('dry_run'),
                 },
