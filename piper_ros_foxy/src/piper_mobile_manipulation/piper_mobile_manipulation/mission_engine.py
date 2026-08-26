@@ -400,6 +400,30 @@ class MissionEngine:
         self.operations.enable_arm(context, True)
         session.arm_enabled = True
         self.operations.arm_enable_guard_started(context)
+        try:
+            self.operations.wait_for_post_enable_stability(
+                context,
+                self.workflow_config.startup_joint_stable_sec,
+                self.workflow_config.startup_joint_timeout_sec)
+        except MissionFailure as startup_error:
+            if session.motor_control_lost_reason:
+                raise
+            try:
+                self.operations.enable_arm(context, False)
+                session.disabled_proved = True
+                session.arm_enabled = False
+            except MissionFailure as disable_error:
+                session.motor_control_lost_reason = (
+                    'post-enable startup proof failed and all-six disable '
+                    'could not be proved: %s' % disable_error)
+                raise MissionFailure(
+                    '%s; %s' % (
+                        startup_error, session.motor_control_lost_reason),
+                    needs_operator=True,
+                    failure_code='CONTROL_UNTRUSTWORTHY', retryable=False)
+            raise MissionFailure(
+                '%s; arm disabled before STARTUP_WRIST' % startup_error,
+                failure=startup_error.failure)
         # PiPER position control holds the current controller target when the
         # motors enable.  The next direct startup-home transaction re-reads
         # fresh joints and live all-six motor state before sending its first

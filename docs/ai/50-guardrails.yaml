@@ -1,18 +1,41 @@
 schema_version: 1
 document: guardrails
-trusted_target_envelope_guardrails_2026_08_25:
+proposed_per_ray_fov_guardrails_2026_08_26:
+  status: applies_when_the_proposed_change_is_implemented
   invariants:
-    - A stale, missing, invalid or unqualified mask/depth sample cannot create or update an envelope.
-    - The envelope is immutable within a mission and resets between missions.
-    - The rotation-origin depth must equal exactly half the measured cross-axis silhouette width and must be hash-bound with the visible-surface centre.
-    - The target tracker remains the sole authoritative target point; envelope geometry cannot alter drift checks or historical base_link reconstruction.
-    - Rejected captures never change accepted coverage or the frozen envelope.
-    - Candidate ray IDs, directions, information gain and shortlist semantics remain owned by the existing NBV path.
-    - Prequalification never claims exact reachability; Tesseract still proves aim, IK, collision, path and visibility.
-    - Target-envelope collision boxes use the existing request/hash contract and count toward MAX_OBSTACLES.
-  blast_radius: [depth mask and confidence semantics, camera intrinsics, exact-time TF, target tracking stamps, ray standoff intervals, camera FOV, Tesseract obstacle serialization and hashing, session reset]
-  must_retest_if_changed: {target_envelope.py: [test_target_envelope.py, test_scan_viewpoint_angles.py, test_bridge_feedback_freshness.py], depth_to_3d_node.py: [depth measurement tests, target-envelope tests, tracking tests], scan_viewpoint_planner_node.py: [NBV, ray, session-memory and planner tests], bridge_node.py: [bridge contract and worker validation tests]}
-  prohibited: [public ROS schema expansion for the envelope, online envelope mutation from later views, target-specific reconstruction movement, treating an AABB profile as exact object geometry, bypassing Tesseract because a ray passed the envelope cull]
+    - Direction-dependent framing may narrow only from conservative envelope evidence and calibrated intrinsics; invalid evidence retains the current enclosing-sphere bound.
+    - The complete conservative envelope, not only the visible silhouette or target center, must fit inside the selected aperture with an explicit margin.
+    - The final ray minimum is never below the direction-specific camera-to-envelope surface-clearance minimum or outside configured target-relative bounds.
+    - A roll-independent narrow aperture may be planner-owned. A rectangular roll-aware bound is forbidden unless the same roll constraint is carried to and revalidated by the Tesseract worker.
+    - Projection does not prove IK, collision-free path, visibility under robot geometry, capture quality or motion safety.
+  blast_radius: [ray-specific standoff intervals, ray survival, capability queries, Tesseract search space, planning latency and achievable framing]
+  must_retest_if_changed: [test_target_envelope.py, test_scan_viewpoint_angles.py, test_viewpoint_rays.py, bridge and worker interval tests if the private contract changes, complete mobile and Tesseract suites, affected package build, command-free 360-ray simulation, no hardware command]
+trusted_target_envelope_guardrails_2026_08_25:
+  invariants: [stale or invalid evidence cannot create an envelope, any selected semantic component touching an image border is clipped and cannot create an envelope, a clipped rejection remains bound to its source stamp and measured near depth, only the planner compares that depth with max_scan_radius_m, one envelope is immutable within a mission, the tracked point remains authoritative, rejected captures change neither envelope nor coverage, permanent ray culls cannot be ranked or resurrected, Tesseract remains exact feasibility authority]
+  prohibited: [estimating full size from a clipped silhouette, declaring physical object size from incomplete pixels, duplicating the 0.80 m maximum in perception, inventing missing silhouette geometry, dropping rejected rays from diagnostics, treating capability support as IK, mutating the committed capability map]
+  blast_radius: [initial size-model availability, planner selection failure, coordinator public failure code, normal terminal shutdown]
+  must_retest_if_changed: [test_target_envelope.py, test_depth_to_3d.py, test_scan_viewpoint_angles.py, test_failure_model.py, test_mission_engine.py, test_bridge_feedback_freshness.py, complete mobile and Tesseract suites, affected package build, no hardware command]
+target_relative_capability_bound_guardrail_2026_08_25:
+  invariants:
+    - The generated ray request is target-relative: 0.28 m minimum, preferred band through 0.50 m and 0.80 m configured maximum. Never shorten it from the target center's distance to base_link.
+    - Coarse workspace intersection, sparse capability support and exact Tesseract feasibility are separate owners. Each may narrow or reject only within its documented authority.
+    - In enforce mode retain original requested bounds, sampled support counts, ordered contiguous support runs and active min/max separately. The active min/max is only the outer envelope and may contain unsupported gaps.
+    - Choose the representative and generation-zero travel seed from a supported run when evidence exists. Do not present that seed, a support bin or the outer envelope as an IK/collision solution.
+    - Missing, corrupt, stale, unqualified or malformed capability evidence falls back to the existing coarse path or is ignored; it never fabricates support or authorizes motion.
+    - NBV information score/order, six-ray shortlist size, accepted-only coverage, worker exact checks, executor gates, motion, capture, home and shutdown remain unchanged.
+  blast_radius: [which standoff endpoints reach worker search, generation-zero travel ordering, capability diagnostics and replay, Tesseract latency and frontier exhaustion]
+  must_retest_if_changed: [test_capability_map.py, test_viewpoint_rays.py, test_viewpoint_feedback_freshness.py, test_bridge_feedback_freshness.py, test_ray_mission_diagnostics.py, complete mobile and Tesseract suites, GUI reviewer tests, changed-file flake8 and pep257, affected package build, registered colcon tests, command-free live-shaped trace, no hardware command]
+mission_ray_evidence_and_hard_cull_guardrail_2026_08_25:
+  invariants:
+    - Diagnostic JSON, coverage NPZ, HTML and the GUI reviewer are observational. Any persistence, parsing, rendering or child-process failure must leave planner, filter, bridge, worker, executor, capture, home and shutdown outputs unchanged.
+    - A permanent upstream ray cull is behavioral and requires an exact canonical population identity plus one enumerated source: workspace/capability prequalification or worker-reported permanent endpoint infeasibility.
+    - Never treat local nonlinear IK failure, endpoint collision, path failure, visibility failure, timeout, transport rejection, generic TESSERACT_EXHAUSTED or human-readable reason matching as permanent evidence.
+    - Population mission ID, session ID, frame, count and SHA-256 must match. Source snapshots must be complete and revision-bound; mismatched populations are ignored and a changed revision replaces only that source.
+    - Apply hard culls before accepted-history and information ranking, but do not alter the immutable generated population, accepted capture history, coverage voxels, information metrics or relative NBV order of survivors.
+    - Historical replay may reproduce only archived target, ray, rank, planned or achieved joint and camera evidence. It must explicitly label missing rejected-ray history and never infer feasibility or recompute an authoritative historical rank.
+    - The GUI review process contains no ROS import, command publisher, motion owner, map writer or network dependency. It loads the capability artifact read-only and labels the HTML kinematic view schematic.
+  blast_radius: [which frozen rays can enter later NBV ranking and the six-ray shortlist, frontier-exhaustion timing, private ROS graph and QoS, mission artifact integrity, GUI diagnostics lifecycle]
+  must_retest_if_changed: [ray_hard_culls.py pure protocol tests, test_ray_mission_diagnostics.py, test_scan_session_memory.py, planner/filter/bridge feedback tests, complete mobile and Tesseract suites, GUI report/reviewer and Phase-8 tests, affected package build and colcon test, command-free historical replay, no hardware command]
 generation_zero_nearest_ray_seed_guardrail_2026_08_25:
   invariants:
     - With accepted_views zero, ray_nbv_seed has no measured information-gain authority; order its shortlist only by current-FK travel to the complete bounded interval.
@@ -32,7 +55,8 @@ startup_wrist_before_pre_home_guardrail_2026_08_24:
 camera_capability_map_guardrail_2026_08_24:
   invariants:
     - Apply the atlas only after the existing coarse check and only to target_ray candidates. Rough acquisition and exact-point policies are unchanged.
-    - Query the complete permitted standoff interval. Never reject a ray from only its scoring point.
+    - Query the complete configured standoff request. Never reject a ray from only its scoring point; preserve per-sample support and contiguous runs before narrowing a survivor to the outer supported envelope.
+    - A disjoint gap inside the active outer envelope is not capability support. Tesseract must still validate the actual selected endpoint.
     - An occupied bin is prequalification only. Tesseract retains exact IK, joint-limit, self/environment collision, path, final aim and dense visibility authority.
     - Accepted captures alone modify coverage. Capability support or rejection changes no NBV score, rank, capture history or reconstruction.
     - Verify every recorded source hash before enforcement. Missing, corrupt, stale or unqualified artifacts fall back to the coarse filter.
@@ -186,7 +210,7 @@ frozen_viewpoint_ray_guardrail_2026_08_21:
     - ray_nbv creates one configured target-sector, upper-hemisphere or full-sphere angular ray pool from the first qualified mission target in base_link and does not translate or regenerate it until a new session.
     - The 0.28 m ray minimum applies only to ray_nbv. legacy and voxel_nbv retain min_scan_radius_m 0.30 and their exact point lattice.
     - Score one representative point per ray against accepted-only coverage, then require at least 0.02 normalized predicted marginal information. Shortlist no more than six rays before exact standoff expansion; voxel_nbv retains twelve exact points and Tesseract remains the sole IK collision path and visibility authority.
-    - For each ray, preferred standoff probes through 0.50 m must precede its reserve probes and the complete ray group must precede the next ray. No ray may exceed the smaller of the target base-link radius and existing 0.80 m scan maximum, except the deliberate 0.28 m minimum clamp for a closer target.
+    - For each ray, the generated target-relative request remains 0.28 through 0.80 m with a preferred band through 0.50 m, independent of target base-link range. Coarse workspace and enforcing capability evidence may then reject or narrow it; the complete active ray group must precede the next ray.
     - Accepted captures alone modify coverage. Both accepted and rejected achieved ray identity retire that direction; rejected capture geometry never becomes observed coverage and actual settled FK remains the next motion start.
     - Ray final capture aim remains bound to the frozen target. Do not reintroduce live tracker jitter into ray geometry during this static phase; total tracking/safety loss still blocks through existing gates.
     - TARGET_TOO_FAR requires sufficient exact-job semantic masked depth with every valid sample beyond 1.20 m. Never infer it from the rough coordinate, unmasked ROI, missing depth, low support or a mixed depth layer.
@@ -752,3 +776,12 @@ capture_diagnostic_callback_guardrail_2026_08_21:
     - The recorder remains command-free and cannot publish motion or change executor retry policy.
     - Existing stale/missing evidence remains fail-closed after the bounded same-pose retry budget.
   must_retest_if_changed: [test_scan_capture.py, test_scan_motion.py, test_failure_model.py, test_mission_engine.py, piper_mobile_manipulation build, supervised settled-capture delivery]
+
+post_enable_startup_stability_guardrail_2026_08_25:
+  invariants:
+    - Pre-enable stability cannot satisfy powered-start proof; joint and arm-status samples must be newer than enable completion.
+    - Require two continuous seconds within the 0.005-rad stability window with zero controller faults and valid all-six-enabled motor feedback.
+    - Do not mask faults, widen the 0.3-rad direct-home allowance, alter measured J1-J5 preservation, or start ROUGH_HOME before wrist proof.
+    - Intact-control failure disables before first motion; current motor-authority loss uses the watchdog no-command path.
+  blast_radius: [mission enable, STARTUP_WRIST admission, pre-motion disable, motor-loss containment]
+  must_retest_if_changed: [test_startup_gates.py, test_mission_engine.py, test_mission_core.py, test_phase1_mission_characterization.py, full mobile suite, package build, explicit low-speed startup-only smoke]

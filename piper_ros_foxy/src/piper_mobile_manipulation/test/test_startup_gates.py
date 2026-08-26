@@ -1,9 +1,46 @@
+from types import SimpleNamespace
+
 from piper_mobile_manipulation.startup_gates import (
     joint_sample_rejection,
     joint_stability_update,
+    post_enable_sample_rejection,
     readiness_stability_update,
     worker_health_rejection,
 )
+
+
+def healthy_powered_status(**overrides):
+    values = {
+        'err_code': 0,
+        'motor_feedback_valid': True,
+        'motor_faults': [],
+        'motor_watchdog_reason': '',
+    }
+    for index in range(1, 7):
+        values['joint_%d_angle_limit' % index] = False
+        values['communication_status_joint_%d' % index] = False
+        values['motor_%d_driver_enabled' % index] = True
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+def test_post_enable_sample_requires_new_healthy_all_six_feedback():
+    status = healthy_powered_status()
+    assert post_enable_sample_rejection(
+        [0.0] * 6, 10.1, status, 10.1, 10.0, 10.2) == ''
+    assert 'received after enable' in post_enable_sample_rejection(
+        [0.0] * 6, 9.9, status, 10.1, 10.0, 10.2)
+
+
+def test_post_enable_sample_rejects_controller_and_motor_faults():
+    assert 'err_code=11264' in post_enable_sample_rejection(
+        [0.0] * 6, 10.1, healthy_powered_status(err_code=11264),
+        10.1, 10.0, 10.2)
+    assert 'all-six motor authority is unproved' in \
+        post_enable_sample_rejection(
+            [0.0] * 6, 10.1,
+            healthy_powered_status(motor_3_driver_enabled=False),
+            10.1, 10.0, 10.2)
 
 
 def valid_joint_sample(previous=None, previous_stamp=0):

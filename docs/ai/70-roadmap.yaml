@@ -1,5 +1,24 @@
 schema_version: 1
 document: mission_goal_and_delivery_roadmap
+direction_dependent_object_framing_2026_08_26:
+  milestone: M5 size-aware closed-loop ray NBV
+  status: proposed_not_implemented
+  decision: Implement roll-independent per-ray projection of the frozen conservative envelope before considering roll-aware rectangular framing.
+  rationale: This safely gives elongated objects different axial and side standoffs without changing the private worker contract or assuming a camera roll that execution may not preserve.
+  next_gate: Add geometry and planner tests, run a command-free 360-ray comparison against fixed-radius and current sphere baselines, then run rootless Tesseract and motors-disabled provenance checks. Physical motion requires separate explicit authorization.
+  research_context: docs/ai/65-research-context.yaml
+target_relative_capability_bounds_2026_08_25:
+  milestone: M5 efficient and explainable closed-loop ray NBV
+  software_status: Configured rays now remain target-relative through 0.80 m instead of being clipped by target base-link range. Enforcing capability lookup records supported standoff runs, preserves the original request and narrows the active worker envelope. Current focused and complete functional suites plus both package builds pass.
+  current_blocker: Seven changed-file flake8 and eight changed-file pep257 findings remain; mobile registered testing is red only on package-wide lint. Command-free live-shaped and physical mission evidence remain pending.
+  next_gate: Clean changed-file lint, rerun registered tests, inspect one no-hardware live-shaped request/report trace, then require separate explicit authorization before physical qualification.
+  problem_record: target_range_clipped_ray_and_unbounded_capability_search_2026_08_25
+mission_ray_evidence_and_static_hard_culls_2026_08_25:
+  milestone: M5 explainable and efficient closed-loop ray NBV
+  software_status: Mission-scoped schema-v2 event evidence, exact coverage snapshots, command-free Ray Review, population-bound two-source permanent hard-cull feedback and capability-bounded target-relative ray handoff are implemented. 51 focused, 782 mobile, 158 Tesseract and 80 GUI tests pass; both affected packages build, all 33 registered mobile functional targets pass and registered Tesseract passes.
+  current_blocker: Seven changed-file flake8 and eight changed-file pep257 findings remain, so mobile registered testing is red only on its package-wide lint targets and full software qualification is not claimed.
+  next_gate: Clean only changed-file lint, rerun registered mobile tests, generate and inspect one command-free full lifecycle artifact, then inspect a later explicitly authorized physical mission report without changing motion or safety policy.
+  problem_records: [missing_complete_ray_decision_audit_2026_08_25, static_ray_eliminations_reentered_upstream_ranking_2026_08_25, target_range_clipped_ray_and_unbounded_capability_search_2026_08_25, ray_review_temporal_truthfulness_edge_cases_2026_08_25, ray_diagnostics_changed_file_lint_gap_2026_08_25]
 generation_zero_nearest_ray_seed_2026_08_25:
   milestone: M5 efficient closed-loop ray NBV
   software_status: Generation zero now spends its bounded Tesseract shortlist nearest to the actual current camera because no accepted coverage exists yet; generation one and later retain the existing cumulative information ranking.
@@ -26,7 +45,7 @@ ray_endpoint_feasibility_repair_2026_08_23:
   milestone: M5 make global NBV choose the best actually feasible information-bearing ray without repeated static IK waste
   software_status: Each shortlisted direction is now one bounded interval solved continuously over joints and standoff by the worker; local solver failure remains generation-contextual rather than falsely entering the frozen-session permanent cache. Accepted directions below ten degrees are redundant while the six-ray bound and global accepted-coverage rescore remain unchanged.
   qualification_status: Focused and complete functional suites, five-package build, and command-free rootless core/compact qualification pass. Registered functional colcon tests pass; only historical package-wide style debt remains. Motors-disabled provenance and explicitly authorized supervised motion remain pending.
-last_reviewed: '2026-08-24'
+last_reviewed: '2026-08-26'
 hand_eye_accuracy_campaign_2026_08_22:
   milestone: M6 reconstruction input accuracy
   software_status: Exact source-stamp image/joint correlation, CameraInfo-aware ChArUco interpolation, within-pose noise reporting, stationary-only collection, pose-diversity reporting and diagnostic solver comparison are implemented and focused-tested.
@@ -381,3 +400,8 @@ nbv_update_2026_08_17:
   completed_software: [accepted-capture voxel evidence, closed-loop information ranking, unique-direction-first fallback ordering, captured-generation replay, delayed capture authorization retry]
   unchanged_exit_criteria: A current physical mission must still prove adaptive 8-to-24 GOOD/CLEAR captures, useful reachable face coverage, measured convergence, home, disable and cleanup.
   next_execution_order: [operator-supervised authoritative voxel_nbv E2E, inspect logs and dataset, correct any defect command-free first, repeat staged mission only after evidence review]
+
+post_enable_startup_requalification_2026_08_25:
+  status: software_complete_physical_pending
+  completed: [new-after-enable sample boundary, two-second joint stability proof, zero controller-fault proof, all-six motor proof, pre-motion disable on intact-control failure, full mobile software regressions]
+  next_execution_order: [explicit five-percent STARTUP_WRIST-only smoke, inspect enable-to-command timing and status, separate ROUGH_HOME then cancel PRE_HOME ROUGH_HOME STORAGE_WRIST disable smoke, only then full E2E]

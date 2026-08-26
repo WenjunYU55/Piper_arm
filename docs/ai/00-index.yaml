@@ -1,11 +1,33 @@
 schema_version: 1
 document: ai_context_index
-trusted_silhouette_envelope_2026_08_25:
-  behavior: A fresh mask-qualified depth observation publishes one private timestamp-bound silhouette. The ray planner correlates it with the tracked target, places the revolution origin at the cross-axis silhouette midpoint and exactly one half-width behind the visible surface, revolves it once into a conservative axisymmetric envelope, freezes that envelope and the ray pool for the mission, and uses the envelope only for future view geometry, clearance and collision obstacles.
-  authority: {target_measurement: depth_to_3d_node.py, envelope_geometry: target_envelope.py, target_position: target_tracker_node.py, ray_selection: scan_viewpoint_planner_node.py, exact_motion_feasibility: piper_tesseract_foxy bridge and worker, accepted_coverage: existing executor and NBV coverage path}
-  invariant: Historical captures stay fixed in base_link; the envelope never replaces the authoritative tracked point; only accepted captures change coverage; rejected captures do not reshape the envelope; no public ROS schema changed.
-  defaults: {inflation_m: 0.010, camera_surface_clearance_m: 0.250, silhouette_points_max: 256, revolution_sections_max: 24}
-  validation: [target-envelope pure tests, ray-planner regression, Tesseract bridge contract tests, package build and tests, no hardware command]
+per_ray_projected_fov_research_direction_2026_08_26:
+  current_behavior: Complete-FOV standoff is conservatively derived from one enclosing sphere, so it does not yet vary by ray direction for elongated targets.
+  recommended_next_cut: Project the frozen conservative envelope per ray through calibrated intrinsics, use the narrower-FOV roll-independent aperture, combine it with the existing direction-specific surface-clearance minimum, and retain the sphere result as fail-closed fallback.
+  research_context: docs/ai/65-research-context.yaml
+  implementation_status: proposed_not_implemented
+clipped_target_shape_failure_2026_08_26:
+  behavior: A semantic target component touching any image border is not a complete silhouette and cannot create or freeze an envelope. DepthTo3D publishes an exact-stamp hash-bound rejection before Target3D; the planner compares its measured near-surface depth with the authoritative 0.80 m maximum and reports TARGET_TOO_LARGE_OR_CLOSE below the boundary or TARGET_SCAN_IMPOSSIBLE at or beyond it.
+  safety_boundary: This is a pre-planning evidence failure. It commands no recovery view or arm motion and enters the existing mission home, disable and cleanup path.
+  validation: [154 focused perception planner failure mission and bridge tests pass, 972 complete mobile and Tesseract tests pass, two-package symlink build passes, no hardware command]
+trusted_size_aware_target_envelope_2026_08_25:
+  behavior: A fresh mask-qualified depth sample produces a timestamp-bound silhouette; the planner builds and freezes one conservative revolved envelope with the mission ray pool, bounds each ray for complete FOV and 0.250 m surface clearance, and sends the same hash-bound boxes to Tesseract.
+  preserved: [authoritative tracked target, full 360-ray diagnostic population, accepted-only NBV coverage, public ROS schemas, motion and safety ownership]
+  validation: [target envelope unit tests, full mobile and Tesseract suites, command-free large-target Ray Review simulation]
+target_relative_capability_bounded_rays_2026_08_25:
+  problem: The configured target-to-camera ray interval was shortened by the target center's unrelated distance from base_link, and the capability lookup collapsed per-standoff support into one whole-ray boolean. Close targets could therefore lose valid farther standoffs while any partly supported ray could still hand a broader than necessary interval to continuous IK.
+  correction: viewpoint_rays.py now preserves the configured target-relative 0.28 through 0.80 m request. The existing coarse workspace owner decides geometric intersection; a hash-qualified enforcing capability map reports sampled support and contiguous supported runs, the reachability filter preserves the requested bounds while narrowing the active search to the outer supported envelope, and the bridge carries the exact run evidence and chooses its representative seed from a supported run. Tesseract remains the exact IK, collision, path, aim and visibility authority.
+  evidence: [51 focused ray capability diagnostic and GUI tests pass, 782 complete mobile tests pass, 158 complete Tesseract tests pass, 80 complete GUI tests pass, two-package symlink build passes, all 33 registered mobile functional targets pass, Tesseract registered 158-test suite passes]
+  qualification_limit: Seven changed-file flake8 and eight changed-file pep257 findings remain. Mobile registered testing is red only on package-wide lint, and no new physical mission artifact exists.
+  problem_log: target_range_clipped_ray_and_unbounded_capability_search_2026_08_25
+mission_ray_evidence_and_hard_culls_2026_08_25:
+  evidence_behavior: Every ray-NBV mission can persist a mission-grouped schema-v2 event journal, exact compressed coverage generations and compatibility HTML, then display the same evidence in one command-free ROS-free PyQt5/VTK reviewer. Historical replay preserves only recorded facts and marks pre-journal archives partial.
+  planning_behavior: The frozen generated-ray population is bound by mission ID, session ID, frame, count and SHA-256. The reachability filter may publish population-bound workspace/capability rejections and the bridge may publish worker-proven permanent endpoint failures on the private reliable transient-local /piper/ray_hard_culls topic; the planner removes only validated matching entries before duplicate filtering and NBV ranking.
+  authority_boundary: Prequalification owns only its existing coarse workspace and capability-map decisions. Tesseract owns only explicitly reported permanent endpoint infeasibility. Contextual IK, collision, path, visibility, timeout and shortlist failures never become hard culls. Accepted captures alone update coverage, and NBV remains authoritative over the surviving pool.
+  failure_boundary: Missing diagnostics, report write failure, missing hard-cull publishers, malformed payloads, population mismatch or a changed source revision cannot authorize motion or invent a rejection. Diagnostics fail open as observation; hard-cull input fails closed to no new upstream elimination and the existing downstream gates remain authoritative.
+  software_validation: [51 focused ray capability diagnostic hard-cull and GUI tests pass, 782 complete mobile behavior tests pass, 158 complete Tesseract tests pass, 80 complete GUI tests pass, two-package symlink build passes, all 33 registered mobile functional targets pass, Tesseract registered 158-test suite passes, all AI YAML parses]
+  qualification_limit: Changed-file lint is not yet clean, the mobile package registered test remains red on package-wide lint, and no new physical mission artifact exists.
+  problem_log: [missing_complete_ray_decision_audit_2026_08_25, static_ray_eliminations_reentered_upstream_ranking_2026_08_25, target_range_clipped_ray_and_unbounded_capability_search_2026_08_25, ray_review_temporal_truthfulness_edge_cases_2026_08_25, ray_diagnostics_changed_file_lint_gap_2026_08_25, duplicate_debt_yaml_key_hid_one_historical_fix_2026_08_25]
+  validation_required: [focused diagnostic journal and hard-cull protocol tests, planner/filter/bridge regressions, complete mobile and Tesseract suites, GUI report/reviewer tests, package build and colcon test, command-free report replay, no hardware command]
 generation_zero_nearest_ray_seed_2026_08_25:
   behavior: Before the first accepted capture, ray_nbv_seed has no measured coverage gain and the six-ray bridge shortlist is ordered only by travel from the actual current FK camera position to the closest point on each bounded ray interval.
   boundary: After one accepted capture, cumulative measured-information NBV ranking remains authoritative. Ray generation, capability/workspace culling, shortlist size, Tesseract feasibility, motion, capture, home and shutdown are unchanged.
@@ -28,8 +50,8 @@ camera_capability_map_2026_08_24:
   selected_checkpoint: {samples: 2000000, collision_qualified_configurations: 1685619, occupied_pose_direction_bins: 1479561, compressed_bytes: 8130829}
   convergence: The 100k, 250k, 500k and 1M checkpoints retained 60.17, 70.35, 77.62 and 90.41 percent of final supported validation rays; only 2M met the 99 percent rule and retained all 87 recorded achieved poses.
   artifact_binding: The tabletop qualification promotion changed no geometry input. The selected 2M arrays were retained exactly and rebound to the new full-manifest hash with explicit non_geometric_source_rebind provenance; the enforcement loader and nine artifact tests pass.
-  runtime: Existing coarse analytic bounds run first. Hash-valid capability lookup then culls unsupported target rays; missing, corrupt, stale-hash or unqualified maps fall back to the old coarse filter. Tesseract remains authoritative for exact IK, collision, path, aim and visibility.
-  boundary: No NBV score/order, six-ray shortlist, worker behavior, motion, capture, home, shutdown, public ROS message or hardware command changed.
+  runtime: Existing coarse analytic bounds run first. Hash-valid capability lookup then culls unsupported target rays and, in enforce mode, preserves per-standoff support runs while narrowing a surviving ray to their outer search envelope. Missing, corrupt, stale-hash or unqualified maps fall back to the old coarse filter. Tesseract remains authoritative for exact IK, collision, path, aim and visibility.
+  boundary: No NBV score/order, six-ray shortlist size, worker algorithm, motion, capture, home, shutdown, public ROS message or hardware command changed; the private continuous-standoff request may be narrower than the original configured ray and retains both requested bounds and map-supported runs as evidence.
 tracked_robot_drop_in_description_2026_08_24:
   behavior: A deterministic two-file drop-in keeps the tracked robot as the master description while synchronizing the current PiPER/gripper/holder/L515 subtree. An empty identity piper_base_link beneath arm_base_link exposes the gateway frame without duplicate geometry or renaming the friend's established arm root.
   tf_chain: odom -> tracked base_link -> arm_base_link -> piper_base_link, with the PiPER chain remaining beneath arm_base_link and the external odom edge owned by tracked localization.
@@ -155,8 +177,8 @@ terminal_home_stage_proof_repair_2026_08_21:
   validation: 114 focused mission/configuration tests pass; supervised staged-home requalification remains pending.
 frozen_viewpoint_ray_pool_2026_08_21:
   goal: Keep frozen-ray NBV separately selectable from both legacy and exact-point voxel NBV so timing and physical behavior can be compared without parallel planning implementations.
-  geometry: ray_nbv freezes the configured ray_count once from the first qualified base_link target lock. target_sector reproduces the former 180-degree 25-by-7 region at count 175, upper_hemisphere covers 360 degrees above the target, and full_sphere covers 360 degrees above and below using deterministic equal-area samples. Each ray has a 0.28 m minimum standoff, a preferred band through 0.50 m, and a maximum capped by both the target base-link radius and the existing 0.80 m scan maximum.
-  handoff: The planner scores one representative point per ray against accepted-only cumulative coverage and removes normalized predicted gain below 0.02. The bridge shortlists at most six rays and transmits one bounded interval per ray; the worker jointly solves joints plus continuous standoff, then applies unchanged exact-aim and Tesseract feasibility checks. Exact-point voxel_nbv retains twelve candidates.
+  geometry: ray_nbv freezes the configured ray_count once from the first qualified base_link target lock. target_sector reproduces the former 180-degree 25-by-7 region at count 175, upper_hemisphere covers 360 degrees above the target, and full_sphere covers 360 degrees above and below using deterministic equal-area samples. Each generated ray keeps the target-relative 0.28 m minimum, preferred band through 0.50 m and configured 0.80 m maximum; target distance from base_link does not shorten that request. The coarse workspace and enforcing capability-map owners may subsequently reject or narrow it.
+  handoff: The planner scores one representative point per ray against accepted-only cumulative coverage and removes normalized predicted gain below 0.02. The bridge shortlists at most six rays and transmits the prequalified active envelope plus any capability-supported run evidence; the worker jointly solves joints plus continuous standoff, then applies unchanged exact-aim and Tesseract feasibility checks. Exact-point voxel_nbv retains twelve candidates.
   static_scope: Tracking does not translate or regenerate the ray pool during this phase. Accepted captures update coverage; a rejected achieved ray is retired without adding coverage; actual settled FK remains the next motion start.
   acquisition_failures: Five absent closed-loop looks return TARGET_NOT_FOUND with rough base_link XYZ. A fresh correlated semantic mask with sufficient masked depth entirely beyond 1.20 m returns retryable TARGET_TOO_FAR and REPOSITION_REQUIRED with rough base_link XYZ. Both use normal mission shutdown.
   selectable_policies: {legacy: original heuristic exact points, voxel_nbv: cumulative-information ranking over the regenerated exact-point lattice, ray_nbv: cumulative-information ranking over one frozen bounded-ray pool}
@@ -1163,6 +1185,7 @@ entrypoints:
   gui_scan_dds_profile: fastdds_gui_udp_only.xml
   system_handoff: SYSTEM_HANDOFF.md
   mission_roadmap: docs/ai/70-roadmap.yaml
+  active_reconstruction_research_context: docs/ai/65-research-context.yaml
   consolidated_problem_log: docs/ai/80-problem-log.yaml
   arm_driver: start_piper.sh
   manual_arm_ui: start_gui.sh; RunTargetScan client, read-only diagnostics, explicitly labelled manual joints/home-profile tools, and RViz STL digital-twin mirroring
@@ -1179,6 +1202,7 @@ source_of_truth:
   supported_foxy_overlay: source_piper_foxy_environment.sh; generated /home/prl/Piper_arm/install must not exist or be sourced
   current_repository_handoff: SYSTEM_HANDOFF.md
   mission_goal_milestones_and_definition_of_done: docs/ai/70-roadmap.yaml
+  research_prior_art_and_proposed_geometry_direction: docs/ai/65-research-context.yaml
   problem_and_incident_status: docs/ai/80-problem-log.yaml
   ros_interfaces: piper_ros_foxy/src/piper_mobile_manipulation/msg
   node_behavior: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation
@@ -1196,6 +1220,7 @@ read_order:
   - docs/ai/10-system-map.yaml
   - docs/ai/30-contracts.yaml
   - docs/ai/70-roadmap.yaml
+  - docs/ai/65-research-context.yaml
   - docs/ai/20-modules.yaml
   - docs/ai/40-flows.yaml
   - docs/ai/50-guardrails.yaml
@@ -1218,6 +1243,7 @@ update_rules:
   - Update 20-modules and 50-guardrails when ownership or safety boundaries change.
   - Update 30-contracts, 40-flows, and operator procedures when scan proposal, approval, cancellation, capture, or command gating changes.
   - Update 70-roadmap whenever the mission goal, milestone status, acceptance evidence, blockers, next execution order, or definition of done changes.
+  - Update 65-research-context when active-reconstruction prior art, novelty boundaries, proposed per-ray framing geometry, baselines, or research validation changes.
   - Update 80-problem-log whenever a material incident, defect, misleading diagnosis, resolution, physical result, or required retest changes.
   - Update project-structure.txt when top-level or ROS package layout changes.
   - Describe checked-out source, including intentional uncommitted work; never infer behavior solely from generated build/install trees.
@@ -1403,3 +1429,9 @@ capture_diagnostic_liveness_repair_2026_08_21:
     low-rate safety evidence cannot be starved by high-rate RGB-D callbacks.
   unchanged: [topics, QoS, one-second freshness threshold, GOOD/CLEAR capture gate, retry limit, motion, home, shutdown]
   qualification: Supervised tasks after the repair consumed fresh GOOD/CLEAR evidence across multiple settled captures; the final task succeeded and shut down safely.
+
+post_enable_startup_stability_2026_08_25:
+  status: software_implemented_physical_startup_only_retest_required
+  incident: codex-e2e-20260825-2312-ray-integration began STARTUP_WRIST about 0.05 seconds after enable and stopped on transient controller err_code 11264 before acquisition.
+  correction: Require new post-enable joint/status samples and two continuous seconds of finite stationary, fault-free, all-six-enabled evidence before STARTUP_WRIST. Failure disables before first motion; motor-authority loss retains watchdog-owned no-command containment.
+  unchanged: [0.3-rad direct-home measured-start allowance, measured J1-J5 preservation, positive-only J6 mapping, completed STARTUP_WRIST before simultaneous ROUGH_HOME, immediate in-motion fault stop]

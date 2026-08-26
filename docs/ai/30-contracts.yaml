@@ -1,20 +1,43 @@
 schema_version: 1
 document: runtime_contracts
-target_shape_measurement_contract_2026_08_25:
-  topic: {name: /piper/target_shape_measurement, type: std_msgs/String JSON, qos: sensor-data best-effort volatile, public_api: false}
-  producer: depth_to_3d_node.py after fresh-mask and qualified-depth success
-  consumer: scan_viewpoint_planner_node.py
-  required_fields: [schema_version, valid, header, source, silhouette_points_camera_m, near_depth_m, mask_pixel_count, qualified_depth_pixel_count, measurement_confidence, camera_info, measurement_sha256]
-  validity: The record is valid only when its canonical hash matches, all geometry is finite and bounded, the contour has at least three points and the source stamp exactly matches the authoritative tracked target used to freeze the mission.
-  missing_or_invalid: No target envelope and no ray candidate; publish private diagnostic TARGET_SHAPE_UNAVAILABLE. Never use an unmasked ROI or stale mask to synthesize the shape.
-target_revolution_envelope_contract_2026_08_25:
-  transport: Private fields inside existing scan-view JSON and Tesseract scene JSON; no ROS message or service definition changes.
-  construction: Transform the trusted silhouette at its source timestamp into base_link, choose the silhouette PCA major axis only when anisotropy is at least 1.2, otherwise use projected base_link vertical with camera-image vertical as a degenerate fallback. Centre the axis on the silhouette cross-axis midpoint and place it exactly visible_transverse_span_m divided by two behind visible_surface_center_m along the capture-time camera normal, then revolve 360 degrees, inflate by 0.010 m and bound to 24 profile sections.
-  geometry_authority: The transformed silhouette determines conservative shape geometry while planning_anchor_m remains exactly the authoritative tracked target point. The envelope may constrain candidate standoff, FOV and collision clearance but may not replace target tracking or move historical captures.
-  camera_clearance_m: 0.250
-  lifecycle: Frozen with the first ray pool of a mission and cleared on session change. Later measurements, rejected views and accepted captures do not mutate it.
-  tesseract_binding: Every candidate carries the envelope hash. The bridge validates the hash and target anchor, converts the stored conservative boxes to the existing obstacle contract, includes them in the existing request hash and rejects overflow beyond MAX_OBSTACLES=256.
-  diagnostic_outcomes: [TARGET_SHAPE_UNAVAILABLE, NO_SAFE_TARGET_STANDOFF, NO_POSITIVE_INFORMATION_CANDIDATE, TESSERACT_EXHAUSTED]
+target_shape_and_envelope_contract_2026_08_25:
+  topic: {name: /piper/target_shape_measurement, type: std_msgs/String JSON, public_api: false}
+  shape_validity: Canonical hash, finite bounded contour, qualified mask/depth source, exact timestamp correlation and a selected semantic component touching no image border are required.
+  clipped_rejection: {schema_version: 1, valid: false, rejection_code: TARGET_SILHOUETTE_CLIPPED, required_fields: [exact source header, near_depth_m, measurement_sha256], publication_order: before same-stamp Target3D}
+  planner_classification: {near_depth_below_max_scan_radius: TARGET_TOO_LARGE_OR_CLOSE, near_depth_at_or_beyond_max_scan_radius: TARGET_SCAN_IMPOSSIBLE, configured_default_maximum_m: 0.80}
+  coordinator_contract: The private planner selection_failure_code is preserved by the Tesseract bridge; failure_model maps both additive string codes into the existing RunTargetScan result fields without changing the action schema.
+  envelope: {frame: base_link, inflation_m: 0.010, camera_surface_clearance_m: 0.250, maximum_profile_sections: 24, lifecycle: frozen with mission ray pool}
+  ray_evidence: Every one of the 360 generated IDs remains journaled; no-safe-standoff rays are permanent first-cycle culls and never re-enter ranking.
+  tesseract_binding: Candidate envelope hashes and planning anchor must match; collision boxes count toward MAX_OBSTACLES=256.
+target_relative_capability_bounded_ray_contract_2026_08_25:
+  public_ros_interface_change: none
+  configured_request: {ray_min_standoff_m: 0.28, ray_preferred_max_standoff_m: 0.50, ray_max_standoff_m: 0.80, coordinate_meaning: target-to-camera distance along the frozen target ray, forbidden_clip: target center distance from base_link}
+  enforcing_prequalification: A valid capability map samples the complete configured request at its spatial resolution, reports the support boolean for each sample and derives ordered contiguous supported intervals. A ray with no support is culled; a surviving ray preserves requested bounds and uses the first supported lower bound through the last supported upper bound as its active search envelope.
+  additive_private_fields: [ray_requested_min_standoff_m, ray_requested_max_standoff_m, ray_capability_intervals_m, ray_capability_min_standoff_m, ray_capability_max_standoff_m, ray_capability_bounded, capability_map_prequalification.sampled_standoffs, capability_map_prequalification.supported_standoff_samples, capability_map_prequalification.supported_intervals_m]
+  seed_rule: The representative/scoring point and generation-zero travel seed are selected from a supported run when run evidence exists. Disjoint runs remain explicit even though the worker's coarse active min/max envelope can span an unsupported gap.
+  fail_closed: Malformed support intervals are not accepted as capability bounds. Missing, corrupt, stale or unqualified capability artifacts retain the existing coarse fallback and configured request; they do not invent support.
+  exact_authority: Capability occupancy and its active envelope are not IK, collision, path, aim or visibility proof. The worker validates the actual selected endpoint and every existing executor gate remains unchanged.
+mission_ray_diagnostic_artifacts_2026_08_25:
+  kind: local_command_free_artifact
+  default_directory: datasets/active_scan/ray_diagnostics/<mission_id-or-session_id>/
+  files: [ray_mission_diagnostics.json schema-v2 with v1 loading, ray_mission_diagnostics.html compatibility export, coverage/capture_NNN.npz exact CoverageSnapshot]
+  identity: The mission task ID groups reacquisition sessions when PIPER_MISSION_TASK_ID is present; otherwise the scan session ID owns the report. Each generation key is session_id plus accepted_views.
+  content: [target center and frame, immutable hash-indexed complete ray population for every recorded generation, every generated ray direction and representative position, azimuth and elevation, standoff interval, deterministic-seed or NBV rank, event-time input eliminated and surviving counts, information metrics, planner cull reason, workspace and capability-map prequalification, bridge shortlist state, Tesseract attempt failure and selection evidence, selected endpoint joint positions, achieved historical joint and camera pose]
+  rendering: One reusable ROS-free PyQt5/VTK Ray Review child with Mission Process and Capability Map tabs. It parses all checked-in URDF visuals, GPU-instances the full L515 mesh, scrubs only append-only event-time evidence, and loads the committed capability map read-only. Self-contained HTML remains a compatibility export whose old kinematic drawing is labelled schematic.
+  write_policy: Enabled by default, root follows PIPER_ARM_ROOT unless explicitly configured, file locking plus atomic replacement, diagnostic exceptions are logged and never change planner/filter/bridge output.
+  gui_access: The native GUI Diagnostics tab exposes Open Ray Review, reuses one child through newline-delimited stdin JSON, and shuts down only that child with the GUI. It can create command-free reports from immutable completed scan metadata.
+  historical_replay: Archived accepted rays, achieved joints, measured camera transforms, ranks and planning summaries are replayed exactly when present. Archives predating complete ray diagnostics are explicitly marked partial; missing rejected-ray identities and reasons are never reconstructed or invented.
+  invariants: [observational only, viewer contains no ROS import entity or command owner, no capability-map generation or write, no external scripts or network assets, no public ROS action service topic message QoS or Tesseract schema change, the separately documented private ray-hard-cull topic is not diagnostic authority, no recomputed rank or inferred feasibility, all exact worker wire bytes remain unchanged]
+persistent_ray_hard_cull_contract_2026_08_25:
+  interface: {topic: /piper/ray_hard_culls, type: std_msgs/String containing canonical JSON, qos: reliable transient_local, publishers: [viewpoint_reachability_filter_node.py, piper_tesseract_foxy/bridge_node.py], subscriber: scan_viewpoint_planner_node.py}
+  population_identity: {schema_version: 1, fields: [mission_id, session_id, sha256, ray_count, target_center_m, frame_id], hash_input: canonical ray_id-sorted generated directions representative points angles and standoff bounds}
+  snapshot: {fields: [schema_version, population, source, source_revision, generation_observed, complete_snapshot, culls], allowed_sources: [prequalification, tesseract_endpoint], complete_snapshot: required_true}
+  prequalification_source: Only the unchanged continuous workspace no-intersection and hash-qualified CAPABILITY_MAP_NO_SUPPORT decisions are cumulative hard evidence. Its source revision binds all coarse bounds, floor, effective map mode and exact map artifact hash.
+  endpoint_source: Only worker planning_diagnostics.permanent_infeasible_ray_ids intersected with the exact request ray IDs is cumulative hard evidence. Its source revision binds the planning model, hand-eye calibration hash and joint-position limits.
+  merge: The planner accepts only the exact current population key. It maintains one ledger per source; the same revision merges monotonically, a changed revision replaces that source, a population change resets all sources, and malformed or mismatched input adds no cull.
+  planner_effect: Matching hard-cull IDs are removed before accepted-history redundancy and information scoring. The generated population and diagnostics retain them as culled_hard. Accepted captures alone update coverage and surviving rays retain their ordinary NBV ordering.
+  prohibited_promotions: [bounded local RAY_IK_FAILURE, endpoint collision, path failure, visibility failure, timeout, transport rejection, generic PLANNING_FAILED, generation-scoped TESSERACT_EXHAUSTED, human-readable reason matching]
+  compatibility: Private additive topic and JSON fields only; public actions services messages and exact schema-v5 Tesseract request and response hashes remain unchanged.
 generation_zero_ray_seed_contract_2026_08_25:
   applies_when: policy ray_nbv_seed and accepted_views equals zero
   ordering: Ascending Euclidean travel from the actual current FK camera position to the closest permitted point on each bounded target-ray interval; stable existing tie-breakers remain private.
@@ -31,9 +54,9 @@ camera_capability_map_contract_2026_08_24:
   public_ros_interface_change: none
   private_parameters: {capability_map_mode: {values: [off, shadow, enforce], default: enforce}, capability_map_project_root: {default: PIPER_ARM_ROOT or /home/prl/Piper_arm}, capability_map_path: {default: config/piper_camera_capability_map.npz beneath project root}, floor_z_m: {startup_override: selected tabletop 0.005 or ground -0.466}}
   artifact_schema: {version: 1, position_voxel_m: 0.02, direction_bin_deg: 10.0, direction_tolerance_deg: 15.0, spatial_dilation_cells: 1, stores_joint_positions: false}
-  acceptance: One ray is retained when any point over its complete already-configured standoff interval intersects a nearby occupied pose-direction bin whose stored best attached-tool minimum Z clears the selected floor by the unchanged 0.005 m.
+  acceptance: One ray is retained when any sampled point over its complete configured target-relative request intersects a nearby occupied pose-direction bin whose stored best attached-tool minimum Z clears the selected floor by the unchanged 0.005 m. Enforce mode records contiguous supported runs, preserves requested bounds and narrows active min/max only to the outer support envelope.
   invalid_artifact_behavior: Fall back to the existing coarse bounded-ray intersection and never bypass Tesseract.
-  diagnostics: Existing private JSON adds map status, per-ray support, checked and matched key counts, query time and CAPABILITY_MAP_NO_SUPPORT without changing a public message definition.
+  diagnostics: Existing private JSON adds map status, per-ray support, checked and matched key counts, sampled and supported-standoff counts, supported intervals, requested and active bounds, query time and CAPABILITY_MAP_NO_SUPPORT without changing a public message definition.
 tracked_robot_description_contract_2026_08_24:
   tree: {external_dynamic_edge: odom -> base_link, tracked_root: robot_bottom, tracked_base: base_link, arm_model_root: arm_base_link, gateway_arm_frame: piper_base_link, gateway_alias_transform: identity}
   mount: {parent: base_link, child: arm_base_link, xyz_m: [0.39, 0.0, 0.016], rpy_rad: [0.0, 0.0, 0.0]}
@@ -170,7 +193,7 @@ exchangeable_nbv_policy_contract_2026_08_21:
   public_compatibility: No ROS action, topic, service, message or field changed.
 frozen_viewpoint_ray_contract_2026_08_21:
   policy_scope: ray_nbv only. legacy remains heuristic exact points; voxel_nbv again means measured-information ranking over the regenerated exact-point radius lattice.
-  planner_candidate: {candidate_geometry: target_ray, ray_id: stable mission-local integer, ray_direction: unit vector from frozen target to camera, ray_min_standoff_m: 0.28, ray_preferred_max_standoff_m: capped at 0.50, ray_max_standoff_m: capped by target base-link radius and 0.80, ray_scoring_standoff_m: representative point used only for cheap gain and prequalification}
+  planner_candidate: {candidate_geometry: target_ray, ray_id: stable mission-local integer, ray_direction: unit vector from frozen target to camera, ray_min_standoff_m: configured target-relative 0.28, ray_preferred_max_standoff_m: configured 0.50, ray_max_standoff_m: configured target-relative 0.80 and never capped by target base-link range, ray_scoring_standoff_m: representative point used only for cheap gain and prequalification; enforce-mode capability evidence may move it into a supported run}
   generation: {frozen_center: first qualified mission base_link target, ray_count_parameter: 1 through 1000, default_count: 175, regions: [target_sector, upper_hemisphere, full_sphere], target_sector_175: 25 azimuth by 7 elevation historical grid, hemisphere_and_sphere: deterministic equal-area sampling, regeneration: only a new mission/session, tracker_updates: do not translate existing rays}
   bridge_handoff: {shortlist_max_rays: 6, interval_candidates_max: 6, search_order: continuous exact-aim joint-plus-standoff solve then continuous bounded-fallback solve before the next ray, feasibility_owner: Tesseract worker, voxel_nbv_exact_candidate_max: 12}
   history: Accepted and rejected achieved records may carry additive ray_id. Accepted records alone modify coverage; either accepted or rejected ray identity retires that direction. latest_achieved_camera remains the physical start after rejection.
@@ -732,3 +755,9 @@ capture_diagnostic_delivery_contract_2026_08_21:
     callback group, independent of the recorder's high-rate RGB-D callback
     group, on a two-thread executor.
   unchanged: [topic names, std_msgs/String payloads, QoS depth 10, one-second receipt freshness, minimum score 0.65, target_valid true, occlusion CLEAR]
+
+post_enable_startup_proof_contract_2026_08_25:
+  boundary: enable completion -> first STARTUP_WRIST command
+  required_evidence: [joint and arm-status samples received after enable, six finite positions, maximum 0.005-rad drift across two seconds, err_code zero, no angle-limit or communication flags, valid all-six-enabled motor feedback, no motor faults or watchdog reason]
+  failure: With intact authority disable before reporting retryable CONTROL_UNTRUSTWORTHY; with motor-authority loss issue no command and use watchdog six-disabled proof.
+  non_effects: [direct-home relaxation allowance, command limits, J6 winding map, endpoint tolerances, STARTUP_WRIST-before-ROUGH_HOME order]

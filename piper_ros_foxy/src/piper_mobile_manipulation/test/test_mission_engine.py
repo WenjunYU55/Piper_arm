@@ -184,6 +184,10 @@ class FakeMissionOperations:
     def arm_enable_guard_started(self, _context):
         pass
 
+    def wait_for_post_enable_stability(
+            self, context, _stable, _timeout):
+        self._record('post_enable_stability', context)
+
     def prove_current_hold(self, context):
         self._record('enable_hold', context)
         context.session.current_hold_proved = True
@@ -351,12 +355,16 @@ def test_successful_engine_matches_frozen_legacy_phase_sequence():
     assert operations.events.count('view_generation') == 8
     assert operations.events.index('view_generation') < \
         operations.events.index('view_planning')
+    assert operations.events.index('enable') < \
+        operations.events.index('post_enable_stability') < \
+        operations.events.index('startup_wrist')
 
 
 @pytest.mark.parametrize('stage', [
     'starting',
     'preflight',
     'enable',
+    'post_enable_stability',
     'startup_home',
     'acquisition',
     'target_lock',
@@ -378,6 +386,45 @@ def test_major_phase_failures_use_the_existing_shutdown(stage):
         assert result.outcome == 'NEEDS_OPERATOR'
     else:
         assert context.session.disabled_proved
+
+
+def test_post_enable_failure_disables_before_any_startup_motion():
+    operations = FakeMissionOperations()
+    operations.failure_stage = 'post_enable_stability'
+
+    operations, context, result = _execute(operations)
+
+    assert not result.succeeded
+    assert result.failure.retryable
+    assert 'arm disabled before STARTUP_WRIST' in result.reason
+    assert operations.events.index('enable') < operations.events.index(
+        'post_enable_stability') < operations.events.index('disable')
+    assert 'startup_wrist' not in operations.events
+    assert not context.session.arm_enabled
+    assert context.session.disabled_proved
+
+
+def test_post_enable_motor_authority_loss_sends_no_further_arm_command():
+    class Operations(FakeMissionOperations):
+        def wait_for_post_enable_stability(
+                self, context, _stable, _timeout):
+            self._record('post_enable_stability', context)
+            context.session.motor_control_lost_reason = 'J5 disabled'
+            raise MissionFailure(
+                'motor control became untrustworthy',
+                needs_operator=True,
+                failure_code='CONTROL_UNTRUSTWORTHY', retryable=False)
+
+    operations, context, result = _execute(Operations())
+
+    assert not result.succeeded
+    assert result.outcome == 'NEEDS_OPERATOR'
+    assert operations.events.count('enable') == 1
+    assert 'disable' not in operations.events
+    assert not any(stage in operations.events for stage in (
+        'startup_wrist', 'pre_home', 'return_home', 'storage_wrist'))
+    assert context.session.disabled_proved
+    assert context.session.processes_stopped
 
 
 def test_original_failure_cannot_prevent_fresh_direct_home_qualification():
@@ -628,6 +675,23 @@ def test_plain_tesseract_exhaustion_remains_terminal():
     assert not result.succeeded
     assert operations.plan_requests == 1
     assert context.session.accepted_captures == 0
+
+
+@pytest.mark.parametrize('failure_code', (
+    'TARGET_TOO_LARGE_OR_CLOSE',
+    'TARGET_SCAN_IMPOSSIBLE',
+))
+def test_clipped_target_code_reaches_result_and_shutdown_proofs(failure_code):
+    operations = FakeMissionOperations()
+    operations.plan_request_failures = [MissionFailure(
+        'planning blocked: %s: item is cropped' % failure_code)]
+
+    operations, context, result = _execute(operations)
+
+    assert not result.succeeded
+    assert result.failure.failure_code == failure_code
+    assert context.session.disabled_proved
+    assert context.session.processes_stopped
 
 
 def test_complete_ray_frontier_exhaustion_is_terminal_and_adds_blockers():

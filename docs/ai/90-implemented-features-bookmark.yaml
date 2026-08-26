@@ -1,11 +1,37 @@
 schema_version: 1
 document: implemented_features_bookmark
-trusted_silhouette_revolution_envelope_2026_08_25:
+clipped_target_shape_failure_2026_08_26:
+  status: software_implemented_physical_observation_pending
+  capability: A target component touching any image edge publishes an exact-stamp hash-bound rejection instead of an undersized envelope. The planner owns the configured 0.80 m comparison and the coordinator receives TARGET_TOO_LARGE_OR_CLOSE below it or TARGET_SCAN_IMPOSSIBLE at or beyond it.
+  preserved: [valid complete-silhouette envelope geometry, 0.28 through 0.80 m ray bounds, 0.250 m surface clearance, NBV, Tesseract exact feasibility, motion, home, disable, cleanup, ROS action schema]
+  evidence: [154 focused tests pass, 972 complete mobile and Tesseract tests pass, piper_mobile_manipulation and piper_tesseract_foxy symlink build passes, no hardware command]
+trusted_size_aware_target_envelope_2026_08_25:
   status: software_implemented_physical_qualification_pending
-  capability: A fresh qualified target silhouette is centred across its measured cross-axis width, placed one exact half-width behind the visible surface and revolved once into a conservative mission-frozen planning envelope. It raises or removes unsafe target-ray standoff intervals, enforces 250 mm camera-to-surface clearance and passes bounded collision boxes to the unchanged Tesseract feasibility path.
-  authority: [depth_to_3d_node.py qualified shape source, target_envelope.py geometry, target_tracker_node.py unchanged target point, scan_viewpoint_planner_node.py freeze and cull, bridge_node.py existing obstacle adaptation]
-  preserved: [public ROS interfaces, tracked target authority, frozen ray identities, cumulative accepted-only NBV scoring, Tesseract exact feasibility, achieved FK state, capture validation, historical base_link reconstruction, speed, home, disable and shutdown]
-  evidence: [pure target-envelope tests, frozen-pool regression, bridge hash and obstacle-contract tests, no hardware command]
+  capability: A qualified silhouette becomes a mission-frozen conservative target envelope that raises or rejects unsafe ray standoffs, retains every ray in schema-v2 review evidence, and binds the same collision boxes into Tesseract requests.
+  evidence: [792 mobile tests, 160 Tesseract tests, 22 GUI and ray tests, successful two-package build, command-free 360-ray large-target simulation]
+target_relative_capability_bounded_rays_2026_08_25:
+  status: software_implemented_functional_suites_pass_changed_file_lint_and_physical_trace_pending
+  capability: ray_nbv preserves the configured target-relative 0.28 through 0.80 m request regardless of target distance from base_link. Enforcing capability lookup records per-standoff support and contiguous runs, preserves requested bounds, narrows the active worker envelope to first through last support and seeds from a supported run.
+  authority: [viewpoint_rays.py configured request and supported-run seed, capability_map.py sampled support, viewpoint_reachability_filter_node.py active-envelope narrowing, bridge_node.py private evidence handoff, worker.py exact endpoint feasibility]
+  preserved: [coarse workspace authority, sparse-map prequalification-only meaning, NBV score and survivor order, six-ray shortlist size, accepted-only coverage, worker exact IK collision path aim and visibility checks, executor safety, motion, capture, home, shutdown, public ROS interfaces]
+  evidence: [51 focused tests pass, 782 complete mobile tests pass, 158 complete Tesseract tests pass, 80 complete GUI tests pass, two-package symlink build passes, all 33 registered mobile functional targets pass, Tesseract registered 158-test suite passes]
+  qualification: Seven changed-file flake8 and eight changed-file pep257 findings remain; one command-free live-shaped trace and later separately authorized physical evidence are pending.
+mission_ray_diagnostic_report_2026_08_25:
+  status: software_implemented_functional_tests_pass_changed_file_lint_and_physical_mission_artifact_pending
+  capability: Every ray-NBV mission writes canonical JSON and an offline interactive HTML graphic covering the complete frozen pool, planner and accepted-history culls, information rank and metrics, workspace/capability culls, bounded Tesseract shortlist, exact worker failure evidence and selected ray for every accepted-view generation. The GUI opens these reports; the 3D view replays the URDF-derived PiPER chain and an L515 camera on every ray using only achieved or planned joint evidence. Reacquisition sessions remain grouped by mission task identity.
+  output: datasets/active_scan/ray_diagnostics/<mission_id-or-session_id>/ray_mission_diagnostics.json plus exact coverage snapshots and compatibility HTML
+  viewer: Open Ray Review reuses one ROS-free stdin-driven PyQt5/VTK child with synchronized Mission Process and read-only Capability Map tabs
+  authority: ray_mission_diagnostics.py observes scan_viewpoint_planner_node.py, viewpoint_reachability_filter_node.py and piper_tesseract_foxy/bridge_node.py decisions
+  preserved: [NBV ranking and gain floor, capability map, six-ray shortlist, schema-v5 Tesseract bytes and hashes, exact feasibility, motion, capture, mission safety, home and shutdown]
+  historical_replay: 35 completed datasets and 116 accepted captures replayed command-free with zero skipped captures; archives do not preserve the complete historical rejected-ray population and are labelled partial.
+  evidence: [51 focused ray capability diagnostic hard-cull and GUI tests pass, 782 complete mobile tests pass, 158 complete Tesseract tests pass, 80 complete GUI tests pass, two-package symlink build passes, all 33 registered mobile functional targets pass, Tesseract registered 158-test suite passes, all AI YAML parses, changed-file lint remains pending]
+persistent_static_ray_culls_2026_08_25:
+  status: software_implemented_functional_suites_pass_changed_file_lint_pending
+  capability: Population-hash-bound complete snapshots carry only static workspace/capability-map rejection or worker-proven permanent endpoint failure back to the planner, which removes matching rays before later history and NBV ranking instead of regenerating and rescoring them every accepted-view generation.
+  interface: Private reliable transient-local std_msgs/String /piper/ray_hard_culls with two enumerated source publishers and one planner consumer.
+  preserved: [complete immutable generated pool, accepted-only coverage, relative NBV rank of survivors, contextual Tesseract failure lifetime, six-ray shortlist, exact worker request and response hashes, motion, capture, safety, home and shutdown]
+  evidence: [51 focused ray capability diagnostic hard-cull and GUI tests pass, 782 complete mobile tests pass, 158 complete Tesseract tests pass, 80 complete GUI tests pass, two-package symlink build passes, all 33 registered mobile functional targets pass, Tesseract registered 158-test suite passes, AI YAML parse passes]
+  qualification: Changed-file flake8 and pep257 still fail, mobile registered colcon remains red on package-wide lint, and a new physical mission artifact is pending; do not promote this entry to software-qualified yet.
 generation_zero_nearest_ray_seed_2026_08_25:
   capability: The first ray_nbv request orders the existing six-ray prequalified shortlist by minimum physical camera travel to each continuous bounded interval. It no longer treats legacy negative-Y preference as measured information before any capture exists.
   authority: [bridge_node.py generation-zero shortlist ordering, latest achieved FK physical start, Tesseract exact endpoint feasibility]
@@ -20,7 +46,7 @@ startup_wrist_terminal_prerequisite_2026_08_24:
 camera_capability_map_2026_08_24:
   feature: Deterministic collision-aware sparse camera capability atlas used as an exchangeable target-ray prequalification layer before the unchanged Tesseract bridge.
   authority: [capability_map.py, viewpoint_reachability_filter_node.py, capability_map_generator.py, generate_capability_map.sh, validate_capability_map.py, piper_camera_capability_map.npz, capability_map_convergence.json]
-  proven: [2M deterministic samples, zero malformed states, 1479561 occupied 5D bins, all 87 recorded achieved poses supported, practical convergence report, source-hash rejection, explicit non-geometric manifest-hash rebind provenance, floor-profile lookup, coarse fallback, target-ray-only enforcement, 29 focused tests]
+  proven: [2M deterministic samples, zero malformed states, 1479561 occupied 5D bins, all 87 recorded achieved poses supported, practical convergence report, source-hash rejection, explicit non-geometric manifest-hash rebind provenance, floor-profile lookup, coarse fallback, target-ray-only enforcement, per-standoff support and disjoint-run retention, active-envelope narrowing with requested-bound preservation, 51 current focused ray and diagnostic tests]
   not_changed: [NBV generation scoring ranking and coverage, bridge six-ray shortlist, worker IK collision path aim and visibility, motion speed, capture, home, disable, shutdown, ROS schemas]
   physical_status: The tabletop collision profile is qualified for plans that individually pass all existing safety gates. The tracked-ground profile remains explicitly unqualified for physical motion.
 tracked_robot_drop_in_description_2026_08_24:
@@ -50,7 +76,7 @@ ray_endpoint_feasibility_cache_2026_08_23:
   diversity: Accepted directions within ten degrees are removed before NBV scoring handoff; global cumulative scoring still runs after every accepted capture.
   authority: [scan_viewpoint_planner_node.py and nbv_coverage.py information rank, viewpoint_rays.py interval binding, bridge_node.py cache and six-ray handoff, worker.py interval endpoint and path feasibility, contract.py interval response validation, executor and scan_capture_node.py achieved pose and acceptance]
   evidence: [196 focused tests pass, 747 complete mobile tests pass, 148 complete Tesseract tests pass, five-package build passes, command-free rootless core and compact qualifications PASS, registered functional tests pass, changed files pass focused flake8 and pep257]
-updated_at: 2026-08-24
+updated_at: 2026-08-25
 shared_settled_capture_deadline_2026_08_22:
   status: software_implemented_physical_retest_deferred
   capability: The command-free recorder still requires exactly 20 new synchronized settled native frames, but now consumes 18 seconds of the executor's existing 20-second capture_timeout_sec and reserves two seconds for returning the Trigger result. Timeout diagnostics expose count, elapsed time and synchronized rate.
@@ -100,7 +126,7 @@ exchangeable_nbv_policy_boundary_2026_08_21:
   evidence: [117 focused tests, 711 complete mobile tests, 125 complete Tesseract tests, 112 root tests with one hardware skip, 32 isolated AI tests, five-package build, changed-file ament lint, AI YAML parse]
 frozen_viewpoint_ray_pool_2026_08_21:
   status: one_supervised_e2e_passed_repeatability_pending
-  capability: Selectable ray_nbv freezes a configurable target-sector, upper-hemisphere or full-sphere direction pool per mission, ranks it from accepted-only coverage, rejects normalized predicted gain below 0.02, shortlists at most six directions, and binds each selected direction to one complete bounded Tesseract interval. voxel_nbv remains selectable as the exact-point lattice with its twelve-point handoff for performance comparison.
+  capability: Selectable ray_nbv freezes a configurable target-sector, upper-hemisphere or full-sphere direction pool per mission, keeps each configured target-relative 0.28 through 0.80 m request independent of target base-link range, ranks from accepted-only coverage, rejects normalized predicted gain below 0.02, shortlists at most six directions, and binds each selected direction to its prequalified active Tesseract envelope plus supported-run evidence when available. voxel_nbv remains selectable as the exact-point lattice with its twelve-point handoff for performance comparison.
   defaults: {policy: ray_nbv, ray_region: full_sphere, ray_count: 175}
   authority: [scan_viewpoint_planner_node.py, viewpoint_rays.py, piper_tesseract_foxy/bridge_node.py]
   retained_boundaries: {target_estimate: target_tracker_node.py, coverage: nbv_coverage.py, feasibility: worker.py, achieved_pose: scan_viewpoint_executor_node.py, capture_acceptance: scan_capture_node.py}
@@ -536,3 +562,9 @@ live_voxel_nbv_2026_08_17:
   default_policy: superseded_by_ray_nbv_default_2026_08_21
   authority_files: [nbv_coverage.py, scan_viewpoint_planner_node.py, piper_tesseract_foxy/bridge_node.py]
   physical_status: Not yet qualified. The operator explicitly selected authoritative voxel_nbv for the next supervised E2E on 2026-08-17; its outcome must be reviewed before qualification is claimed.
+
+post_enable_startup_stability_2026_08_25:
+  state: software_implemented_physical_retest_pending
+  capability: First STARTUP_WRIST cannot reuse disabled-state stability; new post-enable samples must prove two continuous seconds finite stationary, controller-fault-free and all-six-enabled.
+  failure_behavior: Intact-control failure proves disable before wrist motion; current motor-authority loss retains watchdog-owned no-command containment.
+  preserved: [direct-home relaxation buffer, measured J1-J5 preservation, positive-only J6 startup, wrist completion before simultaneous rough home, in-motion fault stop]

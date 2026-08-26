@@ -9,11 +9,14 @@ import pytest
 
 from piper_mobile_manipulation.target_envelope import (
     build_revolution_envelope,
+    clipped_shape_rejection,
     envelope_constrained_ray_interval,
     point_to_envelope_distance,
+    TargetSilhouetteClippedError,
     trusted_silhouette_measurement,
     validate_envelope,
     validate_shape_measurement,
+    validate_shape_rejection,
 )
 
 
@@ -70,6 +73,61 @@ def test_only_semantic_component_overlapping_qualified_depth_is_used():
     assert shape['mask_pixel_count'] == 400
     assert shape['qualified_depth_pixel_count'] == 400
     assert len(shape['silhouette_points_camera_m']) >= 4
+
+
+@pytest.mark.parametrize('x0, y0, width, height', (
+    (0, 20, 20, 20),
+    (100, 20, 20, 20),
+    (20, 0, 20, 20),
+    (20, 80, 20, 20),
+))
+def test_component_touching_any_image_border_is_rejected_as_clipped(
+        x0, y0, width, height):
+    mask = np.zeros((100, 120), dtype=np.uint8)
+    mask[y0:y0 + height, x0:x0 + width] = 255
+    support = np.ones((height, width), dtype=bool)
+    depth = np.full((height, width), 0.40, dtype=float)
+    camera = np.asarray([
+        [100.0, 0.0, 60.0],
+        [0.0, 100.0, 50.0],
+        [0.0, 0.0, 1.0],
+    ])
+
+    with pytest.raises(TargetSilhouetteClippedError) as caught:
+        trusted_silhouette_measurement(
+            mask, support, (x0, y0), depth, camera, header(), 0.8)
+
+    assert caught.value.near_depth_m == pytest.approx(0.40)
+
+
+def test_one_pixel_image_border_margin_is_a_complete_silhouette():
+    mask = np.zeros((100, 120), dtype=np.uint8)
+    mask[1:99, 1:119] = 255
+    support = np.ones((98, 118), dtype=bool)
+    depth = np.full((98, 118), 0.40, dtype=float)
+    camera = np.asarray([
+        [100.0, 0.0, 60.0],
+        [0.0, 100.0, 50.0],
+        [0.0, 0.0, 1.0],
+    ])
+
+    shape = trusted_silhouette_measurement(
+        mask, support, (1, 1), depth, camera, header(), 0.8)
+
+    assert shape['valid'] is True
+
+
+def test_clipped_rejection_is_exact_stamp_depth_and_digest_bound():
+    rejection = clipped_shape_rejection(header(), 0.73)
+
+    assert rejection['valid'] is False
+    assert rejection['rejection_code'] == 'TARGET_SILHOUETTE_CLIPPED'
+    assert rejection['near_depth_m'] == pytest.approx(0.73)
+    assert validate_shape_rejection(rejection) == rejection
+    changed = copy.deepcopy(rejection)
+    changed['near_depth_m'] = 0.80
+    with pytest.raises(ValueError, match='digest'):
+        validate_shape_rejection(changed)
 
 
 def test_shape_digest_rejects_mutated_or_nonfinite_geometry():

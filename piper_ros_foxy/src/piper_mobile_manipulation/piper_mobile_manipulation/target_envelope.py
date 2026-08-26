@@ -15,6 +15,15 @@ MAX_PROFILE_SECTIONS = 24
 AXIS_ANISOTROPY_RATIO = 1.2
 ENVELOPE_INFLATION_M = 0.010
 CAMERA_SURFACE_CLEARANCE_M = 0.250
+TARGET_SILHOUETTE_CLIPPED = 'TARGET_SILHOUETTE_CLIPPED'
+
+
+class TargetSilhouetteClippedError(ValueError):
+    """Report that a measured component cannot prove its complete outline."""
+
+    def __init__(self, near_depth_m):
+        self.near_depth_m = float(near_depth_m)
+        super().__init__('target silhouette touches the image border')
 
 
 def canonical_sha256(value):
@@ -35,6 +44,29 @@ def _finite_array(value, shape, label):
 def _stamp_record(header):
     stamp = header.stamp
     return {'sec': int(stamp.sec), 'nanosec': int(stamp.nanosec)}
+
+
+def clipped_shape_rejection(header, near_depth_m):
+    """Build one exact-stamp rejection for a border-clipped silhouette."""
+    depth = float(near_depth_m)
+    if not math.isfinite(depth) or depth <= 0.0:
+        raise ValueError('clipped target near depth is invalid')
+    rejection = {
+        'schema_version': SHAPE_SCHEMA_VERSION,
+        'valid': False,
+        'header': {
+            'stamp': _stamp_record(header),
+            'frame_id': str(header.frame_id),
+        },
+        'source': 'fresh_mask_qualified_depth',
+        'rejection_code': TARGET_SILHOUETTE_CLIPPED,
+        'rejection_reason': (
+            'the item is cropped by the camera frame, so its complete size '
+            'cannot be measured'),
+        'near_depth_m': round(depth, 8),
+    }
+    rejection['measurement_sha256'] = canonical_sha256(rejection)
+    return rejection
 
 
 def stamp_nanoseconds(stamp):
@@ -70,6 +102,10 @@ def trusted_silhouette_measurement(
     qualified = support & np.isfinite(depth) & (depth > 0.0)
     if not np.any(qualified):
         raise ValueError('qualified target support is empty')
+    depths = depth[qualified]
+    near_depth = float(np.percentile(depths, 10.0))
+    if not math.isfinite(near_depth) or near_depth <= 0.0:
+        raise ValueError('trusted target near depth is invalid')
 
     labels_count, labels = cv2.connectedComponents(
         semantic.astype(np.uint8), connectivity=8)
@@ -84,6 +120,10 @@ def trusted_silhouette_measurement(
     if best_label == 0 or best_overlap == 0:
         raise ValueError('no semantic component overlaps qualified depth')
     component = labels == best_label
+    if (
+            np.any(component[0, :]) or np.any(component[-1, :])
+            or np.any(component[:, 0]) or np.any(component[:, -1])):
+        raise TargetSilhouetteClippedError(near_depth)
     contours, _hierarchy = cv2.findContours(
         component.astype(np.uint8), cv2.RETR_EXTERNAL,
         cv2.CHAIN_APPROX_NONE)
@@ -103,10 +143,6 @@ def trusted_silhouette_measurement(
     cx, cy = float(intrinsic[0, 2]), float(intrinsic[1, 2])
     if fx <= 0.0 or fy <= 0.0:
         raise ValueError('camera focal lengths must be positive')
-    depths = depth[qualified]
-    near_depth = float(np.percentile(depths, 10.0))
-    if not math.isfinite(near_depth) or near_depth <= 0.0:
-        raise ValueError('trusted target near depth is invalid')
     columns = contour[:, 0].astype(float)
     rows = contour[:, 1].astype(float)
     points = np.column_stack((
@@ -163,6 +199,32 @@ def validate_shape_measurement(payload):
     unsigned.pop('measurement_sha256', None)
     if supplied != canonical_sha256(unsigned):
         raise ValueError('target shape measurement digest does not match')
+    return dict(payload)
+
+
+def validate_shape_rejection(payload):
+    """Validate one exact-stamp border-clipping rejection record."""
+    if not isinstance(payload, dict) or payload.get('valid') is not False:
+        raise ValueError('target shape rejection is not valid')
+    if int(payload.get('schema_version', -1)) != SHAPE_SCHEMA_VERSION:
+        raise ValueError('target shape rejection schema is unsupported')
+    header = payload.get('header')
+    if not isinstance(header, dict) or not str(header.get('frame_id', '')):
+        raise ValueError('target shape rejection frame is missing')
+    stamp_nanoseconds(header.get('stamp'))
+    if payload.get('rejection_code') != TARGET_SILHOUETTE_CLIPPED:
+        raise ValueError('target shape rejection code is unsupported')
+    try:
+        near_depth = float(payload['near_depth_m'])
+    except (KeyError, TypeError, ValueError):
+        raise ValueError('target shape rejection depth is malformed')
+    if not math.isfinite(near_depth) or near_depth <= 0.0:
+        raise ValueError('target shape rejection depth is invalid')
+    supplied = str(payload.get('measurement_sha256', ''))
+    unsigned = dict(payload)
+    unsigned.pop('measurement_sha256', None)
+    if supplied != canonical_sha256(unsigned):
+        raise ValueError('target shape rejection digest does not match')
     return dict(payload)
 
 

@@ -1,17 +1,34 @@
 schema_version: 1
 document: maintenance_routing
+clipped_target_shape_failure_2026_08_26:
+  inspect: [depth_to_3d_node.py clipped-shape publication, target_envelope.py border validation and rejection record, scan_viewpoint_planner_node.py exact-stamp rejection cache and maximum-distance classification, failure_model.py coordinator codes, piper_tesseract_foxy/bridge_node.py selection_failure_code preservation]
+  ownership: target_envelope.py owns proof that the selected component does not touch the image border; depth_to_3d_node.py publishes the exact-stamp evidence; scan_viewpoint_planner_node.py owns comparison with max_scan_radius_m; failure_model.py owns the public result classification.
+  rule: Never revolve or freeze a border-clipped silhouette. Near depth below 0.80 m does not prove the object's full size, so report too-large-or-close rather than impossible. A qualified visible surface already at or beyond the configured maximum while clipped is operationally impossible for the configured initial size-model path.
+  required_retests: [test_target_envelope.py, test_depth_to_3d.py, test_scan_viewpoint_angles.py, test_failure_model.py, test_mission_engine.py, test_bridge_feedback_freshness.py, complete mobile and Tesseract suites, affected package build, YAML parse, no hardware command]
 trusted_target_envelope_2026_08_25:
-  inspect: [depth_to_3d_node.py target_shape_pub, target_envelope.py, scan_viewpoint_planner_node.py target_shape_cb and frozen_ray_pool, bridge_node.py target_envelope_obstacles, camera_params.yaml, scan_planning_params.yaml]
-  rule: Preserve exact image timestamps from the qualified mask/depth measurement, correlate the silhouette with the matching tracked target, place the rotation origin at the silhouette cross-axis midpoint and one exact half-width into the assumed object depth, freeze one envelope per mission, keep the tracked point authoritative, and express the frozen envelope through the existing private scan JSON and standard box-obstacle request contract. Never update coverage from the envelope or alter accepted historical geometry.
-  regeneration: A new session must clear the frozen envelope and ray pool. A rejected capture or later perception sample must not mutate either. Changing inflation, clearance, profile construction, camera intrinsics, hand-eye TF or obstacle serialization requires the complete retest set.
-  required_retests: [test_target_envelope.py, test_scan_viewpoint_angles.py, test_viewpoint_rays.py, test_bridge_feedback_freshness.py, complete mobile and Tesseract suites, colcon build, colcon test, software-only replay before physical qualification]
+  inspect: [depth_to_3d_node.py target_shape_pub, target_envelope.py, scan_viewpoint_planner_node.py frozen_ray_pool, bridge_node.py target_envelope_obstacles]
+  rule: Correlate exact image stamps, reject border-clipped silhouettes before envelope construction, keep the tracked point authoritative, freeze one envelope per mission, retain rejected rays in diagnostics as permanent culls, and never update accepted coverage from the envelope.
+  required_retests: [test_target_envelope.py, test_scan_viewpoint_angles.py, test_ray_mission_diagnostics.py, test_bridge_feedback_freshness.py]
+target_relative_ray_or_capability_bound_regression_2026_08_25:
+  inspect: [viewpoint_rays.py bounded_ray_interval and bind_shortlisted_ray_intervals, capability_map.py CapabilityQuery and intersects_ray, viewpoint_reachability_filter_node.py capability_bound_ray and capability_query, piper_tesseract_foxy/bridge_node.py target-ray handoff, test_capability_map.py, test_viewpoint_rays.py, test_ray_mission_diagnostics.py]
+  ownership: viewpoint_rays.py owns the configured target-relative request; the coarse reachability filter owns workspace intersection; capability_map.py owns immutable sampled occupancy evidence; viewpoint_reachability_filter_node.py owns enforce-mode active-envelope narrowing; the bridge/worker retain private request validation and exact feasibility.
+  rule: Never cap target-to-camera standoff by target distance from base_link. Preserve the requested 0.28 through 0.80 m bounds, sampled support runs, narrowed active envelope and representative seed separately. A gap between supported runs is not capability proof, and neither an occupied bin nor its outer envelope is exact IK or collision proof.
+  problem_log_record: target_range_clipped_ray_and_unbounded_capability_search_2026_08_25
+  required_retests: [test_capability_map.py, test_viewpoint_rays.py, test_viewpoint_feedback_freshness.py, test_bridge_feedback_freshness.py, test_ray_mission_diagnostics.py, complete mobile and Tesseract suites, GUI reviewer tests, changed-file flake8 and pep257, affected package build, registered colcon tests, command-free live-shaped trace, no hardware command]
+mission_ray_evidence_or_static_cull_regression_2026_08_25:
+  inspect: [ray_mission_diagnostics.py, ray_hard_culls.py, nbv_coverage.py persist_coverage_snapshot, scan_viewpoint_planner_node.py hard_cull_cb and planner_generation_snapshot, viewpoint_reachability_filter_node.py publish_hard_culls, piper_tesseract_foxy/bridge_node.py publish_permanent_hard_culls, piper_gui/ray_reports.py, piper_gui/ray_review_model.py, piper_gui/ray_review_viewer.py, scan_planning_params.yaml, tesseract_bridge_params.yaml]
+  routing: Diagnostic journal/render/viewer defects belong to ray_mission_diagnostics.py and piper_gui/ray_* without changing planner decisions. Population identity and merge defects belong to ray_hard_culls.py. Workspace/capability source evidence belongs to the reachability filter; permanent endpoint evidence belongs to the bridge/worker contract; accepted-only coverage and surviving-ray rank remain planner-owned.
+  load_order: Start the planner, reachability filter and bridge with the same private topic name. Reliable transient-local source snapshots may arrive before or after the planner subscription, but the planner may apply them only after it has independently generated the exact matching frozen population identity.
+  rule: Never promote human-readable or contextual failure text into a permanent cull. A hard cull requires one of the two enumerated sources, a complete source snapshot, a nonempty source revision and an exact population key. A revision change replaces that source ledger; a different population is ignored.
+  problem_log_records: [missing_complete_ray_decision_audit_2026_08_25, static_ray_eliminations_reentered_upstream_ranking_2026_08_25, target_range_clipped_ray_and_unbounded_capability_search_2026_08_25, ray_review_temporal_truthfulness_edge_cases_2026_08_25, ray_diagnostics_changed_file_lint_gap_2026_08_25, duplicate_debt_yaml_key_hid_one_historical_fix_2026_08_25]
+  required_retests: [test_ray_hard_culls.py, test_ray_mission_diagnostics.py, test_scan_session_memory.py, test_viewpoint_feedback_freshness.py, test_bridge_feedback_freshness.py, complete mobile and Tesseract suites, test_piper_gui_ray_reports.py, test_piper_gui_ray_review.py, test_piper_gui_phase8.py, changed-file flake8 and pep257, affected package build, colcon test, command-free historical replay, YAML parse]
 generation_zero_nearest_ray_seed_2026_08_25:
   inspect: [piper_tesseract_foxy/bridge_node.py balanced_closed_loop_candidates, test_bridge_feedback_freshness.py]
   rule: When compact_first denotes accepted_views zero, order prequalified seed rays by distance from latest achieved FK camera position to each complete bounded ray interval. Do not use legacy face preference or speculative coverage score before measured coverage exists. After capture one, retain the existing information-ranked NBV path.
   required_retests: [test_bridge_feedback_freshness.py, complete Tesseract tests, complete mobile tests, colcon build, colcon test]
 camera_capability_map_2026_08_24:
   inspect: [capability_map.py, viewpoint_reachability_filter_node.py, capability_map_generator.py, generate_capability_map.sh, validate_capability_map.py, capability_map_convergence.json, docs/refactor/capability_map_convergence.md]
-  rule: Regenerate after any geometry-affecting source hash recorded in the artifact changes. A diff proved to contain only qualification state or explanatory prose may retain the exact arrays and rebind the full-file hash only with explicit non_geometric_source_rebind provenance. Keep all checkpoints in the ignored Tesseract runtime, validate through the two-million reference, and commit only the smallest checkpoint with 100 percent recorded achieved-pose retention plus at least 99 percent final supported-ray recall. Never treat an occupied bin as exact reachability or a rejected bin as a collision proof.
+  rule: Regenerate after any geometry-affecting source hash recorded in the artifact changes. A diff proved to contain only qualification state or explanatory prose may retain the exact arrays and rebind the full-file hash only with explicit non_geometric_source_rebind provenance. Keep all checkpoints in the ignored Tesseract runtime, validate through the two-million reference, and commit only the smallest checkpoint with 100 percent recorded achieved-pose retention plus at least 99 percent final supported-ray recall. Preserve per-standoff support and contiguous runs when enforcing a surviving ray; never treat an occupied bin, a merged outer envelope or a rejected bin as exact IK/collision proof.
   fallback: Missing, corrupt, source-hash-mismatched or unqualified artifacts retain the existing coarse bounded-ray filter and Tesseract authority.
   required_retests: [test_capability_map.py, test_capability_map_generator.py, test_viewpoint_feedback_freshness.py, test_viewpoint_rays.py, test_bridge_feedback_freshness.py, complete mobile and Tesseract suites, colcon build, colcon test, command-free rootless qualification]
 tracked_robot_description_sync_2026_08_24:
@@ -351,6 +368,7 @@ symptom_routing:
     action: Clean only build/install artifacts for piper_mobile_manipulation, rebuild it, and source a fresh overlay; see OPERATOR_COMMANDS.md.
 navigation:
   mission_goal_and_milestones: docs/ai/70-roadmap.yaml
+  active_reconstruction_research_and_design: docs/ai/65-research-context.yaml
   problems_and_incidents: docs/ai/80-problem-log.yaml
   architecture: docs/ai/10-system-map.yaml
   ownership: docs/ai/20-modules.yaml
@@ -358,6 +376,13 @@ navigation:
   startup_and_data_flows: docs/ai/40-flows.yaml
   safety_and_retests: docs/ai/50-guardrails.yaml
   known_gaps: docs/ai/60-debt.yaml
+research_maintenance_routing_2026_08_26:
+  per_ray_framing_or_unknown_size_scanning:
+    inspect: [docs/ai/65-research-context.yaml, target_envelope.py, scan_viewpoint_planner_node.py, viewpoint_rays.py, piper_tesseract_foxy/bridge_node.py, piper_tesseract_foxy/worker.py]
+    coordination: A roll-independent aperture can remain planner-owned. Any rectangular roll-aware relaxation must coordinate the planner, private bridge request and worker endpoint proof.
+  novelty_or_publication_claim:
+    inspect: [docs/ai/65-research-context.yaml, docs/ai/70-roadmap.yaml]
+    rule: Recheck the literature and experiments; do not infer novelty from the current repository implementation alone.
 maintenance_commands:
   changed_files: git status --short
   source_inventory: "rg --files -g '!build/**' -g '!install/**' -g '!log/**'"
@@ -533,3 +558,9 @@ capture_burst_timeout_routing_2026_08_22:
   rule: The recorder must collect exactly 20 new synchronized native frames, use capture_timeout_sec from scan_execution_params.yaml, and return at least two seconds before the executor's outer deadline. Do not restore an independent five-second deadline or weaken the 20-frame requirement.
   incident: gui-sim-8733327f74f3455eb8656f01a6ceb66d received 18/20 before the former five-second limit; this was the terminal DEADLINE_EXPIRED cause, not an operator cancellation or NBV failure.
   next_check: Before another physical E2E, run test_scan_capture.py and the package build. On the next explicitly authorized run, inspect the reported synchronized rate and RealSense USB warnings.
+
+post_enable_startup_fault_routing_2026_08_25:
+  symptom: STARTUP_WRIST starts immediately after enable and aborts on a transient arm err_code before rough home.
+  inspect: [mission_engine.py _handle_enable_and_hold, target_scan_mission_node.py wait_for_post_enable_stability, startup_gates.py post_enable_sample_rejection, /arm_status, /joint_states_single, driver.log, scan_stack.log]
+  rule: Prove new post-enable feedback continuously stable, fault-free and all-six-enabled for two seconds. Do not widen buffers, suppress controller faults, or start ROUGH_HOME before wrist completion.
+  retest: [startup-gate tests, mission-engine tests, mission characterization, full mobile suite, package build, explicitly authorized five-percent startup-only smoke]

@@ -15,6 +15,8 @@ class FailureCode(str, Enum):
     OCCLUSION_NOT_CLEARED = 'OCCLUSION_NOT_CLEARED'
     TARGET_NOT_FOUND = 'TARGET_NOT_FOUND'
     TARGET_TOO_FAR = 'TARGET_TOO_FAR'
+    TARGET_TOO_LARGE_OR_CLOSE = 'TARGET_TOO_LARGE_OR_CLOSE'
+    TARGET_SCAN_IMPOSSIBLE = 'TARGET_SCAN_IMPOSSIBLE'
     NO_REACHABLE_PLAN = 'NO_REACHABLE_PLAN'
     CONTROL_UNTRUSTWORTHY = 'CONTROL_UNTRUSTWORTHY'
     MISSION_FAILED = 'MISSION_FAILED'
@@ -82,6 +84,10 @@ FailureLike = Union[Failure, BaseException, str]
 def _failure_code_from_legacy_detail(detail: str) -> FailureCode:
     """Preserve the Phase 1 public failure-code mapping exactly."""
     lowered = detail.lower()
+    if 'target_scan_impossible' in lowered:
+        return FailureCode.TARGET_SCAN_IMPOSSIBLE
+    if 'target_too_large_or_close' in lowered:
+        return FailureCode.TARGET_TOO_LARGE_OR_CLOSE
     if 'cancel' in lowered:
         return FailureCode.CANCELLED
     if (

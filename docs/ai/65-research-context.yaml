@@ -1,0 +1,68 @@
+schema_version: 1
+document: research_context
+last_reviewed: '2026-08-26'
+
+scope:
+  question: How should an eye-in-hand arm frame and reconstruct an initially unknown object whose size and aspect ratio may vary substantially?
+  local_status: The repository has a safe initial size model and closed-loop ray NBV, but its complete-FOV minimum currently comes from one enclosing sphere and is therefore identical for every ray.
+  use: Research and design navigation only. Proposed work in this file is not an implemented runtime contract or a physical-motion authorization.
+
+prior_art:
+  - id: torabi_gupta_2012
+    citation: Liila Torabi and Kamal Gupta, An autonomous six-DOF eye-in-hand system for in situ 3D object modeling, International Journal of Robotics Research, 2012.
+    doi: 10.1177/0278364911425836
+    url: https://journals.sagepub.com/doi/10.1177/0278364911425836
+    initial_assumption: Object location and a size bounding box are known; detailed shape is unknown.
+    approach: Search camera pose while considering field of view, overlap, occlusion, arm reachability and collision-free travel.
+    local_relevance: Confirms that object-size-aware eye-in-hand view planning and joint sensing/motion constraints are established ideas.
+  - id: monica_aleotti_2018
+    citation: Riccardo Monica and Jacopo Aleotti, Contour-based next-best view planning from point cloud segmentation of unknown objects, Autonomous Robots, 2018.
+    doi: 10.1007/s10514-017-9618-0
+    url: https://air.unipr.it/handle/11381/2821273
+    initial_assumption: No prior object model; objects are segmented from observed point clouds.
+    approach: Use an eye-in-hand Kinect V2 and KinectFusion, then choose views that observe borders of incomplete objects rather than maximizing only unknown volume.
+    local_relevance: Supports adapting later views from measured incompleteness instead of committing to a fixed orbit.
+  - id: vasquez_gomez_et_al_2014
+    citation: J. Irving Vasquez-Gomez, L. Enrique Sucar, Rafael Murrieta-Cid and Efrain Lopez-Damian, Volumetric Next-best-view Planning for 3D Object Reconstruction with Positioning Error, 2014.
+    doi: 10.5772/58759
+    url: https://journals.sagepub.com/doi/10.5772/58759
+    initial_assumption: Object position and approximate dimensions are available.
+    approach: Evaluate candidate sensor views over a volumetric model using new information, sensor field/depth constraints, overlap, navigation cost and positioning uncertainty.
+    local_relevance: Direct precedent for size-dependent candidate regions, sensor-frustum checks and robust view selection under arm positioning error.
+  - id: yan_et_al_2023
+    citation: Dongyu Yan, Jianheng Liu, Fengyu Quan, Haoyao Chen and Mengmeng Fu, Active Implicit Object Reconstruction using Uncertainty-guided Next-Best-View Optimization, 2023.
+    identifier: arXiv:2303.16739
+    url: https://arxiv.org/abs/2303.16739
+    initial_assumption: A prior object bounding box helps initialize the implicit occupancy model.
+    approach: Optimize NBV continuously on an uncertainty field rather than selecting only from a finite candidate set.
+    local_relevance: Useful future baseline for continuous view optimization, but it does not replace this repository's robot-specific collision, safety and shutdown authorities.
+
+local_research_position:
+  established_components: [eye-in-hand active reconstruction, object-centric candidate views, volumetric or implicit NBV, field-of-view constraints, overlap scoring, reachability and collision validation]
+  defensible_contribution_direction: A fail-closed integrated system that turns one qualified silhouette into direction-dependent framing bounds, preserves exact evidence and ownership across NBV and Tesseract, and demonstrates safe closed-loop scanning across object scales and aspect ratios on the PiPER/L515 platform.
+  claim_limit: Do not claim novelty from per-ray projection, NBV, a revolved envelope or size adaptation alone. Any research claim requires a systematic literature review, explicit baselines and repeatable experiments.
+
+recommended_design:
+  phase_1_roll_independent_per_ray_framing:
+    status: proposed_not_implemented
+    owner: target_envelope.py with scan_viewpoint_planner_node.py integration
+    method:
+      - For each frozen ray, place a virtual camera at anchor plus standoff times ray direction and aim its optical axis at the anchor.
+      - Project a conservative representation of the frozen envelope, initially every corner of every conservative collision box, through calibrated camera intrinsics.
+      - Use a circular aperture based on the narrower calibrated horizontal or vertical field of view so the bound is valid for any camera roll.
+      - Binary-search the nearest standoff within the configured 0.28 through 0.80 m request for which the complete conservative envelope fits with a documented pixel or angular margin.
+      - Combine that framing minimum with the existing direction-specific 0.250 m camera-to-envelope surface-clearance minimum.
+      - Preserve the current enclosing-sphere value as diagnostic fallback; invalid projection evidence fails closed and never relaxes the current bound.
+    expected_effect: Long bottle-like targets permit closer axial top or bottom rays while broad side views remain farther away.
+    contract_boundary: Keep public ROS schemas, ray population, NBV rank, Tesseract authority, motion, capture, home and shutdown unchanged.
+  phase_2_roll_aware_rectangular_framing:
+    status: deferred_until_phase_1_evidence
+    reason: The 640 by 480 frame can fit an elongated projection differently after camera roll. A planner-only roll assumption is unsafe if Tesseract chooses another roll.
+    requirement: Carry a feasible roll interval or selected roll through the private planner-worker contract, then have the worker reproject the complete conservative envelope using exact intrinsics after IK and before accepting the endpoint.
+
+validation_plan:
+  command_free_cases: [long bottle axial versus side rays, symmetric cube, long rod, near and far request boundaries, envelope near or behind the virtual camera, invalid intrinsics, no feasible standoff below 0.80 m]
+  invariants: [every accepted projected corner is inside the conservative aperture, returned minimum never falls below surface clearance, no result escapes configured ray bounds, invalid evidence cannot loosen the current enclosing-sphere bound]
+  baselines: [fixed standoff, current enclosing-sphere FOV bound, proposed per-ray conservative projection]
+  metrics: [surviving ray count, standoff distribution, projected pixel occupancy, capability-map survival, Tesseract feasibility, planning latency, accepted-view coverage and reconstruction quality]
+  qualification_order: [unit and property tests, command-free 360-ray simulation, rootless Tesseract planning, motors-disabled provenance inspection, separately authorized supervised low-speed qualification]

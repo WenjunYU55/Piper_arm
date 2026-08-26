@@ -13,7 +13,19 @@ from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
 from piper_mobile_manipulation.scan_motion import motor_control_reasons
-from piper_mobile_manipulation.capability_map import load_capability_map
+from piper_mobile_manipulation.capability_map import (
+    load_capability_map,
+    sha256_file,
+)
+from piper_mobile_manipulation.ray_hard_culls import (
+    hard_cull_snapshot,
+    population_key,
+    stable_revision,
+)
+from piper_mobile_manipulation.ray_mission_diagnostics import (
+    add_prequalification,
+    RayMissionDiagnosticsStore,
+)
 
 
 ROUGH_ACQUISITION = 'ROUGH_ACQUISITION'
@@ -23,6 +35,95 @@ CAPABILITY_MAP_REJECTION = (
     'CAPABILITY_MAP_NO_SUPPORT: bounded ray has no nearby '
     'collision-qualified camera capability cell')
 CAPABILITY_MAP_MODES = ('off', 'shadow', 'enforce')
+
+
+def capability_bound_ray(viewpoint, capability):
+    """Narrow one requested ray to its map-supported standoff envelope.
+
+    The individual contiguous runs remain attached as evidence.  The active
+    min/max envelope is intentionally only a coarse search bound; Tesseract
+    still owns exact IK and collision validation and the map is never
+    presented as a joint solution.
+    """
+    result = dict(viewpoint)
+    if not isinstance(capability, dict) or not capability.get('supported'):
+        return result
+    raw_intervals = capability.get('supported_intervals_m', [])
+    try:
+        requested_minimum = float(result['ray_min_standoff_m'])
+        requested_maximum = float(result['ray_max_standoff_m'])
+        configured_minimum = float(result.get(
+            'ray_requested_min_standoff_m', requested_minimum))
+        configured_maximum = float(result.get(
+            'ray_requested_max_standoff_m', requested_maximum))
+        intervals = []
+        for raw in raw_intervals:
+            if not isinstance(raw, (list, tuple)) or len(raw) != 2:
+                raise ValueError('capability interval is malformed')
+            lower = max(requested_minimum, float(raw[0]))
+            upper = min(requested_maximum, float(raw[1]))
+            if not all(math.isfinite(value) for value in (lower, upper)):
+                raise ValueError('capability interval is non-finite')
+            if upper >= lower:
+                intervals.append([lower, upper])
+    except (KeyError, TypeError, ValueError):
+        return result
+    if not intervals:
+        return result
+    intervals.sort(key=lambda item: (item[0], item[1]))
+    merged = []
+    for lower, upper in intervals:
+        if merged and lower <= merged[-1][1] + 1e-9:
+            merged[-1][1] = max(merged[-1][1], upper)
+        else:
+            merged.append([lower, upper])
+    minimum = merged[0][0]
+    maximum = merged[-1][1]
+    try:
+        original_scoring = float(result.get(
+            'ray_scoring_standoff_m', 0.5 * (minimum + maximum)))
+        original_preferred = float(result.get(
+            'ray_preferred_max_standoff_m', maximum))
+        target_record = result['target_object_center']
+        target = [float(target_record[key]) for key in ('x', 'y', 'z')]
+        direction_record = result['ray_direction']
+        direction = [float(direction_record[key]) for key in ('x', 'y', 'z')]
+        norm = math.sqrt(sum(value * value for value in direction))
+        if norm <= 1e-12:
+            return result
+        direction = [value / norm for value in direction]
+    except (KeyError, TypeError, ValueError):
+        return result
+    scoring_candidates = [
+        min(upper, max(lower, original_scoring))
+        for lower, upper in merged]
+    scoring = min(
+        scoring_candidates,
+        key=lambda value: (abs(value - original_scoring), value))
+    preferred = min(maximum, max(minimum, original_preferred))
+    camera = [
+        target[index] + direction[index] * scoring for index in range(3)]
+    result.update({
+        # Preserve the original configured interval for review while naming
+        # the size-envelope interval that actually entered atlas lookup.
+        'ray_requested_min_standoff_m': configured_minimum,
+        'ray_requested_max_standoff_m': configured_maximum,
+        'ray_capability_requested_min_standoff_m': requested_minimum,
+        'ray_capability_requested_max_standoff_m': requested_maximum,
+        'ray_capability_intervals_m': merged,
+        'ray_capability_min_standoff_m': minimum,
+        'ray_capability_max_standoff_m': maximum,
+        'ray_capability_bounded': True,
+        'ray_min_standoff_m': minimum,
+        'ray_max_standoff_m': maximum,
+        'ray_preferred_max_standoff_m': preferred,
+        'ray_scoring_standoff_m': scoring,
+        'desired_camera_position': {
+            axis: float(camera[index])
+            for index, axis in enumerate(('x', 'y', 'z'))},
+        'camera_object_distance_m': scoring,
+    })
+    return result
 
 
 def target_status_rejection_reason(target_status, plan_kind):
@@ -125,6 +226,8 @@ class ViewpointReachabilityFilterNode(Node):
         self.declare_parameter('joint_states_topic', '/joint_states_single')
         self.declare_parameter('arm_status_topic', '/arm_status')
         self.declare_parameter('target_status_topic', '/piper/target_status')
+        self.declare_parameter(
+            'ray_hard_culls_topic', '/piper/ray_hard_culls')
 
         self.declare_parameter('min_reach_m', 0.20)
         self.declare_parameter('max_reach_m', 0.75)
@@ -146,6 +249,11 @@ class ViewpointReachabilityFilterNode(Node):
         self.declare_parameter('arm_status_timeout_sec', 1.0)
         self.declare_parameter('dry_run', False)
         self.declare_parameter('debug', True)
+        self.declare_parameter('ray_diagnostics_enabled', True)
+        self.declare_parameter(
+            'ray_diagnostics_root',
+            os.path.join(project_root, 'datasets', 'active_scan',
+                         'ray_diagnostics'))
 
         self.arm_status = None
         self.arm_status_at = None
@@ -156,6 +264,11 @@ class ViewpointReachabilityFilterNode(Node):
         self.capability_map_requested_mode = str(
             self.get_parameter('capability_map_mode').value).strip().lower()
         self.capability_map_effective_mode = 'off'
+        self.capability_map_artifact_sha256 = ''
+        self.hard_cull_population_key = None
+        self.hard_cull_entries = {}
+        self.ray_diagnostics_store = RayMissionDiagnosticsStore(
+            self.get_parameter('ray_diagnostics_root').value)
         self.initialize_capability_map()
 
         self.pub = self.create_publisher(
@@ -167,6 +280,16 @@ class ViewpointReachabilityFilterNode(Node):
             String,
             self.get_parameter('reachable_acquisition_viewpoints_topic').value,
             10,
+        )
+        hard_cull_qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self.hard_cull_pub = self.create_publisher(
+            String,
+            self.get_parameter('ray_hard_culls_topic').value,
+            hard_cull_qos,
         )
         # PiPER publishes reliable status at high rate. Retain only the newest
         # sample. Missing or stale status rejects every viewpoint without
@@ -230,6 +353,8 @@ class ViewpointReachabilityFilterNode(Node):
                 self.get_parameter('capability_map_project_root').value,
                 verify_sources=True,
             )
+            self.capability_map_artifact_sha256 = sha256_file(
+                self.get_parameter('capability_map_path').value)
         except (OSError, TypeError, ValueError) as error:
             self.capability_map_error = str(error)
             self.capability_map_effective_mode = 'fallback_coarse'
@@ -321,6 +446,12 @@ class ViewpointReachabilityFilterNode(Node):
                 ray_candidate_count += 1
             reasons, capability = self.evaluate_viewpoint(result, plan_kind)
             if capability is not None:
+                if (
+                        capability.get('supported')
+                        and getattr(
+                            self, 'capability_map_effective_mode', 'off')
+                        == 'enforce'):
+                    result = capability_bound_ray(result, capability)
                 result['capability_map_prequalification'] = capability
                 capability_query_ms += float(capability['elapsed_ms'])
                 if capability['supported']:
@@ -334,6 +465,12 @@ class ViewpointReachabilityFilterNode(Node):
             result['reachable'] = bool(accepted)
             result['safe'] = bool(accepted)
             result['reject_reasons'] = reasons
+            if not accepted:
+                result['cull_disposition'] = (
+                    'permanent' if any(reason in (
+                        RAY_WORKSPACE_REJECTION,
+                        CAPABILITY_MAP_REJECTION) for reason in reasons)
+                    else 'retry_eligible')
             filtered.append(result)
             if RAY_WORKSPACE_REJECTION in reasons:
                 workspace_rejected_rays += 1
@@ -372,6 +509,25 @@ class ViewpointReachabilityFilterNode(Node):
             'dry_run_config_loaded': self.param_bool('dry_run'),
         }
         output['viewpoints'] = filtered
+        if plan_kind == 'MULTIVIEW_SCAN':
+            try:
+                self.publish_hard_culls(payload, filtered)
+            except (KeyError, TypeError, ValueError) as error:
+                self.get_logger().warn(
+                    'Could not publish hard-ray cull feedback: %s' % error)
+        diagnostics = payload.get('ray_diagnostics')
+        if isinstance(diagnostics, dict):
+            try:
+                diagnostics = add_prequalification(
+                    diagnostics, filtered, output['filter'])
+                if self.param_bool('ray_diagnostics_enabled'):
+                    _json_path, html_path = self.ray_diagnostics_store.record(
+                        diagnostics)
+                    diagnostics['artifact_html_path'] = html_path
+                output['ray_diagnostics'] = diagnostics
+            except Exception as error:  # Diagnostics must never gate the filter.
+                self.get_logger().warn(
+                    'Could not update ray mission diagnostics: %s' % error)
 
         out = String()
         out.data = json.dumps(output, sort_keys=True)
@@ -382,6 +538,65 @@ class ViewpointReachabilityFilterNode(Node):
                 'prequalified %s viewpoints: %d/%d (Tesseract feasibility pending)'
                 % (plan_kind, reachable_count, len(filtered))
             )
+
+    def hard_cull_source_revision(self):
+        return stable_revision({
+            'min_reach_m': self.get_parameter('min_reach_m').value,
+            'max_reach_m': self.get_parameter('max_reach_m').value,
+            'min_camera_object_distance_m': self.get_parameter(
+                'min_camera_object_distance_m').value,
+            'max_camera_object_distance_m': self.get_parameter(
+                'max_camera_object_distance_m').value,
+            'max_height_change_m': self.get_parameter(
+                'max_height_change_m').value,
+            'floor_z_m': self.get_parameter('floor_z_m').value,
+            'capability_map_mode': self.capability_map_effective_mode,
+            'capability_map_sha256': self.capability_map_artifact_sha256,
+        })
+
+    def publish_hard_culls(self, payload, viewpoints):
+        """Publish cumulative static rejections for one frozen population."""
+        population = payload.get('ray_population')
+        if not isinstance(population, dict):
+            return
+        try:
+            key = population_key(population)
+        except ValueError:
+            return
+        if key != self.hard_cull_population_key:
+            self.hard_cull_population_key = key
+            self.hard_cull_entries = {}
+        for viewpoint in viewpoints:
+            reasons = [str(value) for value in viewpoint.get(
+                'reject_reasons', [])]
+            hard_reason = next((value for value in reasons if value in (
+                RAY_WORKSPACE_REJECTION, CAPABILITY_MAP_REJECTION)), None)
+            if hard_reason is None:
+                continue
+            ray_id = int(viewpoint.get(
+                'ray_id', viewpoint.get('index', -1)))
+            if ray_id < 0:
+                continue
+            capability = viewpoint.get('capability_map_prequalification', {})
+            self.hard_cull_entries[ray_id] = {
+                'ray_id': ray_id,
+                'stage': 'prequalification',
+                'reason_code': (
+                    'CAPABILITY_MAP_NO_SUPPORT'
+                    if hard_reason == CAPABILITY_MAP_REJECTION
+                    else 'RAY_WORKSPACE_NO_INTERSECTION'),
+                'reason': hard_reason,
+                'evidence': dict(capability) if isinstance(
+                    capability, dict) else {},
+            }
+        generation = payload.get('scan_session', {}).get(
+            'accepted_views', 0)
+        message = String()
+        message.data = json.dumps(hard_cull_snapshot(
+            population, 'prequalification',
+            self.hard_cull_source_revision(), generation,
+            self.hard_cull_entries.values()), sort_keys=True)
+        self.hard_cull_pub.publish(message)
 
     def reject_reasons(self, viewpoint, plan_kind='MULTIVIEW_SCAN'):
         """Compatibility wrapper for existing pure characterization tests."""
@@ -521,6 +736,12 @@ class ViewpointReachabilityFilterNode(Node):
             'supported': bool(result.supported),
             'checked_keys': int(result.checked_keys),
             'matching_keys': int(result.matching_keys),
+            'sampled_standoffs': len(result.sample_support),
+            'supported_standoff_samples': int(sum(result.sample_support)),
+            'supported_intervals_m': [
+                [float(lower), float(upper)]
+                for lower, upper in result.supported_intervals_m],
+            'position_voxel_m': float(capability_map.position_voxel_m),
             'elapsed_ms': float(result.elapsed_ms),
             'reason': str(result.reason),
             'effective_mode': getattr(

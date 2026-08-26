@@ -68,6 +68,48 @@ The ROS workspace contains five packages: `piper`, `piper_description`,
 | `active_scan_debug_overlay` | `active_scan_debug_overlay_node.py` | Visual diagnostics only |
 | `supervised_cube_workflow` | `supervised_cube_workflow_node.py` | Measured-lock/occlusion assessment and command-free manipulation proposals |
 
+Ray-NBV missions also write observational schema-v2 evidence below
+`datasets/active_scan/ray_diagnostics/<mission-id>/`. Its canonical JSON and
+append-only event journal records the frozen generated pool, planner/history
+and information culls, workspace/capability prequalification, bridge retries,
+Tesseract outcomes, accepted captures, exact compressed target-model snapshots
+and terminal result. The evidence is not consumed by planning, execution,
+capture or mission safety; schema-v1 final records remain loadable and are not
+expanded into invented intermediate history.
+
+The GUI's Open Ray Review control reuses one freely resizable, ROS-free
+PyQt5/VTK child through stdin JSON. Its Mission Process tab parses every
+checked-in URDF visual and synchronizes ray/rank/target/achieved-pose evidence
+to an event strip. Its Capability Map tab loads the committed map read-only and
+does not claim IK or trajectory evidence. HTML remains a compatibility export;
+its old kinematic drawing is labelled schematic. Historical datasets that
+predate full rejected-ray persistence are visibly labelled partial, and the
+replay never invents missing cull evidence.
+
+This observational path is separate from the behavioral permanent-cull
+feedback. The reachability filter and Tesseract bridge publish complete,
+revision-bound source snapshots on private reliable transient-local
+`/piper/ray_hard_culls`. The planner accepts a snapshot only when its mission,
+session, frame, ray count, and canonical population SHA-256 match the frozen
+pool it generated. Coarse workspace/capability rejections and explicit worker
+`permanent_infeasible_ray_ids` are the only allowed sources. Matching rays are
+removed before later NBV ranking; contextual IK, collision, path, visibility,
+timeout, and shortlist failures remain generation-scoped. Accepted captures
+alone change coverage.
+
+The frozen ray request is target-relative and no longer uses the target
+center's distance from `base_link` as a standoff cap: generation retains the
+configured 0.28 m minimum, preferred band through 0.50 m, and 0.80 m maximum.
+The coarse workspace filter still owns analytic interval eligibility. In
+capability-map enforce mode, the sparse atlas preserves support for each
+sampled standoff and derives ordered contiguous runs; the filter retains the
+original requested bounds while narrowing active min/max to the first through
+last supported run. The bridge carries those run records and chooses its
+representative seed from a supported run. Because the outer active envelope
+can span a gap between runs, it remains prequalification only: the worker and
+executor still prove exact IK, joint limits, collision, path, aim, visibility,
+and runtime safety for the actual selected endpoint.
+
 ### Perception and geometry
 
 | Node/process | Source | Role |

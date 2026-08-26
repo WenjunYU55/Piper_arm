@@ -370,7 +370,7 @@ def filter_and_order_viewpoints(
         viewpoints, entries, position_tolerance_m=0.012,
         look_tolerance_deg=2.0, accepted_entries=None, target_center=None,
         minimum_direction_separation_deg=0.0,
-        direction_target_center=None):
+        direction_target_center=None, rejection_reasons=None):
     """
     Remove viewpoints already captured in this session.
 
@@ -386,6 +386,9 @@ def filter_and_order_viewpoints(
     for item in viewpoints:
         if viewpoint_is_duplicate(
                 item, entries, position_tolerance_m, look_tolerance_deg):
+            if rejection_reasons is not None:
+                rejection_reasons[int(item.get('ray_id', item.get(
+                    'index', -1)))] = ['duplicate of an accepted camera pose']
             continue
         if (
                 (direction_target_center is not None or target_center is not None)
@@ -394,6 +397,10 @@ def filter_and_order_viewpoints(
                     direction_target_center
                     if direction_target_center is not None else target_center,
                     minimum_direction_separation_deg)):
+            if rejection_reasons is not None:
+                rejection_reasons[int(item.get('ray_id', item.get(
+                    'index', -1)))] = [
+                        'direction is within the accepted-view redundancy floor']
             continue
         remaining.append(item)
     if target_center is None:

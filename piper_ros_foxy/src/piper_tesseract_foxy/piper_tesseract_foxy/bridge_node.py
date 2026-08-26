@@ -4,6 +4,7 @@
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import time
 
@@ -43,6 +44,16 @@ from piper_mobile_manipulation.viewpoint_rays import (
     bind_shortlisted_ray_intervals,
 )
 from piper_mobile_manipulation.motion_limit_stability import MotionLimitStability
+from piper_mobile_manipulation.ray_mission_diagnostics import (
+    add_bridge_request,
+    add_request_rejection,
+    add_tesseract_response,
+    RayMissionDiagnosticsStore,
+)
+from piper_mobile_manipulation.ray_hard_culls import (
+    hard_cull_snapshot,
+    stable_revision,
+)
 from piper_mobile_manipulation.srv import RequestTesseractPlan
 
 from piper_tesseract_foxy.contract import (
@@ -65,7 +76,7 @@ FINAL_AIM_EXECUTION_MARGIN_DEG = 1.0
 
 
 def target_envelope_obstacles(scan, target_center):
-    """Validate one frozen envelope and return its existing box contract."""
+    """Validate one frozen envelope and adapt it to the box contract."""
     supplied = scan.get('target_envelope') if isinstance(scan, dict) else None
     if supplied is None:
         return None, []
@@ -75,12 +86,11 @@ def target_envelope_obstacles(scan, target_center):
         raise ContractError('target envelope is invalid: %s' % error)
     anchor = [float(value) for value in envelope['planning_anchor_m']]
     center = [float(value) for value in target_center]
-    if any(
-            abs(actual - expected) > 1e-6
-            for actual, expected in zip(anchor, center)):
+    if any(abs(actual - expected) > 1e-6
+           for actual, expected in zip(anchor, center)):
         raise ContractError(
-            'target envelope planning anchor disagrees with tracked '
-            'target center')
+            'target envelope planning anchor disagrees with tracked target '
+            'center')
     envelope_hash = str(envelope.get('envelope_sha256', ''))
     if any(
             item.get('candidate_geometry') == 'target_ray'
@@ -88,8 +98,7 @@ def target_envelope_obstacles(scan, target_center):
             for item in scan.get('viewpoints', [])
             if isinstance(item, dict)):
         raise ContractError('target ray is not bound to the frozen envelope')
-    return envelope, [
-        dict(item) for item in envelope['collision_boxes']]
+    return envelope, [dict(item) for item in envelope['collision_boxes']]
 
 
 def obstacle_scene_rejection_reason(scene):
@@ -792,6 +801,7 @@ class TesseractPlanBridge(Node):
             'plan_topic': '/piper/tesseract_plan',
             'view_generation_receipt_topic':
                 '/piper/tesseract_view_generation',
+            'ray_hard_culls_topic': '/piper/ray_hard_culls',
             'plan_provenance_topic': '/piper/tesseract_plan_provenance',
             'status_topic': '/piper/tesseract_plan_status',
             'readiness_topic': '/piper/tesseract_readiness',
@@ -833,6 +843,10 @@ class TesseractPlanBridge(Node):
             # within this strict subset of the executor's 20-degree cone.
             'closed_loop_max_aim_offset_deg': 5.0,
             'manipulation_model_qualified': False,
+            'ray_diagnostics_enabled': True,
+            'ray_diagnostics_root': os.path.join(
+                os.environ.get('PIPER_ARM_ROOT', '/home/prl/Piper_arm'),
+                'datasets', 'active_scan', 'ray_diagnostics'),
             'debug': True,
         }
         for name, value in defaults.items():
@@ -874,6 +888,8 @@ class TesseractPlanBridge(Node):
         self.remaining_ray_pool_session = None
         self.remaining_ray_ids = set()
         self.retired_ray_ids = set()
+        self.ray_diagnostics_store = RayMissionDiagnosticsStore(
+            self.get_parameter('ray_diagnostics_root').value)
         self.state = 'IDLE'
         self.reason = 'waiting for an explicit plan request'
         self.worker_generation_id = ''
@@ -888,6 +904,9 @@ class TesseractPlanBridge(Node):
         self.view_generation_pub = self.create_publisher(
             String,
             self.get_parameter('view_generation_receipt_topic').value,
+            self.plan_qos)
+        self.hard_cull_pub = self.create_publisher(
+            String, self.get_parameter('ray_hard_culls_topic').value,
             self.plan_qos)
         self.plan_provenance_pub = self.create_publisher(
             String, self.get_parameter('plan_provenance_topic').value,
@@ -1273,9 +1292,11 @@ class TesseractPlanBridge(Node):
             response.message = 'request creation failed: %s' % error
             self.set_status('REJECTED', response.message)
             return response
+        ray_diagnostics = self.record_ray_request(payload)
         self.pending[payload['request_id']] = {
             'request': payload,
             'started': self.now(),
+            'ray_diagnostics': ray_diagnostics,
         }
         response.accepted = True
         response.request_id = payload['request_id']
@@ -1383,6 +1404,25 @@ class TesseractPlanBridge(Node):
                     'ray_scoring_standoff_m': float(
                         item.get('ray_scoring_standoff_m')),
                 })
+                intervals = item.get('ray_capability_intervals_m')
+                if intervals is not None:
+                    if (
+                            not isinstance(intervals, list)
+                            or not intervals
+                            or any(
+                                not isinstance(interval, list)
+                                or len(interval) != 2
+                                for interval in intervals)):
+                        raise ContractError(
+                            'target-ray capability intervals are malformed')
+                    candidate['ray_capability_intervals_m'] = [
+                        [float(interval[0]), float(interval[1])]
+                        for interval in intervals]
+                for key in (
+                        'ray_requested_min_standoff_m',
+                        'ray_requested_max_standoff_m'):
+                    if item.get(key) is not None:
+                        candidate[key] = float(item[key])
             candidates.append(candidate)
         configured_maximum = max(
             1, int(self.get_parameter('max_execution_viewpoints').value))
@@ -1551,6 +1591,9 @@ class TesseractPlanBridge(Node):
             'boot_id': self.boot_id,
             'created_at_ns': now_ns,
             'expires_at_ns': now_ns + ttl_ns,
+            'ray_population': (
+                dict(scan.get('ray_population', {}))
+                if plan_kind == 'MULTIVIEW_SCAN' else {}),
             'frames': {
                 'world_frame': 'base_link',
                 'camera_optical_frame': 'camera_color_optical_frame',
@@ -1662,6 +1705,88 @@ class TesseractPlanBridge(Node):
             },
         }
         return attach_digest(payload, 'request_sha256')
+
+    def record_ray_request(self, payload):
+        """Persist bridge shortlist membership without influencing planning."""
+        try:
+            return self._record_ray_request(payload)
+        except Exception as error:  # Diagnostics must never reject a request.
+            self.warn_ray_diagnostics(
+                'Could not update ray mission diagnostics: %s' % error)
+            return None
+
+    def _record_ray_request(self, payload):
+        if payload.get('plan_kind') != 'MULTIVIEW_SCAN':
+            return None
+        scan = getattr(self, 'latest_scan', None)
+        diagnostics = (
+            scan.get('ray_diagnostics') if isinstance(scan, dict) else None)
+        if not isinstance(diagnostics, dict):
+            return None
+        shortlisted = {
+            int(item['ray_id'])
+            for item in payload.get('scene', {}).get('candidate_views', [])
+            if item.get('ray_id') is not None}
+        diagnostics = add_bridge_request(
+            diagnostics,
+            payload.get('request_id', ''),
+            shortlisted,
+            getattr(self, 'retired_ray_ids', set()),
+            getattr(self, 'tesseract_exhausted_ray_ids', set()),
+        )
+        if bool(self.get_parameter('ray_diagnostics_enabled').value):
+            self.ray_diagnostics_store.record(diagnostics)
+        return diagnostics
+
+    def record_ray_response(self, payload):
+        """Persist worker attempt and feasibility evidence for one request."""
+        try:
+            self._record_ray_response(payload)
+        except Exception as error:  # Diagnostics must never reject a response.
+            self.warn_ray_diagnostics(
+                'Could not record Tesseract ray diagnostics: %s' % error)
+
+    def _record_ray_response(self, payload):
+        request_id = str(payload.get('request_id', ''))
+        state = getattr(self, 'pending', {}).get(request_id)
+        if not isinstance(state, dict):
+            return
+        diagnostics = state.get('ray_diagnostics')
+        if not isinstance(diagnostics, dict):
+            return
+        diagnostics = add_tesseract_response(
+            diagnostics, payload, state.get('request'))
+        state['ray_diagnostics'] = diagnostics
+        state['ray_response_recorded'] = True
+        if bool(self.get_parameter('ray_diagnostics_enabled').value):
+            self.ray_diagnostics_store.record(diagnostics)
+
+    def record_ray_rejection(self, request_id, code, reason):
+        """Persist transport/validation failures that have no worker result."""
+        try:
+            self._record_ray_rejection(request_id, code, reason)
+        except Exception as error:  # Diagnostics must never mask rejection.
+            self.warn_ray_diagnostics(
+                'Could not record ray request rejection: %s' % error)
+
+    def _record_ray_rejection(self, request_id, code, reason):
+        state = getattr(self, 'pending', {}).get(str(request_id))
+        if not isinstance(state, dict) or state.get('ray_response_recorded'):
+            return
+        diagnostics = state.get('ray_diagnostics')
+        if not isinstance(diagnostics, dict):
+            return
+        diagnostics = add_request_rejection(
+            diagnostics, request_id, code, reason)
+        state['ray_diagnostics'] = diagnostics
+        if bool(self.get_parameter('ray_diagnostics_enabled').value):
+            self.ray_diagnostics_store.record(diagnostics)
+
+    def warn_ray_diagnostics(self, message):
+        try:
+            self.get_logger().warn(str(message))
+        except Exception:
+            pass
 
     @staticmethod
     def target_provenance(scan, plan_kind):
@@ -1795,7 +1920,40 @@ class TesseractPlanBridge(Node):
             self.get_logger().info(
                 'retired static endpoint-infeasible rays for session=%s: %s'
                 % (session_id, newly_infeasible))
+        self.publish_permanent_hard_culls(
+            request, int(session.get('accepted_views', 0)))
         return newly_infeasible
+
+    def publish_permanent_hard_culls(self, request, generation):
+        """Return worker-proven endpoint failures to the upstream planner."""
+        try:
+            population = request.get('ray_population')
+            if not isinstance(population, dict) or not population:
+                return
+            revision = stable_revision({
+                'model': request.get('model', {}),
+                'calibration_sha256': request.get(
+                    'calibration', {}).get('hand_eye_sha256', ''),
+                'position_limits': request.get(
+                    'limits', {}).get('position_rad', []),
+            })
+            culls = [{
+                'ray_id': int(ray_id),
+                'stage': 'tesseract_endpoint',
+                'reason_code': 'PERMANENT_ENDPOINT_INFEASIBLE',
+                'reason': (
+                    'retired after permanent Tesseract endpoint '
+                    'infeasibility'),
+                'evidence': {'worker_reported_permanent': True},
+            } for ray_id in sorted(self.retired_ray_ids)]
+            message = String()
+            message.data = json.dumps(hard_cull_snapshot(
+                population, 'tesseract_endpoint', revision, generation,
+                culls), sort_keys=True)
+            self.hard_cull_pub.publish(message)
+        except (KeyError, TypeError, ValueError) as error:
+            self.warn_ray_diagnostics(
+                'Could not publish permanent hard-ray culls: %s' % error)
 
     def remember_tesseract_exhausted_rays(self, payload):
         """Retire only rays actually attempted by one failed worker request."""
@@ -1857,6 +2015,9 @@ class TesseractPlanBridge(Node):
                         pass
                 self.pending.pop(request_id, None)
             elif self.now() - state['started'] > timeout:
+                self.record_ray_rejection(
+                    request_id, 'PLANNER_TIMEOUT',
+                    'Tesseract response timed out')
                 self.pending.pop(request_id, None)
                 self.publish_rejection(
                     request_id, 'PLANNER_TIMEOUT', 'Tesseract response timed out')
@@ -1876,6 +2037,7 @@ class TesseractPlanBridge(Node):
             self.mark('motion_limits')
 
     def publish_plan(self, payload):
+        self.record_ray_response(payload)
         self.remember_permanently_infeasible_rays(payload)
         if payload.get('status') != 'success':
             codes = payload.get('rejection_codes') or ['PLANNING_FAILED']
@@ -2096,6 +2258,7 @@ class TesseractPlanBridge(Node):
 
     def publish_rejection(
             self, request_id, code, reason, additional_codes=None):
+        self.record_ray_rejection(request_id, code, reason)
         msg = TesseractPlan()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'base_link'

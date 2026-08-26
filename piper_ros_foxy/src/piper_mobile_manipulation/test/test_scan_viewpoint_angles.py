@@ -1,13 +1,25 @@
+import json
 from types import SimpleNamespace
+
+import pytest
 
 from piper_mobile_manipulation.scan_viewpoint_planner_node import (
     build_viewpoint_angles,
+    clipped_target_failure,
     ScanViewpointPlannerNode,
+    target_shape_failure_code,
     target_frame_rejection_reason,
     viewpoint_replan_required,
     viewpoint_refresh_required,
 )
 from piper_mobile_manipulation.viewpoint_rays import build_ray_samples
+from piper_mobile_manipulation.target_envelope import clipped_shape_rejection
+
+
+def shape_header():
+    return SimpleNamespace(
+        stamp=SimpleNamespace(sec=12, nanosec=345),
+        frame_id='camera_color_optical_frame')
 
 
 def test_reachable_workstation_sector_has_five_ordered_views():
@@ -113,7 +125,7 @@ def test_ray_pool_is_generated_once_and_ignores_later_target_shift():
     assert len(calls) == 2
 
 
-def test_target_envelope_culls_once_before_the_ray_pool_is_frozen():
+def test_target_envelope_culls_are_retained_before_pool_is_frozen():
     calls = []
     harness = SimpleNamespace(
         ray_pool_session_id='',
@@ -126,9 +138,11 @@ def test_target_envelope_culls_once_before_the_ray_pool_is_frozen():
 
     def make_ray(ray_id, angle, center, frame_id, pitch, envelope=None):
         calls.append((ray_id, envelope))
-        if ray_id == 0:
-            return None
-        return {'ray_id': ray_id, 'target_object_center': dict(center)}
+        return {
+            'ray_id': ray_id,
+            'target_object_center': dict(center),
+            'target_envelope_supported': ray_id != 0,
+        }
 
     harness.make_ray_viewpoint = make_ray
     history = {'session_id': 'envelope-session'}
@@ -143,10 +157,58 @@ def test_target_envelope_culls_once_before_the_ray_pool_is_frozen():
         [(90.0, 0.0)], envelope={'envelope_sha256': 'b' * 64})
 
     assert first == second
-    assert [item['ray_id'] for item in first] == [1]
+    assert [item['ray_id'] for item in first] == [0, 1]
+    assert first[0]['target_envelope_supported'] is False
     assert len(calls) == 2
     assert harness.ray_pool_envelope_rejected_rays == 1
     assert harness.ray_pool_target_envelope == envelope
+
+
+def test_clipped_target_inside_maximum_reports_too_large_or_close():
+    code, detail = clipped_target_failure({'near_depth_m': 0.63}, 0.80)
+
+    assert code == 'TARGET_TOO_LARGE_OR_CLOSE'
+    assert 'cropped at 0.630m' in detail
+    assert target_shape_failure_code('%s: %s' % (code, detail)) == code
+
+
+def test_clipped_target_at_maximum_reports_scan_impossible():
+    code, detail = clipped_target_failure({'near_depth_m': 0.80}, 0.80)
+
+    assert code == 'TARGET_SCAN_IMPOSSIBLE'
+    assert 'configured 0.800m maximum' in detail
+    assert target_shape_failure_code('%s: %s' % (code, detail)) == code
+
+
+@pytest.mark.parametrize('near_depth, expected_code', (
+    (0.63, 'TARGET_TOO_LARGE_OR_CLOSE'),
+    (0.80, 'TARGET_SCAN_IMPOSSIBLE'),
+))
+def test_exact_stamp_clipped_shape_reaches_planner_failure(
+        near_depth, expected_code):
+    harness = SimpleNamespace(
+        ray_pool_session_id='',
+        ray_pool_target_envelope=None,
+        target_shape_measurements={},
+        target_shape_rejections={},
+        latest_target_shape_error='',
+        get_parameter=lambda name: SimpleNamespace(value={
+            'max_scan_radius_m': 0.80,
+            'planning_frame_id': 'base_link',
+        }[name]),
+        camera_info_summary=lambda: {'available': True},
+    )
+    rejection = clipped_shape_rejection(shape_header(), near_depth)
+
+    ScanViewpointPlannerNode.target_shape_cb(
+        harness, SimpleNamespace(data=json.dumps(rejection)))
+    envelope, error = ScanViewpointPlannerNode.target_envelope_for(
+        harness, shape_header(), {'x': 0.4, 'y': 0.0, 'z': 0.1},
+        {'session_id': 'session-a'})
+
+    assert envelope is None
+    assert error.startswith(expected_code + ':')
+    assert target_shape_failure_code(error) == expected_code
 
 
 def test_tracker_rate_duplicates_do_not_regenerate_candidates():

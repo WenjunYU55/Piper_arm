@@ -67,7 +67,7 @@ def _target_envelope_fixture():
         shape, np.eye(4), [0.0, 0.0, 0.40])
 
 
-def test_target_envelope_reuses_existing_box_contract_and_hash_binding():
+def test_target_envelope_reuses_box_contract_and_hash_binding():
     envelope = _target_envelope_fixture()
     payload = {
         'target_envelope': envelope,
@@ -1391,3 +1391,24 @@ def test_zero_prequalified_views_without_visual_reason_fail_as_no_candidate():
         bridge, 'MULTIVIEW_SCAN')
 
     assert 'NO_PREQUALIFIED_VIEWPOINT_CANDIDATE' in reasons
+
+
+def test_clipped_target_failure_is_preserved_for_the_coordinator():
+    bridge = snapshot_bridge()
+    bridge.latest_scan = {
+        'dry_run': True,
+        'scan_session': {
+            'session_id': 'session-a',
+            'accepted_views': 0,
+            'max_views': 13,
+        },
+        'remaining_viewpoints': 13,
+        'selection_failure_code': 'TARGET_TOO_LARGE_OR_CLOSE',
+        'viewpoints': [],
+    }
+
+    reasons = TesseractPlanBridge.snapshot_reasons(
+        bridge, 'MULTIVIEW_SCAN')
+
+    assert 'TARGET_TOO_LARGE_OR_CLOSE' in reasons
+    assert 'NO_PREQUALIFIED_VIEWPOINT_CANDIDATE' not in reasons

@@ -1,13 +1,29 @@
 schema_version: 1
 document: system_map
-trusted_silhouette_envelope_flow_2026_08_25:
-  sequence: [fresh correlated SAM2 mask and qualified target depth, bounded contour projection in the camera frame, private exact-stamp shape publication, authoritative tracked target at the same source stamp, exact-time camera-to-base transform, silhouette cross-axis midpoint plus half-width depth origin, one mission-frozen 360-degree revolution envelope, envelope-aware ray interval prequalification, unchanged information ranking and shortlist, existing Tesseract box-obstacle feasibility, achieved motion and capture validation, accepted-only coverage update]
+proposed_direction_dependent_fov_path_2026_08_26:
+  status: proposed_not_implemented
+  proposed_sequence: [frozen conservative target envelope, per-ray virtual camera aimed at anchor, calibrated projection through a roll-independent narrow aperture, nearest complete-fit standoff search, maximum with direction-specific surface clearance, configured request clipping, unchanged capability and Tesseract checks]
+  fallback: Invalid projection evidence retains the current enclosing-sphere minimum; it must never create a closer ray bound.
+  later_coordination: Rectangular roll-aware framing requires the same roll evidence to cross the private bridge boundary and be revalidated by the worker after IK.
+  research_context: docs/ai/65-research-context.yaml
+trusted_target_envelope_flow_2026_08_25:
+  sequence: [qualified mask and depth, selected-component image-border completeness gate, private exact-stamp valid silhouette or clipped rejection, tracked base_link target, conservative frozen envelope, FOV and surface-clearance ray bound, capability-map bound, unchanged NBV rank, existing Tesseract box collision feasibility]
+  failure_behavior: Missing or invalid shape withholds ray planning. A border-clipped shape is classified against the configured maximum distance and reaches the coordinator as TARGET_TOO_LARGE_OR_CLOSE or TARGET_SCAN_IMPOSSIBLE. An unsupported valid-envelope ray remains in the immutable review population and is permanently culled once.
+  unchanged: [public interfaces, target tracking, accepted coverage, Tesseract feasibility authority, motion, capture, home and shutdown]
+target_relative_capability_bound_path_2026_08_25:
+  ownership_chain: [viewpoint_rays.py creates the configured target-relative 0.28 through 0.80 m request, viewpoint_reachability_filter_node.py applies coarse workspace intersection, capability_map.py returns sampled support and contiguous standoff runs, viewpoint_reachability_filter_node.py preserves requested bounds and replaces active min/max with the outer supported envelope in enforce mode, bridge_node.py validates and carries run evidence while seeding within a supported run, worker.py proves exact endpoint feasibility]
+  data_contract: [ray_requested_min_standoff_m, ray_requested_max_standoff_m, ray_min_standoff_m, ray_max_standoff_m, ray_capability_intervals_m, ray_capability_bounded, desired_camera_position, ray_scoring_standoff_m]
+  load_order_contract: The immutable capability artifact and selected floor must be validated before enforce-mode filtering. A missing or invalid artifact leaves the configured request under the existing coarse filter; it must not fabricate supported runs or narrow the request.
+  authority_boundary: Capability support is sparse prequalification. The active envelope may span gaps between recorded supported runs, so every candidate still requires worker IK, joint-limit, collision, path, aim and dense-visibility validation.
+mission_ray_evidence_and_static_cull_path_2026_08_25:
+  runtime_load_order: [planner freezes and generates the complete mission ray population, planner publishes its population identity and diagnostic seed journal, reachability filter applies existing workspace and capability checks and publishes a complete prequalification hard-cull snapshot, bridge shortlists surviving rays and sends the unchanged worker request, worker response may identify only contract-qualified permanent endpoint failures, bridge publishes a complete endpoint hard-cull snapshot, planner merges matching source ledgers and removes those rays before later history and NBV ranking, accepted capture persists exact coverage and capture evidence, mission terminal result closes the journal]
+  ownership: {population_identity_and_protocol: ray_hard_culls.py, complete_pool_and_survivor_ranking: scan_viewpoint_planner_node.py, workspace_and_capability_source: viewpoint_reachability_filter_node.py, endpoint_source: piper_tesseract_foxy/bridge_node.py from worker permanent_infeasible_ray_ids, coverage_persistence: nbv_coverage.py, journal_merge_and_html: ray_mission_diagnostics.py, GUI_discovery_and_child_lifecycle: piper_gui/ray_reports.py, offline_model_and_rendering: piper_gui/ray_review_model.py plus piper_gui/ray_review_viewer.py}
   load_order_contracts:
-    - Depth-to-3D must publish the private shape record before the matching Target3D so the tracked target callback can bind it without a DDS ordering race.
-    - The planner may freeze a ray pool only after both the exact-stamp shape and a valid tracked target exist; absence produces TARGET_SHAPE_UNAVAILABLE and no candidate motion.
-    - The bridge must validate the envelope hash, candidate binding and planning anchor before adding its boxes to the existing obstacle request.
-  fixed_state: {historical_reconstruction_frame: base_link, authoritative_target: target_tracker_node.py, frozen_mission_envelope: scan_viewpoint_planner_node.py, physical_achieved_pose: scan_viewpoint_executor_node.py, accepted_coverage: existing accepted history and nbv_coverage.py}
-  unchanged: [public ROS interfaces, target drift semantics, NBV gain and ranking, ray identities, shortlist policy, Tesseract worker authority, motion speed, capture acceptance, home and shutdown]
+    - /piper/ray_hard_culls is private std_msgs/String with reliable transient-local QoS and depth sufficient to retain one complete snapshot from each of the two publishers.
+    - A source snapshot is useful only after the planner has generated the matching mission/session/frame/count/SHA-256 population. Startup ordering cannot substitute for identity validation.
+    - Source revisions bind the workspace/capability configuration or Tesseract model/calibration/limits. A changed revision replaces only that source's accumulated entries.
+    - Diagnostics propagate planner -> reachability filter -> bridge only as additive private JSON; write/render/viewer failure is isolated from every planning, motion, capture and shutdown result.
+  unchanged_authorities: [accepted-only coverage, NBV scoring and rank among survivors, six-ray shortlist, exact Tesseract feasibility, executor approval and motion, capture acceptance, mission outcome, home and shutdown]
 generation_zero_ray_seed_order_2026_08_25:
   sequence: [receive prequalified ray_nbv_seed pool, compute current-FK travel to each bounded ray interval, shortlist the six nearest rays, let Tesseract choose the first exactly feasible target-facing endpoint]
   authority: {seed_order: bridge_node.py, current_physical_pose: latest achieved FK, exact_feasibility: Tesseract worker, post_capture_information_order: accepted-only NBV coverage path}
@@ -19,7 +35,7 @@ startup_wrist_terminal_prerequisite_2026_08_24:
   invariant: PRE_HOME is never an alternative to unfinished STARTUP_WRIST. Direct home still bypasses Tesseract, so stage ordering is the safety boundary for the folded camera posture.
 camera_capability_prequalification_2026_08_24:
   offline_load_order: [build hash-locked combined planning URDF, deterministic Halton joint sampling within conservative limits plus 0.03 rad margin, full endpoint collision and clearance query, camera and link6 FK, 20 mm XYZ plus 10 degree optical-direction quantization, checkpoint convergence validation, commit selected compressed artifact]
-  runtime_load_order: [load artifact once, verify schema and every source hash, apply existing coarse bounded-ray intersection, query sparse atlas over the complete permitted standoff interval and selected floor, preserve unsupported rays in diagnostics, forward only prequalified information-ranked rays to the unchanged six-ray bridge shortlist, Tesseract proves exact feasibility]
+  runtime_load_order: [load artifact once, verify schema and every source hash, apply existing coarse bounded-ray intersection, query sparse atlas over the complete configured standoff request and selected floor, preserve per-sample support and contiguous runs, reject an entirely unsupported ray or narrow a supported ray to its outer support envelope in enforce mode, preserve unsupported rays in diagnostics, forward only prequalified information-ranked rays to the unchanged six-ray bridge shortlist, Tesseract proves exact feasibility]
   data_shape: {stored: [sorted packed uint64 5D keys, maximum attached-tool minimum Z per key, immutable metadata and hashes], not_stored: [raw joint samples, IK seeds, solid workspace volume, trajectories]}
   authority: {capability_map: cheap endpoint prequalification, tesseract_worker: exact IK collision path aim and visibility, nbv: information score and ordering}
 tracked_robot_description_boundary_2026_08_24:
@@ -536,3 +552,8 @@ live_voxel_nbv_boundary_2026_08_17:
   fallback_structure: One score per unique viewing direction; alternate radii remain Tesseract IK fallbacks and cannot displace every distinct direction from the shortlist.
   modes: {legacy: established heuristic selector, voxel_nbv_shadow: additive point-lattice diagnostics only, voxel_nbv: information ranking over exact-point lattice, ray_nbv: information ranking over mission-frozen bounded rays}
   unchanged_authorities: [GOOD/CLEAR capture acceptance, adaptive 8-to-24 completion, local angular frontier, target drift checks, Tesseract collision validation, trajectory timing, home and shutdown]
+
+post_enable_startup_load_order_2026_08_25:
+  sequence: [feedback-confirmed enable, discard pre-enable stability history, receive new joint and arm-status samples, prove two seconds stationary fault-free and all-six-enabled, STARTUP_WRIST, prove ready zero, simultaneous six-joint ROUGH_HOME]
+  failure_before_first_motion: Intact authority requests feedback-confirmed disable without STARTUP_WRIST; motor-authority loss emits no further command and uses watchdog six-disabled proof.
+  unchanged: [coordinator ownership, driver CAN ownership, executor stage ownership, STARTUP_WRIST before ROUGH_HOME, acquisition after rough home]

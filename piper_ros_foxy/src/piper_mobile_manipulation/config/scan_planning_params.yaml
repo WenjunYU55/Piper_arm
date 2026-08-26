@@ -34,12 +34,15 @@
     max_viewpoints: 25
     session_max_views: 13
     scan_session_history_topic: "/piper/scan_session_history"
+    # Command-free feedback carrying only population-bound permanent ray
+    # eliminations from prequalification and Tesseract endpoint evidence.
+    ray_hard_culls_topic: "/piper/ray_hard_culls"
     # Multiview candidates are generated only from coordinates already in this
     # frame. Raw camera-optical /piper/target_3d observations must first pass
     # through the base-frame tracker; they are never a coordinate fallback.
     planning_frame_id: "base_link"
-    # Private trusted silhouette handoff from synchronized mask/depth
-    # projection. The ray pool freezes one matching envelope per mission.
+    # Private trusted silhouette handoff. One correlated envelope is frozen
+    # with the mission-scoped ray population.
     target_shape_topic: "/piper/target_shape_measurement"
     # A retried scan excludes only a camera pose that is close in both
     # translation and viewing direction to an achieved accepted capture.
@@ -112,6 +115,10 @@
     # Full voxel evidence is retained; candidate raycasts use this bounded,
     # deterministic planning sample so a noisy large mask cannot stall ROS.
     nbv_maximum_scoring_voxels: 20000
+    # Write one self-contained HTML graphic and canonical JSON ray-lifecycle
+    # record per mission. This observes planner/prequalification/Tesseract
+    # decisions only and is never a motion or capture authority.
+    ray_diagnostics_enabled: true
 
     # A typed /scan_target_acquisition/prepare call atomically binds the session
     # ID and rough base_link coordinate. The guarded executor still requires
