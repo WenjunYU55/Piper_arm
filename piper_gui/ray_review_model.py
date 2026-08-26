@@ -53,6 +53,91 @@ STAGE_LABELS = {
 }
 
 
+def revolved_envelope_mesh(envelope, angular_segments=32):
+    """Return a presentation mesh for one recorded revolved profile.
+
+    The conservative collision boxes remain the planning representation. This
+    smooth surface is deliberately derived only from recorded profile sections
+    and is used by the command-free viewer.
+    """
+    empty_vertices = np.empty((0, 3), dtype=np.float64)
+    empty_faces = np.empty((0, 3), dtype=np.int64)
+    if not isinstance(envelope, dict):
+        return empty_vertices, empty_faces
+    try:
+        origin = np.asarray(envelope['axis_origin_m'], dtype=np.float64)
+        axis = np.asarray(envelope['axis_direction'], dtype=np.float64)
+        sections = list(envelope['profile_sections'])
+        segments = int(angular_segments)
+    except (KeyError, TypeError, ValueError):
+        return empty_vertices, empty_faces
+    axis_norm = float(np.linalg.norm(axis))
+    if (
+            origin.shape != (3,) or axis.shape != (3,)
+            or not np.all(np.isfinite(origin))
+            or not np.all(np.isfinite(axis)) or axis_norm <= 1e-9
+            or len(sections) < 1 or segments < 8 or segments > 256):
+        return empty_vertices, empty_faces
+    axis = axis / axis_norm
+    profile = []
+    try:
+        for section in sections:
+            center = float(section['center_s_m'])
+            half_length = float(section['half_length_m'])
+            radius = float(section['radius_m'])
+            if (
+                    not all(math.isfinite(value) for value in (
+                        center, half_length, radius))
+                    or half_length <= 0.0 or radius <= 0.0):
+                return empty_vertices, empty_faces
+            profile.append((center, half_length, radius))
+    except (KeyError, TypeError, ValueError):
+        return empty_vertices, empty_faces
+    profile.sort(key=lambda value: value[0])
+    rings = [(profile[0][0] - profile[0][1], profile[0][2])]
+    rings.extend((center, radius) for center, _half, radius in profile)
+    rings.append((profile[-1][0] + profile[-1][1], profile[-1][2]))
+
+    reference = np.asarray([0.0, 0.0, 1.0], dtype=np.float64)
+    if abs(float(np.dot(axis, reference))) > 0.90:
+        reference = np.asarray([0.0, 1.0, 0.0], dtype=np.float64)
+    first = np.cross(axis, reference)
+    first /= np.linalg.norm(first)
+    second = np.cross(axis, first)
+    angles = np.linspace(0.0, 2.0 * math.pi, segments, endpoint=False)
+    circle = (
+        np.cos(angles)[:, None] * first[None, :]
+        + np.sin(angles)[:, None] * second[None, :])
+    vertices = np.vstack([
+        origin + axis * axial + circle * radius
+        for axial, radius in rings
+    ])
+    faces = []
+    for ring_index in range(len(rings) - 1):
+        lower = ring_index * segments
+        upper = (ring_index + 1) * segments
+        for segment in range(segments):
+            following = (segment + 1) % segments
+            faces.append((
+                lower + segment, upper + segment, lower + following))
+            faces.append((
+                lower + following, upper + segment, upper + following))
+    start_center = len(vertices)
+    end_center = start_center + 1
+    vertices = np.vstack((
+        vertices,
+        origin + axis * rings[0][0],
+        origin + axis * rings[-1][0],
+    ))
+    final_ring = (len(rings) - 1) * segments
+    for segment in range(segments):
+        following = (segment + 1) % segments
+        faces.append((start_center, following, segment))
+        faces.append((
+            end_center, final_ring + segment, final_ring + following))
+    return vertices, np.asarray(faces, dtype=np.int64)
+
+
 def sha256_file(path):
     digest = hashlib.sha256()
     with Path(path).open('rb') as stream:

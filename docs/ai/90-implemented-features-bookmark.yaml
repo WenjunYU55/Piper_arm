@@ -1,5 +1,10 @@
 schema_version: 1
 document: implemented_features_bookmark
+ray_review_target_envelope_layers_2026_08_26:
+  status: software_implemented_command_free_validated
+  capability: Ray Review has independent default-on Estimated revolved model, Conservative planning boxes and Original mask/depth outline controls. New frozen envelopes preserve the original qualified contour as optional hash-bound base_link evidence; older reports remain readable without inventing an outline.
+  authority: The smooth mesh is presentation-only, boxes remain planning evidence, and the ROS-free viewer cannot change any mission or motion output.
+  evidence: [107 focused envelope bridge diagnostic and viewer tests pass, 975 complete mobile and Tesseract tests pass, 92 complete GUI tests pass, offscreen independent-toggle smoke passes, command-free 360-ray report carries outline evidence, two-package build passes, no hardware command]
 clipped_target_shape_failure_2026_08_26:
   status: software_implemented_physical_observation_pending
   capability: A target component touching any image edge publishes an exact-stamp hash-bound rejection instead of an undersized envelope. The planner owns the configured 0.80 m comparison and the coordinator receives TARGET_TOO_LARGE_OR_CLOSE below it or TARGET_SCAN_IMPOSSIBLE at or beyond it.

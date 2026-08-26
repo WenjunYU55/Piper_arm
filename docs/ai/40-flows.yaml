@@ -1,5 +1,9 @@
 schema_version: 1
 document: runtime_flows
+ray_review_target_layer_flow_2026_08_26:
+  sequence: [sample bounded mask contour at qualified near depth, transform contour into base_link during envelope construction, bind optional visible_silhouette_points_m into envelope SHA-256, persist the frozen envelope in its event, load without recomputation, derive a smooth surface from recorded profile sections, render smooth estimate planning boxes and source outline under independent controls]
+  failure_modes: [legacy outline absent -> other layers remain and outline draws nothing, malformed optional outline -> envelope validation fails before planning handoff, malformed historical presentation profile -> viewer draws no smooth mesh, VTK rendering failure -> command-free child only and no mission output changes]
+  manual_smoke_checks: [open a new synthetic size-aware report, toggle each of the three layers independently, confirm source outline lies on the recorded visible plane, confirm smooth model follows the recorded long axis, confirm boxes exactly match the planning evidence, open a pre-outline report and confirm it remains usable]
 proposed_per_ray_framing_flow_2026_08_26:
   status: proposed_not_implemented
   sequence: [freeze trusted envelope, choose ray direction, aim virtual camera at target anchor, project every conservative envelope-box corner through calibrated intrinsics, find nearest complete fit in a roll-independent aperture, combine with camera-to-surface clearance, retain configured request intersection, continue through unchanged capability and Tesseract gates]

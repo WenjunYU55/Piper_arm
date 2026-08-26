@@ -383,6 +383,9 @@ research_maintenance_routing_2026_08_26:
   novelty_or_publication_claim:
     inspect: [docs/ai/65-research-context.yaml, docs/ai/70-roadmap.yaml]
     rule: Recheck the literature and experiments; do not infer novelty from the current repository implementation alone.
+  ray_review_target_layers:
+    inspect: [target_envelope.py visible_silhouette_points_m, ray_mission_diagnostics.py target_envelope evidence, piper_gui/ray_review_model.py revolved_envelope_mesh, piper_gui/ray_review_viewer.py MissionScene and Inspector, test_target_envelope.py, test_piper_gui_ray_review.py]
+    rule: The revolved mesh is an estimated presentation surface, the source outline is recorded evidence, and only collision_boxes is planning geometry. Keep every layer command-free and independently selectable.
 maintenance_commands:
   changed_files: git status --short
   source_inventory: "rg --files -g '!build/**' -g '!install/**' -g '!log/**'"

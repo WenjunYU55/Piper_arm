@@ -1,5 +1,13 @@
 schema_version: 1
 document: ai_context_index
+ray_review_target_envelope_layers_2026_08_26:
+  behavior: >-
+    Ray Review exposes three independently selectable target layers: an
+    estimated smooth revolved model, the exact conservative planning boxes,
+    and the original sampled mask/depth outline transformed into base_link.
+  evidence_contract: New envelopes carry up to 256 hash-bound visible_silhouette_points_m. Older valid envelopes without the optional outline remain readable and simply render no source outline.
+  authority_boundary: All three controls are command-free presentation. The smooth mesh and source outline never replace collision boxes or authorize planning, capture or motion.
+  validation: [107 focused envelope bridge diagnostic and viewer tests pass, 975 complete mobile and Tesseract tests pass, 92 complete GUI tests pass, offscreen independent-toggle smoke passes, command-free 360-ray report carries outline evidence, two-package build passes, no hardware command]
 per_ray_projected_fov_research_direction_2026_08_26:
   current_behavior: Complete-FOV standoff is conservatively derived from one enclosing sphere, so it does not yet vary by ray direction for elongated targets.
   recommended_next_cut: Project the frozen conservative envelope per ray through calibrated intrinsics, use the narrower-FOV roll-independent aperture, combine it with the existing direction-specific surface-clearance minimum, and retain the sphere result as fail-closed fallback.

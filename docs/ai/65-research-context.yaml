@@ -41,6 +41,7 @@ local_research_position:
   established_components: [eye-in-hand active reconstruction, object-centric candidate views, volumetric or implicit NBV, field-of-view constraints, overlap scoring, reachability and collision validation]
   defensible_contribution_direction: A fail-closed integrated system that turns one qualified silhouette into direction-dependent framing bounds, preserves exact evidence and ownership across NBV and Tesseract, and demonstrates safe closed-loop scanning across object scales and aspect ratios on the PiPER/L515 platform.
   claim_limit: Do not claim novelty from per-ray projection, NBV, a revolved envelope or size adaptation alone. Any research claim requires a systematic literature review, explicit baselines and repeatable experiments.
+  visualization_evidence: Ray Review independently exposes the recorded source outline, estimated revolved surface and conservative planning boxes. This supports explanation and debugging but is not experimental proof of shape accuracy.
 
 recommended_design:
   phase_1_roll_independent_per_ray_framing:

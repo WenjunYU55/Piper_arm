@@ -4,7 +4,7 @@ Piper_arm/
 ├── tools/validate_capability_map.py  Command-free convergence replay and smallest-qualified-checkpoint selector
 ├── docs/ai/                         AI-first architecture, contracts, flows, guardrails, debt, 65-research-context.yaml prior art/design notes, authoritative 70-roadmap.yaml milestones, consolidated 80-problem-log.yaml incident history, and implemented-feature rewrite bookmark
 ├── docs/refactor/                   Phase 0/1 baselines, Phase 2-9 extraction records, Phase 10 final architecture, final equivalence audit, and staged physical requalification checklist
-├── piper_gui/                       Phase 8 Tk-independent mission ViewModel, action-client callback adapter, GUI lifecycle bootstrap, bounded next-mission viewpoint selector, idle-only next-mission support-floor selector, and validated next-camera-start RGB profile persistence; owns no production mission policy
+├── piper_gui/                       Phase 8 Tk-independent mission ViewModel, action-client callback adapter, GUI lifecycle bootstrap, bounded next-mission viewpoint selector, command-free Ray Review with independent estimated-revolution/planning-box/source-outline layers, idle-only next-mission support-floor selector, and validated next-camera-start RGB profile persistence; owns no production mission policy
 ├── CAD/                             User-supplied physical reference photos; the holder/L515 runtime STL copies are owned by piper_description/meshes, while original CAD source provenance is currently absent
 ├── piper_ros_foxy/                  ROS 2 Foxy colcon workspace
 │   └── src/
@@ -48,8 +48,8 @@ Piper_arm/
 ├── enable_piper.sh / disable_piper.sh  Explicit software motor control
 ├── piper_gui_native.py              Production RunTargetScan client UI plus a next-mission legacy/exact-point voxel-NBV/frozen-ray-NBV selector with target-sector/upper-hemisphere/full-sphere and ray-count controls, read-only mission/perception diagnostics and explicitly separated manual/home-profile/RViz-preview commissioning controls; commissioning motion starts publisher-locked until sole ownership is proved and explicit no-home disable sends no motion; owns no production scan children, phase transitions, plan approvals, retries, replans or autonomous shutdown
 ├── piper_gui/ray_reports.py         Command-free discovery, one-child stdin protocol, compatibility HTML opening and immutable historical-dataset replay helpers
-├── piper_gui/ray_review_model.py    ROS-free schema-v1/v2 event-time state, exact coverage, URDF/FK and read-only capability-map model
-├── piper_gui/ray_review_viewer.py   Freely resizable two-tab PyQt5/VTK Mission Process and Capability Map review process
+├── piper_gui/ray_review_model.py    ROS-free schema-v1/v2 event-time state, target-envelope presentation mesh, exact coverage, URDF/FK and read-only capability-map model
+├── piper_gui/ray_review_viewer.py   Freely resizable two-tab PyQt5/VTK Mission Process and Capability Map review process with independent target-evidence layer controls
 ├── test_piper_gui_ray_reports.py    Path-containment, report discovery/opening and native-GUI ray-control regressions
 ├── test_piper_gui_ray_review.py     Journal isolation, child reuse, full URDF triangle count and immutable capability-map characterization
 ├── test_ray_hard_culls.py           Population/revision ledger, pre-rank survivor, event-time reevaluation and deferred-shortlist regressions

@@ -1,5 +1,12 @@
 schema_version: 1
 document: module_ownership
+ray_review_target_layer_ownership_2026_08_26:
+  owner_module: piper_gui/ray_review_viewer.py
+  split_owners: {recorded_source_outline: target_envelope.py, immutable_event_transport: ray_mission_diagnostics.py, testable_smooth_presentation_mesh: piper_gui/ray_review_model.py, VTK_layer_controls: piper_gui/ray_review_viewer.py}
+  allowed_edit_paths: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_envelope.py, piper_gui/ray_review_model.py, piper_gui/ray_review_viewer.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_target_envelope.py, test_piper_gui_ray_review.py, docs/ai]
+  owns: [optional hash-bound base_link source outline, smooth presentation mesh, independently selectable viewer layers]
+  does_not_own: [collision obstacle authority, envelope construction policy, NBV, Tesseract feasibility, capture, motion, safety, home or shutdown]
+  must_not_move_without: [trusted_target_envelope_2026_08_25, mission_ray_diagnostics_2026_08_25, command-free GUI process boundary, legacy report loading]
 proposed_per_ray_fov_ownership_2026_08_26:
   status: proposed_not_implemented
   owner_module: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_envelope.py

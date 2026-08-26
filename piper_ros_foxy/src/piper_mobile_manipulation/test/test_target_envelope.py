@@ -9,6 +9,7 @@ import pytest
 
 from piper_mobile_manipulation.target_envelope import (
     build_revolution_envelope,
+    canonical_sha256,
     clipped_shape_rejection,
     envelope_constrained_ray_interval,
     point_to_envelope_distance,
@@ -160,8 +161,40 @@ def test_square_silhouette_uses_stable_vertical_fallback_and_metric_size():
         result['rotation_origin_depth_m'], abs=1e-8)
     assert len(result['profile_sections']) <= 24
     assert len(result['collision_boxes']) == len(result['profile_sections'])
+    assert 3 <= len(result['visible_silhouette_points_m']) <= 256
     assert validate_envelope(result)['envelope_sha256'] == (
         result['envelope_sha256'])
+
+
+def test_recorded_visible_outline_is_exact_base_frame_source_geometry():
+    shape = rectangle_shape(width_px=60, height_px=25)
+    transform = np.eye(4)
+    transform[:3, 3] = [0.1, -0.2, 0.3]
+
+    result = build_revolution_envelope(
+        shape, transform, [0.1, -0.2, 0.7])
+    source = np.asarray(shape['silhouette_points_camera_m'])
+    expected = source + transform[:3, 3]
+
+    assert np.allclose(result['visible_silhouette_points_m'], expected)
+
+
+def test_legacy_envelope_without_visible_outline_remains_valid():
+    result = envelope()
+    result.pop('visible_silhouette_points_m')
+    unsigned = dict(result)
+    unsigned.pop('envelope_sha256')
+    result['envelope_sha256'] = canonical_sha256(unsigned)
+
+    assert validate_envelope(result) == result
+
+
+def test_malformed_visible_outline_fails_before_rendering_or_handoff():
+    result = envelope()
+    result['visible_silhouette_points_m'] = [[math.nan, 0.0, 0.4]] * 3
+
+    with pytest.raises(ValueError, match='outline'):
+        validate_envelope(result)
 
 
 def test_elongated_silhouette_uses_mask_major_axis():

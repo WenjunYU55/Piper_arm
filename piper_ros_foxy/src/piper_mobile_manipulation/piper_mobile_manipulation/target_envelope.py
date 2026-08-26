@@ -374,6 +374,7 @@ def build_revolution_envelope(
         'axis_origin_m': np.round(axis_origin, 8).tolist(),
         'visible_surface_center_m': np.round(
             visible_surface_center, 8).tolist(),
+        'visible_silhouette_points_m': np.round(points, 8).tolist(),
         'axis_direction': np.round(axis, 10).tolist(),
         'axis_source': axis_source,
         'axis_anisotropy_ratio': round(float(ratio), 8),
@@ -411,6 +412,15 @@ def validate_envelope(envelope):
     _finite_array(
         envelope.get('visible_surface_center_m'), (3,),
         'visible surface center')
+    outline = envelope.get('visible_silhouette_points_m')
+    if outline is not None:
+        outline = np.asarray(outline, dtype=float)
+        if (
+                outline.ndim != 2 or outline.shape[1] != 3
+                or outline.shape[0] < 3
+                or outline.shape[0] > MAX_SILHOUETTE_POINTS
+                or not np.all(np.isfinite(outline))):
+            raise ValueError('visible silhouette outline is malformed')
     axis = _finite_array(
         envelope.get('axis_direction'), (3,), 'envelope axis direction')
     if abs(float(np.linalg.norm(axis)) - 1.0) > 1e-6:

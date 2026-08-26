@@ -38,6 +38,7 @@ from piper_gui.ray_review_model import (
     load_coverage_snapshot,
     load_diagnostic_document,
     load_optical_registration,
+    revolved_envelope_mesh,
     state_at_event,
 )
 
@@ -58,6 +59,9 @@ RANK_PALETTE = (
     (0.90, 0.12, 0.10),  # lowest: red
 )
 GROUND_Z_M = -0.466
+REVOLVED_MODEL = (0.10, 0.72, 0.68)
+PLANNING_BOX = (0.15, 0.92, 0.86)
+SOURCE_OUTLINE = (1.00, 0.55, 0.16)
 
 
 def _vtk_matrix(array):
@@ -344,9 +348,84 @@ class MissionScene:
         self.renderer.AddActor(actor)
         self.dynamic.append(actor)
 
-    def _add_target_envelope(self, envelope):
-        """Render the frozen conservative target volume used by planning."""
+    def _add_revolved_model(self, envelope):
+        vertices, faces = revolved_envelope_mesh(envelope)
+        if not len(vertices) or not len(faces):
+            return
+        points = vtk.vtkPoints()
+        points.SetData(numpy_to_vtk(vertices, deep=True))
+        polygons = vtk.vtkCellArray()
+        for face in faces:
+            triangle = vtk.vtkTriangle()
+            for index, point_id in enumerate(face):
+                triangle.GetPointIds().SetId(index, int(point_id))
+            polygons.InsertNextCell(triangle)
+        surface = vtk.vtkPolyData()
+        surface.SetPoints(points)
+        surface.SetPolys(polygons)
+        normals = vtk.vtkPolyDataNormals()
+        normals.SetInputData(surface)
+        normals.ConsistencyOn()
+        normals.SplittingOff()
+        mapper = vtk.vtkPolyDataMapper()
+        mapper.SetInputConnection(normals.GetOutputPort())
+        actor = vtk.vtkActor()
+        actor.SetMapper(mapper)
+        actor.GetProperty().SetColor(*REVOLVED_MODEL)
+        actor.GetProperty().SetOpacity(0.24)
+        actor.GetProperty().SetInterpolationToPhong()
+        actor.PickableOff()
+        self.renderer.AddActor(actor)
+        self.dynamic.append(actor)
+
+    def _add_source_outline(self, envelope):
+        try:
+            outline = np.asarray(
+                envelope['visible_silhouette_points_m'], dtype=float)
+        except (KeyError, TypeError, ValueError):
+            return
+        if (
+                outline.ndim != 2 or outline.shape[1] != 3
+                or outline.shape[0] < 3
+                or not np.all(np.isfinite(outline))):
+            return
+        points = vtk.vtkPoints()
+        points.SetData(numpy_to_vtk(outline, deep=True))
+        polyline = vtk.vtkPolyLine()
+        polyline.GetPointIds().SetNumberOfIds(len(outline) + 1)
+        for index in range(len(outline)):
+            polyline.GetPointIds().SetId(index, index)
+        polyline.GetPointIds().SetId(len(outline), 0)
+        lines = vtk.vtkCellArray()
+        lines.InsertNextCell(polyline)
+        source = vtk.vtkPolyData()
+        source.SetPoints(points)
+        source.SetLines(lines)
+        tube = vtk.vtkTubeFilter()
+        tube.SetInputData(source)
+        tube.SetRadius(0.0015)
+        tube.SetNumberOfSides(8)
+        tube.CappingOn()
+        mapper = vtk.vtkPolyDataMapper()
+        mapper.SetInputConnection(tube.GetOutputPort())
+        actor = vtk.vtkActor()
+        actor.SetMapper(mapper)
+        actor.GetProperty().SetColor(*SOURCE_OUTLINE)
+        actor.PickableOff()
+        self.renderer.AddActor(actor)
+        self.dynamic.append(actor)
+
+    def _add_target_envelope(
+            self, envelope, show_revolved_model=True,
+            show_planning_boxes=True, show_source_outline=True):
+        """Render independently selectable recorded target evidence."""
         if not isinstance(envelope, dict):
+            return
+        if show_revolved_model:
+            self._add_revolved_model(envelope)
+        if show_source_outline:
+            self._add_source_outline(envelope)
+        if not show_planning_boxes:
             return
         boxes = envelope.get('collision_boxes', [])
         if not isinstance(boxes, list):
@@ -373,7 +452,7 @@ class MissionScene:
             mapper.SetInputConnection(cube.GetOutputPort())
             actor = vtk.vtkActor()
             actor.SetMapper(mapper)
-            actor.GetProperty().SetColor(0.08, 0.72, 0.68)
+            actor.GetProperty().SetColor(*PLANNING_BOX)
             actor.GetProperty().SetOpacity(0.075)
             actor.GetProperty().SetEdgeVisibility(True)
             actor.GetProperty().SetEdgeColor(0.15, 0.92, 0.86)
@@ -422,14 +501,18 @@ class MissionScene:
             self.dynamic.append(actor)
 
     def render(self, state, visible_rays, show_free=False,
-               show_past_culled=False, show_standoff_bounds=False):
+               show_past_culled=False, show_standoff_bounds=False,
+               show_revolved_model=True, show_planning_boxes=True,
+               show_source_outline=True):
         self._clear_dynamic()
         event = state.get('event') or {}
         target = state.get('target_center_m')
         if target is None:
             target = [0.0, 0.0, 0.0]
         self._add_target(target)
-        self._add_target_envelope(state.get('target_envelope'))
+        self._add_target_envelope(
+            state.get('target_envelope'), show_revolved_model,
+            show_planning_boxes, show_source_outline)
         self._update_robot(state.get('robot_pose'))
         event_ranks = [
             _numeric_rank(ray) for ray in state.get('rays', {}).values()
@@ -613,12 +696,24 @@ class Inspector(QtWidgets.QWidget):
         self.show_culled = QtWidgets.QCheckBox('Show past culled rays')
         self.show_bounds = QtWidgets.QCheckBox('Show standoff bounds')
         self.show_free = QtWidgets.QCheckBox('Show FREE target voxels')
+        self.show_revolved_model = QtWidgets.QCheckBox(
+            'Estimated revolved model')
+        self.show_planning_boxes = QtWidgets.QCheckBox(
+            'Conservative planning boxes')
+        self.show_source_outline = QtWidgets.QCheckBox(
+            'Original mask/depth outline')
+        self.show_revolved_model.setChecked(True)
+        self.show_planning_boxes.setChecked(True)
+        self.show_source_outline.setChecked(True)
         form.addRow('Cull stage', self.stage); form.addRow('Reason', self.reason)
         form.addRow('Minimum rank', self.rank_min); form.addRow('Maximum rank', self.rank_max)
         form.addRow('Ray ID', self.ray_id); form.addRow('', self.only_key)
         form.addRow('', self.show_culled)
         form.addRow('', self.show_bounds)
         form.addRow('', self.show_free)
+        form.addRow('', self.show_revolved_model)
+        form.addRow('', self.show_planning_boxes)
+        form.addRow('', self.show_source_outline)
         layout.addLayout(form)
         self.table = QtWidgets.QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
@@ -632,7 +727,9 @@ class Inspector(QtWidgets.QWidget):
         layout.addWidget(self.evidence)
         for control in (self.stage, self.rank_min, self.rank_max,
                         self.only_key, self.show_culled, self.show_bounds,
-                        self.show_free):
+                        self.show_free, self.show_revolved_model,
+                        self.show_planning_boxes,
+                        self.show_source_outline):
             if isinstance(control, QtWidgets.QComboBox):
                 control.currentIndexChanged.connect(self.filters_changed)
             elif isinstance(control, QtWidgets.QCheckBox):
@@ -736,7 +833,10 @@ class MissionTab(QtWidgets.QWidget):
             '<span style="color:#5c6673">&#9632; past cull</span> &nbsp; '
             '<span style="color:#b761ff">&#9632; re-evaluated</span> &nbsp; '
             '<span style="color:#4fe87a">&#9632; captured</span> &nbsp; '
-            '<span style="color:#26d9cc">&#9633; target envelope</span> &nbsp; '
+            'target envelope: '
+            '<span style="color:#1ab8ad">&#9632; revolved estimate</span> &nbsp; '
+            '<span style="color:#26ebdb">&#9633; planning boxes</span> &nbsp; '
+            '<span style="color:#ff8c29">&#9633; source outline</span> &nbsp; '
             '<b>thick line = selected</b> &nbsp; Bounds: '
             '<span style="color:#b8beca">grey dashed = requested</span>, '
             '<span style="color:#33d1e6">cyan = capability-supported</span>')
@@ -970,7 +1070,10 @@ class MissionTab(QtWidgets.QWidget):
         self.scene.render(
             self.current_state, rays, self.inspector.show_free.isChecked(),
             self.inspector.show_culled.isChecked(),
-            self.inspector.show_bounds.isChecked())
+            self.inspector.show_bounds.isChecked(),
+            self.inspector.show_revolved_model.isChecked(),
+            self.inspector.show_planning_boxes.isChecked(),
+            self.inspector.show_source_outline.isChecked())
 
     def eventFilter(self, watched, event):
         if event.type() == QtCore.QEvent.KeyPress:

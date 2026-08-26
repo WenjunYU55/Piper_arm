@@ -1,5 +1,9 @@
 schema_version: 1
 document: system_map
+ray_review_target_layer_path_2026_08_26:
+  runtime_evidence: [qualified mask/depth contour, build_revolution_envelope transforms and hash-binds visible_silhouette_points_m, planner freezes envelope, schema-v2 diagnostic event records exact envelope, ROS-free model derives presentation vertices only while loading, VTK viewer independently toggles smooth estimate boxes and source outline]
+  backward_compatibility: Historical envelopes without visible_silhouette_points_m retain profile and collision-box rendering; source-outline rendering is absent rather than invented.
+  authority_boundary: Viewer geometry never returns to planner, bridge, worker, executor, capture, safety, home or shutdown.
 proposed_direction_dependent_fov_path_2026_08_26:
   status: proposed_not_implemented
   proposed_sequence: [frozen conservative target envelope, per-ray virtual camera aimed at anchor, calibrated projection through a roll-independent narrow aperture, nearest complete-fit standoff search, maximum with direction-specific surface clearance, configured request clipping, unchanged capability and Tesseract checks]

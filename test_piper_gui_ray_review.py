@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from piper_gui.ray_review_model import (
     UrdfAssembly,
@@ -10,6 +11,7 @@ from piper_gui.ray_review_model import (
     load_capability_view,
     load_diagnostic_document,
     load_optical_registration,
+    revolved_envelope_mesh,
     filter_rays,
     state_at_event,
 )
@@ -102,6 +104,40 @@ def test_target_envelope_appears_only_when_recorded_by_the_event(tmp_path):
     assert state_at_event(document, 1)['target_envelope'] == envelope
 
 
+def test_revolved_envelope_mesh_follows_recorded_axis_and_radius():
+    vertices, faces = revolved_envelope_mesh({
+        'axis_origin_m': [0.1, -0.2, 0.3],
+        'axis_direction': [0.0, 0.0, 1.0],
+        'profile_sections': [
+            {'center_s_m': -0.02, 'half_length_m': 0.01,
+             'radius_m': 0.01},
+            {'center_s_m': 0.0, 'half_length_m': 0.01,
+             'radius_m': 0.02},
+            {'center_s_m': 0.02, 'half_length_m': 0.01,
+             'radius_m': 0.01},
+        ],
+    }, angular_segments=16)
+
+    assert vertices.shape == (82, 3)
+    assert faces.shape == (160, 3)
+    assert np.all(np.isfinite(vertices))
+    assert np.min(vertices[:, 2]) == pytest.approx(0.27)
+    assert np.max(vertices[:, 2]) == pytest.approx(0.33)
+    radial = np.linalg.norm(vertices[:-2, :2] - [0.1, -0.2], axis=1)
+    assert np.max(radial) == pytest.approx(0.02)
+
+
+def test_revolved_envelope_presentation_mesh_rejects_malformed_evidence():
+    vertices, faces = revolved_envelope_mesh({
+        'axis_origin_m': [0.0, 0.0, 0.0],
+        'axis_direction': [0.0, 0.0, 0.0],
+        'profile_sections': [],
+    })
+
+    assert vertices.shape == (0, 3)
+    assert faces.shape == (0, 3)
+
+
 def test_unranked_generation_rays_remain_visible_without_rank_filter():
     state = {'rays': {
         1: {'ray_id': 1, 'direction': [1, 0, 0]},
@@ -191,6 +227,11 @@ def test_rank_colours_and_transient_culls_are_explained_in_the_viewer():
     assert 'cyan = capability-supported' in source
     assert 'target envelope' in source
     assert 'def _add_target_envelope(' in source
+    assert 'Estimated revolved model' in source
+    assert 'Conservative planning boxes' in source
+    assert 'Original mask/depth outline' in source
+    assert 'def _add_revolved_model(' in source
+    assert 'def _add_source_outline(' in source
     assert 'culled now' in source
     assert 'thick line = selected' in source
     assert 'and not show_past_culled' in source

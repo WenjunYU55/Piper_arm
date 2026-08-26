@@ -1,5 +1,10 @@
 schema_version: 1
 document: mission_goal_and_delivery_roadmap
+ray_review_target_envelope_layers_2026_08_26:
+  milestone: M5 explainable size-aware closed-loop ray NBV
+  software_status: Implemented three independent command-free target layers in Ray Review and preserved the qualified source contour as optional hash-bound envelope evidence with legacy loading. 107 focused, 975 complete mobile/Tesseract and 92 complete GUI tests pass; the offscreen toggle smoke, command-free 360-ray report and two-package build pass.
+  qualification_boundary: Presentation does not implement direction-dependent FOV, change collision geometry or authorize motion.
+  next_gate: Open the synthetic report interactively when convenient and visually compare the three layers. No hardware is required and physical qualification state is unchanged.
 direction_dependent_object_framing_2026_08_26:
   milestone: M5 size-aware closed-loop ray NBV
   status: proposed_not_implemented

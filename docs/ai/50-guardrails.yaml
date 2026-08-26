@@ -1,5 +1,14 @@
 schema_version: 1
 document: guardrails
+ray_review_target_layer_guardrails_2026_08_26:
+  invariants:
+    - visible_silhouette_points_m is optional for historical compatibility but, when present, is finite, bounded to 3 through 256 points, expressed in base_link, included in the envelope digest and copied without viewer recomputation.
+    - Estimated revolved model is a presentation interpolation of recorded profile_sections. It must be labelled as an estimate and never replace collision_boxes.
+    - Conservative planning boxes displays the exact box evidence consumed by the bridge. Hiding them in the viewer cannot change planning state.
+    - Original mask/depth outline displays only recorded qualified contour evidence. Missing historical evidence produces no outline; never synthesize one from the profile or boxes.
+    - All layer controls remain inside the ROS-free viewer and have no publisher, service, action, worker request, map write or motion owner.
+  blast_radius: [private envelope digest and payload size for new missions, additive private worker scene evidence while collision obstacles remain unchanged, diagnostic artifact size, command-free Ray Review rendering]
+  must_retest_if_changed: [test_target_envelope.py, test_ray_mission_diagnostics.py, test_bridge_feedback_freshness.py, test_piper_gui_ray_review.py, test_piper_gui_ray_reports.py, complete mobile and Tesseract suites, GUI tests, affected package build, no hardware command]
 proposed_per_ray_fov_guardrails_2026_08_26:
   status: applies_when_the_proposed_change_is_implemented
   invariants:
