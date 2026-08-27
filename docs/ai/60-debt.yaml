@@ -1458,3 +1458,11 @@ post_cleanup_architecture_debt_2026_08_27:
   style: Package-wide mobile Flake8 and PEP257 retain 76 historical findings; added files pass the 99-column project convention.
   planner_performance: Rootless core qualification still exceeds its internal 150-second budget at dual_limit_start_acquisition exactly as the pre-refactor baseline did. Do not weaken the planning bound as an architecture cleanup.
   compatibility: Import facades remain until downstream callers migrate and identity tests permit a separate removal.
+
+curobo_runtime_and_collision_qualification_debt_2026_08_27:
+  status: software_boundary_complete_runtime_and_physical_qualification_blocked
+  pinned_release: {version: 0.7.8, commit: d64c4b005459db10c5dd867d8b30a87d5bda9bdb}
+  blockers: [cuRobo is not installed, nvcc/CUDA toolkit is absent although CUDA runtime is available, PyTorch 2.11.0 plus CUDA 12.8 exceeds the release's recommended combination and requires real build/GPU evidence, generated sphere/cuboid collision approximation is not physically qualified]
+  explicit_limitations: [folded bootstrap outside canonical joint limits unsupported, occlusion and manipulation plan kinds unsupported, no claim of Tesseract collision equivalence, no physical robot test]
+  next_cut: Install the pinned release in the isolated interpreter without changing Foxy, run the opt-in GPU suite, inspect free-space and collision cases, compare robot and world geometry against Tesseract, then review and mark the model hardware_qualified before any explicitly authorized physical motion.
+  must_not_resolve_by: [weakening shared validators, faking planner success, bypassing collision qualification, importing CUDA into ROS, automatic fallback, enabling real motion]

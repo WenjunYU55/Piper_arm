@@ -1,24 +1,27 @@
-"""Fail-closed validation for scheduled PiPER/Tesseract joint paths."""
+"""Fail-closed validation for scheduled planner-produced PiPER paths."""
 
 import math
 
 import numpy as np
 
 
-TIMING_POLICY_VERSION = 'tesseract_stream_v3'
+EXECUTION_TIMING_POLICY_VERSION = 'timed_stream_v1'
+LEGACY_TESSERACT_TIMING_POLICY_VERSION = 'tesseract_stream_v3'
+# Source-compatible legacy name. New production code uses the neutral value.
+TIMING_POLICY_VERSION = LEGACY_TESSERACT_TIMING_POLICY_VERSION
 MOVEJ_NOMINAL_VELOCITY_RAD_S = np.asarray(
     [5.0, 5.0, 5.0, 5.0, 5.0, 3.0], dtype=float)
 JOINT_NAMES = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
 
 
-def validate_tesseract_point(
+def validate_planner_point(
         positions,
         velocities,
         accelerations,
         time_from_start_s,
         previous_time_s=None,
 ):
-    """Validate and normalize one complete six-joint Tesseract sample."""
+    """Validate and normalize one complete six-joint planner sample."""
     vectors = []
     for label, values in (
             ('positions', positions),
@@ -36,7 +39,7 @@ def validate_tesseract_point(
     return vectors[0], vectors[1], vectors[2], when
 
 
-def validate_timed_tesseract_path(
+def validate_timed_execution_path(
         positions,
         velocities,
         accelerations,
@@ -53,7 +56,7 @@ def validate_timed_tesseract_path(
     The PiPER boundary still consumes position targets plus one aggregate
     speed percentage, so qdot/qddot remain zero transport placeholders.  In
     this policy the timestamps are an execution schedule and every adjacent
-    position is a Tesseract-path sample.  Direct configured-home transactions
+    position is a collision-qualified planner sample. Direct configured-home transactions
     remain a separately scoped two-point exception in the caller.
     """
     q = np.asarray(positions, dtype=float)
@@ -129,4 +132,6 @@ def validate_timed_tesseract_path(
 
 # Kept as a source-compatible import for downstream packages while the policy
 # string prevents an old endpoint-only proposal from entering this executor.
-validate_sdk_movej_waypoint_path = validate_timed_tesseract_path
+validate_sdk_movej_waypoint_path = validate_timed_execution_path
+validate_tesseract_point = validate_planner_point
+validate_timed_tesseract_path = validate_timed_execution_path

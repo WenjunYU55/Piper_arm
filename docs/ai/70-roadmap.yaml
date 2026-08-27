@@ -438,3 +438,8 @@ post_enable_startup_requalification_2026_08_25:
   status: software_complete_physical_pending
   completed: [new-after-enable sample boundary, two-second joint stability proof, zero controller-fault proof, all-six motor proof, pre-motion disable on intact-control failure, full mobile software regressions]
   next_execution_order: [explicit five-percent STARTUP_WRIST-only smoke, inspect enable-to-command timing and status, separate ROUGH_HOME then cancel PRE_HOME ROUGH_HOME STORAGE_WRIST disable smoke, only then full E2E]
+
+curobo_backend_qualification_2026_08_27:
+  status: generic_architecture_complete_gpu_and_collision_qualification_pending
+  completed: [generic ROS and domain contract, frozen per-mission selection, GUI next-mission selector, Tesseract compatibility adapter, isolated real-API cuRobo worker, shared execution and safety path, pure tests, opt-in GPU test harness]
+  next_execution_order: [install CUDA toolkit/compiler without changing ROS, install pinned cuRobo 0.7.8 in explicit environment, run command-free GPU integration suite, review collision model differences and asset hashes, qualify model provenance, perform separate explicitly authorized staged robot test]

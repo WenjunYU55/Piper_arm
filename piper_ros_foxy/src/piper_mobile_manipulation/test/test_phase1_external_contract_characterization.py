@@ -30,7 +30,7 @@ from piper_mobile_manipulation.target_scan_mission_node import (
 
 INTERFACE_HASHES = {
     'piper_mobile_manipulation/action/RunTargetScan.action':
-        '86fd648c620244caf390ecfb59f34ece03479ee16e1141276cd6199777abc7cd',
+        'c54319336ada0442c789fc52e99124d52eeee3fae758dfad571efa197f67c565',
     'piper_mobile_manipulation/msg/CameraTimestampHealth.msg':
         '7fe0ef05befe75084473cc6b33aca12571cdf0000d7f7cf1f82d95cbcd7362e2',
     'piper_mobile_manipulation/msg/Detection2D.msg':
@@ -43,12 +43,18 @@ INTERFACE_HASHES = {
         'ba48588e4d2767eff12f1491d85de9b0a151a968d1171c29c0f0fabdb03869cf',
     'piper_mobile_manipulation/msg/MeshJobStatus.msg':
         'de8c524f064ff6d004b1822b2dc02bd3f5b9552addd233d910f2f6b7588eb502',
+    'piper_mobile_manipulation/msg/MotionPlan.msg':
+        '09ddcf657abda42c1067afb414f6f7ba29278b5dc25748b2ffb1e7c097ce058d',
+    'piper_mobile_manipulation/msg/MotionPlanStatus.msg':
+        'f2bed83e293ccc3f8f3a94ceb4e1b7f281956d1da1af37dc8cb819a317dd4559',
     'piper_mobile_manipulation/msg/ObstacleInstance3D.msg':
         'e52aeea80788f434511ce60217a88726b03ae884b343d70da7807ff411093f5c',
     'piper_mobile_manipulation/msg/ObstacleInstance3DArray.msg':
         'b23ec64535088309b88301865feb6b88b5d46c321bba5e69dfa572784edd4b6f',
     'piper_mobile_manipulation/msg/OccluderAction.msg':
         '79f2676c522d0230222110a465481de8e4f7e3002c38d8991b9fadd7a5639f75',
+    'piper_mobile_manipulation/msg/PlannerReadiness.msg':
+        '5303cc1e1628d643901520579a8ebdd75e739a6099b5b5b896134e0f228d90b7',
     'piper_mobile_manipulation/msg/ScanExecutionPlan.msg':
         '968ce6790c642ffb0f2b43c5ccd81dae94cc60810d13d80c806575a63b067c9b',
     'piper_mobile_manipulation/msg/ScanExecutionStatus.msg':
@@ -72,7 +78,7 @@ INTERFACE_HASHES = {
     'piper_mobile_manipulation/srv/ApproveScanExecution.srv':
         'd3c973619eb5d621a0192d6698889aa6b3dd263cbce35b3601172c64e2cb06b1',
     'piper_mobile_manipulation/srv/AuthorizeMission.srv':
-        '6f54705cb05616b67f1486a4348a0413978ac9d89a021c256d52462b3f5f54eb',
+        '8ce2eeefc0d59a23bcbd74162dc650652ac22f7061399451c71238f772ec542e',
     'piper_mobile_manipulation/srv/ExecuteHomeStage.srv':
         '452d6569fd0f240d729b9cb1147aa37a8407b1b842dc1e2b0b0106cc0e85ac83',
     'piper_mobile_manipulation/srv/GetMeshJobResult.srv':
@@ -83,6 +89,8 @@ INTERFACE_HASHES = {
         'f4ca21ad6af0c6ba8e796776e7c2b2918dabee42edf291392383457f5e8e6e82',
     'piper_mobile_manipulation/srv/ReportTrackedRobotHomed.srv':
         '20bbd39d2d8f442cd891b318c0a0a1cd4691a9c5378ed66d19e31bb71149ad84',
+    'piper_mobile_manipulation/srv/RequestMotionPlan.srv':
+        '886b8a2299d02745c4aa39e101614ab56dcc12684365f754fc5acfa2cf116906',
     'piper_mobile_manipulation/srv/RequestTesseractPlan.srv':
         'ab62ebcb0038e7b6acd753ffbf5be169e54516a36b70b928c7b5139ec04218d2',
     'piper_msgs/msg/PiperMotionLimits.msg':
@@ -156,7 +164,7 @@ def test_primary_public_ros_names_remain_present_at_their_owners():
             '/piper/scan_execution_status',
             '/piper/scan_capture_status',
             '/piper/scan_session_history',
-            '/piper/tesseract_readiness',
+            '/piper/planner_readiness',
             '/piper/camera_timestamp_health',
             '/joint_states_single',
             '/arm_status'):

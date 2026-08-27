@@ -831,3 +831,14 @@ post_enable_startup_proof_contract_2026_08_25:
   required_evidence: [joint and arm-status samples received after enable, six finite positions, maximum 0.005-rad drift across two seconds, err_code zero, no angle-limit or communication flags, valid all-six-enabled motor feedback, no motor faults or watchdog reason]
   failure: With intact authority disable before reporting retryable CONTROL_UNTRUSTWORTHY; with motor-authority loss issue no command and use watchdog six-disabled proof.
   non_effects: [direct-home relaxation allowance, command limits, J6 winding map, endpoint tolerances, STARTUP_WRIST-before-ROUGH_HOME order]
+
+generic_motion_planner_contract_2026_08_27:
+  configuration: planner_backend is a frozen typed value with exactly tesseract or curobo; default tesseract; invalid persisted or requested values fail closed.
+  generic_services: [/motion_planner/request_plan, /motion_planner/request_acquisition_plan, /motion_planner/request_return_home_plan, /motion_planner/request_startup_home_plan]
+  generic_topics: [/piper/motion_plan, /piper/planner_readiness, /piper/motion_plan_status, /piper/view_generation, /piper/motion_plan_provenance]
+  transport: MotionPlan carries identity, request and trajectory hashes, backend/version, plan kind, collision qualification and clearance, execution timing policy, target/view evidence, JointTrajectory data, bootstrap evidence, rejection information and comparable metrics.
+  execution_boundary: MotionPlan -> backend-neutral normalization and validation -> ScanExecutionPlan -> PlanAuthorizer -> existing executor and TrajectoryRunner.
+  timing: TIMED_STREAM with timed_stream_v1 is authoritative; TESSERACT_STREAM and tesseract_stream_v3 remain compatibility input aliases with unchanged numeric validation.
+  supported_plan_kinds: {tesseract: [MULTIVIEW_SCAN, ROUGH_ACQUISITION, RETURN_HOME, current legacy kinds], curobo: [MULTIVIEW_SCAN, ROUGH_ACQUISITION within canonical joint limits, RETURN_HOME]}
+  unsupported_curobo: [OCCLUSION_PROBE, OCCLUDER_PICK_PLACE, OCCLUDER_PUSH, folded bootstrap outside canonical joint limits]
+  compatibility: Legacy RequestTesseractPlan, TesseractPlan, TesseractReadiness and /tesseract_plan_bridge endpoints are published only for Tesseract and are not the production shared boundary.

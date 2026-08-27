@@ -47,6 +47,19 @@ def home_override():
 
 def generate_launch_description():
     root = os.environ.get('PIPER_ARM_ROOT', '/home/prl/Piper_arm')
+    planner_backend = os.environ.get(
+        'PIPER_PLANNER_BACKEND', 'tesseract').strip().lower()
+    if planner_backend not in ('tesseract', 'curobo'):
+        raise RuntimeError(
+            'PIPER_PLANNER_BACKEND must be tesseract or curobo')
+    planner_spool = (
+        os.environ.get('PIPER_TESSERACT_SPOOL', os.path.join(
+            os.environ.get('XDG_RUNTIME_DIR', '/tmp'),
+            'piper_tesseract_plans'))
+        if planner_backend == 'tesseract'
+        else os.environ.get('PIPER_CUROBO_SPOOL', os.path.join(
+            os.environ.get('XDG_RUNTIME_DIR', '/tmp'),
+            'piper_curobo_plans')))
     enable_motion = DeclareLaunchArgument(
         'enable_real_arm_motion',
         default_value='false',
@@ -109,17 +122,16 @@ def generate_launch_description():
     selected_home = home_override()
     bridge = Node(
         package='piper_tesseract_foxy',
-        executable='tesseract_plan_bridge',
-        name='tesseract_plan_bridge',
+        executable='motion_planner_bridge',
+        name='motion_planner',
         output='screen',
         parameters=[
             os.path.join(
                 get_package_share_directory('piper_tesseract_foxy'),
                 'config', 'tesseract_bridge_params.yaml'),
             {
-                'spool_root': os.path.join(
-                    os.environ.get('XDG_RUNTIME_DIR', '/tmp'),
-                    'piper_tesseract_plans'),
+                'spool_root': planner_spool,
+                'planner_backend': planner_backend,
                 'hand_eye_calibration_path': os.environ.get(
                     'PIPER_HAND_EYE_CALIBRATION', os.path.join(
                         root,

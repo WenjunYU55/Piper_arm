@@ -17,6 +17,7 @@ class MissionUiPhase(str, Enum):
 class MissionRequest:
     coordinates: Tuple[float, float, float]
     target_label: str
+    planner_backend: str = 'tesseract'
 
 
 @dataclass(frozen=True)
@@ -74,7 +75,8 @@ class MissionUiState:
 
 
 def validate_mission_request(
-        coordinates: Sequence[object], target_label: object) -> MissionRequest:
+        coordinates: Sequence[object], target_label: object,
+        planner_backend: object = 'tesseract') -> MissionRequest:
     try:
         values = tuple(float(value) for value in coordinates)
     except (TypeError, ValueError):
@@ -82,7 +84,10 @@ def validate_mission_request(
     if len(values) != 3 or not all(math.isfinite(value) for value in values):
         raise ValueError("rough target XYZ must contain three finite values")
     label = str(target_label).strip() or "green cube"
-    return MissionRequest(values, label)
+    backend = str(planner_backend).strip().lower()
+    if backend not in ('tesseract', 'curobo'):
+        raise ValueError('unsupported planner backend: %s' % planner_backend)
+    return MissionRequest(values, label, backend)
 
 
 class MissionViewModel:
@@ -100,10 +105,12 @@ class MissionViewModel:
     def state(self):
         return self._state
 
-    def begin_submission(self, coordinates, target_label):
+    def begin_submission(
+            self, coordinates, target_label, planner_backend='tesseract'):
         if not self._state.can_start:
             raise RuntimeError("an automatic mission is already starting or active")
-        request = validate_mission_request(coordinates, target_label)
+        request = validate_mission_request(
+            coordinates, target_label, planner_backend)
         self._state = replace(
             self._state,
             phase=MissionUiPhase.SUBMITTING,

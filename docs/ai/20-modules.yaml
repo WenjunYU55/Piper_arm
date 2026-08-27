@@ -473,3 +473,13 @@ large_asset_ownership_2026_08_27:
   owner_module: source subsystem named in docs/architecture/asset_policy.md
   allowed_edit_paths: [docs/architecture/asset_policy.md, piper_ros_foxy/src/piper_description/meshes, piper_ros_foxy/src/piper_mobile_manipulation/config, L515_camera/calibration]
   must_not_move_without: [URDF resource lookup, collision mesh manifests, capability-map hashes and convergence, calibration provenance and consumers]
+
+motion_planner_backend_ownership_2026_08_27:
+  owner_module: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/planning/backend.py
+  generic_ros_boundary: [msg/MotionPlan.msg, msg/PlannerReadiness.msg, msg/MotionPlanStatus.msg, srv/RequestMotionPlan.srv]
+  backend_router: piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/bridge_node.py
+  tesseract_backend: [motion_planning/tesseract, piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/worker.py]
+  curobo_backend: motion_planning/curobo
+  gui_selection: [piper_gui/planner_backend.py, piper_gui/ros_node.py, piper_gui/view_model.py, piper_gui_native.py]
+  allowed_edit_paths: [piper_mobile_manipulation/planning/backend.py, piper_tesseract_foxy, motion_planning/tesseract, motion_planning/curobo, piper_gui, planner_backend.yaml, planner ROS messages and services, planner tests, docs/ai]
+  must_not_move_without: [mission backend freeze, ProcessSupervisor generation ownership, request and world freshness, collision qualification, MotionPlan to ScanExecutionPlan normalization, PlanAuthorizer, runtime safety gates, legacy Tesseract compatibility]

@@ -16,6 +16,9 @@ def generate_launch_description():
                 'Next-mission support floor. saved reads the GUI selection.'),
         ),
         DeclareLaunchArgument('floor_profile_path', default_value=''),
+        DeclareLaunchArgument(
+            'planner_backend', default_value='tesseract',
+            choices=['tesseract', 'curobo']),
         DeclareLaunchArgument('enable_real_arm_motion', default_value='false'),
         DeclareLaunchArgument(
             'motion_speed_profile_qualified', default_value='false'),
@@ -60,6 +63,7 @@ def generate_launch_description():
                 'floor_profile': LaunchConfiguration('floor_profile'),
                 'floor_profile_path': LaunchConfiguration(
                     'floor_profile_path'),
+                'planner_backend': LaunchConfiguration('planner_backend'),
                 'enable_real_arm_motion': ParameterValue(
                     LaunchConfiguration('enable_real_arm_motion'), value_type=bool),
                 'motion_speed_profile_qualified': ParameterValue(

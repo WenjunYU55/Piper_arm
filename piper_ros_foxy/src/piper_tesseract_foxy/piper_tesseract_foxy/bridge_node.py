@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Command-free Foxy bridge for the isolated Tesseract plan worker."""
+"""Command-free backend router for the generic planner ROS boundary."""
 
 import hashlib
 import json
@@ -21,7 +21,10 @@ from piper_msgs.msg import PiperMotionLimits
 
 from piper_mobile_manipulation.msg import (
     CameraTimestampHealth,
+    MotionPlan,
+    MotionPlanStatus,
     ObstacleInstance3DArray,
+    PlannerReadiness,
     TesseractPlan,
     TesseractReadiness,
     TesseractPlanStatus,
@@ -35,6 +38,10 @@ from piper_mobile_manipulation.execution.motion import (
 from piper_mobile_manipulation.execution.modes import (
     commanded_speed_percent,
 )
+from piper_mobile_manipulation.execution.validation import (
+    EXECUTION_TIMING_POLICY_VERSION,
+    LEGACY_TESSERACT_TIMING_POLICY_VERSION,
+)
 from piper_mobile_manipulation.planning.generation import (
     parse_view_generation,
 )
@@ -45,14 +52,17 @@ from piper_mobile_manipulation.motion_limit_stability import MotionLimitStabilit
 from piper_mobile_manipulation.ray_mission_diagnostics import (
     add_bridge_request,
     add_request_rejection,
-    add_tesseract_response,
+    add_planner_response,
     RayMissionDiagnosticsStore,
 )
 from piper_mobile_manipulation.planning.ray_culls import (
     hard_cull_snapshot,
     stable_revision,
 )
-from piper_mobile_manipulation.srv import RequestTesseractPlan
+from piper_mobile_manipulation.srv import (
+    RequestMotionPlan,
+    RequestTesseractPlan,
+)
 
 from piper_tesseract_foxy.protocol.contract import (
     attach_digest,
@@ -89,11 +99,11 @@ from piper_tesseract_foxy.candidate_selection import (  # noqa: F401
 )
 
 
-class TesseractPlanBridge(Node):
-    """Freezes live inputs and publishes validated, motion-free proposals."""
+class MotionPlannerBridge(Node):
+    """Route one frozen planner backend into generic, command-free plans."""
 
     def __init__(self):
-        super().__init__('tesseract_plan_bridge')
+        super().__init__('motion_planner')
         defaults = {
             'reachable_viewpoints_topic': '/piper/reachable_scan_viewpoints',
             'reachable_acquisition_viewpoints_topic':
@@ -104,12 +114,21 @@ class TesseractPlanBridge(Node):
             'camera_timestamp_health_topic': '/piper/camera_timestamp_health',
             'obstacle_topic': '/piper/obstacle_instances_3d',
             'plan_topic': '/piper/tesseract_plan',
+            'motion_plan_topic': '/piper/motion_plan',
             'view_generation_receipt_topic':
+                '/piper/view_generation',
+            'legacy_view_generation_receipt_topic':
                 '/piper/tesseract_view_generation',
             'ray_hard_culls_topic': '/piper/ray_hard_culls',
-            'plan_provenance_topic': '/piper/tesseract_plan_provenance',
+            'plan_provenance_topic': '/piper/motion_plan_provenance',
+            'legacy_plan_provenance_topic':
+                '/piper/tesseract_plan_provenance',
             'status_topic': '/piper/tesseract_plan_status',
+            'motion_plan_status_topic': '/piper/motion_plan_status',
             'readiness_topic': '/piper/tesseract_readiness',
+            'planner_readiness_topic': '/piper/planner_readiness',
+            'planner_backend': os.environ.get(
+                'PIPER_PLANNER_BACKEND', 'tesseract'),
             'spool_root': '/tmp/piper_tesseract_plans',
             'hand_eye_calibration_path': '',
             'joint_bounds_path': '',
@@ -156,6 +175,13 @@ class TesseractPlanBridge(Node):
         }
         for name, value in defaults.items():
             self.declare_parameter(name, value)
+        self.planner_backend = str(
+            self.get_parameter('planner_backend').value).strip().lower()
+        if self.planner_backend not in ('tesseract', 'curobo'):
+            raise RuntimeError('unsupported planner_backend: %s'
+                               % self.planner_backend)
+        self.backend_label = (
+            'Tesseract' if self.planner_backend == 'tesseract' else 'cuRobo')
 
         required = [
             'hand_eye_calibration_path', 'joint_bounds_path', 'robot_xacro_path',
@@ -163,7 +189,8 @@ class TesseractPlanBridge(Node):
         ]
         missing = [name for name in required if not self.parameter_path(name).is_file()]
         if missing:
-            raise RuntimeError('missing Tesseract bridge assets: ' + ', '.join(missing))
+            raise RuntimeError(
+                'missing motion-planner bridge assets: ' + ', '.join(missing))
 
         self.spool = Spool(self.get_parameter('spool_root').value)
         self.hand_eye = load_accepted_hand_eye(
@@ -198,6 +225,7 @@ class TesseractPlanBridge(Node):
         self.state = 'IDLE'
         self.reason = 'waiting for an explicit plan request'
         self.worker_generation_id = ''
+        self.worker_backend_version = ''
 
         self.plan_qos = QoSProfile(
             depth=1,
@@ -206,9 +234,16 @@ class TesseractPlanBridge(Node):
         )
         self.plan_pub = self.create_publisher(
             TesseractPlan, self.get_parameter('plan_topic').value, self.plan_qos)
+        self.motion_plan_pub = self.create_publisher(
+            MotionPlan, self.get_parameter('motion_plan_topic').value,
+            self.plan_qos)
         self.view_generation_pub = self.create_publisher(
             String,
             self.get_parameter('view_generation_receipt_topic').value,
+            self.plan_qos)
+        self.legacy_view_generation_pub = self.create_publisher(
+            String,
+            self.get_parameter('legacy_view_generation_receipt_topic').value,
             self.plan_qos)
         self.hard_cull_pub = self.create_publisher(
             String, self.get_parameter('ray_hard_culls_topic').value,
@@ -220,11 +255,31 @@ class TesseractPlanBridge(Node):
                 reliability=ReliabilityPolicy.RELIABLE,
                 durability=DurabilityPolicy.VOLATILE,
             ))
+        self.legacy_plan_provenance_pub = self.create_publisher(
+            String,
+            self.get_parameter('legacy_plan_provenance_topic').value,
+            QoSProfile(
+                depth=10,
+                reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.VOLATILE,
+            ))
         self.status_pub = self.create_publisher(
             TesseractPlanStatus, self.get_parameter('status_topic').value, 10)
+        self.motion_plan_status_pub = self.create_publisher(
+            MotionPlanStatus,
+            self.get_parameter('motion_plan_status_topic').value, 10)
         self.readiness_pub = self.create_publisher(
             TesseractReadiness,
             self.get_parameter('readiness_topic').value,
+            QoSProfile(
+                depth=1,
+                reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.VOLATILE,
+            ),
+        )
+        self.planner_readiness_pub = self.create_publisher(
+            PlannerReadiness,
+            self.get_parameter('planner_readiness_topic').value,
             QoSProfile(
                 depth=1,
                 reliability=ReliabilityPolicy.RELIABLE,
@@ -271,21 +326,37 @@ class TesseractPlanBridge(Node):
             10,
         )
         self.request_service = self.create_service(
-            RequestTesseractPlan, '~/request_plan', self.request_plan_cb)
+            RequestTesseractPlan, '/tesseract_plan_bridge/request_plan',
+            self.request_plan_cb)
         self.request_acquisition_service = self.create_service(
-            RequestTesseractPlan, '~/request_acquisition_plan',
+            RequestTesseractPlan,
+            '/tesseract_plan_bridge/request_acquisition_plan',
             self.request_acquisition_plan_cb)
         self.request_return_home_service = self.create_service(
-            RequestTesseractPlan, '~/request_return_home_plan',
+            RequestTesseractPlan,
+            '/tesseract_plan_bridge/request_return_home_plan',
             self.request_return_home_plan_cb)
         self.request_startup_home_service = self.create_service(
-            RequestTesseractPlan, '~/request_startup_home_plan',
+            RequestTesseractPlan,
+            '/tesseract_plan_bridge/request_startup_home_plan',
+            self.request_startup_home_plan_cb)
+        self.motion_request_service = self.create_service(
+            RequestMotionPlan, '/motion_planner/request_plan',
+            self.request_plan_cb)
+        self.motion_request_acquisition_service = self.create_service(
+            RequestMotionPlan, '/motion_planner/request_acquisition_plan',
+            self.request_acquisition_plan_cb)
+        self.motion_request_return_home_service = self.create_service(
+            RequestMotionPlan, '/motion_planner/request_return_home_plan',
+            self.request_return_home_plan_cb)
+        self.motion_request_startup_home_service = self.create_service(
+            RequestMotionPlan, '/motion_planner/request_startup_home_plan',
             self.request_startup_home_plan_cb)
         self.poll_timer = self.create_timer(0.20, self.poll)
         self.publish_status()
         self.publish_readiness()
         self.get_logger().warn(
-            'Tesseract bridge is command-free: it has no /joint_ctrl_single publisher '
+            'Motion-planner bridge is command-free: it has no /joint_ctrl_single publisher '
             'and no motor-enable client. Ignored saved bounds: %s'
             % (','.join(self.ignored_bounds) or 'none'))
 
@@ -346,6 +417,13 @@ class TesseractPlanBridge(Node):
                     'view_generation': generation.to_dict(),
                 }, sort_keys=True)
                 self.view_generation_pub.publish(receipt)
+                legacy_publisher = getattr(
+                    self, 'legacy_view_generation_pub', None)
+                if (
+                        getattr(self, 'planner_backend', 'tesseract') ==
+                        'tesseract'
+                        and legacy_publisher is not None):
+                    legacy_publisher.publish(receipt)
                 if self.param_bool('debug'):
                     self.get_logger().info(
                         'cached view generation session=%s accepted=%d '
@@ -374,11 +452,15 @@ class TesseractPlanBridge(Node):
         self.mark('obstacles')
 
     def worker_health_reasons(self):
+        planner_backend = getattr(self, 'planner_backend', 'tesseract')
+        backend_label = getattr(self, 'backend_label', 'Tesseract')
         try:
             health = self.spool.read_health()
         except (ContractError, FileNotFoundError, OSError, TypeError, ValueError):
             self.worker_generation_id = ''
-            return ['Tesseract worker heartbeat is missing or invalid']
+            self.worker_backend_version = ''
+            return ['%s worker heartbeat is missing or invalid'
+                    % backend_label]
         generation = health.get('generation_id')
         written_at_ns = health.get('written_at_ns')
         if (
@@ -387,27 +469,37 @@ class TesseractPlanBridge(Node):
                 or any(character not in '0123456789abcdef'
                        for character in generation)):
             self.worker_generation_id = ''
-            return ['Tesseract worker generation ID is invalid']
+            return ['%s worker generation ID is invalid' % backend_label]
         try:
             age_sec = (time.time_ns() - int(written_at_ns)) / 1e9
         except (TypeError, ValueError):
             self.worker_generation_id = ''
-            return ['Tesseract worker heartbeat timestamp is invalid']
+            return ['%s worker heartbeat timestamp is invalid'
+                    % backend_label]
         timeout = float(
             self.get_parameter('worker_heartbeat_timeout_sec').value)
         if age_sec < -1.0 or age_sec > timeout:
             self.worker_generation_id = generation
-            return ['Tesseract worker heartbeat is stale']
+            return ['%s worker heartbeat is stale' % backend_label]
         if (
                 health.get('schema_version') != SCHEMA_VERSION
-                or health.get('backend') != 'tesseract'
+                or health.get('backend') != planner_backend
                 or health.get('worker_ready') is not True):
             self.worker_generation_id = generation
             detail = str(health.get('backend_error', '')).strip()
             return [
-                'Tesseract worker is not ready'
+                '%s worker is not ready' % backend_label
                 + (': ' + detail if detail else '')
             ]
+        self.worker_backend_version = str(
+            health.get('backend_version', ''))
+        if (
+                planner_backend == 'curobo'
+                and health.get('collision_model_qualified') is not True):
+            self.worker_generation_id = generation
+            return [
+                'cuRobo collision model is not hardware-qualified; '
+                'planning remains command-free and fail-closed']
         expected_hashes = {
             'srdf_sha256': sha256_file(self.parameter_path('srdf_path')),
             'collision_manifest_sha256': sha256_file(
@@ -420,7 +512,8 @@ class TesseractPlanBridge(Node):
         if mismatches:
             self.worker_generation_id = generation
             return [
-                'Tesseract worker collision profile does not match bridge: '
+                '%s worker collision profile does not match bridge: '
+                % backend_label
                 + ', '.join(mismatches)
             ]
         self.worker_generation_id = generation
@@ -568,7 +661,7 @@ class TesseractPlanBridge(Node):
         if self.pending and not request.force_refresh:
             response.accepted = False
             response.request_id = next(iter(self.pending))
-            response.message = 'a Tesseract request is already pending'
+            response.message = 'a motion-planner request is already pending'
             return response
         reasons = self.snapshot_reasons(
             plan_kind, startup_home=startup_home)
@@ -605,7 +698,7 @@ class TesseractPlanBridge(Node):
         }
         response.accepted = True
         response.request_id = payload['request_id']
-        response.message = 'command-free Tesseract planning request queued'
+        response.message = 'command-free motion-planning request queued'
         self.set_status('PLANNING', response.message, payload['request_id'])
         return response
 
@@ -890,6 +983,7 @@ class TesseractPlanBridge(Node):
             json.dumps(identity, sort_keys=True).encode('utf-8')).hexdigest()[:32]
         payload = {
             'schema_version': SCHEMA_VERSION,
+            'planner_backend': self.planner_backend,
             'plan_kind': plan_kind,
             'target_provenance': provenance,
             'request_id': request_id,
@@ -967,8 +1061,15 @@ class TesseractPlanBridge(Node):
                 'source': str(self.latest_motion_limits.source),
             },
             'planning': {
-                'planner': 'RRTConnect',
-                'pipeline': 'OMPL_ISP',
+                'planner': (
+                    'RRTConnect'
+                    if getattr(
+                        self, 'planner_backend', 'tesseract') == 'tesseract'
+                    else 'MotionGen'),
+                'pipeline': (
+                    'OMPL_ISP'
+                    if self.planner_backend == 'tesseract'
+                    else 'CUROBO_V1'),
                 'deterministic_seed': int(
                     self.get_parameter('deterministic_seed').value),
                 'roll_samples_rad': [float(value) for value in self.get_parameter(
@@ -1049,7 +1150,7 @@ class TesseractPlanBridge(Node):
             self._record_ray_response(payload)
         except Exception as error:  # Diagnostics must never reject a response.
             self.warn_ray_diagnostics(
-                'Could not record Tesseract ray diagnostics: %s' % error)
+                'Could not record planner ray diagnostics: %s' % error)
 
     def _record_ray_response(self, payload):
         request_id = str(payload.get('request_id', ''))
@@ -1059,7 +1160,7 @@ class TesseractPlanBridge(Node):
         diagnostics = state.get('ray_diagnostics')
         if not isinstance(diagnostics, dict):
             return
-        diagnostics = add_tesseract_response(
+        diagnostics = add_planner_response(
             diagnostics, payload, state.get('request'))
         state['ray_diagnostics'] = diagnostics
         state['ray_response_recorded'] = True
@@ -1182,7 +1283,7 @@ class TesseractPlanBridge(Node):
         if not available:
             raise ContractError(
                 'RAY_FRONTIER_EXHAUSTED: all %d prequalified rays were '
-                'rejected by Tesseract for accepted-view generation %d'
+                'rejected by the motion planner for accepted-view generation %d'
                 % (len(candidates), int(accepted_views)))
         self.get_logger().info(
             'mission ray pool session=%s accepted=%d: pool=%d, '
@@ -1242,16 +1343,16 @@ class TesseractPlanBridge(Node):
             })
             culls = [{
                 'ray_id': int(ray_id),
-                'stage': 'tesseract_endpoint',
+                'stage': 'planner_endpoint',
                 'reason_code': 'PERMANENT_ENDPOINT_INFEASIBLE',
                 'reason': (
-                    'retired after permanent Tesseract endpoint '
+                    'retired after permanent planner endpoint '
                     'infeasibility'),
                 'evidence': {'worker_reported_permanent': True},
             } for ray_id in sorted(self.retired_ray_ids)]
             message = String()
             message.data = json.dumps(hard_cull_snapshot(
-                population, 'tesseract_endpoint', revision, generation,
+                population, 'planner_endpoint', revision, generation,
                 culls), sort_keys=True)
             self.hard_cull_pub.publish(message)
         except (KeyError, TypeError, ValueError) as error:
@@ -1293,7 +1394,7 @@ class TesseractPlanBridge(Node):
         exhausted.update(newly_exhausted)
         if newly_exhausted:
             self.get_logger().info(
-                'retired Tesseract-infeasible rays for session=%s '
+                'retired planner-infeasible rays for session=%s '
                 'accepted=%d: %s'
                 % (generation[0], generation[1], newly_exhausted))
         return newly_exhausted
@@ -1320,10 +1421,11 @@ class TesseractPlanBridge(Node):
             elif self.now() - state['started'] > timeout:
                 self.record_ray_rejection(
                     request_id, 'PLANNER_TIMEOUT',
-                    'Tesseract response timed out')
+                    '%s response timed out' % self.backend_label)
                 self.pending.pop(request_id, None)
                 self.publish_rejection(
-                    request_id, 'PLANNER_TIMEOUT', 'Tesseract response timed out')
+                    request_id, 'PLANNER_TIMEOUT',
+                    '%s response timed out' % self.backend_label)
         self.publish_status()
         self.publish_readiness()
 
@@ -1346,11 +1448,17 @@ class TesseractPlanBridge(Node):
             codes = payload.get('rejection_codes') or ['PLANNING_FAILED']
             exhausted_rays = self.remember_tesseract_exhausted_rays(payload)
             if exhausted_rays:
+                exhausted_marker = (
+                    'TESSERACT_EXHAUSTED'
+                    if getattr(
+                        self, 'planner_backend', 'tesseract') == 'tesseract'
+                    else 'PLANNER_EXHAUSTED')
                 self.publish_rejection(
                     payload.get('request_id', ''),
                     'RAY_SHORTLIST_EXHAUSTED',
-                    'TESSERACT_EXHAUSTED: %s; retired attempted ray IDs %s'
+                    '%s: %s; retired attempted ray IDs %s'
                     % (
+                        exhausted_marker,
                         str(payload.get('diagnostic', 'planning failed')),
                         exhausted_rays),
                     additional_codes=codes)
@@ -1359,7 +1467,7 @@ class TesseractPlanBridge(Node):
                 payload.get('request_id', ''), str(codes[0]),
                 str(payload.get('diagnostic', 'planning failed')))
             return
-        msg = TesseractPlan()
+        msg = MotionPlan()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'base_link'
         msg.plan_id = str(payload['plan_id'])
@@ -1375,15 +1483,36 @@ class TesseractPlanBridge(Node):
         msg.execution_speed_percent = float(
             execution['effective_speed_percent'])
         msg.command_rate_hz = float(execution['command_rate_hz'])
-        msg.timing_policy = str(execution['timing_policy'])
+        msg.timing_policy = EXECUTION_TIMING_POLICY_VERSION
         msg.backend = str(payload['backend'])
         msg.backend_version = str(payload['backend_version'])
         msg.valid = True
         msg.dry_run = True
         msg.real_arm_motion = False
         msg.collision_model_qualified = bool(payload['collision_model_qualified'])
-        msg.reason = str(payload.get('diagnostic', 'validated Tesseract proposal'))
+        msg.reason = str(payload.get(
+            'diagnostic', 'validated motion-planner proposal'))
         msg.rejection_codes = [str(value) for value in payload.get('rejection_codes', [])]
+        diagnostics = payload.get('planning_diagnostics', {})
+        msg.planning_duration_sec = float(
+            diagnostics.get('planning_duration_sec', -1.0))
+        msg.trajectory_duration_sec = sum(
+            float(segment['points'][-1]['time_from_start_s'])
+            for segment in payload['segments'] if segment.get('points'))
+        msg.joint_space_path_length_rad = sum(
+            sum(abs(float(right) - float(left)) for left, right in zip(
+                first['positions_rad'], second['positions_rad']))
+            for segment in payload['segments']
+            for first, second in zip(
+                segment.get('points', []), segment.get('points', [])[1:]))
+        msg.candidate_viewpoints_considered = int(
+            diagnostics.get('candidate_viewpoints_considered', 0))
+        msg.candidate_viewpoints_rejected = int(
+            diagnostics.get('candidate_viewpoints_rejected', 0))
+        msg.feasible_viewpoints = int(
+            diagnostics.get('feasible_viewpoints', len(
+                payload.get('selected_viewpoints', []))))
+        msg.successful_viewpoints = len(payload.get('selected_viewpoints', []))
         center = payload['target_center_m']
         msg.target_center = Point(x=float(center[0]), y=float(center[1]), z=float(center[2]))
         for selected in payload['selected_viewpoints']:
@@ -1449,8 +1578,11 @@ class TesseractPlanBridge(Node):
                     'pass_through_maximum_radius_rad', 0.0)),
                 'pass_through_blend_reason': str(segment.get(
                     'pass_through_blend_reason', '')),
-                'sdk_execution_mode': str(segment.get(
-                    'sdk_execution_mode', 'TESSERACT_STREAM')),
+                'sdk_execution_mode': (
+                    'DIRECT_MOVEJ'
+                    if str(segment.get('sdk_execution_mode', '')).upper()
+                    == 'DIRECT_MOVEJ'
+                    else 'TIMED_STREAM'),
                 'sdk_command_anchor_count': int(segment.get(
                     'sdk_command_anchor_count', 0)),
                 'direct_movej_validation': str(segment.get(
@@ -1504,6 +1636,8 @@ class TesseractPlanBridge(Node):
             'request_id': str(payload['request_id']),
             'request_sha256': str(payload['request_sha256']),
             'plan_kind': str(payload['plan_kind']),
+            'planner_backend': str(payload['backend']),
+            'planner_backend_version': str(payload['backend_version']),
             'selected_viewpoints': [
                 {
                     key: selected[key]
@@ -1542,7 +1676,16 @@ class TesseractPlanBridge(Node):
                 'planning_diagnostics', {}),
         }, sort_keys=True)
         self.plan_provenance_pub.publish(provenance)
-        self.plan_pub.publish(msg)
+        legacy_provenance_pub = getattr(
+            self, 'legacy_plan_provenance_pub', None)
+        if self.planner_backend == 'tesseract' and (
+                legacy_provenance_pub is not None):
+            legacy_provenance_pub.publish(provenance)
+        motion_plan_pub = getattr(self, 'motion_plan_pub', None)
+        if motion_plan_pub is not None:
+            motion_plan_pub.publish(msg)
+        if self.planner_backend == 'tesseract':
+            self.plan_pub.publish(self.legacy_plan(msg))
         if self.param_bool('debug') and payload['selected_viewpoints']:
             selected = payload['selected_viewpoints'][0]
             self.get_logger().info(
@@ -1562,7 +1705,7 @@ class TesseractPlanBridge(Node):
     def publish_rejection(
             self, request_id, code, reason, additional_codes=None):
         self.record_ray_rejection(request_id, code, reason)
-        msg = TesseractPlan()
+        msg = MotionPlan()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'base_link'
         # Rejections are plans too for correlation purposes. Preserve the
@@ -1583,7 +1726,16 @@ class TesseractPlanBridge(Node):
             str(value) for value in (additional_codes or [])
             if str(value) != str(code)
         ]
-        self.plan_pub.publish(msg)
+        msg.backend = self.planner_backend
+        msg.backend_version = ''
+        msg.planning_duration_sec = -1.0
+        msg.trajectory_duration_sec = -1.0
+        msg.joint_space_path_length_rad = -1.0
+        motion_plan_pub = getattr(self, 'motion_plan_pub', None)
+        if motion_plan_pub is not None:
+            motion_plan_pub.publish(msg)
+        if self.planner_backend == 'tesseract':
+            self.plan_pub.publish(self.legacy_plan(msg))
         self.set_status('REJECTED', msg.reason, request_id)
 
     def set_status(self, state, reason, request_id=''):
@@ -1602,7 +1754,22 @@ class TesseractPlanBridge(Node):
         msg.real_arm_motion = False
         msg.pending_requests = self.spool.pending('requests') + self.spool.pending('processing')
         msg.pending_responses = self.spool.pending('responses')
-        self.status_pub.publish(msg)
+        if self.planner_backend == 'tesseract':
+            self.status_pub.publish(msg)
+        generic = MotionPlanStatus()
+        generic.header = msg.header
+        generic.backend = self.planner_backend
+        generic.backend_version = self.worker_backend_version
+        generic.request_id = msg.request_id
+        generic.state = msg.state
+        generic.reason = msg.reason
+        generic.dry_run = msg.dry_run
+        generic.real_arm_motion = msg.real_arm_motion
+        generic.pending_requests = msg.pending_requests
+        generic.pending_responses = msg.pending_responses
+        publisher = getattr(self, 'motion_plan_status_pub', None)
+        if publisher is not None:
+            publisher.publish(generic)
 
     def publish_readiness(self):
         worker_blockers = self.worker_health_reasons()
@@ -1636,15 +1803,65 @@ class TesseractPlanBridge(Node):
         msg.acquisition_ready = not acquisition_blockers
         msg.multiview_ready = not multiview_blockers
         msg.manipulation_ready = not manipulation_blockers
-        self.readiness_pub.publish(msg)
+        if self.planner_backend == 'tesseract':
+            self.readiness_pub.publish(msg)
+        generic = PlannerReadiness()
+        generic.header = msg.header
+        generic.backend = self.planner_backend
+        generic.backend_version = self.worker_backend_version
+        generic.generation_id = msg.generation_id
+        generic.worker_ready = msg.worker_ready
+        generic.acquisition_ready = msg.acquisition_ready
+        generic.multiview_ready = msg.multiview_ready
+        generic.manipulation_ready = msg.manipulation_ready
+        generic.acquisition_blockers = msg.acquisition_blockers
+        generic.multiview_blockers = msg.multiview_blockers
+        generic.manipulation_blockers = msg.manipulation_blockers
+        publisher = getattr(self, 'planner_readiness_pub', None)
+        if publisher is not None:
+            publisher.publish(generic)
+
+    @staticmethod
+    def legacy_plan(plan):
+        """Translate the production generic plan to the legacy ROS message."""
+        legacy = TesseractPlan()
+        for field in (
+                'header', 'plan_id', 'plan_kind', 'source_request_id',
+                'request_sha256', 'trajectory_sha256',
+                'motion_limits_sha256', 'execution_speed_percent',
+                'command_rate_hz', 'timing_policy', 'backend',
+                'backend_version', 'valid', 'dry_run', 'real_arm_motion',
+                'collision_model_qualified', 'reason', 'rejection_codes',
+                'target_center', 'viewpoint_indices', 'camera_positions',
+                'look_directions', 'trajectories', 'minimum_clearance_m',
+                'limiting_link_pairs', 'bootstrap_recovery_end_points',
+                'bootstrap_recovery_joints',
+                'bootstrap_recovery_delta_rad',
+                'bootstrap_recovery_evidence_json'):
+            setattr(legacy, field, getattr(plan, field))
+        legacy.timing_policy = LEGACY_TESSERACT_TIMING_POLICY_VERSION
+        legacy.bootstrap_recovery_evidence_json = []
+        for raw in plan.bootstrap_recovery_evidence_json:
+            try:
+                evidence = json.loads(raw)
+                if evidence.get('sdk_execution_mode') == 'TIMED_STREAM':
+                    evidence['sdk_execution_mode'] = 'TESSERACT_STREAM'
+                legacy.bootstrap_recovery_evidence_json.append(json.dumps(
+                    evidence, sort_keys=True, separators=(',', ':')))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                legacy.bootstrap_recovery_evidence_json.append(raw)
+        return legacy
+
+
+TesseractPlanBridge = MotionPlannerBridge
 
 
 def main(args=None):
     rclpy.init(args=args)
     try:
-        node = TesseractPlanBridge()
+        node = MotionPlannerBridge()
     except (ContractError, OSError, RuntimeError, ValueError) as error:
-        print('Tesseract bridge startup error: %s' % error)
+        print('Motion planner bridge startup error: %s' % error)
         rclpy.shutdown()
         return
     try:

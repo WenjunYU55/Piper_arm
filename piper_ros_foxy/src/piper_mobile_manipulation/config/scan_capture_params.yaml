@@ -13,7 +13,7 @@
     scan_coverage_topic: "/piper/scan_coverage"
     scan_capture_status_topic: "/piper/scan_capture_status"
     scan_summary_topic: "/piper/scan_summary"
-    plan_provenance_topic: "/piper/tesseract_plan_provenance"
+    plan_provenance_topic: "/piper/motion_plan_provenance"
     base_frame: "base_link"
     camera_optical_frame: "camera_color_optical_frame"
     require_camera_transform: true

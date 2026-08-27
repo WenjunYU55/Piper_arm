@@ -19,7 +19,7 @@ from piper_mobile_manipulation.msg import (
     ObstacleInstance3DArray,
     ScanExecutionPlan,
     ScanExecutionStatus,
-    TesseractPlan,
+    MotionPlan,
     TrackedTarget,
     TrackingHealth,
 )
@@ -87,9 +87,9 @@ from piper_mobile_manipulation.execution.motion import (
 from piper_mobile_manipulation.motion_limit_stability import MotionLimitStability
 from piper_mobile_manipulation.planning.rays import decoded_ray_id
 from piper_mobile_manipulation.execution.validation import (
-    TIMING_POLICY_VERSION,
+    EXECUTION_TIMING_POLICY_VERSION,
     validate_sdk_movej_waypoint_path,
-    validate_tesseract_point,
+    validate_planner_point,
 )
 
 
@@ -237,6 +237,8 @@ def sdk_command_path(path, velocities, accelerations, times, execution_mode,
         np.asarray(item, dtype=float).copy() for item in accelerations[1:]]
     command_times = [float(item) for item in times[1:]]
     mode = str(execution_mode).strip().upper()
+    if mode == 'TESSERACT_STREAM':
+        mode = 'TIMED_STREAM'
     if mode == 'DIRECT_MOVEJ' and not bool(direct_home):
         return (
             [np.asarray(path[-1], dtype=float).copy()],
@@ -247,7 +249,7 @@ def sdk_command_path(path, velocities, accelerations, times, execution_mode,
         )
     return (
         command_path, command_velocities, command_accelerations,
-        command_times, bool(not direct_home and mode == 'TESSERACT_STREAM'))
+        command_times, bool(not direct_home and mode == 'TIMED_STREAM'))
 
 
 # Preserve Phase 1/downstream pure-helper imports while their implementation
@@ -445,7 +447,7 @@ def approved_retrace_validation_reasons(reasons):
     Keep changing-scene checks without re-rejecting an executed path.
 
     Every target in the abort history is an endpoint that this executor has
-    already reached from an approval-bound, collision-qualified Tesseract
+    already reached from an approval-bound, collision-qualified planner
     path.  Reversing those same SDK MoveJ segments cannot introduce a new
     robot self-collision.  The generic validator can nevertheless report the
     folded-home contact again because it does not have the proposal's bounded
@@ -539,6 +541,7 @@ class ScanViewpointExecutorNode(Node):
         self.state = 'IDLE'
         self.reason = 'waiting for a validated viewpoint proposal'
         self.plan_id = ''
+        self.plan_backend = ''
         self.plan_kind = MULTIVIEW_SCAN
         self.plan_source_request_id = ''
         self.plan_created = 0.0
@@ -642,6 +645,7 @@ class ScanViewpointExecutorNode(Node):
         self.acquisition_scene_snapshot_validated = False
         self.mission_task_id = ''
         self.mission_sha256 = ''
+        self.mission_planner_backend = ''
         self.mission_expires_at_sec = 0.0
 
         history_qos = QoSProfile(
@@ -671,14 +675,14 @@ class ScanViewpointExecutorNode(Node):
         self.create_subscription(
             String, self.configuration.interfaces.reachable_viewpoints_topic,
             self.scan_cb, 10)
-        self.tesseract_plan_qos = QoSProfile(
+        self.motion_plan_qos = QoSProfile(
             depth=1,
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
-        self.tesseract_plan_sub = self.create_subscription(
-            TesseractPlan, self.configuration.interfaces.tesseract_plan_topic,
-            self.tesseract_plan_cb, self.tesseract_plan_qos)
+        self.motion_plan_sub = self.create_subscription(
+            MotionPlan, self.configuration.interfaces.motion_plan_topic,
+            self.motion_plan_cb, self.motion_plan_qos)
         self.create_subscription(
             JointState, self.configuration.interfaces.joint_states_topic,
             self.joint_cb, 10)
@@ -750,7 +754,7 @@ class ScanViewpointExecutorNode(Node):
         mode = 'motion opt-in available' if self.real_motion_enabled() else 'proposal-only'
         self.get_logger().warn(
             'Scan viewpoint executor started %s at %.1f%% configured speed; '
-            'Tesseract all-six-joint planning is mandatory. '
+            'An exact all-six-joint planner is mandatory. '
             'Ignored saved bounds: %s'
             % (mode, self.speed_percent(),
                ','.join(ignored_bounds) or 'none'))
@@ -792,9 +796,11 @@ class ScanViewpointExecutorNode(Node):
         if self.state == 'ABORTED':
             self.state = 'IDLE'
 
-    def tesseract_plan_cb(self, msg):
+    def motion_plan_cb(self, msg):
         if self.state in ACTIVE_STATES:
             return
+        self.plan_backend = str(
+            getattr(msg, 'backend', 'tesseract')).strip().lower()
         plan_kind = str(msg.plan_kind)
         source_request_id = str(msg.source_request_id)
         if not msg.valid:
@@ -841,19 +847,25 @@ class ScanViewpointExecutorNode(Node):
                 motion_limits_timeout
             self.set_state(
                 'WAITING_FOR_PLAN_LIMITS',
-                'hash-bound Tesseract proposal is waiting for one fresh '
+                'hash-bound planner proposal is waiting for one fresh '
                 'matching controller-limit sample',
             )
             return
         reasons = []
         if not msg.dry_run or msg.real_arm_motion:
-            reasons.append('Tesseract proposal flags are not command-free')
-        if msg.backend != 'tesseract':
-            reasons.append('unexpected planning backend: %s' % msg.backend)
+            reasons.append('planner proposal flags are not command-free')
+        if self.plan_backend not in ('tesseract', 'curobo'):
+            reasons.append(
+                'unsupported planning backend: %s' % self.plan_backend)
+        if (
+                getattr(self, 'mission_planner_backend', '')
+                and self.plan_backend != self.mission_planner_backend):
+            reasons.append(
+                'planner backend does not match active mission authorization')
         if not msg.plan_id or len(msg.trajectory_sha256) != 64:
             reasons.append('plan identity or trajectory hash is invalid')
-        if str(msg.timing_policy) != TIMING_POLICY_VERSION:
-            reasons.append('Tesseract timing policy is unsupported')
+        if str(msg.timing_policy) != EXECUTION_TIMING_POLICY_VERSION:
+            reasons.append('planner timing policy is unsupported')
         closed_loop_one_view = self.param_bool('closed_loop_one_view')
         returns_home = (
             plan_kind in (MULTIVIEW_SCAN, RETURN_HOME)
@@ -910,7 +922,7 @@ class ScanViewpointExecutorNode(Node):
             configured_value(self, 'trajectory_joint_step_rad'))
         command_rate = float(configured_value(self, 'trajectory_command_rate_hz'))
         if abs(float(msg.command_rate_hz) - command_rate) > 1e-6:
-            reasons.append('Tesseract command rate does not match the executor')
+            reasons.append('planner command rate does not match the executor')
         if not limits_fresh:
             reasons.append('controller motion limits are missing or stale')
         if limits is None or not limits.valid:
@@ -920,7 +932,7 @@ class ScanViewpointExecutorNode(Node):
                     str(msg.motion_limits_sha256) != str(limits.limits_sha256)
                     or len(str(msg.motion_limits_sha256)) != 64):
                 reasons.append(
-                    'Tesseract controller-limit binding is stale or mismatched')
+                    'planner controller-limit binding is stale or mismatched')
         if telemetry_store is None:
             tracking_health = self.latest_tracking_health
         else:
@@ -955,7 +967,7 @@ class ScanViewpointExecutorNode(Node):
                     point.time_from_start.nanosec) * 1e-9
                 try:
                     values, point_velocities, point_accelerations, when = (
-                        validate_tesseract_point(
+                        validate_planner_point(
                             point.positions,
                             point.velocities,
                             point.accelerations,
@@ -1015,13 +1027,15 @@ class ScanViewpointExecutorNode(Node):
                 if isinstance(segment_evidence, dict) else '')
             sdk_execution_mode = str(
                 segment_evidence.get(
-                    'sdk_execution_mode', 'TESSERACT_STREAM')
+                    'sdk_execution_mode', 'TIMED_STREAM')
                 if isinstance(segment_evidence, dict)
-                else 'TESSERACT_STREAM').strip().upper()
-            if sdk_execution_mode not in ('DIRECT_MOVEJ', 'TESSERACT_STREAM'):
+                else 'TIMED_STREAM').strip().upper()
+            if sdk_execution_mode == 'TESSERACT_STREAM':
+                sdk_execution_mode = 'TIMED_STREAM'
+            if sdk_execution_mode not in ('DIRECT_MOVEJ', 'TIMED_STREAM'):
                 reasons.append(
                     'segment %d SDK execution mode is invalid' % segment_index)
-                sdk_execution_mode = 'TESSERACT_STREAM'
+                sdk_execution_mode = 'TIMED_STREAM'
             if sdk_execution_mode == 'DIRECT_MOVEJ':
                 if (
                         recovery_end >= 0 or configured_home_direct
@@ -1162,7 +1176,7 @@ class ScanViewpointExecutorNode(Node):
                 elif not (1 <= recovery_end < len(path) - 1):
                     reasons.append(
                         'segment %d bootstrap recovery endpoint must be an '
-                        'internal scheduled Tesseract point'
+                        'internal scheduled planner point'
                         % segment_index)
                 if not declared_joints and 1 <= recovery_joint <= 6:
                     declared_joints = [recovery_joint]
@@ -1272,11 +1286,11 @@ class ScanViewpointExecutorNode(Node):
             elif float(np.max(np.abs(
                     targets[-1] - configured_home))) > 1e-6:
                 reasons.append(
-                    'Tesseract return-home endpoint does not match the '
+                    'planner return-home endpoint does not match the '
                     'executor configuration')
         if reasons:
             self.invalidate_plan(
-                'invalid Tesseract proposal: ' + '; '.join(reasons),
+                'invalid motion-planner proposal: ' + '; '.join(reasons),
                 plan_kind=plan_kind,
                 source_request_id=source_request_id,
                 plan_id=str(msg.plan_id),
@@ -1349,11 +1363,12 @@ class ScanViewpointExecutorNode(Node):
             and configured_home_direct_segments == [True])
         self.set_state(
             'PROPOSAL_READY',
-            '%d six-joint Tesseract %s viewpoints%s use exact %sSDK MoveJ '
+            '%d six-joint %s %s viewpoints%s use exact %sSDK MoveJ '
             'position targets at %.1f%% (%s); '
             'exact trajectory hash approval required'
             % (
                 self.plan_capture_count,
+                self.plan_backend or 'planner',
                 self.plan_kind.lower(),
                 ' plus an approved return-home segment'
                 if self.plan_returns_home else '',
@@ -1363,6 +1378,10 @@ class ScanViewpointExecutorNode(Node):
                 qualification,
             ))
         self.publish_plan(True, self.reason)
+
+    def tesseract_plan_cb(self, msg):
+        """Accept the legacy callback name as a compatibility alias."""
+        return ScanViewpointExecutorNode.motion_plan_cb(self, msg)
 
     def joint_cb(self, msg):
         self.latest_joint_state = msg
@@ -1408,7 +1427,10 @@ class ScanViewpointExecutorNode(Node):
                 if self.now() <= self.pending_limit_refresh_deadline:
                     self.pending_limit_refresh_plan = None
                     self.pending_limit_refresh_deadline = 0.0
-                    self.tesseract_plan_cb(pending)
+                    callback = getattr(self, 'motion_plan_cb', None)
+                    if callback is None:
+                        callback = self.tesseract_plan_cb
+                    callback(pending)
                 else:
                     plan_kind = str(pending.plan_kind)
                     source_request_id = str(pending.source_request_id)
@@ -1416,7 +1438,7 @@ class ScanViewpointExecutorNode(Node):
                     self.pending_limit_refresh_plan = None
                     self.pending_limit_refresh_deadline = 0.0
                     self.invalidate_plan(
-                        'invalid Tesseract proposal: controller motion limits '
+                        'invalid motion-planner proposal: controller motion limits '
                         'did not refresh before the bounded deadline',
                         plan_kind=plan_kind,
                         source_request_id=source_request_id,
@@ -1702,7 +1724,7 @@ class ScanViewpointExecutorNode(Node):
                 self.pending_limit_refresh_plan = None
                 self.pending_limit_refresh_deadline = 0.0
                 self.invalidate_plan(
-                    'invalid Tesseract proposal: controller motion limits '
+                    'invalid motion-planner proposal: controller motion limits '
                     'did not refresh before the bounded deadline',
                     plan_kind=str(pending.plan_kind),
                     source_request_id=str(pending.source_request_id),
@@ -1752,6 +1774,9 @@ class ScanViewpointExecutorNode(Node):
             str(request.confirmation) == mission_confirmation)
         mission_authorization_granted = (
             self.mission_authorization_valid()
+            and str(getattr(self, 'plan_backend', '')).strip().lower() ==
+            str(getattr(
+                self, 'mission_planner_backend', '')).strip().lower()
             if mission_authorization_requested else True)
         if mission_authorization_requested and mission_authorization_granted:
             expected = mission_confirmation
@@ -1797,7 +1822,7 @@ class ScanViewpointExecutorNode(Node):
         if not self.plan_collision_model_qualified:
             response.accepted = False
             response.message = (
-                'Tesseract collision model is proposal-only and not qualified for hardware')
+                'planner collision model is proposal-only and not qualified for hardware')
             return response
         target_required = not (acquisition or return_only)
         latest_target_center = None
@@ -1903,6 +1928,7 @@ class ScanViewpointExecutorNode(Node):
                 return response
             self.mission_task_id = ''
             self.mission_sha256 = ''
+            self.mission_planner_backend = ''
             self.mission_expires_at_sec = 0.0
             response.accepted = True
             response.message = 'mission authorization revoked'
@@ -1913,6 +1939,7 @@ class ScanViewpointExecutorNode(Node):
             return response
         task_id = str(request.task_id).strip()
         digest = str(request.mission_sha256).strip()
+        planner_backend = str(request.planner_backend).strip().lower()
         expires = float(request.expires_at.sec) + float(
             request.expires_at.nanosec) * 1e-9
         now = time.time()
@@ -1920,6 +1947,10 @@ class ScanViewpointExecutorNode(Node):
                 character not in '0123456789abcdef' for character in digest):
             response.accepted = False
             response.message = 'mission identity or SHA-256 is invalid'
+            return response
+        if planner_backend not in ('tesseract', 'curobo'):
+            response.accepted = False
+            response.message = 'mission planner backend is invalid'
             return response
         if expires <= now or expires - now > 1200.5:
             response.accepted = False
@@ -1931,6 +1962,7 @@ class ScanViewpointExecutorNode(Node):
             return response
         self.mission_task_id = task_id
         self.mission_sha256 = digest
+        self.mission_planner_backend = planner_backend
         self.mission_expires_at_sec = expires
         response.accepted = True
         response.message = 'mission policy authorization bound to task and deadline'
@@ -2010,7 +2042,7 @@ class ScanViewpointExecutorNode(Node):
         self.plan_returns_home = True
         self.plan_execution_speed_percent = self.speed_percent()
         # Direct configured home uses the driver's bounded SDK MoveJ speed and
-        # the exact configured joint endpoint. Tesseract timing/limit hashes do
+        # the exact configured joint endpoint. Planner timing/limit hashes do
         # not own this transaction; hard joint bounds, live motor authority and
         # attached-tool external clearance remain mandatory.
         self.plan_motion_limits_sha256 = ''
@@ -2042,7 +2074,7 @@ class ScanViewpointExecutorNode(Node):
         response.accepted = True
         response.execution_id = execution_id
         response.message = (
-            'direct %s endpoint accepted without Tesseract planning' % stage)
+            'direct %s endpoint accepted without motion planning' % stage)
         return response
 
     def mission_authorization_valid(self):
@@ -2050,6 +2082,7 @@ class ScanViewpointExecutorNode(Node):
             self.param_bool('allow_mission_policy')
             and bool(self.mission_task_id)
             and len(self.mission_sha256) == 64
+            and self.mission_planner_backend in ('tesseract', 'curobo')
             and time.time() < self.mission_expires_at_sec
         )
 
@@ -2117,7 +2150,7 @@ class ScanViewpointExecutorNode(Node):
             'execution_speed_percent': self.plan_execution_speed_percent,
             'trajectory_command_rate_hz': float(
                 configured_value(self, 'trajectory_command_rate_hz')),
-            'motion_adapter': TIMING_POLICY_VERSION,
+            'motion_adapter': EXECUTION_TIMING_POLICY_VERSION,
             'executor_tick_rate_hz': float(
                 configured_value(self, 'executor_tick_rate_hz')),
             'command_samples_sent': self.command_samples_sent,
@@ -2293,7 +2326,7 @@ class ScanViewpointExecutorNode(Node):
         )
         self.pending_motion_reason = (
             'fresh runtime telemetry restored; resuming the same approved '
-            'Tesseract target')
+            'planner target')
         self.set_state(
             'WAITING_FOR_RUNTIME_REFRESH',
             'holding current position while runtime telemetry refreshes: '
@@ -2511,7 +2544,7 @@ class ScanViewpointExecutorNode(Node):
         self.publish_next_waypoint(now)
 
     def streaming_moving_tick(self, now):
-        """Follow Tesseract timestamps; feedback gates safety and the endpoint."""
+        """Follow planner timestamps; feedback gates safety and the endpoint."""
         if self.motion_started_at is None:
             self.motion_started_at = now
         last_tick = getattr(self, 'stream_last_tick_at', None)
@@ -2532,7 +2565,7 @@ class ScanViewpointExecutorNode(Node):
                 hold_started = now
                 self.stream_following_hold_started_at = now
                 self.get_logger().warning(
-                    'Tesseract stream feedback corridor reached; holding '
+                    'planner stream feedback corridor reached; holding '
                     'the last collision-qualified setpoint until measured '
                     'joints catch up')
             decision = TrajectoryRunner.following_decision(
@@ -2556,7 +2589,7 @@ class ScanViewpointExecutorNode(Node):
                     current = []
                 self.abort_or_finish_captures(
                     'measured joints did not recover inside the scheduled '
-                    'Tesseract following corridor: max_error=%.9f rad '
+                    'planner following corridor: max_error=%.9f rad '
                     'limit=%.9f rad current=%s target=%s'
                     % (error, limit, current, np.asarray(target).tolist()))
                 return True
@@ -2590,7 +2623,7 @@ class ScanViewpointExecutorNode(Node):
             if stream_decision.action is TrajectoryAction.FAILED_OVERRUN:
                 self.dropped_command_samples += stream_decision.missed_samples
                 self.abort_or_finish_captures(
-                    'scheduled Tesseract stream overran by %d samples; '
+                    'scheduled planner stream overran by %d samples; '
                     'refusing to burst or shortcut the approved path'
                     % stream_decision.missed_samples)
                 return
@@ -2604,7 +2637,7 @@ class ScanViewpointExecutorNode(Node):
                     self, 'stream_schedule_paused_sec', 0.0)) + delay
                 elapsed = max(0.0, elapsed - delay)
                 self.get_logger().warning(
-                    'Tesseract stream tick was late by %.4fs (%d later '
+                    'planner stream tick was late by %.4fs (%d later '
                     'samples were already due); stretching the unchanged '
                     'schedule and publishing the next unsent point'
                     % (delay, stream_decision.missed_samples))
@@ -2625,7 +2658,7 @@ class ScanViewpointExecutorNode(Node):
                     return
             if getattr(self, 'stream_following_hold_started_at', None) is not None:
                 self.get_logger().info(
-                    'measured joints recovered inside the Tesseract stream '
+                    'measured joints recovered inside the planner stream '
                     'feedback corridor; resuming the unchanged path')
                 self.stream_following_hold_started_at = None
             self.path_index = due_index + 1
@@ -2654,7 +2687,7 @@ class ScanViewpointExecutorNode(Node):
                     self.last_stream_achieved_rate_hz = achieved_rate
                     self.stream_schedule_completion_logged = True
                     self.get_logger().info(
-                        'Tesseract stream complete: planned=%.3fs '
+                        'planner stream complete: planned=%.3fs '
                         'actual=%.3fs samples=%d achieved_rate=%.1fHz '
                         'max_interval=%.4fs max_following_error=%.4frad'
                         % (
@@ -3765,7 +3798,7 @@ class ScanViewpointExecutorNode(Node):
     def prepare_current_view(self):
         start = self.current_joints()
         if not self.plan_collision_model_qualified:
-            return ['Tesseract collision model is not qualified for hardware']
+            return ['planner collision model is not qualified for hardware']
         path = [item.copy() for item in self.plan_paths[self.current_view]]
         path_times = [
             float(item) for item in self.plan_path_times[self.current_view]]
@@ -3777,7 +3810,7 @@ class ScanViewpointExecutorNode(Node):
             return ['current state changed beyond the approved plan-start tolerance']
         # A cumulative joint-distance gate rejects valid collision-aware
         # detours even though the executor never sends that cumulative
-        # displacement as one command. The Tesseract path has already been
+        # displacement as one command. The planner path has already been
         # hash-bound and exact-path validated; retain the per-sample step
         # limit, fresh-start match, and feedback convergence below.
         command_path = path[1:]
@@ -3936,7 +3969,7 @@ class ScanViewpointExecutorNode(Node):
             getattr(self, 'plan_segment_execution_modes', [])[self.current_view]
             if self.current_view < len(getattr(
                 self, 'plan_segment_execution_modes', []))
-            else 'TESSERACT_STREAM')
+            else 'TIMED_STREAM')
         command_path, command_velocities, command_accelerations, \
             command_times, streaming = sdk_command_path(
                 path,
@@ -4234,7 +4267,7 @@ class ScanViewpointExecutorNode(Node):
         Accept a fresh valid limit generation for position-only SDK MoveJ.
 
         The executor sends one joint-position target plus an aggregate speed
-        percentage. It never sends Tesseract velocities, accelerations, or
+        percentage. It never sends planner velocities, accelerations, or
         timing to the controller, so a changed valid hash does not change the
         approved geometric path.
         """
@@ -4721,6 +4754,8 @@ class ScanViewpointExecutorNode(Node):
         if self.state in ACTIVE_STATES:
             return
         preserved_plan_kind = self.plan_kind
+        preserved_plan_backend = getattr(
+            self, 'plan_backend', 'tesseract')
         preserved_source_request_id = self.plan_source_request_id
         preserved_candidate_count = self.plan_candidate_count
         preserved_retrace = [
@@ -4732,6 +4767,7 @@ class ScanViewpointExecutorNode(Node):
         # only collision-qualified authority for a benign failure return.
         self.retrace_joint_targets = preserved_retrace
         self.plan_id = str(plan_id or '')
+        self.plan_backend = preserved_plan_backend
         self.plan_kind = (
             plan_kind
             if plan_kind in (MULTIVIEW_SCAN, ROUGH_ACQUISITION, RETURN_HOME)
@@ -4755,6 +4791,7 @@ class ScanViewpointExecutorNode(Node):
 
     def clear_plan(self):
         self.plan_id = ''
+        self.plan_backend = ''
         self.plan_kind = MULTIVIEW_SCAN
         self.plan_source_request_id = ''
         self.plan_created = 0.0
@@ -4837,14 +4874,15 @@ class ScanViewpointExecutorNode(Node):
         msg.plan_id = self.plan_id
         msg.plan_kind = self.plan_kind
         msg.source_request_id = self.plan_source_request_id
-        msg.planner_backend = 'tesseract'
+        msg.planner_backend = (
+            self.plan_backend or self.mission_planner_backend or 'tesseract')
         msg.trajectory_sha256 = self.plan_trajectory_sha256
         msg.motion_limits_sha256 = self.plan_motion_limits_sha256
         msg.execution_speed_percent = float(
             self.plan_execution_speed_percent)
         msg.command_rate_hz = float(
             configured_value(self, 'trajectory_command_rate_hz'))
-        msg.timing_policy = TIMING_POLICY_VERSION
+        msg.timing_policy = EXECUTION_TIMING_POLICY_VERSION
         msg.valid = bool(valid)
         msg.dry_run = True
         msg.real_arm_motion = False

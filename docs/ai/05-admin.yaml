@@ -654,3 +654,9 @@ repository_test_and_asset_routing_2026_08_27:
   history_owner: docs/historical
   asset_decisions: docs/architecture/asset_policy.md
   rule: Keep root operator entrypoints stable. Put new cross-package tests under the owning tests subdirectory; package-owned tests remain in the ROS or subsystem package.
+
+motion_planner_backend_routing_2026_08_27:
+  inspect: [configuration.py PlannerConfig, planning/backend.py, motion_planner_backends.md, bridge_node.py MotionPlannerBridge, motion_planning/curobo, planner_backend.yaml, piper_gui/planner_backend.py]
+  rule: Route backend choice only at the planner adapter/process boundary. MissionEngine, NBV, authorization, execution safety, capture and the PiPER command path remain backend-neutral.
+  incident_checks: [frozen mission backend and authorization correlation, selected worker generation, planner readiness backend, MotionPlan backend and hashes, collision qualification, bounded worker shutdown]
+  tests: [test_planner_backend.py, test_contract.py, tests/curobo, tests/gui/test_piper_gui_planner_backend.py, mobile and Tesseract regression suites]

@@ -30,6 +30,9 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ObstacleInstance3DArray.msg"
   "msg/ScanExecutionPlan.msg"
   "msg/ScanExecutionStatus.msg"
+  "msg/MotionPlan.msg"
+  "msg/MotionPlanStatus.msg"
+  "msg/PlannerReadiness.msg"
   "msg/TesseractPlan.msg"
   "msg/TesseractPlanStatus.msg"
   "msg/TesseractReadiness.msg"
@@ -40,6 +43,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/ApproveScanExecution.srv"
   "srv/ExecuteHomeStage.srv"
   "srv/PrepareAcquisition.srv"
+  "srv/RequestMotionPlan.srv"
   "srv/RequestTesseractPlan.srv"
   "srv/ReportTrackedRobotHomed.srv"
   "srv/GetMeshJobResult.srv"
@@ -155,6 +159,8 @@ if(BUILD_TESTING)
   ament_add_pytest_test(
     test_ray_mission_diagnostics test/test_ray_mission_diagnostics.py)
   ament_add_pytest_test(test_configuration test/test_configuration.py)
+  ament_add_pytest_test(
+    test_planner_backend test/test_planner_backend.py)
   ament_add_pytest_test(
     test_architecture_boundaries test/test_architecture_boundaries.py)
   ament_add_pytest_test(

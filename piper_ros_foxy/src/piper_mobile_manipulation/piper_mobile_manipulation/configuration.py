@@ -12,6 +12,9 @@ from piper_mobile_manipulation.mission.core import (
     MISSION_QUEUE_COALESCE_SEC,
     REQUIRED_CAPTURES,
 )
+from piper_mobile_manipulation.planning.backend import (
+    parse_planner_backend,
+)
 
 
 class ConfigurationError(ValueError):
@@ -90,6 +93,15 @@ class ProcessConfig:
 
 
 @dataclass(frozen=True)
+class PlannerConfig:
+    """Planner defaults and isolated-worker configuration."""
+
+    default_backend: str
+    curobo_worker_python: str
+    curobo_spool_root: str
+
+
+@dataclass(frozen=True)
 class MissionMotionConfig:
     """Existing mission-level motion authorization and speed policy."""
 
@@ -141,6 +153,7 @@ class MissionConfigurationGroups:
 
     mission: MissionConfig
     process: ProcessConfig
+    planner: PlannerConfig
     motion: MissionMotionConfig
     capture: MissionCaptureConfig
     workflow: MissionWorkflowConfig
@@ -175,6 +188,7 @@ class ExecutorInterfaceConfig:
     rgbd_capture_service: str
     heavy_refresh_request_topic: str
     heavy_refresh_status_topic: str
+    motion_plan_topic: str
     tesseract_plan_topic: str
     hand_eye_calibration_path: str
     joint_bounds_path: str
@@ -304,6 +318,12 @@ def mission_parameter_defaults(environ=None):
         'manage_processes': True,
         'floor_profile': 'saved',
         'floor_profile_path': '',
+        'planner_backend': 'tesseract',
+        'curobo_worker_python': environment.get(
+            'PIPER_CUROBO_PYTHON', ''),
+        'curobo_spool_root': environment.get(
+            'PIPER_CUROBO_SPOOL', os.path.join(
+                runtime_root, 'piper_curobo_plans')),
         'enable_real_arm_motion': False,
         'motion_speed_profile_qualified': False,
         'free_motion_speed_percent': 30.0,
@@ -346,6 +366,7 @@ def executor_parameter_defaults():
         'rgbd_capture_service': '/scan_capture/capture_view',
         'heavy_refresh_request_topic': '/piper/heavy_refresh_request',
         'heavy_refresh_status_topic': '/piper/heavy_refresh_status',
+        'motion_plan_topic': '/piper/motion_plan',
         'tesseract_plan_topic': '/piper/tesseract_plan',
         'hand_eye_calibration_path': '',
         'joint_bounds_path': '',
@@ -457,6 +478,17 @@ def load_mission_configuration(node, environ=None):
             'floor_profile', values['floor_profile']).lower(),
         floor_profile_path=str(values['floor_profile_path']).strip(),
     )
+    try:
+        planner_backend = parse_planner_backend(
+            values['planner_backend']).value
+    except ValueError as error:
+        raise ConfigurationError(str(error)) from error
+    planner = PlannerConfig(
+        default_backend=planner_backend,
+        curobo_worker_python=str(values['curobo_worker_python']).strip(),
+        curobo_spool_root=_nonempty(
+            'curobo_spool_root', values['curobo_spool_root']),
+    )
     if process.floor_profile not in ('saved', 'tabletop', 'ground'):
         raise ConfigurationError(
             'floor_profile must be exactly saved, tabletop or ground')
@@ -484,6 +516,7 @@ def load_mission_configuration(node, environ=None):
     return MissionConfigurationGroups(
         mission=mission,
         process=process,
+        planner=planner,
         motion=motion,
         capture=capture,
         workflow=MissionWorkflowConfig(),
@@ -501,7 +534,8 @@ def _interface_config(values):
         'scan_session_history_topic', 'joint_command_topic', 'plan_topic',
         'status_topic', 'capture_service', 'finish_scan_service',
         'rgbd_capture_service', 'heavy_refresh_request_topic',
-        'heavy_refresh_status_topic', 'tesseract_plan_topic',
+        'heavy_refresh_status_topic', 'motion_plan_topic',
+        'tesseract_plan_topic',
     )
     checked = {name: _nonempty(name, values[name]) for name in names}
     checked['hand_eye_calibration_path'] = str(

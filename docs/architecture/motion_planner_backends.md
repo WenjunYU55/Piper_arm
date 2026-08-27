@@ -1,0 +1,287 @@
+# Motion-planner backends
+
+## Scope and safety status
+
+The scan mission has one backend-neutral planning path. `planner_backend` is
+either `tesseract` or `curobo`, defaults to `tesseract`, is validated before
+mission admission, and is copied into the immutable mission goal/hash. There
+is no automatic fallback and no mid-mission switch.
+
+Tesseract is the regression baseline. The cuRobo adapter is real MotionGen
+integration against cuRobo v0.7.8, but this host cannot yet build/import that
+release because the CUDA 12.8 toolkit compiler (`nvcc`) is absent. The
+generated PiPER sphere/cuboid collision approximation is deliberately marked
+`hardware_qualified: false`. Therefore cuRobo readiness remains fail-closed
+until GPU tests and collision-model qualification are completed. No planner in
+this architecture directly commands the robot.
+
+## Runtime architecture
+
+```text
+RunTargetScan / MissionEngine / NBV candidate
+                    |
+                    v
+       /motion_planner/request_*
+                    |
+          generic Foxy bridge
+                    |
+       schema-v5 private spool request
+                    |
+       +------------+------------+
+       |                         |
+Tesseract ROS-free worker   cuRobo ROS-free worker
+       |                         |
+       +------------+------------+
+                    |
+          validated MotionPlan
+                    |
+   common schedule normalization/validation
+                    |
+           ScanExecutionPlan
+                    |
+       PlanAuthorizer + runtime gates
+                    |
+    common executor / TrajectoryRunner
+                    |
+             PiPER driver
+```
+
+The selected worker is the only planner worker started for a mission.
+`ProcessSupervisor` owns its process group, generation, heartbeat, bounded
+termination, and cleanup. The cuRobo script uses `exec` with the exact
+`PIPER_CUROBO_PYTHON` path, so process-group termination also owns CUDA work.
+
+## Generic ROS boundary
+
+Production interfaces:
+
+- `RequestMotionPlan.srv`
+- `/motion_planner/request_plan`
+- `/motion_planner/request_acquisition_plan`
+- `/motion_planner/request_return_home_plan`
+- `/motion_planner/request_startup_home_plan`
+- `/piper/motion_plan` (`MotionPlan.msg`)
+- `/piper/motion_plan_status` (`MotionPlanStatus.msg`)
+- `/piper/planner_readiness` (`PlannerReadiness.msg`)
+- `/piper/view_generation`
+- `/piper/motion_plan_provenance`
+
+The bridge keeps the old `RequestTesseractPlan`, `TesseractPlan`, status,
+readiness, view-generation, provenance and `/tesseract_plan_bridge/request_*`
+names only for Tesseract compatibility. Compatibility messages are not
+published in cuRobo mode. The production mission and executor consume only the
+generic interfaces.
+
+## `MotionPlan` and `ScanExecutionPlan`
+
+`MotionPlan` is the command-free planner transport. It carries backend and
+version, transaction identities and hashes, plan kind, target/view metadata,
+collision qualification, complete timed six-joint trajectories, startup
+recovery evidence, execution schedule policy, and comparable planning metrics.
+
+The common executor independently validates `MotionPlan` against current
+controller limits, target/scene freshness, mission backend, hashes, joint
+order, finite values, timestamps, command rate, joint-step ceiling,
+speed-scaled MoveJ limits, collision qualification, and bootstrap evidence.
+Only then does it publish `ScanExecutionPlan`, the authorization-facing summary
+of the normalized executable plan. `ScanExecutionPlan` is not a second planner
+result and cannot restore information rejected at the `MotionPlan` boundary.
+
+### Former `TesseractPlan` field classification
+
+| Fields | Classification | Current owner |
+|---|---|---|
+| plan/request IDs and hashes, plan kind, backend/version, validity, collision qualification, rejection codes, target/view geometry, trajectories, clearance/link diagnostics | generic planner output | `MotionPlan` |
+| planning duration, candidate/feasible/success counts | generic comparable diagnostics | `MotionPlan` and provenance |
+| execution speed, command rate, timing policy | PiPER execution policy bound by the request and revalidated by the executor | `MotionPlan` then `ScanExecutionPlan` |
+| bootstrap recovery endpoints/joints/deltas/evidence | generic acquisition/start-state safety evidence | `MotionPlan`; cuRobo explicitly rejects out-of-limit bootstrap |
+| planner-native attempt traces | backend diagnostic metadata | private response/provenance, never the executor |
+| duplicated Tesseract transport | compatibility only | `TesseractPlan` alias publisher in Tesseract mode |
+
+`TIMED_STREAM` and `timed_stream_v1` are the generic execution mode/policy.
+`TESSERACT_STREAM`, `tesseract_stream_v3`, `validate_tesseract_point`, and
+`validate_timed_tesseract_path` remain parsing/import aliases only.
+
+## Backend selection and GUI
+
+The Automatic Scan tab exposes exactly **Tesseract** and **cuRobo** under
+“Motion planner for next mission”. **Apply for Next Mission** persists the
+validated value in `config/planner_backend.yaml`. Starting the single automatic
+scan path reads it into a frozen `MissionRequest`, sends it in
+`RunTargetScan.Goal.planner_backend`, and the mission includes it in its
+canonical hash. The controls are disabled while a mission is active. Editing
+the persisted value cannot change the active goal.
+
+Headless selection uses the same mission field, with
+`PIPER_PLANNER_BACKEND=tesseract|curobo` as the launch/default source. Unknown
+or missing persisted values fail closed; an empty legacy action field resolves
+to the typed `tesseract` default.
+
+## Backend behavior
+
+| Plan kind | Tesseract | cuRobo |
+|---|---|---|
+| `MULTIVIEW_SCAN` | supported | MotionGen pose plans plus optional joint-space home |
+| `ROUGH_ACQUISITION` | supported, including qualified folded-start recovery | supported only when the measured start is already inside all six limits |
+| `RETURN_HOME` | supported | MotionGen joint-space plan |
+| `OCCLUSION_PROBE` | not in the active schema-v5 worker contract | explicitly unsupported |
+| `OCCLUDER_PICK_PLACE` | not production-qualified | explicitly unsupported |
+| `OCCLUDER_PUSH` | not production-qualified | explicitly unsupported |
+
+Unsupported kinds return a structured failure. They are never approximated and
+never trigger another backend.
+
+## cuRobo implementation and model
+
+The worker uses the verified v0.7.8 APIs:
+
+- `MotionGenConfig.load_from_robot_config`
+- `MotionGen` and `MotionGenPlanConfig`
+- `plan_single` for target-facing camera poses
+- `plan_single_js` for home poses
+- `Pose`, `JointState`, `WorldConfig`, and `Cuboid`
+- `MotionGenResult.get_interpolated_plan()` and `interpolation_dt`
+
+cuRobo tensors are reordered to the canonical `joint1..joint6` order and
+converted to ordinary finite lists before the response is written. Native
+paths are slowed/subdivided to the unchanged 20 Hz PiPER schedule and then pass
+the common validator. Tensor/CUDA types never enter ROS, mission, NBV,
+authorization, or execution code.
+
+`prepare_model.sh` first invokes the existing Tesseract model builder, so both
+backends start from the same current Xacro, calibrated L515 frame, SRDF,
+collision manifest, joint order and limits. The cuRobo conversion represents:
+
+- moving PiPER, gripper, holder, cable envelope and L515 geometry as a
+  conservative per-collision AABB sphere grid;
+- fixed `base_link` and Bunker decomposed cells as base-frame world cuboids;
+- the selected support floor as a world cuboid;
+- current authoritative perception obstacles as request-bound world cuboids.
+
+Differences from Tesseract are material: Tesseract uses the exact configured
+mesh/convex collision model and reports comparable clearances, while cuRobo
+uses conservative sphere/AABB approximations and currently reports clearance
+as unavailable (`-1`). cuRobo also lacks Tesseract's qualified out-of-limit
+bootstrap recovery. Collision equivalence is not claimed.
+
+The generated config binds the pinned cuRobo version/commit and SHA-256 hashes
+of its generated URDF, SRDF and collision manifest. Readiness requires matching
+authoritative hashes. Hardware collision qualification additionally requires
+both `hardware_qualified: true` in reviewed model provenance and
+`PIPER_CUROBO_COLLISION_MODEL_QUALIFIED=1`; the environment flag alone cannot
+grant motion authority.
+
+## Pinned runtime and host validation
+
+- cuRobo: `v0.7.8`
+- exact commit: `d64c4b005459db10c5dd867d8b30a87d5bda9bdb`
+- host GPU: NVIDIA GeForce RTX 3090, 24,576 MiB
+- driver: 570.133.07
+- driver-reported CUDA runtime: 12.8
+- current isolated Python: 3.10.20
+- current PyTorch: 2.11.0+cu128
+- torch CUDA: 12.8; CUDA available: yes
+- cuDNN: 9.19.0
+- current cuRobo import: unavailable
+- current CUDA compiler: unavailable (`nvcc` missing)
+
+The v0.7.8 documentation supports Ubuntu 20.04/22.04, Volta-or-newer NVIDIA
+GPUs with at least 4 GB, Python 3.8–3.10, and PyTorch 1.15+ (2.x recommended).
+The RTX 3090 and Python 3.10 meet those published bounds. The exact
+PyTorch-2.11/CUDA-12.8 combination is not recorded as qualified until the
+pinned source builds and the GPU suite passes. v0.8 is not substituted because
+it changes the public planner API.
+
+## Deterministic environment setup
+
+Do not install into Foxy's Python and do not alter the driver or system Python.
+After configuring NVIDIA's CUDA repository for this Ubuntu installation, the
+minimal missing system component is the 12.8 toolkit/compiler:
+
+```bash
+sudo apt-get install cuda-toolkit-12-8
+/usr/local/cuda-12.8/bin/nvcc --version
+```
+
+Create an isolated environment from the available Python 3.10 interpreter:
+
+```bash
+/home/prl/Piper_arm/AI_perception_tests/groundingdino_test/envs/grounded_sam2_py310/bin/python \
+  -m venv /home/prl/.venvs/piper-curobo-v0.7.8
+CUROBO_PYTHON=/home/prl/.venvs/piper-curobo-v0.7.8/bin/python
+"$CUROBO_PYTHON" -m pip install --upgrade pip setuptools wheel ninja
+"$CUROBO_PYTHON" -m pip install torch==2.11.0 \
+  --index-url https://download.pytorch.org/whl/cu128
+git lfs install
+git clone https://github.com/NVlabs/curobo.git \
+  /home/prl/.venvs/curobo-src-v0.7.8
+git -C /home/prl/.venvs/curobo-src-v0.7.8 checkout \
+  d64c4b005459db10c5dd867d8b30a87d5bda9bdb
+CUDA_HOME=/usr/local/cuda-12.8 \
+PATH=/usr/local/cuda-12.8/bin:"$PATH" \
+  "$CUROBO_PYTHON" -m pip install -e \
+  /home/prl/.venvs/curobo-src-v0.7.8 --no-build-isolation
+```
+
+Verify before configuring the mission:
+
+```bash
+CUROBO_PYTHON=/home/prl/.venvs/piper-curobo-v0.7.8/bin/python
+"$CUROBO_PYTHON" -c 'import curobo, torch; print(curobo.__version__, torch.__version__, torch.version.cuda, torch.cuda.is_available(), torch.cuda.get_device_name(0))'
+```
+
+Version and installation references:
+
+- [cuRobo v0.7.8 source](https://github.com/NVlabs/curobo/tree/v0.7.8)
+- [cuRobo v0.7.8 release](https://github.com/NVlabs/curobo/releases/tag/v0.7.8)
+- [Version-matched installation guide](https://curobo.org/get_started/1_install_instructions.html)
+
+## Running and testing
+
+Tesseract mode retains the established defaults:
+
+```bash
+cd /home/prl/Piper_arm
+PIPER_PLANNER_BACKEND=tesseract ./run_target_scan_mission.sh
+```
+
+cuRobo command-free startup (it remains unready for hardware until qualified):
+
+```bash
+cd /home/prl/Piper_arm
+PIPER_PLANNER_BACKEND=curobo \
+PIPER_CUROBO_PYTHON=/home/prl/.venvs/piper-curobo-v0.7.8/bin/python \
+./run_target_scan_mission.sh
+```
+
+Real arm motion remains disabled unless the existing independent mission motion
+opt-ins are also supplied. Selecting cuRobo does not enable motors or motion.
+
+Ordinary tests do not import cuRobo:
+
+```bash
+source /opt/ros/foxy/setup.bash
+source piper_ros_foxy/install/setup.bash
+python3 -m pytest -q \
+  piper_ros_foxy/src/piper_mobile_manipulation/test \
+  piper_ros_foxy/src/piper_tesseract_foxy/test \
+  tests/curobo tests/gui/test_piper_gui_planner_backend.py
+```
+
+GPU tests consume frozen, real bridge requests for all three plan kinds and
+never publish robot commands:
+
+```bash
+PIPER_RUN_CUROBO_GPU_TESTS=1 \
+PIPER_CUROBO_ROBOT_CONFIG=/tmp/piper_curobo_model/piper_curobo.yml \
+PIPER_CUROBO_GPU_MULTIVIEW_REQUEST=/path/to/multiview.request.json \
+PIPER_CUROBO_GPU_ACQUISITION_REQUEST=/path/to/acquisition.request.json \
+PIPER_CUROBO_GPU_RETURN_HOME_REQUEST=/path/to/return_home.request.json \
+/home/prl/.venvs/piper-curobo-v0.7.8/bin/python -m pytest -q \
+  tests/curobo/test_curobo_gpu_integration.py
+```
+
+Plan comparison data is recorded in `MotionPlan`, motion-plan provenance and
+ray diagnostics: backend/version, plan/request IDs, result and failure reason,
+planning time, trajectory duration/point count/path length, candidate counts,
+selected views and available clearance evidence.

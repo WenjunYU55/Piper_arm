@@ -973,3 +973,14 @@ latest_hardware_diagnostics_2026_08_23:
     root_cause: Startup had no fresh powered stability boundary and could command about 0.05 seconds after enable using stability history begun while disabled. Exact attribution among J3/J4/J6 remains unproved.
     correction: Require new post-enable joint/status samples plus two continuous seconds stable, fault-free and all-six-enabled. Failure disables before motion unless motor authority is lost, when watchdog containment remains command-free.
     evidence: [/run/user/1000/piper_target_scan_logs/driver.log, /run/user/1000/piper_target_scan_logs/scan_stack.log, /tmp/piper_target_scan_missions/results/codex-e2e-20260825-2312-ray-integration.json, test_startup_gates.py, test_mission_engine.py]
+
+curobo_integration_diagnostics_2026_08_27:
+  - id: curobo_runtime_not_installed_and_nvcc_missing
+    status: explicit_readiness_failure_gpu_tests_blocked
+    symptom: Host CUDA runtime and PyTorch can use the RTX 3090, but importing cuRobo and compiling its CUDA extension are unavailable.
+    root_cause: The pinned cuRobo 0.7.8 package is not installed and its setup uses CUDAExtension while the host has no nvcc toolkit compiler.
+    correction: Keep ROS and system environments unchanged; use the documented explicit isolated interpreter, install a compatible CUDA toolkit, install the pinned commit, then run only the opt-in command-free GPU suite.
+  - id: curobo_collision_model_unqualified
+    status: fail_closed
+    symptom: Canonical PiPER assets can be converted to conservative moving-link spheres and fixed world cuboids, but physical equivalence to the Tesseract model is not proved.
+    correction: Worker readiness and collision_qualified remain false unless reviewed model provenance says hardware_qualified and the operator explicitly enables qualification. Environment opt-in alone cannot bypass provenance.

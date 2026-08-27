@@ -675,7 +675,7 @@ class MissionEngine:
                 self.operations.progress(
                     context,
                     'adaptive scan complete after %d accepted diverse views; '
-                    'Tesseract proved no meaningfully different collision-free '
+                    'the motion planner proved no meaningfully different collision-free '
                     'view remains' % accepted)
                 break
             try:

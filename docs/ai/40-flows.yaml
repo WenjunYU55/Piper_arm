@@ -979,3 +979,11 @@ repository_development_test_flow_2026_08_27:
   sequence: [source the canonical piper_ros_foxy overlay, collect tests under tests/gui tests/driver and tests/planning, shared conftest inserts the repository root and changes only the test process working directory, execute assertions against unchanged production paths]
   failure_modes: [unsourced ROS interfaces, introducing a second root computation inside individual tests, moving an operator entrypoint instead of a development-only test]
   manual_smoke_checks: [python3 -m pytest -q tests, combined tests plus L515_camera and reconstruction suite, verify supported root shell commands still exist]
+
+generic_motion_planner_flow_2026_08_27:
+  trigger: The operator applies Tesseract or cuRobo for the next automatic mission and starts the single existing mission action.
+  sequence: [mission freezes backend, ProcessSupervisor starts only that worker, bridge proves matching readiness, mission requests a generic plan, adapter validates backend-native output, bridge publishes MotionPlan, executor applies shared normalization validation authorization and runtime gates, TrajectoryRunner uses the existing PiPER adapter, capture and NBV continue unchanged]
+  failure_modes: [invalid backend, missing interpreter, worker import or GPU initialization failure, stale or mismatched request/world/target, unsupported plan kind, malformed trajectory, missing collision qualification, backend loss]
+  failure_behavior: Explicit mission planning failure, no automatic fallback, no direct command from either worker, bounded worker cleanup.
+  curobo_qualification_flow: [generate model from canonical Tesseract URDF/SRDF and mesh manifest, verify asset hashes, install pinned cuRobo 0.7.8 in explicit Python environment with CUDA toolkit, execute opt-in command-free GPU suite, compare collision representation, set hardware_qualified in reviewed model provenance, explicitly opt in with PIPER_CUROBO_COLLISION_MODEL_QUALIFIED=1]
+  manual_smoke_checks: [default Tesseract mission dry run, cuRobo readiness failure with absent interpreter, pure adapter suite, opt-in GPU free-space and collision tests without robot motion, shutdown process audit]

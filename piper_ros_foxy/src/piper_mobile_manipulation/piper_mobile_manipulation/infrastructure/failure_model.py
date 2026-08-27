@@ -224,7 +224,9 @@ def legacy_failure_adapter(
         tags.add(FailureTag.NO_POSITIVE_INFORMATION)
         tags.add(FailureTag.EMPTY_VIEW_FRONTIER)
         tags.add(FailureTag.SAFE_VIEW_EXHAUSTED)
-    if 'tesseract_exhausted' in lowered:
+    if (
+            'tesseract_exhausted' in lowered
+            or 'planner_exhausted' in lowered):
         tags.add(FailureTag.TESSERACT_EXHAUSTED)
         tags.add(FailureTag.SAFE_VIEW_EXHAUSTED)
     if 'ray_shortlist_exhausted' in lowered:
@@ -235,6 +237,9 @@ def legacy_failure_adapter(
     if (
             (
                 'planning failed: tesseract proposal rejected:' in lowered
+                and 'planning_failed:' in lowered)
+            or (
+                'planning failed: motion-planner proposal rejected:' in lowered
                 and 'planning_failed:' in lowered)
             or 'runtime safety gate: invalid obstacle geometry is present'
             in lowered

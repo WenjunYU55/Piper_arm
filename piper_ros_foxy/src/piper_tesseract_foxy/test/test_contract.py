@@ -91,7 +91,7 @@ def request_fixture(plan_kind='MULTIVIEW_SCAN'):
             'max_execution_joint_step_rad': 0.10,
             'effective_speed_percent': 100.0,
             'command_rate_hz': 20.0,
-            'timing_policy': 'tesseract_stream_v3',
+            'timing_policy': 'timed_stream_v1',
             'joint_specific_costs': {},
             'return_home_positions_rad': (
                 [0.0, 0.0, -0.026, -0.039, 0.346, 0.107]
@@ -152,6 +152,11 @@ def response_fixture(request):
     }
     value = {
         'schema_version': SCHEMA_VERSION,
+        'backend': request.get('planner_backend', 'tesseract'),
+        'backend_version': (
+            '0.7.8'
+            if request.get('planner_backend') == 'curobo'
+            else '0.35.0.6'),
         'plan_kind': request['plan_kind'],
         'target_provenance': request['target_provenance'],
         'request_id': request['request_id'],
@@ -746,6 +751,30 @@ def test_response_rejects_kind_or_provenance_substitution():
     with pytest.raises(
             ContractError,
             match='plan_kind mismatch|must not carry source_request_id'):
+        validate_response(response, request)
+
+
+def test_response_backend_must_match_the_frozen_request():
+    request = request_fixture()
+    response = response_fixture(request)
+    response['backend'] = 'curobo'
+    response['backend_version'] = '0.7.8'
+    response = attach_digest(response, 'response_sha256')
+    with pytest.raises(ContractError, match='planner backend mismatch'):
+        validate_response(response, request)
+
+
+@pytest.mark.parametrize('backend,version', [
+    ('automatic', 'unknown'),
+    ('tesseract', ''),
+])
+def test_response_backend_identity_is_mandatory(backend, version):
+    request = request_fixture()
+    response = response_fixture(request)
+    response['backend'] = backend
+    response['backend_version'] = version
+    response = attach_digest(response, 'response_sha256')
+    with pytest.raises(ContractError, match='planner backend'):
         validate_response(response, request)
 
 

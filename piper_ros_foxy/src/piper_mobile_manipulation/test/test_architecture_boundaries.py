@@ -11,6 +11,11 @@ TESSERACT_ROOT = (
     / 'piper_tesseract_foxy'
     / 'piper_tesseract_foxy'
 )
+CUROBO_ROOT = (
+    Path(__file__).resolve().parents[4]
+    / 'motion_planning'
+    / 'curobo'
+)
 
 ROS_IMPORT_ROOTS = frozenset({
     'builtin_interfaces',
@@ -201,6 +206,43 @@ def test_tesseract_worker_and_contract_remain_ros_independent():
             if imported.split('.', 1)[0] in ROS_IMPORT_ROOTS:
                 violations.append((filename, imported))
     assert violations == []
+
+
+def test_curobo_worker_is_ros_free_and_has_no_robot_command_path():
+    """Keep CUDA planning isolated from ROS and PiPER actuation."""
+    violations = []
+    for filename in (
+            'adapter.py', 'generate_robot_config.py', 'spool.py', 'worker.py'):
+        for imported in imported_modules(CUROBO_ROOT / filename):
+            if imported.split('.', 1)[0] in ROS_IMPORT_ROOTS:
+                violations.append((filename, imported))
+    worker_source = (CUROBO_ROOT / 'worker.py').read_text(encoding='utf-8')
+    assert violations == []
+    assert '/joint_ctrl_single' not in worker_source
+    assert 'piper_msgs' not in worker_source
+
+
+def test_common_mission_execution_and_planning_modules_do_not_import_curobo():
+    """Keep CUDA objects behind the external backend adapter."""
+    shared_files = (
+        'target_scan_mission_node.py',
+        'scan_viewpoint_executor_node.py',
+        'mission/engine.py',
+        'execution/authorization.py',
+        'execution/validation.py',
+        'planning/backend.py',
+        'planning/coverage.py',
+        'planning/rays.py',
+    )
+    imported = {
+        name: imported_modules(PACKAGE_ROOT / name)
+        for name in shared_files
+    }
+    assert all(
+        not any(module == 'curobo' or module.startswith('curobo.')
+                or module == 'torch' or module.startswith('torch.')
+                for module in modules)
+        for modules in imported.values())
 
 
 def test_tesseract_contract_facade_preserves_public_objects():

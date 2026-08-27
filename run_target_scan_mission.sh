@@ -25,6 +25,7 @@ REAL_MOTION="${PIPER_MISSION_ENABLE_REAL_MOTION:-0}"
 GATEWAY_HEARTBEAT="${PIPER_MISSION_REQUIRE_GATEWAY_HEARTBEAT:-0}"
 SPEEDS_QUALIFIED="${PIPER_MISSION_SPEEDS_QUALIFIED:-0}"
 FLOOR_PROFILE="${PIPER_FLOOR_PROFILE:-saved}"
+PLANNER_BACKEND="${PIPER_PLANNER_BACKEND:-tesseract}"
 case "$REAL_MOTION" in 0) ROS_REAL_MOTION=false ;; 1) ROS_REAL_MOTION=true ;; *) exit 2 ;; esac
 case "$GATEWAY_HEARTBEAT" in 0) ROS_GATEWAY_HEARTBEAT=false ;; 1) ROS_GATEWAY_HEARTBEAT=true ;; *) exit 2 ;; esac
 case "$SPEEDS_QUALIFIED" in 0) ROS_SPEEDS_QUALIFIED=false ;; 1) ROS_SPEEDS_QUALIFIED=true ;; *) exit 2 ;; esac
@@ -35,11 +36,19 @@ case "$FLOOR_PROFILE" in
     exit 2
     ;;
 esac
+case "$PLANNER_BACKEND" in
+  tesseract|curobo) ;;
+  *)
+    echo "PIPER_PLANNER_BACKEND must be exactly tesseract or curobo." >&2
+    exit 2
+    ;;
+esac
 
 exec ros2 launch piper_mobile_manipulation target_scan_mission.launch.py \
   project_root:="$ROOT" \
   manage_processes:=true \
   floor_profile:="$FLOOR_PROFILE" \
+  planner_backend:="$PLANNER_BACKEND" \
   enable_real_arm_motion:="$ROS_REAL_MOTION" \
   motion_speed_profile_qualified:="$ROS_SPEEDS_QUALIFIED" \
   require_gateway_heartbeat:="$ROS_GATEWAY_HEARTBEAT" \

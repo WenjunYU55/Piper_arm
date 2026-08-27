@@ -919,3 +919,15 @@ repository_layout_and_asset_guardrail_2026_08_27:
     - Generated datasets model weights bags point clouds build output and caches remain untracked unless introduced as explicit minimal fixtures.
   blast_radius: [developer test discovery, documented commands, URDF resources, collision qualification, planner provenance, calibration provenance]
   must_retest_if_changed: [complete affected test directory, five-package build for runtime asset paths, mesh manifest and capability-map validation, YAML parse, root operator-path audit]
+
+generic_motion_planner_guardrail_2026_08_27:
+  invariants:
+    - Planner backend is selected before mission start and cannot change during that mission generation.
+    - No automatic fallback or mid-mission planner switch is allowed.
+    - Tesseract and cuRobo workers are ROS-free planning-only processes and cannot publish PiPER commands.
+    - Both backends must emit the same MotionPlan contract and traverse unchanged common normalization, validation, PlanAuthorizer, runtime monitoring, cancellation, recovery and TrajectoryRunner paths.
+    - Unknown, stale, uncorrelated, malformed, unsupported or collision-unqualified planner results fail closed.
+    - cuRobo readiness requires reviewed model provenance plus explicit collision-model qualification; environment flags alone cannot qualify a model.
+    - Real-arm motion remains disabled by default and planner selection grants no motion authority.
+  blast_radius: [mission identity, planner process ownership, readiness, world and target freshness, collision evidence, plan hashing, execution authorization, GUI next-mission configuration]
+  must_retest_if_changed: [test_planner_backend.py, test_contract.py, test_execution_validation.py, test_execution_authorization.py, test_phase1_external_contract_characterization.py, tests/curobo, GUI planner tests, full mobile and Tesseract suites, five-package build]

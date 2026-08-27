@@ -658,3 +658,11 @@ architecture_cleanup_2026_08_27:
   preserved: [ROS and GUI external interfaces, configuration and launch semantics, mission safety planner driver reconstruction and dataset behavior, root operator commands, runtime asset paths]
   evidence: docs/refactor/architecture_cleanup_2026_08_27.md
   final_deliverables: [ARCHITECTURE.md, docs/refactor/final_equivalence_report.md, docs/architecture/asset_policy.md, docs/ai/project-structure.txt]
+
+generic_motion_planner_and_curobo_2026_08_27:
+  state: software_implemented_gpu_qualification_pending
+  branch: curobo-integration
+  implemented: [PlannerBackend and frozen PlannerConfig, generic RequestMotionPlan and MotionPlan ROS contracts, backend-neutral timed execution validation, one shared mission authorization safety capture and execution path, Tesseract adapter and compatibility aliases, ROS-free cuRobo MotionGen worker, GUI next-mission selection, process supervision, pure and opt-in GPU tests]
+  pinned_curobo: {version: 0.7.8, commit: d64c4b005459db10c5dd867d8b30a87d5bda9bdb}
+  fail_closed_status: cuRobo remains unavailable for missions until its explicit interpreter imports the pinned runtime with CUDA and the generated collision model is reviewed and qualified.
+  unchanged: [one mission implementation, NBV, PlanAuthorizer, runtime safety gates, TrajectoryRunner, PiPER driver path, default-disabled real motion, no planner fallback]

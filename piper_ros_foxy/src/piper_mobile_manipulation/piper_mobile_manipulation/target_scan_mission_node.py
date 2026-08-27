@@ -104,7 +104,7 @@ from piper_mobile_manipulation.msg import (
     CameraTimestampHealth,
     ScanExecutionPlan,
     ScanExecutionStatus,
-    TesseractReadiness,
+    PlannerReadiness,
 )
 from piper_mobile_manipulation.scan_capture import rigid_transform_matrix
 from piper_mobile_manipulation.execution.motion import (
@@ -142,7 +142,7 @@ from piper_mobile_manipulation.srv import (
     ExecuteHomeStage,
     GetTargetScanResult,
     PrepareAcquisition,
-    RequestTesseractPlan,
+    RequestMotionPlan,
 )
 
 # Preserve established pure-helper imports at the ROS adapter boundary while
@@ -161,6 +161,7 @@ NON_COMMAND_PROCESS_GROUPS = (
     'vision',
     'hand_eye',
     'tesseract_worker',
+    'curobo_worker',
 )
 
 
@@ -467,7 +468,7 @@ class TargetScanMissionNode(Node):
             depth=1, reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(
-            TesseractReadiness, '/piper/tesseract_readiness',
+            PlannerReadiness, '/piper/planner_readiness',
             self.readiness_cb, 10)
         self.create_subscription(
             ScanExecutionPlan, '/piper/scan_execution_plan',
@@ -481,7 +482,7 @@ class TargetScanMissionNode(Node):
             String, '/piper/scan_session_history', self.scan_history_cb,
             latched)
         self.create_subscription(
-            String, '/piper/tesseract_view_generation',
+            String, '/piper/view_generation',
             self.view_generation_cb, latched)
         self.create_subscription(
             JointState, '/joint_states_single', self.joint_cb, 10)
@@ -497,15 +498,15 @@ class TargetScanMissionNode(Node):
             PrepareAcquisition, '/scan_target_acquisition/prepare',
             callback_group=self.callback_group)
         self.plan_client = self.create_client(
-            RequestTesseractPlan, '/tesseract_plan_bridge/request_plan',
+            RequestMotionPlan, '/motion_planner/request_plan',
             callback_group=self.callback_group)
         self.return_home_plan_client = self.create_client(
-            RequestTesseractPlan,
-            '/tesseract_plan_bridge/request_return_home_plan',
+            RequestMotionPlan,
+            '/motion_planner/request_return_home_plan',
             callback_group=self.callback_group)
         self.startup_home_plan_client = self.create_client(
-            RequestTesseractPlan,
-            '/tesseract_plan_bridge/request_startup_home_plan',
+            RequestMotionPlan,
+            '/motion_planner/request_startup_home_plan',
             callback_group=self.callback_group)
         self.execute_home_stage_client = self.create_client(
             ExecuteHomeStage,
@@ -811,14 +812,16 @@ class TargetScanMissionNode(Node):
                 msg, received_at=received_at,
                 frame_id=str(getattr(msg.header, 'frame_id', '')))
 
-    @staticmethod
-    def goal_payload(goal):
+    def goal_payload(self, goal):
         stamp = goal.rough_target.header.stamp
         return {
             'task_id': goal.task_id,
             'task_type': goal.task_type,
             'target_label': goal.target_label,
             'target_profile': goal.target_profile,
+            'planner_backend': (
+                goal.planner_backend
+                or self.configuration.planner.default_backend),
             'target_confidence': float(goal.target_confidence),
             'deadline_sec': float(goal.deadline_sec),
             'rough_target': {
@@ -1189,7 +1192,19 @@ class TargetScanMissionNode(Node):
             'PIPER_TARGET_LABEL': session.goal['target_label'],
             'PIPER_TARGET_PROFILE': session.goal['target_profile'],
             'PIPER_TARGET_PROMPT': session.goal['target_prompt'],
+            'PIPER_PLANNER_BACKEND': session.goal.get(
+                'planner_backend', 'tesseract'),
         })
+        planner_config = getattr(self.configuration, 'planner', None)
+        curobo_python = str(getattr(
+            planner_config, 'curobo_worker_python', ''))
+        if curobo_python:
+            environment['PIPER_CUROBO_PYTHON'] = (
+                curobo_python)
+        environment['PIPER_CUROBO_SPOOL'] = str(getattr(
+            planner_config, 'curobo_spool_root', os.path.join(
+                environment.get('XDG_RUNTIME_DIR', '/tmp'),
+                'piper_curobo_plans')))
         calibration_path, calibration_sha256 = calibration_identity_for_mission(
             root, environment)
         environment['PIPER_HAND_EYE_CALIBRATION'] = str(calibration_path)
@@ -1261,28 +1276,38 @@ class TargetScanMissionNode(Node):
         self.wait_for_hand_eye_boot(
             hand_eye_started_ns, 20.0, goal_handle, session)
 
+        backend = str(session.goal.get('planner_backend', 'tesseract'))
+        backend_label = 'Tesseract' if backend == 'tesseract' else 'cuRobo'
+        process_name = '%s_worker' % backend
+        spool_variable = (
+            'PIPER_TESSERACT_SPOOL'
+            if backend == 'tesseract' else 'PIPER_CUROBO_SPOOL')
+        default_spool = (
+            'piper_tesseract_plans'
+            if backend == 'tesseract' else 'piper_curobo_plans')
+        worker_script = root / 'motion_planning' / backend / 'run_worker.sh'
         self.startup_progress(
             goal_handle, session,
-            'fresh hand-eye transform ready; starting Tesseract worker')
-        worker_health_path = Path(
-            environment.get(
-                'PIPER_TESSERACT_SPOOL',
-                os.path.join(
-                    environment.get('XDG_RUNTIME_DIR', '/tmp'),
-                    'piper_tesseract_plans'))) / 'worker_health.json'
+            'fresh hand-eye transform ready; starting %s worker'
+            % backend_label)
+        worker_health_path = Path(environment.get(
+            spool_variable,
+            os.path.join(
+                environment.get('XDG_RUNTIME_DIR', '/tmp'),
+                default_spool))) / 'worker_health.json'
         previous_worker_generation = self.worker_generation(
             worker_health_path)
         self.processes.start(
-            'tesseract_worker', [
-                str(root / 'motion_planning/tesseract/run_worker.sh')],
+            process_name, [str(worker_script)],
             environment)
         self.wait_for_worker_boot(
             worker_health_path, previous_worker_generation, 45.0,
-            goal_handle, session)
+            goal_handle, session, process_name, backend)
 
         self.startup_progress(
             goal_handle, session,
-            'new Tesseract worker ready; starting supervised scan stack')
+            'new %s worker ready; starting supervised scan stack'
+            % backend_label)
         self.processes.start(
             'scan_stack', [
                 str(root / 'L515_camera/run_supervised_viewpoint_execution.sh')],
@@ -1485,24 +1510,28 @@ class TargetScanMissionNode(Node):
 
     def wait_for_worker_boot(
             self, path, previous_generation, timeout_sec,
-            goal_handle=None, session=None):
+            goal_handle=None, session=None, process_name='tesseract_worker',
+            backend='tesseract'):
         deadline = time.monotonic() + float(timeout_sec)
-        last_reason = 'Tesseract worker heartbeat is missing'
+        label = 'Tesseract' if backend == 'tesseract' else 'cuRobo'
+        last_reason = '%s worker heartbeat is missing' % label
         while time.monotonic() < deadline:
             if goal_handle is not None and session is not None:
                 self.guard(goal_handle, session)
             failed = self.processes.failed()
-            if 'tesseract_worker' in failed:
+            if process_name in failed:
                 raise MissionFailure(
-                    'Tesseract worker exited during startup with status %s'
-                    % failed['tesseract_worker'])
+                    '%s worker exited during startup with status %s'
+                    % (label, failed[process_name]))
             health = self.read_worker_health(path)
             last_reason = worker_health_rejection(
-                health, time.time_ns(), previous_generation)
+                health, time.time_ns(), previous_generation,
+                expected_backend=backend)
             if not last_reason:
                 return
             time.sleep(0.1)
-        raise MissionFailure('Tesseract worker startup timed out: ' + last_reason)
+        raise MissionFailure(
+            '%s worker startup timed out: %s' % (label, last_reason))
 
     def selected_home_profile(self):
         configured = str(configured_value(self, 'home_pose_path')).strip()
@@ -1578,6 +1607,8 @@ class TargetScanMissionNode(Node):
         request = AuthorizeMission.Request()
         request.task_id = session.task_id
         request.mission_sha256 = session.mission_sha256
+        request.planner_backend = getattr(session, 'goal', {}).get(
+            'planner_backend', 'tesseract')
         if terminal_home and not revoke:
             # A scan deadline ends scan authority, but it must not prevent the
             # already-established terminal home sequence.  Give each direct
@@ -1625,7 +1656,7 @@ class TargetScanMissionNode(Node):
         while time.monotonic() < (
                 visual_deadline if visual_deadline is not None
                 else queue_deadline):
-            request = RequestTesseractPlan.Request()
+            request = RequestMotionPlan.Request()
             request.force_refresh = False
             deadline = (
                 visual_deadline if visual_deadline is not None
@@ -1633,7 +1664,7 @@ class TargetScanMissionNode(Node):
             result = self.call_service(
                 self.plan_client, request,
                 max(0.1, deadline - time.monotonic()),
-                'Tesseract plan request service')
+                'motion-planner request service')
             if result.accepted:
                 return str(result.request_id)
             if (
@@ -2305,9 +2336,17 @@ class TargetScanMissionNode(Node):
                 math.inf if observation is None else
                 observation.age_at(snapshot.captured_at))
         if readiness is None or age > 1.0:
-            return 'Tesseract readiness is missing or stale'
+            return 'planner readiness is missing or stale'
+        active_session = getattr(self, '_active_engine_session', None)
+        expected_backend = (
+            str(active_session.goal.get('planner_backend', ''))
+            if active_session is not None else '')
+        if (
+                expected_backend
+                and str(readiness.backend) != expected_backend):
+            return 'planner readiness backend does not match active mission'
         if not readiness.worker_ready:
-            return 'Tesseract worker is not ready'
+            return 'planner worker is not ready'
         if mode == 'acquisition':
             return '' if readiness.acquisition_ready else '; '.join(
                 readiness.acquisition_blockers)
@@ -2317,7 +2356,7 @@ class TargetScanMissionNode(Node):
         if mode == 'manipulation':
             return '' if readiness.manipulation_ready else '; '.join(
                 readiness.manipulation_blockers)
-        return 'unsupported Tesseract readiness mode'
+        return 'unsupported planner readiness mode'
 
     def require_fresh_joint_feedback(self):
         telemetry_store = getattr(self, 'telemetry_store', None)
@@ -2575,6 +2614,7 @@ class TargetScanMissionNode(Node):
             request.task_type = str(payload['task_type'])
             request.target_label = str(payload['target_label'])
             request.target_profile = str(payload['target_profile'])
+            request.planner_backend = str(payload['planner_backend'])
             request.target_confidence = float(payload['target_confidence'])
             request.deadline_sec = float(payload['deadline_sec'])
             target = payload['rough_target']

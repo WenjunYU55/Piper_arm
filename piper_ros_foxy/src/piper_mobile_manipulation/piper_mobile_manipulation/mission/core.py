@@ -8,6 +8,8 @@ import math
 import re
 import time
 
+from piper_mobile_manipulation.planning.backend import parse_planner_backend
+
 
 DEFAULT_DEADLINE_SEC = 1200.0
 MAX_DEADLINE_SEC = 1200.0
@@ -158,11 +160,14 @@ def validate_goal_payload(payload, now_sec=None):
     deadline = requested_deadline if requested_deadline > 0.0 else DEFAULT_DEADLINE_SEC
     if not math.isfinite(deadline) or deadline < 60.0 or deadline > MAX_DEADLINE_SEC:
         raise ValueError('deadline_sec must be between 60 and 1200 seconds')
+    planner_backend = parse_planner_backend(
+        payload.get('planner_backend', 'tesseract') or 'tesseract').value
     normalized = {
         'task_id': task_id,
         'task_type': 'SCAN_3D',
         'target_label': label,
         'target_profile': profile_name,
+        'planner_backend': planner_backend,
         'target_prompt': (
             profile.prompt if profile.prompt else target_prompt(label)),
         'target_confidence': confidence,

@@ -118,30 +118,33 @@ def joint_stability_update(reference, stable_since, positions, received_at,
 
 
 def worker_health_rejection(
-        health, now_ns, previous_generation='', maximum_age_sec=1.5):
+        health, now_ns, previous_generation='', maximum_age_sec=1.5,
+        expected_backend='tesseract'):
     """Require one fresh, ready heartbeat from a newly started worker."""
+    backend = str(expected_backend).strip().lower()
+    label = 'Tesseract' if backend == 'tesseract' else 'cuRobo'
     if not isinstance(health, dict):
-        return 'Tesseract worker heartbeat is missing or invalid'
+        return '%s worker heartbeat is missing or invalid' % label
     generation = health.get('generation_id')
     if not isinstance(generation, str) or len(generation) != 32:
-        return 'Tesseract worker generation ID is invalid'
+        return '%s worker generation ID is invalid' % label
     if any(character not in '0123456789abcdef'
            for character in generation):
-        return 'Tesseract worker generation ID is invalid'
+        return '%s worker generation ID is invalid' % label
     if previous_generation and generation == previous_generation:
-        return 'Tesseract worker has not started a new generation'
+        return '%s worker has not started a new generation' % label
     try:
         age_sec = (int(now_ns) - int(health.get('written_at_ns'))) / 1e9
     except (TypeError, ValueError):
-        return 'Tesseract worker heartbeat timestamp is invalid'
+        return '%s worker heartbeat timestamp is invalid' % label
     if age_sec < -1.0 or age_sec > float(maximum_age_sec):
-        return 'Tesseract worker heartbeat is stale'
+        return '%s worker heartbeat is stale' % label
     if health.get('worker_ready') is not True:
         detail = str(health.get('backend_error', '')).strip()
-        return 'Tesseract worker is not ready' + (
+        return '%s worker is not ready' % label + (
             ': ' + detail if detail else '')
-    if health.get('backend') != 'tesseract':
-        return 'Tesseract worker backend is invalid'
+    if health.get('backend') != backend:
+        return '%s worker backend is invalid' % label
     return ''
 
 

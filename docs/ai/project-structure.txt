@@ -127,3 +127,10 @@ piper_ros_foxy/src/piper_mobile_manipulation/srv/GetMeshJobResult.srv - durable 
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/startup_gates.py - pure pre-enable and post-enable joint/status stability validation
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission/engine.py - enable, powered stability proof, STARTUP_WRIST, simultaneous ROUGH_HOME and terminal ordering
 piper_ros_foxy/src/piper/piper/joint_state_policy.py - side-effect-free controller command clamping, J6 startup mapping and raw CAN joint-cycle coherence; piper_ctrl_single_node.py retains hardware lifecycle and compatible exports
+motion_planning/curobo/ - ROS-free pinned-cuRobo MotionGen worker, canonical-model generator, atomic spool protocol, native-result adapter and explicit interpreter launcher; never imports rclpy or commands PiPER
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/planning/backend.py - immutable backend-neutral PlannerBackend, PlannerReadiness, MotionPlanRequest and MotionPlanResult concepts
+piper_ros_foxy/src/piper_mobile_manipulation/msg/{MotionPlan,PlannerReadiness,MotionPlanStatus}.msg - generic planner transport, readiness and status contracts consumed by shared mission/executor code
+piper_ros_foxy/src/piper_mobile_manipulation/srv/RequestMotionPlan.srv - backend-neutral plan request boundary; legacy RequestTesseractPlan remains compatibility-only
+piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/bridge_node.py - generic MotionPlannerBridge routing the frozen backend to one ROS-free worker and publishing MotionPlan; historical package/class/executable aliases are compatibility-only
+piper_gui/planner_backend.py - authoritative persisted next-mission backend parsing and immutable active-mission selection; GUI offers exactly Tesseract or cuRobo through the single automatic mission path
+docs/architecture/motion_planner_backends.md - generic planner architecture, contract classification, process isolation, pinned cuRobo environment/setup, plan-kind support, collision-model limitations and test commands

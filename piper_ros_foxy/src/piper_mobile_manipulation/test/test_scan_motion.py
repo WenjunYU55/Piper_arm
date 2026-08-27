@@ -209,6 +209,37 @@ def test_startup_home_approval_gate_allows_missing_obstacle_telemetry():
     assert not captured['policy'].require_motion_limits
 
 
+def test_mission_approval_rejects_a_plan_from_another_backend():
+    executor = SimpleNamespace(
+        mission_sha256='a' * 64,
+        mission_planner_backend='tesseract',
+        plan_backend='curobo',
+        mission_authorization_valid=lambda: True,
+        state='PROPOSAL_READY',
+        plan_targets=[np.zeros(6)],
+        plan_id='wrong-backend-plan',
+        plan_created=9.0,
+        plan_trajectory_sha256='b' * 64,
+        real_motion_enabled=lambda: True,
+        now=lambda: 10.0,
+        get_parameter=lambda name: SimpleNamespace(value={
+            'approval_confirmation': 'APPROVE',
+            'plan_max_age_sec': 30.0,
+        }[name]),
+    )
+    request = SimpleNamespace(
+        confirmation='MISSION_POLICY:' + executor.mission_sha256,
+        plan_id=executor.plan_id,
+        trajectory_sha256=executor.plan_trajectory_sha256,
+    )
+    response = SimpleNamespace(accepted=True, message='')
+
+    ScanViewpointExecutorNode.approve_cb(executor, request, response)
+
+    assert not response.accepted
+    assert 'live mission authorization' in response.message
+
+
 LINK6_FROM_CAMERA = np.asarray([
     [-0.0635035764, 0.9974167728, -0.0335719700, -0.0745866291],
     [-0.9979815660, -0.0634575393, 0.0024360971, -0.0027843239],
@@ -496,7 +527,7 @@ def test_valid_but_rejected_tesseract_proposal_keeps_full_request_id():
 
     assert captured['plan_id'] == proposal.plan_id
     assert captured['plan_kind'] == MULTIVIEW_SCAN
-    assert captured['reason'].startswith('invalid Tesseract proposal:')
+    assert captured['reason'].startswith('invalid motion-planner proposal:')
 
 
 def test_terminal_folded_home_recovery_validates_its_safe_reverse(monkeypatch):
@@ -1277,8 +1308,9 @@ def test_fixed_j6_planner_cannot_return_as_a_fallback():
     assert 'legacy_fixed_j6' not in combined
     assert 'solve_fixed_j6_viewpoint' not in combined
     assert "'planning_backend'" not in combined
-    assert "msg.backend != 'tesseract'" in executor_source
-    assert "msg.planner_backend = 'tesseract'" in executor_source
+    assert "self.plan_backend not in ('tesseract', 'curobo')" in executor_source
+    assert 'mission_planner_backend' in executor_source
+    assert 'MotionPlan' in executor_source
 
 
 def test_automatic_capture_maximum_is_shared_with_session_planner():
