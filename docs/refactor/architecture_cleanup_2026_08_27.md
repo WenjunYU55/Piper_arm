@@ -157,3 +157,16 @@ remain in the native module.
 All 106 GUI and reconstruction-control tests pass. Source-characterization
 tests inspect both production modules, the class identity is regression-tested,
 and touched files pass flake8, pep257 and byte compilation.
+
+## Phase 8b: reconstruction input provenance
+
+`reconstruction/input_provenance.py` now owns immutable capture-set, manifest,
+artifact, calibration, confidence-schema, exact camera-transform and optional
+offline-mask input admission. `tsdf_reconstruct.py` exposes identical aliases
+for every moved symbol, while `offline_resegment.py` imports the owner directly.
+Fusion, registration, component filtering, quality selection, output writing and
+CLI orchestration remain in `tsdf_reconstruct.py`.
+
+AST comparison proves all 15 moved function bodies are unchanged. Fifty-four
+reconstruction tests pass, direct CLI help works outside the repository working
+directory, and the touched files pass flake8, pep257 and byte compilation.

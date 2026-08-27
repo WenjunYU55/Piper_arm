@@ -102,6 +102,14 @@ hash is part of the committed capability-map provenance.
 | `piper_gui/app.py` | GUI/ROS bootstrap. |
 | `piper_gui_native.py` | Tk presentation, read-only diagnostics, and clearly separated commissioning controls; it re-exports the ROS adapter for compatibility. Its only child process is the preview-only RViz joint editor. |
 
+### Reconstruction boundary
+
+`reconstruction/input_provenance.py` owns immutable input admission, artifact
+hashes and containment, calibration/capture-schema provenance, camera-transform
+conversion and optional offline-mask preparation. `tsdf_reconstruct.py` retains
+Open3D frame loading, registration, TSDF fusion, quality selection, output
+writing and CLI orchestration, and re-exports the input symbols for compatibility.
+
 The GUI is not an autonomous controller. It does not own production retries,
 replanning, occlusion decisions, scan sequencing, mission safety, or production
 child-process lifecycle.

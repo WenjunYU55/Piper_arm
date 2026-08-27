@@ -40,6 +40,10 @@ gui_adapter_guardrails_2026_08_27:
   invariants: [ros_node owns ROS mechanics only, piper_gui_native owns Tk and explicit commissioning interaction, autonomous progression remains outside the GUI, piper_gui_native.PiperGuiRos remains identical to the owner, endpoint names QoS action fields command format event names and presentation are unchanged]
   blast_radius: [operator GUI startup, diagnostics, manual commissioning, mission submission cancellation, reconstruction home handshake]
   must_retest_if_changed: [all test_piper_gui files, reconstruction GUI-support tests, isolated-domain GUI launch and close, changed-file lint and compile, no hardware command]
+reconstruction_input_guardrails_2026_08_27:
+  invariants: [input_provenance remains independent of Open3D and GUI, moved function bodies and constants remain unchanged, tsdf_reconstruct compatibility exports are identical owner objects, manifest containment hashes calibration capture schema offline-mask provenance CLI and outputs are unchanged]
+  blast_radius: [every reconstruction input, diagnostic certification, offline resegmentation cache, gateway reconstruction jobs, GUI reconstruction]
+  must_retest_if_changed: [all reconstruction tests, compatibility identity and AST comparison, direct CLI smoke, root GUI reconstruction and calibration suite, immutable dataset replay, changed-file lint pep257 and compile]
 ray_diagnostics_storage_guardrails_2026_08_27:
   invariants:
     - Every future default writer and historical replay output uses PIPER_ARM_ROOT/datasets/ray_diagnostics.

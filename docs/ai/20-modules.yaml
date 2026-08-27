@@ -48,6 +48,13 @@ responsibility_packages_2026_08_27:
     owns: ROS endpoint creation, unchanged RunTargetScan goal conversion, commissioning joint and enable transport, diagnostic delivery and tracked-base reconstruction handshake.
     allowed_edit_paths: [piper_gui/ros_node.py, piper_gui/ros_client.py, piper_gui_native.py compatibility import and Tk call sites, GUI tests, docs/ai]
     must_not_move_without: [GUI event names, action goal and outcome mapping, commissioning publisher ownership lock, joint command format, diagnostic topics, ReportTrackedRobotHomed identity]
+  reconstruction_input_provenance:
+    owner_module: reconstruction/input_provenance.py
+    runtime_orchestrator: reconstruction/tsdf_reconstruct.py
+    derived_mask_adapter: reconstruction/offline_resegment.py
+    owns: Immutable capture-set count, manifest artifact hashes and containment, exact metadata artifact resolution, calibration and confidence-schema provenance, offline mask generation admission and camera extrinsic conversion.
+    allowed_edit_paths: [reconstruction/input_provenance.py, tsdf_reconstruct compatibility exports and call sites, offline_resegment owner imports, reconstruction tests, docs/ai]
+    must_not_move_without: [manifest and file digests, dataset containment, capture schema 2, calibration identity, offline derived-mask identity, report provenance, GUI reconstruction command]
 capture_one_model_seed_2026_08_26:
   owner_module: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture_node.py
   supporting_owners: {shape transform seed schema and digest: target_envelope.py, private response admission and accepted promotion: scan_viewpoint_executor_node.py, validated history transport: scan_session_memory.py, envelope and qualified population freeze: scan_viewpoint_planner_node.py}
@@ -360,6 +367,7 @@ modules:
     must_not_move_without: [autonomous_target_scan, operator_tools, camera_timestamp_safety, tesseract_planning]
   reconstruction_export:
     owner_module: reconstruction/tsdf_reconstruct.py
+    input_owner: reconstruction/input_provenance.py
     allowed_edit_paths: [reconstruction/tsdf_reconstruct.py, reconstruction/view_reconstruction.py, reconstruction/gui_support.py, reconstruction/test_tsdf_reconstruct.py, reconstruction/test_gui_support.py, reconstruction/requirements.txt, piper_gui_native.py, test_piper_gui_phase8.py]
     owns: Offline masked RGB-D TSDF integration for immutable successful automatic scan datasets, including the 1-to-24 view-count contract without a fixed eight-view quality cap, exact manifest-to-frame-metadata count agreement, timestamped camera-transform validation, robot-pose baseline, optional sequential or connected bounded target-only GICP and target-excluded static-scene RGB-D pose-graph residual refinement, conservative connected-target fragment filtering, full-resolution accepted measured-point diagnostic export, evidence-based auto selection, and mesh quality report.
     must_not_move_without: [autonomous_target_scan, supervised_scan_execution, scan_and_obstacles]

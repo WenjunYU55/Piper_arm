@@ -24,6 +24,10 @@ gui_internal_adapter_contract_2026_08_27:
   owner: piper_gui/ros_node.py
   compatibility: piper_gui_native.PiperGuiRos is the identical owner class.
   external_change: none; ROS endpoint names message types QoS depths action fields commissioning commands event payloads and Tk behavior are unchanged.
+reconstruction_input_contract_2026_08_27:
+  owner: reconstruction/input_provenance.py
+  compatibility: tsdf_reconstruct exports the identical fifteen functions and three constants used by existing tests and scripts.
+  external_change: none; manifest bytes hashes calibration and schema admission offline-mask identity CLI arguments output files quality JSON and dataset formats are unchanged.
 ray_review_operator_name_contract_2026_08_27:
   internal_basename: RayProcesses - HH:MM - DD-MM-YYYY
   files: [RayProcesses - HH:MM - DD-MM-YYYY.json, RayProcesses - HH:MM - DD-MM-YYYY.html]

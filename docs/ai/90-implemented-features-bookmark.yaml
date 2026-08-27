@@ -35,6 +35,11 @@ gui_ros_adapter_cleanup_2026_08_27:
   owner: piper_gui/ros_node.py
   compatibility: piper_gui_native.PiperGuiRos is the identical class object.
   evidence: [106 GUI and reconstruction-control tests, strengthened two-module production-source characterization, changed-file lint and compile]
+reconstruction_input_cleanup_2026_08_27:
+  status: structurally_extracted_behavior_preserved
+  owner: reconstruction/input_provenance.py
+  compatibility: tsdf_reconstruct re-exports identical input-admission constants and functions.
+  evidence: [15 moved function ASTs identical to rollback commit, 54 reconstruction tests, direct out-of-tree CLI smoke, changed-file flake8 pep257 and compile]
 capture_one_bound_model_seed_2026_08_26:
   status: physically_retested_generation_one_and_three_captures_passed
   capability: The first accepted model is derived from capture one's exact persisted semantic mask confidence-qualified target depth CameraInfo and recorded base-from-camera transform. Shape and transform are one hash-bound private seed persisted in frame metadata, returned by scan capture, admitted before workflow acceptance and promoted in accepted scan history. The planner builds the revolution directly from the recorded matrix, so TF cache lifetime cannot empty generation one.

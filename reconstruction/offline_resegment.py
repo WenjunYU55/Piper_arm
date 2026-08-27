@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Create immutable-derived GroundingDINO/SAM2 masks for one scan dataset.
+"""
+Create immutable-derived GroundingDINO/SAM2 masks for one scan dataset.
 
 The source capture and manifest are never edited.  Each derived generation is
 bound to the immutable manifest, target prompt and exact model assets.  The
@@ -42,15 +43,28 @@ from sam2_refine_on_capture import (  # noqa: E402
     DEFAULT_SAM2_CONFIG,
     refine_capture,
 )
-from tsdf_reconstruct import (  # noqa: E402
-    canonical_sha256,
-    load_metadata,
-    manifest_artifact_index,
-    metadata_paths_from_manifest,
-    resolve_frame_artifacts,
-    sha256_file,
-    validate_manifest_integrity,
-)
+try:
+    from reconstruction.input_provenance import (  # noqa: E402
+        canonical_sha256,
+        load_metadata,
+        manifest_artifact_index,
+        metadata_paths_from_manifest,
+        resolve_frame_artifacts,
+        sha256_file,
+        validate_manifest_integrity,
+    )
+except ModuleNotFoundError as error:
+    if error.name != 'reconstruction':
+        raise
+    from input_provenance import (  # noqa: E402
+        canonical_sha256,
+        load_metadata,
+        manifest_artifact_index,
+        metadata_paths_from_manifest,
+        resolve_frame_artifacts,
+        sha256_file,
+        validate_manifest_integrity,
+    )
 
 
 PIPELINE_VERSION = 2

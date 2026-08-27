@@ -6,6 +6,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from reconstruction import input_provenance as INPUTS
+
 cv2 = pytest.importorskip('cv2')
 
 
@@ -13,6 +15,21 @@ PATH = Path(__file__).with_name('tsdf_reconstruct.py')
 SPEC = importlib.util.spec_from_file_location('tsdf_reconstruct', PATH)
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
+
+
+def test_tsdf_module_preserves_input_admission_exports():
+    names = (
+        'MINIMUM_CAPTURE_VIEWS', 'MAXIMUM_CAPTURE_VIEWS', 'MASK_SOURCES',
+        'canonical_sha256', 'camera_extrinsic_from_metadata', 'sha256_file',
+        'load_metadata', 'capture_set_provenance', 'validate_capture_set',
+        'validate_manifest_integrity', 'manifest_artifact_index',
+        'prepare_offline_mask_context', 'load_offline_target_mask',
+        'metadata_paths_from_manifest', 'resolve_frame_artifacts',
+        'confidence_capture_provenance', 'calibration_provenance',
+        'capture_schema_provenance',
+    )
+    for name in names:
+        assert getattr(MODULE, name) is getattr(INPUTS, name)
 
 
 def test_default_reconstruction_preserves_one_millimetre_detail():

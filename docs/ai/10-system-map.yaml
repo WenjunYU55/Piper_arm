@@ -20,6 +20,9 @@ tesseract_owner_load_order_2026_08_27:
 gui_adapter_load_order_2026_08_27:
   sequence: [piper_gui/app.py initializes the ROS runtime, piper_gui/ros_node.py creates the unchanged endpoints and converts events, piper_gui/ros_client.py manages action futures, piper_gui_native.py renders events and explicit commissioning state]
   load_order_contracts: [Tk presentation depends on the ROS adapter, the ROS adapter never imports piper_gui_native, MissionEngine remains the sole autonomous mission progression owner, piper_gui_native retains a one-way class compatibility export]
+reconstruction_input_load_order_2026_08_27:
+  sequence: [input_provenance validates immutable manifest artifacts calibration and capture schema, optional offline resegmentation produces hash-bound derived masks, tsdf_reconstruct loads admitted frames, unchanged registration and TSDF fusion run, unchanged quality report and outputs are written]
+  load_order_contracts: [input admission precedes Open3D integration, offline_resegment imports input_provenance rather than the orchestrator, tsdf_reconstruct exposes one-way compatibility aliases, direct script execution retains its local import fallback]
 ray_diagnostics_storage_path_2026_08_27:
   runtime_load_order: [planner reachability filter bridge and coordinator resolve PIPER_ARM_ROOT, every writer constructs datasets/ray_diagnostics, unique mission or session directory is created, the existing per-directory lock selects or retains its report basename, GUI discovers canonical and legacy roots but historical replay writes only canonical]
   load_order_contracts: [deploy and restart all diagnostic-producing nodes together so one mission cannot split across old and new roots, preserve one root per new mission, canonical root is searched before the legacy root for unqualified historical selections, path containment is enforced independently for each root]

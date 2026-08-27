@@ -48,6 +48,12 @@ gui_adapter_routing_2026_08_27:
   compatibility: piper_gui_native.py imports and exposes the identical PiperGuiRos class while retaining Tk presentation and commissioning controls.
   preserved: [all topic service and action names, QoS depths, goal fields, command message format, commissioning lock behavior, GUI presentation]
   validation: [106 GUI and reconstruction-control tests pass, old and new class identity is tested, touched-file lint and compile pass, no hardware command]
+reconstruction_input_routing_2026_08_27:
+  owner: reconstruction/input_provenance.py
+  owns: Immutable manifest and artifact validation, calibration and capture-schema provenance, exact camera transform admission, offline-mask preparation and hash-bound input resolution.
+  compatibility: reconstruction/tsdf_reconstruct.py re-exports the identical constants and functions; offline_resegment.py imports the owner directly.
+  preserved: [manifest and artifact hashes, capture count, calibration policy, schema-2 confidence checks, offline mask cache and subprocess behavior, TSDF and registration algorithms, CLI, report and dataset formats]
+  validation: [all 15 moved function ASTs are identical, 54 reconstruction tests pass, direct CLI help works outside the repository cwd, lint pep257 and compile pass]
 ray_diagnostics_storage_root_2026_08_27:
   behavior: All new live mission, reachability, Tesseract, terminal, historical replay and offline simulation ray diagnostics use datasets/ray_diagnostics/<mission_id-or-session_id>/ as their one canonical root.
   compatibility: The GUI continues to discover, validate and open historical reports under datasets/active_scan/ray_diagnostics without migrating or rewriting them. Plain artifact selections prefer the canonical root; GUI selections carry an internal current or legacy root qualifier.
