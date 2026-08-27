@@ -34,7 +34,7 @@ from piper_tesseract_foxy.contract import (
 )
 
 WORKER_PLANNING_BUDGET_SEC = 150.0
-AUTOMATIC_ONE_VIEW_PLANNING_BUDGET_SEC = 45.0
+AUTOMATIC_ONE_VIEW_PLANNING_BUDGET_SEC = 90.0
 AUTOMATIC_ONE_VIEW_SEGMENT_BUDGET_SEC = 3.0
 WORKER_RESPONSE_RESERVE_SEC = 5.0
 SCAN_TARGET_MAX_BORESIGHT_DEG = 20.0
@@ -337,18 +337,25 @@ def attached_box_floor_clearance_rejection(
 def camera_transform_path_rejection(
         transforms, target_center,
         maximum_boresight_deg=SCAN_TARGET_MAX_BORESIGHT_DEG,
-        minimum_target_distance_m=SCAN_TARGET_MIN_DISTANCE_M):
+        minimum_target_distance_m=SCAN_TARGET_MIN_DISTANCE_M,
+        initial_alignment=False, final_aim_deg=5.0):
     """Return why calibrated camera FK cannot preserve target visibility."""
     target = np.asarray(target_center, dtype=float)
     maximum = float(maximum_boresight_deg)
     minimum = float(minimum_target_distance_m)
+    final_aim = float(final_aim_deg)
     if (
             target.shape != (3,) or not np.all(np.isfinite(target))
             or not math.isfinite(maximum) or maximum <= 0.0 or maximum >= 90.0
-            or not math.isfinite(minimum) or minimum <= 0.0):
+            or not math.isfinite(minimum) or minimum <= 0.0
+            or not math.isfinite(final_aim) or final_aim <= 0.0
+            or final_aim > maximum):
         return 'scan target visibility inputs are invalid'
     if not transforms:
         return 'scan target visibility path is empty'
+    initial_angle = None
+    entered_normal_cone = False
+    final_angle = None
     for index, value in enumerate(transforms):
         transform = np.asarray(value, dtype=float)
         if transform.shape != (4, 4) or not np.all(np.isfinite(transform)):
@@ -366,11 +373,32 @@ def camera_transform_path_rejection(
             return 'scan camera optical axis is invalid at sample %d' % index
         angle_deg = math.degrees(math.acos(float(np.clip(
             np.dot(forward / forward_norm, ray / distance_m), -1.0, 1.0))))
-        if angle_deg > maximum + 1e-6:
+        final_angle = angle_deg
+        if initial_angle is None:
+            initial_angle = angle_deg
+            entered_normal_cone = angle_deg <= maximum + 1e-6
+        if not initial_alignment and angle_deg > maximum + 1e-6:
             return (
                 'scan target leaves the %.1f-degree camera boresight cone '
                 'at sample %d (%.1f degrees)'
                 % (maximum, index, angle_deg))
+        if initial_alignment:
+            if angle_deg > max(maximum, initial_angle) + 1e-6:
+                return (
+                    'initial target-alignment path worsens beyond its '
+                    '%.1f-degree acquired aim at sample %d (%.1f degrees)'
+                    % (initial_angle, index, angle_deg))
+            if entered_normal_cone and angle_deg > maximum + 1e-6:
+                return (
+                    'initial target-alignment path leaves the %.1f-degree '
+                    'camera boresight cone after entering it at sample %d '
+                    '(%.1f degrees)' % (maximum, index, angle_deg))
+            if angle_deg <= maximum + 1e-6:
+                entered_normal_cone = True
+    if initial_alignment and final_angle > final_aim + 1e-6:
+        return (
+            'initial target-alignment endpoint aim %.1f degrees exceeds the '
+            '%.1f-degree settled-capture limit' % (final_angle, final_aim))
     return ''
 
 
@@ -1764,7 +1792,8 @@ class TesseractBackend:
 
     def plan_candidate(self, start, candidate, rolls, maximum_step,
                        position_limits, joint_margin, bootstrap_recovery=None,
-                       visibility_target=None):
+                       visibility_target=None,
+                       initial_target_alignment=False):
         """Rank IK across every roll, then bound expensive planner attempts."""
         start_array = finite_six(start, 'candidate start')
         ranked = []
@@ -1813,7 +1842,8 @@ class TesseractBackend:
             try:
                 points, validation = self.plan_segment_to_joint_goal(
                     start_array, goal, maximum_step, bootstrap_recovery,
-                    visibility_target=visibility_target)
+                    visibility_target=visibility_target,
+                    initial_target_alignment=initial_target_alignment)
                 if visibility_target is not None:
                     positions = []
                     for point_index, point in enumerate(points):
@@ -1831,7 +1861,9 @@ class TesseractBackend:
                         for joints in positions
                     ]
                     rejection = camera_transform_path_rejection(
-                        transforms, visibility_target)
+                        transforms, visibility_target,
+                        initial_alignment=initial_target_alignment,
+                        final_aim_deg=5.0)
                     if rejection:
                         raise CandidatePlanningError(
                             'VISIBILITY_FAILURE', rejection)
@@ -1847,7 +1879,7 @@ class TesseractBackend:
     def plan_candidate_aims(
             self, start, candidate, rolls, maximum_step,
             position_limits, joint_margin, bootstrap_recovery=None,
-            visibility_target=None):
+            visibility_target=None, initial_target_alignment=False):
         """Try exact aim first, solving a target ray continuously when used."""
         nominal = list(candidate['look_direction'])
         variants = [nominal] + list(
@@ -1919,7 +1951,8 @@ class TesseractBackend:
                             *arguments)
                     else:
                         roll, points, validation = self.plan_candidate(
-                            *arguments, visibility_target)
+                            *arguments, visibility_target,
+                            initial_target_alignment)
                     offset = angular_separation_deg(nominal, look_direction)
                     attempt['aim_attempt_diagnostics'] = {
                         'attempted': list(attempted),
@@ -1975,7 +2008,7 @@ class TesseractBackend:
     def plan_segment_to_joint_goal(
             self, start, goal, maximum_step, bootstrap_recovery=None,
             bootstrap_policy_name='bootstrap_start_recovery',
-            visibility_target=None):
+            visibility_target=None, initial_target_alignment=False):
         planning_time = self.remaining_planning_time(
             'before an OMPL segment solve')
         program = self.api['MotionProgram'](
@@ -2199,7 +2232,9 @@ class TesseractBackend:
                     tip_link='camera_optical_frame').matrix)
                 for joints in positions]
             return camera_transform_path_rejection(
-                transforms, visibility_target)
+                transforms, visibility_target,
+                initial_alignment=initial_target_alignment,
+                final_aim_deg=5.0)
 
         visibility_error = visibility_rejection(points)
         if visibility_error and bool(blend_metadata.get('applied', False)):
@@ -2576,6 +2611,10 @@ class TesseractBackend:
         visibility_target = (
             request['scene'].get('target_center_m')
             if request.get('plan_kind') == 'MULTIVIEW_SCAN' else None)
+        first_target_alignment_pending = bool(
+            request.get('plan_kind') == 'MULTIVIEW_SCAN'
+            and int(request.get(
+                'scan_session', {}).get('accepted_views', -1)) == 0)
         if request.get('plan_kind') == 'RETURN_HOME':
             TesseractBackend.ensure_planning_time(
                 self, 'before dedicated return-home qualification')
@@ -2708,7 +2747,7 @@ class TesseractBackend:
                         self,
                         current, candidate, rolls, maximum_step,
                         position_limits, joint_margin, bootstrap_recovery,
-                        visibility_target)
+                        visibility_target, first_target_alignment_pending)
                 except (ContractError, RuntimeError, ValueError) as error:
                     failures[int(candidate['id'])] = str(error)
                     diagnostics = self.last_planning_diagnostics
@@ -2807,6 +2846,7 @@ class TesseractBackend:
                 })
                 current = points[-1]['positions_rad']
                 bootstrap_recovery = None
+                first_target_alignment_pending = False
                 failures.pop(int(candidate['id']), None)
                 pending = (
                     next_pending + pending[candidate_index + 1:])

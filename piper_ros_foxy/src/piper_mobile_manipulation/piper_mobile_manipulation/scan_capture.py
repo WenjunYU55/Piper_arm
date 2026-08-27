@@ -71,8 +71,9 @@ def synchronized_bundle_rejection(
 
 def capture_diagnostic_rejection(
         quality, quality_age_sec, occlusion, occlusion_age_sec,
-        maximum_age_sec=1.0, minimum_quality_score=0.65):
-    """Require one fresh GOOD/CLEAR visual observation before persistence."""
+        maximum_age_sec=1.0, minimum_quality_score=0.65,
+        allowed_occlusion_states=('CLEAR',)):
+    """Require one fresh GOOD observation and an explicitly allowed scene."""
     if not isinstance(quality, dict):
         return 'QUALITY_REJECTED: scan quality is missing'
     try:
@@ -108,7 +109,12 @@ def capture_diagnostic_rejection(
             or occlusion_age > float(maximum_age_sec)):
         return 'OCCLUSION_REJECTED: occlusion evidence is stale'
     state = str(occlusion.get('occlusion_state', 'UNKNOWN')).upper()
-    if state != 'CLEAR':
+    allowed = {
+        str(value).strip().upper()
+        for value in allowed_occlusion_states
+        if str(value).strip()
+    }
+    if state not in allowed:
         return 'OCCLUSION_REJECTED: settled target view is %s' % state
     return ''
 

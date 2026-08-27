@@ -11,10 +11,8 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.time import Time
 from std_msgs.msg import String
-from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformException, TransformListener
 
-from piper_mobile_manipulation.msg import ScanExecutionStatus
 from piper_mobile_manipulation.srv import (
     PrepareAcquisition,
     RequestMotionPlan,
@@ -39,11 +37,8 @@ class ScanTargetAcquisitionNode(Node):
             'acquisition_viewpoints_topic': '/piper/acquisition_viewpoints',
             'reachable_acquisition_viewpoints_topic':
                 '/piper/reachable_acquisition_viewpoints',
-            'scan_execution_status_topic': '/piper/scan_execution_status',
-            'workflow_status_topic': '/piper/supervised_workflow_status',
             'request_acquisition_plan_service':
                 '/motion_planner/request_acquisition_plan',
-            'workflow_start_service': '/supervised_cube_workflow/start',
             'base_frame': 'base_link',
             'camera_optical_frame': 'camera_color_optical_frame',
             'hint_max_age_sec': 5.0,
@@ -75,9 +70,6 @@ class ScanTargetAcquisitionNode(Node):
         self.last_acquisition_publish_at = -float('inf')
         self.last_acquisition_request_at = -float('inf')
         self.acquisition_handoff_timeout_reported = False
-        self.acquired_status_seen = False
-        self.workflow_start_sent = False
-        self.workflow_ready = False
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         self.publisher = self.create_publisher(
@@ -88,25 +80,9 @@ class ScanTargetAcquisitionNode(Node):
             self.reachable_acquisition_cb,
             10,
         )
-        self.execution_status_subscription = self.create_subscription(
-            ScanExecutionStatus,
-            self.get_parameter('scan_execution_status_topic').value,
-            self.execution_status_cb,
-            10,
-        )
-        self.workflow_status_subscription = self.create_subscription(
-            String,
-            self.get_parameter('workflow_status_topic').value,
-            self.workflow_status_cb,
-            10,
-        )
         self.acquisition_plan_client = self.create_client(
             RequestMotionPlan,
             self.get_parameter('request_acquisition_plan_service').value,
-        )
-        self.workflow_start_client = self.create_client(
-            Trigger,
-            self.get_parameter('workflow_start_service').value,
         )
         self.prepare_service = self.create_service(
             PrepareAcquisition, '~/prepare', self.prepare_cb)
@@ -268,9 +244,6 @@ class ScanTargetAcquisitionNode(Node):
         self.last_acquisition_publish_at = self.acquisition_handoff_started_at
         self.last_acquisition_request_at = -float('inf')
         self.acquisition_handoff_timeout_reported = False
-        self.acquired_status_seen = False
-        self.workflow_start_sent = False
-        self.workflow_ready = False
         self.publisher.publish(output)
         response.accepted = True
         response.message = (
@@ -293,25 +266,6 @@ class ScanTargetAcquisitionNode(Node):
             self.pending_acquisition_payload_ready = True
             self.submit_ready_requests()
 
-    def execution_status_cb(self, msg):
-        if (
-                msg.state == 'ACQUIRED'
-                and msg.execution_mode == ROUGH_ACQUISITION
-                and self.acquisition_bridge_request_id
-                and self.acquisition_bridge_request_id.startswith(msg.plan_id)
-                and not self.acquired_status_seen):
-            self.acquired_status_seen = True
-            self.submit_ready_requests()
-
-    def workflow_status_cb(self, msg):
-        try:
-            payload = json.loads(msg.data)
-        except (TypeError, json.JSONDecodeError):
-            return
-        self.workflow_ready = str(payload.get('state', '')) == 'SCAN_READY'
-        if self.workflow_ready:
-            self.submit_ready_requests()
-
     def submit_ready_requests(self):
         now = time.monotonic()
         retry = float(self.get_parameter('handoff_retry_sec').value)
@@ -328,15 +282,6 @@ class ScanTargetAcquisitionNode(Node):
             future.add_done_callback(
                 lambda result: self.log_plan_request_result(
                     result, ROUGH_ACQUISITION))
-
-        if (
-                self.acquired_status_seen
-                and not self.workflow_start_sent
-                and not self.workflow_ready
-                and self.workflow_start_client.service_is_ready()):
-            self.workflow_start_sent = True
-            future = self.workflow_start_client.call_async(Trigger.Request())
-            future.add_done_callback(self.log_workflow_start_result)
 
     def handoff_tick(self):
         """Retry the command-free Foxy handoff without duplicating a plan."""
@@ -360,16 +305,6 @@ class ScanTargetAcquisitionNode(Node):
                     'ROUGH_ACQUISITION handoff timed out before planner '
                     'accepted a command-free request')
         self.submit_ready_requests()
-
-    def log_workflow_start_result(self, future):
-        try:
-            response = future.result()
-            level = self.get_logger().info if response.success else \
-                self.get_logger().error
-            level('post-acquisition workflow start: %s' % response.message)
-        except Exception as exc:
-            self.get_logger().error(
-                'post-acquisition workflow start service failed: %s' % exc)
 
     def log_plan_request_result(self, future, plan_kind):
         try:

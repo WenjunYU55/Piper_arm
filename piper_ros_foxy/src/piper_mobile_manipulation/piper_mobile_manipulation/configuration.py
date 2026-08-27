@@ -251,6 +251,7 @@ class CaptureConfig:
     settle_duration_sec: float
     settle_timeout_sec: float
     capture_timeout_sec: float
+    first_capture_acceptance_timeout_sec: float
     finish_scan_timeout_sec: float
     capture_status_propagation_sec: float
 
@@ -406,6 +407,7 @@ def executor_parameter_defaults():
         'settle_duration_sec': 1.5,
         'settle_timeout_sec': 15.0,
         'capture_timeout_sec': 20.0,
+        'first_capture_acceptance_timeout_sec': 75.0,
         'finish_scan_timeout_sec': 10.0,
         'capture_status_propagation_sec': 0.25,
         'acquisition_fresh_frame_timeout_sec': 10.0,
@@ -653,6 +655,9 @@ def load_executor_configuration(node):
             'settle_timeout_sec', values['settle_timeout_sec']),
         capture_timeout_sec=_positive(
             'capture_timeout_sec', values['capture_timeout_sec']),
+        first_capture_acceptance_timeout_sec=_positive(
+            'first_capture_acceptance_timeout_sec',
+            values['first_capture_acceptance_timeout_sec']),
         finish_scan_timeout_sec=_positive(
             'finish_scan_timeout_sec', values['finish_scan_timeout_sec']),
         capture_status_propagation_sec=_non_negative(
@@ -663,6 +668,10 @@ def load_executor_configuration(node):
         raise ConfigurationError(
             'max_execution_viewpoints must be at least '
             'min_execution_viewpoints')
+    if capture.first_capture_acceptance_timeout_sec < capture.capture_timeout_sec:
+        raise ConfigurationError(
+            'first_capture_acceptance_timeout_sec must be at least '
+            'capture_timeout_sec')
     safety = SafetyConfig(
         joint_feedback_limit_tolerance_rad=_non_negative(
             'joint_feedback_limit_tolerance_rad',

@@ -20,11 +20,23 @@ def _inside(root, value):
 
 
 def _frame_voxels(dataset, metadata, voxel_size_m, pixel_stride):
-    depth_path = _inside(dataset, metadata['depth_file_path'])
-    mask_path = _inside(dataset, metadata['mask_file_path'])
-    depth = np.load(str(depth_path), allow_pickle=False).astype(np.float64)
-    if '16U' in str(metadata.get('depth_encoding', '')) or str(
-            metadata.get('depth_encoding', '')) in ('mono16', '16UC1'):
+    schema = int(metadata.get('capture_schema_version', 1))
+    if schema >= 2:
+        depth_path = _inside(
+            dataset, metadata['target_depth_png_file_path'])
+        mask_path = _inside(
+            dataset, metadata['target_support_mask_file_path'])
+        depth = cv2.imread(str(depth_path), cv2.IMREAD_UNCHANGED)
+        if depth is None or depth.dtype != np.uint16:
+            raise ValueError('qualified target depth is missing or malformed')
+        depth = depth.astype(np.float64)
+        depth_encoding = '16UC1'
+    else:
+        depth_path = _inside(dataset, metadata['depth_file_path'])
+        mask_path = _inside(dataset, metadata['mask_file_path'])
+        depth = np.load(str(depth_path), allow_pickle=False).astype(np.float64)
+        depth_encoding = str(metadata.get('depth_encoding', ''))
+    if '16U' in depth_encoding or depth_encoding in ('mono16', '16UC1'):
         depth *= 0.001
     mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
     if mask is None or mask.shape != depth.shape:

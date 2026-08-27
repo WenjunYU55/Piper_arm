@@ -1,5 +1,6 @@
 """Phase 1 characterization of executor safety and capture decisions."""
 
+import inspect
 import json
 from types import SimpleNamespace
 
@@ -25,6 +26,24 @@ from piper_mobile_manipulation.target_envelope import (
     build_capture_model_seed,
     canonical_sha256,
 )
+
+
+def test_executor_isolates_timer_services_clients_and_telemetry_callbacks():
+    constructor = inspect.getsource(ScanViewpointExecutorNode.__init__)
+    module = inspect.getmodule(ScanViewpointExecutorNode)
+    main_source = inspect.getsource(module.main)
+
+    assert 'control_callback_group' in constructor
+    assert 'timer_callback_group' in constructor
+    assert 'telemetry_callback_group' in constructor
+    assert 'client_callback_group' in constructor
+    assert 'serialized_control_callback(self.tick)' in constructor
+    assert 'callback_group=self.control_callback_group' in constructor
+    assert 'callback_group=self.timer_callback_group' in constructor
+    assert 'callback_group=self.telemetry_callback_group' in constructor
+    assert 'callback_group=self.client_callback_group' in constructor
+    assert 'MultiThreadedExecutor' in main_source
+    assert 'except KeyboardInterrupt' in main_source
 
 
 class CompletedFuture:
@@ -68,6 +87,8 @@ def capture_model_seed_response():
     })
     return json.dumps({
         'capture_result_schema_version': 1,
+        'occlusion_state': 'CLEAR',
+        'occlusion_score': 0.0,
         'qualified_target_model_seed': seed,
     }), seed
 
@@ -297,6 +318,8 @@ def test_successful_rgbd_capture_advances_to_workflow_acceptance():
     assert events[1][0:2] == ('state', 'CAPTURING')
     assert harness.pending_scan_qualified_target_model_seed == seed
     assert harness.pending_scan_qualified_target_shape == seed['shape']
+    assert harness.pending_capture_occlusion_state == 'CLEAR'
+    assert harness.capture_semantic_probe_pending
 
 
 def test_first_capture_without_capture_bound_model_seed_aborts():
@@ -308,9 +331,74 @@ def test_first_capture_without_capture_bound_model_seed_aborts():
 
     assert events == [(
         'abort',
-        'accepted first RGB-D capture has no exact model seed: capture '
-        'response does not contain model-seed JSON',
+        'accepted RGB-D capture result is malformed: capture response does '
+        'not contain model-seed JSON',
     )]
+
+
+def test_waiting_capture_propagates_occlusion_cancellation_immediately():
+    aborted = []
+    harness = SimpleNamespace(
+        now=lambda: 1.0,
+        state_started=0.0,
+        get_parameter=lambda _name: SimpleNamespace(value=20.0),
+        telemetry_store=None,
+        latest_workflow={
+            'state': 'ABORTED',
+            'reason': 'target is occluded by pen; mission cancelled',
+        },
+        workflow_ready=lambda: False,
+        abort_motion=lambda reason: aborted.append(reason),
+    )
+
+    ScanViewpointExecutorNode.wait_capture_tick(harness)
+
+    assert aborted == [
+        'workflow rejected first capture: target is occluded by pen; '
+        'mission cancelled',
+    ]
+
+
+def test_semantic_probe_wait_uses_extended_timeout_for_any_capture():
+    aborted = []
+    parameters = {
+        'capture_timeout_sec': 20.0,
+        'first_capture_acceptance_timeout_sec': 75.0,
+    }
+    harness = SimpleNamespace(
+        now=lambda: 74.0,
+        state_started=0.0,
+        scan_history=[],
+        get_parameter=lambda name: SimpleNamespace(value=parameters[name]),
+        telemetry_store=None,
+        latest_workflow={'state': 'INITIALIZING', 'accepted_views': 0},
+        abort_motion=aborted.append,
+    )
+
+    ScanViewpointExecutorNode.wait_capture_tick(harness)
+    assert aborted == []
+
+    harness.now = lambda: 76.0
+    ScanViewpointExecutorNode.wait_capture_tick(harness)
+    assert aborted == [
+        'capture semantic acceptance did not return workflow to '
+        'SCAN_READY',
+    ]
+
+    aborted.clear()
+    harness.scan_history = [{}]
+    harness.capture_semantic_probe_pending = False
+    harness.now = lambda: 21.0
+    ScanViewpointExecutorNode.wait_capture_tick(harness)
+    assert aborted == [
+        'accepted capture did not return workflow to SCAN_READY',
+    ]
+
+    aborted.clear()
+    harness.capture_semantic_probe_pending = True
+    harness.now = lambda: 74.0
+    ScanViewpointExecutorNode.wait_capture_tick(harness)
+    assert aborted == []
 
 
 def _achieved_view_harness(look_angle_deg=0.0):

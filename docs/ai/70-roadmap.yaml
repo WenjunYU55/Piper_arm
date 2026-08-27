@@ -1,5 +1,16 @@
 schema_version: 1
 document: mission_goal_and_delivery_roadmap
+executor_capture_integration_requalification_2026_08_27:
+  milestone: M5 reliable size-aware closed-loop ray NBV
+  status: software_validated_physical_retest_pending
+  completed: [audited all uncommitted integration changes before repair, separated timer control telemetry and service-response scheduler lanes under one state lock, aligned 75-second first acceptance with 70-second semantic probe, retained GOOD quality and fresh classified occlusion for pending capture one, retained CLEAR-only later captures, corrected occluder continue contract]
+  software_evidence: [124 focused tests, live proposal-only 800-Hz aggregate control load, 30 of 30 diagnostic and hold service calls below two seconds, no joint-command topic]
+  next_gate: Run complete suites and package build, then a separately authorized five-percent E2E proving approval first alignment pending probe capture-one acceptance qualified ray generation one multiview stream and terminal home cleanup.
+automatic_one_view_budget_requalification_2026_08_27:
+  milestone: M5 reliable size-aware closed-loop ray NBV
+  status: superseded_as_root_cause_by_first_capture_alignment_fix
+  software_status: The automatic one-view worker budget remains 90 seconds with three-second attempts, but deeper diagnostics proved the recurring zero-capture failure was not one slow ray. Every proposed path inherited an approximately 30.8-degree acquired sample zero and was rejected by the ordinary 20-degree visibility gate. The bounded first-capture alignment rule is now the root fix; all later paths retain strict 20-degree behavior.
+  next_gate: Run a command-free one-view planning request; then require separate authorization for a five-percent physical mission and verify capture one plus permanent ray retirement without weakening collision or motion gates.
 capture_one_model_seed_requalification_2026_08_26:
   milestone: M5 reliable size-aware closed-loop ray NBV
   status: physical_generation_one_and_three_capture_retest_passed
@@ -7,7 +18,7 @@ capture_one_model_seed_requalification_2026_08_26:
   software_status: Capture one now constructs a hash-bound model seed from its exact persisted mask confidence-qualified depth and recorded base-from-camera matrix. Executor validates it before workflow acceptance; planner consumes the immutable matrix with no delayed TF lookup.
   validation_status: 264 focused, 848 complete mobile and 162 complete Tesseract tests pass. Changed-file flake8 and pep257, mobile package symlink build and all 12 AI YAML parses pass. Archived failed capture replay produces a valid thirteen-box envelope at the exact view_000 mask stamp with a 0.033263872-second transform delta.
   live_retest: Task codex-e2e-model-seed-20260827-0123 persisted a synchronized capture-bound seed, generated 353 qualified generation-one rays, accepted captures two and three, then completed operator-requested home disable and cleanup with safe_shutdown true.
-  next_gate: Diagnose stream tick-lateness under planner load, then run a separately authorized uninterrupted mission to validate automatic completion and diversity floors.
+  next_gate: The callback-isolated five-percent acquisition stream passes at 19.8 Hz with zero late ticks. Software now aligns capture one within 5 degrees, defers the dedicated probe to that pending settled capture and continues collision-aware scanning with a persisted occluder label. Run a separately authorized mission to validate that barrier, multiview timing, automatic completion and diversity floors.
 object_sized_coverage_and_monotonic_ray_frontier_2026_08_26:
   milestone: M5 reliable size-aware closed-loop ray NBV
   software_status: Bootstrap rays now use the visible-surface lock only to acquire accepted capture one. The qualified revolution axis then becomes the single grey-model and permanent-ray centre, creates a new population identity, resets bootstrap culls once and retains qualified culls monotonically thereafter. Past culls are visible by default and event normalization prevents repeated-new-cull display.
@@ -205,18 +216,17 @@ system_behavior_required:
     - Stop immediately on a fresh measured target lock and fail safely after at most five distinct looks.
     - No fixed rectangular, radial or height workspace may reject a pose; finite joints, IK, collision, visibility, sensor range and runtime state remain authoritative.
   occlusion_handling:
-    - Run a dedicated settled heavy RGB-D observation after target lock; acquisition evidence cannot declare the scene clear.
+    - Run the dedicated correlated heavy RGB-D observation only after the first settled target-facing RGB-D record is persisted but pending; acquisition evidence cannot declare the scene clear.
     - Decide whether foreground geometry materially harms target capture quality.
-    - If clear, proceed without touching the scene.
-    - If harmful and qualified, choose the least invasive safe push or pick/place action using exact observed geometry and an observed supported placement region.
-    - Reobserve after every physical action and repeat only within the bounded action budget until clear.
-    - Unknown objects, people, missing geometry or unqualified manipulation return NEEDS_OPERATOR; they never authorize contact.
+    - If clear, accept capture one and proceed without touching the scene.
+    - If a meaningful occluder is qualified, preserve its semantic label, accept only the visible measured target support and continue collision-aware scanning without automatic contact.
+    - Unknown objects, people, missing or mismatched geometry, timeout and unqualified evidence fail closed; none authorize contact.
   scanning:
     - Use the measured target, never the rough hint, after lock.
     - Plan one reachable collision-free next view at a time from measured achieved FK and measured masked RGB-D surface coverage.
     - Prefer views that expose missing target faces and distinctive features, including both Y sides, while retaining compact IK alternatives for close targets.
     - Persist synchronized RGB, raw/aligned depth, mask, intrinsics, capture-time TF, joints, target pose, plan identity and quality evidence for every accepted capture.
-    - Require GOOD and CLEAR evidence; reject stale or bad views without counting them and replan from the measured held pose.
+    - Require fresh GOOD target-valid evidence. CLEAR views accept directly; every classified partial/heavy view requires exact semantic acceptance and may carry qualified occlusion labels. Reject stale bad unsafe or unqualified views without counting them.
     - Treat eight accepted captures only as a measured-model seed; continue adaptively through at most twenty-four until Y-side/elevation floors and three consecutive measured novel-surface gains at or below 0.02 pass, or fail safely when no meaningful safe view remains. Keep azimuth span diagnostic-only.
   terminal_behavior:
     - Success, controllable failure and manual Cancel/Home first stop and hold the measured current pose.
@@ -234,14 +244,14 @@ definition_of_done:
     - The same production mission path works from the GUI emulator and the tracked-robot gateway.
     - Close and farther reachable targets can be acquired from rough hints with error up to 0.10 m without a fixed software workspace box.
     - Clear scenes produce feature-diverse, measured-converged RGB-D datasets and a usable mesh.
-    - Qualified rigid occlusions can be cleared by both push and pick/place, with heavy reobservation after each action.
+    - Qualified occlusions are labelled and scanned without automatic contact; push and pick/place remain separate future qualifications.
     - Every success, failure and cancellation reaches the configured staged storage posture, retains the final position-controller target, disables all six motors and removes all mission-owned children unless control feedback is untrustworthy.
     - The tracked robot receives a durable success/failure/retry result and can trigger reconstruction only after reporting base home.
   acceptance:
     - All affected offline tests, ROS builds, YAML checks and rootless Tesseract qualifications pass.
     - All flow-specific mandatory smoke checks in 40-flows.yaml and 50-guardrails.yaml pass on the current hardware/configuration.
-    - Three consecutive supervised five-percent end-to-end missions pass without manual software intervention, with 8-24 GOOD/CLEAR records, required feature/three-view surface convergence, safe shutdown and exact child cleanup.
-    - Separate supervised cases pass for no-lock, bad capture replacement, cancel during motion, controllable component failure, clear scene, push occlusion, pick/place occlusion, tracked-base-home correlation and mesh reconstruction.
+    - Three consecutive supervised five-percent end-to-end missions pass without manual software intervention, with 8-24 accepted records under the direct-CLEAR/exact-qualified-occlusion contract, target-only surface convergence, safe shutdown and exact child cleanup.
+    - Separate supervised cases pass for no-lock, bad capture replacement, cancel during motion, controllable component failure, clear first capture, qualified labelled-occlusion continuation, unsafe/unqualified-occlusion abort, tracked-base-home correlation and mesh reconstruction. Push and pick/place require their own later authorization and qualification.
     - Mounted deployment additionally proves odom-to-piper_base_link transformation, stationary/brake authority and chassis collision integration.
   claim_rule: >-
     Do not call the whole system complete because unit tests pass or because one
@@ -271,8 +281,9 @@ current_baseline_2026_08_11:
   current_physical_state:
     - GUI task gui-sim-a130d7ad58a54815ab36341ed324be82 physically exercised historical tesseract_stream_v1 at 50 percent through acquisition and 24 GOOD/CLEAR captures. It achieved nine +Y and three -Y views, 113.51-degree azimuth and 37.46-degree elevation, then correctly failed INSUFFICIENT_CAPTURE_QUALITY because azimuth remained below 120 degrees and measured surface did not converge. No scheduled-stream overrun was logged; direct staged home, storage proof, six-axis disable and exact child cleanup completed with safe_shutdown=true. This does not qualify tesseract_stream_v3, settings above its 20-percent exact-speed envelope or feature completion.
     - The next GUI task gui-sim-79f9f909f91148dda1f74b4292a4b5b5 physically proved the base_link-only frame repair, persisted three GOOD/CLEAR captures, rejected one fresh invalid view and planned a distinct replacement. The replacement reached and settled, but lower-level target_3d invalid was misclassified as ABORTED instead of VIEW_REJECTED. Safe shutdown again proved rough home, storage J6, hold, all six disabled and exact child cleanup without contact. The equivalence repair passes 114 focused, 327 full mobile and 92 Tesseract tests plus both command-free rootless qualifications; physical retry remains.
-    - GUI task gui-sim-e9629c41e1224425b5adb0454b61ee3f physically exercised current tesseract_stream_v3 at 20 percent. Acquisition ran for 2.501 seconds over 50 samples at 19.6 Hz; scan segments remained approximately 18.0-19.6 Hz with aligned planned/actual duration, and the operator judged speed consistent. Fifteen GOOD/CLEAR captures persisted with two views on each Y side and 40.64-degree elevation, but the local 6-30-degree candidate frontier exhausted at only 65.30/120 degrees azimuth without measured-surface convergence. It correctly returned NO_REACHABLE_PLAN and proved direct rough/storage home, all-six disable and exact child cleanup with safe_shutdown=true. The 20-percent v3 timing behavior is accepted; 1/5/10-percent stages, deliberate cancel, NBV completion and settings above 20 percent remain pending.
-    - Current idle state after the operator-requested shutdown is arm disabled with coordinator, GUI, RViz, ROS discovery daemon and every mission-owned driver/camera/perception/planning child stopped. No process owns any /dev/video device. Every new physical run requires explicit operator authorization and the read-only gate.
+    - GUI task gui-sim-e9629c41e1224425b5adb0454b61ee3f physically exercised current tesseract_stream_v3 at 20 percent. Acquisition ran for 2.501 seconds over 50 samples at 19.6 Hz; scan segments remained approximately 18.0-19.6 Hz with aligned planned/actual duration, and the operator judged speed consistent. Fifteen GOOD/CLEAR captures persisted with two views on each Y side and 40.64-degree elevation, but the local 6-30-degree candidate frontier exhausted at only 65.30/120 degrees azimuth without measured-surface convergence. It correctly returned NO_REACHABLE_PLAN and proved direct rough/storage home, all-six disable and exact child cleanup with safe_shutdown=true. The 20-percent v3 timing behavior is accepted; 1/10-percent stages, callback-isolated five-percent multiview timing, deliberate cancel, NBV completion and settings above 20 percent remain pending.
+    - GUI task gui-sim-9a5b86a861c44103aa8086b9f7092949 physically exercised the callback-isolated executor at five percent. Its 90-point acquisition stream completed in 4.505 seconds at 19.8 Hz with zero late ticks, 0.0580-second maximum interval and 0.1471-rad maximum following error. It then failed independently with OCCLUSION_NOT_CLEARED when the dedicated probe could not re-detect the locked target. PRE_HOME, ROUGH_HOME, STORAGE_WRIST, all-six disable, zero-capture dataset removal and exact child cleanup passed with safe_shutdown true. Multiview timing under post-capture traffic remains unproved.
+    - Current idle state after gui-sim-9a5b86a861c44103aa8086b9f7092949 is arm disabled with the long-lived coordinator still ready and every mission-owned driver/camera/perception/planning child stopped. Every new physical run requires explicit operator authorization and the read-only gate.
     - On 2026-08-11 GUI task gui-sim-0d67e6fce8404547b93b68c11d900d1a completed acquisition and CLEAR occlusion assessment, persisted ten GOOD/CLEAR observations, exercised same-pose evidence retry plus fresh-quality rejection/replacement, and completed external-floor-guarded ROUGH_HOME, STORAGE_WRIST, hold, six disabled axes and exact child cleanup without contact. It failed feature completion at +Y 3, -Y 0, 59.7-degree azimuth and 22.2-degree elevation because raw camera-frame /piper/target_3d briefly replaced the base_link NBV centre after tracking paused. The frame contract and misleading CONTROL_UNTRUSTWORTHY classification are repaired; the package rebuild, 327 mobile tests, 92 Tesseract tests and both command-free rootless qualifications pass. A new physical GUI validation is next.
     - On 2026-08-11 GUI task gui-sim-d30410e05b9c405cb48e969fa818c173 persisted ten GOOD/CLEAR diverse views in scan_20260811_124232. The planner is accepted. During terminal direct home, the camera-holder/L515 contacted the table/floor and J5 disabled with multiple per-motor FOC faults. Exact geometry showed only 0.001245441 m holder clearance at the start versus the required 0.005 m.
     - Immediately after that incident all six motor flags were false and hardware/mission processes were stopped. Mechanical inspection, fault-clear read-only feedback and operator reauthorization have since completed; the newer ten-capture mission above is the first contact-free post-incident full shutdown proof.
@@ -349,7 +360,7 @@ milestones:
       - Preserve the accepted 24-view execution and safe shutdown from scan_20260811_190342; inspect why it stopped 6.49 degrees short of the azimuth floor and failed measured convergence.
       - Run the current one-view closed loop on close and farther reachable targets.
       - Audit actual camera position/look, both Y sides, azimuth/elevation spans, visible distinctive features and per-view novel masked surface.
-      - Inspect all persisted RGB-D/mask/TF metadata and tune ranking only from measured failures without weakening collision, visibility, standoff or GOOD/CLEAR gates.
+      - Inspect all persisted RGB-D/mask/TF metadata and tune ranking only from confidence-qualified target surface without weakening collision, visibility, standoff or semantic qualification.
     exit_criteria: A current-version mission records 8-24 accepted captures, at least two views per Y side, at least 25 degrees elevation and three consecutive novel-surface gains at or below 0.02. Record achieved azimuth span diagnostically without treating it as a pass/fail threshold.
   - id: M6
     name: Delayed target mesh reconstruction
@@ -382,7 +393,7 @@ milestones:
 
 next_execution_order:
   - Audit scan_20260811_190342 and scan_20260811_230742 achieved poses, masks, candidate failures and surface-gain sequences; repair the final coverage/convergence and local-frontier exhaustion gaps without weakening completion thresholds.
-  - Complete tesseract_stream_v3 staged 1/5/10-percent and deliberate cancel-to-hold characterization using persisted timing/following telemetry; preserve every collision-checked source vertex. The 20-percent timing observation is accepted. Keep settings above 20 percent capped and unqualified until a deliberate step-envelope extension is reviewed and measured.
+  - Complete tesseract_stream_v3 staged 1/10-percent, callback-isolated five-percent multiview and deliberate cancel-to-hold characterization using persisted timing/following telemetry; preserve every collision-checked source vertex. The 20-percent timing and five-percent acquisition observations are accepted. Keep settings above 20 percent capped and unqualified until a deliberate step-envelope extension is reviewed and measured.
   - Complete remaining M1 deliberate cancel-to-hold and three-repeat staged startup/home/disable acceptance under explicit physical authorization.
   - M2 close/far and 0.10 m-offset acquisition matrix.
   - M3 clear/rigid/unknown exact heavy-occlusion matrix.
@@ -431,7 +442,7 @@ nbv_update_2026_08_17:
   milestone: M5 feature-diverse measured NBV capture
   status: authoritative_software_selected_supervised_E2E_pending
   completed_software: [accepted-capture voxel evidence, closed-loop information ranking, unique-direction-first fallback ordering, captured-generation replay, delayed capture authorization retry]
-  unchanged_exit_criteria: A current physical mission must still prove adaptive 8-to-24 GOOD/CLEAR captures, useful reachable face coverage, measured convergence, home, disable and cleanup.
+  unchanged_exit_criteria: A current physical mission must still prove adaptive 8-to-24 accepted captures under direct-CLEAR/exact-qualified-occlusion acceptance, useful reachable face coverage, target-only measured convergence, home, disable and cleanup.
   next_execution_order: [operator-supervised authoritative voxel_nbv E2E, inspect logs and dataset, correct any defect command-free first, repeat staged mission only after evidence review]
 
 post_enable_startup_requalification_2026_08_25:

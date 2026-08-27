@@ -1,5 +1,27 @@
 schema_version: 1
 document: maintenance_routing
+executor_capture_integration_maintenance_2026_08_27:
+  inspect: [scan_viewpoint_executor_node.py callback groups and serialized_control_callback, configuration.py CaptureConfig, scan_execution_params.yaml, scan_capture.py capture_diagnostic_rejection, scan_capture_node.py capture_prerequisites_ready, scan_capture_params.yaml, supervised_cube_workflow_node.py]
+  scheduler_rule: Keep timer services state subscriptions telemetry and service-client responses in their documented separate callback groups. Every timer or state-mutating control callback must enter the shared control_state_lock; telemetry crosses through TelemetryStore. Never put the 200 Hz timer back in the service group or let cancel approval and motion tick mutate state concurrently.
+  capture_rule: Every service record requires fresh GOOD target-valid evidence. CLEAR accepts immediately; fresh classified PARTIALLY_OCCLUDED or HEAVILY_OCCLUDED persists pending and must pass the exact request-and-image-stamp semantic scene before counting. UNKNOWN LOST missing stale malformed unsafe or unqualified evidence fails closed.
+  timeout_rule: first_capture_acceptance_timeout_sec is the semantic-probe acceptance bound for any pending capture and must exceed workflow occlusion_probe_timeout_sec by a bounded status-propagation reserve. Ordinary CLEAR acceptance retains capture_timeout_sec.
+  required_retests: [test_configuration.py, test_scan_capture.py, test_supervised_workflow.py, test_phase1_executor_characterization.py, complete mobile suite, proposal-only control-load service smoke, package build, AI YAML parse, separately authorized E2E]
+rough_acquisition_partial_target_maintenance_2026_08_27:
+  inspect: [AI_perception_tests/heavy_model_worker.py, AI_perception_tests/temporal_heavy_refresh.py, AI_perception_tests/groundingdino_test/run_groundingdino_on_capture.py, AI_perception_tests/test_groundingdino_target_selection.py, AI_perception_tests/test_heavy_model_worker.py]
+  rule: Propagate the exact private request reason through each heavy-worker job. Only rough_acquisition_viewpoint may disable green-cube box-aspect validation; do not disable semantic confidence green appearance mask or aligned-depth qualification and do not relax ordinary refresh or capture policy.
+  required_retests: [exact saved clipped-target replay, test_groundingdino_target_selection.py, test_heavy_model_worker.py, Python compile, separately authorized physical E2E]
+capture_one_occlusion_barrier_maintenance_2026_08_27:
+  inspect: [supervised_cube_workflow_node.py, scan_viewpoint_executor_node.py, mission/engine.py, test_supervised_workflow.py, test_phase1_executor_characterization.py]
+  ownership: supervised_cube_workflow_node.py owns the correlated semantic decision and pending first-view acceptance. scan_viewpoint_executor_node.py owns the pending capture model seed and may publish accepted history only after workflow accepted_views advances.
+  ordering_rule: Never restore the heavy occlusion probe before the first target-facing endpoint, and never publish any pending occluded capture into accepted history before its correlated probe returns qualified evidence.
+  occlusion_rule: Qualified meaningful occlusion reports semantic labels and continues through collision-aware planning. Do not create automatic contact motion, trust occluded pixels as target surface, or treat missing malformed uncorrelated unsafe or unqualified evidence as clear.
+  first_alignment_rule: Only capture one's MULTIVIEW_SCAN path may begin outside 20 degrees. It cannot worsen beyond its acquired start angle, cannot leave the 20-degree cone after entering, and must end within 5 degrees. Later paths remain strict 20-degree paths.
+  required_retests: [test_supervised_workflow.py, test_phase1_executor_characterization.py, test_mission_engine.py, test_mission_core.py, complete mobile suite, package build, AI YAML parse, separately authorized physical E2E]
+acquisition_workflow_handoff_maintenance_2026_08_27:
+  inspect: [mission/engine.py, target_scan_mission_node.py, scan_target_acquisition_node.py, supervised_cube_workflow_node.py, test_mission_core.py, test_scan_target_acquisition.py]
+  ownership: target_scan_mission_node.py is the sole automatic-mission client of /supervised_cube_workflow/start. scan_target_acquisition_node.py must not subscribe to workflow/execution terminal state or start mission progression.
+  diagnostic_rule: SCAN_READY with measured_lock_ready=false is a bounded transient wait, not success and not an immediate incompatible-state failure. The existing workflow deadline remains authoritative.
+  required_retests: [test_scan_target_acquisition.py, test_mission_core.py, test_mission_engine.py, test_phase1_mission_characterization.py, complete mobile suite, package build, separately authorized physical E2E]
 architecture_cleanup_routing_2026_08_27:
   inspect: [docs/refactor/architecture_cleanup_2026_08_27.md, test_architecture_boundaries.py, piper_mobile_manipulation/CMakeLists.txt, docs/ai/20-modules.yaml, docs/ai/50-guardrails.yaml, docs/ai/60-debt.yaml]
   rule: Move one responsibility at a time from the origin/main behavior baseline. Add the new owner first, keep an explicit old-path compatibility facade, migrate consumers, run the linked characterization, and only then consider facade removal. Domain modules must not import ROS adapters and no move may create an internal import cycle.
@@ -52,7 +74,7 @@ capture_one_model_seed_or_zero_qualified_rays_2026_08_26:
   rule: Never promote latest_target_shape as model geometry, never reconstruct capture one from a rough or merely pre-capture framing mask, and never defer a new session's capture model transform to live TF. The framing silhouette remains an endpoint gate only. Capture service success without a valid capture_result_schema_version 1 qualified_target_model_seed must abort before workflow acceptance.
   required_retests: [test_scan_capture.py exact persisted model seed, test_target_envelope.py seed digest synchronization and envelope, test_phase1_executor_characterization.py missing-seed fail closed, test_scan_motion.py accepted-only promotion, test_scan_session_memory.py seed/shape correlation, test_scan_viewpoint_angles.py no-live-TF envelope path, complete mobile and Tesseract suites, changed-file lint, mobile package build, archived failed-capture replay]
   latest_physical_evidence: Task codex-e2e-model-seed-20260827-0123 persisted model_seed_sha256 b97bdd2d5b530d3bc83085d3d9226cc5635618608e6268c229c46f1b510dc4f0 with 0.032565248 second synchronization delta, generated 353 qualified rays, accepted three captures and completed operator-requested home disable cleanup with safe_shutdown true.
-  follow_up: Automatic completion remains untested because the operator cancelled after three captures. Repeated stream tick-lateness warnings while planner and reachability nodes were busy require performance diagnosis before claiming timing qualification.
+  follow_up: Automatic completion remains untested. The callback-isolated five-percent acquisition repeat delivered 90 points at 19.8 Hz with zero late ticks, so the next timing gate is a multiview segment under post-capture planning traffic. Its independent occlusion-probe re-detection failure must be diagnosed before that mission can reach capture one.
 object_sized_coverage_or_ray_resurrection_2026_08_26:
   inspect: [target_envelope.py coverage_sphere_from_envelope, nbv_coverage.py ObjectCoverageModel explicit model geometry, scan_viewpoint_planner_node.py refresh_coverage_model retired_view_history and hard-cull ledger, ray_hard_culls.py canonical_ray_universe, bridge_node.py permanent_ray_ids_from_response, scan_planning_params.yaml minimum_useful_direction_separation_deg, tools/simulate_size_aware_ray_review.py source-report replay mode]
   ownership: Target envelope owns the qualified object centre size and bootstrap-anchor provenance. The planner owns the explicit bootstrap-to-qualified population replacement, qualified direction-universe identity, accepted-neighbour retirement and survivor reranking. The executor persists the one qualified centre upgrade after receiving the first envelope-bound plan. NBV coverage owns the centred grey voxel volume. The bridge owns typed endpoint-static response classification.
@@ -259,6 +281,7 @@ where_to_start:
   gui_saved_camera_profile_selection: [piper_gui/camera_profile.py, piper_gui_native.py, L515_camera/rgb_profile.conf, L515_camera/start_l515_camera.sh, L515_camera/start_l515_camera_low_bandwidth.sh, tests/gui/test_piper_gui_camera_profile.py]
   viewpoint_plan_authorization: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/plan_authorizer.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_phase7_viewpoint_components.py]
   viewpoint_trajectory_monitoring: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/trajectory_runner.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_phase7_viewpoint_components.py]
+  viewpoint_stream_callback_isolation: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py callback groups and main executor, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/infrastructure/telemetry_store.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_scan_motion.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_phase1_executor_characterization.py]
   viewpoint_capture_or_recovery: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/capture_coordinator.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/executor_recovery.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/failure_model.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_phase7_viewpoint_components.py]
   autonomous_mission_phase_or_shutdown_order: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission_engine.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_scan_mission_node.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_mission_engine.py, docs/refactor/phase6_mission_engine.md]
   autonomous_process_start_monitor_or_shutdown: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/process_supervisor.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_scan_mission_node.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_process_supervisor.py, docs/refactor/phase4_process_supervisor.md]
@@ -324,7 +347,7 @@ symptom_routing:
     note: /piper/target_cloud is best-effort sensor QoS and the workflow subscription must match it. The workflow caches a capture cloud while WAIT_CAPTURE and processes it after the matching accumulating/full_resolution_refinement acceptance, regardless of message order. Accepted refined target geometry uses every masked depth pixel and 0.001 m target voxels; do not confuse it with the unchanged 0.015 m coarse scene cloud or 0.005 m NBV coverage grid.
   accepted_view_missing_rgbd_record:
     inspect: [/scan_capture/capture_view, /piper/scan_capture_status, datasets/active_scan, scan_capture_node.py, scan_capture.py, scan_capture_params.yaml, scan_viewpoint_executor_node.py]
-    note: In supervised service mode the executor must enter CAPTURING_RGBD with TF and GOOD/CLEAR evidence. The recorder then collects exactly 20 new synchronized native depth/camera-info/L515-confidence frames while that achieved pose is held, uses one exact-stamp mask/RGB identity, and writes the confidence-qualified temporal-median depth plus all schema-2 artifacts transactionally. A missing frame or correlation gap rejects the capture without inventing data; fresh depth-quality rejection excludes the view; malformed provenance or failed persistence aborts and holds.
+    note: In supervised service mode the executor must enter CAPTURING_RGBD with TF and fresh GOOD target-valid evidence. CLEAR views accept immediately; any fresh classified partial/heavy view remains pending behind the exact semantic barrier. The recorder collects exactly 20 new synchronized native depth/camera-info/L515-confidence frames while that achieved pose is held, uses one exact-stamp mask/RGB identity, and writes the confidence-qualified temporal-median depth plus all schema-2 artifacts transactionally. A missing frame or correlation gap rejects the capture without inventing data; fresh depth-quality rejection excludes the view; malformed provenance or failed persistence aborts and holds.
   target_depth_layer_jitter:
     inspect: [utils/target_depth.py, depth_to_3d_node.py, target_landmark_node.py, occlusion_checker_node.py, scan_capture.py, camera_params.yaml, test_depth_to_3d.py]
     note: All target-depth consumers must use the shared ambiguity-aware component selector. A close score tie fails closed; do not restore whole-mask median depth or seed-pixel flood filling independently in one consumer.
@@ -408,8 +431,12 @@ symptom_routing:
       settle. If current or next command lead reaches the unchanged 0.30-rad
       corridor, schedule time freezes on the last safe setpoint for at most
       the existing one-second grace. Feedback supplies that following guard
-      and final endpoint/settle proof. Any multi-sample schedule overrun aborts to
-      hold rather than bursting or shortcutting a planned corner. Dedicated
+      and final endpoint/settle proof. The state-machine timer is serialized in
+      its own callback group while high-rate telemetry enters through a second
+      group and the thread-safe immutable TelemetryStore. A late timer retains
+      the next unsent point, stretches the unchanged schedule, never bursts or
+      shortcuts a planned corner, and emits only one aggregate warning per five
+      seconds. Dedicated
       zero-capture RETURN_HOME remains the explicit exact two-point direct
       exception with its existing stage-bound collision-bypass evidence and
       feedback-gated endpoint. PiPER MoveJ does not consume per-joint qdot/qddot,
@@ -418,10 +445,16 @@ symptom_routing:
       gui-sim-e9629c41e1224425b5adb0454b61ee3f physically exercised the current
       stream at 20 percent; planned/actual timing aligned at approximately
       18.0-19.6 Hz and the operator judged speed consistent. The remaining
-      1/5/10-percent stages and deliberate cancel-to-hold are still pending;
+      callback-isolated 5-percent acquisition task
+      gui-sim-9a5b86a861c44103aa8086b9f7092949 then delivered 90 points in
+      4.505 seconds at 19.8 Hz with zero late ticks and 0.1471-rad maximum
+      following error before an independent occlusion re-detection failure.
+      Multiview timing, 1/10-percent stages and deliberate cancel-to-hold are
+      still pending;
       settings above 20 percent remain capped and unqualified. Inspect
-      the diagnostic-state planned/actual duration, achieved rate, maximum
-      interval, dropped samples and following-error fields after each segment.
+      the diagnostic-state planned/true-wall duration, achieved rate, maximum
+      interval, late-tick count, maximum lateness, dropped samples and
+      following-error fields after each segment.
   arm_reaches_pose_but_never_settles:
     inspect: [/joint_states_single, /piper/scan_execution_status, scan_viewpoint_executor_node.py, target_scan_mission_node.py, scan_execution_params.yaml]
     note: Use an application-level subscriber to compare measured position deltas with SDK velocity. PiPER instantaneous velocity can spike while positions remain stationary and is diagnostic only. Normal acquisition/scan endpoint proof requires target error at most 0.025 rad plus a continuous 0.007 rad position-anchor window; this is narrowly above the observed 0.006227508-rad powered J4 feedback step. Configured PRE_HOME/ROUGH_HOME/STORAGE_WRIST bypass the Tesseract worker and use the operator-authorized 0.30-rad per-joint target and successive-sample bands for one second. Startup/final current-position holds require command acknowledgement plus fresh finite feedback and trusted motors, not a second scan-endpoint settle window.
@@ -517,7 +550,7 @@ maintenance_routing_2026_08_04:
     note: Every bounded startup loop must call the mission guard so action cancellation, deadline expiry, gateway loss and managed-child exit are observed while the dependency is still unavailable. The 2026-08-04 GUI cancellation during missing-camera startup completed in about eight seconds with CANCELLED, safe_shutdown=true and no managed child left behind.
   settled_view_not_saved:
     inspect: [/piper/scan_quality, /piper/occlusion_status, /piper/scan_capture_status, /piper/scan_execution_status, /piper/scan_session_history, scan_capture_node.py, scan_capture.py]
-    note: Service capture requires GOOD score at least 0.65, target_valid exactly true and CLEAR occlusion. Rejection saves no frame, appends rejected_entries, holds at measured current pose, and in automatic closed-loop mode requests one coverage-ranked replacement. Missing target_3d or mask may retry only at the same held pose under the ten-attempt readiness bound. A present fresh target_3d valid=false is equivalent to ScanQuality target_valid=false and must become VIEW_REJECTED rather than ABORTED. Malformed/nonfinite diagnostics, I/O, TF, service and safety faults fail closed.
+    note: Service capture requires GOOD score at least 0.65 and target_valid exactly true. CLEAR accepts directly; classified partial/heavy persists pending and counts only after exact safe semantic qualification. UNKNOWN LOST stale unsafe unqualified and malformed evidence fails closed. Missing target_3d or mask may retry only at the same held pose under the ten-attempt readiness bound. Schema-2 accepted coverage uses only target depth/support, never raw occluder depth.
   replacement_plan_has_wrong_count_or_reuses_pose:
     inspect: [/piper/scan_session_history, scan_session_memory.py, scan_viewpoint_executor_node.py, target_scan_mission_node.py, scan_viewpoint_planner_node.py, /piper/tesseract_plan_status]
     note: accepted_views counts only persisted records; accepted/rejected entries both exclude duplicates. Automatic mission requests contain exactly one view and rank by new coverage from achieved FK pose/look; manual batch requests still contain every remaining view. The mission permits at most eight visual replacements. Normal feature completion continues through 8-24 until achieved Y-side/elevation floors and three-view measured surface convergence pass; azimuth span is diagnostic only. Independently, typed full safe-ray-frontier exhaustion may finish after at least one persisted achieved capture, because no further collision-qualified target-facing observation exists. A failed shortlist, generic timeout, malformed response, worker failure, zero-capture run, or unproved history remains failure and enters fresh current-state home cleanup.

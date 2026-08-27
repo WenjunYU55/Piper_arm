@@ -1,5 +1,49 @@
 schema_version: 1
 document: ai_context_index
+qualified_occluded_capture_continuation_2026_08_27:
+  correction: Every settled service capture still requires fresh finite GOOD target-valid evidence and confidence-qualified target depth. CLEAR views accept immediately. Fresh PARTIALLY_OCCLUDED or HEAVILY_OCCLUDED views persist pending, run the exact correlated semantic probe, and count only when the scene is qualified; labels are recorded and scanning continues without contact action.
+  fail_closed: [UNKNOWN, LOST, missing or stale evidence, malformed capture result, unsafe or invalid obstacle, unqualified movable evidence, semantic timeout or correlation failure]
+  surface_boundary: Schema-2 live measured coverage now consumes target_depth_png_file_path plus target_support_mask_file_path, matching reconstruction, so occluder pixels cannot become measured target voxels. Legacy schema-1 datasets retain their raw-depth/mask compatibility path.
+  unchanged: [ray and NBV generation, Tesseract, collision validation, authorization, runtime safety, capture quality threshold, trajectory execution, real-motion default, home, disable, cleanup]
+  validation: [243 focused capture workflow executor and coverage tests pass, 875 non-hardware mobile tests pass, seven remaining camera-watchdog tests pass; its one ROS-context recovery test exits the host pytest process before reporting and is unrelated to these files]
+executor_and_capture_integration_audit_2026_08_27:
+  scope: Audited every uncommitted production test configuration artifact and AI-document change against reintegrate/selected-archived-features and the behavior-equivalent main hot paths before editing.
+  findings: [the 200 Hz timer shared one mutually-exclusive group with approval cancel hold control subscriptions and capture clients, the first-capture workflow probe had a 70-second bound but the executor waited only 20 seconds, the recorder required CLEAR while the workflow claimed qualified occlusion could be labelled and continued, 30-contracts contradicted every other AI document by saying qualified occlusion aborts]
+  correction: The timer control services control subscriptions telemetry and service-client responses now have separate scheduler groups; timer and state-mutating control callbacks share one explicit reentrant lock. The first-capture-only classified-occlusion restriction was subsequently generalized by qualified_occluded_capture_continuation_2026_08_27.
+  preserved: [one state-machine owner, exact plan authorization, collision and freshness gates, Tesseract paths, ray and NBV behavior, 20 Hz point order, following monitoring, ordinary GOOD plus CLEAR captures, real-motion default, PiPER command path]
+  validation: [99 focused configuration capture and executor tests, 881 complete mobile tests, 165 complete Tesseract tests, 34 ROS-free GroundingDINO and worker tests, mobile and Tesseract symlink builds, all 43 functional mobile CTests pass, proposal-only live four-group ROS stress with 800 aggregate control messages per second, 30 of 30 diagnostic and hold service calls completed below two seconds, joint command topic absent, repaired mobile production files pass flake8 pep257 and compile, diff-check and AI-YAML validation pass]
+rough_acquisition_partial_target_lock_2026_08_27:
+  incident: Physical task gui-sim-eaa02e1f6f9d404ea5fe75a31fe0c8e4 visibly contained the green cube at its second rough look. GroundingDINO detected it at 0.602 confidence, SAM2 produced 4372 pixels with 0.974 valid-depth ratio, but the shared clean-view shape gate rejected its clipped 1.637 box aspect ratio against the 1.600 maximum.
+  correction: The private request reason is carried into the ROS-free heavy worker. Only rough_acquisition_viewpoint omits box-aspect validation so a partially visible green target can seed measured rough lock; semantic confidence green appearance SAM2 support and aligned depth remain required. Every non-acquisition refresh retains the strict aspect gate.
+  preserved: [trusted capture and reconstruction admission, first-capture framing, 5-degree achieved aim, target and scene freshness, Tesseract planning, authorization, runtime safety, command path, real-motion default]
+  validation: [exact saved rough-look-2 image replay changes strict reject to rough accept, 34 focused ROS-free perception tests pass, changed Python compiles, AI YAML parse]
+first_capture_alignment_and_occlusion_label_2026_08_27:
+  correction: Acquisition may legitimately lock the target from an offset rough-search pose. Only the first MULTIVIEW_SCAN path may therefore start outside the normal 20-degree target-visibility cone; it may never exceed its acquired start angle, may not leave the 20-degree cone after entering it, and must finish within the unchanged 5-degree settled-capture limit. Every later scan path remains inside 20 degrees throughout and every capture retains the independent achieved-FK 5-degree gate.
+  order: [rough measured lock, bootstrap ray selection, bounded first target alignment, settled achieved-FK 5-degree check, framing check, persist capture one as pending, exact correlated semantic probe, classify clear or labelled occluded, promote visible target-mask evidence, qualified second ray population]
+  occlusion_behavior: A qualified meaningful occluder is recorded by semantic label in workflow status and capture-one history, then the collision-aware scan continues without contact manipulation. Missing target, malformed or uncorrelated evidence, timeout, unsafe geometry and unqualified evidence remain fail-closed. Occluded pixels are not promoted as measured target surface.
+  preserved: [20-degree ordinary dense-path visibility gate, 0.22-metre target distance gate, 5-degree capture aim, Tesseract collision validation, authorization, target and scene freshness, runtime monitoring, trajectory command path, real-motion default]
+  capability_map_provenance: The worker edit does not affect the capability sampler's FK collision geometry bounds floor calibration quantization or occupancy arrays. The exact arrays are retained and the worker full-file hash is rebound with explicit non_geometric_worker_source_rebind metadata and array hashes.
+  validation: [273 focused alignment workflow executor worker and capability tests pass, complete mobile suite 877 passes, complete Tesseract suite 165 passes, both affected packages build, every registered functional CTest passes, git diff check and Python compile pass, all 12 AI YAML files parse]
+  known_baseline: The rootless core qualification again reached dual_limit_start_acquisition and exceeded its existing 150-second internal budget, matching the documented pre-refactor baseline. It issued no robot command. Package-wide flake8 and pep257 remain the documented historical lint failures; changed behavior tests are green.
+automatic_one_view_planning_budget_2026_08_27:
+  incident: Task gui-sim-644e7a33238140b293f6221ade527767 acquired and locked the cube, produced 36 prequalified bootstrap rays and selected ray 123, but each shortlisted ray exhausted the 45-second automatic path-planning budget. No capture or robot-safety failure occurred; the operator cancelled and staged home, all-six disable and exact child cleanup completed safely.
+  comparison: A prior successful reintegrated task gui-sim-d23434471b1c4640bac2829abe39390d planned the same ray ID in about 41 seconds. Raising the total budget exposed more attempts but did not explain why every geometry-valid ray path failed.
+  correction: Automatic closed-loop one-view MULTIVIEW_SCAN retains 90 seconds total while each OMPL attempt remains capped at three seconds. The later deep trace identified the actual recurring zero-capture bug as applying the ordinary 20-degree path cone to a roughly 30.8-degree acquired sample zero; first_capture_alignment_and_occlusion_label_2026_08_27 is the root fix.
+  unchanged: [physical arm speed, collision model and clearance, candidate ordering, ray ownership and culling, authorization, trajectory validation, runtime safety, command path, real-motion default, manual and batch 150-second budget]
+  validation: [complete Tesseract suite 163 passes, Tesseract package symlink build passes, changed Python compiles, git diff check passes, all 12 AI YAML files parse]
+  required_retest: [Tesseract worker validation suite, command-free one-view planning regression, separately authorized five-percent physical mission]
+capture_one_occlusion_barrier_2026_08_27:
+  order: [rough measured lock, bootstrap ray generation, bounded first target-facing alignment, achieved 5-degree and framing gates, persist capture one as pending, correlated semantic occlusion probe, accept clear or labelled-occluded result, promote visible target evidence, qualified second ray population]
+  acceptance_barrier: Capture one remains uncounted and its model seed remains pending until the exact request-and-image-stamp probe scene returns either clear evidence or qualified meaningful occlusion labels.
+  terminal_behavior: A qualified occluder is labelled and scanning continues without automatic contact motion. Missing target, malformed evidence, timeout, unsafe geometry and unqualified occluder evidence remain fail-closed.
+  unchanged: [ROS names and schemas, bootstrap ray selection, capture dataset format, revolution geometry, qualified ray generation, Tesseract safety, authorization, command path, terminal home disable cleanup]
+  validation: [198 focused workflow executor mission tests pass, complete mobile suite has 874 passes, complete Tesseract suite has 163 passes, mobile package symlink build passes, changed-file lint and compile pass, all 12 AI YAML files parse]
+acquisition_workflow_ownership_fix_2026_08_27:
+  incident: A physical automatic mission reached ACQUIRED, but both scan_target_acquisition and the mission coordinator called /supervised_cube_workflow/start. The duplicate owner exposed a transient SCAN_READY diagnostic with measured_lock_ready=false, which the coordinator incorrectly treated as an incompatible terminal state.
+  authority: MissionEngine through target_scan_mission_node.py is the sole automatic-mission owner of post-acquisition workflow start and progression. scan_target_acquisition_node.py owns only typed rough-target candidate generation and the command-free acquisition-plan handoff.
+  fail_closed_behavior: SCAN_READY advances only with measured_lock_ready=true. A transient false value is polled within the existing workflow assessment deadline; timeout, ABORTED, malformed diagnostics and genuinely incompatible states still fail.
+  external_change: none; ROS names, planning, motion, safety, capture, dataset and shutdown behavior are unchanged.
+  validation: [two regressions failed before the production fix and pass after it, 185 focused acquisition mission tests pass, complete mobile suite has 866 passes, changed-file lint and compile pass, mobile package symlink build passes, task gui-sim-d23434471b1c4640bac2829abe39390d passed the corrected ACQUIRED-to-SCAN_READY handoff and persisted four captures before an unrelated generation-four ray-frontier exhaustion]
 architecture_cleanup_2026_08_27:
   status: implementation_and_final_validation_complete_push_pending
   branch: reintegrate/selected-archived-features
@@ -497,7 +541,7 @@ project:
     disable command, waits read-only for the driver's all-six-disabled proof,
     stops owned processes and returns NEEDS_OPERATOR with safe_shutdown=false
     because configured home was not autonomously proved. Automatic one-view
-    MULTIVIEW_SCAN requests now use a 45-second internal budget and three-second
+    MULTIVIEW_SCAN requests now use a 90-second internal budget and three-second
     OMPL attempts; manual/batch requests retain 150/5 seconds. Four affected
     packages build, 218 focused tests pass, 452 broad functional tests pass
     with one skip, and both command-free rootless qualifications pass. The
@@ -1204,8 +1248,8 @@ project:
     not move, and every temporary validation process was stopped afterward. No planner, collision,
     limit, command, or J6 behavior changed.
     On 2026-07-27 the acquisition/scan handoff was split at the measured-lock and SCAN_READY
-    boundary. scan_target_acquisition now starts the workflow only; the GUI owns the explicit fresh
-    MULTIVIEW_SCAN request and the separate exact scan confirmation. A 2026-07-29 live 5-percent
+    boundary. The production mission coordinator now solely starts the workflow; scan_target_acquisition
+    owns only rough-plan handoff. The GUI owns the explicit fresh MULTIVIEW_SCAN request and the separate exact scan confirmation. A 2026-07-29 live 5-percent
     acquisition showed that timed_movej_v2 sent 7281 tiny targets even though PiPER MoveJ consumes
     only joint positions and one aggregate speed; its qdot/qddot fields were not controller inputs.
     That endpoint-only adapter later completed a 13-view physical run, but could not preserve an OMPL
@@ -1364,6 +1408,7 @@ hot_paths:
   hardware_commands: [piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py, piper_gui_native.py commissioning only, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_motion.py, start_piper.sh]
   supervised_dry_run: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/supervised_cube_workflow_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/supervised_workflow.py]
   supervised_scan_motion: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_trajectory.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_target_acquisition_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_motion.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture_node.py, piper_ros_foxy/src/piper_mobile_manipulation/config/scan_execution_params.yaml, piper_ros_foxy/src/piper_mobile_manipulation/config/scan_capture_params.yaml]
+  timed_stream_callback_isolation: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/infrastructure/telemetry_store.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_scan_motion.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_phase1_executor_characterization.py]
   tesseract_planning_boundary: [piper_ros_foxy/src/piper_tesseract_foxy, motion_planning/tesseract]
   mission_process_ownership: [run_target_scan_mission.sh, piper_ros_foxy/src/piper_mobile_manipulation/launch/target_scan_mission.launch.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_scan_mission_node.py]
   typed_mission_executor_configuration: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/configuration.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_configuration.py, docs/refactor/phase9_configuration.md]

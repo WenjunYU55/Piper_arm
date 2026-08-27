@@ -167,7 +167,8 @@ def orbit_camera_view(center, angle_deg, radius_m, camera_pitch_deg):
 
 def camera_target_path_reasons(
         kinematics, path, target_center, maximum_boresight_deg=20.0,
-        minimum_target_distance_m=0.22):
+        minimum_target_distance_m=0.22, initial_alignment=False,
+        final_aim_deg=5.0):
     """
     Reject a scan path that loses or passes too close to its locked target.
 
@@ -179,15 +180,21 @@ def camera_target_path_reasons(
         target = np.asarray(target_center, dtype=float)
         maximum = float(maximum_boresight_deg)
         minimum = float(minimum_target_distance_m)
+        final_aim = float(final_aim_deg)
     except (TypeError, ValueError):
         return ['scan target visibility inputs are not numeric']
     if (
             target.shape != (3,) or not np.all(np.isfinite(target))
             or not math.isfinite(maximum) or maximum <= 0.0 or maximum >= 90.0
-            or not math.isfinite(minimum) or minimum <= 0.0):
+            or not math.isfinite(minimum) or minimum <= 0.0
+            or not math.isfinite(final_aim) or final_aim <= 0.0
+            or final_aim > maximum):
         return ['scan target visibility inputs are invalid']
     if not path:
         return ['scan target visibility path is empty']
+    initial_angle = None
+    entered_normal_cone = False
+    final_angle = None
     for index, joints in enumerate(path):
         try:
             transform = np.asarray(
@@ -210,11 +217,32 @@ def camera_target_path_reasons(
             return ['scan camera optical axis is invalid at sample %d' % index]
         cosine = float(np.dot(forward / forward_norm, ray / distance_m))
         angle_deg = math.degrees(math.acos(float(np.clip(cosine, -1.0, 1.0))))
-        if angle_deg > maximum + 1e-6:
+        final_angle = angle_deg
+        if initial_angle is None:
+            initial_angle = angle_deg
+            entered_normal_cone = angle_deg <= maximum + 1e-6
+        if not initial_alignment and angle_deg > maximum + 1e-6:
             return [
                 'scan target leaves the %.1f-degree camera boresight cone '
                 'at sample %d (%.1f degrees)'
                 % (maximum, index, angle_deg)]
+        if initial_alignment:
+            if angle_deg > max(maximum, initial_angle) + 1e-6:
+                return [
+                    'initial target-alignment path worsens beyond its %.1f-degree '
+                    'acquired aim at sample %d (%.1f degrees)'
+                    % (initial_angle, index, angle_deg)]
+            if entered_normal_cone and angle_deg > maximum + 1e-6:
+                return [
+                    'initial target-alignment path leaves the %.1f-degree '
+                    'camera boresight cone after entering it at sample %d '
+                    '(%.1f degrees)' % (maximum, index, angle_deg)]
+            if angle_deg <= maximum + 1e-6:
+                entered_normal_cone = True
+    if initial_alignment and final_angle > final_aim + 1e-6:
+        return [
+            'initial target-alignment endpoint aim %.1f degrees exceeds the '
+            '%.1f-degree settled-capture limit' % (final_angle, final_aim)]
     return []
 
 

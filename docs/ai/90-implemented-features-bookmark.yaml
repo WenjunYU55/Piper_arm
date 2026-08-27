@@ -1,5 +1,21 @@
 schema_version: 1
 document: implemented_features_bookmark
+executor_capture_integration_2026_08_27:
+  status: software_validated_physical_retest_pending
+  capability: The 200 Hz point scheduler approval cancel hold diagnostics telemetry and capture-service responses remain independently schedulable while one explicit lock preserves state-machine ownership. Capture one's saved record may carry a fresh classified occlusion into the exact semantic acceptance barrier for up to 75 seconds; qualified labels continue and every unsafe unknown stale malformed or later non-CLEAR case remains fail-closed.
+  unchanged: [Tesseract geometry and path, ray ranking and culling, plan hashes, authorization, runtime freshness, point order, following error, 20 Hz policy, real-motion default, PiPER command owner]
+  evidence: [99 focused configuration capture and executor tests, 881 complete mobile tests, 165 complete Tesseract tests, 34 ROS-free GroundingDINO and worker tests, mobile and Tesseract symlink builds, all 43 functional mobile CTests, live proposal-only control-load service smoke, no joint-command topic]
+rough_acquisition_partial_target_lock_2026_08_27:
+  status: software_validated_physical_retest_pending
+  capability: Rough acquisition can form a measured lock from a partially clipped but semantically colour mask and depth-qualified green cube. Clean-view box proportions remain mandatory for every non-rough heavy refresh.
+  evidence: [physical task eaa02 archived artifact, exact 1.637 aspect replay, 34 focused tests, changed Python compile]
+  preserved: [semantic confidence, green appearance, SAM2 support, aligned depth, tracking lock, capture framing, Tesseract, authorization, runtime safety, real-motion default]
+capture_one_occlusion_barrier_2026_08_27:
+  status: software_validated_physical_retest_pending
+  capability: The dedicated semantic occlusion probe is deferred from rough lock to the first settled target-facing RGB-D record. The first alignment may enter from an offset acquired look but must safely enter the normal 20-degree cone and finish within 5 degrees. Capture one remains pending and cannot seed the revolution or qualified ray population until exact correlated evidence is classified as clear or qualified labelled occlusion. Qualified meaningful occluders persist their semantic labels and collision-aware scanning continues without automatic contact motion.
+  fail_closed: [target re-detection failure, heavy worker failure or timeout, request or stamp mismatch, unsafe blocked invalid scene, unqualified occluder, executor capture wait timeout]
+  preserved: [semantic thresholds, bootstrap ray behavior, capture format, model-seed hashing, qualified revolution and ray algorithm, authorization, Tesseract collision planning, runtime safety, terminal home disable cleanup]
+  evidence: [273 focused workflow executor worker capability tests, 877 complete mobile tests, 165 complete Tesseract tests, both affected package builds, registered functional CTests, git diff check and Python compile, all 12 AI YAML files parse]
 responsibility_package_bookmark_2026_08_27:
   status: structurally_moved_behavior_preserved
   owners: [mission/core.py, mission/engine.py, mission/spool.py, infrastructure/failure_model.py, infrastructure/telemetry_store.py, infrastructure/process_supervisor.py]
@@ -431,8 +447,10 @@ active_rollback_features:
     summary: >-
       Each accepted settled viewpoint writes immutable RGB, raw depth, metric
       depth PNG, mask and metadata with intrinsics, joints, camera transform and
-      mission/plan identity. Only synchronized GOOD/CLEAR target-valid evidence
-      increments the accepted count.
+      mission/plan identity. Capture one increments the accepted count only
+      after synchronized GOOD target-valid persistence and exact semantic
+      acceptance; later classified occluded views now use the same exact
+      semantic qualification while CLEAR views accept directly.
     authority: [scan_capture_node.py, scan_capture.py, scan_quality_node.py]
 
   - id: tracking_loss_hold_and_replan

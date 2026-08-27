@@ -47,7 +47,11 @@ class HeavyModelWorkerTest(unittest.TestCase):
             cv2.imwrite(str(job / "rgb.png"), rgb)
             cv2.imwrite(str(job / "tracked_mask.png"), np.zeros(rgb.shape[:2], np.uint8))
             with (job / "request.yaml").open("w", encoding="utf-8") as stream:
-                yaml.safe_dump({"request_id": 7, "image_stamp": {"sec": 3, "nanosec": 4}}, stream)
+                yaml.safe_dump({
+                    "request_id": 7,
+                    "reason": "rough_acquisition_viewpoint",
+                    "image_stamp": {"sec": 3, "nanosec": 4},
+                }, stream)
             (job / "READY").touch()
 
             def fake_inference(capture_dir: Path, output_dir: Path, device: str) -> dict:
@@ -116,6 +120,12 @@ class HeavyModelWorkerTest(unittest.TestCase):
             with capture_context.open('r', encoding='utf-8') as stream:
                 context = yaml.safe_load(stream)
             self.assertEqual(context['target_profile'], 'generic_open_vocab')
+            self.assertEqual(
+                context['request_reason'], 'rough_acquisition_viewpoint')
+            self.assertEqual(
+                result['mission_context']['request_reason'],
+                'rough_acquisition_viewpoint',
+            )
 
     def test_failure_produces_a_consumable_status_response(self):
         with tempfile.TemporaryDirectory() as temporary:

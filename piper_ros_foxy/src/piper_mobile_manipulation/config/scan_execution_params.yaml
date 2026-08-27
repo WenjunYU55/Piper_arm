@@ -94,6 +94,10 @@
     settle_duration_sec: 1.5
     settle_timeout_sec: 15.0
     capture_timeout_sec: 20.0
+    # The first saved view remains pending while the workflow runs its
+    # 70-second exact semantic probe; reserve five seconds for propagation.
+    # Ordinary RGB-D capture deadlines remain at 20 seconds.
+    first_capture_acceptance_timeout_sec: 75.0
     finish_scan_timeout_sec: 10.0
     # scan_capture_node independently gates service saves using the executor
     # status topic. Republish CAPTURING_RGBD briefly before the service call

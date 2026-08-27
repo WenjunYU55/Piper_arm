@@ -189,12 +189,14 @@ class HeavyModelWorker:
             if depth is not None:
                 np.save(str(capture_dir / "depth.npy"), depth)
 
+            request_context = dict(self.mission_context)
+            request_context["request_reason"] = str(request.get("reason", ""))
             prepare_capture_metadata(
                 capture_dir,
                 depth,
                 tracked,
                 float(request.get("tracking_confidence", 0.0)),
-                self.mission_context,
+                request_context,
             )
             result = self.inference(capture_dir, self.model_outputs / job.name, self.device)
             mask_path = Path(str(result.get("target_mask_png", "")))
@@ -281,7 +283,7 @@ class HeavyModelWorker:
                     "frame_id": request.get("frame_id", ""),
                     "dry_run": True,
                     "real_arm_motion": False,
-                    "mission_context": dict(self.mission_context),
+                    "mission_context": request_context,
                     "tracked_objects": tracked_objects,
                     "obstacle_count": len(obstacle_records),
                     "obstacle_labels": [

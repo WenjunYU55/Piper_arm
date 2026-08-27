@@ -160,6 +160,8 @@ def run_heavy_refresh(capture_dir: Path, output_root: Path, device: str = "cpu")
     target_label = str(mission.get("target_label", "green cube"))
     target_profile = str(mission.get("target_profile", "green_cube"))
     target_prompt = str(mission.get("target_prompt", DEFAULT_PROMPT))
+    request_reason = str(mission.get("request_reason", ""))
+    rough_acquisition = request_reason == "rough_acquisition_viewpoint"
     obstacle_groups = [
         group.strip() for group in DEFAULT_OBSTACLE_PROMPT.split("|")
         if group.strip()
@@ -184,6 +186,7 @@ def run_heavy_refresh(capture_dir: Path, output_root: Path, device: str = "cpu")
         local_box_threshold=DEFAULT_LOCAL_BOX_THRESHOLD,
         target_label=target_label,
         target_profile=target_profile,
+        require_target_box_aspect=not rough_acquisition,
     )
     grounding_boxes = Path(grounding["outputs"]["boxes_yaml"])
     sam2 = refine_capture(

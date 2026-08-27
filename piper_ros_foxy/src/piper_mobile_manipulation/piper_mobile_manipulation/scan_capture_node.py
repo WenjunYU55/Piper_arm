@@ -170,6 +170,10 @@ class ScanCaptureNode(Node):
         self.declare_parameter('require_depth', True)
         self.declare_parameter('require_good_quality_for_service', True)
         self.declare_parameter('require_clear_occlusion_for_service', True)
+        self.declare_parameter(
+            'allow_classified_occlusion_for_service', False)
+        self.declare_parameter(
+            'allow_classified_occlusion_for_first_capture', False)
         self.declare_parameter('diagnostic_timeout_sec', 1.0)
         self.declare_parameter('minimum_accepted_quality_score', 0.65)
         self.declare_parameter('dataset_root', '/home/prl/Piper_arm/datasets/active_scan')
@@ -536,6 +540,14 @@ class ScanCaptureNode(Node):
                     self.latest_occlusion_status
                     if self.param_bool('require_clear_occlusion_for_service')
                     else {'occlusion_state': 'CLEAR'})
+                classified_occlusion_barrier = bool(
+                    self.param_bool(
+                        'allow_classified_occlusion_for_service'))
+                first_capture_semantic_barrier = bool(
+                    self.param_bool(
+                        'allow_classified_occlusion_for_first_capture')
+                    and int(self.frame_index) == 0
+                    and int(status.current_view) == 1)
                 reason = capture_diagnostic_rejection(
                     quality,
                     (0.0 if not self.param_bool(
@@ -550,6 +562,11 @@ class ScanCaptureNode(Node):
                     float(self.get_parameter('diagnostic_timeout_sec').value),
                     float(self.get_parameter(
                         'minimum_accepted_quality_score').value),
+                    allowed_occlusion_states=(
+                        ('CLEAR', 'PARTIALLY_OCCLUDED', 'HEAVILY_OCCLUDED')
+                        if (classified_occlusion_barrier
+                            or first_capture_semantic_barrier)
+                        else ('CLEAR',)),
                 )
                 if reason:
                     return False, reason
@@ -938,6 +955,8 @@ class ScanCaptureNode(Node):
                 index, self.frames_dir),
             'frame_index': int(index),
             'metadata_file_path': paths['metadata'],
+            'occlusion_state': str(metadata['occlusion_state']),
+            'occlusion_score': float(metadata['occlusion_score']),
             'qualified_target_model_seed': dict(
                 metadata['qualified_target_model_seed']),
         }

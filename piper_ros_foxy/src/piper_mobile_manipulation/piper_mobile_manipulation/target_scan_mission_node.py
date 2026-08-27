@@ -1844,8 +1844,11 @@ class TargetScanMissionNode(Node):
             except json.JSONDecodeError as exc:
                 raise MissionFailure('workflow diagnostic is invalid JSON: %s' % exc)
             state = str(payload.get('state', ''))
-            if state == 'SCAN_READY' and payload.get('measured_lock_ready'):
-                return payload
+            if state == 'SCAN_READY':
+                if payload.get('measured_lock_ready'):
+                    return payload
+                time.sleep(0.25)
+                continue
             if state == 'PLAN_READY':
                 return payload
             if state == 'ABORTED':
@@ -1854,7 +1857,7 @@ class TargetScanMissionNode(Node):
                 raise MissionFailure('workflow is in incompatible state %s' % state)
             time.sleep(0.25)
         raise MissionFailure(
-            'dedicated workflow occlusion assessment exceeded %.0f seconds'
+            'measured workflow lock admission exceeded %.0f seconds'
             % workflow_config_for(self).workflow_assessment_timeout_sec)
 
     def wait_for_execution(self, goal_handle, session, successes, timeout, failures):

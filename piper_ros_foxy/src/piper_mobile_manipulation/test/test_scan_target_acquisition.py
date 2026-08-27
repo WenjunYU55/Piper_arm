@@ -1,3 +1,4 @@
+import inspect
 import math
 from types import SimpleNamespace
 
@@ -398,6 +399,19 @@ def test_accepted_acquisition_call_stops_candidate_republish():
 
     assert bridge.acquisition_request_sent
     assert bridge.pending_acquisition_message is None
+
+
+def test_acquisition_adapter_does_not_start_the_supervised_workflow():
+    bridge = SimpleNamespace(
+        pending_acquisition_payload_ready=False,
+        get_parameter=lambda name: SimpleNamespace(
+            value={'handoff_retry_sec': 0.5}[name]),
+    )
+
+    ScanTargetAcquisitionNode.submit_ready_requests(bridge)
+
+    assert 'workflow_start_client' not in inspect.getsource(
+        ScanTargetAcquisitionNode)
 
 
 def test_rejected_then_accepted_request_can_change_log_severity_on_foxy():

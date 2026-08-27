@@ -295,6 +295,47 @@ def test_multiview_approval_holds_then_accepts_after_measured_lock_recovers(
         'while perception reacquires a measured lock']
 
 
+def test_workflow_scan_ready_waits_for_transient_measured_lock_recovery(
+        monkeypatch):
+    start_client = object()
+    diagnostic_client = object()
+    responses = [
+        SimpleNamespace(success=True, message='workflow started'),
+        SimpleNamespace(
+            success=True,
+            message='{"state":"SCAN_READY","measured_lock_ready":false,'
+                    '"measured_lock_rejection":"tracking is prediction-only"}'),
+        SimpleNamespace(
+            success=True,
+            message='{"state":"SCAN_READY","measured_lock_ready":true,'
+                    '"measured_lock_rejection":""}'),
+    ]
+    calls = []
+
+    def call_service(client, *_args, **_kwargs):
+        calls.append(client)
+        return responses.pop(0)
+
+    node = SimpleNamespace(
+        workflow_start_client=start_client,
+        workflow_diagnostic_client=diagnostic_client,
+        call_service=call_service,
+        guard=lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        mission_node, 'workflow_config_for',
+        lambda _node: SimpleNamespace(workflow_assessment_timeout_sec=1.0))
+    monkeypatch.setattr(mission_node.time, 'sleep', lambda _seconds: None)
+
+    result = TargetScanMissionNode.start_and_wait_workflow(
+        node, object(), object())
+
+    assert result['state'] == 'SCAN_READY'
+    assert result['measured_lock_ready'] is True
+    assert calls == [start_client, diagnostic_client, diagnostic_client]
+    assert responses == []
+
+
 def test_shutdown_uses_static_home_until_perception_scene_is_established():
     session = MissionSession(validate_goal_payload(goal(), now_sec=1001.0))
     assert shutdown_uses_startup_home(session)
