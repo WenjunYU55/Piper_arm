@@ -570,7 +570,8 @@ class MissionEngine:
     def _handle_occlusion_probe(self, context):
         self._transition(
             context, MissionPhase.OCCLUSION_PROBE,
-            'assessing the measured target and occluder scene')
+            'initializing measured workflow state; the dedicated occlusion '
+            'probe is deferred until the settled first RGB-D view')
         workflow = self.operations.start_and_wait_workflow(context)
         if workflow.get('state') == 'PLAN_READY':
             readiness = self.operations.readiness_rejection(

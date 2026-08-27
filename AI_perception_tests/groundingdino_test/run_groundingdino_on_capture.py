@@ -332,6 +332,7 @@ def target_detection_validation(
     detection: dict[str, Any],
     image_bgr: np.ndarray,
     target_profile: str = "green_cube",
+    require_box_aspect: bool = True,
 ) -> dict[str, Any]:
     """Validate semantic confidence, observed colour, and box proportions."""
     confidence = float(detection.get("confidence", 0.0))
@@ -351,7 +352,7 @@ def target_detection_validation(
             % (confidence, MIN_TARGET_SEMANTIC_CONFIDENCE)
         )
     reasons.extend(appearance["rejection_reasons"])
-    if str(target_profile) == "green_cube" and not (
+    if require_box_aspect and str(target_profile) == "green_cube" and not (
         MIN_TARGET_BOX_ASPECT_RATIO
         <= aspect_ratio
         <= MAX_TARGET_BOX_ASPECT_RATIO
@@ -373,6 +374,7 @@ def target_detection_validation(
         "box_aspect_ratio": aspect_ratio,
         "minimum_box_aspect_ratio": MIN_TARGET_BOX_ASPECT_RATIO,
         "maximum_box_aspect_ratio": MAX_TARGET_BOX_ASPECT_RATIO,
+        "box_aspect_required": bool(require_box_aspect),
         "rejection_reasons": reasons,
     }
 
@@ -381,6 +383,7 @@ def validate_target_detections(
     detections: list[dict[str, Any]],
     image_bgr: np.ndarray,
     target_profile: str = "green_cube",
+    require_box_aspect: bool = True,
 ) -> list[dict[str, Any]]:
     """Mark semantic target candidates valid only after appearance checks."""
     rejected = []
@@ -390,7 +393,11 @@ def validate_target_detections(
         if not semantic_candidate:
             continue
         validation = target_detection_validation(
-            detection, image_bgr, target_profile=target_profile)
+            detection,
+            image_bgr,
+            target_profile=target_profile,
+            require_box_aspect=require_box_aspect,
+        )
         detection["target_validation"] = validation
         detection["is_target_candidate"] = bool(validation["accepted"])
         if not validation["accepted"]:
@@ -572,6 +579,7 @@ def run_on_capture(
     local_box_threshold: float = DEFAULT_LOCAL_BOX_THRESHOLD,
     target_label: str = "green cube",
     target_profile: str = "green_cube",
+    require_target_box_aspect: bool = True,
 ) -> dict[str, Any]:
     capture_dir = capture_dir.expanduser().resolve()
     config_path = config_path.expanduser().resolve()
@@ -604,6 +612,7 @@ def run_on_capture(
         full_frame_detections,
         image_source,
         target_profile=target_profile,
+        require_box_aspect=require_target_box_aspect,
     )
     model_target = best_detection(full_frame_detections, "is_target_candidate")
     target = model_target or tracked_mask_target_fallback(
@@ -677,6 +686,7 @@ def run_on_capture(
             MIN_TARGET_BOX_ASPECT_RATIO,
             MAX_TARGET_BOX_ASPECT_RATIO,
         ],
+        "box_aspect_required": bool(require_target_box_aspect),
         "fail_closed": True,
     }
 

@@ -78,6 +78,40 @@ def test_repeated_measured_surface_converges(tmp_path):
     assert result['per_view_novel_fraction'][-2:] == [0.0, 0.0]
 
 
+def test_schema_two_coverage_uses_qualified_target_depth_not_occluder(tmp_path):
+    target_depth = np.full((60, 60), 400, dtype=np.uint16)
+    raw_depth = np.full((60, 60), 0.20, dtype=np.float32)
+    mask = np.full((60, 60), 255, dtype=np.uint8)
+    files = []
+    for index in range(2):
+        record = write_frame(tmp_path, index, raw_depth, mask)
+        metadata_path = tmp_path / record['path']
+        metadata = yaml.safe_load(metadata_path.read_text(encoding='utf-8'))
+        target_depth_path = (
+            tmp_path / 'frames' / ('frame_%03d_target_depth.png' % index))
+        target_support_path = (
+            tmp_path / 'frames' / ('frame_%03d_target_support.png' % index))
+        assert cv2.imwrite(str(target_depth_path), target_depth)
+        assert cv2.imwrite(str(target_support_path), mask)
+        metadata.update({
+            'capture_schema_version': 2,
+            'target_depth_png_file_path': str(target_depth_path),
+            'target_support_mask_file_path': str(target_support_path),
+        })
+        metadata_path.write_text(
+            yaml.safe_dump(metadata), encoding='utf-8')
+        files.append(record)
+    (tmp_path / 'manifest.json').write_text(
+        json.dumps({'files': files}), encoding='utf-8')
+
+    result = measured_surface_coverage(
+        tmp_path, minimum_views=2, pixel_stride=1,
+        convergence_views=1)
+
+    assert result['available']
+    assert result['per_view_novel_fraction'] == [1.0, 0.0]
+
+
 def test_new_surface_does_not_claim_convergence(tmp_path):
     depth = np.full((60, 60), 0.4, dtype=np.float32)
     mask = np.full((60, 60), 255, dtype=np.uint8)

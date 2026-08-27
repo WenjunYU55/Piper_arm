@@ -47,6 +47,12 @@
     require_depth: true
     require_good_quality_for_service: true
     require_clear_occlusion_for_service: true
+    # A fresh classified partial/heavy frame may be persisted while the
+    # workflow holds it unaccepted for an exact semantic probe. UNKNOWN, LOST
+    # and stale evidence remain rejected. The older first-only switch remains
+    # as a compatibility alias for external parameter overlays.
+    allow_classified_occlusion_for_service: true
+    allow_classified_occlusion_for_first_capture: false
     diagnostic_timeout_sec: 1.0
     minimum_accepted_quality_score: 0.65
     dataset_root: "/home/prl/Piper_arm/datasets/active_scan"

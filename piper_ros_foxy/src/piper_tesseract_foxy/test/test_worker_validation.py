@@ -41,6 +41,27 @@ def test_worker_camera_path_accepts_compact_visible_route():
         [0.0, 0.0, 1.0]) == ''
 
 
+def test_worker_first_alignment_enters_cone_and_finishes_within_five_degrees():
+    assert camera_transform_path_rejection(
+        [optical_transform(value) for value in (30.8, 25.0, 19.0, 5.0)],
+        [0.0, 0.0, 1.0],
+        initial_alignment=True, final_aim_deg=5.0) == ''
+
+
+def test_worker_first_alignment_rejects_worsening_and_bad_endpoint():
+    worsening = camera_transform_path_rejection(
+        [optical_transform(value) for value in (30.8, 32.0, 5.0)],
+        [0.0, 0.0, 1.0],
+        initial_alignment=True, final_aim_deg=5.0)
+    bad_endpoint = camera_transform_path_rejection(
+        [optical_transform(value) for value in (30.8, 18.0, 5.5)],
+        [0.0, 0.0, 1.0],
+        initial_alignment=True, final_aim_deg=5.0)
+
+    assert 'worsens' in worsening
+    assert 'endpoint aim' in bad_endpoint
+
+
 def test_worker_exhausts_exact_aim_before_one_fallback():
     calls = []
     fallback = [0.996194698, 0.087155743, 0.0]
@@ -863,6 +884,7 @@ def test_successful_request_obstacle_marks_scene_dirty():
 
 def test_scene_setup_time_does_not_consume_candidate_budget(monkeypatch):
     clock = {'now': 0.0}
+    candidate_calls = []
     monkeypatch.setattr(
         worker_module.time, 'monotonic', lambda: float(clock['now']))
     points = [
@@ -873,18 +895,22 @@ def test_scene_setup_time_does_not_consume_candidate_budget(monkeypatch):
     def setup_scene():
         clock['now'] = 60.0
 
-    backend = SimpleNamespace(
-        reset_scene=setup_scene,
-        add_obstacles=lambda _obstacles: None,
-        find_bootstrap_recovery=lambda _request: None,
-        plan_candidate=lambda *_args: (
+    def plan_candidate(*args):
+        candidate_calls.append(args)
+        return (
             0.0,
             points,
             {
                 'minimum_clearance_m': 0.1,
                 'limiting_link_pair': 'none/none',
             },
-        ),
+        )
+
+    backend = SimpleNamespace(
+        reset_scene=setup_scene,
+        add_obstacles=lambda _obstacles: None,
+        find_bootstrap_recovery=lambda _request: None,
+        plan_candidate=plan_candidate,
     )
     request = {
         'plan_kind': 'MULTIVIEW_SCAN',
@@ -913,13 +939,15 @@ def test_scene_setup_time_does_not_consume_candidate_budget(monkeypatch):
             'max_acceleration_rad_s2': [5.0] * 6,
         },
         'start_state': {'positions_rad': [0.0] * 6},
+        'scan_session': {'accepted_views': 0},
     }
 
     selected, segments = TesseractBackend.plan(backend, request)
 
     assert [item['id'] for item in selected] == [0]
     assert len(segments) == 1
-    assert backend.planning_deadline_monotonic == pytest.approx(105.0)
+    assert candidate_calls[0][-1] is True
+    assert backend.planning_deadline_monotonic == pytest.approx(150.0)
 
 
 def test_automatic_one_view_replan_has_a_tight_bounded_budget():
@@ -931,7 +959,7 @@ def test_automatic_one_view_replan_has_a_tight_bounded_budget():
             'include_return_home': False,
         },
     }
-    assert planning_budgets_for_request(request) == (45.0, 3.0)
+    assert planning_budgets_for_request(request) == (90.0, 3.0)
 
     request['planning']['include_return_home'] = True
     assert planning_budgets_for_request(request) == (150.0, 5.0)

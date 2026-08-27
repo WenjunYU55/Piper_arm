@@ -718,6 +718,63 @@ def test_camera_target_path_rejects_off_axis_joint_shortcut():
     assert 'leaves the 20.0-degree camera boresight cone' in rejection[0]
 
 
+def test_first_target_alignment_may_enter_cone_but_must_finish_within_five_degrees():
+    class FakeKinematics:
+        @staticmethod
+        def camera_transform(joints):
+            angle = float(joints[0])
+            transform = np.eye(4)
+            transform[:3, 2] = [math.sin(angle), 0.0, math.cos(angle)]
+            return transform
+
+    path = [
+        np.asarray([math.radians(value), 0, 0, 0, 0, 0])
+        for value in (30.8, 25.0, 19.0, 5.0)
+    ]
+
+    assert camera_target_path_reasons(
+        FakeKinematics(), path, [0.0, 0.0, 1.0], 20.0, 0.22,
+        initial_alignment=True, final_aim_deg=5.0) == []
+
+
+def test_first_target_alignment_rejects_worsening_before_entering_cone():
+    class FakeKinematics:
+        @staticmethod
+        def camera_transform(joints):
+            angle = float(joints[0])
+            transform = np.eye(4)
+            transform[:3, 2] = [math.sin(angle), 0.0, math.cos(angle)]
+            return transform
+
+    rejection = camera_target_path_reasons(
+        FakeKinematics(),
+        [np.asarray([math.radians(value), 0, 0, 0, 0, 0])
+         for value in (30.8, 32.0, 5.0)],
+        [0.0, 0.0, 1.0], 20.0, 0.22,
+        initial_alignment=True, final_aim_deg=5.0)
+
+    assert 'worsens' in rejection[0]
+
+
+def test_first_target_alignment_rejects_endpoint_outside_five_degrees():
+    class FakeKinematics:
+        @staticmethod
+        def camera_transform(joints):
+            angle = float(joints[0])
+            transform = np.eye(4)
+            transform[:3, 2] = [math.sin(angle), 0.0, math.cos(angle)]
+            return transform
+
+    rejection = camera_target_path_reasons(
+        FakeKinematics(),
+        [np.asarray([math.radians(value), 0, 0, 0, 0, 0])
+         for value in (30.8, 18.0, 5.5)],
+        [0.0, 0.0, 1.0], 20.0, 0.22,
+        initial_alignment=True, final_aim_deg=5.0)
+
+    assert 'endpoint aim' in rejection[0]
+
+
 def test_camera_target_path_rejects_motion_through_close_target():
     class FakeKinematics:
         @staticmethod
@@ -2482,6 +2539,78 @@ def test_executor_stretches_schedule_without_bursting_or_skipping_path():
     assert fake.stream_schedule_paused_sec == pytest.approx(0.051)
 
 
+def test_executor_stream_completion_reports_true_wall_duration_after_pause():
+    published = []
+    parameters = {
+        'trajectory_following_error_grace_sec': 1.0,
+        'trajectory_following_error_rad': 0.30,
+    }
+    fake = SimpleNamespace(
+        motion_started_at=0.0,
+        stream_wall_started_at=0.0,
+        stream_last_tick_at=0.4,
+        stream_schedule_paused_sec=0.4,
+        stream_following_hold_started_at=None,
+        stream_late_event_count=0,
+        stream_late_missed_samples=0,
+        stream_late_max_sec=0.0,
+        stream_late_reported_at=None,
+        command_target=None,
+        path_index=0,
+        current_path=[np.full(6, 0.01)],
+        current_path_times=[0.10],
+        current_waypoint_error=0.0,
+        max_waypoint_error=0.0,
+        dropped_command_samples=0,
+        command_sent_at=0.0,
+        command_samples_sent=0,
+        max_command_interval_sec=0.0,
+        stream_schedule_completion_logged=False,
+        last_stream_planned_duration_sec=0.0,
+        last_stream_actual_duration_sec=0.0,
+        last_stream_achieved_rate_hz=0.0,
+        last_motion_status_at=0.0,
+        waypoint_started_at=None,
+        waypoint_last_progress_at=None,
+        waypoint_best_error=math.inf,
+        max_joint_error=lambda _target: 0.01,
+        total_joint_error=lambda _target: 0.01,
+        get_parameter=lambda name: SimpleNamespace(value=parameters[name]),
+        publish_joint_command=lambda value: published.append(
+            np.asarray(value).copy()),
+        publish_status=lambda: None,
+        get_logger=lambda: SimpleNamespace(
+            info=lambda _message: None,
+            warning=lambda _message: None),
+        abort_or_finish_captures=lambda reason: pytest.fail(reason),
+    )
+
+    ScanViewpointExecutorNode.streaming_moving_tick(fake, 0.50)
+
+    assert len(published) == 1
+    assert fake.last_stream_actual_duration_sec == pytest.approx(0.50)
+
+
+def test_executor_rate_limits_repeated_stream_lateness_warnings():
+    warnings = []
+    fake = SimpleNamespace(
+        stream_late_event_count=0,
+        stream_late_missed_samples=0,
+        stream_late_max_sec=0.0,
+        stream_late_reported_at=None,
+        get_logger=lambda: SimpleNamespace(warning=warnings.append),
+    )
+
+    ScanViewpointExecutorNode.record_stream_lateness(fake, 1.0, 0.06, 1)
+    ScanViewpointExecutorNode.record_stream_lateness(fake, 2.0, 0.07, 1)
+    ScanViewpointExecutorNode.record_stream_lateness(fake, 6.1, 0.08, 2)
+
+    assert len(warnings) == 2
+    assert fake.stream_late_event_count == 3
+    assert fake.stream_late_missed_samples == 4
+    assert fake.stream_late_max_sec == pytest.approx(0.08)
+
+
 def test_executor_holds_stream_until_feedback_catches_up():
     published = []
     aborts = []
@@ -2716,6 +2845,8 @@ def test_first_accepted_view_promotes_pending_model_seed():
         pending_scan_qualified_target_shape=seed,
         scan_qualified_target_model_seed=None,
         pending_scan_qualified_target_model_seed=capture_seed,
+        pending_capture_occlusion_state='PARTIALLY_OCCLUDED',
+        capture_semantic_probe_pending=True,
         current_view=0,
         plan_id='plan-a',
         plan_target_center=np.asarray([0.4, 0.0, 0.04]),
@@ -2734,6 +2865,12 @@ def test_first_accepted_view_promotes_pending_model_seed():
             'achieved_at_sec': 12.0,
         },
         latest_achieved_matches_current_view=lambda: True,
+        latest_workflow={
+            'state': 'SCAN_READY',
+            'accepted_views': 1,
+            'first_capture_occluded': True,
+            'occlusion_labels': ['pen'],
+        },
         publish_scan_history=lambda: published.append(True),
         abort_motion=lambda reason: pytest.fail(reason),
     )
@@ -2744,6 +2881,10 @@ def test_first_accepted_view_promotes_pending_model_seed():
     assert executor.pending_scan_qualified_target_shape is None
     assert executor.pending_scan_qualified_target_model_seed is None
     assert len(executor.scan_history) == 1
+    assert executor.scan_history[0]['occluded']
+    assert executor.scan_history[0]['occlusion_state'] == (
+        'PARTIALLY_OCCLUDED')
+    assert executor.scan_history[0]['occlusion_labels'] == ['pen']
     assert published == [True]
 
 

@@ -107,6 +107,7 @@ LEGACY_EXECUTOR_DEFAULTS = {
     'settle_duration_sec': 1.5,
     'settle_timeout_sec': 15.0,
     'capture_timeout_sec': 20.0,
+    'first_capture_acceptance_timeout_sec': 75.0,
     'finish_scan_timeout_sec': 10.0,
     'capture_status_propagation_sec': 0.25,
     'acquisition_fresh_frame_timeout_sec': 10.0,
@@ -324,6 +325,8 @@ def test_invalid_mission_configuration_fails_at_startup(overrides, expected):
     ({'camera_holder_envelope_size_m': [0.1, 0.0, 0.1]},
      'camera_holder_envelope_size_m'),
     ({'capture_timeout_sec': -1.0}, 'capture_timeout_sec'),
+    ({'first_capture_acceptance_timeout_sec': 10.0},
+     'first_capture_acceptance_timeout_sec'),
 ])
 def test_invalid_executor_configuration_fails_at_startup(overrides, expected):
     with pytest.raises(ConfigurationError, match=expected):

@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import cv2
 import numpy as np
@@ -31,6 +32,7 @@ from run_groundingdino_on_capture import (  # noqa: E402
     target_crop_bounds,
     validate_target_detections,
 )
+import temporal_heavy_refresh  # noqa: E402
 from temporal_heavy_refresh import classify_refined_obstacles  # noqa: E402
 from sam2_refine_on_capture import (  # noqa: E402
     _SAM2_MODEL_CACHE,
@@ -275,6 +277,84 @@ class TargetSelectionTest(unittest.TestCase):
             'aspect ratio' in reason
             for reason in result['rejection_reasons']
         ))
+
+    def test_rough_acquisition_accepts_visible_green_partial_cube_box(self):
+        image = np.zeros((480, 640, 3), dtype=np.uint8)
+        image[425:480, 0:89] = (0, 255, 0)
+        detection = self.target_detection(
+            confidence=0.602,
+            box=[0.58, 425.38, 88.21, 478.90],
+        )
+
+        result = target_detection_validation(
+            detection,
+            image,
+            require_box_aspect=False,
+        )
+
+        self.assertTrue(result['accepted'])
+        self.assertFalse(result['box_aspect_required'])
+        self.assertGreater(result['box_aspect_ratio'], 1.6)
+
+    def test_rough_acquisition_still_rejects_non_green_candidate(self):
+        image = np.full((480, 640, 3), (80, 120, 160), dtype=np.uint8)
+        detection = self.target_detection(
+            confidence=0.90,
+            box=[0.58, 425.38, 88.21, 478.90],
+        )
+
+        result = target_detection_validation(
+            detection,
+            image,
+            require_box_aspect=False,
+        )
+
+        self.assertFalse(result['accepted'])
+        self.assertTrue(any(
+            'green fraction' in reason
+            for reason in result['rejection_reasons']
+        ))
+
+    def test_only_rough_request_disables_box_aspect_gate(self):
+        for reason, expected in (
+                ('rough_acquisition_viewpoint', False),
+                ('capture_refresh', True)):
+            with self.subTest(reason=reason):
+                with tempfile.TemporaryDirectory() as temporary:
+                    capture = Path(temporary) / 'capture'
+                    capture.mkdir()
+                    with (capture / 'mission_context.yaml').open(
+                            'w', encoding='utf-8') as stream:
+                        yaml.safe_dump({
+                            'target_label': 'green cube',
+                            'target_profile': 'green_cube',
+                            'target_prompt': 'green cube .',
+                            'request_reason': reason,
+                        }, stream)
+                    grounding = {
+                        'outputs': {
+                            'boxes_yaml': str(capture / 'boxes.yaml'),
+                            'debug_png': '',
+                        },
+                        'summary': {},
+                    }
+                    refined = {'masks': [], 'outputs': {}}
+                    with patch.object(
+                            temporal_heavy_refresh,
+                            'run_on_capture',
+                            return_value=grounding) as run_on_capture:
+                        with patch.object(
+                                temporal_heavy_refresh,
+                                'refine_capture',
+                                return_value=refined):
+                            temporal_heavy_refresh.run_heavy_refresh(
+                                capture, Path(temporary) / 'output')
+
+                    self.assertEqual(
+                        run_on_capture.call_args.kwargs[
+                            'require_target_box_aspect'],
+                        expected,
+                    )
 
     def test_refined_non_green_mask_is_rejected(self):
         image = np.full((20, 30, 3), (70, 100, 140), dtype=np.uint8)

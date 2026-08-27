@@ -4,10 +4,15 @@
 import json
 import math
 import time
+from functools import wraps
+from threading import RLock
+
 import numpy as np
 import rclpy
 from geometry_msgs.msg import Point, Vector3
 from piper_msgs.msg import PiperMotionLimits, PiperStatusMsg
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import JointState
@@ -137,6 +142,7 @@ ACTIVE_STATES = {
 }
 MAX_RGBD_CAPTURE_READINESS_RETRIES = 10
 MAX_FINAL_CAPTURE_AIM_ERROR_DEG = 5.0
+STREAM_LATE_WARNING_INTERVAL_SEC = 5.0
 TARGET_SHAPE_QOS = QoSProfile(
     depth=5,
     reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -192,8 +198,8 @@ def first_capture_model_seed(payload, framing_action):
     return validate_shape_measurement(payload)
 
 
-def capture_model_seed_from_response(message):
-    """Extract the exact persisted capture-one model seed from Trigger JSON."""
+def capture_result_from_response(message):
+    """Validate the exact persisted RGB-D capture result from Trigger JSON."""
     try:
         payload = json.loads(str(message))
     except (TypeError, ValueError, json.JSONDecodeError):
@@ -202,8 +208,19 @@ def capture_model_seed_from_response(message):
             not isinstance(payload, dict)
             or int(payload.get('capture_result_schema_version', -1)) != 1):
         raise ValueError('capture response model-seed schema is unsupported')
-    return validate_capture_model_seed(
+    state = str(payload.get('occlusion_state', '')).upper()
+    if state not in ('CLEAR', 'PARTIALLY_OCCLUDED', 'HEAVILY_OCCLUDED'):
+        raise ValueError('capture response occlusion state is unqualified')
+    payload = dict(payload)
+    payload['occlusion_state'] = state
+    payload['qualified_target_model_seed'] = validate_capture_model_seed(
         payload.get('qualified_target_model_seed'))
+    return payload
+
+
+def capture_model_seed_from_response(message):
+    """Extract the exact persisted capture-one model seed from Trigger JSON."""
+    return capture_result_from_response(message)['qualified_target_model_seed']
 
 
 def qualified_scan_center_update(
@@ -487,6 +504,15 @@ def missing_obstacles_can_wait(
 class ScanViewpointExecutorNode(Node):
     def __init__(self):
         super().__init__('scan_viewpoint_executor')
+        # The 200 Hz state-machine timer needs its own scheduler lane, while
+        # every state-mutating callback still shares one explicit lock. This
+        # keeps approval/cancel/capture responses serviceable without allowing
+        # the timer and a control callback to mutate execution state together.
+        self.control_state_lock = RLock()
+        self.control_callback_group = MutuallyExclusiveCallbackGroup()
+        self.timer_callback_group = MutuallyExclusiveCallbackGroup()
+        self.telemetry_callback_group = MutuallyExclusiveCallbackGroup()
+        self.client_callback_group = MutuallyExclusiveCallbackGroup()
         self.configuration = load_executor_configuration(self)
 
         calibration_path = self.configuration.interfaces.hand_eye_calibration_path
@@ -532,6 +558,8 @@ class ScanViewpointExecutorNode(Node):
         self.pending_scan_qualified_target_shape = None
         self.scan_qualified_target_model_seed = None
         self.pending_scan_qualified_target_model_seed = None
+        self.pending_capture_occlusion_state = 'UNKNOWN'
+        self.capture_semantic_probe_pending = False
         self.latest_achieved_scan_view = None
         self.scan_coverage_target_center = None
         self.scan_target_center_qualified = False
@@ -583,10 +611,15 @@ class ScanViewpointExecutorNode(Node):
         self.max_command_interval_sec = 0.0
         self.dropped_command_samples = 0
         self.motion_started_at = None
+        self.stream_wall_started_at = None
         self.stream_last_tick_at = None
         self.stream_schedule_paused_sec = 0.0
         self.stream_following_hold_started_at = None
         self.stream_schedule_completion_logged = False
+        self.stream_late_event_count = 0
+        self.stream_late_missed_samples = 0
+        self.stream_late_max_sec = 0.0
+        self.stream_late_reported_at = None
         self.last_stream_planned_duration_sec = 0.0
         self.last_stream_actual_duration_sec = 0.0
         self.last_stream_achieved_rate_hz = 0.0
@@ -623,6 +656,8 @@ class ScanViewpointExecutorNode(Node):
         self.capture_heavy_refresh_publish_attempts = 0
         self.capture_heavy_refresh_waiting_for_worker = False
         self.capture_rejection_reason = ''
+        self.pending_capture_occlusion_state = 'UNKNOWN'
+        self.capture_semantic_probe_pending = False
         self.finish_scan_future = None
         self.return_home_warning = ''
         self.abort_return_in_progress = False
@@ -670,7 +705,8 @@ class ScanViewpointExecutorNode(Node):
                 10)
         self.create_subscription(
             String, self.configuration.interfaces.reachable_viewpoints_topic,
-            self.scan_cb, 10)
+            self.serialized_control_callback(self.scan_cb), 10,
+            callback_group=self.control_callback_group)
         self.tesseract_plan_qos = QoSProfile(
             depth=1,
             reliability=ReliabilityPolicy.RELIABLE,
@@ -678,63 +714,98 @@ class ScanViewpointExecutorNode(Node):
         )
         self.tesseract_plan_sub = self.create_subscription(
             TesseractPlan, self.configuration.interfaces.tesseract_plan_topic,
-            self.tesseract_plan_cb, self.tesseract_plan_qos)
+            self.serialized_control_callback(self.tesseract_plan_cb),
+            self.tesseract_plan_qos,
+            callback_group=self.control_callback_group)
         self.create_subscription(
             JointState, self.configuration.interfaces.joint_states_topic,
-            self.joint_cb, 10)
+            self.joint_cb, 10,
+            callback_group=self.telemetry_callback_group)
         self.create_subscription(
             PiperStatusMsg, self.configuration.interfaces.arm_status_topic,
-            self.arm_status_cb, 10)
+            self.arm_status_cb, 10,
+            callback_group=self.telemetry_callback_group)
         self.create_subscription(
             PiperMotionLimits,
             self.configuration.interfaces.motion_limits_topic,
-            self.motion_limits_cb, 10)
+            self.serialized_control_callback(self.motion_limits_cb), 10,
+            callback_group=self.control_callback_group)
         self.create_subscription(
             TrackingHealth,
             self.configuration.interfaces.tracking_health_topic,
-            self.tracking_health_cb, 10)
+            self.tracking_health_cb, 10,
+            callback_group=self.telemetry_callback_group)
         self.create_subscription(
             TrackedTarget, self.configuration.interfaces.tracked_target_topic,
-            self.tracked_target_cb, 10)
+            self.tracked_target_cb, 10,
+            callback_group=self.telemetry_callback_group)
         self.create_subscription(
             CameraTimestampHealth,
             self.configuration.interfaces.camera_timestamp_health_topic,
-            self.camera_timestamp_health_cb, 10)
+            self.camera_timestamp_health_cb, 10,
+            callback_group=self.telemetry_callback_group)
         self.create_subscription(
             String, self.configuration.interfaces.target_status_topic,
-            self.target_status_cb, 10)
+            self.target_status_cb, 10,
+            callback_group=self.telemetry_callback_group)
         self.create_subscription(
             String, self.configuration.interfaces.target_shape_topic,
-            self.target_shape_cb, TARGET_SHAPE_QOS)
+            self.serialized_control_callback(self.target_shape_cb),
+            TARGET_SHAPE_QOS,
+            callback_group=self.control_callback_group)
         self.create_subscription(
             ObstacleInstance3DArray,
             self.configuration.interfaces.obstacle_topic,
-            self.obstacle_cb, 10)
+            self.obstacle_cb, 10,
+            callback_group=self.telemetry_callback_group)
         self.create_subscription(
             String, self.configuration.interfaces.workflow_status_topic,
-            self.workflow_cb, 10)
-        self.create_service(ApproveScanExecution, '~/approve', self.approve_cb)
+            self.serialized_control_callback(self.workflow_cb), 10,
+            callback_group=self.control_callback_group)
         self.create_service(
-            AuthorizeMission, '~/authorize_mission', self.authorize_mission_cb)
+            ApproveScanExecution, '~/approve',
+            self.serialized_control_callback(self.approve_cb),
+            callback_group=self.control_callback_group)
+        self.create_service(
+            AuthorizeMission, '~/authorize_mission',
+            self.serialized_control_callback(self.authorize_mission_cb),
+            callback_group=self.control_callback_group)
         self.create_service(
             ExecuteHomeStage, '~/execute_home_stage',
-            self.execute_home_stage_cb)
-        self.create_service(Trigger, '~/hold', self.hold_cb)
-        self.create_service(Trigger, '~/cancel', self.cancel_cb)
-        self.create_service(Trigger, '~/refresh_plan', self.refresh_cb)
-        self.create_service(Trigger, '~/diagnostic_state', self.diagnostic_state_cb)
+            self.serialized_control_callback(self.execute_home_stage_cb),
+            callback_group=self.control_callback_group)
+        self.create_service(
+            Trigger, '~/hold',
+            self.serialized_control_callback(self.hold_cb),
+            callback_group=self.control_callback_group)
+        self.create_service(
+            Trigger, '~/cancel',
+            self.serialized_control_callback(self.cancel_cb),
+            callback_group=self.control_callback_group)
+        self.create_service(
+            Trigger, '~/refresh_plan',
+            self.serialized_control_callback(self.refresh_cb),
+            callback_group=self.control_callback_group)
+        self.create_service(
+            Trigger, '~/diagnostic_state',
+            self.serialized_control_callback(self.diagnostic_state_cb),
+            callback_group=self.control_callback_group)
         self.capture_client = self.create_client(
-            Trigger, self.configuration.interfaces.capture_service)
+            Trigger, self.configuration.interfaces.capture_service,
+            callback_group=self.client_callback_group)
         self.rgbd_capture_client = self.create_client(
-            Trigger, self.configuration.interfaces.rgbd_capture_service)
+            Trigger, self.configuration.interfaces.rgbd_capture_service,
+            callback_group=self.client_callback_group)
         self.finish_scan_client = self.create_client(
-            Trigger, self.configuration.interfaces.finish_scan_service)
+            Trigger, self.configuration.interfaces.finish_scan_service,
+            callback_group=self.client_callback_group)
         self.heavy_refresh_pub = self.create_publisher(
             String,
             self.configuration.interfaces.heavy_refresh_request_topic, 10)
         self.create_subscription(
             String, self.configuration.interfaces.heavy_refresh_status_topic,
-            self.heavy_refresh_status_cb, 10)
+            self.serialized_control_callback(self.heavy_refresh_status_cb), 10,
+            callback_group=self.control_callback_group)
         command_rate = self.configuration.motion.trajectory_command_rate_hz
         if not math.isfinite(command_rate) or command_rate <= 0.0:
             raise RuntimeError('trajectory_command_rate_hz must be finite and positive')
@@ -745,7 +816,10 @@ class ScanViewpointExecutorNode(Node):
             raise RuntimeError(
                 'executor_tick_rate_hz must be at least twice '
                 'trajectory_command_rate_hz')
-        self.create_timer(1.0 / tick_rate, self.tick)
+        self.create_timer(
+            1.0 / tick_rate,
+            self.serialized_control_callback(self.tick),
+            callback_group=self.timer_callback_group)
 
         mode = 'motion opt-in available' if self.real_motion_enabled() else 'proposal-only'
         self.get_logger().warn(
@@ -756,6 +830,14 @@ class ScanViewpointExecutorNode(Node):
                ','.join(ignored_bounds) or 'none'))
         self.publish_status()
         self.publish_scan_history()
+
+    def serialized_control_callback(self, callback):
+        """Serialize timer and control callbacks across scheduler groups."""
+        @wraps(callback)
+        def guarded(*args, **kwargs):
+            with self.control_state_lock:
+                return callback(*args, **kwargs)
+        return guarded
 
     def now(self):
         return time.monotonic()
@@ -2100,6 +2182,21 @@ class ScanViewpointExecutorNode(Node):
 
     def diagnostic_state_cb(self, _request, response):
         """Expose command-free executor state when Foxy topic echo is unreliable."""
+        telemetry_store = getattr(self, 'telemetry_store', None)
+        if telemetry_store is None:
+            camera_health = self.latest_camera_timestamp_health
+            camera_fresh = self.fresh('camera_clock')
+        else:
+            telemetry_snapshot = telemetry_store.snapshot()
+            camera_observation = telemetry_snapshot.perception.camera
+            camera_health = (
+                None if camera_observation is None
+                else camera_observation.value)
+            camera_fresh = bool(
+                camera_observation is not None
+                and not camera_observation.is_stale_at(
+                    telemetry_snapshot.captured_at,
+                    float(configured_value(self, 'data_timeout_sec'))))
         first_delta = None
         first_goal = []
         if self.plan_paths and len(self.plan_paths[0]) >= 2:
@@ -2128,9 +2225,14 @@ class ScanViewpointExecutorNode(Node):
                 if self.current_path_streaming and self.current_path_times
                 else 0.0),
             'current_stream_elapsed_sec': (
-                max(0.0, self.now() - self.motion_started_at)
+                max(0.0, self.now() - float(
+                    self.stream_wall_started_at
+                    if self.stream_wall_started_at is not None
+                    else self.motion_started_at))
                 if self.current_path_streaming
                 and self.motion_started_at is not None else 0.0),
+            'current_stream_late_tick_count': self.stream_late_event_count,
+            'current_stream_max_lateness_sec': self.stream_late_max_sec,
             'last_stream_planned_duration_sec': (
                 self.last_stream_planned_duration_sec),
             'last_stream_actual_duration_sec': (
@@ -2154,10 +2256,9 @@ class ScanViewpointExecutorNode(Node):
             'mission_policy_enabled': self.param_bool('allow_mission_policy'),
             'mission_task_id': self.mission_task_id,
             'mission_authorization_valid': self.mission_authorization_valid(),
-            'camera_clock_fresh': self.fresh('camera_clock'),
+            'camera_clock_fresh': camera_fresh,
             'camera_clock_healthy': bool(
-                self.latest_camera_timestamp_health is not None
-                and self.latest_camera_timestamp_health.healthy),
+                camera_health is not None and camera_health.healthy),
         }, sort_keys=True)
         return response
 
@@ -2514,6 +2615,8 @@ class ScanViewpointExecutorNode(Node):
         """Follow Tesseract timestamps; feedback gates safety and the endpoint."""
         if self.motion_started_at is None:
             self.motion_started_at = now
+        if getattr(self, 'stream_wall_started_at', None) is None:
+            self.stream_wall_started_at = self.motion_started_at
         last_tick = getattr(self, 'stream_last_tick_at', None)
         tick_interval = (
             max(0.0, now - float(last_tick))
@@ -2603,11 +2706,8 @@ class ScanViewpointExecutorNode(Node):
                 self.stream_schedule_paused_sec = float(getattr(
                     self, 'stream_schedule_paused_sec', 0.0)) + delay
                 elapsed = max(0.0, elapsed - delay)
-                self.get_logger().warning(
-                    'Tesseract stream tick was late by %.4fs (%d later '
-                    'samples were already due); stretching the unchanged '
-                    'schedule and publishing the next unsent point'
-                    % (delay, stream_decision.missed_samples))
+                ScanViewpointExecutorNode.record_stream_lateness(
+                    self, now, delay, stream_decision.missed_samples)
             # Never burst stale goals and never shortcut collision-qualified
             # path corners. The pure runner returns exactly one due index.
             due_index = int(stream_decision.sample_index)
@@ -2644,8 +2744,13 @@ class ScanViewpointExecutorNode(Node):
                 self.waypoint_best_error = self.total_joint_error(target)
                 if not self.stream_schedule_completion_logged:
                     planned_duration = float(self.current_path_times[-1])
-                    actual_duration = elapsed
-                    interval_count = max(0, self.command_samples_sent - 1)
+                    actual_duration = max(
+                        0.0,
+                        now - float(getattr(
+                            self, 'stream_wall_started_at',
+                            self.motion_started_at)),
+                    )
+                    interval_count = max(0, self.path_index - 1)
                     achieved_rate = (
                         float(interval_count) / actual_duration
                         if actual_duration > 0.0 else 0.0)
@@ -2655,15 +2760,20 @@ class ScanViewpointExecutorNode(Node):
                     self.stream_schedule_completion_logged = True
                     self.get_logger().info(
                         'Tesseract stream complete: planned=%.3fs '
-                        'actual=%.3fs samples=%d achieved_rate=%.1fHz '
-                        'max_interval=%.4fs max_following_error=%.4frad'
+                        'wall=%.3fs samples=%d achieved_rate=%.1fHz '
+                        'max_interval=%.4fs max_following_error=%.4frad '
+                        'late_ticks=%d max_lateness=%.4fs'
                         % (
                             planned_duration,
                             actual_duration,
-                            self.command_samples_sent,
+                            self.path_index,
                             achieved_rate,
                             self.max_command_interval_sec,
                             self.max_waypoint_error,
+                            int(getattr(
+                                self, 'stream_late_event_count', 0)),
+                            float(getattr(
+                                self, 'stream_late_max_sec', 0.0)),
                         ))
             self.publish_status()
             return
@@ -2672,6 +2782,34 @@ class ScanViewpointExecutorNode(Node):
         # feedback-gated so intermediate samples never create stop-and-go
         # motion, while convergence/stall/timeout behavior remains unchanged.
         ScanViewpointExecutorNode.feedback_gated_moving_tick(self, now)
+
+    def record_stream_lateness(self, now, delay_sec, missed_samples):
+        """Aggregate recurring timer lateness and warn at a bounded rate."""
+        delay = max(0.0, float(delay_sec))
+        missed = max(0, int(missed_samples))
+        self.stream_late_event_count = int(getattr(
+            self, 'stream_late_event_count', 0)) + 1
+        self.stream_late_missed_samples = int(getattr(
+            self, 'stream_late_missed_samples', 0)) + missed
+        self.stream_late_max_sec = max(
+            float(getattr(self, 'stream_late_max_sec', 0.0)), delay)
+        last_report = getattr(self, 'stream_late_reported_at', None)
+        if (
+                last_report is not None
+                and float(now) - float(last_report)
+                < STREAM_LATE_WARNING_INTERVAL_SEC):
+            return
+        self.stream_late_reported_at = float(now)
+        self.get_logger().warning(
+            'Tesseract stream timer lateness detected: latest=%.4fs '
+            'maximum=%.4fs events=%d later_samples_due=%d; preserving '
+            'every approved point in order and stretching the schedule'
+            % (
+                delay,
+                self.stream_late_max_sec,
+                self.stream_late_event_count,
+                self.stream_late_missed_samples,
+            ))
 
     def publish_next_waypoint(self, now):
         target = np.asarray(
@@ -3173,17 +3311,22 @@ class ScanViewpointExecutorNode(Node):
                 return
             self.abort_motion('RGB-D viewpoint capture was rejected: %s' % message)
             return
+        try:
+            capture_result = capture_result_from_response(result.message)
+        except ValueError as error:
+            self.abort_motion(
+                'accepted RGB-D capture result is malformed: %s' % error)
+            return
+        self.pending_capture_occlusion_state = str(
+            capture_result['occlusion_state'])
+        self.capture_semantic_probe_pending = bool(
+            not getattr(self, 'scan_history', [])
+            or self.pending_capture_occlusion_state != 'CLEAR')
         if (
                 not getattr(self, 'scan_history', [])
                 and getattr(
                     self, 'scan_qualified_target_model_seed', None) is None):
-            try:
-                seed = capture_model_seed_from_response(result.message)
-            except ValueError as error:
-                self.abort_motion(
-                    'accepted first RGB-D capture has no exact model seed: %s'
-                    % error)
-                return
+            seed = capture_result['qualified_target_model_seed']
             self.pending_scan_qualified_target_model_seed = dict(seed)
             self.pending_scan_qualified_target_shape = dict(seed['shape'])
         # Count a view only after its synchronized files exist. The workflow's
@@ -3256,11 +3399,19 @@ class ScanViewpointExecutorNode(Node):
             'holding for a new NBV plan' % reason)
 
     def wait_capture_tick(self):
-        if self.now() - self.state_started > float(
-                configured_value(self, 'capture_timeout_sec')):
-            self.abort_motion('accepted capture did not return workflow to SCAN_READY')
-            return
-        if not self.workflow_ready():
+        first_capture_pending = not bool(getattr(self, 'scan_history', []))
+        semantic_probe_pending = bool(getattr(
+            self, 'capture_semantic_probe_pending', first_capture_pending))
+        acceptance_timeout = float(configured_value(
+            self,
+            'first_capture_acceptance_timeout_sec'
+            if semantic_probe_pending else 'capture_timeout_sec'))
+        if self.now() - self.state_started > acceptance_timeout:
+            self.abort_motion(
+                'capture semantic acceptance did not return workflow to '
+                'SCAN_READY'
+                if semantic_probe_pending else
+                'accepted capture did not return workflow to SCAN_READY')
             return
         telemetry_store = getattr(self, 'telemetry_store', None)
         if telemetry_store is None:
@@ -3268,6 +3419,16 @@ class ScanViewpointExecutorNode(Node):
         else:
             observation = telemetry_store.snapshot().mission.workflow
             workflow = None if observation is None else observation.value
+        if isinstance(workflow, dict) and str(
+                workflow.get('state', '')) == 'ABORTED':
+            self.abort_motion(
+                'workflow rejected first capture: '
+                + str(workflow.get('reason', 'workflow aborted')))
+            return
+        if not (
+                isinstance(workflow, dict)
+                and str(workflow.get('state', '')) == 'SCAN_READY'):
+            return
         accepted = int(workflow.get('accepted_views', 0))
         if accepted <= self.capture_accepted_before:
             return
@@ -3319,6 +3480,13 @@ class ScanViewpointExecutorNode(Node):
         planning_target = dict(zip(
             ('x', 'y', 'z'),
             (float(value) for value in self.plan_target_center)))
+        workflow = getattr(self, 'latest_workflow', None)
+        occlusion_labels = []
+        if isinstance(workflow, dict):
+            raw_labels = workflow.get('occlusion_labels', [])
+            if isinstance(raw_labels, list):
+                occlusion_labels = sorted(set(
+                    str(label) for label in raw_labels if str(label)))
         self.scan_history.append({
             'accepted_view': int(accepted_views),
             'plan_id': self.plan_id,
@@ -3337,9 +3505,19 @@ class ScanViewpointExecutorNode(Node):
             'joint_positions_rad': joints,
             'achieved_at_sec': float(achieved['achieved_at_sec']),
             'target_estimate_used': planning_target,
+            'occlusion_state': str(getattr(
+                self, 'pending_capture_occlusion_state', 'UNKNOWN')),
+            'occluded': bool(
+                occlusion_labels
+                or str(getattr(
+                    self, 'pending_capture_occlusion_state', 'UNKNOWN'))
+                in ('PARTIALLY_OCCLUDED', 'HEAVILY_OCCLUDED')),
+            'occlusion_labels': occlusion_labels,
             **({'ray_id': int(viewpoint['ray_id'])}
                if viewpoint.get('ray_id') is not None else {}),
         })
+        self.pending_capture_occlusion_state = 'UNKNOWN'
+        self.capture_semantic_probe_pending = False
         self.publish_scan_history()
         return True
 
@@ -3929,6 +4107,8 @@ class ScanViewpointExecutorNode(Node):
                 self.plan_target_center,
                 configured_value(self, 'scan_target_max_boresight_deg'),
                 configured_value(self, 'scan_target_min_distance_m'),
+                initial_alignment=not bool(self.scan_history),
+                final_aim_deg=MAX_FINAL_CAPTURE_AIM_ERROR_DEG,
             )
             if visibility_reasons:
                 return visibility_reasons
@@ -3965,10 +4145,15 @@ class ScanViewpointExecutorNode(Node):
         self.max_command_interval_sec = 0.0
         self.dropped_command_samples = 0
         self.motion_started_at = None
+        self.stream_wall_started_at = None
         self.stream_last_tick_at = None
         self.stream_schedule_paused_sec = 0.0
         self.stream_following_hold_started_at = None
         self.stream_schedule_completion_logged = False
+        self.stream_late_event_count = 0
+        self.stream_late_missed_samples = 0
+        self.stream_late_max_sec = 0.0
+        self.stream_late_reported_at = None
         self.last_motion_status_at = 0.0
         self.waypoint_started_at = None
         self.waypoint_last_progress_at = None
@@ -5067,6 +5252,8 @@ class ScanViewpointExecutorNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
+    node = None
+    executor = None
     try:
         node = ScanViewpointExecutorNode()
     except (KeyError, OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
@@ -5074,8 +5261,15 @@ def main(args=None):
         rclpy.shutdown()
         return
     try:
-        rclpy.spin(node)
+        executor = MultiThreadedExecutor(num_threads=4)
+        executor.add_node(node)
+        try:
+            executor.spin()
+        except KeyboardInterrupt:
+            pass
     finally:
+        if executor is not None:
+            executor.shutdown()
         node.destroy_node()
         rclpy.shutdown()
 

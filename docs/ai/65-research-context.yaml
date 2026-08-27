@@ -57,7 +57,7 @@ recommended_design:
     prerequisite: Physically observe and qualify the settled first-scan-ray target-framing crop gate before changing runtime NBV.
     state_model:
       target_center: Freeze the actual mask-derived target center in base_link; never redefine the physical target as coordinate origin outside local math.
-      measured_surface: Accepted RGB-D patches are high-confidence truth and alone count toward completion.
+      measured_surface: Accepted schema-2 RGB-D patches contribute only confidence-qualified target depth/support; raw masked occluder depth never counts toward completion.
       predicted_surface: The first complete silhouette is revolved into hidden-surface prior patches with explicit high uncertainty.
       collision_surface: Conservative boxes remain separate and may expand when measurements contradict the prior; prediction alone never shrinks collision evidence.
     ray_evaluation:

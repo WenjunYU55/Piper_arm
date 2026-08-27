@@ -383,6 +383,74 @@ def test_capture_requires_fresh_good_and_clear_visual_evidence():
         quality, 1.1, clear, 0.1, 1.0, 0.65)
 
 
+def test_pending_first_capture_allows_only_fresh_classified_occlusion():
+    quality = {
+        'quality_label': 'GOOD', 'quality_score': 0.80,
+        'target_valid': True,
+    }
+    allowed = ('CLEAR', 'PARTIALLY_OCCLUDED', 'HEAVILY_OCCLUDED')
+
+    for state in allowed:
+        assert capture_diagnostic_rejection(
+            quality, 0.1, {'occlusion_state': state}, 0.1,
+            1.0, 0.65, allowed) == ''
+    assert 'UNKNOWN' in capture_diagnostic_rejection(
+        quality, 0.1, {'occlusion_state': 'UNKNOWN'}, 0.1,
+        1.0, 0.65, allowed)
+    assert 'stale' in capture_diagnostic_rejection(
+        quality, 0.1, {'occlusion_state': 'PARTIALLY_OCCLUDED'}, 1.1,
+        1.0, 0.65, allowed)
+
+
+def test_capture_node_allows_classified_occlusion_for_every_service_view():
+    now = time.monotonic()
+    parameters = {
+        'dry_run': True,
+        'enable_real_arm_motion': False,
+        'require_mask': True,
+        'require_valid_target': True,
+        'require_good_quality_for_service': True,
+        'require_clear_occlusion_for_service': True,
+        'allow_classified_occlusion_for_service': True,
+        'allow_classified_occlusion_for_first_capture': False,
+        'diagnostic_timeout_sec': 1.0,
+        'minimum_accepted_quality_score': 0.65,
+    }
+    node = SimpleNamespace(
+        prepared_capture=None,
+        param_bool=lambda name: bool(parameters[name]),
+        capture_mode=lambda: 'service',
+        latest_mask=np.ones((2, 2), dtype=np.uint8),
+        latest_target=SimpleNamespace(valid=True),
+        latest_execution_status=SimpleNamespace(
+            execution_mode='MULTIVIEW_SCAN',
+            state='CAPTURING_RGBD', current_view=1),
+        frame_index=0,
+        latest_scan_quality={
+            'quality_label': 'GOOD', 'quality_score': 0.80,
+            'target_valid': True,
+        },
+        latest_scan_quality_at=now,
+        latest_occlusion_status={
+            'occlusion_state': 'PARTIALLY_OCCLUDED'},
+        latest_occlusion_status_at=now,
+        get_parameter=lambda name: SimpleNamespace(value=parameters[name]),
+    )
+
+    ready, reason = ScanCaptureNode.capture_prerequisites_ready(node)
+    assert ready, reason
+
+    node.frame_index = 1
+    node.latest_execution_status.current_view = 2
+    ready, reason = ScanCaptureNode.capture_prerequisites_ready(node)
+    assert ready, reason
+
+    node.latest_occlusion_status = {'occlusion_state': 'UNKNOWN'}
+    ready, reason = ScanCaptureNode.capture_prerequisites_ready(node)
+    assert not ready
+    assert 'UNKNOWN' in reason
+
+
 def test_capture_diagnostic_fails_closed_on_malformed_or_nonfinite_values():
     clear = {'occlusion_state': 'CLEAR'}
     assert capture_diagnostic_rejection({

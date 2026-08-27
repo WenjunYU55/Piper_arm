@@ -1,11 +1,31 @@
 schema_version: 1
 document: module_ownership
+rough_acquisition_partial_target_ownership_2026_08_27:
+  owner_module: AI_perception_tests/groundingdino_test/run_groundingdino_on_capture.py
+  orchestration: AI_perception_tests/temporal_heavy_refresh.py
+  request_boundary: AI_perception_tests/heavy_model_worker.py
+  owns: Stage-scoped target appearance admission. Strict box proportions remain the default; rough_acquisition_viewpoint may accept a clipped semantically and chromatically qualified green target for measured-lock seeding.
+  allowed_edit_paths: [the three owner and boundary files, their focused tests, docs/ai]
+  must_not_move_without: [heavy refresh request correlation, GroundingDINO semantic threshold, green appearance validation, SAM2 role assignment, aligned depth, tracking LOCKED admission, capture framing]
 acquisition_workflow_authority_2026_08_27:
   owner_module: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission/engine.py
   ros_boundary: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_scan_mission_node.py
   acquisition_adapter: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_target_acquisition_node.py
   rule: MissionEngine is the sole mission-progression owner; its ROS boundary is the sole automatic-mission workflow-start client. The acquisition adapter may prepare candidates and request an acquisition plan but must not observe ACQUIRED to start the workflow.
   must_not_move_without: [autonomous_target_scan, supervised_workflow, supervised_scan_execution, scan_and_obstacles]
+timed_stream_callback_isolation_2026_08_27:
+  owner_module: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py
+  telemetry_boundary: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/infrastructure/telemetry_store.py
+  owns: Separate ROS scheduler groups for the 200 Hz timer state-mutating control services/subscriptions high-rate telemetry and outbound service responses; one explicit control_state_lock across timer and control mutation; sole command publication; aggregate lateness reporting and true wall-time stream diagnostics.
+  allowed_edit_paths: [scan_viewpoint_executor_node.py, infrastructure/telemetry_store.py only if snapshot behavior changes, execution/trajectory.py only if pure scheduling decisions change, executor and trajectory tests, docs/ai]
+  must_not_move_without: [sole /joint_ctrl_single ownership, TrajectoryRunner exact next-unsent behavior, RuntimeGatePolicy and immutable telemetry snapshots, Tesseract timing and hash contract, following-error hold, cancellation and terminal home]
+first_capture_occlusion_admission_2026_08_27:
+  owner_module: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture.py
+  ros_adapter: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture_node.py
+  workflow_owner: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/supervised_cube_workflow_node.py
+  owns: The pure capture diagnostic admits an explicit allowed occlusion-state set. Production keeps CLEAR-only by default; the ROS adapter supplies CLEAR PARTIALLY_OCCLUDED or HEAVILY_OCCLUDED only for dataset frame zero and execution view one while the workflow owns the subsequent exact semantic acceptance barrier.
+  allowed_edit_paths: [scan_capture.py, scan_capture_node.py, scan_capture_params.yaml, supervised_cube_workflow_node.py, scan_viewpoint_executor_node.py capture-result and acceptance wait only, planning/measured_surface.py target-only coverage input, focused tests, docs/ai]
+  must_not_move_without: [GOOD quality, target-valid evidence, diagnostic freshness, exact semantic probe correlation, pending model-seed promotion, 70-second workflow probe and 75-second executor acceptance bound, ordinary later-capture CLEAR policy]
 architecture_characterization_2026_08_27:
   owner_module: piper_ros_foxy/src/piper_mobile_manipulation/test/test_architecture_boundaries.py
   owns: Static characterization of established ROS-free application and domain modules, the ROS-free Tesseract worker and contract, and cycle-free internal imports for both production Python packages.
@@ -283,7 +303,7 @@ latest_motor_authority_2026_08_11:
   one_view_planning_budget:
     owner_module: piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/worker.py
     allowed_edit_paths: [piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/worker.py, piper_ros_foxy/src/piper_tesseract_foxy/test]
-    owns: 45-second/three-second automatic one-view planning budget selection while retaining the 150-second/five-second manual batch contract.
+    owns: 90-second/three-second automatic one-view planning budget selection while retaining the 150-second/five-second manual batch contract.
     must_not_move_without: [tesseract_planning, autonomous_target_scan]
 modules:
   arm_driver:
@@ -343,7 +363,7 @@ modules:
   supervised_workflow:
     owner_module: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/supervised_cube_workflow_node.py
     allowed_edit_paths: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/supervised_cube_workflow_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/supervised_workflow.py, piper_ros_foxy/src/piper_mobile_manipulation/config/supervised_cube_workflow_params.yaml, piper_ros_foxy/src/piper_mobile_manipulation/launch/supervised_cube_workflow.launch.py]
-    owns: Operator-gated command-free leaf/branch pick-place or outward-push proposal, observed base_link scene-cloud support validation for placement, a dedicated post-lock semantic occlusion request with exact request-ID/image-stamp 3D-scene correlation before SCAN_READY, multi-view target model state machine, authoritative measured TrackedTarget/TrackingHealth/LOCKED handoff with target_landmark retained only as diagnostics, idle measured-lock availability status for explicit GUI adoption, target/scene-cloud best-effort QoS compatibility, accepted-versus-modeled counters, and read-only diagnostic state. Fixed rectangular workspace enforcement defaults off.
+    owns: Measured-lock workflow admission followed by a deferred capture-one semantic occlusion barrier with exact request-ID/image-stamp 3D-scene correlation. The first persisted RGB-D view remains pending and uncounted until clear or qualified labelled-occluded evidence accepts it; confirmed meaningful occluders persist their semantic labels and continue collision-aware scanning instead of entering automatic contact manipulation. Historical operator-gated command-free leaf/branch pick-place or outward-push proposal helpers remain available outside that automatic first-capture path, together with observed base_link scene-cloud support validation, multi-view target model state, authoritative TrackedTarget/TrackingHealth/LOCKED handoff, diagnostic target_landmark, idle lock status, target/scene-cloud best-effort QoS, accepted-versus-modeled counters and read-only diagnostics. Fixed rectangular workspace enforcement defaults off.
     boundary: Must not publish real arm commands unless a separately reviewed hardware executor is explicitly introduced.
   supervised_scan_execution:
     owner_module: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py
@@ -403,6 +423,7 @@ implementation_ownership_2026_08_10:
   measured_surface_coverage:
     owner_module: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/planning/measured_surface.py
     allowed_edit_paths: [scan_session_memory.py, target_scan_mission_node.py, scan_capture_node.py, reconstruction, piper_ros_foxy/src/piper_mobile_manipulation/test/test_surface_coverage.py]
+    source_of_truth: Schema-2 coverage consumes confidence-qualified target-depth PNG and target-support mask; raw aligned depth plus SAM mask is compatibility-only for legacy schema-1 datasets.
     must_not_move_without: [immutable capture manifest, capture-time camera transform, achieved-FK scan history]
   deferred_reconstruction:
     owner_module: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_scan_gateway_node.py

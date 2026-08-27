@@ -126,6 +126,13 @@ class SupervisedCubeWorkflowNode(Node):
         self.occlusion_probe_started = None
         self.occlusion_probe_attempt = 0
         self.occlusion_probe_waiting_retry = False
+        self.first_capture_pending = False
+        self.first_capture_occlusion_cleared = False
+        self.first_capture_occlusion_labels = []
+        self.capture_occlusion_probe_pending = False
+        self.pending_capture_occlusion_state = 'UNKNOWN'
+        self.latest_capture_occlusion_state = 'UNKNOWN'
+        self.latest_capture_occlusion_labels = []
         self.contact_actions = 0
         self.push_attempts_by_track = {}
         self.post_action_verification = False
@@ -264,6 +271,71 @@ class SupervisedCubeWorkflowNode(Node):
         self.publish_status(
             'requesting a fresh settled semantic occlusion assessment')
 
+    def begin_first_capture_occlusion_probe(self):
+        """Hold capture one pending while its settled view proves clearance."""
+        self.first_capture_pending = True
+        state = (
+            str(self.occlusion.get('occlusion_state', 'UNKNOWN')).upper()
+            if isinstance(self.occlusion, dict) else 'UNKNOWN')
+        self.begin_capture_occlusion_probe(state, first_capture=True)
+
+    def begin_capture_occlusion_probe(
+            self, occlusion_state, first_capture=False):
+        """Hold one saved view pending for exact semantic classification."""
+        self.capture_occlusion_probe_pending = True
+        self.pending_capture_occlusion_state = str(occlusion_state).upper()
+        self.first_capture_pending = bool(first_capture)
+        self.state = 'INITIALIZING'
+        self.occlusion_probe_status = None
+        self.occlusion_probe_scene = None
+        self.occlusion_probe_started = self.now()
+        self.occlusion_probe_attempt = 0
+        self.occlusion_probe_waiting_retry = False
+        self.obstacles = None
+        self.updated.pop('obstacles', None)
+        self.publish_occlusion_probe()
+        self.publish_status(
+            ('first RGB-D view saved; checking settled target-facing view for '
+             'occlusion before qualifying the target model and next ray set')
+            if first_capture else
+            'occluded RGB-D view saved; checking the settled view before '
+            'counting its target-only surface')
+
+    def accept_saved_view(self, reason):
+        """Commit one already-persisted RGB-D view to workflow accounting."""
+        self.accepted_views += 1
+        self.modeled_views = self.accepted_views
+        if bool(self.get_parameter(
+                'request_optional_cloud_refinement').value):
+            msg = String()
+            msg.data = 'capture'
+            self.cloud_request_pub.publish(msg)
+        self.state = 'SCAN_READY'
+        self.publish_status(reason)
+
+    def accept_first_capture_after_probe(self, reason, labels=()):
+        """Release capture one after its correlated probe has been classified."""
+        self.accept_capture_after_probe(reason, labels)
+
+    def accept_capture_after_probe(self, reason, labels=()):
+        """Release one saved capture after its exact probe is qualified."""
+        was_first = bool(self.first_capture_pending)
+        labels = sorted(set(str(label) for label in labels if str(label)))
+        self.capture_occlusion_probe_pending = False
+        self.latest_capture_occlusion_state = str(
+            self.pending_capture_occlusion_state).upper()
+        self.latest_capture_occlusion_labels = labels
+        self.pending_capture_occlusion_state = 'UNKNOWN'
+        self.first_capture_pending = False
+        if was_first:
+            self.first_capture_occlusion_labels = list(labels)
+            self.first_capture_occlusion_cleared = not bool(labels)
+        self.accept_saved_view(reason)
+
+    def accept_first_capture_after_clear_probe(self, reason):
+        """Compatibility helper for the clear first-capture probe path."""
+        self.accept_first_capture_after_probe(reason)
+
     def landmark_cb(self, msg):
         self.target_landmark = point(msg.point)
         self.mark('target_landmark')
@@ -390,13 +462,23 @@ class SupervisedCubeWorkflowNode(Node):
         self.state = 'INITIALIZING'
         self.occlusion_probe_status = None
         self.occlusion_probe_scene = None
-        self.occlusion_probe_started = self.now()
+        self.occlusion_probe_started = None
         self.occlusion_probe_attempt = 0
         self.occlusion_probe_waiting_retry = False
+        self.occlusion_probe_request_id = ''
+        self.first_capture_pending = False
+        self.first_capture_occlusion_cleared = False
+        self.first_capture_occlusion_labels = []
+        self.capture_occlusion_probe_pending = False
+        self.pending_capture_occlusion_state = 'UNKNOWN'
+        self.latest_capture_occlusion_state = 'UNKNOWN'
+        self.latest_capture_occlusion_labels = []
         self.contact_actions = 0
         self.push_attempts_by_track = {}
         self.post_action_verification = False
-        self.publish_occlusion_probe()
+        self.publish_status(
+            'workflow started; waiting for measured lock before the first '
+            'scan view; occlusion probing is deferred to capture one')
         return self.reply(response, True, 'workflow started')
 
     def approve_cb(self, _request, response):
@@ -432,20 +514,37 @@ class SupervisedCubeWorkflowNode(Node):
             return self.reply(response, False, 'scan is not ready for a view')
         if self.accepted_views >= int(self.get_parameter('max_views').value):
             return self.reply(response, False, 'maximum view count reached; finish the scan')
-        # The executor calls this only after the synchronized RGB-D/mask/
-        # metadata files have been saved. Quality, occlusion and accumulated
-        # cloud products remain useful diagnostics, but they do not invalidate
-        # a completed viewpoint record or stop the fixed 13-view sweep.
-        self.accepted_views += 1
-        self.modeled_views = self.accepted_views
-        if bool(self.get_parameter(
-                'request_optional_cloud_refinement').value):
-            msg = String()
-            msg.data = 'capture'
-            self.cloud_request_pub.publish(msg)
-        self.publish_status(
-            'synchronized RGB-D viewpoint accepted; diagnostic quality and '
-            'occlusion recorded')
+        if (
+                self.accepted_views == 0
+                and not self.first_capture_occlusion_cleared):
+            self.first_capture_pending = True
+            self.begin_first_capture_occlusion_probe()
+            return self.reply(
+                response, True,
+                'first RGB-D viewpoint saved; occlusion assessment pending '
+                'before target-model qualification')
+        if not self.fresh('occlusion') or not isinstance(self.occlusion, dict):
+            return self.reply(
+                response, False,
+                'saved RGB-D viewpoint has missing or stale occlusion state')
+        occlusion_state = str(
+            self.occlusion.get('occlusion_state', 'UNKNOWN')).upper()
+        if occlusion_state in ('PARTIALLY_OCCLUDED', 'HEAVILY_OCCLUDED'):
+            self.begin_capture_occlusion_probe(
+                occlusion_state, first_capture=False)
+            return self.reply(
+                response, True,
+                'occluded RGB-D viewpoint saved; semantic assessment pending '
+                'before target-only surface acceptance')
+        if occlusion_state != 'CLEAR':
+            return self.reply(
+                response, False,
+                'saved RGB-D viewpoint has unqualified occlusion state: '
+                + occlusion_state)
+        self.latest_capture_occlusion_state = 'CLEAR'
+        self.latest_capture_occlusion_labels = []
+        self.accept_saved_view(
+            'clear synchronized RGB-D viewpoint accepted')
         return self.reply(
             response, True,
             'synchronized RGB-D viewpoint accepted')
@@ -497,6 +596,16 @@ class SupervisedCubeWorkflowNode(Node):
             'occlusion_probe_request_id': self.occlusion_probe_request_id,
             'occlusion_probe_complete': self.occlusion_probe_status is not None,
             'occlusion_probe_scene_complete': self.occlusion_probe_scene is not None,
+            'first_capture_pending': self.first_capture_pending,
+            'first_capture_occlusion_cleared': (
+                self.first_capture_occlusion_cleared),
+            'first_capture_occluded': bool(
+                self.first_capture_occlusion_labels),
+            'capture_occlusion_probe_pending': (
+                self.capture_occlusion_probe_pending),
+            'latest_capture_occlusion_state': (
+                self.latest_capture_occlusion_state),
+            'occlusion_labels': list(self.latest_capture_occlusion_labels),
             'accepted_views': self.accepted_views,
             'session_id': self.session_id,
             'modeled_views': self.modeled_views,
@@ -530,6 +639,14 @@ class SupervisedCubeWorkflowNode(Node):
         else:
             self.last_idle_lock_status = None
         if self.state == 'INITIALIZING':
+            if self.occlusion_probe_started is None:
+                if not lock_rejection and self.landmark:
+                    self.initial_landmark = self.landmark
+                    self.state = 'SCAN_READY'
+                    self.publish_status(
+                        'measured target lock ready; first target-facing scan '
+                        'view may proceed before the deferred occlusion probe')
+                return
             if (
                     self.occlusion_probe_started is not None
                     and self.now() - self.occlusion_probe_started > float(
@@ -602,13 +719,22 @@ class SupervisedCubeWorkflowNode(Node):
         unsafe = [item for item in self.obstacles.instances
                   if not item.valid or int(item.classification) != item.CLASSIFICATION_MOVABLE]
         if unsafe:
+            labels = sorted(set(
+                str(item.semantic_label or 'unknown object')
+                for item in unsafe))
             self.abort(
-                'occlusion scene contains unsafe, blocked, or invalid '
-                'obstacle geometry')
+                'target occlusion contains unsafe, blocked, or invalid '
+                'object%s: %s; mission cancelled'
+                % ('s' if len(labels) != 1 else '', ', '.join(labels)))
             return
         if not movable:
-            self.state = 'SCAN_READY'
-            self.publish_status('scene is clear; ready for first scan view')
+            if self.capture_occlusion_probe_pending:
+                self.accept_capture_after_probe(
+                    'settled view is clear; capture accepted with target-only '
+                    'surface evidence')
+            else:
+                self.state = 'SCAN_READY'
+                self.publish_status('scene is clear; ready for first scan view')
             return
         harmful = []
         unqualified = []
@@ -625,13 +751,29 @@ class SupervisedCubeWorkflowNode(Node):
         if unqualified:
             self.abort(
                 'candidate occluder cannot be safely qualified: '
-                + '; '.join(unqualified))
+                + '; '.join(unqualified)
+                + '; mission cancelled')
             return
         if not harmful:
-            self.state = 'SCAN_READY'
-            self.publish_status(
-                'rigid objects are visible but do not measurably obstruct '
-                'target capture; ready to scan')
+            if self.capture_occlusion_probe_pending:
+                self.accept_capture_after_probe(
+                    'visible rigid objects do not measurably obstruct the '
+                    'target; capture accepted with target-only evidence')
+            else:
+                self.state = 'SCAN_READY'
+                self.publish_status(
+                    'rigid objects are visible but do not measurably obstruct '
+                    'target capture; ready to scan')
+            return
+        if self.capture_occlusion_probe_pending:
+            labels = sorted(set(
+                str(item.semantic_label or 'unknown object')
+                for item, _evidence in harmful))
+            self.accept_capture_after_probe(
+                'target occlusion labelled as %s; capture accepted and the '
+                'collision-aware scan mission continues'
+                % ', '.join(labels),
+                labels)
             return
         if self.contact_actions >= int(
                 self.get_parameter('max_contact_actions').value):
@@ -763,6 +905,15 @@ class SupervisedCubeWorkflowNode(Node):
             'measured_lock_rejection': lock_rejection,
             'lock_source': 'tracked_target',
             'target_landmark_diagnostic_state': self.target_landmark_state,
+            'first_capture_occlusion_cleared': (
+                self.first_capture_occlusion_cleared),
+            'first_capture_occluded': bool(
+                self.first_capture_occlusion_labels),
+            'capture_occlusion_probe_pending': (
+                self.capture_occlusion_probe_pending),
+            'latest_capture_occlusion_state': (
+                self.latest_capture_occlusion_state),
+            'occlusion_labels': list(self.latest_capture_occlusion_labels),
         })
 
     def abort(self, reason):

@@ -1,7 +1,56 @@
 schema_version: 1
 document: consolidated_problem_and_incident_log
+executor_service_and_first_capture_contract_integration_2026_08_27:
+  state: software_fixed_physical_retest_pending
+  tasks: [gui-sim-eaa02e1f6f9d404ea5fe75a31fe0c8e4, gui-sim-dcba9651cd2c4538b2366e3785d11100]
+  symptoms: [Tesseract plan reached executor PROPOSAL_READY but mission approval timed out, terminal cancel-to-hold timed out on the same still-registered executor, first-capture semantic barrier allowed 70 seconds while executor waited 20, recorder required CLEAR although workflow specified qualified occlusion label-and-continue]
+  root_cause: The streaming liveness patch placed the 200 Hz timer state subscriptions services and outbound service clients in one mutually-exclusive group. Under the full planner shape workflow and telemetry graph, critical services could remain queued. The occlusion reorder was tested within individual nodes but its recorder and timeout contracts were not integrated end to end.
+  correction: Separate timer state-control telemetry and client-response groups under one reentrant state lock. The later qualified-occlusion continuation repair now applies the 75-second semantic deadline to any pending classified-occlusion capture; CLEAR remains on the ordinary bound. UNKNOWN LOST missing stale malformed unsafe or unqualified evidence still aborts.
+  evidence: [real logs show plan publication 1787862402.0997 and PROPOSAL_READY 1787862402.2459 before the timeout, 99 focused configuration capture and executor tests pass, 881 complete mobile tests pass, 165 complete Tesseract tests pass, 34 ROS-free GroundingDINO and worker tests pass, mobile and Tesseract symlink builds and all 43 functional mobile CTests pass, proposal-only 800-Hz aggregate control stress completes 30 of 30 services below two seconds, command topic absent]
+  remaining: [separately authorized five-percent physical E2E]
+rough_look_detected_but_shape_rejected_2026_08_27:
+  state: software_fixed_physical_retest_pending
+  task: gui-sim-eaa02e1f6f9d404ea5fe75a31fe0c8e4
+  symptom: The visibly green cube at physical rough look two did not lock and acquisition continued until look four.
+  root_cause: GroundingDINO actually detected green cube at 0.601687 confidence. Its SAM2 mask had 4372 pixels and 0.973925 valid depth, but the target was clipped near the left and bottom borders so its 1.637333 detection-box aspect exceeded the shared 1.600 clean-cube maximum. The executor misleadingly reported this policy rejection as target not found.
+  correction: Carry request_reason into the worker capture context and omit only the box-aspect check for rough_acquisition_viewpoint. Keep confidence colour mask and depth qualification and retain the strict gate elsewhere.
+  validation: [exact archived image strict reject and rough accept replay, 34 focused perception tests pass, changed Python compile]
+first_scan_path_rejected_acquired_offset_pose_2026_08_27:
+  state: software_fixed_physical_retest_pending
+  symptom: Rough acquisition found and locked the cube from an offset search look, but every first-ray path was rejected at sample zero because the acquired camera aim was about 30.8 degrees while the ordinary dense-path gate requires every sample to remain within 20 degrees. Tesseract repeatedly found geometry-valid endpoints and consumed the candidate budget without being allowed to leave the already-authorized acquired pose toward them.
+  root_cause: The same ordinary-path visibility invariant was applied to the initial state of the first target-alignment transaction even though acquisition intentionally permits offset search looks. The endpoint already required target-facing aim, but there was no bounded transition rule for entering the normal cone.
+  correction: Only the first MULTIVIEW_SCAN path may start outside 20 degrees. It cannot exceed its acquired start angle, cannot leave 20 degrees after entering, and must finish within 5 degrees. The executor repeats the dense-path check and independently proves the achieved endpoint within 5 degrees before framing capture and the correlated occlusion probe. Qualified occlusion is labelled and continues; invalid evidence remains fail-closed.
+  unchanged: [minimum target distance, ordinary 20-degree path gate, 5-degree capture gate, collision model, capability culls, authorization, target and scene freshness, runtime following monitoring, physical speed, real-motion default]
+  artifact_note: Capability occupancy arrays are unchanged because sampling uses FK collision geometry bounds floor calibration and quantization, none of which changed. The committed artifact records an explicit worker source-hash rebind and array hashes.
+automatic_one_view_budget_was_a_path_search_knife_edge_2026_08_27:
+  state: provisional_timeout_mitigation_superseded_by_deeper_alignment_root_cause
+  task: gui-sim-644e7a33238140b293f6221ade527767
+  symptom: Acquisition and measured lock succeeded, but bootstrap rays 123, 102, 136, 157, 144, 89, 110 and 115 each consumed the full 45-second automatic planning budget and retired without a path. The mission recorded zero captures and was safely cancelled.
+  root_cause: The 45-second limit was close to one prior 41-second success, so raising it was a reasonable bounded diagnostic mitigation. Deeper traces then proved the systematic failure persisted because the first path started at an acquired camera aim around 30.8 degrees and the ordinary 20-degree gate rejected sample zero before any ray could be valid. It was not caused by one singular ray, culling ownership, joint streaming or capability-map absence.
+  correction: Retain the bounded 90-second total and three-second attempts, but fix the actual admission mismatch with the one-time non-worsening first-alignment rule ending within 5 degrees. The bridge mission and all safety deadlines remain unchanged.
+  rollback_warning: Do not increase physical command speed, weaken collision checks, resurrect culled rays, enlarge per-attempt search beyond three seconds or add silent planner fallback to mask a timeout.
+  validation: [complete Tesseract suite 165 passes, complete mobile suite 877 passes, both affected package builds pass, focused first-alignment and ordinary-path regressions pass]
+  remaining: [command-free planning qualification, separately authorized five-percent physical retest]
+post_lock_occlusion_probe_brittle_semantic_floor_2026_08_27:
+  state: software_validated_physical_retest_pending
+  task: gui-sim-9a5b86a861c44103aa8086b9f7092949
+  symptom: Rough acquisition accepted green cube at GroundingDINO confidence 0.600340 against a 0.600 floor. The immediate post-lock occlusion probe detected the same green cube at 0.538493 with 0.893 green fraction and a 0.978 SAM2 mask score, but semantic validation rejected it and the workflow surfaced OCCLUSION_NOT_CLEARED before capture one.
+  root_cause: The dedicated semantic occlusion probe ran from the rough acquisition pose before the first scan ray supplied the intended settled aimed framing. The terminal text said re-detection failed even though the detector found the correct class below its unchanged confidence floor.
+  correction: Defer the exact correlated probe until the first target-facing RGB-D view is persisted but pending. Keep accepted_views zero and the seed unpromoted until clear or qualified labelled-occluded evidence is classified. Qualified occluders report semantic labels and collision-aware scanning continues without entering contact planning.
+  evidence: [198 focused workflow executor mission tests, 874 complete mobile tests, 163 complete Tesseract tests, changed-file lint and compile, mobile symlink build, 12 AI YAML parses]
+  rollback_warning: Do not lower the semantic confidence floor, reuse uncorrelated acquisition output, count capture one early, generate qualified rays before classification, trust occluded pixels as target surface, treat missing target as clear or bypass Tesseract/executor safety.
 architecture_path_note_2026_08_27:
   interpretation: Historical incident references to mission_core.py mission_engine.py mission_spool.py failure_model.py telemetry_store.py and process_supervisor.py remain valid compatibility paths. Their current behavior owners are the matching mission/ or infrastructure/ modules; incident evidence and historical behavior are unchanged.
+tesseract_stream_timer_starved_by_single_executor_queue_2026_08_27:
+  state: physical_acquisition_stream_passed_multiview_timing_pending
+  task: gui-sim-d23434471b1c4640bac2829abe39390d
+  symptom: The ordered collision-qualified stream retained low following error but accumulated 777 late timer events. Planned 12.0, 22.5 and 4.5 second segments consumed about 58.0, 89.7 and 17.4 wall seconds, only 4.1 to 5.2 Hz. Completion logs incorrectly reported near-plan time because schedule pauses were subtracted.
+  root_cause: scan_viewpoint_executor used the normal single-threaded rclpy executor for its 200 Hz state-machine timer and every feedback, tracking, target, obstacle, workflow and plan callback. Post-lock traffic starved the timer, and one synchronous warning per late point amplified queue pressure. This was host callback scheduling, not invalid Tesseract timestamps, PiPER following or general CPU exhaustion.
+  correction: The initial three-worker timer-plus-control grouping fixed stream timing but later starved approval and hold under the full graph. The integrated correction uses four scheduler groups for timer state-control telemetry and client responses, plus one explicit timer/control lock and TelemetryStore. Preserve next-unsent stretch behavior, bounded aggregate warnings and true wall duration.
+  evidence: [new regressions failed before and pass after, 244 focused tests, 869 mobile tests, 163 Tesseract tests, mobile symlink build and clean proposal-only SIGINT, proposal-only 7480-message stress retained 200.6 Hz control ticks and no command publisher]
+  physical_retest: Task gui-sim-9a5b86a861c44103aa8086b9f7092949 delivered 90 acquisition points in 4.505 seconds at 19.8 Hz with zero late ticks, 0.0580-second maximum interval and 0.1471-rad maximum following error. A later independent OCCLUSION_NOT_CLEARED ended the zero-capture mission; staged home, all-six disable and cleanup passed with safe_shutdown true.
+  remaining: [inspect the reordered capture-one occlusion barrier and callback-isolated multiview timing under post-capture traffic, retain 1/10-percent and deliberate cancel-to-hold qualification]
+  rollback_warning: Never repair timing by dropping or bursting points, weakening freshness or following gates, increasing limits, bypassing authorization, or enabling motion by default.
 capture_one_model_seed_expired_before_qualified_generation_2026_08_26:
   state: fixed_and_physical_generation_one_retest_passed
   task: codex-e2e-qualified-rays-20260826-2331
@@ -40,7 +89,7 @@ rough_shape_was_integrated_before_settled_aim_2026_08_26:
   correction: Generation zero now creates un-enveloped bootstrap rays from tracking only. The executor alone holds a complete silhouette after settle and achieved aim, requires its source stamp to follow settle start, promotes it after capture-one acceptance and discards it on rejection; validated scan history is the planner's only shape input. Envelope construction uses the shape source transform, retains the frozen surface lock as bootstrap provenance and makes its axis origin the permanent planning centre. Superseded coordinator/acquisition framing paths were removed.
   evidence: [physical zero-capture safe shutdown, 189 focused border and order tests pass, 835 complete mobile tests pass, 161 complete Tesseract tests pass, affected lint and mobile package build pass]
   remaining: [separately authorized five-percent physical repeat]
-last_reviewed: '2026-08-26'
+last_reviewed: '2026-08-27'
 acquired_tracking_lock_was_not_capture_aim_2026_08_26:
   state: software_fixed_physical_retest_pending
   symptom: Task codex-e2e-achieved-lock-20260826-1746 reached ACQUIRED on look two, then failed NO_REACHABLE_PLAN because the fresh measured target was 30.31 degrees from the camera optical axis.

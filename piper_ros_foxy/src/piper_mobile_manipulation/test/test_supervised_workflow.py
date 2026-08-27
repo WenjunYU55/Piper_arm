@@ -240,17 +240,18 @@ def test_capture_cloud_is_processed_when_acceptance_arrives_first():
     assert not should_cache_capture_cloud('SCAN_READY', 1, 1)
 
 
-def test_saved_rgbd_view_is_accepted_without_cloud_or_quality_gate():
+def test_first_saved_rgbd_view_defers_acceptance_until_occlusion_probe():
     published = []
-    cloud_requests = []
+    probes = []
     node = SimpleNamespace(
         state='SCAN_READY',
         accepted_views=0,
         modeled_views=0,
+        first_capture_pending=False,
+        first_capture_occlusion_cleared=False,
         get_parameter=lambda name: SimpleNamespace(
             value=13 if name == 'max_views' else False),
-        cloud_request_pub=SimpleNamespace(
-            publish=lambda msg: cloud_requests.append(msg)),
+        begin_first_capture_occlusion_probe=lambda: probes.append(True),
         publish_status=lambda reason: published.append(reason),
         reply=lambda response, success, message: SimpleNamespace(
             success=success, message=message),
@@ -260,10 +261,187 @@ def test_saved_rgbd_view_is_accepted_without_cloud_or_quality_gate():
         node, None, SimpleNamespace())
 
     assert response.success
-    assert node.accepted_views == 1
-    assert node.modeled_views == 1
+    assert node.accepted_views == 0
+    assert node.first_capture_pending
+    assert probes == [True]
+    assert 'occlusion assessment' in response.message
+
+
+def test_workflow_start_does_not_probe_before_first_target_facing_view():
+    published = []
+    node = SimpleNamespace(
+        state='IDLE',
+        updated={},
+        publish_status=lambda reason: published.append(reason),
+        reply=lambda response, success, message: SimpleNamespace(
+            success=success, message=message),
+    )
+
+    response = SupervisedCubeWorkflowNode.start_cb(
+        node, None, SimpleNamespace())
+
+    assert response.success
+    assert node.state == 'INITIALIZING'
+    assert node.occlusion_probe_started is None
+    assert node.occlusion_probe_request_id == ''
+    assert not node.first_capture_pending
+    assert not node.first_capture_occlusion_cleared
+    assert 'deferred to capture one' in published[-1]
+
+
+def test_later_saved_rgbd_view_is_accepted_without_cloud_or_quality_gate():
+    published = []
+    cloud_requests = []
+    node = SimpleNamespace(
+        state='SCAN_READY',
+        accepted_views=1,
+        modeled_views=1,
+        first_capture_pending=False,
+        first_capture_occlusion_cleared=True,
+        occlusion={'occlusion_state': 'CLEAR'},
+        fresh=lambda key: key == 'occlusion',
+        get_parameter=lambda name: SimpleNamespace(
+            value=13 if name == 'max_views' else False),
+        cloud_request_pub=SimpleNamespace(
+            publish=lambda msg: cloud_requests.append(msg)),
+        publish_status=lambda reason: published.append(reason),
+        reply=lambda response, success, message: SimpleNamespace(
+            success=success, message=message),
+    )
+    node.accept_saved_view = lambda reason: \
+        SupervisedCubeWorkflowNode.accept_saved_view(node, reason)
+
+    response = SupervisedCubeWorkflowNode.capture_view_cb(
+        node, None, SimpleNamespace())
+
+    assert response.success
+    assert node.accepted_views == 2
+    assert node.modeled_views == 2
     assert cloud_requests == []
     assert 'synchronized RGB-D viewpoint accepted' in published[-1]
+
+
+def test_later_occluded_view_waits_for_exact_semantic_probe():
+    probes = []
+    node = SimpleNamespace(
+        state='SCAN_READY', accepted_views=1, modeled_views=1,
+        first_capture_pending=False,
+        first_capture_occlusion_cleared=True,
+        occlusion={'occlusion_state': 'PARTIALLY_OCCLUDED'},
+        fresh=lambda key: key == 'occlusion',
+        get_parameter=lambda name: SimpleNamespace(
+            value=13 if name == 'max_views' else False),
+        begin_capture_occlusion_probe=lambda state, first_capture=False:
+        probes.append((state, first_capture)),
+        reply=lambda response, success, message: SimpleNamespace(
+            success=success, message=message),
+    )
+
+    response = SupervisedCubeWorkflowNode.capture_view_cb(
+        node, None, SimpleNamespace())
+
+    assert response.success
+    assert node.accepted_views == 1
+    assert probes == [('PARTIALLY_OCCLUDED', False)]
+    assert 'semantic assessment pending' in response.message
+
+
+def test_first_capture_occluder_is_labelled_and_mission_continues():
+    item = SimpleNamespace(
+        CLASSIFICATION_MOVABLE=1,
+        classification=1,
+        valid=True,
+        semantic_label='pen',
+        object_id=7,
+        track_id='pen-track',
+        observation_count=2,
+        confirmed_in_probe_view=True,
+        target_overlap_ratio=0.25,
+        closer_depth_occlusion_ratio=0.20,
+        confidence=0.92,
+        position_uncertainty_m=0.002,
+        base_centroid=p(0.4, 0.02, 0.08),
+        base_bounds_min=p(0.38, 0.015, 0.075),
+        base_bounds_max=p(0.42, 0.025, 0.085),
+    )
+    aborted = []
+    published = []
+    node = SimpleNamespace(
+        obstacles=SimpleNamespace(instances=[item]),
+        first_capture_pending=True,
+        first_capture_occlusion_cleared=False,
+        first_capture_occlusion_labels=[],
+        capture_occlusion_probe_pending=True,
+        pending_capture_occlusion_state='PARTIALLY_OCCLUDED',
+        latest_capture_occlusion_state='UNKNOWN',
+        latest_capture_occlusion_labels=[],
+        accepted_views=0,
+        modeled_views=0,
+        state='INITIALIZING',
+        occluder_evidence=SupervisedCubeWorkflowNode.occluder_evidence,
+        abort=lambda reason: aborted.append(reason),
+        get_parameter=lambda _name: SimpleNamespace(value=False),
+        cloud_request_pub=SimpleNamespace(publish=lambda _msg: None),
+        publish_status=lambda reason: published.append(reason),
+    )
+    node.accept_saved_view = lambda reason: \
+        SupervisedCubeWorkflowNode.accept_saved_view(node, reason)
+    node.accept_capture_after_probe = lambda reason, labels=(): \
+        SupervisedCubeWorkflowNode.accept_capture_after_probe(
+            node, reason, labels)
+    node.accept_first_capture_after_probe = lambda reason, labels=(): \
+        SupervisedCubeWorkflowNode.accept_first_capture_after_probe(
+            node, reason, labels)
+
+    SupervisedCubeWorkflowNode.assess_scene(node)
+
+    assert aborted == []
+    assert node.accepted_views == 1
+    assert node.state == 'SCAN_READY'
+    assert node.first_capture_occlusion_labels == ['pen']
+    assert not node.first_capture_occlusion_cleared
+    assert 'pen' in published[-1]
+    assert 'continues' in published[-1]
+
+
+def test_clear_first_capture_probe_releases_exactly_one_acceptance():
+    published = []
+    node = SimpleNamespace(
+        obstacles=SimpleNamespace(instances=[]),
+        first_capture_pending=True,
+        first_capture_occlusion_cleared=False,
+        first_capture_occlusion_labels=[],
+        capture_occlusion_probe_pending=True,
+        pending_capture_occlusion_state='CLEAR',
+        latest_capture_occlusion_state='UNKNOWN',
+        latest_capture_occlusion_labels=[],
+        accepted_views=0,
+        modeled_views=0,
+        state='INITIALIZING',
+        get_parameter=lambda _name: SimpleNamespace(value=False),
+        cloud_request_pub=SimpleNamespace(publish=lambda _msg: None),
+        publish_status=lambda reason: published.append(reason),
+    )
+    node.accept_saved_view = lambda reason: \
+        SupervisedCubeWorkflowNode.accept_saved_view(node, reason)
+    node.accept_capture_after_probe = lambda reason, labels=(): \
+        SupervisedCubeWorkflowNode.accept_capture_after_probe(
+            node, reason, labels)
+    node.accept_first_capture_after_probe = lambda reason, labels=(): \
+        SupervisedCubeWorkflowNode.accept_first_capture_after_probe(
+            node, reason, labels)
+    node.accept_first_capture_after_clear_probe = lambda reason: \
+        SupervisedCubeWorkflowNode.accept_first_capture_after_clear_probe(
+            node, reason)
+
+    SupervisedCubeWorkflowNode.assess_scene(node)
+
+    assert node.accepted_views == 1
+    assert node.modeled_views == 1
+    assert node.state == 'SCAN_READY'
+    assert not node.first_capture_pending
+    assert node.first_capture_occlusion_cleared
+    assert 'target-only surface evidence' in published[-1]
 
 
 def test_capture_requires_fresh_clear_occlusion_evidence():
