@@ -10,6 +10,9 @@ execution_owner_load_order_2026_08_27:
 planning_owner_load_order_2026_08_27:
   sequence: [planner builds stable generation and bounded ray population, capability and reachability evidence cull candidates, permanent ray ledger prunes before rank, coverage owner scores surviving candidates from accepted evidence, planner publishes unchanged shortlist contract, Tesseract remains exact feasibility authority]
   load_order_contracts: [generation identity precedes culls, hard culls never resurrect within one population, accepted coverage precedes NBV rerank, planning owners remain ROS-free, compatibility facades import owners one-way]
+perception_owner_load_order_2026_08_27:
+  sequence: [ROS perception adapters produce correlated mask depth and transforms, perception owners validate and derive target obstacle landmark and occlusion evidence, capture persists the exact accepted seed, planning consumes validated envelope and centre, workflow consumes repeated occlusion policy result]
+  load_order_contracts: [rough or cropped evidence cannot become qualified model geometry, capture-one seed remains authoritative, planning never owns perception measurement, contact policy retains repeated correlated evidence, facades import owners one-way]
 ray_diagnostics_storage_path_2026_08_27:
   runtime_load_order: [planner reachability filter bridge and coordinator resolve PIPER_ARM_ROOT, every writer constructs datasets/ray_diagnostics, unique mission or session directory is created, the existing per-directory lock selects or retains its report basename, GUI discovers canonical and legacy roots but historical replay writes only canonical]
   load_order_contracts: [deploy and restart all diagnostic-producing nodes together so one mission cannot split across old and new roots, preserve one root per new mission, canonical root is searched before the legacy root for unqualified historical selections, path containment is enforced independently for each root]

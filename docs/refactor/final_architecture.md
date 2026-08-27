@@ -66,6 +66,8 @@ algorithm, or Tesseract behavior changed during Phase 10.
 | Scan/perception helpers | Geometry, acquisition, coverage, scan history, motion validation, occlusion policy, capture persistence, and reconstruction job contracts. |
 | `planning/capability.py`, `planning/coverage.py`, `planning/generation.py` | Capability lookup, accepted object-centric NBV evidence/ranking, and immutable proposal-generation identity. |
 | `planning/measured_surface.py`, `planning/ray_culls.py`, `planning/rays.py` | Persisted measured coverage, permanent ray-elimination protocol, and bounded target-centred ray geometry. |
+| `perception/acquisition.py`, `perception/target_envelope.py` | Rough-target acquisition policy and exact-stamp silhouette, capture seed, revolution and target-bound geometry. |
+| `perception/landmark_geometry.py`, `perception/obstacle_geometry.py`, `perception/occlusion.py` | Stationary landmark projection, obstacle evidence geometry/classification, and bounded repeated-evidence occlusion policy. |
 
 The former root-level names remain explicit import-only compatibility facades;
 they contain no duplicate implementation or policy.

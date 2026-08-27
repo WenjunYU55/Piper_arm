@@ -19,7 +19,7 @@ from piper_mobile_manipulation.srv import (
     PrepareAcquisition,
     RequestTesseractPlan,
 )
-from piper_mobile_manipulation.target_acquisition import (
+from piper_mobile_manipulation.perception.acquisition import (
     ROUGH_ACQUISITION,
     build_acquisition_viewpoints,
     rough_hint_rejection_reason,

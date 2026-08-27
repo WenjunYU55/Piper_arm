@@ -22,6 +22,10 @@ planning_package_maintenance_2026_08_27:
   inspect: [planning/capability.py, planning/coverage.py, planning/generation.py, planning/measured_surface.py, planning/ray_culls.py, planning/rays.py, planner and reachability ROS nodes, compatibility facades]
   rule: Edit planning behavior only in package owners. Keep old paths export-only. White-box tests that monkeypatch implementation globals must patch the owner module, while public symbol imports remain compatible.
   required_retests: [test_capability_map.py, test_nbv_coverage.py, test_nbv_regression_replay.py, test_view_generation.py, test_viewpoint_rays.py, test_scan_viewpoint_angles.py, test_surface_coverage.py, test_ray_mission_diagnostics.py, complete mobile suite, package build]
+perception_package_maintenance_2026_08_27:
+  inspect: [perception/acquisition.py, perception/target_envelope.py, perception/landmark_geometry.py, perception/obstacle_geometry.py, perception/occlusion.py, their ROS nodes, compatibility facades]
+  rule: Behavior belongs in perception owners; old paths are export-only. Obstacle and occlusion canonical_label functions remain separate because their accepted label sets and policy contexts differ.
+  required_retests: [test_depth_to_3d.py, test_target_envelope.py, test_scan_target_acquisition.py, test_target_landmark_geometry.py, test_obstacle_geometry.py, test_occlusion_policy.py, test_tracking_recovery.py, test_scan_capture.py, complete mobile suite, package build]
 ray_diagnostics_storage_root_2026_08_27:
   inspect: [scan_viewpoint_planner_node.py ray_diagnostics_root, viewpoint_reachability_filter_node.py ray_diagnostics_root, piper_tesseract_foxy/bridge_node.py ray_diagnostics_root, target_scan_mission_node.py terminal diagnostics store, tools/simulate_size_aware_ray_review.py report_root, piper_gui/ray_reports.py canonical and legacy roots]
   rule: Every new writer and replay uses datasets/ray_diagnostics. Keep datasets/active_scan/ray_diagnostics read-only compatible in the GUI for historical reports, but never select it as a future writer default or silently migrate its contents.

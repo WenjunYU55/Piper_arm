@@ -13,7 +13,9 @@ from rclpy.node import Node
 from std_srvs.srv import Trigger
 
 from piper_mobile_manipulation.msg import ObstacleInstance3D, ObstacleInstance3DArray
-from piper_mobile_manipulation.obstacle_geometry import canonical_label
+from piper_mobile_manipulation.perception.obstacle_geometry import (
+    canonical_label,
+)
 
 
 class ObstacleRepeatabilityValidator(Node):

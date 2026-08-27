@@ -12,7 +12,7 @@ from sensor_msgs.msg import CameraInfo, Image
 from std_msgs.msg import String
 
 from piper_mobile_manipulation.msg import Detection2D, Target3D
-from piper_mobile_manipulation.target_envelope import (
+from piper_mobile_manipulation.perception.target_envelope import (
     clipped_shape_rejection,
     TargetSilhouetteClippedError,
     trusted_silhouette_measurement,

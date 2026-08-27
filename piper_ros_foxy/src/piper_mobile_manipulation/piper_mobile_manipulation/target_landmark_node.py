@@ -21,8 +21,10 @@ from std_msgs.msg import String
 from tf2_ros import Buffer, TransformException, TransformListener
 
 from piper_mobile_manipulation.msg import Detection2D
-from piper_mobile_manipulation.obstacle_geometry import transform_points
-from piper_mobile_manipulation.target_landmark_geometry import (
+from piper_mobile_manipulation.perception.obstacle_geometry import (
+    transform_points,
+)
+from piper_mobile_manipulation.perception.landmark_geometry import (
     direction_angle_degrees,
     maximum_pairwise_distance,
     project_camera_point,

@@ -58,6 +58,11 @@ PURE_MOBILE_MODULES = frozenset({
     'nbv_coverage.py',
     'obstacle_geometry.py',
     'occlusion_policy.py',
+    'perception/acquisition.py',
+    'perception/landmark_geometry.py',
+    'perception/obstacle_geometry.py',
+    'perception/occlusion.py',
+    'perception/target_envelope.py',
     'plan_authorizer.py',
     'planning/capability.py',
     'planning/coverage.py',
@@ -300,6 +305,24 @@ def test_planning_compatibility_facades_preserve_public_objects():
         facade = import_module('piper_mobile_manipulation.' + facade_name)
         owner = import_module(
             'piper_mobile_manipulation.planning.' + owner_name)
+        assert facade.__all__
+        for symbol in facade.__all__:
+            assert getattr(facade, symbol) is getattr(owner, symbol)
+
+
+def test_perception_compatibility_facades_preserve_public_objects():
+    """Keep perception imports stable while moving their authority package."""
+    owner_by_facade = {
+        'obstacle_geometry': 'obstacle_geometry',
+        'occlusion_policy': 'occlusion',
+        'target_acquisition': 'acquisition',
+        'target_envelope': 'target_envelope',
+        'target_landmark_geometry': 'landmark_geometry',
+    }
+    for facade_name, owner_name in owner_by_facade.items():
+        facade = import_module('piper_mobile_manipulation.' + facade_name)
+        owner = import_module(
+            'piper_mobile_manipulation.perception.' + owner_name)
         assert facade.__all__
         for symbol in facade.__all__:
             assert getattr(facade, symbol) is getattr(owner, symbol)

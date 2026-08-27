@@ -26,7 +26,7 @@ from piper_mobile_manipulation.planning.coverage import (
     VoxelCoverageConfig,
 )
 from piper_mobile_manipulation.execution.motion import orbit_camera_view
-from piper_mobile_manipulation.target_envelope import (
+from piper_mobile_manipulation.perception.target_envelope import (
     build_revolution_envelope,
     coverage_sphere_from_envelope,
     envelope_constrained_ray_interval,

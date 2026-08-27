@@ -88,6 +88,8 @@ piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/execution
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/{plan_authorizer,capture_coordinator,scan_execution_modes,scan_motion,executor_recovery,trajectory_runner,scan_trajectory}.py - explicit old-path compatibility facades only
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/planning/{capability,coverage,generation,measured_surface,ray_culls,rays}.py - ROS-free capability lookup, generation identity, bounded ray lifecycle, accepted measured coverage and NBV ranking owners
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/{capability_map,nbv_coverage,view_generation,surface_coverage,ray_hard_culls,viewpoint_rays}.py - explicit old-path planning compatibility facades only
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/perception/{acquisition,target_envelope,landmark_geometry,obstacle_geometry,occlusion}.py - ROS-free target acquisition/model, landmark, obstacle and occlusion policy owners
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/{target_acquisition,target_envelope,target_landmark_geometry,obstacle_geometry,occlusion_policy}.py - explicit old-path perception compatibility facades only
 piper_ros_foxy/src/piper_mobile_manipulation/test/test_safety_evaluator.py - all-mode named-policy boundary and immutability regressions
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/plan_authorizer.py - pure exact plan/mission authorization decisions
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/trajectory_runner.py - pure authorized trajectory schedule and monitoring decisions

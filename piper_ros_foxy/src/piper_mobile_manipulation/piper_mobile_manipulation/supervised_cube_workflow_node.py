@@ -22,7 +22,7 @@ from piper_mobile_manipulation.msg import (
     TrackedTarget,
     TrackingHealth,
 )
-from piper_mobile_manipulation.occlusion_policy import (
+from piper_mobile_manipulation.perception.occlusion import (
     OccluderEvidence, evidence_rejection,
 )
 from piper_mobile_manipulation.execution.modes import (

@@ -20,6 +20,11 @@ planning_responsibility_package_2026_08_27:
   owners: [planning/capability.py, planning/coverage.py, planning/generation.py, planning/measured_surface.py, planning/ray_culls.py, planning/rays.py]
   compatibility: Six former paths explicitly export identical owner objects; white-box NBV monkeypatch tests now target the owner module.
   evidence: [161 focused planning tests with one existing replay skip, 861 complete mobile tests with one skip, facade identity and cycle tests, changed-file lint]
+perception_responsibility_package_2026_08_27:
+  status: structurally_moved_behavior_preserved
+  owners: [perception/acquisition.py, perception/target_envelope.py, perception/landmark_geometry.py, perception/obstacle_geometry.py, perception/occlusion.py]
+  compatibility: Five former paths explicitly export identical owner objects; obstacle and occlusion label normalization remain intentionally separate policies.
+  evidence: [199 focused perception capture planner and session tests, 862 complete mobile tests with one skip, facade identity and cycle tests, changed-file lint]
 capture_one_bound_model_seed_2026_08_26:
   status: physically_retested_generation_one_and_three_captures_passed
   capability: The first accepted model is derived from capture one's exact persisted semantic mask confidence-qualified target depth CameraInfo and recorded base-from-camera transform. Shape and transform are one hash-bound private seed persisted in frame metadata, returned by scan capture, admitted before workflow acceptance and promoted in accepted scan history. The planner builds the revolution directly from the recorded matrix, so TF cache lifetime cannot empty generation one.

@@ -38,7 +38,7 @@ from piper_mobile_manipulation.scan_capture import (
     synchronized_bundle_rejection,
     temporal_confident_depth_median,
 )
-from piper_mobile_manipulation.target_envelope import (
+from piper_mobile_manipulation.perception.target_envelope import (
     build_capture_model_seed,
     trusted_silhouette_measurement,
 )

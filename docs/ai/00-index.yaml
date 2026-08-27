@@ -32,6 +32,11 @@ planning_package_routing_2026_08_27:
   compatibility_facades: [capability_map.py, nbv_coverage.py, view_generation.py, surface_coverage.py, ray_hard_culls.py, viewpoint_rays.py]
   preserved: [candidate population identity, permanent cull lifetime, accepted-only coverage, NBV scores and tie breaks, ray bounds and IDs, capability-map schema, old import paths]
   validation: [161 focused planning tests pass with one existing replay skip, complete mobile suite has 861 passes and one hardware-dependent skip, changed-file lint passes]
+perception_package_routing_2026_08_27:
+  owners: {rough acquisition geometry: perception/acquisition.py, trusted silhouette revolution and target bounds: perception/target_envelope.py, stationary landmark geometry: perception/landmark_geometry.py, obstacle projection and classification: perception/obstacle_geometry.py, occlusion and bounded-contact policy: perception/occlusion.py}
+  compatibility_facades: [target_acquisition.py, target_envelope.py, target_landmark_geometry.py, obstacle_geometry.py, occlusion_policy.py]
+  preserved: [mask and depth interpretation, capture model seed hashes, envelope schema and constants, obstacle labels, repeated occlusion evidence, contact policy, old imports]
+  validation: [199 focused perception capture planner and session tests pass, complete mobile suite has 862 passes and one hardware-dependent skip, changed-file lint passes]
 ray_diagnostics_storage_root_2026_08_27:
   behavior: All new live mission, reachability, Tesseract, terminal, historical replay and offline simulation ray diagnostics use datasets/ray_diagnostics/<mission_id-or-session_id>/ as their one canonical root.
   compatibility: The GUI continues to discover, validate and open historical reports under datasets/active_scan/ray_diagnostics without migrating or rewriting them. Plain artifact selections prefer the canonical root; GUI selections carry an internal current or legacy root qualifier.

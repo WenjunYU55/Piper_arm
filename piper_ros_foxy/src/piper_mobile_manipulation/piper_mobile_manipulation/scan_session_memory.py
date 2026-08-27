@@ -4,7 +4,7 @@ import math
 
 import numpy as np
 
-from piper_mobile_manipulation.target_envelope import (
+from piper_mobile_manipulation.perception.target_envelope import (
     validate_capture_model_seed,
     validate_shape_measurement,
 )

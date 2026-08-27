@@ -113,3 +113,16 @@ Focused planning validation passes 161 tests with one existing replay skip;
 the complete mobile suite passes 861 tests with one hardware-dependent skip,
 and changed-file lint passes. Candidate IDs, hashes, cull lifetime, ranking,
 coverage, capability schema, ROS contracts and Tesseract authority are unchanged.
+
+## Phase 6: perception responsibility package
+
+The existing ROS-free acquisition, trusted target-envelope, landmark geometry,
+obstacle geometry and occlusion policy modules moved intact under `perception/`.
+Production nodes use the owners and five old paths remain explicit facades.
+Obstacle and occlusion label canonicalization were deliberately not deduplicated:
+they serve different accepted-label and policy contexts.
+
+Focused perception, capture, session and planner validation passes 199 tests;
+the complete mobile suite passes 862 tests with one hardware-dependent skip,
+and changed-file lint passes. Exact timestamps, seed/envelope hashes, crop gates,
+obstacle classifications, repeated occlusion proof and ROS contracts are unchanged.

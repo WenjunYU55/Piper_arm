@@ -21,7 +21,7 @@ from std_msgs.msg import String
 from tf2_ros import Buffer, TransformException, TransformListener
 
 from piper_mobile_manipulation.msg import ObstacleInstance3D, ObstacleInstance3DArray
-from piper_mobile_manipulation.obstacle_geometry import (
+from piper_mobile_manipulation.perception.obstacle_geometry import (
     BLOCKED, MOVABLE, aabb_corners, effective_classification,
     normalize_label, obstacle_records, project_instance,
     target_occlusion_evidence, transform_points,

@@ -107,7 +107,7 @@ from piper_mobile_manipulation.srv import (
 from piper_mobile_manipulation.infrastructure.telemetry_store import (
     TelemetryStore,
 )
-from piper_mobile_manipulation.target_envelope import (
+from piper_mobile_manipulation.perception.target_envelope import (
     classify_centered_silhouette,
     CROPPED_TOO_LARGE_DISTANCE_M,
     stamp_nanoseconds,

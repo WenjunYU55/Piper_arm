@@ -28,6 +28,10 @@ planning_package_guardrails_2026_08_27:
   invariants: [planning owners remain ROS-free, old paths remain explicit export-only facades, facade exports are identical owner objects, population and generation identity are unchanged, permanent culls remain monotonic within a population, only accepted evidence updates coverage, Tesseract remains exact feasibility authority]
   blast_radius: [all ray generation culling ranking reachability diagnostic replay and mission completion]
   must_retest_if_changed: [test_architecture_boundaries.py, all capability NBV generation ray cull surface and diagnostic tests, planner characterization, complete mobile and Tesseract suites, package build, command-free replay]
+perception_package_guardrails_2026_08_27:
+  invariants: [perception owners remain ROS-free, old paths remain export-only facades, facade exports are identical owner objects, exact-stamp and crop validation are unchanged, capture-one seed and envelope hashes remain stable, obstacle and occlusion label policies are not merged, repeated contact evidence remains mandatory]
+  blast_radius: [target acquisition tracking seed revolution planning centre obstacle scene occlusion workflow and capture acceptance]
+  must_retest_if_changed: [test_architecture_boundaries.py, depth target envelope acquisition landmark obstacle occlusion tracking capture session and planner tests, complete mobile and Tesseract suites, package build, command-free replay]
 ray_diagnostics_storage_guardrails_2026_08_27:
   invariants:
     - Every future default writer and historical replay output uses PIPER_ARM_ROOT/datasets/ray_diagnostics.
