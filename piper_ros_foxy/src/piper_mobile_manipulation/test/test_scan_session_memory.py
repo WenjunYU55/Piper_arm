@@ -1,5 +1,6 @@
 import math
 
+import numpy as np
 import pytest
 
 from piper_mobile_manipulation.motion_limit_stability import MotionLimitStability
@@ -12,6 +13,10 @@ from piper_mobile_manipulation.scan_session_memory import (
     history_coverage_target_center,
     validate_history_payload,
     viewpoint_is_duplicate,
+)
+from piper_mobile_manipulation.target_envelope import (
+    build_capture_model_seed,
+    canonical_sha256,
 )
 
 
@@ -74,6 +79,27 @@ def test_front_and_top_cluster_is_not_distinctive_feature_coverage():
     assert not coverage['sufficient']
     assert coverage['negative_y_side_views'] == 0
     assert any('-Y side' in blocker for blocker in coverage['blockers'])
+
+
+def test_azimuth_span_is_diagnostic_and_does_not_block_completion():
+    target = {'x': 0.0, 'y': 0.0, 'z': 0.0}
+    accepted = [
+        spherical_entry(150.0, 25.0),
+        spherical_entry(155.0, 30.0),
+        spherical_entry(160.0, 35.0),
+        spherical_entry(175.0, 40.0),
+        spherical_entry(180.0, 45.0),
+        spherical_entry(185.0, 50.0),
+        spherical_entry(200.0, 55.0),
+        spherical_entry(205.0, 30.0),
+        spherical_entry(210.0, 25.0),
+    ]
+
+    coverage = achieved_feature_coverage(accepted, target)
+
+    assert coverage['azimuth_span_deg'] == pytest.approx(60.0)
+    assert coverage['sufficient']
+    assert not any('azimuth' in blocker for blocker in coverage['blockers'])
 
 
 def view(index, angle_deg, radius=0.30):
@@ -217,7 +243,7 @@ def test_ordered_candidates_publish_objective_progress_margin():
     assert margins[2] < 0.0
 
 
-def test_feature_priority_extends_azimuth_then_elevation_span():
+def test_feature_priority_ignores_azimuth_span_and_extends_elevation():
     target = {'x': 0.0, 'y': 0.0, 'z': 0.0}
     narrow_azimuth = [
         spherical_entry(220.0, 40.0),
@@ -233,8 +259,8 @@ def test_feature_priority_extends_azimuth_then_elevation_span():
         wider_azimuth, narrow_azimuth, target)
     tall_score, _ = feature_coverage_priority(
         taller_only, narrow_azimuth, target)
-    assert objective == 'azimuth_span'
-    assert wide_score > tall_score
+    assert objective == 'elevation_span'
+    assert tall_score > wide_score
 
     broad_but_flat = [
         spherical_entry(240.0, 40.0),
@@ -283,6 +309,79 @@ def test_history_payload_is_session_bounded_and_correlated():
             'accepted_views': 2,
             'max_views': 13,
             'entries': [entry],
+        }, 13)
+
+
+def test_history_preserves_only_digest_valid_qualified_model_seed():
+    shape = {
+        'schema_version': 1,
+        'valid': True,
+        'header': {
+            'stamp': {'sec': 12, 'nanosec': 345},
+            'frame_id': 'camera_color_optical_frame',
+        },
+        'silhouette_points_camera_m': [
+            [-0.05, -0.05, 0.40], [0.05, -0.05, 0.40],
+            [0.05, 0.05, 0.40], [-0.05, 0.05, 0.40],
+        ],
+    }
+    shape['measurement_sha256'] = canonical_sha256(shape)
+    model_seed = build_capture_model_seed(shape, {
+        'header': {
+            'stamp': {'sec': 12, 'nanosec': 30_000_345},
+            'frame_id': 'base_link',
+        },
+        'child_frame_id': 'camera_color_optical_frame',
+        'matrix_4x4': np.eye(4).tolist(),
+    })
+    payload = validate_history_payload({
+        'session_id': 'session-a',
+        'accepted_views': 1,
+        'max_views': 13,
+        'entries': [achieved_entry(0.1, 0.0, 0.2)],
+        'qualified_target_shape': shape,
+        'qualified_target_model_seed': model_seed,
+    }, 13)
+    assert payload['qualified_target_shape'] == shape
+    assert payload['qualified_target_model_seed'] == model_seed
+
+    corrupt = dict(shape, measurement_sha256='0' * 64)
+    with pytest.raises(ValueError, match='digest'):
+        validate_history_payload({
+            'session_id': 'session-a',
+            'accepted_views': 1,
+            'max_views': 13,
+            'entries': [achieved_entry(0.1, 0.0, 0.2)],
+            'qualified_target_shape': corrupt,
+            'qualified_target_model_seed': model_seed,
+        }, 13)
+
+    mismatched_shape = dict(shape)
+    mismatched_shape['silhouette_points_camera_m'] = [
+        [-0.04, -0.05, 0.40], [0.05, -0.05, 0.40],
+        [0.05, 0.05, 0.40], [-0.04, 0.05, 0.40],
+    ]
+    mismatched_shape['measurement_sha256'] = canonical_sha256({
+        key: value for key, value in mismatched_shape.items()
+        if key != 'measurement_sha256'})
+    with pytest.raises(ValueError, match='does not match capture model seed'):
+        validate_history_payload({
+            'session_id': 'session-a',
+            'accepted_views': 1,
+            'max_views': 13,
+            'entries': [achieved_entry(0.1, 0.0, 0.2)],
+            'qualified_target_shape': mismatched_shape,
+            'qualified_target_model_seed': model_seed,
+        }, 13)
+
+    with pytest.raises(ValueError, match='requires an accepted view'):
+        validate_history_payload({
+            'session_id': 'session-a',
+            'accepted_views': 0,
+            'max_views': 13,
+            'entries': [],
+            'qualified_target_shape': shape,
+            'qualified_target_model_seed': model_seed,
         }, 13)
 
 
@@ -339,6 +438,22 @@ def test_six_degree_accepted_view_floor_removes_only_redundant_ray():
         minimum_direction_separation_deg=6.0)
 
     assert [item['index'] for item in remaining] == [2]
+
+
+def test_fifteen_degree_floor_retires_a_real_360_ray_neighbourhood():
+    target = {'x': 0.0, 'y': 0.0, 'z': 0.0}
+    achieved = [spherical_entry(180.0, 0.0)]
+    inside = dict(spherical_entry(194.9, 0.0), index=1)
+    boundary = dict(spherical_entry(195.0, 0.0), index=2)
+    outside = dict(spherical_entry(195.1, 0.0), index=3)
+
+    remaining = filter_and_order_viewpoints(
+        [inside, boundary, outside], achieved,
+        accepted_entries=achieved,
+        direction_target_center=target,
+        minimum_direction_separation_deg=15.0)
+
+    assert [item['index'] for item in remaining] == [3]
 
 
 def test_motion_limit_change_requires_persistence_and_cancels_on_recovery():

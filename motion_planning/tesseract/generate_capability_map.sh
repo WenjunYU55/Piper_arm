@@ -65,5 +65,4 @@ bwrap --unshare-user --uid 1000 --gid 1000 --unshare-pid --unshare-net \
   --source /workspace/piper_ros_foxy/src/piper_tesseract_foxy/model/collision_model.yaml \
   --source /workspace/piper_ros_foxy/src/piper_tesseract_foxy/model/collision_model_ground.yaml \
   --source /workspace/piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/model_builder.py \
-  --source /workspace/piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/worker_components.py \
   --source /workspace/piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/worker.py

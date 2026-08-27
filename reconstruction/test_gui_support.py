@@ -3,8 +3,8 @@ import json
 import pytest
 
 from reconstruction.gui_support import (
-    list_scan_datasets, quality_summary, reconstruction_command,
-    validated_dataset_path, viewer_command)
+    existing_reconstruction_outputs, list_scan_datasets, quality_summary,
+    reconstruction_command, validated_dataset_path, viewer_command)
 
 
 def project(tmp_path):
@@ -33,7 +33,7 @@ def test_gui_command_is_argument_only_and_diagnostic(tmp_path):
     assert '--allow-missing-calibration-id' in command
     assert '--allow-partial-view-set' in command
     assert command[command.index('--registration-mode') + 1] == 'auto'
-    assert command[command.index('--voxel-length') + 1] == '0.001'
+    assert command[command.index('--voxel-length') + 1] == '0.003'
     assert output == scan / 'reconstruction' / 'validation' / 'target_mesh.ply'
     assert all('\n' not in argument for argument in command)
 
@@ -84,12 +84,55 @@ def test_viewer_report_cannot_escape_dataset_root(tmp_path):
     assert '--show-input' in viewer_command(root, report, show_input=True)
     raw_command = viewer_command(root, report, mesh_variant='raw')
     assert raw_command[raw_command.index('--mesh') + 1] == 'raw'
+    measured_command = viewer_command(root, report, mesh_variant='measured')
+    assert measured_command[measured_command.index('--mesh') + 1] == 'measured'
     with pytest.raises(ValueError, match='mesh variant'):
         viewer_command(root, report, mesh_variant='unknown')
     outside = root / 'report.json'
     outside.write_text('{}', encoding='utf-8')
     with pytest.raises(ValueError, match='escapes'):
         viewer_command(root, outside)
+
+
+def test_existing_failed_outputs_remain_inspectable(tmp_path):
+    root, scan = project(tmp_path)
+    output = scan / 'reconstruction' / 'validation' / 'target_mesh.ply'
+    raw = output.with_name('target_mesh.raw.ply')
+    measured = output.with_name('target_mesh.measured_points.ply')
+    report = output.with_suffix(output.suffix + '.quality.json')
+    report.parent.mkdir(parents=True)
+    output.write_text('cleaned', encoding='utf-8')
+    raw.write_text('raw', encoding='utf-8')
+    measured.write_text('measured', encoding='utf-8')
+    report.write_text(json.dumps({
+        'overall_quality': 'FAIL',
+        'mesh_path': str(output),
+        'raw_mesh_path': str(raw),
+        'measured_cloud_path': str(measured),
+    }), encoding='utf-8')
+
+    saved = existing_reconstruction_outputs(root, scan.name)
+
+    assert saved['report']['overall_quality'] == 'FAIL'
+    assert saved['report_path'] == report
+    assert saved['output_path'] == output
+    assert saved['raw_output_path'] == raw
+    assert saved['measured_cloud_path'] == measured
+
+
+def test_existing_output_paths_cannot_escape_selected_dataset(tmp_path):
+    root, scan = project(tmp_path)
+    output = scan / 'reconstruction' / 'validation' / 'target_mesh.ply'
+    report = output.with_suffix(output.suffix + '.quality.json')
+    outside = root / 'outside.ply'
+    report.parent.mkdir(parents=True)
+    outside.write_text('outside', encoding='utf-8')
+    report.write_text(json.dumps({
+        'mesh_path': str(outside),
+    }), encoding='utf-8')
+
+    with pytest.raises(ValueError, match='escapes'):
+        existing_reconstruction_outputs(root, scan.name)
 
 
 def test_quality_summary_calls_out_provisional_dimension_and_visual_review():
@@ -101,6 +144,8 @@ def test_quality_summary_calls_out_provisional_dimension_and_visual_review():
         'registration_mode': 'robot_pose', 'integrated_views': 15,
         'vertex_count': 100, 'triangle_count': 200,
         'raw_mesh_path': '/tmp/target_mesh.raw.ply',
+        'measured_cloud_path': '/tmp/target_mesh.measured_points.ply',
+        'measured_point_count': 11947,
         'configuration': {'voxel_length_m': 0.0005},
         'registration_summary': {'median_rmse_m': 0.006},
         'mesh_metrics': {
@@ -129,6 +174,8 @@ def test_quality_summary_calls_out_provisional_dimension_and_visual_review():
     assert 'TSDF mesh voxel: 0.50 mm' in summary
     assert 'Target mask: captured' in summary
     assert '12 raw components -> 1 cleaned components' in summary
+    assert '11,947 accepted depth points' not in summary
+    assert '11947 accepted depth points' in summary
     assert 'removed 11 tiny fragments' in summary
     assert 'Cleaned mesh OBB' in summary
     assert 'Visual review is required' in summary

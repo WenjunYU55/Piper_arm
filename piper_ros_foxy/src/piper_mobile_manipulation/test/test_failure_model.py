@@ -38,6 +38,10 @@ from piper_mobile_manipulation.target_scan_mission_node import (
      FailureCode.INSUFFICIENT_CAPTURE_QUALITY),
     ('occlusion was not cleared', FailureCode.OCCLUSION_NOT_CLEARED),
     ('target lock was not found', FailureCode.TARGET_NOT_FOUND),
+    ('TARGET_TOO_LARGE_OR_CLOSE: item is cropped',
+     FailureCode.TARGET_TOO_LARGE_OR_CLOSE),
+    ('TARGET_SCAN_IMPOSSIBLE: item remains cropped at maximum distance',
+     FailureCode.TARGET_SCAN_IMPOSSIBLE),
     ('no reachable IK plan exists', FailureCode.NO_REACHABLE_PLAN),
     ('CAN bus feedback is unavailable',
      FailureCode.CONTROL_UNTRUSTWORTHY),
@@ -59,6 +63,20 @@ def test_explicit_failure_code_overrides_legacy_detail_classification():
 
     assert failure.code is FailureCode.TARGET_NOT_FOUND
     assert failure.retryable is False
+
+
+@pytest.mark.parametrize('detail, tag', (
+    ('TARGET_FRAMING_RETRY_FARTHER: cropped',
+     FailureTag.TARGET_FRAMING_RETRY_FARTHER),
+    ('TARGET_FRAMING_TOO_CLOSE: cropped',
+     FailureTag.TARGET_FRAMING_TOO_CLOSE),
+    ('TARGET_FRAMING_TOO_LARGE: cropped',
+     FailureTag.TARGET_FRAMING_TOO_LARGE),
+    ('planning failed: TARGET_FRAMING_NO_AIMED_ENDPOINT',
+     FailureTag.TARGET_FRAMING_NO_AIMED_ENDPOINT),
+))
+def test_target_framing_legacy_boundary_adds_typed_tag(detail, tag):
+    assert legacy_failure_adapter(detail).has(tag)
 
 
 @pytest.mark.parametrize('tag, decision', (

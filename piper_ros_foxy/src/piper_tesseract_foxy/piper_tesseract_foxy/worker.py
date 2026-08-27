@@ -32,7 +32,6 @@ from piper_tesseract_foxy.contract import (
     trajectory_digest,
     validate_request,
 )
-from piper_tesseract_foxy.worker_components import WorkerOrchestrator
 
 WORKER_PLANNING_BUDGET_SEC = 150.0
 AUTOMATIC_ONE_VIEW_PLANNING_BUDGET_SEC = 45.0
@@ -2494,8 +2493,369 @@ class TesseractBackend:
         }
 
     def plan(self, request):
-        """Compatibility delegate to the composed worker orchestrator."""
-        return WorkerOrchestrator(self).plan(request)
+        planning_budget, segment_budget = planning_budgets_for_request(request)
+        self.planning_budget_sec = planning_budget
+        self.segment_planning_budget_sec = segment_budget
+        # Scene cleanup/model loading is request setup, not an IK/OMPL
+        # candidate attempt. The bridge's unchanged response timeout bounds
+        # the complete transaction; start the tighter worker budget only once
+        # the request-local collision scene is ready.
+        self.planning_deadline_monotonic = None
+        self.last_planning_diagnostics = {
+            'shortlisted_candidates': len(
+                request.get('scene', {}).get('candidate_views', [])),
+            'shortlisted_rays': int(request.get(
+                'planning', {}).get('shortlisted_ray_count', 0)),
+            'expanded_ray_candidates': int(request.get(
+                'planning', {}).get('expanded_ray_candidate_count', 0)),
+            'candidate_attempts': 0,
+            'exact_aim_attempts': 0,
+            'fallback_aim_attempts': 0,
+            'ray_ik_solver_attempts': 0,
+            'failure_stage_counts': {},
+            'candidate_failures': [],
+            'attempted_ray_ids': [],
+            'ray_failure_stage_counts': {},
+        }
+        self.reset_scene()
+        self.add_obstacles(request['scene'].get('obstacles', []))
+        planning_deadline = time.monotonic() + planning_budget
+        self.planning_deadline_monotonic = planning_deadline
+        self.execution_speed_percent = float(
+            request['planning']['effective_speed_percent'])
+        self.command_rate_hz = float(
+            request['planning']['command_rate_hz'])
+        self.execution_position_limits = request['limits']['position_rad']
+        self.execution_velocity_limits = request[
+            'limits']['max_velocity_rad_s']
+        self.execution_acceleration_limits = request[
+            'limits']['max_acceleration_rad_s2']
+        self.bootstrap_start_limit_tolerance_rad = float(
+            request['limits'].get(
+                'bootstrap_start_limit_tolerance_rad', 0.0))
+        minimum_views = int(request['planning']['min_viewpoints'])
+        maximum_views = int(request['planning']['max_viewpoints'])
+        maximum_step = float(request['planning']['max_execution_joint_step_rad'])
+        position_limits = request['limits']['position_rad']
+        joint_margin = float(request['limits'].get('joint_margin_rad', 0.0))
+        rolls = [float(value) for value in request['planning']['roll_samples_rad']]
+        current = request['start_state']['positions_rad']
+        if request.get('plan_kind') == 'RETURN_HOME' and (
+                self.configured_home_direct_policy(request) is not None):
+            TesseractBackend.ensure_planning_time(
+                self, 'before configured direct return-home target')
+            home = finite_six(
+                request['planning']['return_home_positions_rad'],
+                'return home positions')
+            points, validation = self.plan_configured_home_direct(
+                request, current, home)
+            return [], [{
+                'from_viewpoint': -1,
+                'to_viewpoint': -2,
+                'is_return_home': True,
+                'startup_home_static': bool(
+                    request['scene'].get('startup_home_static', False)),
+                'points': points,
+                **validation,
+            }]
+        powered_start_recovery = (
+            self.find_bootstrap_recovery(
+                request, 'powered_start_home_recovery')
+            if request.get('plan_kind') == 'RETURN_HOME' else None)
+        bootstrap_recovery = (
+            powered_start_recovery
+            if request.get('plan_kind') == 'RETURN_HOME'
+            else self.find_bootstrap_recovery(request))
+        if bootstrap_recovery is not None:
+            current = bootstrap_recovery[
+                'bootstrap_recovery_end_positions_rad']
+        selected = []
+        segments = []
+        failures = {}
+        pending = list(request['scene']['candidate_views'])
+        visibility_target = (
+            request['scene'].get('target_center_m')
+            if request.get('plan_kind') == 'MULTIVIEW_SCAN' else None)
+        if request.get('plan_kind') == 'RETURN_HOME':
+            TesseractBackend.ensure_planning_time(
+                self, 'before dedicated return-home qualification')
+            home = finite_six(
+                request['planning']['return_home_positions_rad'],
+                'return home positions')
+            terminal_recovery = self.find_terminal_home_recovery(
+                request, home)
+            if (
+                    powered_start_recovery is not None
+                    and terminal_recovery is not None):
+                points, validation = self.plan_dual_recovery_return_home(
+                    powered_start_recovery, terminal_recovery, maximum_step)
+            elif terminal_recovery is None:
+                points, validation = self.plan_segment_to_joint_goal(
+                    current, home, maximum_step, powered_start_recovery,
+                    'powered_start_home_recovery')
+            else:
+                recovery_endpoint = finite_six(
+                    terminal_recovery[
+                        'bootstrap_recovery_end_positions_rad'],
+                    'terminal home recovery endpoint')
+                points, validation = self.plan_segment_to_joint_goal(
+                    recovery_endpoint, current, maximum_step,
+                    terminal_recovery)
+                points = reverse_sdk_movej_points(points)
+            segments.append({
+                'from_viewpoint': -1,
+                'to_viewpoint': -2,
+                'is_return_home': True,
+                'startup_home_static': bool(
+                    request['scene'].get('startup_home_static', False)),
+                'points': points,
+                **validation,
+            })
+            return selected, segments
+        if request.get('plan_kind') == 'ROUGH_ACQUISITION':
+            selected_center_id = None
+            centered = [
+                candidate for candidate in pending
+                if candidate.get('required_first') is True
+            ]
+            # Direct backend qualification helpers predate the transport
+            # marker and already place the centered view first. Real worker
+            # requests pass validate_request(), which requires the marker.
+            if not centered and pending:
+                centered = pending[:1]
+            for candidate in centered:
+                TesseractBackend.ensure_planning_time(
+                    self, 'before centered rough-coordinate candidate')
+                try:
+                    self.last_planning_diagnostics['candidate_attempts'] += 1
+                    accepted = TesseractBackend.plan_candidate_aims(
+                        self,
+                        current, candidate, rolls, maximum_step,
+                        position_limits, joint_margin, bootstrap_recovery)
+                except (ContractError, RuntimeError, ValueError) as error:
+                    failures[int(candidate['id'])] = str(error)
+                    continue
+                (selected_candidate, roll, points, validation,
+                 aim_fallback_used, aim_offset_deg) = accepted
+                selected.append({
+                    'id': int(candidate['id']),
+                    'camera_position_m': selected_candidate[
+                        'camera_position_m'],
+                    'look_direction': selected_candidate['look_direction'],
+                    'nominal_look_direction': candidate['look_direction'],
+                    'aim_fallback_used': bool(aim_fallback_used),
+                    'aim_offset_deg': float(aim_offset_deg),
+                    'aim_attempt_diagnostics': selected_candidate.get(
+                        'aim_attempt_diagnostics', {}),
+                    'roll_rad': roll,
+                    **{
+                        key: selected_candidate[key]
+                        for key in (
+                            'view_selection_policy',
+                            'view_selection_requested_policy',
+                            'view_selection_generation',
+                            'view_selection_session_id',
+                            'nbv_rank',
+                            'nbv_positive_information_gain',
+                            'nbv_predicted_unknown_pixels',
+                            'nbv_novel_surface_pixels',
+                            'nbv_marginal_information_pixels',
+                            'nbv_marginal_information_fraction',
+                            'coverage_score',
+                        )
+                        if key in selected_candidate
+                    },
+                })
+                segments.append({
+                    'from_viewpoint': -1,
+                    'to_viewpoint': int(candidate['id']),
+                    'points': points,
+                    **validation,
+                })
+                current = points[-1]['positions_rad']
+                bootstrap_recovery = None
+                failures.pop(int(candidate['id']), None)
+                selected_center_id = int(candidate['id'])
+                break
+            if not selected:
+                raise ContractError(
+                    'no centered rough-coordinate first view is reachable (%s)'
+                    % '; '.join(
+                        'view %s: %s' % item
+                        for item in sorted(failures.items())))
+            # ``required_first`` makes a centered candidate eligible for the
+            # mandatory first look; it does not make every other centered
+            # compact pose unusable later in the bounded search.
+            pending = [
+                candidate for candidate in pending
+                if int(candidate['id']) != selected_center_id
+            ]
+        while pending and len(selected) < maximum_views:
+            next_pending = []
+            progress = False
+            for candidate_index, candidate in enumerate(pending):
+                TesseractBackend.ensure_planning_time(
+                    self, 'before starting a viewpoint candidate')
+                ray_id = candidate.get('ray_id')
+                if ray_id is not None:
+                    attempted_rays = self.last_planning_diagnostics[
+                        'attempted_ray_ids']
+                    if int(ray_id) not in attempted_rays:
+                        attempted_rays.append(int(ray_id))
+                try:
+                    self.last_planning_diagnostics['candidate_attempts'] += 1
+                    accepted = TesseractBackend.plan_candidate_aims(
+                        self,
+                        current, candidate, rolls, maximum_step,
+                        position_limits, joint_margin, bootstrap_recovery,
+                        visibility_target)
+                except (ContractError, RuntimeError, ValueError) as error:
+                    failures[int(candidate['id'])] = str(error)
+                    diagnostics = self.last_planning_diagnostics
+                    aim_failures = [dict(item) for item in getattr(
+                        error, 'evidence', ())]
+                    permanent_endpoint_failure = bool(
+                        aim_failures
+                        and all(
+                            str(item.get('stage', ''))
+                            in PERMANENT_ENDPOINT_FAILURE_STAGES
+                            for item in aim_failures))
+                    if ray_id is not None:
+                        ray_counts = diagnostics[
+                            'ray_failure_stage_counts'].setdefault(
+                                str(int(ray_id)), {})
+                        stage = str(getattr(
+                            error, 'stage', 'PLANNING_FAILURE'))
+                        ray_counts[stage] = int(
+                            ray_counts.get(stage, 0)) + 1
+                    if len(diagnostics['candidate_failures']) < len(
+                            request['scene']['candidate_views']):
+                        diagnostics['candidate_failures'].append({
+                            'id': int(candidate['id']),
+                            'nbv_rank': int(candidate.get('nbv_rank', 0)),
+                            'camera_position_m': list(
+                                candidate['camera_position_m']),
+                            'stage': str(getattr(
+                                error, 'stage', 'PLANNING_FAILURE')),
+                            'aim_failures': aim_failures,
+                            'permanent_endpoint_failure': bool(
+                                permanent_endpoint_failure),
+                            'detail': str(error),
+                        })
+                    next_pending.append(candidate)
+                    continue
+                (selected_candidate, roll, points, validation,
+                 aim_fallback_used, aim_offset_deg) = accepted
+                selected.append({
+                    'id': int(candidate['id']),
+                    'camera_position_m': selected_candidate[
+                        'camera_position_m'],
+                    'look_direction': selected_candidate['look_direction'],
+                    'nominal_look_direction': candidate['look_direction'],
+                    'aim_fallback_used': bool(aim_fallback_used),
+                    'aim_offset_deg': float(aim_offset_deg),
+                    'aim_attempt_diagnostics': selected_candidate.get(
+                        'aim_attempt_diagnostics', {}),
+                    'roll_rad': roll,
+                    **{
+                        key: selected_candidate[key]
+                        for key in (
+                            'view_selection_policy',
+                            'view_selection_requested_policy',
+                            'view_selection_generation',
+                            'view_selection_session_id',
+                            'nbv_rank',
+                            'nbv_positive_information_gain',
+                            'nbv_predicted_unknown_pixels',
+                            'nbv_novel_surface_pixels',
+                            'nbv_marginal_information_pixels',
+                            'nbv_marginal_information_fraction',
+                            'nbv_projected_object_pixels',
+                            'nbv_direction_novelty_deg',
+                            'nbv_camera_travel_m',
+                            'coverage_score',
+                            'ray_id',
+                            'ray_standoff_m',
+                            'ray_probe_index',
+                            'ray_probe_phase',
+                        )
+                        if key in selected_candidate
+                    },
+                })
+                self.last_planning_diagnostics['selected_candidate'] = {
+                    'id': int(candidate['id']),
+                    'nbv_rank': int(candidate.get('nbv_rank', 0)),
+                    'camera_position_m': list(
+                        selected_candidate['camera_position_m']),
+                    'aim_fallback_used': bool(aim_fallback_used),
+                    'aim_offset_deg': float(aim_offset_deg),
+                    **{
+                        key: selected_candidate[key]
+                        for key in (
+                            'ray_id', 'ray_standoff_m', 'ray_probe_index',
+                            'ray_probe_phase')
+                        if key in selected_candidate
+                    },
+                }
+                segments.append({
+                    'from_viewpoint': (
+                        -1 if len(selected) == 1
+                        else int(selected[-2]['id'])),
+                    'to_viewpoint': int(candidate['id']),
+                    'points': points,
+                    **validation,
+                })
+                current = points[-1]['positions_rad']
+                bootstrap_recovery = None
+                failures.pop(int(candidate['id']), None)
+                pending = (
+                    next_pending + pending[candidate_index + 1:])
+                progress = True
+                break
+            if not progress:
+                break
+        if len(selected) < minimum_views:
+            raise CandidateExhausted(
+                'only %d viewpoints planned; require at least %d of %d (%s)' % (
+                    len(selected), minimum_views, maximum_views,
+                    '; '.join(
+                        'view %s: %s' % item
+                        for item in sorted(failures.items()))
+                    if failures else 'no candidates'))
+        if (
+                request.get('plan_kind') == 'MULTIVIEW_SCAN'
+                and bool(request.get('planning', {}).get(
+                    'include_return_home', True))):
+            TesseractBackend.ensure_planning_time(
+                self, 'before return-home qualification')
+            home = finite_six(
+                request['planning']['return_home_positions_rad'],
+                'return home positions')
+            terminal_recovery = self.find_terminal_home_recovery(
+                request, home)
+            if terminal_recovery is None:
+                points, validation = self.plan_segment_to_joint_goal(
+                    current, home, maximum_step)
+            else:
+                # The folded home is a qualified bounded start corridor, not a
+                # normal-clearance OMPL goal.  Plan and validate home->current,
+                # then execute its exact rest-to-rest reverse current->home.
+                recovery_endpoint = finite_six(
+                    terminal_recovery[
+                        'bootstrap_recovery_end_positions_rad'],
+                    'terminal home recovery endpoint')
+                points, validation = self.plan_segment_to_joint_goal(
+                    recovery_endpoint, current, maximum_step,
+                    terminal_recovery)
+                points = reverse_sdk_movej_points(points)
+            segments.append({
+                'from_viewpoint': int(selected[-1]['id']),
+                'to_viewpoint': -2,
+                'is_return_home': True,
+                'points': points,
+                **validation,
+            })
+        return selected, segments
 
 
 class Worker:
@@ -2508,7 +2868,6 @@ class Worker:
         self.backend_error = None
         try:
             self.backend = TesseractBackend(urdf_path, srdf_path, manifest_path)
-            self.orchestrator = WorkerOrchestrator(self.backend)
             self.model_hashes = {
                 'urdf_sha256': sha256_file(Path(self.urdf_path)),
                 'srdf_sha256': sha256_file(Path(self.srdf_path)),
@@ -2517,7 +2876,6 @@ class Worker:
             }
         except (BackendUnavailable, ContractError, OSError, RuntimeError, ValueError) as error:
             self.backend = None
-            self.orchestrator = None
             self.backend_error = str(error)
         self.running = True
         self.generation_id = uuid.uuid4().hex
@@ -2566,9 +2924,9 @@ class Worker:
                 raise ContractError(
                     'request deterministic seed %d does not match worker seed %d'
                     % (requested_seed, self.backend.deterministic_seed))
-            selected, segments = self.orchestrator.plan(request)
+            selected, segments = self.backend.plan(request)
             finalize_ray_endpoint_diagnostics(
-                request, self.orchestrator.last_planning_diagnostics)
+                request, self.backend.last_planning_diagnostics)
             binding = {
                 'request_sha256': request['request_sha256'],
                 'plan_kind': request['plan_kind'],

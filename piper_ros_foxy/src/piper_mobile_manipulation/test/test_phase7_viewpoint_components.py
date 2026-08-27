@@ -1,7 +1,9 @@
 """Pure Phase 7 characterization of viewpoint application components."""
 
 from dataclasses import replace
+from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 from piper_mobile_manipulation.capture_coordinator import (
@@ -23,6 +25,16 @@ from piper_mobile_manipulation.plan_authorizer import (
     PlanAuthorizationRequest,
     PlanAuthorizationStatus,
     PlanAuthorizer,
+)
+from piper_mobile_manipulation.scan_viewpoint_executor_node import (
+    first_capture_framing_decision,
+    first_capture_model_seed,
+    next_target_framing_standoff,
+    ScanViewpointExecutorNode,
+)
+from piper_mobile_manipulation.target_envelope import (
+    canonical_sha256,
+    clipped_shape_rejection,
 )
 from piper_mobile_manipulation.trajectory_runner import (
     TrajectoryAction,
@@ -50,6 +62,101 @@ def authorization_request(**changes):
 def failure(code=FailureCode.MISSION_FAILED, *tags, detail='diagnostic'):
     """Create one typed failure for recovery/capture tests."""
     return Failure(code, detail, frozenset(tags))
+
+
+def test_first_capture_crop_requests_farther_aimed_standoff():
+    header = SimpleNamespace(
+        stamp=SimpleNamespace(sec=12, nanosec=34),
+        frame_id='camera_color_optical_frame')
+    action, _reason, farther = first_capture_framing_decision(
+        clipped_shape_rejection(header, 0.40), 0.40)
+
+    assert action == 'RETRY_FARTHER'
+    assert farther == pytest.approx(0.50)
+    action, _reason, farther = first_capture_framing_decision(
+        clipped_shape_rejection(header, 0.40), 0.42,
+        previous_minimum_m=0.50)
+    assert action == 'RETRY_FARTHER'
+    assert farther == pytest.approx(0.60)
+    action, _reason, farther = first_capture_framing_decision(
+        clipped_shape_rejection(header, 0.40), 0.79,
+        previous_minimum_m=0.80)
+    assert action == 'NO_AIMED_ENDPOINT'
+    assert farther is None
+    assert next_target_framing_standoff(0.79) == pytest.approx(0.80)
+    assert next_target_framing_standoff(0.80) is None
+
+
+def test_border_clipped_shape_cannot_become_revolution_seed():
+    header = SimpleNamespace(
+        stamp=SimpleNamespace(sec=12, nanosec=34),
+        frame_id='camera_color_optical_frame')
+    clipped = clipped_shape_rejection(header, 0.40)
+
+    assert first_capture_model_seed(clipped, 'RETRY_FARTHER') is None
+    with pytest.raises(ValueError, match='not valid'):
+        first_capture_model_seed(clipped, 'CLEAR')
+
+
+def complete_shape(stamp_ns=12_000_000_345):
+    """Build one digest-valid complete silhouette for executor tests."""
+    shape = {
+        'schema_version': 1,
+        'valid': True,
+        'header': {
+            'stamp': {
+                'sec': int(stamp_ns // 1_000_000_000),
+                'nanosec': int(stamp_ns % 1_000_000_000),
+            },
+            'frame_id': 'camera_color_optical_frame',
+        },
+        'source': 'fresh_mask_qualified_depth',
+        'silhouette_points_camera_m': [
+            [-0.05, -0.05, 0.40], [0.05, -0.05, 0.40],
+            [0.05, 0.05, 0.40], [-0.05, 0.05, 0.40],
+        ],
+        'near_depth_m': 0.40,
+        'mask_pixel_count': 1000,
+        'qualified_depth_pixel_count': 900,
+        'measurement_confidence': 0.9,
+        'camera_info': {
+            'width': 640, 'height': 480,
+            'fx': 600.0, 'fy': 600.0, 'cx': 320.0, 'cy': 240.0,
+        },
+    }
+    shape['measurement_sha256'] = canonical_sha256(shape)
+    return shape
+
+
+def framing_harness(shape_stamp_ns, settle_stamp_ns):
+    """Return a settled first-view harness with source-stamped shape evidence."""
+    return SimpleNamespace(
+        plan_kind='MULTIVIEW_SCAN',
+        scan_history=[],
+        latest_target_shape=complete_shape(shape_stamp_ns),
+        settle_started=10.0,
+        latest_target_shape_at=10.1,
+        latest_target_shape_stamp_ns=shape_stamp_ns,
+        settle_started_ros_ns=settle_stamp_ns,
+        latest_achieved_scan_view={
+            'camera_position': {'x': 0.0, 'y': 0.0, 'z': 0.0}},
+        plan_target_center=np.asarray([0.0, 0.0, 0.40]),
+        first_capture_framing_retry_active=lambda: False,
+        settle_diagnostic='',
+    )
+
+
+def test_model_seed_shape_must_come_from_after_settle_source_time():
+    stale = framing_harness(11_999_999_999, 12_000_000_000)
+    assert ScanViewpointExecutorNode.settled_first_capture_framing_result(
+        stale) is None
+    assert 'source-stamped post-settle' in stale.settle_diagnostic
+
+    fresh = framing_harness(12_000_000_001, 12_000_000_000)
+    action, _reason, farther = (
+        ScanViewpointExecutorNode.settled_first_capture_framing_result(fresh))
+    assert action == 'CLEAR'
+    assert farther is None
 
 
 def test_valid_plan_is_authorized():

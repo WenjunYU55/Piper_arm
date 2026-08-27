@@ -34,13 +34,13 @@
     max_viewpoints: 25
     session_max_views: 13
     scan_session_history_topic: "/piper/scan_session_history"
+    # Command-free feedback carrying only population-bound permanent ray
+    # eliminations from prequalification and Tesseract endpoint evidence.
+    ray_hard_culls_topic: "/piper/ray_hard_culls"
     # Multiview candidates are generated only from coordinates already in this
     # frame. Raw camera-optical /piper/target_3d observations must first pass
     # through the base-frame tracker; they are never a coordinate fallback.
     planning_frame_id: "base_link"
-    # Private trusted silhouette handoff from synchronized mask/depth
-    # projection. The ray pool freezes one matching envelope per mission.
-    target_shape_topic: "/piper/target_shape_measurement"
     # A retried scan excludes only a camera pose that is close in both
     # translation and viewing direction to an achieved accepted capture.
     # The next view persistently targets missing -Y/+Y face observations,
@@ -49,9 +49,10 @@
     duplicate_look_tolerance_deg: 2.0
     # This is accepted-view redundancy only. It is not a maximum transition
     # angle and cannot prevent a globally informative 60/80-degree NBV. The
-    # ten-degree floor rejects effectively repeated accepted directions while
-    # still allowing the next genuinely informative direction to compete.
-    minimum_useful_direction_separation_deg: 10.0
+    # fifteen-degree floor retires a real neighbourhood around every achieved
+    # accepted/rejected direction in the 360-ray Fibonacci sphere. It is not a
+    # maximum transition angle; all surviving global NBV directions compete.
+    minimum_useful_direction_separation_deg: 15.0
 
     min_reach_m: 0.20
     max_reach_m: 0.75
@@ -112,6 +113,10 @@
     # Full voxel evidence is retained; candidate raycasts use this bounded,
     # deterministic planning sample so a noisy large mask cannot stall ROS.
     nbv_maximum_scoring_voxels: 20000
+    # Write one self-contained HTML graphic and canonical JSON ray-lifecycle
+    # record per mission. This observes planner/prequalification/Tesseract
+    # decisions only and is never a motion or capture authority.
+    ray_diagnostics_enabled: true
 
     # A typed /scan_target_acquisition/prepare call atomically binds the session
     # ID and rough base_link coordinate. The guarded executor still requires

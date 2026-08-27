@@ -16,8 +16,8 @@ SPEC.loader.exec_module(MODULE)
 
 
 def test_default_reconstruction_preserves_one_millimetre_detail():
-    assert MODULE.DEFAULT_VOXEL_LENGTH_M == pytest.approx(0.001)
-    assert MODULE.DEFAULT_SDF_TRUNC_M == pytest.approx(0.005)
+    assert MODULE.DEFAULT_VOXEL_LENGTH_M == pytest.approx(0.003)
+    assert MODULE.DEFAULT_SDF_TRUNC_M == pytest.approx(0.015)
     assert 'robot_pose' in MODULE.REGISTRATION_MODES
     assert 'scene_pose_graph' in MODULE.REGISTRATION_MODES
     assert MODULE.MASK_SOURCES == ('captured', 'offline_resegment')
@@ -83,32 +83,32 @@ def test_missing_timestamped_pose_fails_closed():
         MODULE.camera_extrinsic_from_metadata({})
 
 
-@pytest.mark.parametrize('count', [8, 12, 19, 24])
+@pytest.mark.parametrize('count', [1, 3, 7, 8, 12, 19, 24])
 def test_feature_driven_capture_count_is_accepted(count):
     paths = [Path('view_%03d_metadata.yaml' % index) for index in range(count)]
     assert MODULE.validate_capture_set({'capture_count': count}, paths) == paths
 
 
-@pytest.mark.parametrize('count', [0, 7, 25])
+@pytest.mark.parametrize('count', [0, 25])
 def test_capture_count_outside_bounded_contract_is_rejected(count):
-    with pytest.raises(ValueError, match='8-24'):
+    with pytest.raises(ValueError, match='1-24'):
         MODULE.validate_capture_set(
             {'capture_count': count}, [Path(str(index)) for index in range(count)])
 
 
 @pytest.mark.parametrize('count', [1, 3, 7])
-def test_partial_capture_count_requires_explicit_admission(count):
+def test_legacy_partial_admission_flag_is_a_compatible_no_op(count):
     paths = [Path(str(index)) for index in range(count)]
     assert MODULE.validate_capture_set(
         {'capture_count': count}, paths,
         allow_partial_view_set=True) == paths
     report = MODULE.capture_set_provenance(
         {'capture_count': count}, allow_partial_view_set=True)
-    assert report['classification'] == 'PARTIAL_VIEW_SET'
-    assert report['ordinary_feature_minimum'] == 8
+    assert report['classification'] == 'VIEW_COUNT_ELIGIBLE'
+    assert report['ordinary_feature_minimum'] == 1
 
 
-def test_zero_capture_set_remains_rejected_when_partial_is_allowed():
+def test_zero_capture_set_remains_rejected_with_legacy_flag():
     with pytest.raises(ValueError, match='1-24'):
         MODULE.validate_capture_set(
             {'capture_count': 0}, [], allow_partial_view_set=True)

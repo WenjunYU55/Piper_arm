@@ -25,6 +25,7 @@ from piper_mobile_manipulation.msg import (
 )
 from piper_mobile_manipulation.failure_model import (
     as_failure,
+    FailureTag,
 )
 from piper_mobile_manipulation.configuration import (
     configured_value,
@@ -43,27 +44,6 @@ from piper_mobile_manipulation.executor_recovery import (
     RecoveryPolicy,
     runtime_gate_action as _runtime_gate_action,
     runtime_refresh_action,
-)
-from piper_mobile_manipulation.executor_session import (
-    EXECUTOR_SESSION_FIELDS,
-    ExecutorSession,
-    SessionField,
-)
-from piper_mobile_manipulation.executor_home_handling import (
-    abort_return_home_blocker as _home_abort_return_blocker,
-    home_position_sample_settled as _home_position_sample_settled,
-    terminal_home_hold_required as _terminal_home_hold_required,
-)
-from piper_mobile_manipulation.executor_plan_normalization import (
-    sdk_command_path as _sdk_command_path,
-)
-from piper_mobile_manipulation.executor_safety_validation import (
-    approved_multiview_motion_obstacle_snapshot as _approved_multiview_scene,
-    approved_retrace_validation_reasons as _approved_retrace_reasons,
-    approved_return_home_obstacle_snapshot as _approved_home_scene,
-    bootstrap_abort_retrace_uses_static_scene as _bootstrap_static_scene,
-    missing_obstacles_can_wait as _missing_obstacles_can_wait,
-    obstacle_scene_runtime_reasons as _obstacle_scene_runtime_reasons,
 )
 from piper_mobile_manipulation.plan_authorizer import (
     configured_home_endpoint_rejection,
@@ -125,6 +105,14 @@ from piper_mobile_manipulation.srv import (
     ExecuteHomeStage,
 )
 from piper_mobile_manipulation.telemetry_store import TelemetryStore
+from piper_mobile_manipulation.target_envelope import (
+    classify_centered_silhouette,
+    CROPPED_TOO_LARGE_DISTANCE_M,
+    stamp_nanoseconds,
+    validate_capture_model_seed,
+    validate_shape_measurement,
+    validate_shape_rejection,
+)
 from piper_mobile_manipulation.trajectory_runner import (
     joint_progress_error,
     TrajectoryAction,
@@ -147,6 +135,118 @@ ACTIVE_STATES = {
 }
 MAX_RGBD_CAPTURE_READINESS_RETRIES = 10
 MAX_FINAL_CAPTURE_AIM_ERROR_DEG = 5.0
+TARGET_SHAPE_QOS = QoSProfile(
+    depth=5,
+    reliability=ReliabilityPolicy.BEST_EFFORT,
+    durability=DurabilityPolicy.VOLATILE,
+)
+
+
+def next_target_framing_standoff(
+        current_distance_m,
+        maximum_distance_m=CROPPED_TOO_LARGE_DISTANCE_M):
+    """Return the next outward 0.10m rung, bounded by the framing maximum."""
+    current = float(current_distance_m)
+    maximum = float(maximum_distance_m)
+    if (
+            not math.isfinite(current) or current <= 0.0
+            or not math.isfinite(maximum) or maximum <= current + 1e-6):
+        return None
+    next_tenth = (math.floor(current * 10.0 + 1e-6) + 1.0) / 10.0
+    return min(maximum, max(current + 0.05, next_tenth))
+
+
+def first_capture_framing_decision(
+        payload, camera_target_distance_m, previous_minimum_m=None):
+    """Translate a settled, aimed first silhouette into executor action."""
+    state, reason = classify_centered_silhouette(
+        payload, camera_target_distance_m)
+    if state == 'CLEAR':
+        return 'CLEAR', reason, None
+    if state == 'TOO_CLOSE':
+        return 'TOO_CLOSE', reason, None
+    if state == 'TOO_LARGE':
+        return 'TOO_LARGE', reason, None
+    farther = next_target_framing_standoff(camera_target_distance_m)
+    if previous_minimum_m is not None:
+        advanced = next_target_framing_standoff(previous_minimum_m)
+        if advanced is None:
+            farther = None
+        elif farther is not None:
+            farther = max(farther, advanced)
+    if farther is None:
+        return (
+            'NO_AIMED_ENDPOINT',
+            reason + '; no farther target-facing endpoint remains',
+            None,
+        )
+    return 'RETRY_FARTHER', reason, farther
+
+
+def first_capture_model_seed(payload, framing_action):
+    """Return model evidence only after the border gate reports clear."""
+    if str(framing_action) != 'CLEAR':
+        return None
+    return validate_shape_measurement(payload)
+
+
+def capture_model_seed_from_response(message):
+    """Extract the exact persisted capture-one model seed from Trigger JSON."""
+    try:
+        payload = json.loads(str(message))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        raise ValueError('capture response does not contain model-seed JSON')
+    if (
+            not isinstance(payload, dict)
+            or int(payload.get('capture_result_schema_version', -1)) != 1):
+        raise ValueError('capture response model-seed schema is unsupported')
+    return validate_capture_model_seed(
+        payload.get('qualified_target_model_seed'))
+
+
+def qualified_scan_center_update(
+        current_center, planned_center, accepted_views,
+        qualified_target_shape, already_qualified=False):
+    """Apply the one allowed bootstrap-to-object-centre transition."""
+    proposed = np.asarray(planned_center, dtype=float)
+    if proposed.shape != (3,) or not np.all(np.isfinite(proposed)):
+        raise ValueError('planned target centre is malformed')
+    qualified = bool(
+        int(accepted_views) > 0
+        and isinstance(qualified_target_shape, dict))
+    if current_center is None:
+        return proposed.copy(), bool(qualified or already_qualified), True
+    current = np.asarray(current_center, dtype=float)
+    if current.shape != (3,) or not np.all(np.isfinite(current)):
+        raise ValueError('scan target centre is malformed')
+    if qualified and not already_qualified:
+        changed = not np.allclose(current, proposed, atol=1e-9, rtol=0.0)
+        return proposed.copy(), True, changed
+    return current.copy(), bool(already_qualified), False
+
+
+def sdk_command_path(path, velocities, accelerations, times, execution_mode,
+                     direct_home=False):
+    """Collapse a fully validated straight chord to one PiPER MoveJ goal."""
+    command_path = [np.asarray(item, dtype=float).copy() for item in path[1:]]
+    command_velocities = [
+        np.asarray(item, dtype=float).copy() for item in velocities[1:]]
+    command_accelerations = [
+        np.asarray(item, dtype=float).copy() for item in accelerations[1:]]
+    command_times = [float(item) for item in times[1:]]
+    mode = str(execution_mode).strip().upper()
+    if mode == 'DIRECT_MOVEJ' and not bool(direct_home):
+        return (
+            [np.asarray(path[-1], dtype=float).copy()],
+            [np.zeros(6, dtype=float)],
+            [np.zeros(6, dtype=float)],
+            [float(times[-1])],
+            False,
+        )
+    return (
+        command_path, command_velocities, command_accelerations,
+        command_times, bool(not direct_home and mode == 'TESSERACT_STREAM'))
+
 
 # Preserve Phase 1/downstream pure-helper imports while their implementation
 # lives in the focused Phase 7 application components.
@@ -205,6 +305,88 @@ def mark_callback_observation(owner, key):
     return observed_at, telemetry_store
 
 
+def approved_return_home_obstacle_snapshot(
+        returning_home, collision_model_qualified, obstacles):
+    """Keep the approval-time scene for the exact planned home segment."""
+    return bool(
+        returning_home
+        and collision_model_qualified
+        and obstacles is not None
+    )
+
+
+def approved_multiview_motion_obstacle_snapshot(
+        plan_kind, state, collision_model_qualified, obstacles):
+    """
+    Keep the approval-time scene only while one exact scan target moves.
+
+    The eye-in-hand SAM2 stream can pause or request a new seed under motion
+    blur.  It is not a dynamic safety scanner.  A MULTIVIEW_SCAN target reaches
+    MOVING only after the current scene was fresh, valid, collision-qualified
+    and bound into the approved direct segment.  Permit that existing snapshot
+    to age until the endpoint; any newly received blocked/invalid scene is still
+    evaluated immediately, and the next target still requires a fresh scene.
+    """
+    return bool(
+        plan_kind == MULTIVIEW_SCAN
+        and state == 'MOVING'
+        and collision_model_qualified
+        and obstacles is not None
+    )
+
+
+def bootstrap_abort_retrace_uses_static_scene(
+        plan_kind, viewpoint_index, collision_model_qualified):
+    """
+    Mirror the approval scene for the exact first acquisition retrace.
+
+    The first rough-acquisition segment is deliberately planned and validated
+    before perception obstacle geometry exists.  A benign operator cancel may
+    reverse only endpoints already executed from that approval; requiring a
+    newly-created obstacle array for the reverse would strand the arm at the
+    acquisition look even though the outward segment used the qualified static
+    robot scene.  This exception never applies to later acquisition looks or
+    multiview motion.
+    """
+    return bool(
+        collision_model_qualified
+        and uses_bootstrap_static_scene(plan_kind, viewpoint_index)
+    )
+
+
+def terminal_home_hold_required(state, reason):
+    """Recognize an abort that has already completed its bounded home retrace."""
+    return bool(
+        str(state) == 'ABORTED'
+        and as_failure(reason).has(FailureTag.TERMINAL_HOME_REACHED)
+    )
+
+
+def home_position_sample_settled(
+        current, target, previous, target_tolerance, motion_tolerance):
+    """Prove a home sample from position, independent of noisy SDK speed."""
+    current_values = np.asarray(current, dtype=float)
+    target_values = np.asarray(target, dtype=float)
+    if (
+            current_values.shape != (6,)
+            or target_values.shape != (6,)
+            or not np.all(np.isfinite(current_values))
+            or not np.all(np.isfinite(target_values))):
+        return False
+    if float(np.max(np.abs(current_values - target_values))) > float(
+            target_tolerance):
+        return False
+    if previous is None:
+        return False
+    previous_values = np.asarray(previous, dtype=float)
+    if (
+            previous_values.shape != (6,)
+            or not np.all(np.isfinite(previous_values))):
+        return False
+    return float(np.max(np.abs(
+        current_values - previous_values))) <= float(motion_tolerance)
+
+
 def target_position_window_sample_settled(
         current, target, anchor, target_tolerance, motion_tolerance):
     """Prove endpoint stability without trusting noisy SDK speed samples."""
@@ -230,31 +412,80 @@ def target_position_window_sample_settled(
     return True, anchor_values.copy()
 
 
-# Stable executor-node import façade for established tests and tooling.
-sdk_command_path = _sdk_command_path
-terminal_home_hold_required = _terminal_home_hold_required
-home_position_sample_settled = _home_position_sample_settled
-abort_return_home_blocker = _home_abort_return_blocker
-approved_return_home_obstacle_snapshot = _approved_home_scene
-approved_multiview_motion_obstacle_snapshot = _approved_multiview_scene
-bootstrap_abort_retrace_uses_static_scene = _bootstrap_static_scene
-obstacle_scene_runtime_reasons = _obstacle_scene_runtime_reasons
-approved_retrace_validation_reasons = _approved_retrace_reasons
-missing_obstacles_can_wait = _missing_obstacles_can_wait
+def obstacle_scene_runtime_reasons(scene):
+    """Classify temporary transform gaps separately from unsafe geometry."""
+    instances = list(getattr(scene, 'instances', []))
+    if bool(getattr(scene, 'scene_blocked', True)) and not instances:
+        return ['scene_blocked: %s' % str(
+            getattr(scene, 'blocking_reason', 'unknown reason'))]
+    invalid = [item for item in instances if not bool(
+        getattr(item, 'valid', False))]
+    if not invalid:
+        return []
+    validity_failures = [
+        as_failure(getattr(item, 'validity_reason', ''))
+        for item in invalid
+    ]
+    if validity_failures and all(
+            failure.has(FailureTag.OBSTACLE_TRANSFORM_TRANSIENT)
+            for failure in validity_failures):
+        return ['obstacles data missing or stale']
+    return ['invalid obstacle geometry is present']
+
+
+def abort_return_home_blocker(reason):
+    """Block direct home only when command/feedback authority is untrusted."""
+    return as_failure(reason).blocker
+
+
+def approved_retrace_validation_reasons(reasons):
+    """
+    Keep changing-scene checks without re-rejecting an executed path.
+
+    Every target in the abort history is an endpoint that this executor has
+    already reached from an approval-bound, collision-qualified Tesseract
+    path.  Reversing those same SDK MoveJ segments cannot introduce a new
+    robot self-collision.  The generic validator can nevertheless report the
+    folded-home contact again because it does not have the proposal's bounded
+    recovery metadata.  Ignore only that static self-clearance duplicate;
+    obstacle, floor, limit and malformed-path failures remain blockers.
+    """
+    return [
+        str(reason) for reason in reasons
+        if not as_failure(reason).has(
+            FailureTag.SELF_COLLISION_CLEARANCE_DUPLICATE)
+    ]
+
+
+def missing_obstacles_can_wait(
+        plan_kind, viewpoint_index, state,
+        bootstrap_abort_retrace=False):
+    """
+    Let stationary phases reach the bounded pre-motion refresh.
+
+    Heavy refinement can briefly reseed the live instance stream after an
+    accepted capture. Missing geometry still blocks the next command, but it
+    must not consume the exact approval while the arm is already stopped.
+    """
+    if bool(bootstrap_abort_retrace):
+        return True
+    if (
+            plan_kind == ROUGH_ACQUISITION
+            and (
+                uses_bootstrap_static_scene(plan_kind, viewpoint_index)
+                or state == 'WAITING_FOR_OBSTACLE_SCENE')):
+        return True
+    return (
+        plan_kind == MULTIVIEW_SCAN
+        and state in (
+            'SETTLING', 'CAPTURING', 'CAPTURING_RGBD', 'WAIT_CAPTURE',
+            'WAITING_FOR_CAPTURE_REFRESH'))
 
 
 class ScanViewpointExecutorNode(Node):
-    # Existing internal attribute names remain available to characterization
-    # harnesses, while production stores each value only in ExecutorSession.
-    for _session_field_name in EXECUTOR_SESSION_FIELDS:
-        locals()[_session_field_name] = SessionField(_session_field_name)
-    del _session_field_name
-
     def __init__(self):
         super().__init__('scan_viewpoint_executor')
         self.configuration = load_executor_configuration(self)
-        self.executor_session = ExecutorSession(
-            self.now(), MAX_RGBD_CAPTURE_READINESS_RETRIES)
 
         calibration_path = self.configuration.interfaces.hand_eye_calibration_path
         bounds_path = self.configuration.interfaces.joint_bounds_path
@@ -270,6 +501,11 @@ class ScanViewpointExecutorNode(Node):
         self.kinematics = PiperScanKinematics(load_accepted_hand_eye(calibration_path))
         self.joint_limits, ignored_bounds = load_conservative_joint_limits(bounds_path)
         self.telemetry_store = TelemetryStore(clock=self.now)
+        self.plan_authorizer = PlanAuthorizer()
+        self.trajectory_runner = TrajectoryRunner()
+        self.capture_coordinator = CaptureCoordinator(
+            MAX_RGBD_CAPTURE_READINESS_RETRIES)
+        self.recovery_policy = RecoveryPolicy()
         self.latest_scan = None
         self.latest_joint_state = None
         self.latest_arm_status = None
@@ -282,9 +518,129 @@ class ScanViewpointExecutorNode(Node):
         self.latest_tracked_target = None
         self.latest_camera_timestamp_health = None
         self.latest_target_status = 'UNKNOWN'
+        self.latest_target_shape = None
+        self.latest_target_shape_at = -1e9
+        self.latest_target_shape_stamp_ns = 0
         self.latest_obstacles = None
         self.latest_workflow = None
+        self.scan_session_id = ''
+        self.scan_history = []
+        self.scan_rejections = []
+        self.scan_qualified_target_shape = None
+        self.pending_scan_qualified_target_shape = None
+        self.scan_qualified_target_model_seed = None
+        self.pending_scan_qualified_target_model_seed = None
+        self.latest_achieved_scan_view = None
+        self.scan_coverage_target_center = None
+        self.scan_target_center_qualified = False
         self.updated = {}
+        self.state = 'IDLE'
+        self.reason = 'waiting for a validated viewpoint proposal'
+        self.plan_id = ''
+        self.plan_kind = MULTIVIEW_SCAN
+        self.plan_source_request_id = ''
+        self.plan_created = 0.0
+        self.plan_targets = []
+        self.plan_paths = []
+        self.plan_path_velocities = []
+        self.plan_path_accelerations = []
+        self.plan_path_times = []
+        self.plan_bootstrap_recovery_end_points = []
+        self.plan_bootstrap_recovery_joints = []
+        self.plan_bootstrap_recovery_joint_sets = []
+        self.plan_powered_start_recovery_end_points = []
+        self.plan_powered_start_recovery_joint_sets = []
+        self.plan_startup_home_static = []
+        self.plan_configured_home_direct = []
+        self.plan_configured_home_stages = []
+        self.plan_segment_execution_modes = []
+        self.plan_viewpoints = []
+        self.plan_candidate_count = 0
+        self.plan_capture_count = 0
+        self.plan_returns_home = False
+        self.plan_target_center = None
+        self.plan_source_trajectory_sha256 = ''
+        self.plan_trajectory_sha256 = ''
+        self.plan_execution_speed_percent = 0.0
+        self.plan_motion_limits_sha256 = ''
+        self.runtime_motion_limits_sha256 = ''
+        self.plan_collision_model_qualified = False
+        self.pending_limit_refresh_plan = None
+        self.pending_limit_refresh_deadline = 0.0
+        self.current_view = 0
+        self.current_path = []
+        self.current_path_velocities = []
+        self.current_path_accelerations = []
+        self.current_path_times = []
+        self.current_path_streaming = False
+        self.current_trajectory = None
+        self.path_index = 0
+        self.command_target = None
+        self.command_sent_at = 0.0
+        self.command_samples_sent = 0
+        self.max_command_interval_sec = 0.0
+        self.dropped_command_samples = 0
+        self.motion_started_at = None
+        self.stream_last_tick_at = None
+        self.stream_schedule_paused_sec = 0.0
+        self.stream_following_hold_started_at = None
+        self.stream_schedule_completion_logged = False
+        self.last_stream_planned_duration_sec = 0.0
+        self.last_stream_actual_duration_sec = 0.0
+        self.last_stream_achieved_rate_hz = 0.0
+        self.last_motion_status_at = 0.0
+        self.waypoint_started_at = None
+        self.waypoint_last_progress_at = None
+        self.waypoint_best_error = math.inf
+        self.current_waypoint_error = 0.0
+        self.max_waypoint_error = 0.0
+        self.pending_motion_reason = ''
+        self.runtime_refresh_require_workflow = False
+        self.runtime_refresh_allow_missing_obstacles = False
+        self.runtime_refresh_resume_state = ''
+        self.runtime_recovery_started_at = None
+        self.settle_started = None
+        self.settle_started_ros_ns = 0
+        self.settle_position_anchor = None
+        self.settle_last_joint_update = -1e9
+        self.settle_last_sample_ok = False
+        self.settle_diagnostic = 'settle proof has not sampled joint feedback'
+        self.settle_reset_count = 0
+        self.settle_longest_window_sec = 0.0
+        self.settle_last_reset_reason = ''
+        self.home_settle_previous_joints = None
+        self.home_settle_last_joint_update = -1e9
+        self.home_settle_last_sample_ok = False
+        self.state_started = self.now()
+        self.capture_future = None
+        self.rgbd_capture_future = None
+        self.rgbd_capture_attempts = 0
+        self.capture_heavy_refresh_started = None
+        self.capture_heavy_refresh_request_id = ''
+        self.capture_heavy_refresh_min_image_stamp_ns = 0
+        self.capture_heavy_refresh_publish_attempts = 0
+        self.capture_heavy_refresh_waiting_for_worker = False
+        self.capture_rejection_reason = ''
+        self.finish_scan_future = None
+        self.return_home_warning = ''
+        self.abort_return_in_progress = False
+        self.abort_return_reason = ''
+        self.abort_return_bootstrap_static_scene = False
+        self.retrace_joint_targets = []
+        self.capture_accepted_before = 0
+        self.acquisition_refresh_started = None
+        self.acquisition_request_id = ''
+        self.acquisition_request_attempt = 0
+        self.acquisition_min_image_stamp_ns = 0
+        self.acquisition_job_image_stamp_ns = 0
+        self.acquisition_job_started = None
+        self.acquisition_detection_completed = None
+        self.acquisition_waiting_for_worker = False
+        self.pending_acquisition_heavy_status = None
+        self.acquisition_scene_snapshot_validated = False
+        self.mission_task_id = ''
+        self.mission_sha256 = ''
+        self.mission_expires_at_sec = 0.0
 
         history_qos = QoSProfile(
             depth=1,
@@ -345,6 +701,9 @@ class ScanViewpointExecutorNode(Node):
         self.create_subscription(
             String, self.configuration.interfaces.target_status_topic,
             self.target_status_cb, 10)
+        self.create_subscription(
+            String, self.configuration.interfaces.target_shape_topic,
+            self.target_shape_cb, TARGET_SHAPE_QOS)
         self.create_subscription(
             ObstacleInstance3DArray,
             self.configuration.interfaces.obstacle_topic,
@@ -947,12 +1306,18 @@ class ScanViewpointExecutorNode(Node):
         self.plan_target_center = np.asarray([
             msg.target_center.x, msg.target_center.y, msg.target_center.z,
         ], dtype=float)
-        if (
-                plan_kind == MULTIVIEW_SCAN
-                and self.scan_session_id
-                and getattr(self, 'scan_coverage_target_center', None) is None):
-            self.scan_coverage_target_center = self.plan_target_center.copy()
-            self.publish_scan_history()
+        if plan_kind == MULTIVIEW_SCAN and self.scan_session_id:
+            center, qualified, changed = qualified_scan_center_update(
+                getattr(self, 'scan_coverage_target_center', None),
+                self.plan_target_center,
+                len(getattr(self, 'scan_history', [])),
+                getattr(self, 'scan_qualified_target_shape', None),
+                getattr(self, 'scan_target_center_qualified', False),
+            )
+            self.scan_coverage_target_center = center
+            self.scan_target_center_qualified = qualified
+            if changed:
+                self.publish_scan_history()
         self.plan_source_trajectory_sha256 = str(msg.trajectory_sha256)
         self.plan_trajectory_sha256 = str(msg.trajectory_sha256)
         self.plan_motion_limits_sha256 = str(msg.motion_limits_sha256)
@@ -1096,6 +1461,21 @@ class ScanViewpointExecutorNode(Node):
             telemetry_store.update_target_status(
                 status, received_at=observed_at)
 
+    def target_shape_cb(self, msg):
+        """Keep only digest-valid silhouette evidence for the capture gate."""
+        try:
+            payload = json.loads(msg.data)
+            if payload.get('valid') is True:
+                payload = validate_shape_measurement(payload)
+            else:
+                payload = validate_shape_rejection(payload)
+        except (AttributeError, TypeError, ValueError, json.JSONDecodeError):
+            return
+        self.latest_target_shape = payload
+        self.latest_target_shape_at = self.now()
+        self.latest_target_shape_stamp_ns = stamp_nanoseconds(
+            payload['header']['stamp'])
+
     def obstacle_cb(self, msg):
         self.latest_obstacles = msg
         observed_at, telemetry_store = mark_callback_observation(
@@ -1122,8 +1502,13 @@ class ScanViewpointExecutorNode(Node):
             self.scan_session_id = session_id
             self.scan_history = []
             self.scan_rejections = []
+            self.scan_qualified_target_shape = None
+            self.pending_scan_qualified_target_shape = None
+            self.scan_qualified_target_model_seed = None
+            self.pending_scan_qualified_target_model_seed = None
             self.latest_achieved_scan_view = None
             self.scan_coverage_target_center = None
+            self.scan_target_center_qualified = False
             self.publish_scan_history()
 
     def heavy_refresh_status_cb(self, msg):
@@ -2326,6 +2711,22 @@ class ScanViewpointExecutorNode(Node):
         settled = (
             self.joints_settled()
             if self.is_acquisition() else self.capture_pose_settled())
+        if (
+                settled and self.plan_kind == MULTIVIEW_SCAN
+                and not self.scan_history
+                and (
+                    self.latest_target_shape is None
+                    or self.settle_started is None
+                    or self.latest_target_shape_at
+                    < float(self.settle_started)
+                    or int(getattr(self, 'latest_target_shape_stamp_ns', 0))
+                    < int(getattr(self, 'settle_started_ros_ns', 0)))
+                and now - self.state_started > float(
+                    configured_value(self, 'settle_timeout_sec'))):
+            self.abort_motion(
+                'camera target silhouette was not refreshed at the settled '
+                'first scan endpoint before timeout')
+            return
         coordinator = getattr(
             self, 'capture_coordinator',
             CaptureCoordinator(MAX_RGBD_CAPTURE_READINESS_RETRIES))
@@ -2368,9 +2769,12 @@ class ScanViewpointExecutorNode(Node):
             self.settle_reset_count += 1
             self.settle_last_reset_reason = str(self.settle_diagnostic)
             self.settle_started = None
+            self.settle_started_ros_ns = 0
             return
         if settle_decision.action is CaptureAction.START_SETTLE_WINDOW:
             self.settle_started = now
+            self.settle_started_ros_ns = int(
+                self.get_clock().now().nanoseconds)
             return
         if settle_decision.action is not CaptureAction.READY:
             return
@@ -2383,9 +2787,41 @@ class ScanViewpointExecutorNode(Node):
             return
         aim_rejection = self.final_capture_aim_rejection()
         if aim_rejection:
+            if self.first_capture_framing_retry_active():
+                aim_rejection = (
+                    'TARGET_FRAMING_NO_AIMED_ENDPOINT: farther endpoint did '
+                    'not retain target-facing aim; ' + aim_rejection)
             self.reject_achieved_capture_view(aim_rejection)
             return
+        framing = self.settled_first_capture_framing_result()
+        if framing is None:
+            return
+        framing_action, framing_reason, farther = framing
+        if framing_action != 'CLEAR':
+            marker = {
+                'RETRY_FARTHER': 'TARGET_FRAMING_RETRY_FARTHER',
+                'TOO_CLOSE': 'TARGET_FRAMING_TOO_CLOSE',
+                'TOO_LARGE': 'TARGET_FRAMING_TOO_LARGE',
+                'NO_AIMED_ENDPOINT': 'TARGET_FRAMING_NO_AIMED_ENDPOINT',
+            }[framing_action]
+            metadata = None
+            if framing_action == 'RETRY_FARTHER':
+                viewpoint = self.plan_viewpoints[self.current_view]
+                if viewpoint.get('ray_id') is None:
+                    self.reject_achieved_capture_view(
+                        'TARGET_FRAMING_NO_AIMED_ENDPOINT: current first '
+                        'view has no bounded target ray for an outward retry')
+                    return
+                metadata = {
+                    'framing_retry_ray_id': int(viewpoint['ray_id']),
+                    'framing_retry_min_standoff_m': float(farther),
+                }
+            self.reject_achieved_capture_view(
+                '%s: %s' % (marker, framing_reason), metadata)
+            return
         if not self.param_bool('auto_capture'):
+            self.pending_scan_qualified_target_shape = None
+            self.pending_scan_qualified_target_model_seed = None
             self.advance_view()
             return
         telemetry_store = getattr(self, 'telemetry_store', None)
@@ -2415,6 +2851,53 @@ class ScanViewpointExecutorNode(Node):
         self.capture_heavy_refresh_waiting_for_worker = False
         self.capture_rejection_reason = ''
         self.finish_scan_future = None
+
+    def first_capture_framing_retry_active(self):
+        """Return whether this zero-capture plan is a farther same-ray retry."""
+        if self.plan_kind != MULTIVIEW_SCAN or self.scan_history:
+            return False
+        if self.current_view >= len(self.plan_viewpoints):
+            return False
+        ray_id = self.plan_viewpoints[self.current_view].get('ray_id')
+        if ray_id is None or not self.scan_rejections:
+            return False
+        latest = self.scan_rejections[-1]
+        return bool(
+            latest.get('framing_retry_min_standoff_m') is not None
+            and int(latest.get('framing_retry_ray_id', -1)) == int(ray_id))
+
+    def settled_first_capture_framing_result(self):
+        """Check border contact only at the settled, aimed first scan pose."""
+        if self.plan_kind != MULTIVIEW_SCAN or self.scan_history:
+            return 'CLEAR', 'first capture framing already qualified', None
+        if (
+                self.latest_target_shape is None
+                or self.settle_started is None
+                or self.latest_target_shape_at < float(self.settle_started)
+                or int(getattr(self, 'latest_target_shape_stamp_ns', 0))
+                < int(getattr(self, 'settle_started_ros_ns', 0))):
+            self.settle_diagnostic = (
+                'waiting for a source-stamped post-settle target silhouette')
+            return None
+        achieved = self.latest_achieved_scan_view
+        try:
+            camera = np.asarray([
+                achieved['camera_position'][axis]
+                for axis in ('x', 'y', 'z')], dtype=float)
+            target = np.asarray(self.plan_target_center, dtype=float)
+            distance = float(np.linalg.norm(target - camera))
+        except (KeyError, TypeError, ValueError):
+            return (
+                'NO_AIMED_ENDPOINT',
+                'settled target-facing camera geometry is unavailable',
+                None,
+            )
+        previous_minimum = None
+        if self.first_capture_framing_retry_active():
+            previous_minimum = self.scan_rejections[-1][
+                'framing_retry_min_standoff_m']
+        return first_capture_framing_decision(
+            self.latest_target_shape, distance, previous_minimum)
 
     def request_acquisition_refresh(self):
         self.acquisition_refresh_started = self.now()
@@ -2688,6 +3171,19 @@ class ScanViewpointExecutorNode(Node):
                 return
             self.abort_motion('RGB-D viewpoint capture was rejected: %s' % message)
             return
+        if (
+                not getattr(self, 'scan_history', [])
+                and getattr(
+                    self, 'scan_qualified_target_model_seed', None) is None):
+            try:
+                seed = capture_model_seed_from_response(result.message)
+            except ValueError as error:
+                self.abort_motion(
+                    'accepted first RGB-D capture has no exact model seed: %s'
+                    % error)
+                return
+            self.pending_scan_qualified_target_model_seed = dict(seed)
+            self.pending_scan_qualified_target_shape = dict(seed['shape'])
         # Count a view only after its synchronized files exist. The workflow's
         # cloud/quality products are diagnostic and must not precede the
         # primary capture contract.
@@ -2742,9 +3238,9 @@ class ScanViewpointExecutorNode(Node):
                 configured_value(self, 'capture_timeout_sec')):
             self.abort_motion('capture heavy perception refresh timed out')
 
-    def reject_achieved_capture_view(self, reason):
+    def reject_achieved_capture_view(self, reason, metadata=None):
         """Reject one achieved observation and hand a clean replan result up."""
-        if not self.record_rejected_view(reason):
+        if not self.record_rejected_view(reason, metadata):
             return
         self.command_target = None
         self.current_path = []
@@ -2792,6 +3288,23 @@ class ScanViewpointExecutorNode(Node):
         if self.current_view >= len(self.plan_viewpoints):
             self.abort_motion('accepted viewpoint is missing from the approved plan')
             return False
+        if (
+                not self.scan_history
+                and self.scan_qualified_target_shape is None):
+            pending_shape = getattr(
+                self, 'pending_scan_qualified_target_shape', None)
+            pending_seed = getattr(
+                self, 'pending_scan_qualified_target_model_seed', None)
+            if (
+                    not isinstance(pending_shape, dict)
+                    or not isinstance(pending_seed, dict)):
+                self.abort_motion(
+                    'accepted first view has no capture-bound model seed')
+                return False
+            self.scan_qualified_target_shape = dict(pending_shape)
+            self.scan_qualified_target_model_seed = dict(pending_seed)
+        self.pending_scan_qualified_target_shape = None
+        self.pending_scan_qualified_target_model_seed = None
         viewpoint = self.plan_viewpoints[self.current_view]
         if (
                 not self.latest_achieved_matches_current_view()
@@ -2828,8 +3341,12 @@ class ScanViewpointExecutorNode(Node):
         self.publish_scan_history()
         return True
 
-    def record_rejected_view(self, reason):
+    def record_rejected_view(self, reason, metadata=None):
         """Exclude one visually unusable pose from the next session replan."""
+        # A rejected RGB-D observation cannot promote its pending silhouette
+        # into the mission-frozen revolved model.
+        self.pending_scan_qualified_target_shape = None
+        self.pending_scan_qualified_target_model_seed = None
         if (
                 self.plan_kind != MULTIVIEW_SCAN
                 or self.current_view >= len(self.plan_viewpoints)):
@@ -2845,7 +3362,7 @@ class ScanViewpointExecutorNode(Node):
         planning_target = dict(zip(
             ('x', 'y', 'z'),
             (float(value) for value in self.plan_target_center)))
-        self.scan_rejections.append({
+        entry = {
             'rejected_view': len(self.scan_rejections) + 1,
             'plan_id': self.plan_id,
             'viewpoint_index': int(
@@ -2863,7 +3380,10 @@ class ScanViewpointExecutorNode(Node):
             'reason': str(reason),
             **({'ray_id': int(viewpoint['ray_id'])}
                if viewpoint.get('ray_id') is not None else {}),
-        })
+        }
+        if metadata:
+            entry.update(dict(metadata))
+        self.scan_rejections.append(entry)
         self.publish_scan_history()
         return True
 
@@ -3213,9 +3733,14 @@ class ScanViewpointExecutorNode(Node):
         self.finish_scan_future = None
         self.scan_history = []
         self.scan_rejections = []
+        self.scan_qualified_target_shape = None
+        self.pending_scan_qualified_target_shape = None
+        self.scan_qualified_target_model_seed = None
+        self.pending_scan_qualified_target_model_seed = None
         self.latest_achieved_scan_view = None
         self.scan_session_id = ''
         self.scan_coverage_target_center = None
+        self.scan_target_center_qualified = False
         self.publish_scan_history()
         warnings = [
             item for item in (
@@ -4402,6 +4927,17 @@ class ScanViewpointExecutorNode(Node):
                     getattr(self, 'latest_achieved_scan_view', None), dict)
                 else None),
             'coverage_target_center': coverage_target_center,
+            'qualified_target_shape': (
+                dict(getattr(self, 'scan_qualified_target_shape', None))
+                if isinstance(
+                    getattr(self, 'scan_qualified_target_shape', None), dict)
+                else None),
+            'qualified_target_model_seed': (
+                dict(getattr(
+                    self, 'scan_qualified_target_model_seed', None))
+                if isinstance(getattr(
+                    self, 'scan_qualified_target_model_seed', None), dict)
+                else None),
         }, sort_keys=True)
         self.scan_history_pub.publish(msg)
 

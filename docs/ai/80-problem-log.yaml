@@ -1,5 +1,143 @@
 schema_version: 1
 document: consolidated_problem_and_incident_log
+capture_one_model_seed_expired_before_qualified_generation_2026_08_26:
+  state: fixed_and_physical_generation_one_retest_passed
+  task: codex-e2e-qualified-rays-20260826-2331
+  symptom: Startup wrist rough acquisition first-ray Tesseract motion and capture one succeeded, but the qualified planner repeatedly published ready false candidates zero and timed out after 185 seconds with retryable NO_REACHABLE_PLAN.
+  root_cause: The executor promoted the post-settle framing silhouette stamped 1787783660.558 as model geometry before the recorder completed capture one. The planner later queried TF at that old camera stamp. At terminal diagnosis the earliest retained transform was 1787783844.354. The accepted frame instead contained a newer exact mask at 1787783668.446 and recorded base-from-camera at 1787783668.413, but neither was the model-seed authority.
+  correction: Reconstruct the qualified shape from capture one's exact persisted mask and confidence-qualified target depth, hash-bind it to the synchronized recorded matrix, return it from scan capture, validate it before workflow acceptance, promote it atomically in history and build the envelope from that matrix without live TF.
+  evidence: [safe pre-home rough-home storage-wrist all-axis disable exact child cleanup and coordinator exit, 264 focused tests, 848 mobile tests, 162 Tesseract tests, clean changed-file lint, archived capture replay creates thirteen valid collision boxes without TF, five-percent task codex-e2e-model-seed-20260827-0123 persisted a synchronized model seed generated 353 qualified generation-one rays accepted three captures and safely cancelled]
+  remaining: [automatic full-mission completion was not claimed because the operator cancelled after three captures, investigate repeated motion stream tick-lateness warnings]
+revolution_update_reset_ray_frontier_and_oversized_nbv_volume_2026_08_26:
+  state: superseded_by_explicit_bootstrap_to_qualified_population_boundary
+  symptom: A roughly 4 cm target rendered a roughly 33.75 cm grey NBV sphere. After accepted capture one qualified the revolution, envelope-adjusted standoff fields changed the population SHA, reset 313 permanent prequalification culls and allowed previously eliminated directions to re-enter. A strict 10-degree comparison on a 360-direction Fibonacci sphere usually retired only the exact selected ray.
+  root_cause: The grey volume used twice the 95th-percentile distance from accepted depth points to a different frozen planning centre plus padding. Population identity incorrectly included mutable representative positions and standoff bounds. Direction retirement mixed accepted and rejected history and used a threshold smaller than typical sample spacing.
+  correction: Use the revolution axis origin and largest raw visible span for grey sphere centre and diameter. Hash stable ray ID order and normalized direction plus centre and frame. The later centre-split repair made the envelope update an explicit bootstrap-to-qualified population replacement. Discard bootstrap culls, then preserve qualified source ledgers, prune them before ranking, retire only accepted directions at an inclusive configured 15 degrees and bridge-classify typed exhaustive RAY_IK failure as endpoint-static.
+  evidence: [latest artifact replays to 0.03988083 m grey diameter instead of 0.3375 m, offline-cube-qualified-centre-replay-20260826 records distinct bootstrap and qualified population SHA values and one stable SHA after qualification, qualified ray and grey centres match, repeated-new-cull count is zero, same-population culled-to-active count is zero]
+  remaining: [separately authorized physical repeat]
+  rollback_warning: Never hash envelope-varying standoff geometry into ray identity, never use rejected history for accepted-neighbour retirement and never infer endpoint permanence from text.
+ray_review_replayed_eliminated_rays_and_exposed_centre_split_2026_08_26:
+  state: software_fixed_physical_retest_pending
+  symptom: In cycle one, already eliminated rays appeared active and were then culled again. Separately, the object-sized grey sphere was visibly outside the ray-circle centre.
+  root_cause: >-
+    Later journal cull events omitted carried hard-cull deltas, so event-time
+    state depended on earlier sparse updates; the source-report simulator then
+    prequalified the full bounded pool instead of the planner's post-history
+    positive frontier. The sphere offset is a different real geometry split:
+    rays use the frozen tracked centre while the qualified revolution uses a
+    mask-derived axis origin 0.05131738 m away.
+  correction: The rough lock is now explicit bootstrap_anchor_m evidence. Capture one qualifies axis_origin_m as planning_anchor_m, creates a new qualified population identity and resets old centre-dependent culls. Ray Review records the population reset, clears bootstrap ray state at that event, keeps past culls visible by default and normalizes newly_culled_ray_ids to actual state transitions.
+  evidence: offline-cube-qualified-centre-replay-20260826 records bootstrap centre [0.38050921 -0.04454511 0.10606284], qualified and grey centre [0.35057870 -0.03728556 0.14711082], different bootstrap and qualified SHA, stable later qualified SHA, zero repeated-new-cull and zero same-population culled-to-active transitions.
+  software_validation: [262 focused tests pass, 844 complete mobile tests pass, 162 complete Tesseract tests pass, 95 complete GUI and root ray tests pass, changed-file flake8 and pep257 pass, Python compile passes, two-package symlink build passes, all 12 AI YAML files parse]
+  remaining: [separately authorized physical repeat]
+rough_shape_was_integrated_before_settled_aim_2026_08_26:
+  state: software_fixed_physical_retest_pending
+  task: codex-e2e-first-ray-20260826-1824
+  symptom: Target acquisition succeeded and capability prequalification retained 39 of 360 rays, but planner and bridge candidate counts oscillated through 360 39 and zero before a scan ray reached the arm.
+  root_cause: The planner subscribed directly to live shape evidence and allowed rough-acquisition exact-stamp shapes to control generation-zero model availability. Cross-topic Target3D and shape arrival order could therefore build geometry before aim or erase the pool. Shape freshness used callback receipt rather than source time, and an envelope upgrade could use the live tracker point instead of the frozen session centre.
+  correction: Generation zero now creates un-enveloped bootstrap rays from tracking only. The executor alone holds a complete silhouette after settle and achieved aim, requires its source stamp to follow settle start, promotes it after capture-one acceptance and discards it on rejection; validated scan history is the planner's only shape input. Envelope construction uses the shape source transform, retains the frozen surface lock as bootstrap provenance and makes its axis origin the permanent planning centre. Superseded coordinator/acquisition framing paths were removed.
+  evidence: [physical zero-capture safe shutdown, 189 focused border and order tests pass, 835 complete mobile tests pass, 161 complete Tesseract tests pass, affected lint and mobile package build pass]
+  remaining: [separately authorized five-percent physical repeat]
+last_reviewed: '2026-08-26'
+acquired_tracking_lock_was_not_capture_aim_2026_08_26:
+  state: software_fixed_physical_retest_pending
+  symptom: Task codex-e2e-achieved-lock-20260826-1746 reached ACQUIRED on look two, then failed NO_REACHABLE_PLAN because the fresh measured target was 30.31 degrees from the camera optical axis.
+  root_cause: ACQUIRED proves stable measured tracking within the acquisition association bound, not capture-ready optical centering on the measured target. The rough plan aimed at the rough hint [0.4, 0.0, 0.0], while the measured target was near [0.387, -0.033, 0.145] in base_link and [-0.120, 0.082, 0.250] in the camera frame. The new no-motion achieved-lock check therefore encountered a genuine off-axis border crop, and target_framing_result rejected aim before MissionEngine could enter the outward ladder.
+  correction: ACQUIRED is tracking-only and no acquisition shape may seed the revolution. Generation-zero bounded rays use the tracked centre alone; classification waits until the first selected scan-ray endpoint is reached settled and aimed, and complete-shape promotion additionally waits for accepted capture one. Middle-band crops persist the same ray ID with a larger minimum standoff and capture nothing; Tesseract owns any safe path and the executor rechecks endpoint aim.
+  evidence: [physical reproduction at 30.31 degrees with safe shutdown, 163 focused software tests pass, 835 complete mobile tests pass, 161 complete Tesseract tests pass, mobile symlink build passes]
+  artifact: /tmp/piper_target_scan_missions/results/codex-e2e-achieved-lock-20260826-1746.json
+redundant_current_distance_exact_pose_blocked_after_acquired_2026_08_26:
+  state: software_fixed_complete_and_physical_retest_pending
+  symptom: Supervised five-percent task codex-e2e-qos-fixed-20260826-1704 completed startup and rough acquisition, published ACQUIRED, then failed NO_REACHABLE_PLAN before capture because the newly added post-lock flow required one exact current-distance target-facing pose.
+  root_cause: The crop gate duplicated the achieved lock as a mandatory ROUGH_ACQUISITION motion. It preserved nearly the same camera position while replacing the orientation with one exact look-at constraint; Tesseract found one geometry-valid solution but no valid motion plan. Main had no such post-ACQUIRED transaction.
+  correction: The intermediate achieved-lock inspection was removed after the next physical run proved ACQUIRED can be off-axis. Production now selects and reaches the first scan ray, then checks fresh settled aim and shape before capture. A middle-band crop retries the same ray farther; Tesseract may take any safe trajectory. Private current-distance look index 5 remains rejected.
+  evidence: [task reached ACQUIRED with healthy commanded motion, rejected pose produced no arm command, PRE_HOME ROUGH_HOME STORAGE_WRIST all-six disable and cleanup passed, 305 focused framing tests pass, 832 complete mobile tests pass, 161 complete Tesseract tests pass, changed-file lint and mobile package build pass]
+  remaining: [registered mobile colcon historical package-wide lint debt, separately authorized five-percent physical repeat]
+  rollback_warning: Never require a new current-distance plan merely to inspect the already-achieved lock, and never constrain the path itself to the endpoint ray.
+target_shape_qos_incompatibility_blocked_framing_2026_08_26:
+  state: software_fixed_physical_retest_pending
+  symptom: Supervised five-percent task codex-e2e-framing-20260826-1644 acquired the target and entered current-distance framing, but failed retryably with fresh target shape was not published after the centered look despite active depth and mask processing.
+  root_cause: depth_to_3d_node published /piper/target_shape_measurement with BEST_EFFORT/VOLATILE sensor-data QoS while target_scan_mission_node subscribed with the default RELIABLE profile. DDS correctly refused the incompatible connection, so the coordinator received zero valid or clipped shape records.
+  correction: The executor subscription uses the same sensor-data profile as the publisher. The mission adapter and planner subscriptions were removed; the planner receives only executor-qualified shape through validated scan history. Missing evidence remains fail closed.
+  evidence: [180 focused tests pass, 830 complete mobile tests pass, 161 complete Tesseract tests pass, actual command-free DDS target-shape delivery passes, mobile package symlink build passes, physical failure proved PRE_HOME ROUGH_HOME STORAGE_WRIST all-six disable and exact child cleanup]
+  remaining: Repeat the supervised five-percent E2E and prove a post-framing shape reaches classification before any broader physical claim.
+  rollback_warning: Never restore a RELIABLE request against the BEST_EFFORT publisher or bypass missing shape evidence.
+off_axis_rough_lock_false_crop_failure_2026_08_26:
+  state: software_fixed_physical_retest_pending
+  symptom: A small target produced a roughly 109-by-73-pixel mask at about 0.263 m but touched the lower-left/bottom image border. Rough acquisition declared ACQUIRED as soon as measured tracking locked, and multiview readiness treated the crop as too-large-or-close before the optical axis had been re-aimed from the rough floor-level hint to the measured elevated target.
+  root_cause: Tracking lock, target-facing framing and silhouette-size qualification were collapsed into one handoff. ACQUIRED correctly proved the tracker but did not prove the mask was centered, while the planner's exact-stamp crop rejection had no mission-phase evidence distinguishing the rough off-axis view.
+  correction: MissionEngine no longer classifies at ACQUIRED. The first selected scan ray is reached before the executor requires fresh shape and <=5-degree aim. Middle-band crops reject without capture and retry the same ray farther; no farther aimed endpoint is too close and cropped-at-0.800 m is too large.
+  evidence: [163 focused tests pass, 835 complete mobile tests pass, 161 complete Tesseract tests pass, mobile package build passes, prior physical run safely exposed the off-axis phase error]
+  remaining: [command-free live-camera classification cases, separately authorized five-percent physical E2E repeat]
+  rollback_warning: Never make a crop result authoritative from rough ACQUIRED alone, never revolve a clipped contour, and never bypass collision or 0.250 m clearance to obtain a better view.
+border_clipped_silhouette_underestimated_target_2026_08_26:
+  state: software_qos_repaired_physical_classification_pending
+  symptom: The selected semantic component could touch an image border yet still be revolved as if its cropped outline were complete, underestimating target width, depth, required FOV standoff and collision volume.
+  root_cause: trusted_silhouette_measurement selected the depth-overlapping connected component but had no image-border completeness gate, and an ordinary missing shape carried no exact-stamp reason to the planner or coordinator.
+  correction: Reject border contact on all four edges and publish canonical exact-stamp evidence before Target3D. Production classification waits for the first settled aimed scan endpoint, uses achieved centre distance with 0.250/0.800 m boundaries and retries the same ray farther before preserving the result through the typed mission path.
+  evidence: [163 current focused tests pass, 835 complete mobile tests pass, 161 complete Tesseract tests pass, mobile package build passes]
+  remaining: Observe both result codes command-free with live camera data, then repeat the next separately authorized supervised five-percent mission and prove the coordinator receives the achieved-lock or post-retreat shape.
+  rollback_warning: Never restore envelope construction from a component that touches the image border or infer the missing extent from its cropped contour.
+current_snapshot_2026_08_25:
+  active_change: Mission-scoped ray lifecycle evidence, command-free Ray Review, exact coverage snapshots, population-bound permanent hard-cull feedback and target-relative capability-bounded continuous-standoff handoff.
+  functional_evidence: [51 focused ray capability diagnostic hard-cull and GUI tests pass, 782 complete mobile tests pass, 158 complete Tesseract tests pass, 80 complete GUI tests pass, piper_mobile_manipulation and piper_tesseract_foxy symlink builds pass, all 33 registered mobile functional targets pass, Tesseract registered 158-test suite passes, Python compileall passes, all AI YAML parses]
+  current_blockers: [seven changed-file flake8 findings, eight changed-file pep257 findings, mobile registered colcon remains red only on package-wide lint, no command-free live-shaped full lifecycle trace, no new physical mission artifact]
+  physical_action_during_change: none
+  qualification: Functional behavior is software-tested, but the change is not fully software-qualified until changed-file lint is clean and registered tests are rechecked. Physical qualification remains separately pending.
+missing_complete_ray_decision_audit_2026_08_25:
+  state: open
+  software_disposition: Behavior is implemented and functional suites pass, but changed-file lint and the first current physical mission artifact remain pending.
+  symptom: Existing per-capture metadata could explain the chosen plan, but it did not preserve one complete event-time record of every generated frozen ray, planner/history/information elimination, workspace/capability result, bridge shortlist, worker attempt, selected endpoint, accepted capture, target-model update and terminal result. Operators therefore could not reliably answer why a ray disappeared or distinguish a deferred ray from an eliminated one across the complete mission.
+  root_cause: Evidence was distributed across transient private ROS JSON, bridge/worker logs and accepted-frame metadata. There was no mission-grouped source of truth, exact coverage-generation artifact or event-time viewer model.
+  correction: ray_mission_diagnostics.py now atomically merges a schema-v2 append-only event journal under the mission task identity, retains schema-v1 loading without invented history, persists exact compressed CoverageSnapshot generations, renders compatibility HTML and feeds one reusable ROS-free PyQt5/VTK Ray Review process. Planner, filter, bridge, capture and terminal adapters add only evidence and catch diagnostic failures without changing runtime output.
+  evidence: [test_ray_mission_diagnostics.py, test_piper_gui_ray_reports.py, test_piper_gui_ray_review.py, 51 current focused ray capability diagnostic hard-cull and GUI tests pass, 782 complete mobile tests pass, 80 complete GUI tests pass, docs/ai/30-contracts.yaml, docs/ai/40-flows.yaml]
+  remaining: Clean the changed-file lint findings, generate one command-free full lifecycle report from current synthetic or recorded inputs, then inspect the first later explicitly authorized physical mission artifact. Historical archives must remain labelled partial when rejected-ray history is unavailable.
+  rollback_warning: Do not reconstruct missing historical rejection identities, recompute an authoritative historical rank, infer feasibility from text or let report persistence/rendering become a planning or motion gate.
+static_ray_eliminations_reentered_upstream_ranking_2026_08_25:
+  state: software_fixed_validation_in_progress
+  software_disposition: Static ledgers now survive the generation-zero envelope upgrade because identity contains only stable directions; endpoint-static exhaustive ray IK is bridge-classified while path-dependent failures remain retryable.
+  symptom: The bridge already prevented reattempt of worker-proven session-static endpoint failures, but the planner still regenerated and ranked those rays after accepted captures. Workspace and capability-map rejections were also recalculated downstream for each generation, so permanently eliminated rays repeatedly consumed upstream scoring and remained difficult to distinguish from generation-contextual failures.
+  root_cause: Permanent evidence lived only inside its downstream owner. The planner had no population-bound, revision-bound feedback contract that could safely remove static failures before accepted-history filtering and NBV ranking.
+  correction: ray_hard_culls.py defines one canonical stable-direction-universe SHA-256 identity and complete snapshots from exactly two sources. The reachability filter publishes cumulative workspace/capability rejections; the bridge publishes worker permanent IDs plus typed exhaustive RAY_IK_FAILURE intersected with the exact request. The planner accepts matching reliable transient-local snapshots, keeps one revision-bound ledger per source and prunes matching IDs before accepted-neighbour retirement and later ranking.
+  evidence: [test_ray_hard_culls.py, test_viewpoint_feedback_freshness.py, test_bridge_feedback_freshness.py, test_scan_session_memory.py, 51 current focused ray capability diagnostic hard-cull and GUI tests pass, 782 complete mobile tests pass, 158 complete Tesseract tests pass, two-package build passes]
+  remaining: Clean changed-file lint, rerun registered mobile colcon tests and inspect a command-free live-shaped two-publisher trace before any physical claim.
+  rollback_warning: Never promote collision path visibility timeout transport error generic TESSERACT_EXHAUSTED partial solve or human-readable reason matching into a permanent upstream cull. Typed RAY_IK_FAILURE is allowed only after complete configured endpoint-search exhaustion. Accepted captures alone update coverage and retire their 15-degree neighbourhood; survivors retain ordinary NBV ordering.
+target_range_clipped_ray_and_unbounded_capability_search_2026_08_25:
+  state: open
+  software_disposition: The correction is implemented and current focused, complete functional, build and registered functional tests pass. Changed-file lint, one command-free live-shaped trace and later physical qualification remain pending.
+  symptom: A target at 0.20 or 0.40 m from base_link caused its target-to-camera ray maximum to collapse to 0.28 or 0.40 m even though the configured request allowed 0.80 m. Separately, capability prequalification answered only whether any sampled standoff was supported, so one occupied region allowed the broader surviving interval to reach continuous IK without preserving which standoffs the atlas actually supported.
+  root_cause: bounded_ray_interval conflated the target center's base_link radius with target-to-camera standoff. CapabilityMap._query_indices flattened the source-point axis and returned one aggregate boolean, discarding per-standoff support before the filter and bridge handoff.
+  correction: bounded_ray_interval now validates the target but always returns the configured target-relative request. CapabilityQuery retains sample_support and supported_intervals_m; intersects_ray derives ordered contiguous runs; enforce-mode capability_bound_ray preserves requested bounds, narrows active min/max to the outer supported envelope, moves the representative point into a supported run and carries run evidence through diagnostics and the bridge. bind_shortlisted_ray_intervals selects its seed from a supported run. The existing coarse workspace owner and exact Tesseract/executor gates remain authoritative.
+  evidence: [test_ray_interval_is_target_relative_and_uses_configured_scan_cap, test_pose_and_ray_lookup_use_sparse_occupied_cells_not_solid_volume, test_ray_lookup_preserves_disjoint_supported_standoff_runs, test_capability_bounds_replace_active_interval_and_preserve_request, test_prequalification_scrub_preserves_requested_and_supported_bounds, 51 focused tests pass, 782 complete mobile tests pass, 158 complete Tesseract tests pass, 80 complete GUI tests pass, two-package build passes, all 33 registered mobile functional targets pass, Tesseract registered suite passes]
+  remaining: [clean seven changed-file flake8 and eight changed-file pep257 findings, rerun registered tests, inspect one command-free live-shaped payload and report proving requested bounds supported runs active envelope seed and selected endpoint, require separate explicit authorization for physical qualification]
+  rollback_warning: Never restore target-base-range clipping, collapse requested and active bounds into one meaning, claim support inside a gap between recorded runs or treat a capability bin/envelope as exact IK, collision, path, aim or visibility proof.
+ray_review_temporal_truthfulness_edge_cases_2026_08_25:
+  state: resolved
+  symptom: A final-state-only viewer could leak later ranks or culls while scrubbing earlier events, label unshortlisted rays as rejected, silently resurrect a previously culled ray after source reevaluation, or make schema-v1 historical data appear complete.
+  root_cause: Snapshot state, event-time state, deferred shortlist membership, source-revision reevaluation and incomplete historical provenance are distinct concepts; collapsing them into one current ray record creates false explanations.
+  correction: The reviewer reconstructs state only through the selected append-only event, uses deferred_shortlist for unattempted rays, records returned rays as reevaluated with their prior reason, leaves unranked rays visible, preserves terminal event ordering and marks schema-v1 or incomplete historical populations partial.
+  evidence: [test_event_scrubbing_never_leaks_a_later_rank, test_unranked_generation_rays_remain_visible_without_rank_filter, test_cycle_blocks_preserve_late_terminal_journal_order, test_historical_cull_return_is_labelled_as_reevaluated, test_unshortlisted_rays_are_deferred_not_falsely_culled, test_v1_loading_is_truthfully_partial]
+  remaining: Retain these regressions whenever the journal schema, viewer filters, shortlist terminology or historical replay changes.
+ray_diagnostics_changed_file_lint_gap_2026_08_25:
+  state: open
+  symptom: All focused and complete functional suites pass, both affected packages build and the Tesseract registered test passes, but changed-file lint is not clean and the mobile registered colcon result remains red.
+  root_cause: >-
+    Current changed files contain one E128 in ray_mission_diagnostics.py, six
+    formatting findings in test_piper_gui_ray_review.py and eight D213
+    docstring findings: six across the new piper_gui ray modules plus
+    bounded_ray_interval and capability_bound_ray. The mobile package also
+    retains broader historical lint debt, currently reported as 73 flake8 and
+    16 pep257 failures.
+  correction: The implementation owner must clean only the changed-file lint findings without altering runtime behavior, then rerun focused flake8/pep257 and the registered mobile test. Historical package-wide debt must remain distinguished from new-change failures.
+  evidence: [focused ament_flake8 over 19 changed files reports 7 errors, focused ament_pep257 over 19 changed files reports 8 errors, direct mobile pytest 782 pass, direct Tesseract pytest 158 pass, GUI pytest 80 pass, two-package symlink build pass, registered mobile has 33 functional targets pass and only two lint targets fail, registered Tesseract 158 pass]
+  remaining: [changed-file flake8 zero, changed-file pep257 zero, mobile registered test result rechecked, qualification status updated in docs/ai/60-debt.yaml and docs/ai/90-implemented-features-bookmark.yaml]
+duplicate_debt_yaml_key_hid_one_historical_fix_2026_08_25:
+  state: resolved
+  symptom: docs/ai/60-debt.yaml contained two eighteenth_fix keys in one mapping, so ordinary YAML loading silently retained only the later record and hid the earlier J4 settle-anchor fix from agents.
+  root_cause: Two consecutive historical corrections reused the same milestone label and the previous validation checked syntax but not duplicate mapping keys.
+  correction: Rename the earlier record to eighteenth_pre_run_settle_fix without changing its content, and validate the complete AI pack with a duplicate-key-rejecting loader.
+  evidence: [docs/ai/60-debt.yaml, all eleven docs/ai YAML files pass strict unique-key parsing]
+  remaining: Keep duplicate-key validation in documentation supervision; never treat ordinary yaml.safe_load success as sufficient structural validation.
 generation_zero_seed_used_legacy_face_bias_2026_08_25:
   state: software_repaired_physical_requalification_pending
   symptom: Before capture one, every ray had zero measured marginal information but the bridge interleaved the nearest option with a legacy negative-Y face-score leader, so adjacent or unnecessarily ambitious initial attempts could appear to be NBV decisions.
@@ -14,7 +152,7 @@ startup_rejection_then_pre_home_camera_collision_2026_08_24:
   remaining: Software build and complete regression first, then one explicitly supervised low-speed storage-to-ready startup and cancel-to-home sequence. No physical command was issued for the repair.
 repeated_infeasible_ray_planning_cost_2026_08_24:
   symptom: Coarse analytic workspace bounds retained roughly 350 of 360 full-sphere rays, so successive six-ray Tesseract shortlists repeatedly spent nonlinear IK attempts on directions unsupported by the integrated arm camera and platform geometry.
-  correction: Generate one source-hash-bound sparse 5D camera capability atlas offline and apply it only as a target-ray prefilter over the complete standoff interval. Preserve exact Tesseract and every downstream safety gate.
+  correction: Generate one source-hash-bound sparse 5D camera capability atlas offline and apply it only as a target-ray prefilter over the complete configured standoff request. Preserve per-standoff support runs, reject a wholly unsupported ray and narrow a survivor only to the outer supported envelope while retaining exact Tesseract and every downstream safety gate.
   convergence: 100k through 1M maps retained only 60.17 through 90.41 percent of the final supported validation rays. The 2M map retained all 87 recorded achieved poses and was selected.
   expected_effect: Representative full-sphere support falls to 344 of 2520 rays. The previously inspected four-view run's theoretical IK seed solves fall from 126 toward 36 when unsupported shortlisted rays are removed; exact request timing still requires command-free replay.
   unresolved: The capability map remains command-free evidence only. Tabletop planning is qualified independently; tracked-ground remains unqualified, and exact IK/path proof still belongs to Tesseract.
@@ -41,9 +179,8 @@ repeated_unreachable_high_information_rays_2026_08_23:
   state: software_qualified_physical_retest_pending
   symptom: scan_20260823_181223 accepted fifteen captures but selected ranks 322 through 358 near the already reachable sector, achieving only 42.9 degrees azimuth and no negative-Y views.
   root_cause: The coarse workspace correctly claimed only prequalification, but the bridge then represented each direction by only a few exact standoff probes. A feasible point between those probes could therefore be missed, and earlier fully failed rays were also forgotten whenever accepted_views changed.
-  correction: Keep global NBV scoring authoritative, transmit one bounded interval per shortlisted ray, jointly solve joints plus continuous standoff in the worker with exact aim first, validate the actual returned endpoint, keep bounded local-solver failures generation-contextual, and reject accepted-direction neighbors below ten degrees.
+  correction: Keep global NBV scoring authoritative, transmit one bounded interval per shortlisted ray, jointly solve joints plus continuous standoff in the worker with exact aim first, validate the actual returned endpoint, retain typed exhaustive RAY_IK failure for the stable session while path-dependent failures remain contextual, and reject accepted-direction neighbours at or below fifteen degrees.
   evidence: [synthetic 0.335 m reachable endpoint is selected despite lying between the old probe locations, off-ray and out-of-interval responses fail contract validation, 196 focused tests pass, 747 complete mobile tests pass, 148 complete Tesseract tests pass]
-last_reviewed: '2026-08-24'
 target_local_depth_halo_false_unsafe_2026_08_23:
   status: software_fixed_recorded_replay_passed
   symptom: After four accepted captures, task gui-sim-8b46fd14bf5d4d4184a1cc84a066d92f failed NO_REACHABLE_PLAN because a U-shaped unknown-depth-foreground component was reported unsafe.
@@ -88,6 +225,23 @@ multiview_cube_surface_duplicated_and_oversized_2026_08_21:
   correction: Add connected bounded multi-view GICP as an offline residual candidate, retain 20 mm and 5 degree bounds, and require evidence-based auto selection. Correct fixed-board validation to use exact image-time TF.
   evidence: Robot baseline 39.5 percent dominant component and 3.97 mm p90 residual; multiway candidate 90.5 percent and 2.25 mm, but 58.8 x 52.9 x 48.3 mm OBB still fails. No threshold was weakened.
   next_action: New operator-driven corrected-scale calibration dataset and held-out validation; do not deploy automatically.
+reconstruction_default_resolution_regression_2026_08_27:
+  state: software_default_restored_quality_gates_unchanged
+  symptom: A six-view 20-August capture that had produced a visually coherent reconstruction under the former defaults became highly fragmented after the offline TSDF and GUI defaults changed from 3 mm voxels with a 15 mm truncation band to 1 mm voxels with a 5 mm band.
+  evidence: Replaying immutable scan_20260820_230845 under 3 mm and 15 mm produced 31 raw components with 79.5 percent dominant support, while 1 mm and 5 mm produced 748 raw components with 56.6 percent dominant support. Both remain dimensional and structural FAIL for the measured 35 mm cube, proving the finer defaults exposed rather than created the underlying cross-view disagreement.
+  correction: Restore the worker and GUI defaults to 0.003 m voxels and 0.015 m TSDF truncation while preserving immutable inputs, raw and cleaned outputs, bounded registration, dimension/component/watertightness checks and terminal quality classification.
+  boundary: Offline reconstruction presentation and default fusion resolution only. Capture, SAM masks, confidence-qualified temporal depth, camera transforms, NBV, Tesseract, motion and every safety gate remain unchanged.
+gui_offline_resegment_failure_hid_existing_mesh_2026_08_27:
+  state: software_fixed
+  symptom: Reconstruction Validation defaulted to offline_resegment; the current dataset produced no fresh GroundingDINO detection, the worker stopped before writing a report, and both Open controls remained disabled even though saved raw and cleaned diagnostic meshes existed.
+  root_cause: Optional fresh resegmentation was incorrectly the GUI default, and mesh inspection authority was coupled to a successful rebuild in the current GUI process rather than the selected dataset's existing report and files.
+  correction: Default command-free GUI reconstruction to the trusted captured mask. On dataset selection, safely validate and load any existing report plus in-dataset raw/cleaned paths; retain those inspection controls after a rebuild failure. Keep offline_resegment explicit and keep its no-live-mask-fallback rule unchanged.
+  boundary: Command-free GUI reconstruction selection and diagnostic presentation only. No capture, mask acceptance, reconstruction quality, ROS, motion or safety policy changed.
+reconstruction_mesh_hid_accepted_depth_evidence_2026_08_27:
+  state: diagnostic_visibility_fixed
+  symptom: The cleaned cube mesh appeared patchy, but the GUI exposed only TSDF surfaces and a 3 mm diagnostic input downsample, so the operator could not see whether all accepted temporally averaged depth points were present or whether capture sheets were mutually displaced.
+  correction: Persist every accepted temporally averaged target-depth point after the selected refined base_link transform as an adjacent measured-points PLY with capture-index colors and no display downsampling. Add Open Measured Points plus an optional mesh overlay, and retain path hash total count and per-view counts in the quality report.
+  boundary: Additive offline diagnostic export and GUI presentation only. It does not change captured data, pose refinement, TSDF integration, mesh cleanup, quality classification, ROS, safety or motion.
 generation_seven_table_contact_2026_08_21:
   state: contained_virtual_floor_raised_physical_requalification_blocked
   symptom: Task gui-sim-d77550972be14f9ca55b27e206ccbfd0 accepted seven burst captures, selected ray-NBV view 1000400 and began motion, but the installed assembly contacted the table and continued downward until the runtime guard stopped on J5 feedback 1.225615 rad.
@@ -97,7 +251,7 @@ generation_seven_table_contact_2026_08_21:
 partial_scan_could_not_enter_reconstruction_2026_08_21:
   state: integration_fixed_current_mesh_quality_failed
   symptom: The successful three-capture safe-frontier mission queued a job that the old worker would reject at its hard eight-view count gate; the gateway also searched a different virtual-environment path than the installer/GUI and system Python had no Open3D. Every historical capture lacked calibration_sha256, so the automatic path would also fail certification.
-  correction: Keep standalone 8-24 by default, explicitly admit 1-7 from the safely completed deferred gateway or command-free manual GUI diagnostic route, classify them PARTIAL_VIEW_SET and cap overall quality below PASS, share reconstruction/.venv, allow missing historical identity only as DIAGNOSTIC_ONLY, hash the exact deployed calibration for future captures, and map quality FAIL to durable job FAILED with diagnostics retained. The GUI now reads target_mesh.ply.quality.json instead of the obsolete quality_report.json path.
+  correction: Historical containment admitted 1-7 only at the deferred gateway or command-free GUI and capped them below PASS. On 2026-08-27 the operator removed that fixed eight-view policy; all callers now admit 1-24 and normal geometry/provenance gates determine quality. Zero, count mismatch, missing artifacts and measured quality FAIL remain rejected. The GUI reads target_mesh.ply.quality.json instead of the obsolete quality_report.json path.
   evidence: [30 isolated reconstruction tests pass, 47 mission/reconstruction-job tests pass, 726 complete mobile tests pass, mobile package builds, gateway-equivalent replay integrates all three frames, actual GUI Build and Validate plus Open 3D Viewer route passes]
   replay_result: scan_20260821_185143 produced 615 vertices and 719 triangles but failed quality at 70.4-percent dominant component and non-watertight geometry. No quality threshold was weakened.
 final_ray_e2e_integration_2026_08_21:
@@ -286,6 +440,11 @@ recording_rule: >-
   observed symptom, root cause when known, corrective action, current status,
   evidence location and required retest. Never erase an incident because a
   later fix passed.
+record_schema:
+  required_fields: [state or status, symptom, root_cause or explicitly unknown cause, correction or containment, evidence, remaining or required retest when not fully resolved]
+  solution_rule: Record what changed, which owner implements it, what remains unchanged, the rollback behavior that is forbidden and the evidence that actually passed. Do not describe a proposal as a correction or a functional pass as physical qualification.
+  history_rule: Preserve the original symptom and unsuccessful or superseded diagnoses. Update disposition and evidence in place; add a new entry when a later failure has a distinct cause or solution boundary.
+  validation_rule: Every current entry must distinguish focused tests, complete functional suites, registered build/test state, lint state, command-free replay and physical evidence.
 
 current_snapshot_2026_08_11:
   release_validation:
@@ -314,7 +473,7 @@ current_snapshot_2026_08_11:
       measured_surface_converged: false
     blockers:
       - no meaningfully distinct safe candidate remained inside the 6-30-degree closed-loop frontier
-      - azimuth span remained below the 120-degree requirement
+      - azimuth span remained below the then-active 120-degree requirement, which was removed on 2026-08-26
       - measured novel-surface gain did not converge
     durable_dataset: datasets/active_scan/scan_20260811_230742
     runtime_result: /tmp/piper_target_scan_missions/results/gui-sim-e9629c41e1224425b5adb0454b61ee3f.json
@@ -528,19 +687,19 @@ problem_groups:
       status: physical_validation_pending
       symptom: Seven-, ten- and twelve-view runs overrepresented the front/top or +Y side and did not cover distinctive side features.
       root_cause: Fixed-count and earlier shortlist policies did not measure achieved FK side/span or surface novelty.
-      correction: Closed-loop NBV records achieved pose, requires both Y sides, 120-degree azimuth, 25-degree elevation and measured-surface convergence across 8-24 accepted captures.
+      correction: Closed-loop NBV records achieved pose and requires both Y sides, 25-degree elevation and measured-surface convergence across 8-24 accepted captures. The former 120-degree azimuth requirement was removed on 2026-08-26; span remains diagnostic.
       evidence: [docs/ai/40-flows.yaml, docs/ai/60-debt.yaml]
     - id: latest_24_view_feature_exhaustion
-      status: open
+      status: superseded_by_azimuth_gate_removal_2026_08_26
       symptom: The 50-percent run accepted 24 GOOD/CLEAR views but ended at 113.5-degree azimuth without measured convergence.
       root_cause: Candidate selection and/or measured coverage scoring failed to close the remaining azimuth and novelty gap before the hard maximum.
-      correction: Inspect persisted achieved poses and masks before changing thresholds; preserve collision, quality and 24-view safety bound.
+      correction: The fixed azimuth completion gate and next-view objective were removed on 2026-08-26. Preserve the historical failed result, measured span, collision, quality and 24-view safety bound; surface convergence remains required.
       evidence: [current_snapshot_2026_08_11, docs/ai/60-debt.yaml]
     - id: fifteen_view_local_frontier_exhaustion
-      status: open
+      status: azimuth_blocker_superseded_surface_convergence_still_open
       symptom: Current v3 task gui-sim-e9629c41e1224425b5adb0454b61ee3f persisted 15 GOOD/CLEAR views and both Y sides, but no distinct safe candidate remained inside the 6-30-degree closed-loop frontier at only 65.30/120 degrees azimuth and without measured-surface convergence.
       root_cause: The candidate continuity/ranking policy exhausted its local frontier before it could extend global azimuth coverage; exact owning cause requires replay of achieved poses, rejected candidates and gain history.
-      correction: Audit scan_20260811_230742 and the matching planning log, then repair frontier continuity/ranking without widening collision, target-distance or optical-cone safety gates and without lowering feature-completion thresholds.
+      correction: The fixed azimuth completion gate and next-view objective were removed on 2026-08-26. Audit scan_20260811_230742 only for the still-open surface-convergence and reachability behavior; do not widen collision, target-distance or optical-cone safety gates.
       evidence: [/tmp/piper_target_scan_missions/results/gui-sim-e9629c41e1224425b5adb0454b61ee3f.json, datasets/active_scan/scan_20260811_230742, docs/ai/60-debt.yaml]
     - id: continuous_1050_candidate_refresh_during_motion
       status: open
@@ -806,3 +965,9 @@ latest_hardware_diagnostics_2026_08_23:
     interpretation: A five-second correlation with 0x472 or 0x477 implicates the periodic limit-query/concurrent-SDK path; correlation with 0x155 through 0x157 implicates repeated host targets; no coincident command implicates firmware servo/load compensation or mechanical limit cycling. Only after evidence should a tracked reversible ThreadSafeBus or complete SDK-send serialization repair be considered.
     invariants: [do not remove or dangle the installed load while powered, do not tune MIT gains, do not change payload presets before measurement, do not run unsupervised movement]
     evidence: [https://github.com/agilexrobotics/piper_sdk/issues/67, piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py, L515_camera/run_fixed_hand_eye_calibration.py]
+  - id: immediate_post_enable_startup_angle_limit_2026_08_25
+    status: contained_software_retest_pending
+    symptom: First STARTUP_WRIST stopped on err_code 11264 before rough home; terminal recovery later completed the same logical stage and safe shutdown.
+    root_cause: Startup had no fresh powered stability boundary and could command about 0.05 seconds after enable using stability history begun while disabled. Exact attribution among J3/J4/J6 remains unproved.
+    correction: Require new post-enable joint/status samples plus two continuous seconds stable, fault-free and all-six-enabled. Failure disables before motion unless motor authority is lost, when watchdog containment remains command-free.
+    evidence: [/run/user/1000/piper_target_scan_logs/driver.log, /run/user/1000/piper_target_scan_logs/scan_stack.log, /tmp/piper_target_scan_missions/results/codex-e2e-20260825-2312-ray-integration.json, test_startup_gates.py, test_mission_engine.py]

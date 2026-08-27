@@ -13,6 +13,8 @@ from std_msgs.msg import String
 
 from piper_mobile_manipulation.msg import Detection2D, Target3D
 from piper_mobile_manipulation.target_envelope import (
+    clipped_shape_rejection,
+    TargetSilhouetteClippedError,
     trusted_silhouette_measurement,
 )
 from piper_mobile_manipulation.utils.target_depth import (
@@ -395,6 +397,17 @@ class DepthTo3DNode(Node):
                 depth_msg.header,
                 out.measurement_confidence,
             )
+        except TargetSilhouetteClippedError as exc:
+            rejection_msg = String()
+            rejection_msg.data = json.dumps(
+                clipped_shape_rejection(depth_msg.header, exc.near_depth_m),
+                sort_keys=True)
+            # Publish before Target3D so the planner can correlate the exact
+            # source stamp and fail without freezing an undersized envelope.
+            self.shape_pub.publish(rejection_msg)
+            self.log_debug(
+                'Target shape measurement rejected: %s' % exc,
+                warn=True)
         except (TypeError, ValueError) as exc:
             self.log_debug(
                 'Target shape measurement rejected: %s' % exc,
@@ -402,9 +415,8 @@ class DepthTo3DNode(Node):
         else:
             shape_msg = String()
             shape_msg.data = json.dumps(shape, sort_keys=True)
-            # Publish the shape first so the downstream tracked-target sample
-            # with the same source timestamp can freeze it without an ordering
-            # race.  The shape is private planning geometry, not target state.
+            # Publish first so a tracked target carrying the same source stamp
+            # can freeze this private planning measurement without a race.
             self.shape_pub.publish(shape_msg)
         self.pub.publish(out)
         self.log_debug(

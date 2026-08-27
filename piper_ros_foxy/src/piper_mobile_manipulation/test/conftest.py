@@ -339,6 +339,11 @@ class MissionCharacterizationHarness:
         self.events.append('joint_feedback:%s' % label)
         self.maybe_fail('joint_feedback', session)
 
+    def wait_for_post_enable_stability(
+            self, _stable, _timeout, _goal_handle=None, session=None):
+        self.events.append('post_enable_stability')
+        self.maybe_fail('post_enable_stability', session)
+
     def require_fresh_joint_feedback(self):
         self.events.append('preflight_joint_feedback')
         self.maybe_fail('preflight')

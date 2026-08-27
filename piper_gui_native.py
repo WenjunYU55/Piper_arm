@@ -32,6 +32,13 @@ from piper_gui.camera_profile import (
     write_camera_profile,
 )
 from piper_gui.ros_client import MissionActionClient, MissionClientEvent
+from piper_gui.ray_reports import (
+    list_ray_reports,
+    ray_report_display_name,
+    ray_report_selection,
+    RayReviewProcess,
+    replay_scan_dataset,
+)
 from piper_gui.scan_policy import (
     FULL_SPHERE_REGION,
     POLICY_LABELS,
@@ -45,6 +52,7 @@ from piper_gui.scan_policy import (
 )
 from piper_gui.view_model import MissionViewModel
 from reconstruction.gui_support import (
+    existing_reconstruction_outputs,
     list_scan_datasets,
     load_quality_report,
     quality_summary,
@@ -425,6 +433,88 @@ class PiperGuiRos(Node):
         return super().destroy_node()
 
 
+GUI_MAX_WIDTH = 1920
+GUI_MAX_HEIGHT = 1080
+GUI_MIN_WIDTH = 1120
+GUI_MIN_HEIGHT = 680
+GUI_HORIZONTAL_SCREEN_MARGIN = 48
+GUI_VERTICAL_SCREEN_MARGIN = 96
+
+
+def fitted_gui_geometry(screen_width: int, screen_height: int):
+    """Return a centred GUI rectangle that fits inside the current screen."""
+    width = max(1, int(screen_width))
+    height = max(1, int(screen_height))
+    usable_width = max(1, width - GUI_HORIZONTAL_SCREEN_MARGIN)
+    usable_height = max(1, height - GUI_VERTICAL_SCREEN_MARGIN)
+    window_width = min(GUI_MAX_WIDTH, usable_width)
+    window_height = min(GUI_MAX_HEIGHT, usable_height)
+    return (
+        window_width,
+        window_height,
+        max(0, (width - window_width) // 2),
+        max(0, (height - window_height) // 2),
+    )
+
+
+def primary_monitor_geometry(xrandr_output: str):
+    """Parse the XRandR primary monitor as ``(x, y, width, height)``."""
+    fallback = None
+    for line in str(xrandr_output).splitlines():
+        fields = line.split()
+        if len(fields) < 3 or not fields[0].rstrip(':').isdigit():
+            continue
+        geometry = fields[2]
+        try:
+            size, x_text, y_text = geometry.rsplit('+', 2)
+            width_text, height_text = size.split('x', 1)
+            width = int(width_text.split('/', 1)[0])
+            height = int(height_text.split('/', 1)[0])
+            value = (int(x_text), int(y_text), width, height)
+        except (TypeError, ValueError):
+            continue
+        fallback = fallback or value
+        if '*' in fields[1]:
+            return value
+    return fallback
+
+
+def detected_monitor_geometry(root: tk.Tk):
+    """Return the primary monitor, with a portable Tk screen fallback."""
+    try:
+        result = subprocess.run(
+            ['xrandr', '--listactivemonitors'],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=1.0,
+        )
+        monitor = primary_monitor_geometry(result.stdout)
+        if result.returncode == 0 and monitor is not None:
+            return monitor
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return (0, 0, root.winfo_screenwidth(), root.winfo_screenheight())
+
+
+def fit_gui_to_screen(root: tk.Tk) -> None:
+    """Size the initial window to the display without preventing resizing."""
+    root.update_idletasks()
+    monitor_x, monitor_y, screen_width, screen_height = (
+        detected_monitor_geometry(root))
+    width, height, x_position, y_position = fitted_gui_geometry(
+        screen_width, screen_height)
+    # On smaller displays, lowering the minimum to the fitted size prevents
+    # the window manager from forcing controls beyond a screen edge.
+    root.minsize(min(GUI_MIN_WIDTH, width), min(GUI_MIN_HEIGHT, height))
+    root.geometry(
+        "%dx%d+%d+%d" % (
+            width, height,
+            monitor_x + x_position,
+            monitor_y + y_position))
+
+
 class PiperGuiApp:
     def __init__(self, root: tk.Tk, ros_node: PiperGuiRos, events: "queue.Queue[tuple]") -> None:
         self.root = root
@@ -435,8 +525,6 @@ class PiperGuiApp:
         self.joints, self.bounds_message = load_joint_limits()
 
         self.root.title("PiPER Control")
-        self.root.geometry("1320x780")
-        self.root.minsize(1120, 680)
 
         self.speed_var = tk.DoubleVar(value=30.0)
         self.effort_var = tk.DoubleVar(value=1.0)
@@ -538,12 +626,12 @@ class PiperGuiApp:
         self.reconstruction_dataset_var = tk.StringVar(value='')
         self.reconstruction_mode_var = tk.StringVar(value='auto')
         self.reconstruction_mask_source_var = tk.StringVar(
-            value='offline_resegment')
+            value='captured')
         self.reconstruction_dimension_vars = [
             tk.StringVar(value='35') for _axis in range(3)]
-        self.reconstruction_voxel_mm_var = tk.DoubleVar(value=1.0)
+        self.reconstruction_voxel_mm_var = tk.DoubleVar(value=3.0)
         self.reconstruction_voxel_status_var = tk.StringVar(
-            value='1.0 mm voxel — baseline mesh detail')
+            value='3.0 mm voxel — baseline mesh detail')
         self.reconstruction_show_input_var = tk.BooleanVar(value=False)
         self.reconstruction_status_var = tk.StringVar(
             value='Select a completed scan dataset')
@@ -552,6 +640,13 @@ class PiperGuiApp:
         self.reconstruction_process = None
         self.reconstruction_report_path = None
         self.reconstruction_output_path = None
+        self.ray_report_var = tk.StringVar(value='')
+        self.ray_report_paths = ()
+        self.ray_replay_dataset_var = tk.StringVar(value='')
+        self.ray_report_status_var = tk.StringVar(
+            value='No mission ray report selected')
+        self.ray_replay_in_progress = False
+        self.ray_review_process = RayReviewProcess(PROJECT_ROOT)
         self.home_status_var = tk.StringVar(
             value="Home: validated compact default")
         self.mission_view_model = MissionViewModel()
@@ -567,6 +662,7 @@ class PiperGuiApp:
         self.service_text = tk.StringVar(value="No service call")
 
         self._build()
+        fit_gui_to_screen(self.root)
         self.enable_button.configure(state="disabled")
         self.set_manual_motion_enabled(False)
         # Commissioning motion starts locked. Resolve the ROS graph after the
@@ -953,6 +1049,8 @@ class PiperGuiApp:
             state='readonly', width=36)
         self.reconstruction_dataset_combo.grid(
             row=0, column=1, columnspan=3, sticky='ew', padx=(8, 8))
+        self.reconstruction_dataset_combo.bind(
+            '<<ComboboxSelected>>', self.load_existing_reconstruction_outputs)
         ttk.Button(
             inputs, text='Refresh',
             command=self.refresh_reconstruction_datasets).grid(
@@ -1021,10 +1119,16 @@ class PiperGuiApp:
             state='disabled')
         self.reconstruction_raw_view_button.grid(
             row=0, column=2, padx=(8, 0))
+        self.reconstruction_measured_view_button = ttk.Button(
+            controls, text='Open Measured Points',
+            command=lambda: self.open_reconstruction_viewer('measured'),
+            state='disabled')
+        self.reconstruction_measured_view_button.grid(
+            row=0, column=3, padx=(8, 0))
         ttk.Checkbutton(
-            controls, text='Show accepted input clouds',
+            controls, text='Overlay measured points',
             variable=self.reconstruction_show_input_var).grid(
-                row=0, column=3, padx=(12, 0))
+                row=0, column=4, padx=(12, 0))
         result = ttk.LabelFrame(parent, text='Quality report', padding=12)
         result.grid(row=4, column=0, sticky='ew')
         ttk.Label(
@@ -1039,7 +1143,7 @@ class PiperGuiApp:
     def update_reconstruction_voxel_status(self, _value=None) -> None:
         """Explain mesh density without claiming additional measured detail."""
         voxel_mm = round(float(self.reconstruction_voxel_mm_var.get()), 1)
-        relative = 1.0 / (voxel_mm * voxel_mm)
+        relative = (3.0 / voxel_mm) ** 2
         self.reconstruction_voxel_status_var.set(
             '%.1f mm voxel — approximately %.1fx baseline surface density; '
             'does not repair missing or misregistered geometry'
@@ -1053,6 +1157,42 @@ class PiperGuiApp:
         if not names:
             self.reconstruction_status_var.set(
                 'No completed datasets found under datasets/active_scan')
+            return
+        self.load_existing_reconstruction_outputs()
+
+    def load_existing_reconstruction_outputs(
+            self, _event=None, update_status=True) -> bool:
+        """Expose saved diagnostic meshes independently of rebuild success."""
+        self.reconstruction_report_path = None
+        self.reconstruction_output_path = None
+        self.reconstruction_view_button.configure(state='disabled')
+        self.reconstruction_raw_view_button.configure(state='disabled')
+        self.reconstruction_measured_view_button.configure(state='disabled')
+        try:
+            saved = existing_reconstruction_outputs(
+                PROJECT_ROOT, self.reconstruction_dataset_var.get())
+        except (OSError, TypeError, ValueError) as exc:
+            if update_status:
+                self.reconstruction_status_var.set(str(exc))
+            return False
+        if saved is None:
+            if update_status:
+                self.reconstruction_status_var.set(
+                    'No existing reconstruction for the selected dataset')
+            return False
+        self.reconstruction_report_path = saved['report_path']
+        self.reconstruction_output_path = saved['output_path']
+        self.reconstruction_view_button.configure(state='normal')
+        if saved['raw_output_path'] is not None:
+            self.reconstruction_raw_view_button.configure(state='normal')
+        if saved['measured_cloud_path'] is not None:
+            self.reconstruction_measured_view_button.configure(state='normal')
+        self.reconstruction_summary_var.set(
+            quality_summary(saved['report']))
+        if update_status:
+            self.reconstruction_status_var.set(
+                'Existing reconstruction loaded for inspection')
+        return True
 
     def start_reconstruction(self) -> None:
         if (self.reconstruction_process is not None
@@ -1074,6 +1214,7 @@ class PiperGuiApp:
         self.reconstruction_build_button.configure(state='disabled')
         self.reconstruction_view_button.configure(state='disabled')
         self.reconstruction_raw_view_button.configure(state='disabled')
+        self.reconstruction_measured_view_button.configure(state='disabled')
         self.reconstruction_status_var.set(
             'Reconstruction is running offline at %.1f mm mesh voxels using %s'
             % (
@@ -1098,6 +1239,8 @@ class PiperGuiApp:
                     'report_path': report_path,
                     'output_path': output,
                     'raw_output_path': report.get('raw_mesh_path', ''),
+                    'measured_cloud_path': report.get(
+                        'measured_cloud_path', ''),
                 }))
             except (OSError, RuntimeError, ValueError) as exc:
                 self.events.put(('reconstruction_complete', {
@@ -1350,6 +1493,103 @@ class PiperGuiApp:
             ttk.Label(
                 frame, textvariable=variable, wraplength=800,
                 justify="left").grid(row=0, column=0, sticky="ew")
+
+        ray_frame = ttk.LabelFrame(
+            parent, text='Mission ray and robot replay', padding=10)
+        ray_frame.grid(row=7, column=0, sticky='ew', pady=(14, 4))
+        ray_frame.columnconfigure(1, weight=1)
+        ttk.Label(ray_frame, text='Report').grid(
+            row=0, column=0, sticky='w')
+        self.ray_report_combo = ttk.Combobox(
+            ray_frame, textvariable=self.ray_report_var,
+            state='readonly', width=42)
+        self.ray_report_combo.grid(
+            row=0, column=1, sticky='ew', padx=(8, 8))
+        ttk.Button(
+            ray_frame, text='Refresh', command=self.refresh_ray_reports).grid(
+                row=0, column=2)
+        ttk.Button(
+            ray_frame, text='Open Ray Review',
+            command=self.open_selected_ray_report).grid(
+                row=1, column=1, sticky='w', pady=(8, 0))
+        ttk.Label(ray_frame, text='Historical dataset').grid(
+            row=2, column=0, sticky='w', pady=(12, 0))
+        self.ray_replay_dataset_combo = ttk.Combobox(
+            ray_frame, textvariable=self.ray_replay_dataset_var,
+            state='readonly', width=42)
+        self.ray_replay_dataset_combo.grid(
+            row=2, column=1, sticky='ew', padx=(8, 8), pady=(12, 0))
+        self.ray_replay_button = ttk.Button(
+            ray_frame, text='Replay Recorded Data',
+            command=self.replay_selected_ray_dataset)
+        self.ray_replay_button.grid(row=2, column=2, pady=(12, 0))
+        ttk.Label(
+            ray_frame, textvariable=self.ray_report_status_var,
+            foreground='#52606d', wraplength=790, justify='left').grid(
+                row=3, column=0, columnspan=3, sticky='ew', pady=(10, 0))
+        self.refresh_ray_reports()
+
+    def refresh_ray_reports(self, preferred_report='') -> None:
+        reports = list_ray_reports(PROJECT_ROOT)
+        previous_index = self.ray_report_combo.current()
+        previous_report = (
+            self.ray_report_paths[previous_index].parent.name
+            if 0 <= previous_index < len(self.ray_report_paths) else '')
+        self.ray_report_paths = tuple(reports)
+        report_names = tuple(
+            ray_report_display_name(path) for path in self.ray_report_paths)
+        self.ray_report_combo.configure(values=report_names)
+        selected_report = preferred_report or previous_report
+        selected_index = next((
+            index for index, path in enumerate(self.ray_report_paths)
+            if path.parent.name == selected_report),
+            0 if report_names else -1)
+        if selected_index >= 0:
+            self.ray_report_combo.current(selected_index)
+        else:
+            self.ray_report_var.set('')
+        datasets = tuple(
+            path.name for path in list_scan_datasets(PROJECT_ROOT))
+        self.ray_replay_dataset_combo.configure(values=datasets)
+        if self.ray_replay_dataset_var.get() not in datasets:
+            self.ray_replay_dataset_var.set(datasets[0] if datasets else '')
+        if not report_names:
+            self.ray_report_status_var.set(
+                'No ray reports yet. Run a mission or replay recorded data.')
+
+    def open_selected_ray_report(self) -> None:
+        try:
+            selected_index = self.ray_report_combo.current()
+            self.ray_review_process.open(
+                ray_report_selection(
+                    PROJECT_ROOT, self.ray_report_paths, selected_index))
+        except (OSError, ValueError) as exc:
+            self.ray_report_status_var.set(str(exc))
+            return
+        self.ray_report_status_var.set(
+            'Ray Review opened %s' % self.ray_report_var.get())
+
+    def replay_selected_ray_dataset(self) -> None:
+        if self.ray_replay_in_progress:
+            self.ray_report_status_var.set(
+                'A command-free historical replay is already running')
+            return
+        selection = self.ray_replay_dataset_var.get()
+        self.ray_replay_in_progress = True
+        self.ray_replay_button.configure(state='disabled')
+        self.ray_report_status_var.set(
+            'Replaying recorded metadata only; ROS and arm commands are not used')
+
+        def worker():
+            try:
+                result = replay_scan_dataset(PROJECT_ROOT, selection)
+                self.events.put(('ray_replay_complete', result))
+            except (OSError, TypeError, ValueError) as exc:
+                self.events.put(('ray_replay_complete', {
+                    'error': str(exc),
+                }))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def start_automated_scan(self):
         try:
@@ -2005,6 +2245,33 @@ class PiperGuiApp:
                         if raw_mesh_path and Path(raw_mesh_path).is_file():
                             self.reconstruction_raw_view_button.configure(
                                 state='normal')
+                        measured_path = str(payload.get(
+                            'measured_cloud_path', ''))
+                        if measured_path and Path(measured_path).is_file():
+                            self.reconstruction_measured_view_button.configure(
+                                state='normal')
+                    elif self.load_existing_reconstruction_outputs(
+                            update_status=False):
+                        self.reconstruction_status_var.set(
+                            '%s; previous saved outputs remain available'
+                            % payload['status'])
+                elif name == 'ray_replay_complete':
+                    self.ray_replay_in_progress = False
+                    self.ray_replay_button.configure(state='normal')
+                    if payload.get('error'):
+                        self.ray_report_status_var.set(
+                            'Historical replay failed: %s' % payload['error'])
+                    else:
+                        report_name = Path(payload['html_path']).parent.name
+                        self.refresh_ray_reports(
+                            preferred_report=report_name)
+                        self.ray_report_status_var.set(
+                            'Replayed %d accepted captures from %s; %d skipped'
+                            % (
+                                int(payload['replayed_capture_count']),
+                                payload['dataset'],
+                                int(payload['skipped_capture_count']),
+                            ))
         except queue.Empty:
             pass
         self.root.after(100, self.drain_events)
@@ -2045,6 +2312,7 @@ class PiperGuiApp:
                     % result.mesh_job_id)
                 self.report_base_home_button.configure(state='normal')
             self._render_mission_state()
+            self.refresh_ray_reports(preferred_report=result.task_id)
             self._restore_manual_controls_if_unowned()
             return
         self._render_mission_state()
@@ -2053,6 +2321,7 @@ class PiperGuiApp:
         if not self.mission_view_model.state.can_start:
             self.ros_node.cancel_mission()
         self.close_3d_joint_editor()
+        self.ray_review_process.shutdown()
         if (self.reconstruction_process is not None
                 and self.reconstruction_process.poll() is None):
             self.reconstruction_process.terminate()

@@ -16,6 +16,7 @@ from piper_mobile_manipulation.capability_map import (
 )
 from piper_mobile_manipulation.viewpoint_reachability_filter_node import (
     CAPABILITY_MAP_REJECTION,
+    capability_bound_ray,
     ViewpointReachabilityFilterNode,
 )
 
@@ -64,8 +65,33 @@ def test_pose_and_ray_lookup_use_sparse_occupied_cells_not_solid_volume():
 
     assert pose.supported
     assert ray.supported
+    assert len(ray.sample_support) > 1
+    assert sum(ray.sample_support) < len(ray.sample_support)
+    assert len(ray.supported_intervals_m) == 1
+    assert ray.supported_intervals_m[0][0] <= 0.34
+    assert ray.supported_intervals_m[0][1] >= 0.34
     assert not unrelated.supported
     assert unrelated.reason
+
+
+def test_ray_lookup_preserves_disjoint_supported_standoff_runs():
+    target = np.asarray([0.40, 0.0, 0.12])
+    direction = np.asarray([0.0, 1.0, 0.0])
+    keys = [
+        capability_key(
+            target + direction * standoff, -direction, 0.020, 10.0)
+        for standoff in (0.30, 0.48)
+    ]
+    capability = synthetic_map(keys)
+
+    ray = capability.intersects_ray(
+        target, direction, 0.28, 0.60,
+        floor_z_m=0.005, clearance_m=0.005)
+
+    assert ray.supported
+    assert len(ray.supported_intervals_m) == 2
+    assert ray.supported_intervals_m[0][1] \
+        < ray.supported_intervals_m[1][0]
 
 
 def test_query_applies_selected_support_floor_without_claiming_exact_ik():
@@ -111,8 +137,46 @@ def target_ray():
         'target_object_center': {'x': 0.40, 'y': 0.0, 'z': 0.12},
         'ray_direction': {'x': 0.0, 'y': 1.0, 'z': 0.0},
         'ray_min_standoff_m': 0.28,
-        'ray_max_standoff_m': 0.50,
+        'ray_max_standoff_m': 0.80,
+        'ray_preferred_max_standoff_m': 0.50,
+        'ray_scoring_standoff_m': 0.39,
     }
+
+
+def test_capability_bounds_replace_active_interval_and_preserve_request():
+    bounded = capability_bound_ray(target_ray(), {
+        'supported': True,
+        'supported_intervals_m': [[0.30, 0.34], [0.50, 0.54]],
+    })
+
+    assert bounded['ray_requested_min_standoff_m'] == pytest.approx(0.28)
+    assert bounded['ray_requested_max_standoff_m'] == pytest.approx(0.80)
+    assert bounded['ray_min_standoff_m'] == pytest.approx(0.30)
+    assert bounded['ray_max_standoff_m'] == pytest.approx(0.54)
+    assert np.asarray(bounded['ray_capability_intervals_m']) \
+        == pytest.approx(np.asarray([[0.30, 0.34], [0.50, 0.54]]))
+    assert bounded['ray_scoring_standoff_m'] == pytest.approx(0.34)
+    assert bounded['desired_camera_position']['y'] == pytest.approx(0.34)
+
+
+def test_capability_bound_preserves_configured_interval_after_size_bound():
+    candidate = target_ray()
+    candidate.update({
+        'ray_requested_min_standoff_m': 0.28,
+        'ray_requested_max_standoff_m': 0.80,
+        'ray_min_standoff_m': 0.41,
+        'ray_max_standoff_m': 0.80,
+    })
+
+    bounded = capability_bound_ray(candidate, {
+        'supported': True,
+        'supported_intervals_m': [[0.44, 0.52]],
+    })
+
+    assert bounded['ray_requested_min_standoff_m'] == pytest.approx(0.28)
+    assert bounded['ray_capability_requested_min_standoff_m'] == pytest.approx(
+        0.41)
+    assert bounded['ray_min_standoff_m'] == pytest.approx(0.44)
 
 
 def filter_fixture(capability, mode):

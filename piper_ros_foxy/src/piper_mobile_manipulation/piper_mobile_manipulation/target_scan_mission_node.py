@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """Headless, bounded ROS action orchestrator for one PiPER target scan."""
 
+import hashlib
 import json
 import math
 import os
 from pathlib import Path
+import re
 import signal
+import shutil
 import threading
 import time
 
 import numpy as np
+import yaml
 import rclpy
 from geometry_msgs.msg import PointStamped
 from piper_msgs.msg import PiperStatusMsg
@@ -18,7 +22,11 @@ from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.qos import (
+    DurabilityPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+)
 from rclpy.time import Time
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
@@ -80,16 +88,11 @@ from piper_mobile_manipulation.mission_engine import (
     visual_reacquisition_plan_request_rejection,
     WORKFLOW_ASSESSMENT_TIMEOUT_SEC,
 )
+from piper_mobile_manipulation.ray_mission_diagnostics import (
+    add_terminal_event,
+    RayMissionDiagnosticsStore,
+)
 from piper_mobile_manipulation.mission_spool import MissionSpool
-from piper_mobile_manipulation.mission_artifacts import (
-    calibration_identity_for_mission as _artifact_calibration_identity,
-    discard_failed_zero_capture_dataset as _artifact_discard_failed_dataset,
-    find_failed_mission_dataset as _artifact_find_failed_dataset,
-)
-from piper_mobile_manipulation.mission_ros_operations import (
-    MissionNodeOperations as _ExtractedMissionNodeOperations,
-    previous_generation_cleanup_targets as _previous_generation_cleanup_targets,
-)
 from piper_mobile_manipulation.process_supervisor import ProcessSupervisor
 from piper_mobile_manipulation.reconstruction_jobs import (
     mesh_job_id,
@@ -117,6 +120,7 @@ from piper_mobile_manipulation.scan_session_memory import (
 from piper_mobile_manipulation.startup_gates import (
     joint_sample_rejection,
     joint_stability_update,
+    post_enable_sample_rejection,
     readiness_stability_update,
     worker_health_rejection,
 )
@@ -149,12 +153,128 @@ shutdown_uses_startup_home = _shutdown_uses_startup_home
 target_drift_requires_replan = _target_drift_requires_replan
 
 
-# Preserve the established mission-node import surface. Guarded filesystem
-# behavior is implemented only in mission_artifacts.
-calibration_identity_for_mission = _artifact_calibration_identity
-discard_failed_zero_capture_dataset = _artifact_discard_failed_dataset
-find_failed_mission_dataset = _artifact_find_failed_dataset
-previous_generation_cleanup_targets = _previous_generation_cleanup_targets
+NON_COMMAND_PROCESS_GROUPS = (
+    'vision',
+    'hand_eye',
+    'tesseract_worker',
+)
+
+
+def calibration_identity_for_mission(root, environment):
+    """Bind capture provenance to the exact hand-eye file used by this run."""
+    default_path = (
+        Path(root) / 'L515_camera' / 'calibration' / 'hand_eye'
+        / 'session_20260808_straight_mount' / 'calibration_result.yaml')
+    path = Path(str(environment.get(
+        'PIPER_HAND_EYE_CALIBRATION', default_path))).expanduser().resolve()
+    if not path.is_file():
+        raise MissionFailure(
+            'hand-eye calibration file is missing: %s' % path)
+    digest = hashlib.sha256()
+    with path.open('rb') as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b''):
+            digest.update(block)
+    return path, digest.hexdigest()
+
+
+def previous_generation_cleanup_targets(
+        live_processes, all_motors_disabled):
+    """Select exact stale handles that are safe to stop before admission."""
+    live = tuple(dict.fromkeys(str(name) for name in live_processes))
+    if 'driver' in live and not bool(all_motors_disabled):
+        return ()
+    return live
+
+
+def discard_failed_zero_capture_dataset(
+        scan_dir, dataset_root, task_id, mission_sha256):
+    """Delete only an identity-matched failed dataset with no captures."""
+    try:
+        raw_candidate = Path(str(scan_dir))
+        if raw_candidate.is_symlink():
+            return False, 'scan dataset path is a symbolic link'
+        root = Path(dataset_root).resolve(strict=True)
+        candidate = raw_candidate.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return False, 'scan directory or dataset root does not exist'
+    if candidate.parent != root or not re.fullmatch(
+            r'scan_[0-9]{8}_[0-9]{6}(?:_[A-Za-z0-9_-]+)?',
+            candidate.name):
+        return False, 'scan directory is outside the guarded dataset root'
+    if not candidate.is_dir():
+        return False, 'scan dataset is not a regular directory'
+    try:
+        metadata = yaml.safe_load(
+            (candidate / 'metadata.yaml').read_text(encoding='utf-8'))
+    except (OSError, TypeError, ValueError, yaml.YAMLError) as exc:
+        return False, 'scan metadata is unreadable: %s' % exc
+    if not isinstance(metadata, dict):
+        return False, 'scan metadata is not a mapping'
+    if (str(metadata.get('task_id', '')) != str(task_id)
+            or str(metadata.get('mission_sha256', ''))
+            != str(mission_sha256)):
+        return False, 'scan metadata does not match the failed mission'
+    allowed_root_files = {
+        'metadata.yaml', 'manifest.json', 'coverage_envelope.yaml'}
+    incomplete_frame_pattern = re.compile(
+        r'view_[0-9]{3}_(?:rgb|depth|mask|native_depth|confidence|'
+        r'target_depth|target_support_mask)(?:\.partial)?\.(?:png|npy)$')
+    for path in candidate.rglob('*'):
+        if path.is_symlink():
+            return False, 'scan dataset contains a symbolic link'
+        if not path.is_file():
+            continue
+        relative = path.relative_to(candidate)
+        if relative.as_posix() in allowed_root_files:
+            continue
+        if relative.parent.as_posix() == 'frames':
+            if re.fullmatch(r'view_[0-9]{3}_metadata\.yaml', path.name):
+                return False, 'scan contains one or more completed captures'
+            if incomplete_frame_pattern.fullmatch(path.name):
+                continue
+        return False, 'scan contains unknown or derived artifacts'
+    manifest_path = candidate / 'manifest.json'
+    if manifest_path.exists():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+            capture_count = int(manifest.get('capture_count', -1))
+        except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            return False, 'scan manifest is unreadable: %s' % exc
+        if capture_count != 0:
+            return False, 'scan manifest records one or more captures'
+    shutil.rmtree(candidate)
+    return True, 'failed zero-capture scan dataset was permanently removed'
+
+
+def find_failed_mission_dataset(dataset_root, task_id, mission_sha256):
+    """Find one exact identity-matched mission directory."""
+    try:
+        root = Path(dataset_root).resolve(strict=True)
+    except (OSError, RuntimeError):
+        return '', 'dataset root does not exist'
+    matches = []
+    for candidate in sorted(root.glob('scan_*')):
+        if candidate.is_symlink() or not candidate.is_dir():
+            continue
+        if not re.fullmatch(
+                r'scan_[0-9]{8}_[0-9]{6}(?:_[A-Za-z0-9_-]+)?',
+                candidate.name):
+            continue
+        try:
+            metadata = yaml.safe_load(
+                (candidate / 'metadata.yaml').read_text(encoding='utf-8'))
+        except (OSError, TypeError, ValueError, yaml.YAMLError):
+            continue
+        if (isinstance(metadata, dict)
+                and str(metadata.get('task_id', '')) == str(task_id)
+                and str(metadata.get('mission_sha256', ''))
+                == str(mission_sha256)):
+            matches.append(candidate)
+    if len(matches) == 1:
+        return str(matches[0]), 'found exact identity-matched mission dataset'
+    if not matches:
+        return '', 'no identity-matched mission dataset exists'
+    return '', 'multiple identity-matched mission datasets exist'
 
 
 # Import compatibility for Phase 0/1 tests and downstream tooling.  Production
@@ -174,9 +294,229 @@ __all__ = (
 )
 
 
-# Preserve the private Phase-1 characterization seam while production and
-# tests both execute the extracted adapter.
-_MissionNodeOperations = _ExtractedMissionNodeOperations
+class _MissionNodeOperations:
+    """Translate pure MissionEngine operations to the existing ROS node."""
+
+    def __init__(self, node, goal_handle, cancellation, rough_target=None):
+        self.node = node
+        self.goal_handle = goal_handle
+        self.cancellation = cancellation
+        self.rough_target = rough_target
+
+    @property
+    def session(self):
+        """Return the currently bound session for compatibility diagnostics."""
+        return getattr(self.node, '_active_engine_session', None)
+
+    def begin_process_generation(self, _context):
+        live = self.node.processes.begin_generation()
+        if not live:
+            return []
+        cleanup_targets = previous_generation_cleanup_targets(
+            live, self.node.fresh_all_motors_disabled())
+        if not cleanup_targets:
+            self.node.get_logger().error(
+                'retaining previous process generation because its driver is '
+                'live and fresh six-disabled feedback is not proved: %s'
+                % ', '.join(live))
+            return live
+        self.node.get_logger().warn(
+            'cleaning exact previous-generation process handles before new '
+            'mission admission: %s' % ', '.join(cleanup_targets))
+        try:
+            report = self.node.processes.shutdown(cleanup_targets)
+        except Exception as error:
+            self.node.get_logger().error(
+                'previous-generation cleanup raised %s: %s'
+                % (type(error).__name__, error))
+            return live
+        if not report.complete:
+            self.node.get_logger().error(
+                'previous-generation cleanup remains incomplete: %s'
+                % ', '.join(report.still_running))
+            return list(report.still_running)
+        return self.node.processes.begin_generation()
+
+    def snapshot_target(self, _context):
+        return self.node.snapshot_target(self.rough_target)
+
+    def transition(self, context, phase, reason):
+        self.node.transition(self.goal_handle, context.session, phase, reason)
+
+    def progress(self, context, reason):
+        self.node.startup_progress(
+            self.goal_handle, context.session, reason)
+
+    def selected_home_profile(self, _context):
+        return self.node.selected_home_profile()
+
+    def bind_home_profile(self, _context, profile):
+        self.node.current_home_profile = profile
+
+    def current_home_profile(self, _context):
+        return self.node.current_home_profile
+
+    def start_processes(self, context):
+        self.node.start_processes(self.goal_handle, context.session)
+
+    def wait_for_enable_service(self, context, timeout):
+        self.node.wait_for(
+            self.goal_handle, context.session,
+            lambda: self.node.enable_client.service_is_ready(), timeout,
+            'PiPER enable service did not become ready')
+
+    def wait_for_stable_readiness(
+            self, context, mode, stable_sec, timeout_sec):
+        self.node.wait_for_stable_readiness(
+            self.goal_handle, context.session, mode, stable_sec, timeout_sec)
+
+    def wait_for_stable_joint_stream(
+            self, context, stable_sec, timeout_sec, label):
+        self.node.wait_for_stable_joint_stream(
+            stable_sec, timeout_sec, label,
+            self.goal_handle, context.session)
+
+    def wait_for_post_enable_stability(
+            self, context, stable_sec, timeout_sec):
+        self.node.wait_for_post_enable_stability(
+            stable_sec, timeout_sec, self.goal_handle, context.session)
+
+    def require_fresh_joint_feedback(self, _context):
+        self.node.require_fresh_joint_feedback()
+
+    def current_joint_positions(self, _context):
+        return self.node.latest_joints.position[:6]
+
+    def boolean_option(self, _context, name):
+        return self.node.param_bool(name)
+
+    def numeric_option(self, _context, name):
+        return configured_value(self.node, name)
+
+    def authorize_mission(self, context, revoke=False):
+        return self.node.authorize_mission(context.session, revoke=revoke)
+
+    def enable_arm(self, _context, enabled):
+        return self.node.call_enable(enabled)
+
+    def arm_enable_guard_started(self, _context):
+        self.node.motor_enable_guard_after = time.monotonic() + 0.5
+
+    def prove_current_hold(self, context):
+        return self.node.prove_current_hold(
+            self.goal_handle, context.session)
+
+    def hold_diagnostic(self, _context):
+        return str(self.node.last_hold_diagnostic)
+
+    def prove_home(
+            self, context, startup=False, target_positions=None,
+            home_stage='ROUGH_HOME', interruptible=False):
+        kwargs = {}
+        if startup:
+            kwargs['startup'] = True
+        if interruptible:
+            kwargs['goal_handle'] = self.goal_handle
+        if target_positions is not None:
+            kwargs['target_positions'] = target_positions
+        if str(home_stage) != 'ROUGH_HOME':
+            kwargs['home_stage'] = home_stage
+        return self.node.prove_return_home_for_shutdown(
+            context.session, **kwargs)
+
+    def return_home_diagnostic(self, _context):
+        return str(getattr(self.node, 'last_return_home_diagnostic', ''))
+
+    def clear_plan_cache(self, _context):
+        return self.node.clear_plan_cache()
+
+    def prepare_acquisition(self, context):
+        return self.node.prepare_acquisition(
+            context.session, context.target)
+
+    def wait_for_plan(self, context, kind, request_id, timeout):
+        return self.node.wait_for_plan(
+            self.goal_handle, context.session, kind, request_id, timeout)
+
+    def approve_plan(self, context, plan):
+        return self.node.approve_plan(
+            self.goal_handle, context.session, plan)
+
+    def wait_for_execution(
+            self, context, successes, timeout, failures):
+        return self.node.wait_for_execution(
+            self.goal_handle, context.session, successes, timeout, failures)
+
+    def start_and_wait_workflow(self, context):
+        return self.node.start_and_wait_workflow(
+            self.goal_handle, context.session)
+
+    def readiness_rejection(self, _context, mode):
+        return self.node.readiness_rejection(mode)
+
+    def capture_count(self, _context):
+        return int(self.node.latest_capture.get('captured_frame_count', 0))
+
+    def current_feature_coverage(self, _context):
+        return self.node.current_scan_feature_coverage()
+
+    def request_multiview_plan(self, context):
+        return self.node.request_multiview_plan(
+            self.goal_handle, context.session)
+
+    def wait_for_view_generation(self, context, accepted_views, timeout):
+        return self.node.wait_for_view_generation(
+            self.goal_handle, context.session, accepted_views, timeout)
+
+    def remaining_time(self, context):
+        return context.session.remaining()
+
+    def wait_for_scan_history(self, context, timeout):
+        self.node.wait_for(
+            self.goal_handle, context.session,
+            lambda: int((self.node.latest_scan_history or {}).get(
+                'accepted_views', 0)) >= context.session.accepted_captures,
+            timeout,
+            'scan history did not catch up with the final accepted capture')
+
+    def wait_for_all_motors_disabled(self, _context, timeout):
+        deadline = time.monotonic() + float(timeout)
+        while time.monotonic() < deadline:
+            telemetry_store = getattr(self.node, 'telemetry_store', None)
+            if telemetry_store is None:
+                status = self.node.latest_arm_status
+                age = time.monotonic() - self.node.latest_arm_status_at
+            else:
+                snapshot = telemetry_store.snapshot()
+                observation = snapshot.arm.status
+                status = None if observation is None else observation.value
+                age = (
+                    math.inf if observation is None else
+                    observation.age_at(snapshot.captured_at))
+            if (
+                    status is not None
+                    and age <= 0.5
+                    and bool(getattr(status, 'motor_feedback_valid', False))
+                    and not any(motor_driver_states(status))):
+                return True
+            time.sleep(0.02)
+        return False
+
+    def stop_processes(self, _context):
+        return self.node.processes.stop_all()
+
+    def stop_processing_processes(self, _context):
+        try:
+            report = self.node.processes.shutdown(NON_COMMAND_PROCESS_GROUPS)
+        except Exception as error:
+            self.node.get_logger().error(
+                'non-command process cleanup raised %s: %s'
+                % (type(error).__name__, error))
+            return False
+        return report.complete
+
+    def prove_shutdown_hold(self, context):
+        return self.node.prove_current_hold_for_shutdown(context.session)
 
 
 def mission_engine_for(owner, operations):
@@ -882,6 +1222,40 @@ class TargetScanMissionNode(Node):
                 'dataset_discard_reason': dataset_discard_reason,
             },
         )
+        if project_root_value:
+            try:
+                root = Path(str(project_root_value))
+                store = RayMissionDiagnosticsStore(
+                    root / 'datasets' / 'ray_diagnostics')
+                terminal_snapshot = {
+                    'schema_version': 2,
+                    'mission_id': str(session.task_id),
+                    'session_id': '%s-%d' % (
+                        session.task_id,
+                        int(getattr(session, 'acquisition_attempt', 0))),
+                    'generation': max(
+                        0, int(session.accepted_captures) - 1),
+                    'frame_id': 'base_link',
+                    'target_center_m': (
+                        [float(value) for value in context.target]
+                        if context.target is not None
+                        else [0.0, 0.0, 0.0]),
+                    'rays': [], 'requests': [], 'events': [],
+                }
+                terminal_snapshot = add_terminal_event(
+                    terminal_snapshot, outcome, session.reason,
+                    '' if failure is None else (
+                        failure.failure_code
+                        or failure_code_for_reason(failure)))
+                store.record(terminal_snapshot)
+            except Exception as error:
+                # Review evidence never gates the mission or test doubles.
+                try:
+                    self.get_logger().warn(
+                        'Could not record terminal ray-review event: %s'
+                        % error)
+                except Exception:
+                    pass
         with self._lock:
             self.registry.finish(result)
         self.spool.write('results', session.task_id, result)
@@ -1103,6 +1477,69 @@ class TargetScanMissionNode(Node):
         raise MissionFailure(
             '%s did not remain coherent and settled for %.1f seconds: %s'
             % (label, stable_sec, rejection or 'feedback is missing or moving'))
+
+    def wait_for_post_enable_stability(
+            self, stable_sec, timeout_sec, goal_handle=None, session=None):
+        """Prove a new stable, fault-free powered sample before first motion."""
+        enabled_at = time.monotonic()
+        deadline = enabled_at + float(timeout_sec)
+        reference = None
+        stable_since = 0.0
+        healthy_since = 0.0
+        last_joint_at = 0.0
+        last_reason = 'waiting for post-enable feedback'
+        while time.monotonic() < deadline:
+            if goal_handle is not None and session is not None:
+                self.guard(goal_handle, session)
+            now = time.monotonic()
+            telemetry_store = getattr(self, 'telemetry_store', None)
+            if telemetry_store is None:
+                joints = self.latest_joints
+                joint_at = self.latest_joints_at
+                status = self.latest_arm_status
+                status_at = self.latest_arm_status_at
+            else:
+                snapshot = telemetry_store.snapshot()
+                joint_observation = snapshot.arm.joints
+                status_observation = snapshot.arm.status
+                joints = (
+                    None if joint_observation is None
+                    else joint_observation.value)
+                joint_at = (
+                    0.0 if joint_observation is None
+                    else joint_observation.received_at)
+                status = (
+                    None if status_observation is None
+                    else status_observation.value)
+                status_at = (
+                    0.0 if status_observation is None
+                    else status_observation.received_at)
+            positions = (
+                [] if joints is None else list(joints.position[:6]))
+            last_reason = post_enable_sample_rejection(
+                positions, joint_at, status, status_at,
+                enabled_at, now)
+            if last_reason:
+                reference = None
+                stable_since = 0.0
+                healthy_since = 0.0
+            else:
+                if healthy_since <= 0.0:
+                    healthy_since = now
+                if joint_at > last_joint_at:
+                    reference, stable_since = joint_stability_update(
+                        reference, stable_since, positions, joint_at)
+                    last_joint_at = joint_at
+                proof_since = max(stable_since, healthy_since)
+                if proof_since > enabled_at and now - proof_since >= float(
+                        stable_sec):
+                    return
+            time.sleep(0.05)
+        raise MissionFailure(
+            'post-enable feedback did not remain stable, all-six-enabled, '
+            'and fault-free for %.1f seconds: %s'
+            % (float(stable_sec), last_reason),
+            failure_code='CONTROL_UNTRUSTWORTHY', retryable=True)
 
     def wait_for_vision_boot(
             self, started_at, timeout_sec, goal_handle=None, session=None):

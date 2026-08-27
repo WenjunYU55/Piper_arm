@@ -38,9 +38,34 @@ from piper_mobile_manipulation.scan_capture import (
     synchronized_bundle_rejection,
     temporal_confident_depth_median,
 )
+from piper_mobile_manipulation.target_envelope import (
+    build_capture_model_seed,
+    trusted_silhouette_measurement,
+)
 
 
 CAPTURE_RESPONSE_MARGIN_SEC = 2.0
+
+
+def capture_model_seed_from_qualified(
+        mask, qualified, color_camera_matrix, mask_header,
+        camera_transform):
+    """Build the model seed from the exact RGB-D record being persisted."""
+    if not isinstance(qualified, dict):
+        raise ValueError('qualified capture geometry is missing')
+    quality = qualified.get('quality')
+    if not isinstance(quality, dict):
+        raise ValueError('qualified capture quality is missing')
+    shape = trusted_silhouette_measurement(
+        mask,
+        np.asarray(qualified.get('target_support_mask')) > 0,
+        (0, 0),
+        np.asarray(qualified.get('target_depth_mm'), dtype=float) / 1000.0,
+        np.asarray(color_camera_matrix, dtype=float).reshape(3, 3),
+        mask_header,
+        float(quality['confident_fraction']),
+    )
+    return build_capture_model_seed(shape, camera_transform)
 
 
 def capture_view_selection_provenance(plan_provenance, execution):
@@ -174,6 +199,7 @@ class ScanCaptureNode(Node):
             int(self.get_parameter('capture_cache_size').value)))
         self.native_bundle_condition = Condition()
         self.prepared_capture = None
+        self.last_capture_result = None
         self.latest_scan_viewpoints = None
         self.latest_reachable_scan_viewpoints = None
         self.latest_scan_coverage = None
@@ -466,9 +492,13 @@ class ScanCaptureNode(Node):
             response.success = False
             response.message = reason
             return response
+        self.last_capture_result = None
         saved, message = self.capture_frame(self.get_clock().now())
         response.success = bool(saved)
-        response.message = str(message)
+        response.message = (
+            json.dumps(self.last_capture_result, sort_keys=True)
+            if saved and isinstance(self.last_capture_result, dict)
+            else str(message))
         return response
 
     def capture_prerequisites_ready(self):
@@ -789,6 +819,14 @@ class ScanCaptureNode(Node):
                 'l515_temporal_median_confidence_qualified_native_depth')
             qualified['quality']['temporal_aggregation'] = dict(
                 burst_report)
+            capture_model_seed = capture_model_seed_from_qualified(
+                mask,
+                qualified,
+                color_info.k,
+                mask_message.header,
+                self.camera_transform_metadata(
+                    self.latest_camera_transform),
+            )
         except DepthQualityRejected as exc:
             return None, str(exc)
         except (TypeError, ValueError, cv2.error) as exc:
@@ -814,6 +852,7 @@ class ScanCaptureNode(Node):
             'camera_transform': self.latest_camera_transform,
             'color_from_depth_transform': (
                 self.latest_color_from_depth_transform),
+            'qualified_target_model_seed': capture_model_seed,
         }, ''
 
     def capture_frame(self, now):
@@ -893,6 +932,15 @@ class ScanCaptureNode(Node):
         self.write_dataset_manifest()
         self.publish_status('captured', 'saved frame %03d' % index, frame_index=index)
         self.publish_summary()
+        self.last_capture_result = {
+            'capture_result_schema_version': 1,
+            'message': 'saved viewpoint %03d to %s' % (
+                index, self.frames_dir),
+            'frame_index': int(index),
+            'metadata_file_path': paths['metadata'],
+            'qualified_target_model_seed': dict(
+                metadata['qualified_target_model_seed']),
+        }
         if self.param_bool('debug'):
             self.get_logger().info('saved scan frame %03d to %s' % (index, self.frames_dir))
         self.prepared_capture = None
@@ -940,6 +988,8 @@ class ScanCaptureNode(Node):
                 prepared['native_depth_info']),
             'camera_transform': self.camera_transform_metadata(
                 prepared['camera_transform']),
+            'qualified_target_model_seed': dict(
+                prepared['qualified_target_model_seed']),
             'color_from_depth_transform': self.camera_transform_metadata(
                 prepared['color_from_depth_transform']),
             'synchronization': {

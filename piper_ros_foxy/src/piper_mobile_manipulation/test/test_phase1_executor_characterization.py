@@ -1,5 +1,6 @@
 """Phase 1 characterization of executor safety and capture decisions."""
 
+import json
 from types import SimpleNamespace
 
 import numpy as np
@@ -20,6 +21,10 @@ from piper_mobile_manipulation.scan_viewpoint_executor_node import (
     visual_capture_rejection,
     waypoint_motion_action,
 )
+from piper_mobile_manipulation.target_envelope import (
+    build_capture_model_seed,
+    canonical_sha256,
+)
 
 
 class CompletedFuture:
@@ -37,6 +42,34 @@ class CompletedFuture:
         if self._error is not None:
             raise self._error
         return self._result
+
+
+def capture_model_seed_response():
+    shape = {
+        'schema_version': 1,
+        'valid': True,
+        'header': {
+            'stamp': {'sec': 12, 'nanosec': 345},
+            'frame_id': 'camera_color_optical_frame',
+        },
+        'silhouette_points_camera_m': [
+            [-0.05, -0.05, 0.40], [0.05, -0.05, 0.40],
+            [0.05, 0.05, 0.40], [-0.05, 0.05, 0.40],
+        ],
+    }
+    shape['measurement_sha256'] = canonical_sha256(shape)
+    seed = build_capture_model_seed(shape, {
+        'header': {
+            'stamp': {'sec': 12, 'nanosec': 30_000_345},
+            'frame_id': 'base_link',
+        },
+        'child_frame_id': 'camera_color_optical_frame',
+        'matrix_4x4': np.eye(4).tolist(),
+    })
+    return json.dumps({
+        'capture_result_schema_version': 1,
+        'qualified_target_model_seed': seed,
+    }), seed
 
 
 def _runtime_reasons(
@@ -249,8 +282,9 @@ def test_capture_transport_failure_aborts_without_recording_acceptance():
 def test_successful_rgbd_capture_advances_to_workflow_acceptance():
     events = []
     harness, _unused = _capture_harness('')
+    response, seed = capture_model_seed_response()
     harness.rgbd_capture_future = CompletedFuture(
-        SimpleNamespace(success=True, message='saved'))
+        SimpleNamespace(success=True, message=response))
     harness.capture_client = SimpleNamespace(
         call_async=lambda _request: events.append('workflow_capture') or
         CompletedFuture())
@@ -261,6 +295,22 @@ def test_successful_rgbd_capture_advances_to_workflow_acceptance():
 
     assert events[0] == 'workflow_capture'
     assert events[1][0:2] == ('state', 'CAPTURING')
+    assert harness.pending_scan_qualified_target_model_seed == seed
+    assert harness.pending_scan_qualified_target_shape == seed['shape']
+
+
+def test_first_capture_without_capture_bound_model_seed_aborts():
+    harness, events = _capture_harness('')
+    harness.rgbd_capture_future = CompletedFuture(
+        SimpleNamespace(success=True, message='saved'))
+
+    ScanViewpointExecutorNode.capturing_rgbd_tick(harness)
+
+    assert events == [(
+        'abort',
+        'accepted first RGB-D capture has no exact model seed: capture '
+        'response does not contain model-seed JSON',
+    )]
 
 
 def _achieved_view_harness(look_angle_deg=0.0):

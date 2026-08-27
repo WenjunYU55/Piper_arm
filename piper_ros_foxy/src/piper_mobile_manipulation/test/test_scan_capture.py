@@ -20,6 +20,7 @@ from piper_mobile_manipulation.scan_capture import (
     temporal_confident_depth_median,
 )
 from piper_mobile_manipulation.scan_capture_node import (
+    capture_model_seed_from_qualified,
     capture_view_selection_provenance,
     ScanCaptureNode,
 )
@@ -30,7 +31,40 @@ def message(seconds):
     nanosec = int(round((float(seconds) - sec) * 1e9))
     return SimpleNamespace(
         header=SimpleNamespace(
-            stamp=SimpleNamespace(sec=sec, nanosec=nanosec)))
+            stamp=SimpleNamespace(sec=sec, nanosec=nanosec),
+            frame_id='camera_color_optical_frame'))
+
+
+def test_capture_model_seed_uses_exact_persisted_mask_depth_and_transform():
+    mask = np.zeros((100, 120), dtype=np.uint8)
+    mask[30:70, 40:80] = 255
+    support = np.zeros_like(mask)
+    support[30:70, 40:80] = 255
+    depth = np.zeros_like(mask, dtype=np.uint16)
+    depth[30:70, 40:80] = 400
+    transform = {
+        'header': {
+            'stamp': {'sec': 12, 'nanosec': 30_000_000},
+            'frame_id': 'base_link',
+        },
+        'child_frame_id': 'camera_color_optical_frame',
+        'matrix_4x4': np.eye(4).tolist(),
+    }
+    seed = capture_model_seed_from_qualified(
+        mask,
+        {
+            'target_support_mask': support,
+            'target_depth_mm': depth,
+            'quality': {'confident_fraction': 0.95},
+        },
+        [100.0, 0.0, 60.0, 0.0, 100.0, 50.0, 0.0, 0.0, 1.0],
+        message(12.0).header,
+        transform,
+    )
+
+    assert seed['shape']['near_depth_m'] == 0.4
+    assert seed['shape']['mask_pixel_count'] == 1600
+    assert seed['base_from_camera']['matrix_4x4'] == np.eye(4).tolist()
 
 
 def test_synchronized_rgbd_bundle_requires_fresh_matching_stamps():

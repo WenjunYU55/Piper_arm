@@ -244,6 +244,20 @@ def acquisition_hint(x=0.4):
     )
 
 
+def test_removed_framing_indexes_are_rejected():
+    request = SimpleNamespace(
+        session_id='framing-current-is-not-a-motion',
+        look_index=5,
+        rough_target=acquisition_hint())
+    response = SimpleNamespace(accepted=False, session_id='', message='')
+
+    result = ScanTargetAcquisitionNode.prepare_cb(
+        SimpleNamespace(), request, response)
+
+    assert not result.accepted
+    assert '0 through 4' in result.message
+
+
 def test_duplicate_atomic_prepare_request_is_idempotent():
     session_id = 'acq-0123456789abcdef'
     hint = acquisition_hint()

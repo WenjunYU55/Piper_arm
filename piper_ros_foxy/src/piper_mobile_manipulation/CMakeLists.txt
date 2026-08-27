@@ -142,20 +142,19 @@ if(BUILD_TESTING)
   ament_add_pytest_test(
     test_phase7_viewpoint_components
     test/test_phase7_viewpoint_components.py)
-  ament_add_pytest_test(
-    test_core_stack_modularization
-    test/test_core_stack_modularization.py)
   ament_add_pytest_test(test_nbv_coverage test/test_nbv_coverage.py)
   ament_add_pytest_test(
     test_nbv_regression_replay test/test_nbv_regression_replay.py)
   ament_add_pytest_test(test_view_generation test/test_view_generation.py)
   ament_add_pytest_test(
     test_capability_map test/test_capability_map.py)
-  ament_add_pytest_test(test_configuration test/test_configuration.py)
   ament_add_pytest_test(
     test_target_envelope test/test_target_envelope.py)
   ament_add_pytest_test(
     test_scan_viewpoint_angles test/test_scan_viewpoint_angles.py)
+  ament_add_pytest_test(
+    test_ray_mission_diagnostics test/test_ray_mission_diagnostics.py)
+  ament_add_pytest_test(test_configuration test/test_configuration.py)
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)

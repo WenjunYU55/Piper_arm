@@ -19,7 +19,6 @@ from piper_tesseract_foxy.worker import (
     worker_rejection_code,
 )
 
-
 def optical_transform(angle_deg=0.0, z_m=0.0):
     angle = np.deg2rad(float(angle_deg))
     transform = np.eye(4)

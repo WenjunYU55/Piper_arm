@@ -249,6 +249,9 @@ def test_native_gui_defaults_reconstruction_reference_to_35mm_cube():
     assert 'Build Raw + Cleaned' in source
     assert 'Open Cleaned' in source
     assert 'Open Raw' in source
+    assert 'Open Measured Points' in source
+    assert "value='captured'" in source
+    assert 'load_existing_reconstruction_outputs' in source
 
 
 def test_native_gui_preserves_pre_home_when_other_stages_are_recorded():

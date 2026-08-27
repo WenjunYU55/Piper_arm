@@ -67,6 +67,7 @@ class FakeMissionOperations:
         self.terminal_cancel_stage = ''
         self._triggered = set()
         self.capture_states = []
+        self.capture_reasons = []
         self.planning_failures = []
         self.plan_request_failures = []
         self.acquisition_states = ['ACQUIRED']
@@ -184,6 +185,10 @@ class FakeMissionOperations:
     def arm_enable_guard_started(self, _context):
         pass
 
+    def wait_for_post_enable_stability(
+            self, context, _stable, _timeout):
+        self._record('post_enable_stability', context)
+
     def prove_current_hold(self, context):
         self._record('enable_hold', context)
         context.session.current_hold_proved = True
@@ -234,7 +239,9 @@ class FakeMissionOperations:
         stage = 'acquisition_plan' if kind == 'ROUGH_ACQUISITION' else 'planning'
         self._record(stage, context)
         if kind == 'MULTIVIEW_SCAN' and self.planning_failures:
-            raise self.planning_failures.pop(0)
+            failure = self.planning_failures.pop(0)
+            if failure is not None:
+                raise failure
         return SimpleNamespace(
             plan_kind=kind, plan_id='plan', trajectory_sha256='a' * 64)
 
@@ -261,7 +268,10 @@ class FakeMissionOperations:
             if self.capture_states else 'VIEW_COMPLETE')
         if state == 'VIEW_COMPLETE':
             self._captures[context.session.task_id] += 1
-        return SimpleNamespace(state=state, reason='view result')
+        reason = (
+            self.capture_reasons.pop(0)
+            if self.capture_reasons else 'view result')
+        return SimpleNamespace(state=state, reason=reason)
 
     def start_and_wait_workflow(self, context):
         self._record('occlusion', context)
@@ -351,12 +361,16 @@ def test_successful_engine_matches_frozen_legacy_phase_sequence():
     assert operations.events.count('view_generation') == 8
     assert operations.events.index('view_generation') < \
         operations.events.index('view_planning')
+    assert operations.events.index('enable') < \
+        operations.events.index('post_enable_stability') < \
+        operations.events.index('startup_wrist')
 
 
 @pytest.mark.parametrize('stage', [
     'starting',
     'preflight',
     'enable',
+    'post_enable_stability',
     'startup_home',
     'acquisition',
     'target_lock',
@@ -378,6 +392,45 @@ def test_major_phase_failures_use_the_existing_shutdown(stage):
         assert result.outcome == 'NEEDS_OPERATOR'
     else:
         assert context.session.disabled_proved
+
+
+def test_post_enable_failure_disables_before_any_startup_motion():
+    operations = FakeMissionOperations()
+    operations.failure_stage = 'post_enable_stability'
+
+    operations, context, result = _execute(operations)
+
+    assert not result.succeeded
+    assert result.failure.retryable
+    assert 'arm disabled before STARTUP_WRIST' in result.reason
+    assert operations.events.index('enable') < operations.events.index(
+        'post_enable_stability') < operations.events.index('disable')
+    assert 'startup_wrist' not in operations.events
+    assert not context.session.arm_enabled
+    assert context.session.disabled_proved
+
+
+def test_post_enable_motor_authority_loss_sends_no_further_arm_command():
+    class Operations(FakeMissionOperations):
+        def wait_for_post_enable_stability(
+                self, context, _stable, _timeout):
+            self._record('post_enable_stability', context)
+            context.session.motor_control_lost_reason = 'J5 disabled'
+            raise MissionFailure(
+                'motor control became untrustworthy',
+                needs_operator=True,
+                failure_code='CONTROL_UNTRUSTWORTHY', retryable=False)
+
+    operations, context, result = _execute(Operations())
+
+    assert not result.succeeded
+    assert result.outcome == 'NEEDS_OPERATOR'
+    assert operations.events.count('enable') == 1
+    assert 'disable' not in operations.events
+    assert not any(stage in operations.events for stage in (
+        'startup_wrist', 'pre_home', 'return_home', 'storage_wrist'))
+    assert context.session.disabled_proved
+    assert context.session.processes_stopped
 
 
 def test_original_failure_cannot_prevent_fresh_direct_home_qualification():
@@ -630,6 +683,23 @@ def test_plain_tesseract_exhaustion_remains_terminal():
     assert context.session.accepted_captures == 0
 
 
+@pytest.mark.parametrize('failure_code', (
+    'TARGET_TOO_LARGE_OR_CLOSE',
+    'TARGET_SCAN_IMPOSSIBLE',
+))
+def test_clipped_target_code_reaches_result_and_shutdown_proofs(failure_code):
+    operations = FakeMissionOperations()
+    operations.plan_request_failures = [MissionFailure(
+        'planning blocked: %s: item is cropped' % failure_code)]
+
+    operations, context, result = _execute(operations)
+
+    assert not result.succeeded
+    assert result.failure.failure_code == failure_code
+    assert context.session.disabled_proved
+    assert context.session.processes_stopped
+
+
 def test_complete_ray_frontier_exhaustion_is_terminal_and_adds_blockers():
     operations = FakeMissionOperations()
     operations.plan_request_failures = [MissionFailure(
@@ -697,6 +767,110 @@ def test_acquisition_replans_from_two_absent_looks_then_locks():
     assert result.succeeded
     assert operations.events.count('acquisition') == 3
     assert context.session.acquisition_attempt == 3
+
+
+def test_clear_achieved_lock_adds_no_exact_centering_motion():
+    operations = FakeMissionOperations()
+
+    operations, context, result = _execute(operations)
+
+    assert result.succeeded
+    assert 'target_framing' not in operations.events
+    assert not any(
+        event.startswith('target_framing_') for event in operations.events)
+
+
+def test_ambiguous_first_ray_crop_replans_farther_before_capture():
+    operations = FakeMissionOperations()
+    operations.capture_states = ['VIEW_REJECTED']
+    operations.capture_reasons = [
+        'TARGET_FRAMING_RETRY_FARTHER: cropped at 0.40m']
+
+    operations, context, result = _execute(operations)
+
+    assert result.succeeded
+    assert operations.plan_requests == 9
+    assert context.session.accepted_captures == 8
+
+
+def test_crop_at_80cm_reports_too_large_from_settled_first_ray():
+    operations = FakeMissionOperations()
+    operations.capture_states = ['VIEW_REJECTED']
+    operations.capture_reasons = [
+        'TARGET_FRAMING_TOO_LARGE: cropped at 0.80m']
+
+    operations, _context, result = _execute(operations)
+
+    assert not result.succeeded
+    assert result.failure.failure_code == 'TARGET_SCAN_IMPOSSIBLE'
+    assert operations.capture_count(_context) == 0
+
+
+def test_no_reachable_farther_same_ray_reports_too_close():
+    operations = FakeMissionOperations()
+    operations.capture_states = ['VIEW_REJECTED']
+    operations.capture_reasons = [
+        'TARGET_FRAMING_RETRY_FARTHER: cropped at 0.40m']
+    operations.planning_failures = [None, MissionFailure(
+        'MULTIVIEW_SCAN planning failed: '
+        'TARGET_FRAMING_NO_AIMED_ENDPOINT',
+        failure_code='NO_REACHABLE_PLAN')]
+
+    operations, context, result = _execute(operations)
+
+    assert not result.succeeded
+    assert result.failure.failure_code == 'TARGET_TOO_LARGE_OR_CLOSE'
+    assert 'could not be moved farther' in result.reason
+    assert context.session.disabled_proved
+
+
+def test_unrelated_plan_failure_after_framing_retry_is_not_misclassified():
+    operations = FakeMissionOperations()
+    operations.capture_states = ['VIEW_REJECTED']
+    operations.capture_reasons = [
+        'TARGET_FRAMING_RETRY_FARTHER: cropped at 0.40m']
+    operations.planning_failures = [None, MissionFailure(
+        'MULTIVIEW_SCAN planning failed: joint state became stale',
+        failure_code='NO_REACHABLE_PLAN')]
+
+    operations, _context, result = _execute(operations)
+
+    assert not result.succeeded
+    assert result.failure.failure_code == 'NO_REACHABLE_PLAN'
+    assert 'joint state became stale' in result.reason
+
+
+def test_farther_first_ray_retry_does_not_consume_quality_budget():
+    operations = FakeMissionOperations()
+    operations.capture_states = ['VIEW_REJECTED']
+    operations.capture_reasons = [
+        'TARGET_FRAMING_RETRY_FARTHER: cropped at 0.40m']
+
+    operations, _context, result = _execute(operations)
+
+    assert result.succeeded
+    assert operations.plan_requests == 9
+
+
+@pytest.mark.parametrize('state, expected_code', (
+    ('TOO_CLOSE', 'TARGET_TOO_LARGE_OR_CLOSE'),
+    ('NO_AIMED_ENDPOINT', 'TARGET_TOO_LARGE_OR_CLOSE'),
+    ('TOO_LARGE', 'TARGET_SCAN_IMPOSSIBLE'),
+))
+def test_centered_crop_reports_specific_coordinator_failure(
+        state, expected_code):
+    operations = FakeMissionOperations()
+    operations.capture_states = ['VIEW_REJECTED']
+    operations.capture_reasons = [
+        'TARGET_FRAMING_%s: settled first ray crop' % state]
+
+    operations, context, result = _execute(operations)
+
+    assert not result.succeeded
+    assert result.failure.failure_code == expected_code
+    assert not any(
+        event.startswith('target_framing_') for event in operations.events)
+    assert context.session.disabled_proved
 
 
 def test_acquisition_too_far_reports_reposition_and_rough_coordinates():

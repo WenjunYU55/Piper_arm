@@ -6,6 +6,58 @@ import math
 MAX_JOINT_SOURCE_AGE_NS = 500_000_000
 
 
+def post_enable_sample_rejection(
+        joints, joint_received_at, status, status_received_at,
+        enable_completed_at, now, joint_max_age_sec=0.25,
+        status_max_age_sec=0.5):
+    """Reject feedback that cannot prove a healthy powered startup sample."""
+    try:
+        values = [float(value) for value in joints]
+        joint_at = float(joint_received_at)
+        status_at = float(status_received_at)
+        enabled_at = float(enable_completed_at)
+        current = float(now)
+    except (TypeError, ValueError):
+        return 'post-enable feedback fields are invalid'
+    if len(values) != 6 or not all(math.isfinite(value) for value in values):
+        return 'post-enable joint feedback is not six finite positions'
+    if joint_at <= enabled_at or status_at <= enabled_at:
+        return 'waiting for joint and arm feedback received after enable'
+    if (
+            joint_at > current or status_at > current
+            or current - joint_at > float(joint_max_age_sec)
+            or current - status_at > float(status_max_age_sec)):
+        return 'post-enable joint or arm feedback is stale or in the future'
+    if status is None:
+        return 'post-enable arm status is missing'
+    if int(getattr(status, 'err_code', 0)) != 0:
+        return 'post-enable arm err_code=%d' % int(status.err_code)
+    if any(bool(getattr(
+            status, 'joint_%d_angle_limit' % index, False))
+            for index in range(1, 7)):
+        return 'post-enable arm reports a joint angle-limit fault'
+    if any(bool(getattr(
+            status, 'communication_status_joint_%d' % index, False))
+            for index in range(1, 7)):
+        return 'post-enable arm reports a joint communication fault'
+    if not bool(getattr(status, 'motor_feedback_valid', False)):
+        return 'post-enable low-speed motor feedback is invalid'
+    states = tuple(bool(getattr(
+        status, 'motor_%d_driver_enabled' % index, False))
+        for index in range(1, 7))
+    if not all(states):
+        return 'post-enable all-six motor authority is unproved: %s' % (
+            states,)
+    faults = tuple(str(value) for value in getattr(
+        status, 'motor_faults', ()) if str(value))
+    if faults:
+        return 'post-enable motor faults=%s' % ','.join(faults)
+    watchdog = str(getattr(status, 'motor_watchdog_reason', '')).strip()
+    if watchdog:
+        return 'post-enable motor watchdog=%s' % watchdog
+    return ''
+
+
 def joint_sample_rejection(
         previous_positions, previous_stamp_ns, positions, stamp_ns,
         receive_ns, generation_started_ns):

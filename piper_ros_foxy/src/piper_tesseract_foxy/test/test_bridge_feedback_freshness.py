@@ -15,6 +15,7 @@ from piper_tesseract_foxy.bridge_node import (
     local_view_frontier_candidates,
     maximize_successive_view_distance,
     obstacle_scene_rejection_reason,
+    permanent_ray_ids_from_response,
     relax_closed_loop_candidate_aims,
     select_diverse_smooth_view_path,
     target_envelope_obstacles,
@@ -67,7 +68,7 @@ def _target_envelope_fixture():
         shape, np.eye(4), [0.0, 0.0, 0.40])
 
 
-def test_target_envelope_reuses_existing_box_contract_and_hash_binding():
+def test_target_envelope_reuses_box_contract_and_hash_binding():
     envelope = _target_envelope_fixture()
     payload = {
         'target_envelope': envelope,
@@ -78,7 +79,7 @@ def test_target_envelope_reuses_existing_box_contract_and_hash_binding():
     }
 
     validated, boxes = target_envelope_obstacles(
-        payload, [0.0, 0.0, 0.40])
+        payload, envelope['planning_anchor_m'])
 
     assert validated['envelope_sha256'] == envelope['envelope_sha256']
     assert boxes == envelope['collision_boxes']
@@ -95,7 +96,7 @@ def test_target_envelope_rejects_wrong_anchor_or_unbound_ray():
         }],
     }
     with pytest.raises(ContractError, match='not bound'):
-        target_envelope_obstacles(payload, [0.0, 0.0, 0.40])
+        target_envelope_obstacles(payload, envelope['planning_anchor_m'])
     payload['viewpoints'][0]['target_envelope_sha256'] = (
         envelope['envelope_sha256'])
     with pytest.raises(ContractError, match='anchor disagrees'):
@@ -232,6 +233,19 @@ def test_successful_plan_remembers_static_failures_before_selected_ray():
     assert remembered == [10]
     assert bridge.remaining_ray_ids == {11}
     assert bridge.retired_ray_ids == {10}
+
+
+def test_exhausted_continuous_ray_ik_is_permanent_but_path_failure_is_not():
+    request = {'scene': {'candidate_views': [
+        {'id': 100, 'ray_id': 10},
+        {'id': 110, 'ray_id': 11},
+    ]}}
+    diagnostics = {'candidate_failures': [
+        {'id': 100, 'stage': 'RAY_IK_FAILURE'},
+        {'id': 110, 'stage': 'PLANNING_FAILURE'},
+    ]}
+
+    assert permanent_ray_ids_from_response(request, diagnostics) == [10]
 
 
 def test_temporary_candidate_absence_does_not_delete_frozen_ray():
@@ -1391,3 +1405,24 @@ def test_zero_prequalified_views_without_visual_reason_fail_as_no_candidate():
         bridge, 'MULTIVIEW_SCAN')
 
     assert 'NO_PREQUALIFIED_VIEWPOINT_CANDIDATE' in reasons
+
+
+def test_clipped_target_failure_is_preserved_for_the_coordinator():
+    bridge = snapshot_bridge()
+    bridge.latest_scan = {
+        'dry_run': True,
+        'scan_session': {
+            'session_id': 'session-a',
+            'accepted_views': 0,
+            'max_views': 13,
+        },
+        'remaining_viewpoints': 13,
+        'selection_failure_code': 'TARGET_TOO_LARGE_OR_CLOSE',
+        'viewpoints': [],
+    }
+
+    reasons = TesseractPlanBridge.snapshot_reasons(
+        bridge, 'MULTIVIEW_SCAN')
+
+    assert 'TARGET_TOO_LARGE_OR_CLOSE' in reasons
+    assert 'NO_PREQUALIFIED_VIEWPOINT_CANDIDATE' not in reasons
