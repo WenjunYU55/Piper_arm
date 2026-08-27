@@ -95,7 +95,7 @@ mission_ray_evidence_and_static_cull_qualification_2026_08_25:
   current_blocker: >-
     Focused changed-file lint reports seven flake8 findings: one E128 in
     ray_mission_diagnostics.py and six formatting findings in
-    test_piper_gui_ray_review.py. Focused pep257 reports eight D213 findings:
+    tests/gui/test_piper_gui_ray_review.py. Focused pep257 reports eight D213 findings:
     six in the new piper_gui ray modules plus bounded_ray_interval and
     capability_bound_ray. The mobile registered test has 73 package-wide
     flake8 and 16 package-wide pep257 failures; all 33 registered functional
@@ -454,7 +454,7 @@ deferred_cleanup:
       reviewed release, move any still-useful pure fixtures under tests and
       delete the compatibility module in a separately reviewed cleanup. Never
       reconnect it to the native GUI.
-    required_retests: [test_piper_gui_phase8.py, test_piper_gui_automation.py, GUI import/bootstrap, public RunTargetScan contract, normal build]
+    required_retests: [tests/gui/test_piper_gui_phase8.py, tests/gui/test_piper_gui_automation.py, GUI import/bootstrap, public RunTargetScan contract, normal build]
   - id: phase3_latest_telemetry_compatibility_mirrors_2026_08_14
     status: coherent_store_active_incremental_mirror_removal_deferred
     issue: >-
@@ -1445,3 +1445,9 @@ post_enable_transient_angle_limit_2026_08_25:
   root_cause: Mission startup reused disabled-state stability and had no powered feedback dwell before its first command. Exact attribution among the combined controller bits remains unproved because raw six-target/status-transition logging was unavailable.
   correction: Require new post-enable samples and a continuous two-second stable, fault-free all-six-enabled proof. Failed proof disables before STARTUP_WRIST; motor-authority loss keeps watchdog-owned no-command containment.
   required_retests: [full software suite, package build, explicit five-percent startup-only run, inspect enable-to-command interval and controller status, cancel/home/disable smoke before E2E]
+
+repository_layout_and_asset_debt_2026_08_27:
+  completed: [thirteen root development tests grouped by GUI driver and planning responsibility, two dated notes archived, documented test commands and AI routing updated, large assets classified without runtime path changes]
+  retained_root_files: [operator shell entrypoints, piper_gui_native.py, piper_gui_automation.py compatibility fixture, calibration utilities, DDS XML, joint bounds, installation and operation documents]
+  optional_future_work: [evaluate Git LFS for binary meshes in a separately coordinated migration, define archival criteria for superseded raw calibration sessions, remove compatibility facades only after their evidence gates]
+  must_not_bundle_with: [runtime geometry regeneration, capability-map regeneration, calibration replacement, ROS interface or operator-command changes]

@@ -1,11 +1,11 @@
 schema_version: 1
 document: ai_context_index
 architecture_cleanup_2026_08_27:
-  status: phase_9_driver_cleanup_in_progress
+  status: phase_10_root_layout_complete_final_validation_pending
   branch: reintegrate/selected-archived-features
   baseline: origin/main at 904dc39e96d5ad36b659cb240b1ad2ab0845775e
   implementation_record: docs/refactor/architecture_cleanup_2026_08_27.md
-  navigation: [docs/refactor/current_architecture.md, docs/refactor/external_contracts.md, docs/refactor/safety_invariants.md, docs/refactor/refactor_risks.md, docs/ai/20-modules.yaml, docs/ai/40-flows.yaml, docs/ai/50-guardrails.yaml, docs/ai/60-debt.yaml]
+  navigation: [docs/refactor/current_architecture.md, docs/refactor/external_contracts.md, docs/refactor/safety_invariants.md, docs/refactor/refactor_risks.md, docs/architecture/asset_policy.md, docs/ai/20-modules.yaml, docs/ai/40-flows.yaml, docs/ai/50-guardrails.yaml, docs/ai/60-debt.yaml]
   phase_1_result: Every mobile-manipulation Python test file is registered with CMake and test_architecture_boundaries.py freezes ROS-free owners, the ROS-free Tesseract worker/contract boundary, and cycle-free internal package imports before structural moves.
   preserved: [all ROS interfaces, launch behavior, configuration values, mission and safety authority, motion and capture behavior, dataset formats, GUI behavior, operator commands]
   validation: [five-package symlink build passes, complete post-characterization mobile suite has 852 passes and one hardware-dependent skip, all seven newly registered CMake targets pass through colcon with 55 test results, 162 Tesseract Python tests pass, 69 driver tests pass with one copyright skip, 18 description tests pass, 193 root GUI reconstruction and calibration tests pass with one environment skip, 25 GroundingDINO selection tests pass, no hardware command]
@@ -389,7 +389,7 @@ gui_viewpoint_policy_selector_2026_08_17:
   selectable_policies: [legacy, voxel_nbv, ray_nbv]
   ray_regions: [target_sector, upper_hemisphere, full_sphere]
   current_saved_policy: ray_nbv
-  validation: [test_piper_gui_scan_policy.py, test_piper_gui_phase8.py]
+  validation: [tests/gui/test_piper_gui_scan_policy.py, tests/gui/test_piper_gui_phase8.py]
 current_change_2026_08_17:
   goal: Simplify mission shutdown and executor runtime gates without changing public ROS, numerical motion, perception, TF/calibration or scan-trajectory contracts.
   authoritative_files: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission_engine.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/safety_evaluator.py]
@@ -1565,3 +1565,10 @@ post_enable_startup_stability_2026_08_25:
   incident: codex-e2e-20260825-2312-ray-integration began STARTUP_WRIST about 0.05 seconds after enable and stopped on transient controller err_code 11264 before acquisition.
   correction: Require new post-enable joint/status samples and two continuous seconds of finite stationary, fault-free, all-six-enabled evidence before STARTUP_WRIST. Failure disables before first motion; motor-authority loss retains watchdog-owned no-command containment.
   unchanged: [0.3-rad direct-home measured-start allowance, measured J1-J5 preservation, positive-only J6 mapping, completed STARTUP_WRIST before simultaneous ROUGH_HOME, immediate in-motion fault stop]
+
+repository_layout_cleanup_2026_08_27:
+  development_tests: {GUI: tests/gui, driver: tests/driver, cross-stack planning: tests/planning}
+  historical_notes: docs/historical
+  asset_policy: docs/architecture/asset_policy.md
+  preserved_root_interfaces: [operator shell entrypoints, piper_gui_native.py, calibration utilities, DDS XML, joint bounds, installation and operation documents]
+  validation: [121 relocated tests pass with one environment skip, combined relocated L515 and reconstruction suite has 194 passes and one skip, no runtime asset moved or deleted]

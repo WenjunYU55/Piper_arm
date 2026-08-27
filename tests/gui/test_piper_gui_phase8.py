@@ -1,3 +1,5 @@
+"""Native GUI responsibility-boundary regressions."""
+
 from types import SimpleNamespace
 
 import pytest
@@ -261,7 +263,7 @@ def test_native_gui_preserves_pre_home_when_other_stages_are_recorded():
     assert "pre_home_positions_rad=profile.get(" in source
 
 
-def test_commissioning_disable_calls_feedback_proved_service_without_hold_gate():
+def test_commissioning_disable_uses_feedback_service_without_hold_gate():
     source = open('piper_gui_native.py', encoding='utf-8').read()
     request_source = source.split(
         '    def request_safe_disable(self) -> None:', 1)[1].split(

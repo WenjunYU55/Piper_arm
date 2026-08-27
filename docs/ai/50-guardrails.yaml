@@ -47,7 +47,7 @@ reconstruction_input_guardrails_2026_08_27:
 driver_joint_policy_guardrails_2026_08_27:
   invariants: [all nine moved bodies and numerical constants are unchanged, policy imports no ROS SDK CAN threading or clock, piper_ctrl_single_node retains CAN receive SDK operations timers callbacks enable disable motor watchdog and command emission, old imports remain compatible]
   blast_radius: [all joint feedback, J6 startup, driver command mapping, limit qualification, motion authorization and motor fault handling]
-  must_retest_if_changed: [test_joint_feedback_continuity.py, test_enable_handshake.py, test_piper_joint6_zero.py, test_piper_motion_limits_transport.py, full piper mobile and Tesseract functional suites, driver and description builds, changed-file lint and compile, supervised physical requalification for any later behavior edit]
+  must_retest_if_changed: [test_joint_feedback_continuity.py, test_enable_handshake.py, tests/driver/test_piper_joint6_zero.py, tests/driver/test_piper_motion_limits_transport.py, full piper mobile and Tesseract functional suites, driver and description builds, changed-file lint and compile, supervised physical requalification for any later behavior edit]
 ray_diagnostics_storage_guardrails_2026_08_27:
   invariants:
     - Every future default writer and historical replay output uses PIPER_ARM_ROOT/datasets/ray_diagnostics.
@@ -55,7 +55,7 @@ ray_diagnostics_storage_guardrails_2026_08_27:
     - The GUI validates canonical and legacy containment independently and carries root identity in its internal selection so duplicate artifact IDs cannot select the wrong report.
     - Root routing is observational only and cannot change ray generation culling ranking feasibility motion capture mission result home or shutdown.
   blast_radius: [planner filter bridge and mission terminal writer convergence, offline simulator and historical replay output, GUI discovery selection and path containment, operator data location]
-  must_retest_if_changed: [test_ray_mission_diagnostics.py, complete mobile and Tesseract suites, test_piper_gui_ray_reports.py, test_piper_gui_ray_review.py, GUI suite, writer-default source audit, command-free replay smoke, changed-file lint and compile, YAML parse, no hardware command]
+  must_retest_if_changed: [test_ray_mission_diagnostics.py, complete mobile and Tesseract suites, tests/gui/test_piper_gui_ray_reports.py, tests/gui/test_piper_gui_ray_review.py, GUI suite, writer-default source audit, command-free replay smoke, changed-file lint and compile, YAML parse, no hardware command]
 capture_one_model_seed_guardrails_2026_08_26:
   invariants:
     - The post-settle live target shape owns final border admission only. It is not the authoritative revolved model.
@@ -80,7 +80,7 @@ object_sized_coverage_and_monotonic_ray_guardrails_2026_08_26:
     - The event journal must expose upgrade_population with population_reset true. Keep past culls visible by default, never label an unchanged carried cull newly culled, and never visually combine bootstrap culls with qualified rays as one population.
     - Ray Review may render candidate L515 meshes only after the current population has cull evidence and only for active survivors. Pre-cull rays and past culled audit rays remain ray lines without camera glyphs.
   blast_radius: [grey Ray Review volume, coverage voxel count and gain, population SHA continuity, permanent-cull retention, retry eligibility, survivor ranking and frontier exhaustion]
-  must_retest_if_changed: [test_target_envelope.py, test_nbv_coverage.py, test_scan_session_memory.py, test_scan_viewpoint_angles.py, test_ray_hard_culls.py, test_ray_mission_diagnostics.py, test_bridge_feedback_freshness.py, test_capability_map.py, complete mobile and Tesseract suites, affected package build, command-free lifecycle replay and viewer model load, supervised physical smoke only with separate authorization]
+  must_retest_if_changed: [test_target_envelope.py, test_nbv_coverage.py, test_scan_session_memory.py, test_scan_viewpoint_angles.py, tests/planning/test_ray_hard_culls.py, test_ray_mission_diagnostics.py, test_bridge_feedback_freshness.py, test_capability_map.py, complete mobile and Tesseract suites, affected package build, command-free lifecycle replay and viewer model load, supervised physical smoke only with separate authorization]
 first_scan_ray_framing_guardrails_2026_08_26:
   invariants:
     - Rough ACQUIRED proves measured tracking only. Border contact there is never classified and cannot fail the mission.
@@ -102,7 +102,7 @@ ray_review_target_layer_guardrails_2026_08_26:
     - Original mask/depth outline displays only recorded qualified contour evidence. Missing historical evidence produces no outline; never synthesize one from the profile or boxes.
     - All layer controls remain inside the ROS-free viewer and have no publisher, service, action, worker request, map write or motion owner.
   blast_radius: [private envelope digest and payload size for new missions, additive private worker scene evidence while collision obstacles remain unchanged, diagnostic artifact size, command-free Ray Review rendering]
-  must_retest_if_changed: [test_target_envelope.py, test_ray_mission_diagnostics.py, test_bridge_feedback_freshness.py, test_piper_gui_ray_review.py, test_piper_gui_ray_reports.py, complete mobile and Tesseract suites, GUI tests, affected package build, no hardware command]
+  must_retest_if_changed: [test_target_envelope.py, test_ray_mission_diagnostics.py, test_bridge_feedback_freshness.py, tests/gui/test_piper_gui_ray_review.py, tests/gui/test_piper_gui_ray_reports.py, complete mobile and Tesseract suites, GUI tests, affected package build, no hardware command]
 ray_review_operator_naming_guardrails_2026_08_27:
   invariants:
     - RayProcesses - HH:MM - DD-MM-YYYY is the actual basename of every new canonical JSON and compatibility HTML report.
@@ -112,7 +112,7 @@ ray_review_operator_naming_guardrails_2026_08_27:
     - Deploy and restart every diagnostics writer together. An old already-running fixed-basename process must not overlap an updated dynamic-basename writer for the same mission directory.
     - Naming remains command-free and cannot affect diagnostics ordering replay evidence planner state motion home or shutdown.
   blast_radius: [diagnostics JSON HTML and lock paths, planner filter bridge and mission diagnostic append convergence, historical replay outputs, Diagnostics Ray Review discovery and selection, viewer window title]
-  must_retest_if_changed: [test_ray_mission_diagnostics.py, complete mobile suite, test_piper_gui_ray_reports.py, test_piper_gui_ray_review.py, test_piper_gui_phase8.py, same-minute separate-directory selection smoke, later-minute append filename-stability smoke, legacy open and append smoke, changed-hunk lint and compile, YAML parse, no hardware command]
+  must_retest_if_changed: [test_ray_mission_diagnostics.py, complete mobile suite, tests/gui/test_piper_gui_ray_reports.py, tests/gui/test_piper_gui_ray_review.py, tests/gui/test_piper_gui_phase8.py, same-minute separate-directory selection smoke, later-minute append filename-stability smoke, legacy open and append smoke, changed-hunk lint and compile, YAML parse, no hardware command]
 ray_review_camera_navigation_guardrails_2026_08_27:
   invariants:
     - Camera navigation remains inside the ROS-free Ray Review child and cannot publish call services send actions write maps or command motion.
@@ -121,7 +121,7 @@ ray_review_camera_navigation_guardrails_2026_08_27:
     - Camera orientation changes presentation only. They do not change recorded camera poses ray directions culls ranks capability evidence target geometry or replay event state.
     - Space replaces its old replay shortcut only over the 3D review controls; P remains the keyboard replay toggle and the replay toolbar button is unchanged.
   blast_radius: [Mission Process camera interaction, Capability Map camera interaction, viewer keyboard navigation and help text]
-  must_retest_if_changed: [test_piper_gui_ray_review.py, test_piper_gui_ray_reports.py, command-free standard-view smoke, manual orbit and Space chooser smoke, no hardware command]
+  must_retest_if_changed: [tests/gui/test_piper_gui_ray_review.py, tests/gui/test_piper_gui_ray_reports.py, command-free standard-view smoke, manual orbit and Space chooser smoke, no hardware command]
 proposed_per_ray_fov_guardrails_2026_08_26:
   status: applies_when_the_proposed_change_is_implemented
   invariants:
@@ -254,7 +254,7 @@ connected_target_mesh_filter_guardrail_2026_08_23:
     - Opening or overlaying measured points must never alter registration, TSDF integration, component filtering, terminal quality, capture, ROS, safety or motion behavior.
     - A failed optional offline-resegmentation attempt must not hide or disable inspection of an existing raw/cleaned diagnostic pair. Opening a FAIL mesh is visual diagnosis, not quality acceptance.
     - Do not couple this command-free output cleanup to capture, target tracking, NBV, Tesseract, motion or hardware.
-  must_retest_if_changed: [reconstruction/test_tsdf_reconstruct.py, reconstruction/test_gui_support.py, test_piper_gui_phase8.py, GUI import, captured and offline-resegmented immutable replay, raw cleaned and measured path/hash inspection, measured per-view point-count sum, Open Measured Points smoke check, YAML parse]
+  must_retest_if_changed: [reconstruction/test_tsdf_reconstruct.py, reconstruction/test_gui_support.py, tests/gui/test_piper_gui_phase8.py, GUI import, captured and offline-resegmented immutable replay, raw cleaned and measured path/hash inspection, measured per-view point-count sum, Open Measured Points smoke check, YAML parse]
 hand_eye_accuracy_guardrail_2026_08_22:
   invariants:
     - Keep firmware S-V1.5-8 on PiPER modified-DH mode 0; do not select mode 1 from a numerically attractive fit.
@@ -273,14 +273,14 @@ offline_resegmentation_guardrail_2026_08_22:
     - Bind every cache generation to the manifest, target prompt/profile and exact model hashes; verify each derived mask path, source RGB hash and mask hash before use.
     - Keep live capture, tracking, NBV, Tesseract, motion, home, shutdown and automatic gateway defaults unchanged.
     - Offline resegmentation does not override mesh dimension, registration, component, watertightness or visual-review failures.
-  must_retest_if_changed: [reconstruction/test_offline_resegment.py, reconstruction/test_tsdf_reconstruct.py, reconstruction/test_gui_support.py, AI_perception_tests/test_groundingdino_target_selection.py, test_piper_gui_phase8.py, immutable dataset replay and GUI import]
+  must_retest_if_changed: [reconstruction/test_offline_resegment.py, reconstruction/test_tsdf_reconstruct.py, reconstruction/test_gui_support.py, AI_perception_tests/test_groundingdino_target_selection.py, tests/gui/test_piper_gui_phase8.py, immutable dataset replay and GUI import]
 manual_mesh_density_guardrail_2026_08_21:
   invariants:
     - The slider controls TSDF mesh voxel length only; it never changes confidence-qualified capture artifacts or accepted coverage.
     - Keep the GUI range bounded to 0.5-through-3.0 mm and retain 1.0 mm default to avoid accidental extreme memory growth.
     - More polygons do not override registration, component, dimension, watertightness, provenance or visual-review failures.
     - Automatic deferred reconstruction remains separately configured and unchanged.
-  must_retest_if_changed: [reconstruction/test_gui_support.py, reconstruction/test_tsdf_reconstruct.py, test_piper_gui_phase8.py, GUI import and changed-file lint]
+  must_retest_if_changed: [reconstruction/test_gui_support.py, reconstruction/test_tsdf_reconstruct.py, tests/gui/test_piper_gui_phase8.py, GUI import and changed-file lint]
 raised_support_plane_guardrail_2026_08_21:
   invariants:
     - Keep floor_z_m at 0.005 in both scan_execution_params.yaml and collision_model.yaml; their values must be regression-compared.
@@ -329,7 +329,7 @@ exchangeable_nbv_policy_guardrail_2026_08_21:
     - voxel_nbv retains at most twelve exact-point candidates. ray_nbv retains at most six information-ranked bounded intervals and the worker must complete one exact-first continuous joint-plus-standoff solve before the next direction.
     - Cheap generation, prequalification and useful-information filtering never claim reachability. The worker remains the only IK, collision, path and visibility authority.
     - Candidate-policy validation and private ray metadata add no ROS interface and cannot alter speed, capture, safety, home, disable or shutdown behavior.
-  must_retest_if_changed: [test_view_generation.py, test_nbv_coverage.py, test_viewpoint_rays.py, test_bridge_feedback_freshness.py, test_contract.py, test_worker_validation.py, test_piper_gui_scan_policy.py, complete mobile and Tesseract suites, colcon build, colcon test]
+  must_retest_if_changed: [test_view_generation.py, test_nbv_coverage.py, test_viewpoint_rays.py, test_bridge_feedback_freshness.py, test_contract.py, test_worker_validation.py, tests/gui/test_piper_gui_scan_policy.py, complete mobile and Tesseract suites, colcon build, colcon test]
 frozen_viewpoint_ray_guardrail_2026_08_21:
   invariants:
     - ray_nbv creates one configured target-sector, upper-hemisphere or full-sphere angular ray pool from the first qualified mission target in base_link and does not translate or regenerate it until a new session.
@@ -342,7 +342,7 @@ frozen_viewpoint_ray_guardrail_2026_08_21:
     - TARGET_TOO_FAR and five-look TARGET_NOT_FOUND must include rough base_link XYZ and enter the unchanged failure home disable cleanup path.
     - Full-sphere generation is candidate generation, not reachability proof. The coarse ray workspace cull removes only empty interval intersections; Tesseract and executor collision/path/visibility checks remain mandatory for every surviving below-target and behind-target ray.
     - GUI policy, region and count controls are disabled during an active mission and alter only the next mission source configuration.
-  must_retest_if_changed: [test_piper_gui_scan_policy.py, test_viewpoint_rays.py, test_scan_viewpoint_angles.py, test_view_generation.py, test_nbv_coverage.py, test_scan_session_memory.py, test_phase1_executor_characterization.py, test_heavy_refresh_bridge.py, test_scan_target_acquisition.py, test_mission_engine.py, test_phase1_mission_characterization.py, test_bridge_feedback_freshness.py, test_contract.py, test_worker_validation.py, focused package build, colcon functional suites, supervised motors-disabled ray inspection before physical motion]
+  must_retest_if_changed: [tests/gui/test_piper_gui_scan_policy.py, test_viewpoint_rays.py, test_scan_viewpoint_angles.py, test_view_generation.py, test_nbv_coverage.py, test_scan_session_memory.py, test_phase1_executor_characterization.py, test_heavy_refresh_bridge.py, test_scan_target_acquisition.py, test_mission_engine.py, test_phase1_mission_characterization.py, test_bridge_feedback_freshness.py, test_contract.py, test_worker_validation.py, focused package build, colcon functional suites, supervised motors-disabled ray inspection before physical motion]
 normalized_marginal_nbv_guardrail_2026_08_20:
   invariants:
     - Only accepted persisted captures modify voxel states, surface direction bits or accepted view directions.
@@ -446,7 +446,7 @@ gripper_diagnostic_guardrail_2026_08_16:
     - Direct gripper diagnosis has exactly one command owner. status/monitor connect with piper_init=false and remain receive-only; a candump observer is permitted because it does not transmit.
     - Never call ResetPiper, send set_zero 0xAE, force enabled jaws, or run the general 40/15 mm direct-SDK motion test while gripper homing status is false. The completed production-path qualification is limited to its supervised 0--10 mm corridor, tagged measured arm hold and compliant test object.
     - Exact 0x159/0x2A8 correlation plus the loaded compliant-object test prove command transport, J7 enable-state response, powered motion and approximately 1.04 N m holding at the existing production target. Production enable/disable targets, effort, ordering and gating remain unchanged; homing false still blocks automatic zero/configuration changes.
-  must_retest_if_changed: [test_debug_piper_gripper.py, piper driver enable-handshake tests, piper package build, command-free process-owner inspection]
+  must_retest_if_changed: [tests/driver/test_debug_piper_gripper.py, piper driver enable-handshake tests, piper package build, command-free process-owner inspection]
 final_equivalence_and_requalification_guardrail_2026_08_15:
   invariants:
     - The software audit verdict is READY FOR SUPERVISED PHYSICAL REQUALIFICATION, not physically requalified and not an authorization for autonomous motion.
@@ -634,8 +634,8 @@ must_retest_if_changed:
   scan_or_workflow: [test_supervised_workflow.py including cloud-before-status and status-before-cloud ordering, /piper/target_cloud publisher/subscriber QoS compatibility, obstacle geometry tests including TF-listener recovery, valid unsafe obstacle forwarding and invalid-geometry rejection, start/approve/confirm/capture/finish/abort/diagnostic_state service smoke, dry-run invariant, accepted_views and modeled_views advance together]
   scan_motion_or_executor: [closed-loop one-look acquisition tests including look_index/session binding, one selected pose, correlated settle/detect/replan and five-look exhaustion; first-look bootstrap_static authority preserved across a transient runtime telemetry hold while moving multiview stays obstacle-gated; one-view scan count, global cumulative-information NBV including a greater-than-30-degree winner, six-degree accepted-view redundancy, twelve-member shortlist, exact-first/five-degree fallback, achieved physical pose independent of accepted coverage and VIEW_COMPLETE hold; command-free planning-snapshot unsettled/prediction/stale no-motion reacquisition and proposal-stage LOW_CONFIDENCE/LOST/SEARCHING recovered approval; hash-matching queued controller-limit refresh wait, retry and bounded-expiry tests; exactly one correlated heavy refresh for transient visual capture rejection; worker alternate-IK retry plus executor dense optical-cone/minimum-distance/final-five-degree path rejection; exact 2026-08-11 incident-pose holder-floor rejection and safe-pose acceptance; stale joint-feedback MoveJ and hold refusal; dedicated workflow request/stamp occlusion correlation; RETURN_HOME zero-capture schema/bridge/executor tests with robot-self-collision exemption but external-floor proof; configured-home feedback proof; focused build and ROS/Tesseract/GUI suite; both rootless qualification suites including dedicated folded-home transaction and external_floor_validation_samples; after explicit authorization, supervised low-speed feature-diverse physical acceptance]
   tesseract_planning_boundary: [test_contract.py schema/hash/source_request_id binding, atomic and bounded worker heartbeat tests, stale/malformed/wrong-generation heartbeat bridge rejection, test_model_builder.py, test_collision_meshes.py deterministic containment/hash checks, test_worker_validation.py unknown/excessive/worsening/uncleared recovery rejection, test_scan_motion.py Foxy monotonic proxy checks, bridge freshness and stable-subscription tests, mode-0 FK, free six-joint/J6 timing, all-zero and exact compact-start acquisition, blocking-box detour, bounded exact-path Bullet validation, stale/hash/fuzz rejection, proposal-only ROS graph, then supervised one-view 5-percent acquisition and cancel-to-hold]
-  gui_or_3d_joint_preview: [test_piper_gui_phase8.py ViewModel/action-client/lifecycle/no-production-process tests, archived test_piper_gui_automation.py pure helper characterization, test_piper_gui_acquisition_service.py absence of legacy GUI service clients, GUI import and fake-root bootstrap, action goal field contract, action cancellation and result display, commissioning lock until terminal result, read-only diagnostic display, preview quaternion/limit tests, preview-only launch, six interactive markers, preview_-prefixed TF lookup, manual publisher removal/restoration, stale/error/path rejection, one small supervised commissioning mirror only with explicit authorization, driver bounds, live TF convergence]
-  launch_or_environment_scripts: [bash syntax, deliberately contaminated-shell preflight, exact canonical package prefixes, scan_capture import, PrepareAcquisition/TesseractReadiness/source_request_id and all bootstrap_recovery TesseractPlan fields, critical-child OnProcessExit shutdown static tests including test_gpu_geometry_launch.py, test_gui_transport_profile.py, XML parse, no-/dev/shm unused-domain probe, bounded isolated-domain GUI launch/close, proof that GUI starts no production child, unchanged GroundingDINO/SAM2 PIDs, preview-only child cleanup, clean canonical focused rebuild, production mission/scan child process startup, killed-critical-child parent shutdown, no repository-root install path in child environment]
+  gui_or_3d_joint_preview: [tests/gui/test_piper_gui_phase8.py ViewModel/action-client/lifecycle/no-production-process tests, archived tests/gui/test_piper_gui_automation.py pure helper characterization, tests/gui/test_piper_gui_acquisition_service.py absence of legacy GUI service clients, GUI import and fake-root bootstrap, action goal field contract, action cancellation and result display, commissioning lock until terminal result, read-only diagnostic display, preview quaternion/limit tests, preview-only launch, six interactive markers, preview_-prefixed TF lookup, manual publisher removal/restoration, stale/error/path rejection, one small supervised commissioning mirror only with explicit authorization, driver bounds, live TF convergence]
+  launch_or_environment_scripts: [bash syntax, deliberately contaminated-shell preflight, exact canonical package prefixes, scan_capture import, PrepareAcquisition/TesseractReadiness/source_request_id and all bootstrap_recovery TesseractPlan fields, critical-child OnProcessExit shutdown static tests including test_gpu_geometry_launch.py, tests/gui/test_gui_transport_profile.py, XML parse, no-/dev/shm unused-domain probe, bounded isolated-domain GUI launch/close, proof that GUI starts no production child, unchanged GroundingDINO/SAM2 PIDs, preview-only child cleanup, clean canonical focused rebuild, production mission/scan child process startup, killed-critical-child parent shutdown, no repository-root install path in child environment]
 risky_change_areas:
   - Unit conversions between SDK integer telemetry, radians, metres, degrees, and millimetres.
   - Treating mechanical CAD dimensions as a calibrated camera optical transform; mesh scale and nominal fit do not measure assembly, print, screw, sensor-frame, or optical tolerances.
@@ -838,7 +838,7 @@ typed_failure_guardrail_2026_08_14:
     - New phrase matching is forbidden outside legacy_failure_adapter while string-only Foxy boundaries remain.
     - The adapter must preserve Phase 1 precedence and exact edge classifications, including camera startup timeout and exhausted visual-replacement budget.
   blast_radius: [mission terminal result, plan retry budgets, visual reacquisition, capture replacement, runtime hold versus abort, configured-home authority, GUI cancel/home recovery]
-  must_retest_if_changed: [test_failure_model.py, all Phase 1 characterization tests, test_mission_core.py, test_scan_motion.py, test_piper_gui_automation.py, public ROS interface hash test, piper_mobile_manipulation build]
+  must_retest_if_changed: [test_failure_model.py, all Phase 1 characterization tests, test_mission_core.py, test_scan_motion.py, tests/gui/test_piper_gui_automation.py, public ROS interface hash test, piper_mobile_manipulation build]
 
 failed_dataset_cleanup_guardrail_2026_08_15:
   invariants:
@@ -910,3 +910,12 @@ post_enable_startup_stability_guardrail_2026_08_25:
     - Intact-control failure disables before first motion; current motor-authority loss uses the watchdog no-command path.
   blast_radius: [mission enable, STARTUP_WRIST admission, pre-motion disable, motor-loss containment]
   must_retest_if_changed: [test_startup_gates.py, test_mission_engine.py, test_mission_core.py, test_phase1_mission_characterization.py, full mobile suite, package build, explicit low-speed startup-only smoke]
+
+repository_layout_and_asset_guardrail_2026_08_27:
+  invariants:
+    - Supported root shell commands and their external behavior remain stable.
+    - ROS package tests stay registered with their package; top-level cross-package tests live under tests by responsibility.
+    - Runtime meshes capability maps calibration and safety data cannot move merely to make the root or Git history smaller.
+    - Generated datasets model weights bags point clouds build output and caches remain untracked unless introduced as explicit minimal fixtures.
+  blast_radius: [developer test discovery, documented commands, URDF resources, collision qualification, planner provenance, calibration provenance]
+  must_retest_if_changed: [complete affected test directory, five-package build for runtime asset paths, mesh manifest and capability-map validation, YAML parse, root operator-path audit]

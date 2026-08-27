@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+"""Joint-six zeroing and driver convention regressions."""
+
 import math
 import json
 from pathlib import Path
@@ -107,7 +109,8 @@ class Joint6ZeroTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "bounds.json"
             path.write_text(
-                '{"joints":{"joint6":{"min":-3.1,"max":5.4,"samples":{"x":1}}}}',
+                '{"joints":{"joint6":{"min":-3.1,"max":5.4,'
+                '"samples":{"x":1}}}}',
                 encoding="utf-8",
             )
             result = joint6.invalidate_joint6_bounds(path)

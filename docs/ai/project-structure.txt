@@ -3,7 +3,9 @@ Piper_arm/
 ├── tools/build_track_robot_description_bundle.py  Deterministic current-arm to tracked-master exporter
 ├── tools/validate_capability_map.py  Command-free convergence replay and smallest-qualified-checkpoint selector
 ├── docs/ai/                         AI-first architecture, contracts, flows, guardrails, debt, 65-research-context.yaml prior art/design notes, authoritative 70-roadmap.yaml milestones, consolidated 80-problem-log.yaml incident history, and implemented-feature rewrite bookmark
-├── docs/refactor/                   Phase 0/1 baselines, Phase 2-9 extraction records, Phase 10 final architecture, final equivalence audit, and staged physical requalification checklist
+├── docs/refactor/                   Phase baselines, responsibility maps, architecture records, equivalence evidence, and staged physical requalification checklist
+├── docs/historical/                 Time-specific scan and session handoff notes retained for provenance, not current operator routing
+├── docs/architecture/               Concise architecture and large-asset policy for maintainers
 ├── piper_gui/                       Phase 8 Tk-independent mission ViewModel, action-client callback adapter, GUI lifecycle bootstrap, bounded next-mission viewpoint selector, command-free Ray Review with independent estimated-revolution/planning-box/source-outline layers and survivor-only post-cull camera glyphs, idle-only next-mission support-floor selector, and validated next-camera-start RGB profile persistence; owns no production mission policy
 ├── CAD/                             User-supplied physical reference photos; the holder/L515 runtime STL copies are owned by piper_description/meshes, while original CAD source provenance is currently absent
 ├── piper_ros_foxy/                  ROS 2 Foxy colcon workspace
@@ -44,7 +46,6 @@ Piper_arm/
 ├── start_piper.sh                   CAN setup and real driver launch, auto-enable off by default
 ├── check_piper_can.sh               Passive no-transmit CAN state/frame preflight
 ├── tools/debug_piper_gripper.py      Single-owner no-zero direct-SDK gripper status/monitor and explicitly confirmed command diagnostics
-├── test_debug_piper_gripper.py       Pure fake-SDK unit coverage for gripper feedback, CAN IDs and no-zero command construction
 ├── start_gui.sh                     Native real-arm GUI launcher
 ├── fastdds_gui_udp_only.xml         Foxy GUI/scan loopback-only UDP profile; disables stale shared-memory graph transport
 ├── enable_piper.sh / disable_piper.sh  Explicit software motor control
@@ -52,14 +53,11 @@ Piper_arm/
 ├── piper_gui/ray_reports.py         Command-free canonical datasets/ray_diagnostics plus historical active_scan report discovery, root-qualified unique-directory RayProcesses selection, one-child stdin protocol, compatibility HTML opening and canonical-root immutable historical-dataset replay helpers
 ├── piper_gui/ray_review_model.py    ROS-free schema-v1/v2 event-time state, target-envelope presentation mesh, exact coverage, URDF/FK and read-only capability-map model
 ├── piper_gui/ray_review_viewer.py   Freely resizable two-tab PyQt5/VTK Mission Process and Capability Map review process with independent target-evidence layers, base_link-Z-upright orbit, and Space standard-view chooser
-├── test_piper_gui_ray_reports.py    Path-containment, report discovery/opening and native-GUI ray-control regressions
-├── test_piper_gui_ray_review.py     Journal isolation, child reuse, full URDF triangle count and immutable capability-map characterization
-├── test_ray_hard_culls.py           Population/revision ledger, pre-rank survivor, event-time reevaluation and deferred-shortlist regressions
 ├── piper_gui_automation.py          Archived side-effect-free pre-Phase-8 GUI workflow characterization helpers; not imported by the production GUI
-├── test_piper_gui_automation.py     Archived helper characterization plus Phase 8 native-GUI ownership assertions
-├── test_piper_gui_phase8.py         Tk-free ViewModel/action-client/bootstrap and no-alternate-controller regressions
-├── test_piper_gui_scan_policy.py    Pure tests for atomic, comment-preserving policy and ray-geometry GUI configuration
-├── test_gui_transport_profile.py    GUI/scan Fast DDS launcher and XML transport contract tests
+├── tests/                           Cross-package development tests; conftest preserves the historical repository-root working directory
+│   ├── gui/                         Native GUI, GUI ROS adapter, ray-review, scan-policy, camera-profile and transport regressions
+│   ├── driver/                      Fake-SDK gripper, J6 convention and DDS motion-limit transport regressions
+│   └── planning/                    Cross-GUI/ROS permanent ray-cull characterization
 ├── piper_joint_bounds.json          Measured hard joint-bound records
 ├── piper_home_pose.json             Ignored local hash-bound schema-v4 rough/ready, terminal PRE_HOME and negative-storage profile; startup J6 is positive-only and positive non-ready feedback blocks before enable
 ├── piper_calibrate_bounds.py        Joint-bound recorder

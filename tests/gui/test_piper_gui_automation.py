@@ -31,6 +31,9 @@ from piper_gui_automation import (
 )
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
 def test_command_publisher_ownership_requires_exact_executor_identity():
     assert command_publisher_ownership_rejection(
         ['/scan_viewpoint_executor']) == ''
@@ -96,10 +99,10 @@ def test_step45_auto_recovery_is_bounded_and_never_hides_operator_blockers():
 
 def test_legacy_recovery_helpers_are_not_used_by_production_gui():
     source = (
-        Path(__file__).resolve().parent / 'piper_gui_native.py'
+        PROJECT_ROOT / 'piper_gui_native.py'
     ).read_text(encoding='utf-8')
     ros_source = (
-        Path(__file__).resolve().parent / 'piper_gui' / 'ros_node.py'
+        PROJECT_ROOT / 'piper_gui' / 'ros_node.py'
     ).read_text(encoding='utf-8')
     production_source = source + ros_source
     assert 'prepare_scan_from_current_lock' not in production_source
@@ -110,7 +113,7 @@ def test_legacy_recovery_helpers_are_not_used_by_production_gui():
 
 def test_automatic_scan_is_a_separate_one_start_button_tab():
     source = (
-        Path(__file__).resolve().parent / 'piper_gui_native.py'
+        PROJECT_ROOT / 'piper_gui_native.py'
     ).read_text(encoding='utf-8')
     assert 'notebook.add(automatic, text="Automatic Scan")' in source
     automatic = source.split('def _build_automatic_scan', 1)[1].split(
@@ -164,7 +167,7 @@ def test_automation_speed_is_finite_and_within_sdk_range():
 
 def test_rootless_worker_keeps_shell_parent_for_bubblewrap_lifetime():
     wrapper = (
-        Path(__file__).resolve().parent
+        PROJECT_ROOT
         / 'motion_planning'
         / 'tesseract'
         / 'run_worker.sh'
@@ -172,7 +175,7 @@ def test_rootless_worker_keeps_shell_parent_for_bubblewrap_lifetime():
     assert 'exec "${ROOTLESS_BWRAP[@]}"' not in wrapper
     assert '"${ROOTLESS_BWRAP[@]}" \\\n' in wrapper
     assert '--die-with-parent' in (
-        Path(__file__).resolve().parent
+        PROJECT_ROOT
         / 'motion_planning'
         / 'tesseract'
         / 'rootless_common.sh'
@@ -467,14 +470,14 @@ def test_gui_phase_and_timeout_contracts_are_explicit():
 
 def test_gui_joint6_fallback_uses_full_turn_limit():
     source = (
-        Path(__file__).resolve().parent / 'piper_gui_native.py'
+        PROJECT_ROOT / 'piper_gui_native.py'
     ).read_text(encoding='utf-8')
     assert '("joint6", -math.pi, math.pi, "rad")' in source
 
 
 def test_production_gui_has_no_step2_service_or_retry_state():
     source = (
-        Path(__file__).resolve().parent / 'piper_gui_native.py'
+        PROJECT_ROOT / 'piper_gui_native.py'
     ).read_text(encoding='utf-8')
     assert '_fresh_acquisition_prepare_client' not in source
     assert 'pending_acquisition_session_id' not in source
@@ -484,7 +487,7 @@ def test_production_gui_has_no_step2_service_or_retry_state():
 
 def test_production_gui_does_not_classify_acquisition_failures():
     source = (
-        Path(__file__).resolve().parent / 'piper_gui_native.py'
+        PROJECT_ROOT / 'piper_gui_native.py'
     ).read_text(encoding='utf-8')
     assert 'Acquisition proposal invalidated' not in source
     assert '_acquisition_fail' not in source
@@ -493,7 +496,7 @@ def test_production_gui_does_not_classify_acquisition_failures():
 
 def test_production_gui_does_not_approve_executor_plans():
     source = (
-        Path(__file__).resolve().parent / 'piper_gui_native.py'
+        PROJECT_ROOT / 'piper_gui_native.py'
     ).read_text(encoding='utf-8')
     assert '/scan_viewpoint_executor/approve' not in source
     assert 'ApproveScanExecution' not in source
@@ -503,7 +506,7 @@ def test_production_gui_does_not_approve_executor_plans():
 
 def test_production_action_owns_enable_and_plan_invalidation():
     source = (
-        Path(__file__).resolve().parent / 'piper_gui_native.py'
+        PROJECT_ROOT / 'piper_gui_native.py'
     ).read_text(encoding='utf-8')
     assert 'arm_enable_confirmed' not in source
     assert 'prepare_acquisition' not in source
@@ -515,7 +518,7 @@ def test_production_action_owns_enable_and_plan_invalidation():
 
 def test_commissioning_disable_is_direct_but_mission_cancel_still_homes():
     source = (
-        Path(__file__).resolve().parent / 'piper_gui_native.py'
+        PROJECT_ROOT / 'piper_gui_native.py'
     ).read_text(encoding='utf-8')
     assert 'command=self.request_safe_disable' in source
     safe_disable = source.split(
@@ -529,7 +532,7 @@ def test_commissioning_disable_is_direct_but_mission_cancel_still_homes():
     assert 'Commissioning disable requested directly' in safe_disable
 
     executor = (
-        Path(__file__).resolve().parent
+        PROJECT_ROOT
         / 'piper_ros_foxy'
         / 'src'
         / 'piper_mobile_manipulation'

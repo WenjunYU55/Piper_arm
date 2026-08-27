@@ -72,7 +72,7 @@ position covariance `0.01`.
 
 ## Phase 8 tests
 
-`test_piper_gui_phase8.py` protects input validation, immutable view state,
+`tests/gui/test_piper_gui_phase8.py` protects input validation, immutable view state,
 feedback/result display, reconstruction eligibility, action callback mapping,
 cancellation, rejected/unavailable action servers, lifecycle cleanup, and the
 absence of production scan-service/process control from the native GUI.

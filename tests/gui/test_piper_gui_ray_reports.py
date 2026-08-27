@@ -1,3 +1,5 @@
+"""Ray-report presentation regressions."""
+
 from datetime import timezone
 from pathlib import Path
 

@@ -1,4 +1,4 @@
-# End-to-end scan test resume point — 2026-07-30
+# End-to-end scan test resume point — 2026-07-30 (Historical)
 
 ## Safe paused state
 

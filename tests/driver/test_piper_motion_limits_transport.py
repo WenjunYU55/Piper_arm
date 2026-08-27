@@ -1,4 +1,4 @@
-"""Real DDS regression for the controller-limit message used by the GUI stack."""
+"""Real DDS regression for the GUI stack's controller-limit message."""
 
 import os
 import multiprocessing
@@ -65,7 +65,7 @@ def cross_process_subscriber(result_queue):
 
 
 def configure_transport(monkeypatch):
-    repository = Path(__file__).resolve().parent
+    repository = Path(__file__).resolve().parents[2]
     monkeypatch.setenv(
         'FASTRTPS_DEFAULT_PROFILES_FILE',
         str(repository / 'fastdds_gui_udp_only.xml'),

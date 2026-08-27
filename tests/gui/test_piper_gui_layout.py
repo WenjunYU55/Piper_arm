@@ -1,3 +1,5 @@
+"""Native GUI layout regressions."""
+
 from piper_gui_native import fitted_gui_geometry, primary_monitor_geometry
 
 

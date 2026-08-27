@@ -185,3 +185,27 @@ flake8/pep257 and byte compilation, and the driver plus description packages
 build. The package-wide style tests remain unusable because they scan the
 entire repository build/install tree and report the established generated and
 historical lint baseline; no finding is in a changed file.
+
+## Phase 10: repository layout and asset policy
+
+Thirteen cross-package development tests moved from the repository root into
+responsibility-labelled `tests/gui`, `tests/driver`, and `tests/planning`
+directories. Their assertions and imports are unchanged; a shared test fixture
+preserves the repository-root working directory assumed by the original files.
+Two date-specific operational notes moved to `docs/historical/`. All supported
+operator shell entrypoints, the native GUI launcher, calibration utilities,
+DDS XML, safety data and top-level installation/operation documents remain at
+their established paths.
+
+The complete relocated development-test directory passes 121 tests with one
+environment-dependent ROS transport skip. The combined relocated, L515 and
+reconstruction suite passes 194 tests with one skip. Documentation routing and
+all affected AI-doc test paths were updated.
+
+The large-asset audit found 115 tracked STL files (about 84 MB), one qualified
+8.1 MB camera capability map and 213 hand-eye calibration records. These are
+canonical source assets, runtime planning assets, or calibration provenance;
+none were deleted, regenerated, renamed or moved. Generated datasets, model
+weights, bags, point clouds, build/install/log trees and Python caches remain
+untracked. `docs/architecture/asset_policy.md` records the separate retention,
+archive and optional Git LFS recommendations.

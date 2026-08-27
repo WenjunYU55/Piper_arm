@@ -92,7 +92,7 @@ missing_complete_ray_decision_audit_2026_08_25:
   symptom: Existing per-capture metadata could explain the chosen plan, but it did not preserve one complete event-time record of every generated frozen ray, planner/history/information elimination, workspace/capability result, bridge shortlist, worker attempt, selected endpoint, accepted capture, target-model update and terminal result. Operators therefore could not reliably answer why a ray disappeared or distinguish a deferred ray from an eliminated one across the complete mission.
   root_cause: Evidence was distributed across transient private ROS JSON, bridge/worker logs and accepted-frame metadata. There was no mission-grouped source of truth, exact coverage-generation artifact or event-time viewer model.
   correction: ray_mission_diagnostics.py now atomically merges a schema-v2 append-only event journal under the mission task identity, retains schema-v1 loading without invented history, persists exact compressed CoverageSnapshot generations, renders compatibility HTML and feeds one reusable ROS-free PyQt5/VTK Ray Review process. Planner, filter, bridge, capture and terminal adapters add only evidence and catch diagnostic failures without changing runtime output.
-  evidence: [test_ray_mission_diagnostics.py, test_piper_gui_ray_reports.py, test_piper_gui_ray_review.py, 51 current focused ray capability diagnostic hard-cull and GUI tests pass, 782 complete mobile tests pass, 80 complete GUI tests pass, docs/ai/30-contracts.yaml, docs/ai/40-flows.yaml]
+  evidence: [test_ray_mission_diagnostics.py, tests/gui/test_piper_gui_ray_reports.py, tests/gui/test_piper_gui_ray_review.py, 51 current focused ray capability diagnostic hard-cull and GUI tests pass, 782 complete mobile tests pass, 80 complete GUI tests pass, docs/ai/30-contracts.yaml, docs/ai/40-flows.yaml]
   remaining: Clean the changed-file lint findings, generate one command-free full lifecycle report from current synthetic or recorded inputs, then inspect the first later explicitly authorized physical mission artifact. Historical archives must remain labelled partial when rejected-ray history is unavailable.
   rollback_warning: Do not reconstruct missing historical rejection identities, recompute an authoritative historical rank, infer feasibility from text or let report persistence/rendering become a planning or motion gate.
 static_ray_eliminations_reentered_upstream_ranking_2026_08_25:
@@ -101,7 +101,7 @@ static_ray_eliminations_reentered_upstream_ranking_2026_08_25:
   symptom: The bridge already prevented reattempt of worker-proven session-static endpoint failures, but the planner still regenerated and ranked those rays after accepted captures. Workspace and capability-map rejections were also recalculated downstream for each generation, so permanently eliminated rays repeatedly consumed upstream scoring and remained difficult to distinguish from generation-contextual failures.
   root_cause: Permanent evidence lived only inside its downstream owner. The planner had no population-bound, revision-bound feedback contract that could safely remove static failures before accepted-history filtering and NBV ranking.
   correction: ray_hard_culls.py defines one canonical stable-direction-universe SHA-256 identity and complete snapshots from exactly two sources. The reachability filter publishes cumulative workspace/capability rejections; the bridge publishes worker permanent IDs plus typed exhaustive RAY_IK_FAILURE intersected with the exact request. The planner accepts matching reliable transient-local snapshots, keeps one revision-bound ledger per source and prunes matching IDs before accepted-neighbour retirement and later ranking.
-  evidence: [test_ray_hard_culls.py, test_viewpoint_feedback_freshness.py, test_bridge_feedback_freshness.py, test_scan_session_memory.py, 51 current focused ray capability diagnostic hard-cull and GUI tests pass, 782 complete mobile tests pass, 158 complete Tesseract tests pass, two-package build passes]
+  evidence: [tests/planning/test_ray_hard_culls.py, test_viewpoint_feedback_freshness.py, test_bridge_feedback_freshness.py, test_scan_session_memory.py, 51 current focused ray capability diagnostic hard-cull and GUI tests pass, 782 complete mobile tests pass, 158 complete Tesseract tests pass, two-package build passes]
   remaining: Clean changed-file lint, rerun registered mobile colcon tests and inspect a command-free live-shaped two-publisher trace before any physical claim.
   rollback_warning: Never promote collision path visibility timeout transport error generic TESSERACT_EXHAUSTED partial solve or human-readable reason matching into a permanent upstream cull. Typed RAY_IK_FAILURE is allowed only after complete configured endpoint-search exhaustion. Accepted captures alone update coverage and retire their 15-degree neighbourhood; survivors retain ordinary NBV ordering.
 target_range_clipped_ray_and_unbounded_capability_search_2026_08_25:
@@ -125,7 +125,7 @@ ray_diagnostics_changed_file_lint_gap_2026_08_25:
   symptom: All focused and complete functional suites pass, both affected packages build and the Tesseract registered test passes, but changed-file lint is not clean and the mobile registered colcon result remains red.
   root_cause: >-
     Current changed files contain one E128 in ray_mission_diagnostics.py, six
-    formatting findings in test_piper_gui_ray_review.py and eight D213
+    formatting findings in tests/gui/test_piper_gui_ray_review.py and eight D213
     docstring findings: six across the new piper_gui ray modules plus
     bounded_ray_interval and capability_bound_ray. The mobile package also
     retains broader historical lint debt, currently reported as 73 flake8 and
@@ -526,13 +526,13 @@ problem_groups:
       symptom: After the failed E2E run, commissioning Enable returned true but posted manual poses never moved. Commissioning Safe Disable then timed out saying its current-feedback hold did not settle.
       root_cause: Driver logs prove every piper_native_gui command, including the GUI's disable hold, was rejected while stale STARTUP_WRIST authority remained. The running driver predated the transaction-reset rebuild. Independently, the GUI created its publisher immediately even while scan_viewpoint_executor remained a writer, and refused to call /enable_srv false until a strict 0.025/0.005-rad hold window passed.
       correction: Start GUI commissioning motion without a publisher and acquire it only after an empty command-topic proof. Give explicit GUI commands a bounded unfinished-startup contract—measured-J6 hold with J1-J5 motion, or positive J6-only movement toward zero. Replace the misleading settle-gated commissioning disable with an explicitly labelled no-home/no-motion direct service request; preserve autonomous Cancel/Home unchanged.
-      evidence: [/run/user/1000/piper_target_scan_logs/driver.log, piper_gui_native.py, piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py, piper_ros_foxy/src/piper/test/test_enable_handshake.py, test_piper_gui_phase8.py, test_piper_gui_automation.py]
+      evidence: [/run/user/1000/piper_target_scan_logs/driver.log, piper_gui_native.py, piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py, piper_ros_foxy/src/piper/test/test_enable_handshake.py, tests/gui/test_piper_gui_phase8.py, tests/gui/test_piper_gui_automation.py]
     - id: gripper_feedback_all_zero_2026_08_16
       status: resolved_expected_position_control_absolute_reference_pending
       symptom: The gripper now mechanically operates but is reported not stiff after enable; earlier J7/J8 ROS feedback appeared fixed at zero.
       root_cause: EXPECTED POSITION CONTROL. J7's enable bit alone while J1-J6 were disabled did not energize useful motion, making the initial direct stiffness test invalid. Through the normal production sequence, all six arm motors enabled first, J7 opened from 0.28 to 9.66 mm at 0.5 N m, and the standard 0 mm/1.0 N m command held a compliant object at 4.48--4.76 mm with approximately 1.04 N m for five seconds. Feedback was live, no fault or override occurred, and final disable succeeded. Soft unloaded jaws at an already-satisfied target were therefore not evidence of failed torque.
       correction: No production control change is required for this symptom. Keep the proved all-six-arm-before-J7 ordering, do not force enabled jaws or increase effort for subjective stiffness, and retain the existing disable order. Homing status is still false, so treat the absolute aperture datum as a separate manufacturer-procedure question and never reset/set zero automatically.
-      evidence: [tools/debug_piper_gripper.py, test_debug_piper_gripper.py, piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py, piper_ros_foxy/src/piper/test/test_enable_handshake.py, docs/ai/60-debt.yaml]
+      evidence: [tools/debug_piper_gripper.py, tests/driver/test_debug_piper_gripper.py, piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py, piper_ros_foxy/src/piper/test/test_enable_handshake.py, docs/ai/60-debt.yaml]
     - id: j5_table_contact_terminal_home_2026_08_11
       status: resolved
       symptom: The installed camera-holder/L515 assembly contacted the table during terminal home and J5 faulted.
@@ -592,7 +592,7 @@ problem_groups:
       symptom: The GUI showed no pre-home recording button, and recording either rough/ready home or storage J6 could silently erase the valid shutdown-only pre-home from schema-v4.
       root_cause: Both single-stage save calls omitted pre_home_positions_rad and save_home_pose correctly interpreted the omission as pre_home_configured=false.
       correction: Add Record Pre-Home (Shutdown Only), display its six joints, and preserve every unaffected home stage whenever one stage is recorded.
-      evidence: [piper_gui_native.py, test_piper_gui_phase8.py, piper_home_pose.json]
+      evidence: [piper_gui_native.py, tests/gui/test_piper_gui_phase8.py, piper_home_pose.json]
     - id: configured_storage_self_collision_false_block
       status: resolved
       symptom: Conservative robot collision geometry rejected the intentionally supported stored fold.
@@ -740,7 +740,7 @@ problem_groups:
       symptom: Enabling native L515 confidence caused the normal wrapper to report RS2_USB_STATUS_BUSY and never declare the RGB global-time control.
       root_cause: The wrapper changed preset/global-time controls while depth, confidence and RGB were still claiming USB interfaces, forcing an unsafe partial stream re-enable.
       correction: Both launchers enable stream synchronization, wait for a real color CameraInfo sample and only then apply and verify preset/global-time controls.
-      evidence: [L515_camera/start_l515_camera.sh, L515_camera/start_l515_camera_low_bandwidth.sh, test_gui_transport_profile.py, docs/ai/60-debt.yaml]
+      evidence: [L515_camera/start_l515_camera.sh, L515_camera/start_l515_camera_low_bandwidth.sh, tests/gui/test_gui_transport_profile.py, docs/ai/60-debt.yaml]
     - id: model_worker_network_retry
       status: resolved
       symptom: GroundingDINO worker readiness could stall on Hugging Face network retries.
@@ -808,7 +808,7 @@ problem_groups:
       symptom: Service discovery succeeded but PrepareAcquisition timed out.
       root_cause: XML endpoint QoS selected a fixed 55-byte history and rejected the larger response sample.
       correction: Keep transport XML but set RMW_FASTRTPS_USE_QOS_FROM_XML=0; GUI owns fresh bounded service clients on a re-entrant executor.
-      evidence: [docs/ai/60-debt.yaml, test_gui_transport_profile.py]
+      evidence: [docs/ai/60-debt.yaml, tests/gui/test_gui_transport_profile.py]
     - id: stale_root_install_shadowed_workspace
       status: resolved
       symptom: Launches imported obsolete interfaces and omitted new scan nodes despite successful source edits.

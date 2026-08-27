@@ -10,6 +10,9 @@ from piper_gui.camera_profile import (
 )
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
 def test_camera_profile_round_trip_is_atomic_and_idempotent(tmp_path):
     path = Path(tmp_path) / "rgb_profile.conf"
     saved = write_camera_profile(path, 1280, 720, 15)
@@ -44,7 +47,7 @@ def test_camera_profile_refuses_malformed_saved_file(tmp_path):
 ])
 def test_camera_launch_reads_saved_profile_and_retains_environment_override(
         script_name):
-    source = (Path(__file__).resolve().parent / "L515_camera" /
+    source = (PROJECT_ROOT / "L515_camera" /
               script_name).read_text(encoding="utf-8")
     assert "rgb_profile.conf" in source
     assert 'PIPER_CAMERA_COLOR_WIDTH:-$saved_color_width' in source

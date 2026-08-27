@@ -1,4 +1,4 @@
-"""Command-free GUI ROS ownership regression for Phase 8."""
+"""Command-free GUI ROS ownership regressions."""
 
 import queue
 

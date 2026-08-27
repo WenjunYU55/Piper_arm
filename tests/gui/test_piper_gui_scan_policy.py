@@ -1,3 +1,5 @@
+"""GUI scan-policy regressions."""
+
 from pathlib import Path
 
 import pytest

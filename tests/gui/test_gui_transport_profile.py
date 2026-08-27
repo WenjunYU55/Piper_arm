@@ -2,7 +2,7 @@ from pathlib import Path
 import xml.etree.ElementTree as ElementTree
 
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[2]
 NAMESPACE = {"f": "http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles"}
 
 
@@ -61,8 +61,10 @@ def test_l515_parameter_transactions_are_process_bounded():
         # Keep the raw CLI invocation inside the bounded helper. Every actual
         # preset/global-time transaction must call that helper instead.
         assert launcher.count("ros2 param") == 1
-        assert launcher.count("camera_param set --no-daemon --spin-time 0.5") == 3
-        assert launcher.count("camera_param get --no-daemon --spin-time 0.5") == 5
+        set_command = "camera_param set --no-daemon --spin-time 0.5"
+        get_command = "camera_param get --no-daemon --spin-time 0.5"
+        assert launcher.count(set_command) == 3
+        assert launcher.count(get_command) == 5
 
 
 def test_supervised_scan_launch_shuts_down_on_critical_child_exit():

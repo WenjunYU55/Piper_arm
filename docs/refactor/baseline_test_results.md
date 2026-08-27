@@ -88,7 +88,7 @@ cd /home/prl/Piper_arm
 source /opt/ros/foxy/setup.bash
 source piper_ros_foxy/install/setup.bash
 ROS_DOMAIN_ID=143 PIPER_MISSION_ENABLE_REAL_MOTION=0 \
-  python3 -m pytest -q test_*.py \
+  python3 -m pytest -q tests \
     reconstruction/test_tsdf_reconstruct.py \
     L515_camera/test_validate_fixed_board.py
 ```

@@ -614,3 +614,8 @@ post_enable_startup_load_order_2026_08_25:
   sequence: [feedback-confirmed enable, discard pre-enable stability history, receive new joint and arm-status samples, prove two seconds stationary fault-free and all-six-enabled, STARTUP_WRIST, prove ready zero, simultaneous six-joint ROUGH_HOME]
   failure_before_first_motion: Intact authority requests feedback-confirmed disable without STARTUP_WRIST; motor-authority loss emits no further command and uses watchdog six-disabled proof.
   unchanged: [coordinator ownership, driver CAN ownership, executor stage ownership, STARTUP_WRIST before ROUGH_HOME, acquisition after rough home]
+
+repository_layout_non_runtime_change_2026_08_27:
+  moved: [root development tests to tests by responsibility, dated handoff notes to docs/historical]
+  runtime_load_order_change: none
+  preserved_paths: [all shell entrypoints, launch files, configuration, ROS packages, URDF and mesh resources, calibration, capability map, datasets]

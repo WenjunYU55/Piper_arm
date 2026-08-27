@@ -22,7 +22,7 @@ from piper_gui.ray_review_viewer import (
 )
 
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_event_scrubbing_never_leaks_a_later_rank(tmp_path):

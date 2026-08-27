@@ -5,7 +5,11 @@ from types import SimpleNamespace
 import pytest
 
 
-SCRIPT = pathlib.Path(__file__).parent / "tools" / "debug_piper_gripper.py"
+SCRIPT = (
+    pathlib.Path(__file__).resolve().parents[2]
+    / "tools"
+    / "debug_piper_gripper.py"
+)
 SPEC = importlib.util.spec_from_file_location("debug_piper_gripper", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)

@@ -1,3 +1,5 @@
+"""Persistent hard-cull planning regressions."""
+
 from piper_gui.ray_review_model import state_at_event
 from piper_mobile_manipulation.ray_hard_culls import (
     HardCullLedger,
