@@ -20,11 +20,11 @@ from rclpy.time import Time
 from tf2_ros import Buffer, TransformException, TransformListener
 
 from piper_mobile_manipulation.action import RunTargetScan
-from piper_mobile_manipulation.mission_core import (
+from piper_mobile_manipulation.mission.core import (
     MAX_PENDING_MISSIONS,
     validate_goal_payload,
 )
-from piper_mobile_manipulation.mission_spool import MissionSpool
+from piper_mobile_manipulation.mission.spool import MissionSpool
 from piper_mobile_manipulation.msg import MeshJobStatus
 from piper_mobile_manipulation.reconstruction_jobs import (
     reconstruction_terminal_decision,
@@ -427,7 +427,7 @@ class TargetScanGatewayNode(Node):
         }
         # Mission identity is recomputed over the local immutable task. The
         # source transform remains independently hashed by the spool envelope.
-        from piper_mobile_manipulation.mission_core import sha256_value
+        from piper_mobile_manipulation.mission.core import sha256_value
         identity = {
             key: local[key] for key in (
                 'task_id', 'task_type', 'target_label', 'target_profile',

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Iterable, Tuple
 
-from piper_mobile_manipulation.failure_model import (
+from piper_mobile_manipulation.infrastructure.failure_model import (
     as_failure,
     Failure,
     FailureCode,

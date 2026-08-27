@@ -5,6 +5,11 @@ architecture_cleanup_routing_2026_08_27:
   rule: Move one responsibility at a time from the origin/main behavior baseline. Add the new owner first, keep an explicit old-path compatibility facade, migrate consumers, run the linked characterization, and only then consider facade removal. Domain modules must not import ROS adapters and no move may create an internal import cycle.
   required_retests: [test_architecture_boundaries.py, changed subsystem characterization, complete mobile tests, affected package build, public interface hashes, AI YAML parse]
   branch_rule: Commit and push only the history-preserving reintegrate/selected-archived-features line. Never update main as part of this cleanup.
+responsibility_package_maintenance_2026_08_27:
+  mission: [piper_mobile_manipulation/mission/core.py, piper_mobile_manipulation/mission/engine.py, piper_mobile_manipulation/mission/spool.py]
+  infrastructure: [piper_mobile_manipulation/infrastructure/failure_model.py, piper_mobile_manipulation/infrastructure/telemetry_store.py, piper_mobile_manipulation/infrastructure/process_supervisor.py]
+  facades_are_not_owners: [mission_core.py, mission_engine.py, mission_spool.py, failure_model.py, telemetry_store.py, process_supervisor.py]
+  rule: Put behavior edits in the package owner. Facades may only explicitly re-export the frozen public symbols and must not gain callbacks state policy or fallback implementations.
 ray_diagnostics_storage_root_2026_08_27:
   inspect: [scan_viewpoint_planner_node.py ray_diagnostics_root, viewpoint_reachability_filter_node.py ray_diagnostics_root, piper_tesseract_foxy/bridge_node.py ray_diagnostics_root, target_scan_mission_node.py terminal diagnostics store, tools/simulate_size_aware_ray_review.py report_root, piper_gui/ray_reports.py canonical and legacy roots]
   rule: Every new writer and replay uses datasets/ray_diagnostics. Keep datasets/active_scan/ray_diagnostics read-only compatible in the GUI for historical reports, but never select it as a future writer default or silently migrate its contents.

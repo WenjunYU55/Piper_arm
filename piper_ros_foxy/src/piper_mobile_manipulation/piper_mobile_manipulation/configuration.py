@@ -6,7 +6,7 @@ import os
 from types import MappingProxyType
 from typing import Mapping, Tuple
 
-from piper_mobile_manipulation.mission_core import (
+from piper_mobile_manipulation.mission.core import (
     MAX_FEATURE_CAPTURES,
     MAX_PENDING_MISSIONS,
     MISSION_QUEUE_COALESCE_SEC,

@@ -1,5 +1,7 @@
 schema_version: 1
 document: consolidated_problem_and_incident_log
+architecture_path_note_2026_08_27:
+  interpretation: Historical incident references to mission_core.py mission_engine.py mission_spool.py failure_model.py telemetry_store.py and process_supervisor.py remain valid compatibility paths. Their current behavior owners are the matching mission/ or infrastructure/ modules; incident evidence and historical behavior are unchanged.
 capture_one_model_seed_expired_before_qualified_generation_2026_08_26:
   state: fixed_and_physical_generation_one_retest_passed
   task: codex-e2e-qualified-rays-20260826-2331

@@ -23,7 +23,7 @@ from piper_mobile_manipulation.msg import (
     TrackedTarget,
     TrackingHealth,
 )
-from piper_mobile_manipulation.failure_model import (
+from piper_mobile_manipulation.infrastructure.failure_model import (
     as_failure,
     FailureTag,
 )
@@ -104,7 +104,9 @@ from piper_mobile_manipulation.srv import (
     AuthorizeMission,
     ExecuteHomeStage,
 )
-from piper_mobile_manipulation.telemetry_store import TelemetryStore
+from piper_mobile_manipulation.infrastructure.telemetry_store import (
+    TelemetryStore,
+)
 from piper_mobile_manipulation.target_envelope import (
     classify_centered_silhouette,
     CROPPED_TOO_LARGE_DISTANCE_M,

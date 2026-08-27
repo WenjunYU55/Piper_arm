@@ -12,6 +12,10 @@ architecture_cleanup_guardrails_2026_08_27:
     - Duplicate safety validation at trust boundaries is retained unless a separate behavior change is explicitly authorized and physically requalified.
   blast_radius: [all Python imports, ROS installed executable paths, launch composition, mission and executor state, Tesseract spool compatibility, operator scripts]
   must_retest_if_changed: [test_architecture_boundaries.py, Phase 1 external mission and executor characterization, complete affected subsystem tests, complete mobile tests, affected package build, public interface hashes, AI YAML parse]
+responsibility_package_guardrails_2026_08_27:
+  invariants: [root-level compatibility modules are explicit export-only facades, every facade symbol is identical to its package-owner object, package owners remain ROS-free, owner imports never point back to facades, MissionEngine remains the sole mission and terminal shutdown progression authority, process signal escalation and telemetry copy semantics are unchanged]
+  blast_radius: [all autonomous mission imports, action result mapping, startup and shutdown, executor failure handling, telemetry decisions, child-process cleanup, external Python imports]
+  must_retest_if_changed: [test_architecture_boundaries.py, test_failure_model.py, test_telemetry_store.py, test_process_supervisor.py, test_mission_core.py, test_mission_engine.py, Phase 1 mission and executor characterization, complete mobile suite, package build, public interface hashes]
 ray_diagnostics_storage_guardrails_2026_08_27:
   invariants:
     - Every future default writer and historical replay output uses PIPER_ARM_ROOT/datasets/ray_diagnostics.

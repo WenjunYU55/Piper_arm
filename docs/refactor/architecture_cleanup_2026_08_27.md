@@ -53,3 +53,22 @@ Each later phase adds the new responsibility owner first, retains an explicit
 old-path facade, migrates callers, runs the linked tests, and updates AI docs.
 Compatibility removal is a separate evidence-gated cleanup. Safety checks at
 distinct trust boundaries are not deduplicated as part of structural work.
+
+## Phase 2: responsibility packages
+
+The existing pure owners moved intact into two cohesive packages:
+
+- `mission/{core,engine,spool}.py` owns mission state, progression and durable
+  handoff;
+- `infrastructure/{failure_model,telemetry_store,process_supervisor}.py` owns
+  cross-cutting typed failures, observations and exact child-process mechanics.
+
+All production consumers import the new owners. The six former module paths
+remain explicit, one-way facades with fixed `__all__` lists, and tests prove
+that every facade export is the identical owner object. Focused mission,
+infrastructure, external-contract and compatibility validation passes 333
+tests. The complete mobile suite passes 854 tests with one hardware-dependent
+skip; changed Python lint/compile, the five-package build and all AI YAML parsing
+pass. Public ROS interface, launch and configuration trees are byte-identical
+to the baseline. No spool format, state transition, signal escalation, safety
+decision or hardware behavior changed.

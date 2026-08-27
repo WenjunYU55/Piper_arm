@@ -49,18 +49,22 @@ algorithm, or Tesseract behavior changed during Phase 10.
 
 | Module | Ownership |
 |---|---|
-| `failure_model.py` | Typed `FailureCode`, tags, immutable failure evidence, and the one-way adapter from legacy text-only boundaries. |
-| `telemetry_store.py` | Thread-safe telemetry updates and immutable, time-coherent `TelemetrySnapshot` values. |
+| `infrastructure/failure_model.py` | Typed `FailureCode`, tags, immutable failure evidence, and the one-way adapter from legacy text-only boundaries. |
+| `infrastructure/telemetry_store.py` | Thread-safe telemetry updates and immutable, time-coherent `TelemetrySnapshot` values. |
 | `configuration.py` | Typed immutable startup configuration for the mission coordinator and viewpoint executor, preserving all ROS names/defaults/overrides. |
-| `mission_core.py` | Mission phases, session state, queue/deduplication records, and result primitives. |
-| `mission_engine.py` | The admitted autonomous mission sequence and terminal shutdown sequence. |
-| `process_supervisor.py` | Exact owned-process generations, environment construction, health checks, reverse-order group shutdown, and shutdown reports. |
+| `mission/core.py` | Mission phases, session state, queue/deduplication records, and result primitives. |
+| `mission/engine.py` | The admitted autonomous mission sequence and terminal shutdown sequence. |
+| `mission/spool.py` | Atomic, permission-bounded mission task, status and result persistence. |
+| `infrastructure/process_supervisor.py` | Exact owned-process generations, environment construction, health checks, reverse-order group shutdown, and shutdown reports. |
 | `safety_evaluator.py` | Pure named immutable runtime-gate policy mapping. It contains no ROS, thresholds, telemetry evaluator, command or second permission authority. |
 | `plan_authorizer.py` | Exact mission/plan identity, expiry, target drift, dependency evidence, typed authorization decisions, and configured-home stage/endpoint policy. |
 | `trajectory_runner.py` | Pure scheduling and feedback decisions for one already-authorized Tesseract trajectory. |
 | `capture_coordinator.py` | Settling-to-capture sequencing and typed capture retry/replacement/abort decisions. |
 | `executor_recovery.py` | Typed retry, reacquire, replan, and abort policy. |
 | Scan/perception helpers | Geometry, acquisition, coverage, scan history, motion validation, occlusion policy, capture persistence, and reconstruction job contracts. |
+
+The former root-level names remain explicit import-only compatibility facades;
+they contain no duplicate implementation or policy.
 
 ### ROS boundary layer
 

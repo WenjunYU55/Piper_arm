@@ -4,7 +4,7 @@ from pathlib import Path
 import math
 import time
 
-from piper_mobile_manipulation.mission_core import sha256_value
+from piper_mobile_manipulation.mission.core import sha256_value
 
 
 MESH_STATES = frozenset((

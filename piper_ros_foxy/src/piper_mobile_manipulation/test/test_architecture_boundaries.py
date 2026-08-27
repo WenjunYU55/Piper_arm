@@ -1,6 +1,7 @@
 """Characterize dependency boundaries before moving production modules."""
 
 import ast
+from importlib import import_module
 from pathlib import Path
 
 
@@ -36,9 +37,15 @@ PURE_MOBILE_MODULES = frozenset({
     'failure_model.py',
     'heavy_refresh_contract.py',
     'home_pose.py',
+    'infrastructure/failure_model.py',
+    'infrastructure/process_supervisor.py',
+    'infrastructure/telemetry_store.py',
     'mission_core.py',
     'mission_engine.py',
     'mission_spool.py',
+    'mission/core.py',
+    'mission/engine.py',
+    'mission/spool.py',
     'motion_limit_stability.py',
     'nbv_coverage.py',
     'obstacle_geometry.py',
@@ -173,6 +180,76 @@ def test_tesseract_worker_and_contract_remain_ros_independent():
             if imported.split('.', 1)[0] in ROS_IMPORT_ROOTS:
                 violations.append((filename, imported))
     assert violations == []
+
+
+def test_infrastructure_compatibility_facades_preserve_public_objects():
+    """Keep established import paths while responsibility owners move."""
+    expected_symbols = {
+        'failure_model': {
+            'Failure', 'FailureCode', 'FailureLike', 'FailureTag',
+            'as_failure', 'legacy_failure_adapter',
+        },
+        'process_supervisor': {
+            'ProcessHandle', 'ProcessSpec', 'ProcessSupervisor',
+            'ShutdownReport',
+        },
+        'telemetry_store': {
+            'ArmTelemetry', 'MissionTelemetry', 'PerceptionTelemetry',
+            'TelemetryObservation', 'TelemetrySnapshot', 'TelemetryStore',
+        },
+    }
+    for module_name, symbols in expected_symbols.items():
+        facade = import_module('piper_mobile_manipulation.' + module_name)
+        owner = import_module(
+            'piper_mobile_manipulation.infrastructure.' + module_name)
+        assert set(facade.__all__) == symbols
+        for symbol in symbols:
+            assert getattr(facade, symbol) is getattr(owner, symbol)
+
+
+def test_mission_compatibility_facades_preserve_public_objects():
+    """Keep mission imports stable while moving their authority package."""
+    expected_symbols = {
+        'core': {
+            'DEFAULT_DEADLINE_SEC', 'HEARTBEAT_TIMEOUT_SEC',
+            'MAX_DEADLINE_SEC', 'MAX_FEATURE_CAPTURES',
+            'MAX_OCCLUSION_ACTIONS', 'MAX_PENDING_MISSIONS',
+            'MISSION_QUEUE_COALESCE_SEC', 'REQUIRED_CAPTURES',
+            'TARGET_PROFILES', 'TASK_ID_PATTERN', 'TARGET_WORD_PATTERN',
+            'TERMINAL_PHASES', 'MissionPhase', 'MissionRegistry',
+            'MissionSession', 'TargetProfile', 'canonical_bytes',
+            'closest_pending_mission', 'mission_queue_ready',
+            'mission_target_distance_m', 'queued_cancel_result',
+            'sha256_value', 'target_prompt', 'validate_goal_payload',
+        },
+        'engine': {
+            'ACQUISITION_SERVICE_TIMEOUT_SEC', 'MAX_SCAN_QUALITY_REPLANS',
+            'MAX_SCAN_TARGET_DRIFT_REPLANS',
+            'PLAN_APPROVAL_TRANSIENT_TIMEOUT_SEC',
+            'PLAN_REQUEST_QUEUE_TIMEOUT_SEC', 'PLAN_RESULT_TIMEOUT_SEC',
+            'SCAN_VISUAL_REACQUISITION_TIMEOUT_SEC',
+            'WORKFLOW_ASSESSMENT_TIMEOUT_SEC', 'CancellationToken',
+            'MissionContext', 'MissionEngine', 'MissionFailure',
+            'MissionResult', 'failure_code_for_reason',
+            'feature_capture_decision', 'first_capture_framing_action',
+            'planning_rejection_allows_current_state_home',
+            'retryable_plan_approval_rejection',
+            'runtime_freshness_plan_request_rejection',
+            'safe_view_exhaustion_after_capture',
+            'shutdown_uses_startup_home', 'target_drift_requires_replan',
+            'visual_reacquisition_plan_approval_rejection',
+            'visual_reacquisition_plan_request_rejection',
+        },
+        'spool': {'MissionSpool'},
+    }
+    for owner_name, symbols in expected_symbols.items():
+        facade = import_module(
+            'piper_mobile_manipulation.mission_' + owner_name)
+        owner = import_module(
+            'piper_mobile_manipulation.mission.' + owner_name)
+        assert set(facade.__all__) == symbols
+        for symbol in symbols:
+            assert getattr(facade, symbol) is getattr(owner, symbol)
 
 
 def test_production_python_packages_have_no_internal_import_cycles():

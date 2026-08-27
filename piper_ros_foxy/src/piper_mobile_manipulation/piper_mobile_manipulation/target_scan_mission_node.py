@@ -51,11 +51,11 @@ from piper_mobile_manipulation.home_pose import (
     validate_home_profile_limits,
     validate_staged_wrist_direction as _validate_staged_wrist_direction,
 )
-from piper_mobile_manipulation.failure_model import (
+from piper_mobile_manipulation.infrastructure.failure_model import (
     as_failure,
     FailureTag,
 )
-from piper_mobile_manipulation.mission_core import (
+from piper_mobile_manipulation.mission.core import (
     MAX_OCCLUSION_ACTIONS,
     MissionPhase,
     MissionRegistry,
@@ -64,7 +64,7 @@ from piper_mobile_manipulation.mission_core import (
     queued_cancel_result,
     validate_goal_payload,
 )
-from piper_mobile_manipulation.mission_engine import (
+from piper_mobile_manipulation.mission.engine import (
     ACQUISITION_SERVICE_TIMEOUT_SEC,
     CancellationToken,
     failure_code_for_reason,
@@ -92,8 +92,10 @@ from piper_mobile_manipulation.ray_mission_diagnostics import (
     add_terminal_event,
     RayMissionDiagnosticsStore,
 )
-from piper_mobile_manipulation.mission_spool import MissionSpool
-from piper_mobile_manipulation.process_supervisor import ProcessSupervisor
+from piper_mobile_manipulation.mission.spool import MissionSpool
+from piper_mobile_manipulation.infrastructure.process_supervisor import (
+    ProcessSupervisor,
+)
 from piper_mobile_manipulation.reconstruction_jobs import (
     mesh_job_id,
     waiting_job,
@@ -128,7 +130,9 @@ from piper_mobile_manipulation.surface_coverage import (
     measured_surface_coverage,
     persisted_achieved_history,
 )
-from piper_mobile_manipulation.telemetry_store import TelemetryStore
+from piper_mobile_manipulation.infrastructure.telemetry_store import (
+    TelemetryStore,
+)
 from piper_mobile_manipulation.view_generation import (
     generation_matches_expected,
 )

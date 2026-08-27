@@ -1,5 +1,9 @@
 schema_version: 1
 document: system_map
+responsibility_package_load_order_2026_08_27:
+  sequence: [ROS nodes import mission and infrastructure owners, mission engine imports mission core and infrastructure failure model, mission spool imports mission core, compatibility facades import one-way from owners, pure owners never import facades or ROS nodes]
+  load_order_contracts: [facade imports are one-way only, package owners remain ROS-free, mission engine remains the only mission progression authority, process supervisor owns mechanics but not mission policy, no facade may dynamically call back into its legacy module]
+  compatibility: Existing import paths remain installed and resolve to the identical class function enum and constant objects exported by the new owners.
 ray_diagnostics_storage_path_2026_08_27:
   runtime_load_order: [planner reachability filter bridge and coordinator resolve PIPER_ARM_ROOT, every writer constructs datasets/ray_diagnostics, unique mission or session directory is created, the existing per-directory lock selects or retains its report basename, GUI discovers canonical and legacy roots but historical replay writes only canonical]
   load_order_contracts: [deploy and restart all diagnostic-producing nodes together so one mission cannot split across old and new roots, preserve one root per new mission, canonical root is searched before the legacy root for unqualified historical selections, path containment is enforced independently for each root]

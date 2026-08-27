@@ -7,7 +7,7 @@ from typing import Optional, Tuple
 
 import numpy as np
 
-from piper_mobile_manipulation.failure_model import (
+from piper_mobile_manipulation.infrastructure.failure_model import (
     Failure,
     FailureCode,
 )

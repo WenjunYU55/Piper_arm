@@ -1,5 +1,9 @@
 schema_version: 1
 document: runtime_contracts
+responsibility_package_contract_2026_08_27:
+  internal_owners: {mission core: piper_mobile_manipulation/mission/core.py, mission progression: piper_mobile_manipulation/mission/engine.py, mission spool: piper_mobile_manipulation/mission/spool.py, typed failures: piper_mobile_manipulation/infrastructure/failure_model.py, telemetry: piper_mobile_manipulation/infrastructure/telemetry_store.py, child processes: piper_mobile_manipulation/infrastructure/process_supervisor.py}
+  compatibility: The six former root-level modules remain installed one-way facades with explicit __all__ exports referring to the identical owner objects. ROS messages services actions topics parameters spool bytes hashes and process escalation are unchanged.
+  forbidden: [duplicate implementation in a facade, owner import from facade, facade-specific mutable state, silent symbol fallback]
 ray_review_operator_name_contract_2026_08_27:
   internal_basename: RayProcesses - HH:MM - DD-MM-YYYY
   files: [RayProcesses - HH:MM - DD-MM-YYYY.json, RayProcesses - HH:MM - DD-MM-YYYY.html]
@@ -721,7 +725,7 @@ runtime_contract_repairs_2026_08_10:
     behavior: A hold_for_refresh reason commands current measured hold and uses bounded WAITING_FOR_RUNTIME_REFRESH before resuming the exact unchanged home transaction.
     excluded_authority: Invalid limits, controller faults, emergency stop, nonfinite feedback and command failure are not made recoverable.
 typed_failure_contract_2026_08_14:
-  internal_source_of_truth: piper_mobile_manipulation/failure_model.py
+  internal_source_of_truth: piper_mobile_manipulation/infrastructure/failure_model.py
   public_boundary: RunTargetScan.failure_code and all existing reason/message fields remain ordinary strings with unchanged names and values.
   model: {code: FailureCode, detail: human-readable string, tags: immutable FailureTag set, retryable: bool, needs_operator: bool, outcome: legacy action outcome, blocker: machine-readable legacy blocker token}
   compatibility_adapter: legacy_failure_adapter is the only migrated mission-path phrase classifier and may be used only where the upstream Foxy interface exposes no typed failure field.
@@ -734,7 +738,7 @@ joint5_contact_contract_2026_08_11:
   required_result: The exact incident pose and any dense path sample below 0.005 m must reject before command in both isolated worker and Foxy executor. Direct home cannot override this rejection.
   hardware_state: All six motor enable flags false; J5 contact/fault requires mechanical inspection before any fault clear, enable, home or physical test.
 phase4_process_supervisor_contract_2026_08_14:
-  internal_source_of_truth: piper_mobile_manipulation/process_supervisor.py
+  internal_source_of_truth: piper_mobile_manipulation/infrastructure/process_supervisor.py
   process_spec: {name: immutable owned identity, command: immutable exact argv, environment: immutable copied mapping}
   process_handle: {popen: exact started child, process_group_id: child pid from start_new_session, log: generation-scoped binary stream/path/offset}
   public_health_shape: [pid, running, returncode, log]
