@@ -880,7 +880,7 @@ class TesseractPlanBridge(Node):
             'ray_diagnostics_enabled': True,
             'ray_diagnostics_root': os.path.join(
                 os.environ.get('PIPER_ARM_ROOT', '/home/prl/Piper_arm'),
-                'datasets', 'active_scan', 'ray_diagnostics'),
+                'datasets', 'ray_diagnostics'),
             'debug': True,
         }
         for name, value in defaults.items():

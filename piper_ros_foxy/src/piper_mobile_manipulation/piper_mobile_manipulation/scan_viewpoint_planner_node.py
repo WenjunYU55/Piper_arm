@@ -296,8 +296,7 @@ class ScanViewpointPlannerNode(Node):
         self.declare_parameter('ray_diagnostics_enabled', True)
         self.declare_parameter(
             'ray_diagnostics_root',
-            os.path.join(project_root, 'datasets', 'active_scan',
-                         'ray_diagnostics'))
+            os.path.join(project_root, 'datasets', 'ray_diagnostics'))
 
         self._selection_policy = str(
             self.get_parameter('view_selection_policy').value).strip()

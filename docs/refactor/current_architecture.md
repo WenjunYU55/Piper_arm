@@ -69,7 +69,8 @@ The ROS workspace contains five packages: `piper`, `piper_description`,
 | `supervised_cube_workflow` | `supervised_cube_workflow_node.py` | Measured-lock/occlusion assessment and command-free manipulation proposals |
 
 Ray-NBV missions also write observational schema-v2 evidence below
-`datasets/active_scan/ray_diagnostics/<mission-id>/`. Its canonical JSON and
+`datasets/ray_diagnostics/<mission-id>/`. The GUI retains read-only discovery
+of historical reports under `datasets/active_scan/ray_diagnostics/`. The canonical JSON and
 append-only event journal records the bootstrap pool, the explicit qualified
 population replacement, planner/history and information culls,
 workspace/capability prequalification, bridge retries,

@@ -384,7 +384,7 @@ class _FakeProcess:
 def test_process_manager_reuses_one_child_and_sends_stdin_json(tmp_path):
     root = tmp_path
     for name in ('one', 'two'):
-        report = (root / 'datasets/active_scan/ray_diagnostics' / name)
+        report = (root / 'datasets/ray_diagnostics' / name)
         report.mkdir(parents=True)
         (report / 'ray_mission_diagnostics.json').write_text('{}')
     children = []

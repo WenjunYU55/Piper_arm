@@ -1,5 +1,13 @@
 schema_version: 1
 document: technical_debt
+ray_diagnostics_storage_root_2026_08_27:
+  resolution: Future live mission, reachability, Tesseract, terminal, replay and simulated ray evidence now converges under datasets/ray_diagnostics. The GUI retains contained read access to the former datasets/active_scan/ray_diagnostics tree without moving or rewriting historical evidence.
+  remaining_limitations: [historical files remain physically split until an explicitly requested migration, all already-running diagnostic nodes must be restarted together before the next mission]
+  validation: [850 complete mobile tests pass, 162 complete Tesseract tests pass, 101 complete GUI tests pass, canonical and legacy GUI discovery open and duplicate-ID regressions pass, two-package symlink build passes, writer-default source audit passes, changed-hunk lint and Python compile pass, all 12 AI YAML files parse, no ROS or hardware command]
+ray_review_operator_naming_2026_08_27:
+  resolution: New Ray Review JSON and HTML files now use the actual internal basename RayProcesses - HH:MM - DD-MM-YYYY chosen once from the earliest first-snapshot event under a fixed per-directory lock. Unique parent directories isolate same-minute names, the GUI selects by directory index, and legacy ray_mission_diagnostics files remain readable and appendable.
+  remaining_limitations: [same-minute reports intentionally have identical basenames because the requested format omits seconds; their unique mission or session parent directories prevent collisions]
+  validation: [43 focused diagnostics report and viewer tests pass, 850 complete mobile tests pass, 98 complete root GUI tests pass, real temporary JSON and HTML write has the requested internal names and retains them across a later-minute append, same-minute directory isolation and legacy open-and-append regressions pass, new naming hunks pass lint review, compile and all 12 AI YAML parse pass, no ROS or hardware command]
 ray_review_camera_navigation_2026_08_27:
   resolution: Both Ray Review VTK canvases now share a command-free camera navigator that removes roll against base_link positive Z, uses a stable positive-Y pole orientation, preserves focal point and zoom for seven standard views, and retains the Mission Process ground-plane camera bound. Space opens the chooser over a 3D canvas and P now owns replay toggle.
   remaining_limitations: [the chooser is a labelled orientation panel rather than an interactive rendered navigation cube, upright correction occurs at VTK interaction events rather than replacing VTK trackball orbit mathematics]

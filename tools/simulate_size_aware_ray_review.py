@@ -411,7 +411,7 @@ def replay_cube_pipeline(args):
         captures = captures[:max(1, int(args.capture_count))]
     session_id = args.name or time.strftime(
         'offline-cube-current-replay-%Y%m%d-%H%M%S')
-    report_root = PROJECT_ROOT / 'datasets/active_scan/ray_diagnostics'
+    report_root = PROJECT_ROOT / 'datasets/ray_diagnostics'
     capability_path = MOBILE_SOURCE / (
         'config/piper_camera_capability_map.npz')
     before = (sha256_file(capability_path), capability_path.stat().st_mtime_ns)
@@ -617,7 +617,7 @@ def main():
     bootstrap_target = tuple(args.target)
     session_id = args.name or time.strftime(
         'offline-size-aware-large-target-%Y%m%d-%H%M%S')
-    report_root = PROJECT_ROOT / 'datasets/active_scan/ray_diagnostics'
+    report_root = PROJECT_ROOT / 'datasets/ray_diagnostics'
     capability_path = MOBILE_SOURCE / (
         'config/piper_camera_capability_map.npz')
     before = (sha256_file(capability_path), capability_path.stat().st_mtime_ns)

@@ -1,5 +1,13 @@
 schema_version: 1
 document: guardrails
+ray_diagnostics_storage_guardrails_2026_08_27:
+  invariants:
+    - Every future default writer and historical replay output uses PIPER_ARM_ROOT/datasets/ray_diagnostics.
+    - datasets/active_scan/ray_diagnostics is historical read compatibility only; do not write new reports there or migrate existing evidence implicitly.
+    - The GUI validates canonical and legacy containment independently and carries root identity in its internal selection so duplicate artifact IDs cannot select the wrong report.
+    - Root routing is observational only and cannot change ray generation culling ranking feasibility motion capture mission result home or shutdown.
+  blast_radius: [planner filter bridge and mission terminal writer convergence, offline simulator and historical replay output, GUI discovery selection and path containment, operator data location]
+  must_retest_if_changed: [test_ray_mission_diagnostics.py, complete mobile and Tesseract suites, test_piper_gui_ray_reports.py, test_piper_gui_ray_review.py, GUI suite, writer-default source audit, command-free replay smoke, changed-file lint and compile, YAML parse, no hardware command]
 capture_one_model_seed_guardrails_2026_08_26:
   invariants:
     - The post-settle live target shape owns final border admission only. It is not the authoritative revolved model.
@@ -47,6 +55,16 @@ ray_review_target_layer_guardrails_2026_08_26:
     - All layer controls remain inside the ROS-free viewer and have no publisher, service, action, worker request, map write or motion owner.
   blast_radius: [private envelope digest and payload size for new missions, additive private worker scene evidence while collision obstacles remain unchanged, diagnostic artifact size, command-free Ray Review rendering]
   must_retest_if_changed: [test_target_envelope.py, test_ray_mission_diagnostics.py, test_bridge_feedback_freshness.py, test_piper_gui_ray_review.py, test_piper_gui_ray_reports.py, complete mobile and Tesseract suites, GUI tests, affected package build, no hardware command]
+ray_review_operator_naming_guardrails_2026_08_27:
+  invariants:
+    - RayProcesses - HH:MM - DD-MM-YYYY is the actual basename of every new canonical JSON and compatibility HTML report.
+    - Choose the basename once under the fixed per-directory legacy-compatible .ray_mission_diagnostics.lock from the earliest valid first-snapshot event, then rediscover that exact file for every later updated-writer append so minute rollover cannot split a report.
+    - Same-minute basenames may duplicate only across unique mission or session parent directories. The GUI maps selected indexes to those unique directories and never resolves by basename alone.
+    - Keep mission_id session_id artifact_id and parent directory identity unchanged. Existing ray_mission_diagnostics JSON and HTML remain readable and appendable without forced migration.
+    - Deploy and restart every diagnostics writer together. An old already-running fixed-basename process must not overlap an updated dynamic-basename writer for the same mission directory.
+    - Naming remains command-free and cannot affect diagnostics ordering replay evidence planner state motion home or shutdown.
+  blast_radius: [diagnostics JSON HTML and lock paths, planner filter bridge and mission diagnostic append convergence, historical replay outputs, Diagnostics Ray Review discovery and selection, viewer window title]
+  must_retest_if_changed: [test_ray_mission_diagnostics.py, complete mobile suite, test_piper_gui_ray_reports.py, test_piper_gui_ray_review.py, test_piper_gui_phase8.py, same-minute separate-directory selection smoke, later-minute append filename-stability smoke, legacy open and append smoke, changed-hunk lint and compile, YAML parse, no hardware command]
 ray_review_camera_navigation_guardrails_2026_08_27:
   invariants:
     - Camera navigation remains inside the ROS-free Ray Review child and cannot publish call services send actions write maps or command motion.

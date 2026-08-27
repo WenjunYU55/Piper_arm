@@ -9,6 +9,7 @@ motion behaviour.
 """
 
 from copy import deepcopy
+from datetime import datetime
 import fcntl
 import hashlib
 import html
@@ -31,7 +32,46 @@ from piper_mobile_manipulation.ray_hard_culls import (
 
 SCHEMA_VERSION = 2
 ARTIFACT_BASENAME = 'ray_mission_diagnostics'
+RAY_PROCESS_PREFIX = 'RayProcesses - '
 _SAFE_SESSION = re.compile(r'[^A-Za-z0-9_.-]+')
+_RAY_PROCESS_BASENAME = re.compile(
+    r'^RayProcesses - (?:[01]\d|2[0-3]):[0-5]\d - '
+    r'\d{2}-\d{2}-\d{4}$')
+
+
+def ray_process_basename(timestamp_ns):
+    """Format one canonical report basename in local operator time."""
+    timestamp = datetime.fromtimestamp(int(timestamp_ns) / 1e9)
+    return timestamp.strftime(RAY_PROCESS_PREFIX + '%H:%M - %d-%m-%Y')
+
+
+def find_ray_process_artifact(directory, suffix='.json'):
+    """Find the one current or legacy report artifact in a session folder."""
+    if suffix not in ('.json', '.html'):
+        raise ValueError('unsupported ray report representation')
+    directory = Path(directory)
+    candidates = sorted(
+        path for path in directory.glob(RAY_PROCESS_PREFIX + '*' + suffix)
+        if _RAY_PROCESS_BASENAME.fullmatch(path.stem))
+    legacy = directory / (ARTIFACT_BASENAME + suffix)
+    if legacy.is_file():
+        candidates.append(legacy)
+    if len(candidates) > 1:
+        raise ValueError('multiple ray process artifacts share one session')
+    return candidates[0] if candidates else None
+
+
+def _snapshot_start_ns(snapshot):
+    timestamps = []
+    for event in snapshot.get('events', []):
+        try:
+            value = int(event.get('timestamp_ns', 0))
+        except (AttributeError, TypeError, ValueError):
+            continue
+        if value > 0:
+            timestamps.append(value)
+    return min(timestamps) if timestamps else time.time_ns()
+
 
 # Compact kinematic representation of piper_description.xacro.  The modified
 # DH values are the controller mode-0 chain and are regression-tested against
@@ -1175,11 +1215,14 @@ class RayMissionDiagnosticsStore:
             raise ValueError('ray diagnostic generation is invalid')
         directory = self.session_dir(artifact_id)
         directory.mkdir(parents=True, exist_ok=True)
-        json_path = directory / (ARTIFACT_BASENAME + '.json')
-        html_path = directory / (ARTIFACT_BASENAME + '.html')
         lock_path = directory / ('.' + ARTIFACT_BASENAME + '.lock')
         with lock_path.open('a+', encoding='utf-8') as lock_stream:
             fcntl.flock(lock_stream.fileno(), fcntl.LOCK_EX)
+            json_path = find_ray_process_artifact(directory)
+            if json_path is None:
+                basename = ray_process_basename(_snapshot_start_ns(snapshot))
+                json_path = directory / (basename + '.json')
+            html_path = json_path.with_suffix('.html')
             document = self._load(json_path, artifact_id, mission_id)
             generations = {
                 (str(item['session_id']), int(item['generation'])): item

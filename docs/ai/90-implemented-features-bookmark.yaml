@@ -52,7 +52,7 @@ target_relative_capability_bounded_rays_2026_08_25:
 mission_ray_diagnostic_report_2026_08_25:
   status: software_implemented_functional_tests_pass_changed_file_lint_and_physical_mission_artifact_pending
   capability: Every ray-NBV mission writes canonical JSON and an offline interactive HTML graphic covering the complete frozen pool, planner and accepted-history culls, information rank and metrics, workspace/capability culls, bounded Tesseract shortlist, exact worker failure evidence and selected ray for every accepted-view generation. The GUI opens these reports; the 3D view replays the URDF-derived PiPER chain and an L515 camera on every ray using only achieved or planned joint evidence. Reacquisition sessions remain grouped by mission task identity.
-  output: datasets/active_scan/ray_diagnostics/<mission_id-or-session_id>/ray_mission_diagnostics.json plus exact coverage snapshots and compatibility HTML
+  output: datasets/ray_diagnostics/<mission_id-or-session_id>/RayProcesses - HH:MM - DD-MM-YYYY.json plus exact coverage snapshots and same-stem compatibility HTML; historical datasets/active_scan/ray_diagnostics reports and legacy ray_mission_diagnostics files remain readable
   viewer: Open Ray Review reuses one ROS-free stdin-driven PyQt5/VTK child with synchronized Mission Process and read-only Capability Map tabs
   authority: ray_mission_diagnostics.py observes scan_viewpoint_planner_node.py, viewpoint_reachability_filter_node.py and piper_tesseract_foxy/bridge_node.py decisions
   preserved: [NBV ranking and gain floor, capability map, six-ray shortlist, schema-v5 Tesseract bytes and hashes, exact feasibility, motion, capture, mission safety, home and shutdown]

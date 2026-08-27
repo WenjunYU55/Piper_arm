@@ -1226,7 +1226,7 @@ class TargetScanMissionNode(Node):
             try:
                 root = Path(str(project_root_value))
                 store = RayMissionDiagnosticsStore(
-                    root / 'datasets' / 'active_scan' / 'ray_diagnostics')
+                    root / 'datasets' / 'ray_diagnostics')
                 terminal_snapshot = {
                     'schema_version': 2,
                     'mission_id': str(session.task_id),

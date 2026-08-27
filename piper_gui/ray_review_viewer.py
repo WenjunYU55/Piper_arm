@@ -42,6 +42,7 @@ from piper_gui.ray_review_model import (
     revolved_envelope_mesh,
     state_at_event,
 )
+from piper_gui.ray_reports import ray_report_display_name
 
 
 BACKGROUND = (0.055, 0.071, 0.090)
@@ -1475,8 +1476,8 @@ class RayReviewWindow(QtWidgets.QMainWindow):
                 self.mission.slider.setValue(min(
                     previous_index, self.mission.slider.maximum()))
             partial = ' · partial historical evidence' if not document.get('journal_complete', True) else ''
-            self.setWindowTitle('Ray Review — %s%s' % (
-                document.get('mission_id') or document.get('artifact_id', Path(path).parent.name), partial))
+            self.setWindowTitle('%s%s' % (
+                ray_report_display_name(source), partial))
             self.status.showMessage('%d recorded events%s' % (len(document.get('events', [])), partial))
             self.show(); self.raise_(); self.activateWindow()
         except Exception as error:

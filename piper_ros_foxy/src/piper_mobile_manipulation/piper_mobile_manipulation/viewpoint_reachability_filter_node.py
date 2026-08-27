@@ -252,8 +252,7 @@ class ViewpointReachabilityFilterNode(Node):
         self.declare_parameter('ray_diagnostics_enabled', True)
         self.declare_parameter(
             'ray_diagnostics_root',
-            os.path.join(project_root, 'datasets', 'active_scan',
-                         'ray_diagnostics'))
+            os.path.join(project_root, 'datasets', 'ray_diagnostics'))
 
         self.arm_status = None
         self.arm_status_at = None

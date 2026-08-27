@@ -34,6 +34,8 @@ from piper_gui.camera_profile import (
 from piper_gui.ros_client import MissionActionClient, MissionClientEvent
 from piper_gui.ray_reports import (
     list_ray_reports,
+    ray_report_display_name,
+    ray_report_selection,
     RayReviewProcess,
     replay_scan_dataset,
 )
@@ -638,6 +640,7 @@ class PiperGuiApp:
         self.reconstruction_report_path = None
         self.reconstruction_output_path = None
         self.ray_report_var = tk.StringVar(value='')
+        self.ray_report_paths = ()
         self.ray_replay_dataset_var = tk.StringVar(value='')
         self.ray_report_status_var = tk.StringVar(
             value='No mission ray report selected')
@@ -1480,13 +1483,25 @@ class PiperGuiApp:
 
     def refresh_ray_reports(self, preferred_report='') -> None:
         reports = list_ray_reports(PROJECT_ROOT)
-        report_names = tuple(path.parent.name for path in reports)
+        previous_index = self.ray_report_combo.current()
+        previous_report = (
+            self.ray_report_paths[previous_index].parent.name
+            if 0 <= previous_index < len(self.ray_report_paths) else '')
+        self.ray_report_paths = tuple(reports)
+        report_names = tuple(
+            ray_report_display_name(path) for path in self.ray_report_paths)
         self.ray_report_combo.configure(values=report_names)
-        if preferred_report in report_names:
-            self.ray_report_var.set(preferred_report)
-        elif self.ray_report_var.get() not in report_names:
-            self.ray_report_var.set(report_names[0] if report_names else '')
-        datasets = tuple(path.name for path in list_scan_datasets(PROJECT_ROOT))
+        selected_report = preferred_report or previous_report
+        selected_index = next((
+            index for index, path in enumerate(self.ray_report_paths)
+            if path.parent.name == selected_report),
+            0 if report_names else -1)
+        if selected_index >= 0:
+            self.ray_report_combo.current(selected_index)
+        else:
+            self.ray_report_var.set('')
+        datasets = tuple(
+            path.name for path in list_scan_datasets(PROJECT_ROOT))
         self.ray_replay_dataset_combo.configure(values=datasets)
         if self.ray_replay_dataset_var.get() not in datasets:
             self.ray_replay_dataset_var.set(datasets[0] if datasets else '')
@@ -1496,12 +1511,15 @@ class PiperGuiApp:
 
     def open_selected_ray_report(self) -> None:
         try:
-            report = self.ray_review_process.open(
-                self.ray_report_var.get())
+            selected_index = self.ray_report_combo.current()
+            self.ray_review_process.open(
+                ray_report_selection(
+                    PROJECT_ROOT, self.ray_report_paths, selected_index))
         except (OSError, ValueError) as exc:
             self.ray_report_status_var.set(str(exc))
             return
-        self.ray_report_status_var.set('Ray Review opened %s' % report.parent.name)
+        self.ray_report_status_var.set(
+            'Ray Review opened %s' % self.ray_report_var.get())
 
     def replay_selected_ray_dataset(self) -> None:
         if self.ray_replay_in_progress:
@@ -2186,9 +2204,9 @@ class PiperGuiApp:
                         self.ray_report_status_var.set(
                             'Historical replay failed: %s' % payload['error'])
                     else:
-                        self.refresh_ray_reports()
                         report_name = Path(payload['html_path']).parent.name
-                        self.ray_report_var.set(report_name)
+                        self.refresh_ray_reports(
+                            preferred_report=report_name)
                         self.ray_report_status_var.set(
                             'Replayed %d accepted captures from %s; %d skipped'
                             % (

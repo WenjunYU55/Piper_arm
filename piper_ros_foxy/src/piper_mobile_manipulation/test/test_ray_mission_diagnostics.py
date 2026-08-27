@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import numpy as np
 import yaml
@@ -293,6 +294,9 @@ def test_store_merges_stages_and_writes_self_contained_html(tmp_path):
     # A later planner freshness update must not erase downstream evidence.
     store.record(base)
 
+    assert Path(json_path).stem.startswith('RayProcesses - ')
+    assert Path(html_path).stem == Path(json_path).stem
+
     with open(json_path, 'r', encoding='utf-8') as stream:
         document = json.load(stream)
     rays = {
@@ -313,6 +317,39 @@ def test_store_merges_stages_and_writes_self_contained_html(tmp_path):
 def test_store_sanitizes_session_directory(tmp_path):
     store = RayMissionDiagnosticsStore(tmp_path)
     assert store.session_dir('../../unsafe').parent == tmp_path
+
+
+def test_store_continues_appending_a_legacy_report_basename(tmp_path):
+    store = RayMissionDiagnosticsStore(tmp_path)
+    value = snapshot()
+    json_path, html_path = store.record(value)
+    legacy_json = Path(json_path).parent / 'ray_mission_diagnostics.json'
+    legacy_html = Path(html_path).parent / 'ray_mission_diagnostics.html'
+    Path(json_path).rename(legacy_json)
+    Path(html_path).rename(legacy_html)
+
+    appended_json, appended_html = store.record(value)
+
+    assert Path(appended_json) == legacy_json
+    assert Path(appended_html) == legacy_html
+
+
+def test_same_minute_internal_names_are_isolated_by_mission_directory(
+        tmp_path):
+    store = RayMissionDiagnosticsStore(tmp_path)
+    first = snapshot()
+    second = snapshot()
+    second['session_id'] = 'mission-b'
+    timestamp_ns = 1787841359000000000
+    for value in (first, second):
+        for event in value['events']:
+            event['timestamp_ns'] = timestamp_ns
+
+    first_path, _ = store.record(first)
+    second_path, _ = store.record(second)
+
+    assert Path(first_path).name == Path(second_path).name
+    assert Path(first_path).parent != Path(second_path).parent
 
 
 def test_store_indexes_the_immutable_seed_population(tmp_path):

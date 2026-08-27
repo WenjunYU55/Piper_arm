@@ -7,6 +7,7 @@ ensures closing the operator GUI cannot affect any mission process.
 """
 
 import json
+from datetime import datetime
 import os
 from pathlib import Path
 import subprocess
@@ -14,7 +15,8 @@ import sys
 import webbrowser
 
 from piper_mobile_manipulation.ray_mission_diagnostics import (
-    ARTIFACT_BASENAME,
+    find_ray_process_artifact,
+    RAY_PROCESS_PREFIX,
     replay_historical_dataset,
 )
 from reconstruction.gui_support import validated_dataset_path
@@ -24,7 +26,23 @@ def ray_report_root(project_root):
     """Return the canonical per-mission diagnostics directory."""
     return (
         Path(project_root).resolve()
+        / 'datasets' / 'ray_diagnostics'
+    )
+
+
+def legacy_ray_report_root(project_root):
+    """Return the former report root retained for historical reads."""
+    return (
+        Path(project_root).resolve()
         / 'datasets' / 'active_scan' / 'ray_diagnostics'
+    )
+
+
+def ray_report_roots(project_root):
+    """Return canonical then legacy report roots."""
+    return (
+        ray_report_root(project_root),
+        legacy_ray_report_root(project_root),
     )
 
 
@@ -37,11 +55,21 @@ def list_ray_reports(project_root):
     its worker, so prioritising live missions here prevents a later replay from
     looking like the latest full ray lifecycle after a GUI restart.
     """
-    root = ray_report_root(project_root)
-    if not root.is_dir():
-        return []
+    reports = []
+    for root in ray_report_roots(project_root):
+        if not root.is_dir():
+            continue
+        for directory in root.iterdir():
+            if not directory.is_dir():
+                continue
+            try:
+                report = find_ray_process_artifact(directory)
+            except ValueError:
+                continue
+            if report is not None:
+                reports.append(report)
     return sorted(
-        root.glob('*/%s.json' % ARTIFACT_BASENAME),
+        reports,
         key=lambda path: (
             path.parent.name.startswith('replay_'),
             -path.stat().st_mtime_ns,
@@ -50,20 +78,86 @@ def list_ray_reports(project_root):
     )
 
 
+def ray_report_display_name(report, timezone=None):
+    """Return the stable minute-resolution operator name for one report."""
+    path = Path(report)
+    if path.stem.startswith(RAY_PROCESS_PREFIX):
+        return path.stem
+    timestamp_ns = None
+    try:
+        with path.open('r', encoding='utf-8') as stream:
+            document = json.load(stream)
+        timestamps = []
+        for event in document.get('events', []):
+            try:
+                value = int(event.get('timestamp_ns', 0))
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if value > 0:
+                timestamps.append(value)
+        if timestamps:
+            timestamp_ns = min(timestamps)
+    except (AttributeError, OSError, TypeError, ValueError,
+            json.JSONDecodeError):
+        pass
+    if timestamp_ns is None:
+        timestamp_ns = path.stat().st_mtime_ns
+    try:
+        timestamp = datetime.fromtimestamp(
+            timestamp_ns / 1e9, tz=timezone)
+    except (OSError, OverflowError, ValueError):
+        timestamp = datetime.fromtimestamp(
+            path.stat().st_mtime_ns / 1e9, tz=timezone)
+    return timestamp.strftime('RayProcesses - %H:%M - %d-%m-%Y')
+
+
+def ray_report_selection(project_root, reports, index):
+    """Resolve one visible combobox row to its unique artifact ID."""
+    try:
+        selected = int(index)
+    except (TypeError, ValueError) as exc:
+        raise ValueError('no ray report is selected') from exc
+    if selected < 0 or selected >= len(reports):
+        raise ValueError('no ray report is selected')
+    report = Path(reports[selected]).resolve()
+    for prefix, root in zip(
+            ('current', 'legacy'), ray_report_roots(project_root)):
+        try:
+            report.relative_to(root.resolve())
+        except ValueError:
+            continue
+        return '%s:%s' % (prefix, report.parent.name)
+    raise ValueError('ray report is outside the supported report roots')
+
+
 def validated_ray_report(project_root, selection, suffix='.json'):
     """Resolve a GUI report selection without permitting path traversal."""
-    root = ray_report_root(project_root)
     if suffix not in ('.json', '.html'):
         raise ValueError('unsupported ray report representation')
-    selected = root / str(selection) / (ARTIFACT_BASENAME + suffix)
-    selected = selected.resolve()
-    try:
-        selected.relative_to(root.resolve())
-    except ValueError as exc:
-        raise ValueError('ray report selection escapes the report root') from exc
-    if not selected.is_file():
-        raise ValueError('selected ray report is missing')
-    return selected
+    value = str(selection)
+    roots = ray_report_roots(project_root)
+    if value.startswith('current:'):
+        value = value[len('current:'):]
+        roots = roots[:1]
+    elif value.startswith('legacy:'):
+        value = value[len('legacy:'):]
+        roots = roots[1:]
+    escaped = False
+    for root in roots:
+        directory = (root / value).resolve()
+        try:
+            directory.relative_to(root.resolve())
+        except ValueError:
+            escaped = True
+            continue
+        selected = find_ray_process_artifact(directory)
+        if selected is not None:
+            selected = selected.with_suffix(suffix)
+        if selected is not None and selected.is_file():
+            return selected
+    if escaped:
+        raise ValueError('ray report selection escapes the report root')
+    raise ValueError('selected ray report is missing')
 
 
 def open_ray_report(project_root, selection, opener=None):
@@ -143,7 +237,8 @@ class RayReviewProcess:
             process.stdin.write('{"command":"shutdown"}\n')
             process.stdin.flush()
             process.wait(timeout=2.0)
-        except (BrokenPipeError, OSError, subprocess.TimeoutExpired, ValueError):
+        except (BrokenPipeError, OSError, subprocess.TimeoutExpired,
+                ValueError):
             process.terminate()
             try:
                 process.wait(timeout=2.0)

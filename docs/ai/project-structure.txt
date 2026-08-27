@@ -34,6 +34,7 @@ Piper_arm/
 ├── AI_perception_tests/             Offline datasets/tools and isolated GPU model workers
 │   └── groundingdino_test/          Grounded-SAM-2 environment, scripts, requirements, asset fetch
 ├── reconstruction/                  Offline target-only RGB-D TSDF with selectable captured or fresh manifest/model-hash-bound GroundingDINO/SAM2 masks, captured-support-only semantic intersection, robot-pose/bounded target-GICP/target-excluded static-scene registration, provenance/quality reports, comparison overlays, preview rendering and Open3D validation
+├── datasets/ray_diagnostics/        Canonical future mission/session RayProcesses JSON, HTML and exact coverage evidence; former datasets/active_scan/ray_diagnostics remains historical read compatibility only
 ├── README.md                        Dependency surfaces and installation overview
 ├── SYSTEM_HANDOFF.md                Whole-system architecture, validated state, limitations, and continuation
 ├── OPERATOR_COMMANDS.md             Supported runtime and safety command reference
@@ -47,8 +48,8 @@ Piper_arm/
 ├── start_gui.sh                     Native real-arm GUI launcher
 ├── fastdds_gui_udp_only.xml         Foxy GUI/scan loopback-only UDP profile; disables stale shared-memory graph transport
 ├── enable_piper.sh / disable_piper.sh  Explicit software motor control
-├── piper_gui_native.py              Production RunTargetScan client UI plus a next-mission legacy/exact-point voxel-NBV/frozen-ray-NBV selector with target-sector/upper-hemisphere/full-sphere and ray-count controls, read-only mission/perception diagnostics and explicitly separated manual/home-profile/RViz-preview commissioning controls; commissioning motion starts publisher-locked until sole ownership is proved and explicit no-home disable sends no motion; owns no production scan children, phase transitions, plan approvals, retries, replans or autonomous shutdown
-├── piper_gui/ray_reports.py         Command-free discovery, one-child stdin protocol, compatibility HTML opening and immutable historical-dataset replay helpers
+├── piper_gui_native.py              Production RunTargetScan client UI plus a next-mission legacy/exact-point voxel-NBV/frozen-ray-NBV selector with target-sector/upper-hemisphere/full-sphere and ray-count controls, read-only mission/perception diagnostics with index-bound RayProcesses filename selection, and explicitly separated manual/home-profile/RViz-preview commissioning controls; commissioning motion starts publisher-locked until sole ownership is proved and explicit no-home disable sends no motion; owns no production scan children, phase transitions, plan approvals, retries, replans or autonomous shutdown
+├── piper_gui/ray_reports.py         Command-free canonical datasets/ray_diagnostics plus historical active_scan report discovery, root-qualified unique-directory RayProcesses selection, one-child stdin protocol, compatibility HTML opening and canonical-root immutable historical-dataset replay helpers
 ├── piper_gui/ray_review_model.py    ROS-free schema-v1/v2 event-time state, target-envelope presentation mesh, exact coverage, URDF/FK and read-only capability-map model
 ├── piper_gui/ray_review_viewer.py   Freely resizable two-tab PyQt5/VTK Mission Process and Capability Map review process with independent target-evidence layers, base_link-Z-upright orbit, and Space standard-view chooser
 ├── test_piper_gui_ray_reports.py    Path-containment, report discovery/opening and native-GUI ray-control regressions
