@@ -68,6 +68,7 @@ from piper_mobile_manipulation.scan_viewpoint_executor_node import (
     joint_progress_error,
     missing_obstacles_can_wait,
     obstacle_scene_runtime_reasons,
+    qualified_scan_center_update,
     rgbd_capture_handoff_action,
     retryable_rgbd_capture_rejection,
     visual_capture_rejection,
@@ -79,6 +80,29 @@ from piper_mobile_manipulation.scan_viewpoint_executor_node import (
     ScanViewpointExecutorNode,
     trajectory_count_rejection,
 )
+
+
+def test_scan_center_upgrades_once_after_qualified_first_capture():
+    bootstrap = np.asarray([0.40, 0.0, 0.10])
+    model = np.asarray([0.35, -0.01, 0.14])
+
+    center, qualified, changed = qualified_scan_center_update(
+        None, bootstrap, 0, None)
+    assert np.allclose(center, bootstrap)
+    assert qualified is False
+    assert changed is True
+
+    center, qualified, changed = qualified_scan_center_update(
+        center, model, 1, {'valid': True}, qualified)
+    assert np.allclose(center, model)
+    assert qualified is True
+    assert changed is True
+
+    later, still_qualified, changed = qualified_scan_center_update(
+        center, [0.9, 0.9, 0.9], 2, {'valid': True}, qualified)
+    assert np.allclose(later, model)
+    assert still_qualified is True
+    assert changed is False
 
 
 def test_staged_direct_home_endpoint_uses_its_own_hash_bound_goal():
@@ -2657,6 +2681,7 @@ def test_quality_rejected_view_is_recorded_for_replan_exclusion():
         }],
         plan_target_center=np.asarray([0.4, 0.0, 0.04]),
         scan_rejections=[],
+        pending_scan_qualified_target_shape={'valid': True},
         latest_achieved_scan_view={
             'plan_id': 'plan-a',
             'viewpoint_index': 7,
@@ -2675,6 +2700,50 @@ def test_quality_rejected_view_is_recorded_for_replan_exclusion():
     assert executor.scan_rejections[0]['viewpoint_index'] == 7
     assert executor.scan_rejections[0]['actual_camera_position']['x'] == 0.31
     assert 'poor focus' in executor.scan_rejections[0]['reason']
+    assert executor.pending_scan_qualified_target_shape is None
+    assert published == [True]
+
+
+def test_first_accepted_view_promotes_pending_model_seed():
+    published = []
+    seed = {'valid': True, 'measurement_sha256': 'seed'}
+    capture_seed = {'model_seed_sha256': 'capture-seed'}
+    executor = SimpleNamespace(
+        plan_kind='MULTIVIEW_SCAN',
+        scan_session_id='session-a',
+        scan_history=[],
+        scan_qualified_target_shape=None,
+        pending_scan_qualified_target_shape=seed,
+        scan_qualified_target_model_seed=None,
+        pending_scan_qualified_target_model_seed=capture_seed,
+        current_view=0,
+        plan_id='plan-a',
+        plan_target_center=np.asarray([0.4, 0.0, 0.04]),
+        plan_viewpoints=[{
+            'index': 7,
+            'ray_id': 12,
+            'desired_camera_position': {'x': 0.3, 'y': 0.1, 'z': 0.2},
+            'desired_look_at_direction': {'x': -1.0, 'y': 0.0, 'z': 0.0},
+        }],
+        latest_achieved_scan_view={
+            'plan_id': 'plan-a',
+            'viewpoint_index': 7,
+            'camera_position': {'x': 0.31, 'y': 0.09, 'z': 0.21},
+            'look_direction': {'x': -0.99, 'y': 0.01, 'z': 0.0},
+            'joint_positions_rad': [0.0] * 6,
+            'achieved_at_sec': 12.0,
+        },
+        latest_achieved_matches_current_view=lambda: True,
+        publish_scan_history=lambda: published.append(True),
+        abort_motion=lambda reason: pytest.fail(reason),
+    )
+
+    assert ScanViewpointExecutorNode.record_accepted_view(executor, 1)
+    assert executor.scan_qualified_target_shape == seed
+    assert executor.scan_qualified_target_model_seed == capture_seed
+    assert executor.pending_scan_qualified_target_shape is None
+    assert executor.pending_scan_qualified_target_model_seed is None
+    assert len(executor.scan_history) == 1
     assert published == [True]
 
 
@@ -2684,6 +2753,11 @@ def test_scan_history_publishes_frozen_measured_coverage_center():
         scan_session_id='session-a',
         scan_history=[],
         scan_rejections=[],
+        scan_qualified_target_shape=None,
+        pending_scan_qualified_target_shape={'valid': True},
+        scan_qualified_target_model_seed=None,
+        pending_scan_qualified_target_model_seed={
+            'model_seed_sha256': 'capture-seed'},
         scan_coverage_target_center=np.asarray([0.4, -0.08, 0.03]),
         get_parameter=lambda _name: SimpleNamespace(value=13),
         scan_history_pub=SimpleNamespace(
@@ -2694,6 +2768,7 @@ def test_scan_history_publishes_frozen_measured_coverage_center():
 
     assert published[0]['coverage_target_center'] == {
         'x': 0.4, 'y': -0.08, 'z': 0.03}
+    assert published[0]['qualified_target_shape'] is None
 
 
 def test_new_workflow_session_clears_frozen_coverage_center():

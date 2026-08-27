@@ -1,9 +1,12 @@
 """Live object-centric coverage and deterministic next-best-view scoring."""
 
 from dataclasses import dataclass
+import hashlib
 import json
 import math
+import os
 from pathlib import Path
+import tempfile
 
 import cv2
 import numpy as np
@@ -69,6 +72,8 @@ class CoverageSnapshot:
     render_width: int
     render_height: int
     maximum_scoring_voxels: int
+    model_center: tuple = ()
+    model_source: str = 'accepted_depth_heuristic'
 
     def __post_init__(self):
         for value in ('states', 'surface_view_bits', 'voxel_centers'):
@@ -83,6 +88,76 @@ class CoverageSnapshot:
     @property
     def surface_voxels(self):
         return int(np.count_nonzero(self.states == SURFACE))
+
+
+def _artifact_binding(path, root):
+    source = Path(path).resolve()
+    digest = hashlib.sha256()
+    with source.open('rb') as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+            digest.update(chunk)
+    try:
+        relative = str(source.relative_to(root))
+    except ValueError:
+        relative = os.path.relpath(str(source), str(root))
+    return {'path': relative, 'sha256': digest.hexdigest()}
+
+
+def persist_coverage_snapshot(path, snapshot, capture_artifacts=None,
+                              configuration_artifacts=None,
+                              dataset_root=None):
+    """Atomically persist one exact, compressed coverage generation."""
+    if snapshot is None:
+        raise ValueError('coverage snapshot is unavailable')
+    output = Path(path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    states = np.asarray(snapshot.states, dtype=np.uint8)
+    bits = np.asarray(snapshot.surface_view_bits, dtype=np.uint32)
+    centers = np.asarray(snapshot.voxel_centers, dtype=np.float64)
+    if centers.ndim != 2 or centers.shape[1] != 3 \
+            or states.shape != (len(centers),) or bits.shape != states.shape:
+        raise ValueError('coverage snapshot arrays are inconsistent')
+    side = int(round(len(centers) ** (1.0 / 3.0)))
+    shape = [side, side, side] if side ** 3 == len(centers) else [len(centers), 1, 1]
+    root = Path(dataset_root).resolve() if dataset_root else output.parent.resolve()
+    metadata = {
+        'schema_version': 1,
+        'artifact_kind': 'CoverageSnapshot',
+        'session_id': str(snapshot.session_id),
+        'generation': int(snapshot.generation),
+        'target_center_m': [float(value) for value in snapshot.target_center],
+        'model_center_m': [float(value) for value in (
+            snapshot.model_center or snapshot.target_center)],
+        'model_source': str(snapshot.model_source),
+        'radius_m': float(snapshot.radius_m),
+        'voxel_size_m': float(snapshot.voxel_size_m),
+        'grid_shape': shape,
+        'state_encoding': {'UNKNOWN': 0, 'FREE': 1, 'SURFACE': 2},
+        'capture_artifacts': [
+            _artifact_binding(value, root) for value in capture_artifacts or []],
+        'configuration_artifacts': [
+            _artifact_binding(value, root)
+            for value in configuration_artifacts or []],
+    }
+    payload = np.frombuffer(json.dumps(
+        metadata, sort_keys=True, separators=(',', ':')).encode('utf-8'),
+        dtype=np.uint8)
+    descriptor, temporary = tempfile.mkstemp(
+        prefix='.' + output.name + '.', suffix='.npz', dir=str(output.parent))
+    os.close(descriptor)
+    try:
+        np.savez_compressed(
+            temporary, metadata_json=payload, states=states,
+            observed_direction_bits=bits, voxel_centers_m=centers,
+            view_directions=np.asarray(snapshot.view_directions, dtype=np.float64))
+        os.replace(temporary, output)
+    except BaseException:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
+    return output
 
 
 def _vector3(value, label):
@@ -210,6 +285,8 @@ class ObjectCoverageModel:
         self.session_id = str(session_id)
         self.generation = 0
         self.target_center = None
+        self.model_center = None
+        self.model_source = 'accepted_depth_heuristic'
         self.radius_m = 0.0
         self.voxel_centers = None
         self.inside_object_envelope = None
@@ -220,16 +297,37 @@ class ObjectCoverageModel:
         self.tan_half_fov_x = 1.0
         self.tan_half_fov_y = 1.0
 
-    def _initialize(self, points, target_center, intrinsic, width, height):
+    def _initialize(
+            self, points, target_center, intrinsic, width, height,
+            model_center=None, model_radius_m=None,
+            model_source='accepted_depth_heuristic'):
         center = _vector3(target_center, 'coverage target center')
-        distances = np.linalg.norm(points - center, axis=1)
-        observed = float(np.percentile(distances, 95.0))
-        radius = (
-            self.config.radius_scale * observed
-            + self.config.padding_voxels * self.config.voxel_size_m)
-        radius = min(
-            self.config.maximum_radius_m,
-            max(self.config.minimum_radius_m, radius))
+        explicit = model_center is not None or model_radius_m is not None
+        if explicit:
+            if model_center is None or model_radius_m is None:
+                raise ValueError(
+                    'NBV model center and radius must be supplied together')
+            grid_center = _vector3(model_center, 'NBV model center')
+            radius = float(model_radius_m)
+            if (
+                    not math.isfinite(radius)
+                    or radius < 0.5 * self.config.voxel_size_m
+                    or radius > self.config.maximum_radius_m):
+                raise ValueError('NBV model radius is outside configured bounds')
+            source = str(model_source).strip()
+            if not source:
+                raise ValueError('NBV model source is missing')
+        else:
+            grid_center = center
+            distances = np.linalg.norm(points - center, axis=1)
+            observed = float(np.percentile(distances, 95.0))
+            radius = (
+                self.config.radius_scale * observed
+                + self.config.padding_voxels * self.config.voxel_size_m)
+            radius = min(
+                self.config.maximum_radius_m,
+                max(self.config.minimum_radius_m, radius))
+            source = 'accepted_depth_heuristic'
         steps = int(math.ceil(2.0 * radius / self.config.voxel_size_m)) + 1
         axis = (
             np.arange(steps, dtype=np.float64) * self.config.voxel_size_m
@@ -237,8 +335,10 @@ class ObjectCoverageModel:
         xx, yy, zz = np.meshgrid(axis, axis, axis, indexing='ij')
         offsets = np.column_stack((xx.ravel(), yy.ravel(), zz.ravel()))
         self.target_center = center
+        self.model_center = grid_center
+        self.model_source = source
         self.radius_m = radius
-        self.voxel_centers = offsets + center
+        self.voxel_centers = offsets + grid_center
         self.inside_object_envelope = (
             np.linalg.norm(offsets, axis=1) <= radius + 1e-9)
         count = len(self.voxel_centers)
@@ -251,7 +351,8 @@ class ObjectCoverageModel:
 
     def integrate(
             self, target_depth_m, support_mask, aligned_depth_m, intrinsic,
-            base_camera, target_center):
+            base_camera, target_center, model_center=None,
+            model_radius_m=None, model_source='accepted_depth_heuristic'):
         """Integrate one accepted target observation into the live model."""
         target_depth = np.asarray(target_depth_m, dtype=np.float64)
         support = np.asarray(support_mask, dtype=bool)
@@ -268,7 +369,10 @@ class ObjectCoverageModel:
             target_depth, support, intrinsic, transform)
         center = _vector3(target_center, 'coverage target center')
         if self.voxel_centers is None:
-            self._initialize(points, center, intrinsic, width, height)
+            self._initialize(
+                points, center, intrinsic, width, height,
+                model_center=model_center, model_radius_m=model_radius_m,
+                model_source=model_source)
         elif float(np.linalg.norm(center - self.target_center)) > 1e-9:
             raise ValueError(
                 'NBV coverage target center changed within session')
@@ -343,10 +447,14 @@ class ObjectCoverageModel:
             render_height=int(self.config.render_height),
             maximum_scoring_voxels=int(
                 self.config.maximum_scoring_voxels),
+            model_center=tuple(float(value) for value in self.model_center),
+            model_source=str(self.model_source),
         )
 
     def rebuild_from_scan(
-            self, scan_dir, accepted_views, target_center, session_id):
+            self, scan_dir, accepted_views, target_center, session_id,
+            model_center=None, model_radius_m=None,
+            model_source='accepted_depth_heuristic'):
         """Rebuild exactly one accepted generation from committed artifacts."""
         expected = int(accepted_views)
         dataset = Path(str(scan_dir or '')).resolve()
@@ -375,7 +483,8 @@ class ObjectCoverageModel:
             target_depth, support, aligned = _frame_arrays(dataset, metadata)
             self.integrate(
                 target_depth, support, aligned, intrinsic, transform,
-                target_center)
+                target_center, model_center=model_center,
+                model_radius_m=model_radius_m, model_source=model_source)
         return self.snapshot()
 
 

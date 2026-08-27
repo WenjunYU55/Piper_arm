@@ -4,6 +4,11 @@ import math
 
 import numpy as np
 
+from piper_mobile_manipulation.target_envelope import (
+    validate_capture_model_seed,
+    validate_shape_measurement,
+)
+
 
 def vector3(mapping, field):
     if not isinstance(mapping, dict):
@@ -90,7 +95,7 @@ def viewpoint_direction_is_redundant(
             continue
         previous_direction = previous_camera - previous_center
         if angular_separation_deg(
-                candidate_direction, previous_direction) < threshold - 1e-9:
+                candidate_direction, previous_direction) <= threshold + 1e-9:
             return True
     return False
 
@@ -153,17 +158,16 @@ def camera_offset_geometry(entries, target_center):
 
 def feature_coverage_priority(
         viewpoint, accepted_entries, target_center,
-        minimum_views_per_y_side=2, minimum_azimuth_span_deg=120.0,
-        minimum_elevation_span_deg=25.0):
+        minimum_views_per_y_side=2, minimum_elevation_span_deg=25.0):
     """
     Score the next view against the most important unmet feature axis.
 
     A generic farthest-point score can reverse an orbit before it reaches a
     missing cube face.  This staged score keeps walking toward one missing
     lateral face until it has two achieved observations, then crosses to the
-    other face, extends azimuth, extends elevation, and only then maximizes
-    ordinary pose diversity.  The stages are recomputed after every accepted
-    achieved pose, so no desired pose is treated as accomplished.
+    other face, extends elevation, and only then maximizes ordinary pose
+    diversity.  The stages are recomputed after every accepted achieved pose,
+    so no desired pose is treated as accomplished.
     """
     center = vector3(target_center, 'coverage target center')
     camera = vector3(
@@ -174,9 +178,6 @@ def feature_coverage_priority(
         raise ValueError('candidate camera position coincides with target center')
     horizontal = float(np.linalg.norm(offset[:2]))
     lateral_fraction = float(offset[1] / distance)
-    azimuth = math.degrees(math.atan2(offset[1], offset[0]))
-    if azimuth < 0.0:
-        azimuth += 360.0
     elevation = math.degrees(math.atan2(offset[2], horizontal))
 
     achieved = camera_offset_geometry(accepted_entries, target_center)
@@ -184,10 +185,7 @@ def feature_coverage_priority(
         item['lateral_fraction'] >= 0.35 for item in achieved)
     negative_y = sum(
         item['lateral_fraction'] <= -0.35 for item in achieved)
-    azimuths = [item['azimuth_deg'] for item in achieved]
     elevations = [item['elevation_deg'] for item in achieved]
-    azimuth_span = (
-        max(azimuths) - min(azimuths) if len(azimuths) >= 2 else 0.0)
     elevation_span = (
         max(elevations) - min(elevations)
         if len(elevations) >= 2 else 0.0)
@@ -211,10 +209,6 @@ def feature_coverage_priority(
     elif positive_y < int(minimum_views_per_y_side):
         objective = 'positive_y_face'
         primary = lateral_fraction
-    elif azimuth_span < float(minimum_azimuth_span_deg):
-        objective = 'azimuth_span'
-        projected = azimuths + [azimuth]
-        primary = (max(projected) - min(projected)) / 180.0
     elif elevation_span < float(minimum_elevation_span_deg):
         objective = 'elevation_span'
         projected = elevations + [elevation]
@@ -260,9 +254,6 @@ def feature_coverage_progress(
         raise ValueError('candidate camera position coincides with target center')
     horizontal = float(np.linalg.norm(offset[:2]))
     candidate_lateral = float(offset[1] / distance)
-    candidate_azimuth = math.degrees(math.atan2(offset[1], offset[0]))
-    if candidate_azimuth < 0.0:
-        candidate_azimuth += 360.0
     candidate_elevation = math.degrees(
         math.atan2(offset[2], horizontal))
     achieved = camera_offset_geometry(accepted_entries, target_center)
@@ -274,11 +265,6 @@ def feature_coverage_progress(
     if objective == 'positive_y_face':
         current = achieved[-1]['lateral_fraction']
         return candidate_lateral - current + float(lateral_tolerance)
-    if objective == 'azimuth_span':
-        values = [item['azimuth_deg'] for item in achieved]
-        previous = max(values) - min(values) if len(values) >= 2 else 0.0
-        projected = values + [candidate_azimuth]
-        return max(projected) - min(projected) - previous
     if objective == 'elevation_span':
         values = [item['elevation_deg'] for item in achieved]
         previous = max(values) - min(values) if len(values) >= 2 else 0.0
@@ -290,8 +276,8 @@ def feature_coverage_progress(
 
 def achieved_feature_coverage(
         entries, target_center, minimum_views=9,
-        minimum_views_per_y_side=2, minimum_azimuth_span_deg=120.0,
-        minimum_elevation_span_deg=25.0, surface_coverage=None):
+        minimum_views_per_y_side=2, minimum_elevation_span_deg=25.0,
+        surface_coverage=None):
     """
     Measure achieved face/axis diversity from persisted camera poses.
 
@@ -323,7 +309,6 @@ def achieved_feature_coverage(
         len(geometry) >= int(minimum_views)
         and positive_y >= int(minimum_views_per_y_side)
         and negative_y >= int(minimum_views_per_y_side)
-        and azimuth_span >= float(minimum_azimuth_span_deg)
         and elevation_span >= float(minimum_elevation_span_deg))
     surface_required = isinstance(surface_coverage, dict)
     surface_sufficient = bool(
@@ -342,10 +327,6 @@ def achieved_feature_coverage(
         blockers.append(
             '-Y side has %d/%d views' % (
                 negative_y, int(minimum_views_per_y_side)))
-    if azimuth_span < float(minimum_azimuth_span_deg):
-        blockers.append(
-            'azimuth span %.1f/%.1f deg' % (
-                azimuth_span, float(minimum_azimuth_span_deg)))
     if elevation_span < float(minimum_elevation_span_deg):
         blockers.append(
             'elevation span %.1f/%.1f deg' % (
@@ -370,7 +351,7 @@ def filter_and_order_viewpoints(
         viewpoints, entries, position_tolerance_m=0.012,
         look_tolerance_deg=2.0, accepted_entries=None, target_center=None,
         minimum_direction_separation_deg=0.0,
-        direction_target_center=None):
+        direction_target_center=None, rejection_reasons=None):
     """
     Remove viewpoints already captured in this session.
 
@@ -386,6 +367,9 @@ def filter_and_order_viewpoints(
     for item in viewpoints:
         if viewpoint_is_duplicate(
                 item, entries, position_tolerance_m, look_tolerance_deg):
+            if rejection_reasons is not None:
+                rejection_reasons[int(item.get('ray_id', item.get(
+                    'index', -1)))] = ['duplicate of an accepted camera pose']
             continue
         if (
                 (direction_target_center is not None or target_center is not None)
@@ -394,6 +378,10 @@ def filter_and_order_viewpoints(
                     direction_target_center
                     if direction_target_center is not None else target_center,
                     minimum_direction_separation_deg)):
+            if rejection_reasons is not None:
+                rejection_reasons[int(item.get('ray_id', item.get(
+                    'index', -1)))] = [
+                        'direction is within the accepted-view redundancy floor']
             continue
         remaining.append(item)
     if target_center is None:
@@ -448,12 +436,45 @@ def validate_history_payload(payload, maximum_views):
             coverage_target_center, 'coverage target center')
         coverage_target_center = dict(zip(
             ('x', 'y', 'z'), (float(value) for value in normalized_center)))
+    qualified_target_shape = payload.get('qualified_target_shape')
+    if qualified_target_shape is not None:
+        qualified_target_shape = validate_shape_measurement(
+            qualified_target_shape)
+    qualified_target_model_seed = payload.get('qualified_target_model_seed')
+    if qualified_target_model_seed is not None:
+        qualified_target_model_seed = validate_capture_model_seed(
+            qualified_target_model_seed)
+        if accepted < 1:
+            raise ValueError(
+                'capture target model seed requires an accepted view')
+        seed_shape = qualified_target_model_seed['shape']
+        if (
+                qualified_target_shape is not None
+                and seed_shape['measurement_sha256'] !=
+                qualified_target_shape['measurement_sha256']):
+            raise ValueError(
+                'qualified target shape does not match capture model seed')
     for entry in entries:
         vector3(entry.get('desired_camera_position'), 'history camera position')
         vector3(entry.get('desired_look_at_direction'), 'history look direction')
     for entry in rejected_entries:
         vector3(entry.get('desired_camera_position'), 'rejected camera position')
         vector3(entry.get('desired_look_at_direction'), 'rejected look direction')
+        has_retry_ray = 'framing_retry_ray_id' in entry
+        has_retry_minimum = 'framing_retry_min_standoff_m' in entry
+        if has_retry_ray != has_retry_minimum:
+            raise ValueError('rejected framing retry metadata is incomplete')
+        if has_retry_ray:
+            try:
+                retry_ray = int(entry['framing_retry_ray_id'])
+                retry_minimum = float(
+                    entry['framing_retry_min_standoff_m'])
+            except (TypeError, ValueError):
+                raise ValueError('rejected framing retry metadata is invalid')
+            if (
+                    retry_ray < 0 or not math.isfinite(retry_minimum)
+                    or retry_minimum <= 0.0):
+                raise ValueError('rejected framing retry metadata is invalid')
     latest_achieved = payload.get('latest_achieved_camera')
     if latest_achieved is not None:
         if not isinstance(latest_achieved, dict):
@@ -484,6 +505,14 @@ def validate_history_payload(payload, maximum_views):
         # must be compared in one immutable frame so tracker noise cannot make
         # an already-covered cube face appear missing again.
         'coverage_target_center': coverage_target_center,
+        # Only the executor may populate this after it proves that the first
+        # scan endpoint is settled, aimed, and observed by a post-settle frame.
+        # The planner uses this exact immutable measurement as its model seed.
+        'qualified_target_shape': qualified_target_shape,
+        # Capture one binds its exact persisted mask/depth silhouette to the
+        # synchronized base-from-camera transform.  The planner must consume
+        # this immutable record instead of querying live TF later.
+        'qualified_target_model_seed': qualified_target_model_seed,
     }
 
 

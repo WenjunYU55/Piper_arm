@@ -68,6 +68,30 @@ def initialized_model():
     return model
 
 
+def test_explicit_revolved_size_controls_grey_coverage_sphere():
+    model = ObjectCoverageModel(VoxelCoverageConfig(
+        voxel_size_m=0.005,
+        minimum_radius_m=0.03,
+        maximum_radius_m=0.25,
+        render_width=32,
+        render_height=24,
+    ))
+    model.session_id = 'sized-target'
+
+    model.integrate(
+        *synthetic_observation(), target_center=[0.0, 0.0, 0.4],
+        model_center=[0.01, -0.01, 0.4], model_radius_m=0.02,
+        model_source='qualified_revolved_target_size')
+    snapshot = model.snapshot()
+
+    assert snapshot.radius_m == pytest.approx(0.02)
+    assert 2.0 * snapshot.radius_m == pytest.approx(0.04)
+    assert snapshot.model_center == pytest.approx((0.01, -0.01, 0.4))
+    assert snapshot.model_source == 'qualified_revolved_target_size'
+    assert np.mean(snapshot.voxel_centers, axis=0) == pytest.approx(
+        snapshot.model_center)
+
+
 def test_repeated_front_view_loses_to_unobserved_back_view():
     model = initialized_model()
     snapshot = model.snapshot()

@@ -1,23 +1,52 @@
 #!/usr/bin/env python3
 import json
 import math
+import os
+from pathlib import Path
 import time
 
+import numpy as np
 import rclpy
+import tf2_ros
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.qos import (
+    DurabilityPolicy, QoSProfile, ReliabilityPolicy,
+)
 from sensor_msgs.msg import CameraInfo
 from std_msgs.msg import String
+import yaml
 
 from piper_mobile_manipulation.msg import Target3D, TrackedTarget
 from piper_mobile_manipulation.nbv_coverage import (
     candidate_meets_minimum_information,
     MINIMUM_USEFUL_MARGINAL_INFORMATION_FRACTION,
     ObjectCoverageModel,
+    persist_coverage_snapshot,
     rank_next_best_views,
     VoxelCoverageConfig,
 )
 from piper_mobile_manipulation.scan_motion import orbit_camera_view
+from piper_mobile_manipulation.target_envelope import (
+    build_revolution_envelope,
+    coverage_sphere_from_envelope,
+    envelope_constrained_ray_interval,
+    stamp_nanoseconds,
+    validate_capture_model_seed,
+    validate_shape_measurement,
+)
+from piper_mobile_manipulation.utils.mask_reprojection import transform_matrix
+from piper_mobile_manipulation.ray_mission_diagnostics import (
+    add_capture_event,
+    add_target_update_event,
+    capture_event_identity,
+    planner_generation_snapshot,
+    RayMissionDiagnosticsStore,
+)
+from piper_mobile_manipulation.ray_hard_culls import (
+    HardCullLedger,
+    prune_hard_culled_rays,
+    ray_population_identity,
+)
 from piper_mobile_manipulation.scan_session_memory import (
     filter_and_order_viewpoints,
     history_coverage_target_center,
@@ -126,6 +155,88 @@ def effective_selection_policy(policy, accepted_views):
     return selected
 
 
+def provisional_first_ray_allowed(history):
+    """Allow generation zero only until an aimed model seed is qualified."""
+    return bool(
+        int(history.get('accepted_views', 0)) == 0
+        and history.get('qualified_target_shape') is None)
+
+
+def pending_first_ray_framing_retry(history):
+    """Return the latest zero-capture same-ray outward retry request."""
+    if int(history.get('accepted_views', 0)) != 0:
+        return None
+    rejected = history.get('rejected_entries', [])
+    if not rejected:
+        return None
+    latest = rejected[-1]
+    try:
+        ray_id = int(latest['framing_retry_ray_id'])
+        minimum = float(latest['framing_retry_min_standoff_m'])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if ray_id < 0 or not math.isfinite(minimum) or minimum <= 0.0:
+        return None
+    return ray_id, minimum
+
+
+def restrict_to_framing_retry(viewpoints, history, target_center):
+    """Retry the same ray farther out while preserving target-facing aim."""
+    request = pending_first_ray_framing_retry(history)
+    if request is None:
+        return [dict(item) for item in viewpoints], False
+    ray_id, requested_minimum = request
+    target = np.asarray([
+        target_center[axis] for axis in ('x', 'y', 'z')], dtype=float)
+    for item in viewpoints:
+        if int(item.get('ray_id', -1)) != ray_id:
+            continue
+        candidate = dict(item)
+        maximum = float(candidate['ray_max_standoff_m'])
+        minimum = max(
+            float(candidate['ray_min_standoff_m']), requested_minimum)
+        if minimum > maximum + 1e-9:
+            return [], True
+        direction = np.asarray([
+            candidate['ray_direction'][axis]
+            for axis in ('x', 'y', 'z')], dtype=float)
+        direction /= np.linalg.norm(direction)
+        preferred = max(
+            minimum,
+            min(maximum, float(candidate['ray_preferred_max_standoff_m'])))
+        scoring = 0.5 * (minimum + preferred)
+        camera = target + direction * scoring
+        candidate.update({
+            'ray_min_standoff_m': float(minimum),
+            'ray_preferred_max_standoff_m': float(preferred),
+            'ray_scoring_standoff_m': float(scoring),
+            'camera_object_distance_m': float(scoring),
+            'desired_camera_position': dict(zip(
+                ('x', 'y', 'z'), (float(value) for value in camera))),
+            'desired_look_at_direction': dict(zip(
+                ('x', 'y', 'z'),
+                (float(value) for value in -direction))),
+            'target_framing_retry': True,
+        })
+        return [candidate], True
+    return [], True
+
+
+def target_shape_failure_code(error):
+    """Return the coordinator code carried by a rejected target shape."""
+    code = str(error).partition(':')[0].strip()
+    if code in ('TARGET_TOO_LARGE_OR_CLOSE', 'TARGET_SCAN_IMPOSSIBLE'):
+        return code
+    return 'TARGET_SHAPE_UNAVAILABLE'
+
+
+def retired_view_history(history, ray_policy):
+    """Return poses allowed to retire regenerated candidate directions."""
+    if ray_policy:
+        return list(history.get('accepted_entries', []))
+    return list(history.get('entries', []))
+
+
 class ScanViewpointPlannerNode(Node):
     def __init__(self):
         super().__init__('scan_viewpoint_planner_node')
@@ -140,6 +251,8 @@ class ScanViewpointPlannerNode(Node):
             'scan_session_history_topic', '/piper/scan_session_history')
         self.declare_parameter(
             'scan_capture_status_topic', '/piper/scan_capture_status')
+        self.declare_parameter(
+            'ray_hard_culls_topic', '/piper/ray_hard_culls')
         self.declare_parameter('planning_frame_id', 'base_link')
 
         self.declare_parameter('desired_scan_angle_deg', 250)
@@ -165,7 +278,7 @@ class ScanViewpointPlannerNode(Node):
         self.declare_parameter('duplicate_position_tolerance_m', 0.012)
         self.declare_parameter('duplicate_look_tolerance_deg', 2.0)
         self.declare_parameter(
-            'minimum_useful_direction_separation_deg', 10.0)
+            'minimum_useful_direction_separation_deg', 15.0)
         self.declare_parameter('target_replan_translation_m', 0.01)
         self.declare_parameter('target_replan_min_period_sec', 0.5)
         self.declare_parameter('target_plan_refresh_period_sec', 0.5)
@@ -179,6 +292,12 @@ class ScanViewpointPlannerNode(Node):
         self.declare_parameter('nbv_render_width', 64)
         self.declare_parameter('nbv_render_height', 48)
         self.declare_parameter('nbv_maximum_scoring_voxels', 20000)
+        project_root = os.environ.get('PIPER_ARM_ROOT', '/home/prl/Piper_arm')
+        self.declare_parameter('ray_diagnostics_enabled', True)
+        self.declare_parameter(
+            'ray_diagnostics_root',
+            os.path.join(project_root, 'datasets', 'active_scan',
+                         'ray_diagnostics'))
 
         self._selection_policy = str(
             self.get_parameter('view_selection_policy').value).strip()
@@ -207,11 +326,19 @@ class ScanViewpointPlannerNode(Node):
         self.ray_pool_target_center = None
         self.ray_pool_frame_id = ''
         self.ray_pool = None
+        self.ray_pool_phase = ''
+        self.ray_pool_target_envelope = None
+        self.ray_pool_envelope_rejected_rays = 0
+        self.current_ray_population = None
+        self.hard_cull_ledger = HardCullLedger()
+        self.pending_hard_cull_feedback = []
         self.configured_ray_samples = (
             tuple(self.ray_samples())
             if self._selection_capabilities.frozen_candidates else None)
         self.nbv_positive_information_count = 0
         self.nbv_low_information_rejected_count = 0
+        self.ray_diagnostics_store = RayMissionDiagnosticsStore(
+            self.get_parameter('ray_diagnostics_root').value)
         self.coverage_model = ObjectCoverageModel(VoxelCoverageConfig(
             voxel_size_m=float(
                 self.get_parameter('nbv_voxel_size_m').value),
@@ -238,6 +365,8 @@ class ScanViewpointPlannerNode(Node):
         self.pub_coverage = self.create_publisher(
             String, self.get_parameter('scan_coverage_topic').value, 10
         )
+        self.tf_buffer = tf2_ros.Buffer()
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
         self.object_sub = self.create_subscription(
             Target3D,
@@ -286,6 +415,17 @@ class ScanViewpointPlannerNode(Node):
             self.capture_status_cb,
             10,
         )
+        hard_cull_qos = QoSProfile(
+            depth=2,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self.hard_cull_sub = self.create_subscription(
+            String,
+            self.get_parameter('ray_hard_culls_topic').value,
+            self.hard_cull_cb,
+            hard_cull_qos,
+        )
         self.get_logger().warn(
             'Scan viewpoint planner is dry-run only; it does not publish '
             '/piper/servo_cmd or move the arm.'
@@ -296,6 +436,56 @@ class ScanViewpointPlannerNode(Node):
 
     def camera_info_cb(self, msg):
         self.latest_camera_info = msg
+
+    def target_envelope_for(self, center, history):
+        """Build only from the exact persisted capture-one model seed."""
+        session_id = str(history.get('session_id', ''))
+        if (
+                session_id and session_id == self.ray_pool_session_id
+                and self.ray_pool_target_envelope is not None):
+            return dict(self.ray_pool_target_envelope), ''
+        try:
+            model_seed = history.get('qualified_target_model_seed')
+            if model_seed is not None:
+                model_seed = validate_capture_model_seed(model_seed)
+                shape = model_seed['shape']
+                transform = np.asarray(
+                    model_seed['base_from_camera']['matrix_4x4'],
+                    dtype=float)
+                envelope = build_revolution_envelope(
+                    shape,
+                    transform,
+                    [center[axis] for axis in ('x', 'y', 'z')],
+                )
+                return envelope, ''
+            shape = history.get('qualified_target_shape')
+            if shape is None:
+                raise ValueError(
+                    'accepted capture target model seed is not yet qualified')
+            # Compatibility only for pre-model-seed command-free replays.
+            # New live sessions always carry the capture-bound matrix above.
+            shape = validate_shape_measurement(shape)
+            camera_info = self.camera_info_summary()
+            if not camera_info.get('available'):
+                raise ValueError(
+                    'camera intrinsics are unavailable for target envelope')
+            source_frame = str(shape['header']['frame_id'])
+            planning_frame = str(
+                self.get_parameter('planning_frame_id').value)
+            transform = self.tf_buffer.lookup_transform(
+                planning_frame, source_frame,
+                rclpy.time.Time(nanoseconds=stamp_nanoseconds(
+                    shape['header']['stamp'])))
+            envelope = build_revolution_envelope(
+                shape,
+                transform_matrix(transform),
+                [center[axis] for axis in ('x', 'y', 'z')],
+            )
+        except (
+                KeyError, TypeError, ValueError,
+                tf2_ros.TransformException) as error:
+            return None, str(error)
+        return envelope, ''
 
     def history_cb(self, msg):
         try:
@@ -316,6 +506,22 @@ class ScanViewpointPlannerNode(Node):
             return
         self.latest_capture_status = payload
         self.refresh_coverage_model()
+
+    def hard_cull_cb(self, msg):
+        """Accept only feedback bound to the current frozen ray universe."""
+        try:
+            payload = json.loads(msg.data)
+            if self.current_ray_population is None:
+                self.pending_hard_cull_feedback.append(payload)
+                self.pending_hard_cull_feedback = (
+                    self.pending_hard_cull_feedback[-8:])
+                return
+            if self.hard_cull_ledger.update(payload):
+                self.nbv_ranking_cache_key = None
+                self.nbv_ranking_cache = None
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+            self.get_logger().warn(
+                'Ignoring invalid hard-ray cull feedback: %s' % error)
 
     def selection_policy(self):
         """Return the policy frozen when this mission stack started."""
@@ -365,6 +571,29 @@ class ScanViewpointPlannerNode(Node):
                 'NBV capture generation is catching up (%d/%d)'
                 % (captured, accepted))
             return False
+        model_center = None
+        model_radius = None
+        model_source = 'accepted_depth_heuristic'
+        if self.ray_policy():
+            envelope, envelope_error = self.target_envelope_for(
+                center, history)
+            if envelope is None:
+                self.nbv_model_error = (
+                    'NBV target envelope is unavailable: %s'
+                    % envelope_error)
+                return False
+            try:
+                coverage_sphere = coverage_sphere_from_envelope(envelope)
+                model_center = coverage_sphere['center_m']
+                model_radius = coverage_sphere['radius_m']
+                model_source = coverage_sphere['source']
+                center = dict(zip(
+                    ('x', 'y', 'z'),
+                    (float(value) for value in model_center)))
+            except (KeyError, TypeError, ValueError) as error:
+                self.nbv_model_error = (
+                    'NBV target size is unavailable: %s' % error)
+                return False
         if (
                 self.coverage_model.session_id == session_id
                 and self.coverage_model.generation == accepted
@@ -373,14 +602,90 @@ class ScanViewpointPlannerNode(Node):
             return True
         try:
             self.coverage_model.rebuild_from_scan(
-                scan_dir, accepted, center, session_id)
+                scan_dir, accepted, center, session_id,
+                model_center=model_center, model_radius_m=model_radius,
+                model_source=model_source)
         except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) \
                 as error:
             self.nbv_model_error = 'NBV coverage update failed: %s' % error
             return False
+        try:
+            self.record_coverage_diagnostics(
+                scan_dir, accepted, center, session_id, history)
+        except Exception as error:  # Diagnostics never gate measured NBV.
+            self.get_logger().warn(
+                'Could not persist coverage diagnostics: %s' % error)
         self.nbv_scan_dir = scan_dir
         self.nbv_model_error = ''
         return True
+
+    def record_coverage_diagnostics(
+            self, scan_dir, accepted, center, session_id, history):
+        """Bind the just-accepted capture to an exact coverage snapshot."""
+        mission_id = os.environ.get('PIPER_MISSION_TASK_ID', '')
+        artifact_id = mission_id or session_id
+        directory = self.ray_diagnostics_store.session_dir(artifact_id)
+        coverage_path = directory / 'coverage' / (
+            'capture_%03d.npz' % int(accepted))
+        dataset = Path(scan_dir).resolve()
+        metadata_paths = sorted((dataset / 'frames').glob(
+            'view_*_metadata.yaml'))
+        if len(metadata_paths) < int(accepted):
+            raise ValueError('accepted capture metadata is unavailable')
+        metadata_path = metadata_paths[int(accepted) - 1]
+        with metadata_path.open('r', encoding='utf-8') as stream:
+            metadata = yaml.safe_load(stream) or {}
+        artifacts = [metadata_path]
+        for key in (
+                'target_depth_png_file_path',
+                'target_support_mask_file_path', 'depth_file_path'):
+            if metadata.get(key):
+                artifacts.append(metadata[key])
+        coverage_available = False
+        coverage_error = ''
+        try:
+            persist_coverage_snapshot(
+                coverage_path, self.coverage_model.snapshot(),
+                capture_artifacts=artifacts,
+                configuration_artifacts=[dataset / 'manifest.json'],
+                dataset_root=dataset)
+            coverage_available = True
+        except Exception as error:
+            coverage_error = str(error)
+            self.get_logger().warn(
+                'Could not persist exact coverage snapshot: %s' % error)
+        joint_state = metadata.get('joint_state', {})
+        names = list(joint_state.get('name', []))
+        positions = list(joint_state.get('position', []))
+        capture_id, ray_id = capture_event_identity(
+            history, metadata, accepted)
+        generation = max(0, int(accepted) - 1)
+        base = {
+            'schema_version': 2,
+            'mission_id': mission_id,
+            'session_id': session_id,
+            'generation': generation,
+            'frame_id': 'base_link',
+            'target_center_m': [
+                float(center[axis]) for axis in ('x', 'y', 'z')]
+            if isinstance(center, dict) else [float(value) for value in center],
+            'rays': [], 'requests': [], 'events': [],
+        }
+        base = add_capture_event(
+            base, capture_id, True, ray_id=ray_id,
+            achieved_camera_matrix_4x4=metadata.get(
+                'camera_transform', {}).get('matrix_4x4'),
+            joint_names=names[:6], joint_positions=positions[:6],
+            gripper_joint_names=names[6:],
+            gripper_joint_positions=positions[6:],
+            coverage_snapshot_path=(
+                str(coverage_path) if coverage_available else ''),
+            artifact_bindings=[str(value) for value in artifacts])
+        base = add_target_update_event(
+            base, capture_id,
+            str(coverage_path) if coverage_available else '',
+            reason=coverage_error or 'target-model artifacts unavailable')
+        self.ray_diagnostics_store.record(base)
 
     @staticmethod
     def current_achieved_camera(history):
@@ -536,9 +841,26 @@ class ScanViewpointPlannerNode(Node):
         angles = self.viewpoint_angles()
         ray_policy = self.ray_policy()
         frozen_viewpoints = None
+        target_envelope = None
+        target_envelope_error = ''
         if ray_policy:
-            center, frozen_viewpoints = self.frozen_ray_pool(
-                history, center, frame_id, self.configured_ray_samples)
+            envelope_center = history_coverage_target_center(history, center)
+            if envelope_center is None:
+                envelope_center = center
+            target_envelope, target_envelope_error = self.target_envelope_for(
+                envelope_center, history)
+            if target_envelope is None:
+                if provisional_first_ray_allowed(history):
+                    center, frozen_viewpoints = self.frozen_ray_pool(
+                        history, center, frame_id,
+                        self.configured_ray_samples, envelope=None)
+                else:
+                    frozen_viewpoints = []
+            else:
+                center, frozen_viewpoints = self.frozen_ray_pool(
+                    history, center, frame_id, self.configured_ray_samples,
+                    envelope=target_envelope)
+                target_envelope = self.ray_pool_target_envelope
         history_signature = json.dumps(
             history, sort_keys=True, separators=(',', ':'))
         now = time.monotonic()
@@ -586,20 +908,77 @@ class ScanViewpointPlannerNode(Node):
                         viewpoints.append(viewpoint)
                         index += 1
         generated_candidate_count = len(viewpoints)
+        generated_viewpoints = [dict(item) for item in viewpoints]
+        framing_retry = False
+        if ray_policy:
+            viewpoints, framing_retry = restrict_to_framing_retry(
+                viewpoints, history, center)
+        ray_population = None
+        persistent_culls = {}
+        envelope_culls = {
+            int(item['ray_id']): {
+                'ray_id': int(item['ray_id']),
+                'stage': 'target_envelope',
+                'reason_code': 'NO_SAFE_TARGET_STANDOFF',
+                'reason': str(item.get(
+                    'target_envelope_rejection_reason',
+                    'target envelope leaves no safe ray interval')),
+                'evidence': {
+                    'target_envelope_sha256': str(item.get(
+                        'target_envelope_sha256', '')),
+                    'requested_minimum_standoff_m': float(item.get(
+                        'ray_requested_min_standoff_m',
+                        item.get('ray_min_standoff_m', 0.0))),
+                    'requested_maximum_standoff_m': float(item.get(
+                        'ray_requested_max_standoff_m',
+                        item.get('ray_max_standoff_m', 0.0))),
+                },
+            }
+            for item in generated_viewpoints
+            if item.get('target_envelope_supported') is False
+        }
+        if ray_policy and str(history.get('session_id', '')).strip():
+            ray_population = ray_population_identity(
+                generated_viewpoints,
+                os.environ.get('PIPER_MISSION_TASK_ID', ''),
+                history['session_id'], center, frame_id)
+            if self.current_ray_population != ray_population:
+                self.current_ray_population = dict(ray_population)
+                self.hard_cull_ledger.reset(ray_population)
+                pending = self.pending_hard_cull_feedback
+                self.pending_hard_cull_feedback = []
+                for payload in pending:
+                    try:
+                        self.hard_cull_ledger.update(payload)
+                    except (KeyError, TypeError, ValueError):
+                        pass
+            persistent_culls = dict(envelope_culls)
+            persistent_culls.update(
+                self.hard_cull_ledger.entries(ray_population))
+        planner_rejections = {}
+        viewpoints = prune_hard_culled_rays(
+            viewpoints, persistent_culls, planner_rejections)
+        # A ray mission has two monotonic retirement sources only: accepted
+        # camera directions (including their angular neighbourhood) and the
+        # permanent hard-cull ledger above.  Do not turn a path-dependent or
+        # framing rejection into an accidental permanent direction cull.
+        retired_history = retired_view_history(history, ray_policy)
         viewpoints = filter_and_order_viewpoints(
             viewpoints,
-            history['entries'],
+            retired_history,
             self.get_parameter('duplicate_position_tolerance_m').value,
             self.get_parameter('duplicate_look_tolerance_deg').value,
-            accepted_entries=(
-                history.get('entries', []) if ray_policy
-                else history.get('accepted_entries', [])),
-            target_center=history_coverage_target_center(history, center),
+            accepted_entries=history.get('accepted_entries', []),
+            target_center=(
+                center if target_envelope is not None
+                else history_coverage_target_center(history, center)),
             minimum_direction_separation_deg=self.get_parameter(
                 'minimum_useful_direction_separation_deg').value,
             direction_target_center=center,
+            rejection_reasons=planner_rejections,
         )
         nonduplicate_candidate_count = len(viewpoints)
+        history_remaining_viewpoints = [dict(item) for item in viewpoints]
         selected_viewpoints = self.apply_view_selection(viewpoints, history)
         selection_ready = selected_viewpoints is not None
         if not selection_ready:
@@ -620,6 +999,15 @@ class ScanViewpointPlannerNode(Node):
                 bool(item.get('nbv_positive_information_gain', True))
                 for item in viewpoints)))
         selection_failure_code = (
+            'TARGET_FRAMING_NO_AIMED_ENDPOINT'
+            if ray_policy and framing_retry and not viewpoints else
+            target_shape_failure_code(target_envelope_error)
+            if ray_policy and target_envelope is None and not viewpoints else
+            'NO_SAFE_TARGET_STANDOFF'
+            if (
+                ray_policy and target_envelope is not None
+                and generated_candidate_count > 0
+                and len(envelope_culls) == generated_candidate_count) else
             'NO_POSITIVE_INFORMATION_CANDIDATE'
             if (
                 self.authoritative_nbv_policy()
@@ -635,6 +1023,43 @@ class ScanViewpointPlannerNode(Node):
         # the exact 13-capture contract.
         if remaining == 0:
             viewpoints = []
+
+        ray_diagnostics = None
+        if ray_policy and str(history['session_id']).strip():
+            try:
+                ranked_viewpoints = history_remaining_viewpoints
+                if (
+                        int(history.get('accepted_views', 0)) > 0
+                        and selection_ready
+                        and isinstance(self.nbv_ranking_cache, list)):
+                    ranked_viewpoints = self.nbv_ranking_cache
+                ray_diagnostics = planner_generation_snapshot(
+                    session_id=history['session_id'],
+                    generation=int(history['accepted_views']),
+                    target_center=center,
+                    frame_id=frame_id,
+                    policy=effective_selection_policy(
+                        self.selection_policy(), history['accepted_views']),
+                    generated=generated_viewpoints,
+                    history_remaining=history_remaining_viewpoints,
+                    ranked=ranked_viewpoints,
+                    selected=viewpoints,
+                    planner_rejections=planner_rejections,
+                    selection_ready=selection_ready,
+                    selection_reason=self.nbv_model_error,
+                    remaining_views=remaining,
+                    mission_id=os.environ.get('PIPER_MISSION_TASK_ID', ''),
+                    persistent_culls=persistent_culls,
+                    target_envelope=target_envelope,
+                )
+                if self.param_bool('ray_diagnostics_enabled'):
+                    _json_path, html_path = self.ray_diagnostics_store.record(
+                        ray_diagnostics)
+                    ray_diagnostics['artifact_html_path'] = html_path
+            except Exception as error:  # Diagnostics must never gate planning.
+                ray_diagnostics = None
+                self.get_logger().warn(
+                    'Could not write ray mission diagnostics: %s' % error)
 
         requested_coverage = float(
             self.get_parameter('desired_scan_angle_deg').value)
@@ -677,8 +1102,7 @@ class ScanViewpointPlannerNode(Node):
             ).to_dict()
 
         view_msg = String()
-        view_msg.data = json.dumps(
-            {
+        view_payload = {
                 'header': {
                     'stamp': stamp,
                     'frame_id': frame_id,
@@ -687,21 +1111,34 @@ class ScanViewpointPlannerNode(Node):
                 'source_topic': source,
                 'target_status': self.target_status,
                 'target_object_center': center,
+                'target_envelope': target_envelope,
                 'camera_info': camera_info,
                 'scan_session': {
                     'session_id': history['session_id'],
                     'accepted_views': int(history['accepted_views']),
                     'max_views': int(history['max_views']),
-                    'coverage_target_center': history_coverage_target_center(
-                        history, center),
+                    'coverage_target_center': (
+                        center if target_envelope is not None
+                        else history_coverage_target_center(history, center)),
                 },
                 'remaining_viewpoints': int(remaining),
                 'viewpoints': viewpoints,
                 'view_generation': view_generation,
                 'selection_failure_code': selection_failure_code,
-            },
-            sort_keys=True,
-        )
+                'target_envelope_available': target_envelope is not None,
+                'target_envelope_sha256': (
+                    str(target_envelope.get('envelope_sha256', ''))
+                    if target_envelope is not None else ''),
+                'target_envelope_rejected_rays': int(
+                    self.ray_pool_envelope_rejected_rays
+                    if ray_policy else 0),
+                'target_envelope_error': target_envelope_error,
+            }
+        if ray_population is not None:
+            view_payload['ray_population'] = ray_population
+        if ray_diagnostics is not None:
+            view_payload['ray_diagnostics'] = ray_diagnostics
+        view_msg.data = json.dumps(view_payload, sort_keys=True)
         self.pub_viewpoints.publish(view_msg)
 
         coverage_msg = String()
@@ -748,6 +1185,14 @@ class ScanViewpointPlannerNode(Node):
                         'nbv_predicted_unknown_pixels', 0))
                     if viewpoints else 0),
                 'selection_failure_code': selection_failure_code,
+                'target_envelope_available': target_envelope is not None,
+                'target_envelope_sha256': (
+                    str(target_envelope.get('envelope_sha256', ''))
+                    if target_envelope is not None else ''),
+                'target_envelope_rejected_rays': int(
+                    self.ray_pool_envelope_rejected_rays
+                    if ray_policy else 0),
+                'target_envelope_error': target_envelope_error,
                 'generated_candidates': int(generated_candidate_count),
                 'duplicate_rejected_candidates': int(
                     generated_candidate_count - nonduplicate_candidate_count),
@@ -839,13 +1284,15 @@ class ScanViewpointPlannerNode(Node):
         }
 
     def make_ray_viewpoint(
-            self, ray_id, angle_deg, center, frame_id, pitch_deg):
+            self, ray_id, angle_deg, center, frame_id, pitch_deg,
+            envelope=None):
         """Build one stable direction with a bounded standoff interval."""
-        minimum, maximum = bounded_ray_interval(
+        requested_minimum, requested_maximum = bounded_ray_interval(
             [center['x'], center['y'], center['z']],
             self.get_parameter('ray_min_standoff_m').value,
             self.get_parameter('max_scan_radius_m').value,
         )
+        minimum, maximum = requested_minimum, requested_maximum
         preferred_maximum = min(
             maximum,
             max(minimum, float(
@@ -860,6 +1307,42 @@ class ScanViewpointPlannerNode(Node):
             axis: (float(camera[axis]) - float(center[axis])) / scoring_standoff
             for axis in ('x', 'y', 'z')
         }
+        envelope_supported = True
+        envelope_rejection_reason = ''
+        envelope_sha256 = ''
+        if envelope is not None:
+            envelope_sha256 = str(envelope.get('envelope_sha256', ''))
+            interval = envelope_constrained_ray_interval(
+                [center[axis] for axis in ('x', 'y', 'z')],
+                [direction[axis] for axis in ('x', 'y', 'z')],
+                requested_minimum,
+                requested_maximum,
+                envelope,
+                self.camera_info_summary(),
+                envelope_is_validated=True,
+            )
+            if interval is None:
+                # Retain the ray in the immutable diagnostic population.  It
+                # will be emitted as a permanent hard cull, allowing Full
+                # Review to show the actual elimination instead of inventing
+                # or silently omitting a candidate.
+                envelope_supported = False
+                envelope_rejection_reason = (
+                    'target envelope leaves no camera standoff with complete '
+                    'FOV and 0.250m surface clearance')
+            else:
+                minimum, maximum = interval
+                preferred_maximum = min(
+                    maximum,
+                    max(minimum, float(self.get_parameter(
+                        'preferred_scan_radius_m').value)),
+                )
+                scoring_standoff = 0.5 * (minimum + preferred_maximum)
+                viewpoint = self.make_viewpoint(
+                    ray_id, angle_deg, scoring_standoff, center, frame_id,
+                    pitch_deg)
+                # Keep the direction calculated before envelope adjustment.
+                # Only the representative endpoint/standoff changed.
         viewpoint.update({
             'candidate_geometry': 'target_ray',
             'ray_id': int(ray_id),
@@ -868,19 +1351,37 @@ class ScanViewpointPlannerNode(Node):
             'ray_max_standoff_m': float(maximum),
             'ray_preferred_max_standoff_m': float(preferred_maximum),
             'ray_scoring_standoff_m': float(scoring_standoff),
+            'ray_requested_min_standoff_m': float(requested_minimum),
+            'ray_requested_max_standoff_m': float(requested_maximum),
+            'ray_envelope_min_standoff_m': float(minimum),
+            'ray_envelope_max_standoff_m': float(maximum),
+            'target_envelope_supported': bool(envelope_supported),
+            'target_envelope_sha256': envelope_sha256,
+            'target_envelope_rejection_reason': envelope_rejection_reason,
         })
         return viewpoint
 
-    def frozen_ray_pool(self, history, center, frame_id, ray_samples):
-        """Create one mission-scoped ray pool and otherwise return a copy."""
+    def frozen_ray_pool(
+            self, history, center, frame_id, ray_samples, envelope=None):
+        """Create one bootstrap pool, then one qualified permanent pool."""
         session_id = str(history.get('session_id', ''))
-        frozen_center = history_coverage_target_center(history, center)
+        phase = 'qualified' if envelope is not None else 'bootstrap'
+        if envelope is not None:
+            anchor = envelope.get('planning_anchor_m')
+            if not isinstance(anchor, (list, tuple)) or len(anchor) != 3:
+                raise ValueError(
+                    'qualified target envelope planning anchor is missing')
+            frozen_center = dict(zip(
+                ('x', 'y', 'z'), (float(value) for value in anchor)))
+        else:
+            frozen_center = history_coverage_target_center(history, center)
         if frozen_center is None:
             frozen_center = dict(center)
         reusable = bool(
             session_id
             and session_id == self.ray_pool_session_id
-            and self.ray_pool is not None)
+            and self.ray_pool is not None
+            and getattr(self, 'ray_pool_phase', '') == phase)
         if reusable:
             return (
                 dict(self.ray_pool_target_center),
@@ -890,14 +1391,27 @@ class ScanViewpointPlannerNode(Node):
         viewpoints = []
         ray_id = 0
         for angle_deg, pitch_deg in ray_samples:
-            viewpoints.append(self.make_ray_viewpoint(
-                ray_id, angle_deg, frozen_center, frame_id, pitch_deg))
+            if envelope is None:
+                viewpoint = self.make_ray_viewpoint(
+                    ray_id, angle_deg, frozen_center, frame_id, pitch_deg)
+            else:
+                viewpoint = self.make_ray_viewpoint(
+                    ray_id, angle_deg, frozen_center, frame_id, pitch_deg,
+                    envelope=envelope)
+            viewpoints.append(viewpoint)
             ray_id += 1
+        rejected = sum(
+            item.get('target_envelope_supported') is False
+            for item in viewpoints)
         if session_id:
             self.ray_pool_session_id = session_id
             self.ray_pool_target_center = dict(frozen_center)
             self.ray_pool_frame_id = str(frame_id)
             self.ray_pool = [dict(item) for item in viewpoints]
+            self.ray_pool_phase = phase
+            self.ray_pool_target_envelope = (
+                dict(envelope) if envelope is not None else None)
+            self.ray_pool_envelope_rejected_rays = int(rejected)
         return dict(frozen_center), viewpoints
 
     def ray_samples(self):
@@ -941,11 +1455,16 @@ class ScanViewpointPlannerNode(Node):
     def camera_info_summary(self):
         if self.latest_camera_info is None:
             return {'available': False}
+        intrinsic = list(self.latest_camera_info.k)
         return {
             'available': True,
             'width': int(self.latest_camera_info.width),
             'height': int(self.latest_camera_info.height),
             'frame_id': self.latest_camera_info.header.frame_id,
+            'fx': float(intrinsic[0]),
+            'fy': float(intrinsic[4]),
+            'cx': float(intrinsic[2]),
+            'cy': float(intrinsic[5]),
         }
 
     def param_bool(self, name):

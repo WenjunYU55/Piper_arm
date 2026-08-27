@@ -164,6 +164,8 @@ class CapabilityQuery:
     matching_keys: int
     elapsed_ms: float
     reason: str
+    sample_support: tuple = ()
+    supported_intervals_m: tuple = ()
 
 
 class CapabilityMap:
@@ -276,41 +278,56 @@ class CapabilityMap:
         spatial = (
             base_cells[:, np.newaxis, :]
             + self._spatial_offsets[np.newaxis, :, :]
-        ).reshape((-1, 3))
-        spatial = spatial[np.all(
+        )
+        valid_spatial = np.all(
             (spatial >= -POSITION_INDEX_OFFSET)
-            & (spatial < POSITION_INDEX_OFFSET), axis=1)]
+            & (spatial < POSITION_INDEX_OFFSET), axis=2)
         direction_keys = self._compatible_direction_bins[
             tuple(int(value) for value in direction_index)]
-        if len(spatial) == 0 or len(direction_keys) == 0:
+        if not np.any(valid_spatial) or len(direction_keys) == 0:
             return CapabilityQuery(
                 False, 0, 0, (time.perf_counter() - start) * 1000.0,
-                'capability query produced no finite lookup cells')
-        encoded = (spatial + POSITION_INDEX_OFFSET).astype(np.uint64)
-        position_keys = encoded[:, 0]
-        position_keys |= encoded[:, 1] << np.uint64(POSITION_INDEX_BITS)
-        position_keys |= encoded[:, 2] << np.uint64(
+                'capability query produced no finite lookup cells',
+                tuple(False for _item in points))
+        # Preserve the source point axis so a ray query can recover exactly
+        # which standoff samples have atlas support. Invalid neighbour cells
+        # use a harmless zero key and are masked before matching.
+        encoded = np.zeros(spatial.shape, dtype=np.uint64)
+        encoded[valid_spatial] = (
+            spatial[valid_spatial] + POSITION_INDEX_OFFSET).astype(np.uint64)
+        position_keys = encoded[:, :, 0]
+        position_keys |= encoded[:, :, 1] << np.uint64(POSITION_INDEX_BITS)
+        position_keys |= encoded[:, :, 2] << np.uint64(
             2 * POSITION_INDEX_BITS)
         # Duplicate neighbour keys are harmless for searchsorted and cheaper
         # than sorting/uniquing every short mission ray.
         query_array = (
-            position_keys[:, np.newaxis]
-            | direction_keys[np.newaxis, :]).reshape(-1)
+            position_keys[:, :, np.newaxis]
+            | direction_keys[np.newaxis, np.newaxis, :])
+        valid_queries = np.broadcast_to(
+            valid_spatial[:, :, np.newaxis], query_array.shape).reshape(-1)
+        query_array = query_array.reshape(-1)
         locations = np.searchsorted(self.keys, query_array)
-        inside = locations < len(self.keys)
+        inside = (locations < len(self.keys)) & valid_queries
         matches = np.zeros(len(query_array), dtype=bool)
         matches[inside] = self.keys[locations[inside]] == query_array[inside]
         matching_locations = locations[matches]
         floor_ok = self.maximum_tool_minimum_z_m[matching_locations] >= (
             floor + clearance - 1e-9)
-        supported = bool(np.any(floor_ok))
+        qualified_matches = np.zeros(len(query_array), dtype=bool)
+        qualified_matches[np.flatnonzero(matches)] = floor_ok
+        sample_support = np.any(qualified_matches.reshape(
+            (len(points), len(self._spatial_offsets), len(direction_keys))),
+            axis=(1, 2))
+        supported = bool(np.any(sample_support))
         return CapabilityQuery(
             supported,
-            int(len(query_array)),
+            int(np.count_nonzero(valid_queries)),
             int(np.count_nonzero(floor_ok)),
             (time.perf_counter() - start) * 1000.0,
             '' if supported else (
                 'no collision-qualified capability cell intersects ray'),
+            tuple(bool(value) for value in sample_support),
         )
 
     def supports_pose(self, camera_position, look_direction,
@@ -343,8 +360,36 @@ class CapabilityMap:
         )
         standoffs = np.linspace(minimum, maximum, samples)
         positions = target.reshape((1, 3)) + np.outer(standoffs, direction)
-        return self._query_indices(
+        result = self._query_indices(
             positions, -direction, floor_z_m, clearance_m)
+        support = np.asarray(result.sample_support, dtype=bool)
+        intervals = []
+        if len(support) == len(standoffs) and np.any(support):
+            spacing = (
+                float(standoffs[1] - standoffs[0])
+                if len(standoffs) > 1 else self.position_voxel_m)
+            indexes = np.flatnonzero(support)
+            run_start = int(indexes[0])
+            run_end = run_start
+            for raw_index in indexes[1:]:
+                index = int(raw_index)
+                if index != run_end + 1:
+                    intervals.append((
+                        max(minimum, float(standoffs[run_start])
+                            - 0.5 * spacing),
+                        min(maximum, float(standoffs[run_end])
+                            + 0.5 * spacing),
+                    ))
+                    run_start = index
+                run_end = index
+            intervals.append((
+                max(minimum, float(standoffs[run_start]) - 0.5 * spacing),
+                min(maximum, float(standoffs[run_end]) + 0.5 * spacing),
+            ))
+        return CapabilityQuery(
+            result.supported, result.checked_keys, result.matching_keys,
+            result.elapsed_ms, result.reason, result.sample_support,
+            tuple(intervals))
 
 
 def write_capability_map(path, keys, maximum_tool_minimum_z_m, metadata):

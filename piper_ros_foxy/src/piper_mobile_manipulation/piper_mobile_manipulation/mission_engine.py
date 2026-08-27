@@ -22,8 +22,6 @@ from piper_mobile_manipulation.home_pose import (
 from piper_mobile_manipulation.mission_core import (
     MissionPhase,
 )
-
-
 _WORKFLOW_DEFAULTS = MissionWorkflowConfig()
 ACQUISITION_SERVICE_TIMEOUT_SEC = \
     _WORKFLOW_DEFAULTS.acquisition_service_timeout_sec
@@ -159,6 +157,20 @@ def shutdown_uses_startup_home(session):
 def target_drift_requires_replan(reason):
     """Recognize the executor's no-motion stale-target-plan rejection."""
     return as_failure(reason).has(FailureTag.TARGET_DRIFT_REPLAN)
+
+
+def first_capture_framing_action(reason):
+    """Classify the executor's settled first-view framing result."""
+    failure = as_failure(reason)
+    for tag, action in (
+            (FailureTag.TARGET_FRAMING_RETRY_FARTHER, 'RETRY_FARTHER'),
+            (FailureTag.TARGET_FRAMING_TOO_CLOSE, 'TOO_CLOSE'),
+            (FailureTag.TARGET_FRAMING_TOO_LARGE, 'TOO_LARGE'),
+            (FailureTag.TARGET_FRAMING_NO_AIMED_ENDPOINT,
+             'NO_AIMED_ENDPOINT')):
+        if failure.has(tag):
+            return action
+    return ''
 
 
 def safe_view_exhaustion_after_capture(
@@ -400,6 +412,30 @@ class MissionEngine:
         self.operations.enable_arm(context, True)
         session.arm_enabled = True
         self.operations.arm_enable_guard_started(context)
+        try:
+            self.operations.wait_for_post_enable_stability(
+                context,
+                self.workflow_config.startup_joint_stable_sec,
+                self.workflow_config.startup_joint_timeout_sec)
+        except MissionFailure as startup_error:
+            if session.motor_control_lost_reason:
+                raise
+            try:
+                self.operations.enable_arm(context, False)
+                session.disabled_proved = True
+                session.arm_enabled = False
+            except MissionFailure as disable_error:
+                session.motor_control_lost_reason = (
+                    'post-enable startup proof failed and all-six disable '
+                    'could not be proved: %s' % disable_error)
+                raise MissionFailure(
+                    '%s; %s' % (
+                        startup_error, session.motor_control_lost_reason),
+                    needs_operator=True,
+                    failure_code='CONTROL_UNTRUSTWORTHY', retryable=False)
+            raise MissionFailure(
+                '%s; arm disabled before STARTUP_WRIST' % startup_error,
+                failure=startup_error.failure)
         # PiPER position control holds the current controller target when the
         # motors enable.  The next direct startup-home transaction re-reads
         # fresh joints and live all-six motor state before sending its first
@@ -519,6 +555,7 @@ class MissionEngine:
         session = context.session
         quality_replans = 0
         target_drift_replans = 0
+        framing_retry_pending = False
         execution = None
         required = self.capture_config.required_captures
         maximum = self.capture_config.maximum_captures
@@ -567,6 +604,16 @@ class MissionEngine:
                     context, 'MULTIVIEW_SCAN', request_id,
                     self.workflow_config.plan_result_timeout_sec)
             except MissionFailure as exc:
+                if (
+                        framing_retry_pending
+                        and as_failure(exc).has(
+                            FailureTag.TARGET_FRAMING_NO_AIMED_ENDPOINT)):
+                    raise MissionFailure(
+                        'the cropped first view could not be moved farther '
+                        'while retaining a collision-qualified endpoint aimed '
+                        'at the target',
+                        failure_code='TARGET_TOO_LARGE_OR_CLOSE',
+                        retryable=True)
                 coverage = self.operations.current_feature_coverage(context)
                 if as_failure(exc).has(
                         FailureTag.RAY_SHORTLIST_EXHAUSTED):
@@ -627,6 +674,26 @@ class MissionEngine:
                 break
             session.accepted_captures = self.operations.capture_count(context)
             if str(execution.state) == 'VIEW_REJECTED':
+                framing_action = first_capture_framing_action(
+                    execution.reason)
+                if framing_action == 'TOO_LARGE':
+                    raise MissionFailure(
+                        str(execution.reason),
+                        failure_code='TARGET_SCAN_IMPOSSIBLE',
+                        retryable=False)
+                if framing_action in ('TOO_CLOSE', 'NO_AIMED_ENDPOINT'):
+                    raise MissionFailure(
+                        str(execution.reason),
+                        failure_code='TARGET_TOO_LARGE_OR_CLOSE',
+                        retryable=True)
+                if framing_action == 'RETRY_FARTHER':
+                    framing_retry_pending = True
+                    self.operations.progress(
+                        context,
+                        'first target-facing scan endpoint is cropped; '
+                        'replanning the same ray at a farther standoff')
+                    continue
+                framing_retry_pending = False
                 if quality_replans >= \
                         self.workflow_config.max_scan_quality_replans:
                     raise MissionFailure(
@@ -643,6 +710,7 @@ class MissionEngine:
                 # rejection path waits for the existing bounded SAM2/heavy
                 # reacquisition before any proposal can be approved.
                 continue
+            framing_retry_pending = False
             self.operations.progress(
                 context,
                 'accepted view %d (minimum %d, bounded maximum %d); '

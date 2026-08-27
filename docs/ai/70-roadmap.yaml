@@ -1,5 +1,57 @@
 schema_version: 1
 document: mission_goal_and_delivery_roadmap
+capture_one_model_seed_requalification_2026_08_26:
+  milestone: M5 reliable size-aware closed-loop ray NBV
+  status: physical_generation_one_and_three_capture_retest_passed
+  physical_evidence: Task codex-e2e-qualified-rays-20260826-2331 passed startup first-ray motion and one persisted capture but generation one stayed empty because its pre-capture shape required an expired TF lookup. Safe staged shutdown and exact cleanup passed.
+  software_status: Capture one now constructs a hash-bound model seed from its exact persisted mask confidence-qualified depth and recorded base-from-camera matrix. Executor validates it before workflow acceptance; planner consumes the immutable matrix with no delayed TF lookup.
+  validation_status: 264 focused, 848 complete mobile and 162 complete Tesseract tests pass. Changed-file flake8 and pep257, mobile package symlink build and all 12 AI YAML parses pass. Archived failed capture replay produces a valid thirteen-box envelope at the exact view_000 mask stamp with a 0.033263872-second transform delta.
+  live_retest: Task codex-e2e-model-seed-20260827-0123 persisted a synchronized capture-bound seed, generated 353 qualified generation-one rays, accepted captures two and three, then completed operator-requested home disable and cleanup with safe_shutdown true.
+  next_gate: Diagnose stream tick-lateness under planner load, then run a separately authorized uninterrupted mission to validate automatic completion and diversity floors.
+object_sized_coverage_and_monotonic_ray_frontier_2026_08_26:
+  milestone: M5 reliable size-aware closed-loop ray NBV
+  software_status: Bootstrap rays now use the visible-surface lock only to acquire accepted capture one. The qualified revolution axis then becomes the single grey-model and permanent-ray centre, creates a new population identity, resets bootstrap culls once and retains qualified culls monotonically thereafter. Past culls are visible by default and event normalization prevents repeated-new-cull display.
+  validation_status: 262 focused centre envelope cull journal planner executor bridge and viewer tests pass; complete suites pass with 844 mobile, 162 Tesseract and 95 GUI/root-ray tests. Changed-file lint, Python compile, two-package symlink build and all 12 AI YAML parses pass. The command-free qualified-centre replay proves exact grey/ray centre equality, distinct bootstrap and qualified SHA, stable later qualified SHA, no reused old-centre IK culls, no repeated-new-cull and no same-population resurrection.
+  next_gate: Inspect offline-cube-qualified-centre-replay-20260826 in Ray Review, then request separate authorization before a five-percent physical mission.
+settled_aimed_model_seed_requalification_2026_08_26:
+  status: software_repaired_physical_repeat_pending
+  completed: [generation-zero rays are independent of live shape traffic, only executor-qualified post-settle post-aim accepted-capture shape can seed the revolution, explicit non-CLEAR model-seed rejection prevents border-clipped revolution, planner live-shape and coordinator duplicate framing integrations removed, source-stamp freshness frozen-centre anchor and rejected-seed regressions added, framing exhaustion uses typed failure tags, 189 focused 835 complete mobile and 161 complete Tesseract tests pass, affected lint and mobile package build pass]
+  next: [separately authorized five-percent E2E, prove no model exists before first endpoint, prove qualified model appears only after settled aimed transaction]
+first_scan_ray_target_framing_gate_2026_08_26:
+  milestone: M5 safe size-aware scan admission
+  software_status: Implemented at the settled first MULTIVIEW_SCAN endpoint immediately before capture. A crop rejects without capture and retries the same ray with a larger minimum standoff; every endpoint remains aimed at the frozen target while Tesseract may choose any safe path. 163 focused, 835 complete mobile and 161 complete Tesseract tests pass; changed-file lint, mobile package build and all 35 registered functional targets pass. Registered package status remains red only on historical package-wide lint.
+  physical_basis: Task codex-e2e-achieved-lock-20260826-1746 proved ACQUIRED can remain 30.31 degrees off the measured target and safely shut down; that phase no longer owns crop classification.
+  next_gate: Repeat one separately authorized supervised five-percent E2E and inspect zero-capture same-ray retry evidence.
+uncertainty_guided_revolved_surface_nbv_2026_08_26:
+  milestone: M5 adaptive unknown-shape scanning
+  status: saved_deferred_design
+  decision: Use the revolved first silhouette as an uncertainty prior, never measured truth; score rays by predicted patches they can reveal, replace patches with accepted RGB-D evidence, update contradictions and stop on measured novelty convergence.
+  next_gate: Physically observe the first-scan-ray crop gate first, then specify patch identity/visibility/update contracts and build a command-free renderer benchmark before touching runtime NBV.
+  research_context: docs/ai/65-research-context.yaml
+ray_review_target_envelope_layers_2026_08_26:
+  milestone: M5 explainable size-aware closed-loop ray NBV
+  software_status: Implemented three independent command-free target layers in Ray Review and preserved the qualified source contour as optional hash-bound envelope evidence with legacy loading. 107 focused, 975 complete mobile/Tesseract and 92 complete GUI tests pass; the offscreen toggle smoke, command-free 360-ray report and two-package build pass.
+  qualification_boundary: Presentation does not implement direction-dependent FOV, change collision geometry or authorize motion.
+  next_gate: Open the synthetic report interactively when convenient and visually compare the three layers. No hardware is required and physical qualification state is unchanged.
+direction_dependent_object_framing_2026_08_26:
+  milestone: M5 size-aware closed-loop ray NBV
+  status: proposed_not_implemented
+  decision: Implement roll-independent per-ray projection of the frozen conservative envelope before considering roll-aware rectangular framing.
+  rationale: This safely gives elongated objects different axial and side standoffs without changing the private worker contract or assuming a camera roll that execution may not preserve.
+  next_gate: Add geometry and planner tests, run a command-free 360-ray comparison against fixed-radius and current sphere baselines, then run rootless Tesseract and motors-disabled provenance checks. Physical motion requires separate explicit authorization.
+  research_context: docs/ai/65-research-context.yaml
+target_relative_capability_bounds_2026_08_25:
+  milestone: M5 efficient and explainable closed-loop ray NBV
+  software_status: Configured rays now remain target-relative through 0.80 m instead of being clipped by target base-link range. Enforcing capability lookup records supported standoff runs, preserves the original request and narrows the active worker envelope. Current focused and complete functional suites plus both package builds pass.
+  current_blocker: Seven changed-file flake8 and eight changed-file pep257 findings remain; mobile registered testing is red only on package-wide lint. Command-free live-shaped and physical mission evidence remain pending.
+  next_gate: Clean changed-file lint, rerun registered tests, inspect one no-hardware live-shaped request/report trace, then require separate explicit authorization before physical qualification.
+  problem_record: target_range_clipped_ray_and_unbounded_capability_search_2026_08_25
+mission_ray_evidence_and_static_hard_culls_2026_08_25:
+  milestone: M5 explainable and efficient closed-loop ray NBV
+  software_status: Mission-scoped schema-v2 event evidence, exact coverage snapshots, command-free Ray Review, population-bound two-source permanent hard-cull feedback and capability-bounded target-relative ray handoff are implemented. 51 focused, 782 mobile, 158 Tesseract and 80 GUI tests pass; both affected packages build, all 33 registered mobile functional targets pass and registered Tesseract passes.
+  current_blocker: Seven changed-file flake8 and eight changed-file pep257 findings remain, so mobile registered testing is red only on its package-wide lint targets and full software qualification is not claimed.
+  next_gate: Clean only changed-file lint, rerun registered mobile tests, generate and inspect one command-free full lifecycle artifact, then inspect a later explicitly authorized physical mission report without changing motion or safety policy.
+  problem_records: [missing_complete_ray_decision_audit_2026_08_25, static_ray_eliminations_reentered_upstream_ranking_2026_08_25, target_range_clipped_ray_and_unbounded_capability_search_2026_08_25, ray_review_temporal_truthfulness_edge_cases_2026_08_25, ray_diagnostics_changed_file_lint_gap_2026_08_25]
 generation_zero_nearest_ray_seed_2026_08_25:
   milestone: M5 efficient closed-loop ray NBV
   software_status: Generation zero now spends its bounded Tesseract shortlist nearest to the actual current camera because no accepted coverage exists yet; generation one and later retain the existing cumulative information ranking.
@@ -24,9 +76,9 @@ bunker_collision_profile_2026_08_24:
   deferred: [tracked-ground hardware profile qualification, target-specific capability slicing, tracked-base TF integration]
 ray_endpoint_feasibility_repair_2026_08_23:
   milestone: M5 make global NBV choose the best actually feasible information-bearing ray without repeated static IK waste
-  software_status: Each shortlisted direction is now one bounded interval solved continuously over joints and standoff by the worker; local solver failure remains generation-contextual rather than falsely entering the frozen-session permanent cache. Accepted directions below ten degrees are redundant while the six-ray bound and global accepted-coverage rescore remain unchanged.
+  software_status: Each shortlisted direction is one bounded interval solved continuously over joints and standoff by the worker. Typed failure after exhausting the complete bounded endpoint search is now session-static while path-dependent failures remain generation-contextual. Accepted directions at or below fifteen degrees are redundant while the six-ray bound and global accepted-coverage survivor rescore remain unchanged.
   qualification_status: Focused and complete functional suites, five-package build, and command-free rootless core/compact qualification pass. Registered functional colcon tests pass; only historical package-wide style debt remains. Motors-disabled provenance and explicitly authorized supervised motion remain pending.
-last_reviewed: '2026-08-24'
+last_reviewed: '2026-08-26'
 hand_eye_accuracy_campaign_2026_08_22:
   milestone: M6 reconstruction input accuracy
   software_status: Exact source-stamp image/joint correlation, CameraInfo-aware ChArUco interpolation, within-pose noise reporting, stationary-only collection, pose-diversity reporting and diagnostic solver comparison are implemented and focused-tested.
@@ -165,7 +217,7 @@ system_behavior_required:
     - Prefer views that expose missing target faces and distinctive features, including both Y sides, while retaining compact IK alternatives for close targets.
     - Persist synchronized RGB, raw/aligned depth, mask, intrinsics, capture-time TF, joints, target pose, plan identity and quality evidence for every accepted capture.
     - Require GOOD and CLEAR evidence; reject stale or bad views without counting them and replan from the measured held pose.
-    - Treat eight accepted captures only as a measured-model seed; continue adaptively through at most twenty-four until side/span floors and three consecutive measured novel-surface gains at or below 0.02 pass, or fail safely when no meaningful safe view remains.
+    - Treat eight accepted captures only as a measured-model seed; continue adaptively through at most twenty-four until Y-side/elevation floors and three consecutive measured novel-surface gains at or below 0.02 pass, or fail safely when no meaningful safe view remains. Keep azimuth span diagnostic-only.
   terminal_behavior:
     - Success, controllable failure and manual Cancel/Home first stop and hold the measured current pose.
     - Request a fresh direct ROUGH_HOME target and then a direct J6-only STORAGE_WRIST target.
@@ -298,7 +350,7 @@ milestones:
       - Run the current one-view closed loop on close and farther reachable targets.
       - Audit actual camera position/look, both Y sides, azimuth/elevation spans, visible distinctive features and per-view novel masked surface.
       - Inspect all persisted RGB-D/mask/TF metadata and tune ranking only from measured failures without weakening collision, visibility, standoff or GOOD/CLEAR gates.
-    exit_criteria: A current-version mission records 8-24 accepted captures, at least two views per Y side, at least 120 degrees azimuth, at least 25 degrees elevation and three consecutive novel-surface gains at or below 0.02.
+    exit_criteria: A current-version mission records 8-24 accepted captures, at least two views per Y side, at least 25 degrees elevation and three consecutive novel-surface gains at or below 0.02. Record achieved azimuth span diagnostically without treating it as a pass/fail threshold.
   - id: M6
     name: Delayed target mesh reconstruction
     status: software_complete_physical_pending
@@ -381,3 +433,8 @@ nbv_update_2026_08_17:
   completed_software: [accepted-capture voxel evidence, closed-loop information ranking, unique-direction-first fallback ordering, captured-generation replay, delayed capture authorization retry]
   unchanged_exit_criteria: A current physical mission must still prove adaptive 8-to-24 GOOD/CLEAR captures, useful reachable face coverage, measured convergence, home, disable and cleanup.
   next_execution_order: [operator-supervised authoritative voxel_nbv E2E, inspect logs and dataset, correct any defect command-free first, repeat staged mission only after evidence review]
+
+post_enable_startup_requalification_2026_08_25:
+  status: software_complete_physical_pending
+  completed: [new-after-enable sample boundary, two-second joint stability proof, zero controller-fault proof, all-six motor proof, pre-motion disable on intact-control failure, full mobile software regressions]
+  next_execution_order: [explicit five-percent STARTUP_WRIST-only smoke, inspect enable-to-command timing and status, separate ROUGH_HOME then cancel PRE_HOME ROUGH_HOME STORAGE_WRIST disable smoke, only then full E2E]

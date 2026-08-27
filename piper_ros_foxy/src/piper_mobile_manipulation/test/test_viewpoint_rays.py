@@ -23,16 +23,15 @@ def ray(ray_id, direction, maximum=0.60, preferred=0.50):
 
 
 @pytest.mark.parametrize(
-    'target, expected', (
-        ([0.20, 0.0, 0.0], (0.28, 0.28)),
-        ([0.40, 0.0, 0.0], (0.28, 0.40)),
-        ([0.90, 0.0, 0.0], (0.28, 0.80)),
+    'target', (
+        [0.20, 0.0, 0.0],
+        [0.40, 0.0, 0.0],
+        [0.90, 0.0, 0.0],
     ),
 )
-def test_ray_interval_uses_target_range_with_existing_scan_cap(
-        target, expected):
+def test_ray_interval_is_target_relative_and_uses_configured_scan_cap(target):
     assert bounded_ray_interval(target, 0.28, 0.80) == pytest.approx(
-        expected)
+        (0.28, 0.80))
 
 
 def test_only_shortlisted_rays_bind_to_one_complete_interval_each():

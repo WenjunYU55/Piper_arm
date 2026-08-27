@@ -59,6 +59,7 @@ LEGACY_EXECUTOR_DEFAULTS = {
     'tracked_target_topic': '/piper/tracked_target',
     'camera_timestamp_health_topic': '/piper/camera_timestamp_health',
     'target_status_topic': '/piper/target_status',
+    'target_shape_topic': '/piper/target_shape_measurement',
     'obstacle_topic': '/piper/obstacle_instances_3d',
     'workflow_status_topic': '/piper/supervised_workflow_status',
     'scan_session_history_topic': '/piper/scan_session_history',

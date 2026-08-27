@@ -15,6 +15,8 @@ class FailureCode(str, Enum):
     OCCLUSION_NOT_CLEARED = 'OCCLUSION_NOT_CLEARED'
     TARGET_NOT_FOUND = 'TARGET_NOT_FOUND'
     TARGET_TOO_FAR = 'TARGET_TOO_FAR'
+    TARGET_TOO_LARGE_OR_CLOSE = 'TARGET_TOO_LARGE_OR_CLOSE'
+    TARGET_SCAN_IMPOSSIBLE = 'TARGET_SCAN_IMPOSSIBLE'
     NO_REACHABLE_PLAN = 'NO_REACHABLE_PLAN'
     CONTROL_UNTRUSTWORTHY = 'CONTROL_UNTRUSTWORTHY'
     MISSION_FAILED = 'MISSION_FAILED'
@@ -52,6 +54,11 @@ class FailureTag(str, Enum):
         'SELF_COLLISION_CLEARANCE_DUPLICATE')
     GUI_RETURN_HOME_RETRY = 'GUI_RETURN_HOME_RETRY'
     GUI_AUTO_RECOVERY_BLOCKED = 'GUI_AUTO_RECOVERY_BLOCKED'
+    TARGET_FRAMING_RETRY_FARTHER = 'TARGET_FRAMING_RETRY_FARTHER'
+    TARGET_FRAMING_TOO_CLOSE = 'TARGET_FRAMING_TOO_CLOSE'
+    TARGET_FRAMING_TOO_LARGE = 'TARGET_FRAMING_TOO_LARGE'
+    TARGET_FRAMING_NO_AIMED_ENDPOINT = (
+        'TARGET_FRAMING_NO_AIMED_ENDPOINT')
 
 
 @dataclass(frozen=True)
@@ -82,6 +89,10 @@ FailureLike = Union[Failure, BaseException, str]
 def _failure_code_from_legacy_detail(detail: str) -> FailureCode:
     """Preserve the Phase 1 public failure-code mapping exactly."""
     lowered = detail.lower()
+    if 'target_scan_impossible' in lowered:
+        return FailureCode.TARGET_SCAN_IMPOSSIBLE
+    if 'target_too_large_or_close' in lowered:
+        return FailureCode.TARGET_TOO_LARGE_OR_CLOSE
     if 'cancel' in lowered:
         return FailureCode.CANCELLED
     if (
@@ -186,6 +197,18 @@ def legacy_failure_adapter(
     if lowered.startswith('target_drift_replan:'):
         tags.add(FailureTag.TARGET_DRIFT_REPLAN)
         tags.add(FailureTag.CAPTURE_REJECT_VIEW)
+
+    framing_tags = (
+        ('target_framing_retry_farther:',
+         FailureTag.TARGET_FRAMING_RETRY_FARTHER),
+        ('target_framing_too_close:', FailureTag.TARGET_FRAMING_TOO_CLOSE),
+        ('target_framing_too_large:', FailureTag.TARGET_FRAMING_TOO_LARGE),
+        ('target_framing_no_aimed_endpoint',
+         FailureTag.TARGET_FRAMING_NO_AIMED_ENDPOINT),
+    )
+    for marker, tag in framing_tags:
+        if marker in lowered:
+            tags.add(tag)
 
     empty_view_frontier = (
         'only 0 viewpoints planned; require at least 1 of 1' in lowered)

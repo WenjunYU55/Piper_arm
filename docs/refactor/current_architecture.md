@@ -68,6 +68,56 @@ The ROS workspace contains five packages: `piper`, `piper_description`,
 | `active_scan_debug_overlay` | `active_scan_debug_overlay_node.py` | Visual diagnostics only |
 | `supervised_cube_workflow` | `supervised_cube_workflow_node.py` | Measured-lock/occlusion assessment and command-free manipulation proposals |
 
+Ray-NBV missions also write observational schema-v2 evidence below
+`datasets/active_scan/ray_diagnostics/<mission-id>/`. Its canonical JSON and
+append-only event journal records the bootstrap pool, the explicit qualified
+population replacement, planner/history and information culls,
+workspace/capability prequalification, bridge retries,
+Tesseract outcomes, accepted captures, exact compressed target-model snapshots
+and terminal result. The evidence is not consumed by planning, execution,
+capture or mission safety; schema-v1 final records remain loadable and are not
+expanded into invented intermediate history.
+
+The GUI's Open Ray Review control reuses one freely resizable, ROS-free
+PyQt5/VTK child through stdin JSON. Its Mission Process tab parses every
+checked-in URDF visual and synchronizes ray/rank/target/achieved-pose evidence
+to an event strip. Its Capability Map tab loads the committed map read-only and
+does not claim IK or trajectory evidence. HTML remains a compatibility export;
+its old kinematic drawing is labelled schematic. Historical datasets that
+predate full rejected-ray persistence are visibly labelled partial, and the
+replay never invents missing cull evidence.
+
+This observational path is separate from the behavioral permanent-cull
+feedback. The reachability filter and Tesseract bridge publish complete,
+revision-bound source snapshots on private reliable transient-local
+`/piper/ray_hard_culls`. The planner accepts a snapshot only when its mission,
+session, phase, frame, ray count, and canonical stable-direction SHA-256 match
+the active pool it generated. The generation-zero bootstrap pool is centred on
+the tracked visible-surface point. Accepted capture one qualifies the revolved
+axis origin, replaces that pool with a permanent object-centred population and
+resets centre-dependent bootstrap culls. Representative camera points and
+envelope-adjusted standoff bounds do not change an already-qualified identity.
+Coarse workspace/capability
+rejections, explicit worker `permanent_infeasible_ray_ids`, and
+bridge-classified typed exhaustive `RAY_IK_FAILURE` are allowed endpoint-static
+evidence. Matching rays are removed before later NBV ranking; collision, path,
+visibility, timeout, and shortlist failures remain generation-scoped.
+Accepted captures alone change coverage and retire their inclusive 15-degree
+direction neighbourhood.
+
+The frozen ray request is target-relative and no longer uses the target
+center's distance from `base_link` as a standoff cap: generation retains the
+configured 0.28 m minimum, preferred band through 0.50 m, and 0.80 m maximum.
+The coarse workspace filter still owns analytic interval eligibility. In
+capability-map enforce mode, the sparse atlas preserves support for each
+sampled standoff and derives ordered contiguous runs; the filter retains the
+original requested bounds while narrowing active min/max to the first through
+last supported run. The bridge carries those run records and chooses its
+representative seed from a supported run. Because the outer active envelope
+can span a gap between runs, it remains prequalification only: the worker and
+executor still prove exact IK, joint limits, collision, path, aim, visibility,
+and runtime safety for the actual selected endpoint.
+
 ### Perception and geometry
 
 | Node/process | Source | Role |
@@ -236,6 +286,25 @@ approved. A fresh frame, GroundingDINO/SAM result, tracking lock and obstacle
 scene are required. `ACQUIRED` exits immediately; otherwise a fresh look is
 requested. Five misses terminate as retryable `TARGET_NOT_FOUND`.
 
+`ACQUIRED` proves tracking only; it never classifies border contact or seeds
+the revolved model. The planner creates one temporary mission-scoped,
+un-enveloped generation-zero ray pool around the tracked visible-surface
+centre, independent of
+live shape-topic ordering. The planner and Tesseract then select and reach an
+ordinary scan ray. At the settled endpoint the executor proves at most
+five-degree target aim and requires both receipt-new and source-new silhouette
+evidence immediately before capture. A complete silhouette is retained as the
+session's pending model seed. Capture-one acceptance promotes and publishes
+the seed; rejection discards it. Only then may the planner transform it at its
+source stamp and revolve it. The resulting axis origin becomes both the frozen
+planning centre and grey model centre. The temporary bootstrap population is
+replaced once with a qualified ray population around that centre; bootstrap
+culls do not cross this geometry boundary, while qualified culls remain
+monotonic. A
+cropped silhouette retries the same ray at a strictly farther minimum
+standoff through 0.80 m. Only the endpoint remains on and aimed along that
+ray; Tesseract may choose any collision-safe joint-space trajectory.
+
 Between scan views, a transient `LOW_CONFIDENCE`, `LOST`, or `SEARCHING` result
 does not authorize motion. The arm remains held for up to 30 seconds while
 SAM2/heavy perception attempts to restore a measured lock. A changed target
@@ -254,8 +323,9 @@ than contacting an obstacle. Pick/push/place is proposal-only in this baseline.
 
 The automatic path is closed-loop next-best-view, one view per transaction:
 
-1. The planner generates target-centered candidates over the configured
-   azimuth, pitch and distance region around the latest measured target.
+1. The planner generates target-centred candidates around the temporary
+   visible-surface anchor before capture one, then around the frozen qualified
+   revolution axis origin for every later generation.
 2. Authoritative voxel NBV scores the complete configured candidate region
    against cumulative accepted voxel coverage. A six-degree threshold rejects
    directions redundant with accepted views; it is not a maximum movement.

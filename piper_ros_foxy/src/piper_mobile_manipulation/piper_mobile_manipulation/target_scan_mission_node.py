@@ -22,7 +22,11 @@ from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.qos import (
+    DurabilityPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+)
 from rclpy.time import Time
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
@@ -84,6 +88,10 @@ from piper_mobile_manipulation.mission_engine import (
     visual_reacquisition_plan_request_rejection,
     WORKFLOW_ASSESSMENT_TIMEOUT_SEC,
 )
+from piper_mobile_manipulation.ray_mission_diagnostics import (
+    add_terminal_event,
+    RayMissionDiagnosticsStore,
+)
 from piper_mobile_manipulation.mission_spool import MissionSpool
 from piper_mobile_manipulation.process_supervisor import ProcessSupervisor
 from piper_mobile_manipulation.reconstruction_jobs import (
@@ -112,6 +120,7 @@ from piper_mobile_manipulation.scan_session_memory import (
 from piper_mobile_manipulation.startup_gates import (
     joint_sample_rejection,
     joint_stability_update,
+    post_enable_sample_rejection,
     readiness_stability_update,
     worker_health_rejection,
 )
@@ -366,6 +375,11 @@ class _MissionNodeOperations:
         self.node.wait_for_stable_joint_stream(
             stable_sec, timeout_sec, label,
             self.goal_handle, context.session)
+
+    def wait_for_post_enable_stability(
+            self, context, stable_sec, timeout_sec):
+        self.node.wait_for_post_enable_stability(
+            stable_sec, timeout_sec, self.goal_handle, context.session)
 
     def require_fresh_joint_feedback(self, _context):
         self.node.require_fresh_joint_feedback()
@@ -1208,6 +1222,40 @@ class TargetScanMissionNode(Node):
                 'dataset_discard_reason': dataset_discard_reason,
             },
         )
+        if project_root_value:
+            try:
+                root = Path(str(project_root_value))
+                store = RayMissionDiagnosticsStore(
+                    root / 'datasets' / 'active_scan' / 'ray_diagnostics')
+                terminal_snapshot = {
+                    'schema_version': 2,
+                    'mission_id': str(session.task_id),
+                    'session_id': '%s-%d' % (
+                        session.task_id,
+                        int(getattr(session, 'acquisition_attempt', 0))),
+                    'generation': max(
+                        0, int(session.accepted_captures) - 1),
+                    'frame_id': 'base_link',
+                    'target_center_m': (
+                        [float(value) for value in context.target]
+                        if context.target is not None
+                        else [0.0, 0.0, 0.0]),
+                    'rays': [], 'requests': [], 'events': [],
+                }
+                terminal_snapshot = add_terminal_event(
+                    terminal_snapshot, outcome, session.reason,
+                    '' if failure is None else (
+                        failure.failure_code
+                        or failure_code_for_reason(failure)))
+                store.record(terminal_snapshot)
+            except Exception as error:
+                # Review evidence never gates the mission or test doubles.
+                try:
+                    self.get_logger().warn(
+                        'Could not record terminal ray-review event: %s'
+                        % error)
+                except Exception:
+                    pass
         with self._lock:
             self.registry.finish(result)
         self.spool.write('results', session.task_id, result)
@@ -1429,6 +1477,69 @@ class TargetScanMissionNode(Node):
         raise MissionFailure(
             '%s did not remain coherent and settled for %.1f seconds: %s'
             % (label, stable_sec, rejection or 'feedback is missing or moving'))
+
+    def wait_for_post_enable_stability(
+            self, stable_sec, timeout_sec, goal_handle=None, session=None):
+        """Prove a new stable, fault-free powered sample before first motion."""
+        enabled_at = time.monotonic()
+        deadline = enabled_at + float(timeout_sec)
+        reference = None
+        stable_since = 0.0
+        healthy_since = 0.0
+        last_joint_at = 0.0
+        last_reason = 'waiting for post-enable feedback'
+        while time.monotonic() < deadline:
+            if goal_handle is not None and session is not None:
+                self.guard(goal_handle, session)
+            now = time.monotonic()
+            telemetry_store = getattr(self, 'telemetry_store', None)
+            if telemetry_store is None:
+                joints = self.latest_joints
+                joint_at = self.latest_joints_at
+                status = self.latest_arm_status
+                status_at = self.latest_arm_status_at
+            else:
+                snapshot = telemetry_store.snapshot()
+                joint_observation = snapshot.arm.joints
+                status_observation = snapshot.arm.status
+                joints = (
+                    None if joint_observation is None
+                    else joint_observation.value)
+                joint_at = (
+                    0.0 if joint_observation is None
+                    else joint_observation.received_at)
+                status = (
+                    None if status_observation is None
+                    else status_observation.value)
+                status_at = (
+                    0.0 if status_observation is None
+                    else status_observation.received_at)
+            positions = (
+                [] if joints is None else list(joints.position[:6]))
+            last_reason = post_enable_sample_rejection(
+                positions, joint_at, status, status_at,
+                enabled_at, now)
+            if last_reason:
+                reference = None
+                stable_since = 0.0
+                healthy_since = 0.0
+            else:
+                if healthy_since <= 0.0:
+                    healthy_since = now
+                if joint_at > last_joint_at:
+                    reference, stable_since = joint_stability_update(
+                        reference, stable_since, positions, joint_at)
+                    last_joint_at = joint_at
+                proof_since = max(stable_since, healthy_since)
+                if proof_since > enabled_at and now - proof_since >= float(
+                        stable_sec):
+                    return
+            time.sleep(0.05)
+        raise MissionFailure(
+            'post-enable feedback did not remain stable, all-six-enabled, '
+            'and fault-free for %.1f seconds: %s'
+            % (float(stable_sec), last_reason),
+            failure_code='CONTROL_UNTRUSTWORTHY', retryable=True)
 
     def wait_for_vision_boot(
             self, started_at, timeout_sec, goal_handle=None, session=None):

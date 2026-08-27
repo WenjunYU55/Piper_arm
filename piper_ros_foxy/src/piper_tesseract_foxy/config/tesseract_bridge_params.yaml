@@ -9,6 +9,7 @@
     obstacle_topic: "/piper/obstacle_instances_3d"
     plan_topic: "/piper/tesseract_plan"
     view_generation_receipt_topic: "/piper/tesseract_view_generation"
+    ray_hard_culls_topic: "/piper/ray_hard_culls"
     plan_provenance_topic: "/piper/tesseract_plan_provenance"
     status_topic: "/piper/tesseract_plan_status"
     readiness_topic: "/piper/tesseract_readiness"

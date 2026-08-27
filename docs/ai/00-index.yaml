@@ -1,5 +1,92 @@
 schema_version: 1
 document: ai_context_index
+capture_one_model_seed_tf_repair_2026_08_26:
+  incident: Physical task codex-e2e-qualified-rays-20260826-2331 completed startup, reached the first qualified endpoint and persisted capture one, then generation one remained at zero candidates until NO_REACHABLE_PLAN. The planner tried to transform pre-capture framing shape stamp 1787783660.558 after TF history began at 1787783844.354. Capture one actually persisted a newer semantic mask at 1787783668.446 and a synchronized base-to-camera transform at 1787783668.413.
+  correction: The capture recorder now rebuilds the complete silhouette from capture one's exact persisted semantic mask, confidence-qualified target depth and CameraInfo, binds it to the recorder's synchronized immutable base-from-camera matrix in a digest-validated capture model seed, stores that seed in frame metadata and returns it through private Trigger JSON. The executor requires that exact seed before asking workflow acceptance, promotes it only with accepted capture one and publishes it in validated scan history. The planner builds the envelope from the recorded matrix and never queries delayed live TF for a new capture-bound seed.
+  preserved: [pre-capture settled aimed border gate, rough lock is bootstrap only, accepted capture transaction, bootstrap-to-qualified population replacement, axis_origin_m qualified centre, target envelope geometry, ray culling and NBV, Tesseract and executor safety, public ROS schemas, terminal home disable cleanup]
+  validation: [264 focused capture executor session planner and envelope tests pass, 848 complete mobile tests pass, 162 complete Tesseract tests pass, eleven changed files pass flake8 and five production files pass pep257, mobile package symlink build passes, all 12 AI YAML files parse, failed dataset replay uses exact capture mask stamp with 0.033263872 second recorded-transform delta and builds a valid thirteen-box envelope without TF, five-percent task codex-e2e-model-seed-20260827-0123 persisted the bound seed with 0.032565248 second delta produced 353 qualified generation-one rays accepted three captures and safely cancelled through home disable and cleanup]
+  remaining_validation: [automatic full-mission completion was not claimed because the operator cancelled after three accepted captures, investigate repeated motion-stream tick-lateness warnings under planner and reachability CPU load]
+object_sized_coverage_and_monotonic_ray_frontier_2026_08_26:
+  correction: The rough green lock is explicitly a visible-surface bootstrap anchor. After accepted capture one, the qualified revolution axis origin becomes both the grey-model centre and the permanent ray centre. The temporary bootstrap population is replaced once; its centre-dependent culls cannot cross into the qualified population. Within the qualified population, identity hashes stable ray IDs and normalized directions plus the qualified centre and frame, so later standoff changes cannot reset permanent culls.
+  lifecycle: [generate a temporary bootstrap population around the visible-surface lock, render its pre-cull candidates as rays without a virtual-camera shell, accept one settled aimed complete capture, calculate the mask-derived object-volume centre, replace bootstrap rays once with the permanent 360-ray population around that centre, reset centre-dependent hard-cull ledgers at that explicit population boundary, retain matching qualified-population culls thereafter, show camera meshes only on post-cull active survivors, retire every accepted direction and its inclusive 15-degree neighbourhood, rank only survivors, reconsider path-dependent and framing failures]
+  endpoint_boundary: A worker RAY_IK_FAILURE means its bounded continuous ray search exhausted standoff roll exact-aim and fallback-aim variants. The bridge classifies it as endpoint-static only from typed candidate diagnostics. Collision path visibility timeout transport and generic planning failures remain retryable.
+  preserved: [qualified post-settle post-aim revolution order, 0.250 m camera-to-surface clearance, target-relative configured standoff limits, accepted-only measured coverage, six-ray shortlist, Tesseract exact feasibility, executor safety, home disable and cleanup]
+  validation: [262 focused centre envelope cull journal planner executor bridge and viewer tests pass, 844 complete mobile tests pass, 162 complete Tesseract tests pass, 95 complete GUI and root ray tests pass, changed-file flake8 and pep257 pass, Python compile passes, two-package symlink build passes, all 12 AI YAML files parse, command-free offline-cube-qualified-centre-replay-20260826 records one bootstrap SHA and one stable qualified SHA, the qualified ray centre exactly equals the grey revolution centre, bootstrap culls and old-centre IK culls are not reused, no same-population culled-to-active or repeated-new-cull transition occurs]
+  physical_validation: Task codex-e2e-model-seed-20260827-0123 exercised the bootstrap-to-qualified replacement, retained permanent Tesseract culls across later batches and accepted three views before operator cancellation; safe shutdown passed.
+  remaining_validation: [automatic full-mission completion and completion-floor diversity, scheduler-load follow-up for stream tick warnings]
+settled_aimed_model_seed_order_repair_2026_08_26:
+  incident: Physical task codex-e2e-first-ray-20260826-1824 exposed that rough-acquisition shape traffic could alternately create, replace or erase generation-zero geometry before the camera reached and aimed at the first scan ray.
+  correction: Generation zero is a session-frozen provisional ray pool derived only from the tracked target centre. The executor uses a fresh source-stamped post-settle silhouette only for endpoint aim and border classification. The exact persisted capture-one mask/depth and synchronized recorded transform become the pending model seed; only accepted capture one promotes that hash-bound seed, while rejection discards it. Only the accepted history transaction may let the planner revolve and freeze an envelope.
+  ownership: {rough localization: acquisition and tracked target, provisional generation-zero rays: scan_viewpoint_planner_node.py, settled aim and border gate: scan_viewpoint_executor_node.py, exact capture seed construction and private Trigger result: scan_capture_node.py, accepted seed promotion: scan_viewpoint_executor_node.py, qualified seed transport: scan_session_memory.py, revolution and frozen envelope: target_envelope.py through scan_viewpoint_planner_node.py}
+  validation: [189 focused border order executor planner and envelope tests pass, 835 complete mobile tests pass, 161 complete Tesseract tests pass, affected lint and mobile package symlink build pass, Python compile and AI YAML parse pass]
+  physical_validation: Task codex-e2e-model-seed-20260827-0123 proved no qualified model before capture one, promoted the exact capture-bound seed after acceptance and generated qualified rays for captures two and three.
+  remaining_validation: [automatic full-mission completion was operator-cancelled after three accepted captures]
+target_shape_qos_handoff_repair_2026_08_26:
+  incident: Supervised five-percent task codex-e2e-framing-20260826-1644 reached measured-target framing, but the coordinator received no /piper/target_shape_measurement and failed closed after three seconds even though depth_to_3d_node was publishing shape evidence.
+  root_cause: depth_to_3d_node offered BEST_EFFORT/VOLATILE sensor-data QoS while target_scan_mission_node requested the default RELIABLE subscription, an incompatible ROS 2 DDS pairing.
+  correction: The executor target-shape subscription uses the publisher's sensor-data QoS. The planner and mission adapter no longer subscribe; the planner receives only executor-qualified shape evidence through validated scan history. Missing evidence still fails closed.
+  validation: [180 focused mission and framing tests pass, 830 complete mobile tests pass, 161 complete Tesseract tests pass, actual command-free DDS target-shape delivery passes, mobile package symlink build passes]
+  remaining_validation: [separately authorized supervised five-percent E2E repeat]
+first_scan_ray_framing_gate_2026_08_26:
+  behavior: Rough acquisition now ends at measured tracking lock without classifying border contact. When the first scan ray has been selected, hash-approved and reached, the executor proves settle and at most five-degree target aim, then checks a fresh silhouette immediately before RGB-D capture. A crop between 0.250 and 0.800 m rejects the view without capture and requests the same ray with the next larger 0.10 m minimum standoff. Tesseract may use any collision-qualified path, but every endpoint look vector is recomputed toward the frozen measured target centre and final aim is rechecked. A crop at or below 0.250 m, an unreachable farther aimed endpoint, or lost aim at that endpoint reports too close; a crop at 0.800 m reports too large.
+  authority: {mission sequencing and public result mapping: mission_engine.py, settled first-capture shape final-aim gate seed promotion and retry evidence: scan_viewpoint_executor_node.py, provisional generation-zero pool qualified envelope and same-ray farther restriction: scan_viewpoint_planner_node.py, border classification and revolution: target_envelope.py, exact IK collision path aim and visibility: piper_tesseract_foxy bridge and worker}
+  preserved: [border-clipped contours never create envelopes, stable measured base_link target authority, 0.250 m minimum camera-centre bound and envelope surface clearance, 0.80 m scan bound, exact plan hash and approval, collision and runtime gates, terminal home disable and cleanup, public ROS schemas]
+  validation: [163 focused framing configuration mission planner and session tests pass, 835 complete mobile tests pass, 161 complete Tesseract tests pass, nine changed files pass flake8 and five changed production files pass pep257, mobile package symlink build passes, all 35 registered functional pytest targets pass]
+  latest_physical_basis: Task codex-e2e-achieved-lock-20260826-1746 proved ACQUIRED can be 30.31 degrees off-axis and therefore must not own crop classification. Startup, acquisition and staged shutdown passed; this repair moves authority to the first settled target-facing scan endpoint.
+  remaining_validation: [registered package check remains red only on historical package-wide flake8 and 16 pep257 findings outside this repair, separately authorized five-percent physical E2E repeat]
+azimuth_completion_gate_removed_2026_08_26:
+  behavior: >-
+    Automatic scan completion no longer requires a fixed 120-degree achieved
+    azimuth span, and next-view ordering no longer creates an azimuth-span
+    objective. The achieved azimuth span remains measured and published as
+    diagnostic evidence only.
+  remaining_completion_evidence: [8 through 24 persisted accepted views, two achieved views on each Y side, 25-degree elevation span, measured masked-surface convergence]
+  unchanged: [accepted-only coverage, redundant-direction rejection now configured at 15 degrees, predicted information floor, Tesseract feasibility, collision, target visibility, GOOD/CLEAR capture, maximum 24 captures, home, disable, shutdown]
+  validation: [19 focused scan-session tests pass, 179 mission and scan-motion tests pass, 815 complete mobile tests pass, 161 complete Tesseract tests pass, command-free 60-degree-span completion decision returns COMPLETE, changed Python files pass ament_flake8 and ament_pep257, 12 AI YAMLs parse, no hardware command]
+  remaining_validation: [separately authorized supervised physical retest]
+ray_review_target_envelope_layers_2026_08_26:
+  behavior: >-
+    Ray Review exposes three independently selectable target layers: an
+    estimated smooth revolved model, the exact conservative planning boxes,
+    and the original sampled mask/depth outline transformed into base_link.
+  evidence_contract: New envelopes carry up to 256 hash-bound visible_silhouette_points_m. Older valid envelopes without the optional outline remain readable and simply render no source outline.
+  authority_boundary: All three controls are command-free presentation. The smooth mesh and source outline never replace collision boxes or authorize planning, capture or motion.
+  validation: [107 focused envelope bridge diagnostic and viewer tests pass, 975 complete mobile and Tesseract tests pass, 92 complete GUI tests pass, offscreen independent-toggle smoke passes, command-free 360-ray report carries outline evidence, two-package build passes, no hardware command]
+per_ray_projected_fov_research_direction_2026_08_26:
+  current_behavior: Complete-FOV standoff is conservatively derived from one enclosing sphere, so it does not yet vary by ray direction for elongated targets.
+  recommended_next_cut: Project the frozen conservative envelope per ray through calibrated intrinsics, use the narrower-FOV roll-independent aperture, combine it with the existing direction-specific surface-clearance minimum, and retain the sphere result as fail-closed fallback.
+  research_context: docs/ai/65-research-context.yaml
+  implementation_status: proposed_not_implemented
+clipped_target_shape_failure_2026_08_26:
+  behavior: >-
+    A semantic target component touching any image border is not a complete
+    silhouette and cannot create or freeze an envelope. The rejection becomes
+    mission-authoritative only at the settled first scan-ray endpoint after
+    timestamped optical aim at the stable measured target is proved. Classification uses camera-to-target-centre
+    distance rather than near-surface depth: <=0.250 m is too close, 0.250
+    through 0.800 m drives same-ray farther retries, and a crop at 0.800 m
+    is too large. Exhausted outward reach below 0.800 m reports too close.
+  safety_boundary: ACQUIRED is tracking-only and its mask cannot seed the model. The planner bootstraps an un-enveloped generation-zero ray pool from the tracked centre, then the executor qualifies the first complete silhouette only after settle and achieved aim. Every crop retry preserves that ray direction, raises its minimum standoff and recomputes a target-facing endpoint; Tesseract owns the unrestricted safe path. No cropped contour is revolved, and all failures retain terminal home, disable and cleanup.
+  validation: [163 focused tests pass, 835 complete mobile tests pass, 161 complete Tesseract tests pass, mobile package symlink build passes]
+trusted_size_aware_target_envelope_2026_08_25:
+  behavior: A fresh mask-qualified depth sample produces a timestamp-bound silhouette; the planner builds and freezes one conservative revolved envelope with the mission ray pool, bounds each ray for complete FOV and 0.250 m surface clearance, and sends the same hash-bound boxes to Tesseract.
+  preserved: [authoritative tracked target, full 360-ray diagnostic population, accepted-only NBV coverage, public ROS schemas, motion and safety ownership]
+  validation: [target envelope unit tests, full mobile and Tesseract suites, command-free large-target Ray Review simulation]
+target_relative_capability_bounded_rays_2026_08_25:
+  problem: The configured target-to-camera ray interval was shortened by the target center's unrelated distance from base_link, and the capability lookup collapsed per-standoff support into one whole-ray boolean. Close targets could therefore lose valid farther standoffs while any partly supported ray could still hand a broader than necessary interval to continuous IK.
+  correction: viewpoint_rays.py now preserves the configured target-relative 0.28 through 0.80 m request. The existing coarse workspace owner decides geometric intersection; a hash-qualified enforcing capability map reports sampled support and contiguous supported runs, the reachability filter preserves the requested bounds while narrowing the active search to the outer supported envelope, and the bridge carries the exact run evidence and chooses its representative seed from a supported run. Tesseract remains the exact IK, collision, path, aim and visibility authority.
+  evidence: [51 focused ray capability diagnostic and GUI tests pass, 782 complete mobile tests pass, 158 complete Tesseract tests pass, 80 complete GUI tests pass, two-package symlink build passes, all 33 registered mobile functional targets pass, Tesseract registered 158-test suite passes]
+  qualification_limit: Seven changed-file flake8 and eight changed-file pep257 findings remain. Mobile registered testing is red only on package-wide lint, and no new physical mission artifact exists.
+  problem_log: target_range_clipped_ray_and_unbounded_capability_search_2026_08_25
+mission_ray_evidence_and_hard_culls_2026_08_25:
+  evidence_behavior: Every ray-NBV mission can persist a mission-grouped schema-v2 event journal, exact compressed coverage generations and compatibility HTML, then display the same evidence in one command-free ROS-free PyQt5/VTK reviewer. Historical replay preserves only recorded facts and marks pre-journal archives partial.
+  planning_behavior: The frozen generated-ray direction universe is bound by mission ID, session ID, frame, count and SHA-256. Envelope-derived representative positions and standoff bounds may change without changing that identity. The reachability filter may publish population-bound workspace/capability rejections and the bridge may publish typed permanent endpoint failures on the private reliable transient-local /piper/ray_hard_culls topic; the planner removes only validated matching entries before accepted-direction filtering and NBV ranking.
+  authority_boundary: Prequalification owns only its existing coarse workspace and capability-map decisions. The bridge may persist worker-reported permanent endpoint infeasibility and typed RAY_IK_FAILURE only after the continuous ray solve exhausts all configured endpoint variants. Collision path visibility timeout transport and generic planning failures never become hard culls. Accepted captures alone update coverage, retire their inclusive 15-degree neighbourhood and leave NBV authoritative over survivors.
+  failure_boundary: Missing diagnostics, report write failure, missing hard-cull publishers, malformed payloads, population mismatch or a changed source revision cannot authorize motion or invent a rejection. Diagnostics fail open as observation; hard-cull input fails closed to no new upstream elimination and the existing downstream gates remain authoritative.
+  software_validation: [51 focused ray capability diagnostic hard-cull and GUI tests pass, 782 complete mobile behavior tests pass, 158 complete Tesseract tests pass, 80 complete GUI tests pass, two-package symlink build passes, all 33 registered mobile functional targets pass, Tesseract registered 158-test suite passes, all AI YAML parses]
+  qualification_limit: Changed-file lint is not yet clean, the mobile package registered test remains red on package-wide lint, and no new physical mission artifact exists.
+  problem_log: [missing_complete_ray_decision_audit_2026_08_25, static_ray_eliminations_reentered_upstream_ranking_2026_08_25, target_range_clipped_ray_and_unbounded_capability_search_2026_08_25, ray_review_temporal_truthfulness_edge_cases_2026_08_25, ray_diagnostics_changed_file_lint_gap_2026_08_25, duplicate_debt_yaml_key_hid_one_historical_fix_2026_08_25]
+  validation_required: [focused diagnostic journal and hard-cull protocol tests, planner/filter/bridge regressions, complete mobile and Tesseract suites, GUI report/reviewer tests, package build and colcon test, command-free report replay, no hardware command]
 generation_zero_nearest_ray_seed_2026_08_25:
   behavior: Before the first accepted capture, ray_nbv_seed has no measured coverage gain and the six-ray bridge shortlist is ordered only by travel from the actual current FK camera position to the closest point on each bounded ray interval.
   boundary: After one accepted capture, cumulative measured-information NBV ranking remains authoritative. Ray generation, capability/workspace culling, shortlist size, Tesseract feasibility, motion, capture, home and shutdown are unchanged.
@@ -22,8 +109,8 @@ camera_capability_map_2026_08_24:
   selected_checkpoint: {samples: 2000000, collision_qualified_configurations: 1685619, occupied_pose_direction_bins: 1479561, compressed_bytes: 8130829}
   convergence: The 100k, 250k, 500k and 1M checkpoints retained 60.17, 70.35, 77.62 and 90.41 percent of final supported validation rays; only 2M met the 99 percent rule and retained all 87 recorded achieved poses.
   artifact_binding: The tabletop qualification promotion changed no geometry input. The selected 2M arrays were retained exactly and rebound to the new full-manifest hash with explicit non_geometric_source_rebind provenance; the enforcement loader and nine artifact tests pass.
-  runtime: Existing coarse analytic bounds run first. Hash-valid capability lookup then culls unsupported target rays; missing, corrupt, stale-hash or unqualified maps fall back to the old coarse filter. Tesseract remains authoritative for exact IK, collision, path, aim and visibility.
-  boundary: No NBV score/order, six-ray shortlist, worker behavior, motion, capture, home, shutdown, public ROS message or hardware command changed.
+  runtime: Existing coarse analytic bounds run first. Hash-valid capability lookup then culls unsupported target rays and, in enforce mode, preserves per-standoff support runs while narrowing a surviving ray to their outer search envelope. Missing, corrupt, stale-hash or unqualified maps fall back to the old coarse filter. Tesseract remains authoritative for exact IK, collision, path, aim and visibility.
+  boundary: No NBV score/order, six-ray shortlist size, worker algorithm, motion, capture, home, shutdown, public ROS message or hardware command changed; the private continuous-standoff request may be narrower than the original configured ray and retains both requested bounds and map-supported runs as evidence.
 tracked_robot_drop_in_description_2026_08_24:
   behavior: A deterministic two-file drop-in keeps the tracked robot as the master description while synchronizing the current PiPER/gripper/holder/L515 subtree. An empty identity piper_base_link beneath arm_base_link exposes the gateway frame without duplicate geometry or renaming the friend's established arm root.
   tf_chain: odom -> tracked base_link -> arm_base_link -> piper_base_link, with the PiPER chain remaining beneath arm_base_link and the external odom edge owned by tracked localization.
@@ -49,8 +136,8 @@ installed_l515_collision_assembly_2026_08_24:
   physical_status: No arm or sensor command was issued. Supervised physical requalification remains required before relying on the new body for motion.
 ray_endpoint_feasibility_repair_2026_08_23:
   incident: scan_20260823_181223 accepted fifteen views but achieved only 42.9 degrees azimuth because information-ranked full-sphere rays repeatedly produced no target-facing IK and the bridge forgot those static failures after each accepted capture.
-  correction: Each shortlisted ray is transmitted once as a bounded standoff interval. The worker jointly solves six joints plus continuous standoff using nine deterministic multistart seeds, validates the resulting camera point on the ray within 0.1 mm and optical aim within 0.001 rad, then retains the existing exact IK, collision, OMPL and dense visibility proof. Exact aim is exhausted before the existing bounded fallback. Local nonlinear-solver failure is contextual rather than falsely treated as proof that the complete ray is permanently infeasible.
-  diversity: Accepted target-to-camera directions within ten degrees are redundant. This is not a movement frontier; every accepted capture still rebuilds cumulative coverage and globally rescores the full remaining feasible ray pool.
+  correction: Each shortlisted ray is transmitted once as a bounded standoff interval. The worker jointly solves six joints plus continuous standoff using nine deterministic multistart seeds, validates the resulting camera point on the ray within 0.1 mm and optical aim within 0.001 rad, then retains the existing exact IK, collision, OMPL and dense visibility proof. Exact aim is exhausted before the existing bounded fallback. A typed RAY_IK_FAILURE after that complete bounded endpoint search is now bridge-classified as endpoint-static; path-dependent failures remain contextual.
+  diversity: Accepted target-to-camera directions within an inclusive fifteen degrees are redundant. This is not a movement frontier; every accepted capture still rebuilds cumulative coverage and globally rescores the surviving feasible ray pool.
   unchanged: [six-ray shortlist, frozen 360-ray configured pool, marginal-information scoring, accepted-only coverage, exact-first aim, five-degree fallback, Tesseract collision and path validation, motion, capture, home, shutdown, public ROS interfaces]
   software_validation: [89 focused interval contract and worker tests pass, 747 complete mobile tests pass, 147 complete Tesseract tests pass, command-free rootless core and compact qualifications pass, recorded ray 131 continuous IK solved in 0.20 seconds and its full collision OMPL dense validation accepted in 31.06 seconds, real_arm_motion false]
 connected_target_mesh_filter_2026_08_23:
@@ -111,7 +198,7 @@ supervised_ray_nbv_e2e_2026_08_21:
   result: Task codex-e2e-20260821-185113-adaptive completed SUCCEEDED with three accepted GOOD/CLEAR captures, safe_shutdown true, configured pre-home rough-home and storage-wrist proof, feedback disable, and exact mission-child cleanup.
   dataset: datasets/active_scan/scan_20260821_185143
   integration_repairs: [final-SAM-mask coherent target-depth selection, low-rate capture diagnostic callback isolation, full-pool exclusion before bounded ray shortlisting, typed attempted-ray planning-budget exhaustion, adaptive completion after a proved safe-view frontier is exhausted]
-  completion_rule: Normal measured-feature completion still uses the existing 8-through-24 quality window and side/span/convergence diagnostics. A distinct terminal branch may complete after at least one persisted accepted achieved view only when typed RAY_FRONTIER_EXHAUSTED proves that every prequalified ray in the current generation has been attempted safely; ordinary timeout, generic planning failure, worker failure, or one failed shortlist cannot become success.
+  completion_rule: Normal measured-feature completion still uses the existing 8-through-24 quality window and Y-side/elevation/convergence evidence; azimuth span is diagnostic only. A distinct terminal branch may complete after at least one persisted accepted achieved view only when typed RAY_FRONTIER_EXHAUSTED proves that every prequalified ray in the current generation has been attempted safely; ordinary timeout, generic planning failure, worker failure, or one failed shortlist cannot become success.
   unchanged: [ROS interfaces, motion speeds, capture thresholds, target confidence, Tesseract IK collision path and visibility checks, home stages, disable order, process ownership]
   reconstruction_note: The durable mesh job remains queued for the authentic tracked-base-home signal. A command-free replay generated a diagnostic mesh but correctly failed quality; the immutable missing calibration identity keeps this historical dataset DIAGNOSTIC_ONLY.
 ray_shortlist_exhaustion_handoff_2026_08_21:
@@ -149,8 +236,8 @@ terminal_home_stage_proof_repair_2026_08_21:
   validation: 114 focused mission/configuration tests pass; supervised staged-home requalification remains pending.
 frozen_viewpoint_ray_pool_2026_08_21:
   goal: Keep frozen-ray NBV separately selectable from both legacy and exact-point voxel NBV so timing and physical behavior can be compared without parallel planning implementations.
-  geometry: ray_nbv freezes the configured ray_count once from the first qualified base_link target lock. target_sector reproduces the former 180-degree 25-by-7 region at count 175, upper_hemisphere covers 360 degrees above the target, and full_sphere covers 360 degrees above and below using deterministic equal-area samples. Each ray has a 0.28 m minimum standoff, a preferred band through 0.50 m, and a maximum capped by both the target base-link radius and the existing 0.80 m scan maximum.
-  handoff: The planner scores one representative point per ray against accepted-only cumulative coverage and removes normalized predicted gain below 0.02. The bridge shortlists at most six rays and transmits one bounded interval per ray; the worker jointly solves joints plus continuous standoff, then applies unchanged exact-aim and Tesseract feasibility checks. Exact-point voxel_nbv retains twelve candidates.
+  geometry: ray_nbv freezes the configured ray_count once from the first qualified base_link target lock. target_sector reproduces the former 180-degree 25-by-7 region at count 175, upper_hemisphere covers 360 degrees above the target, and full_sphere covers 360 degrees above and below using deterministic equal-area samples. Each generated ray keeps the target-relative 0.28 m minimum, preferred band through 0.50 m and configured 0.80 m maximum; target distance from base_link does not shorten that request. The coarse workspace and enforcing capability-map owners may subsequently reject or narrow it.
+  handoff: The planner scores one representative point per ray against accepted-only cumulative coverage and removes normalized predicted gain below 0.02. The bridge shortlists at most six rays and transmits the prequalified active envelope plus any capability-supported run evidence; the worker jointly solves joints plus continuous standoff, then applies unchanged exact-aim and Tesseract feasibility checks. Exact-point voxel_nbv retains twelve candidates.
   static_scope: Tracking does not translate or regenerate the ray pool during this phase. Accepted captures update coverage; a rejected achieved ray is retired without adding coverage; actual settled FK remains the next motion start.
   acquisition_failures: Five absent closed-loop looks return TARGET_NOT_FOUND with rough base_link XYZ. A fresh correlated semantic mask with sufficient masked depth entirely beyond 1.20 m returns retryable TARGET_TOO_FAR and REPOSITION_REQUIRED with rough base_link XYZ. Both use normal mission shutdown.
   selectable_policies: {legacy: original heuristic exact points, voxel_nbv: cumulative-information ranking over the regenerated exact-point lattice, ray_nbv: cumulative-information ranking over one frozen bounded-ray pool}
@@ -728,9 +815,9 @@ project:
     alternatives. The zero-history transaction tries compact progress first;
     later transactions interleave maximum-coverage directions with compact IK
     fallbacks toward the same active feature goal.
-    Success below thirteen additionally
-    requires at least nine achieved views, two on each Y side, 120 degrees of
-    azimuth and 25 degrees of elevation. This diversity revision is unit-tested
+    At that historical revision, success below thirteen additionally required
+    at least nine achieved views, two on each Y side, 120 degrees of azimuth and
+    25 degrees of elevation. That fixed azimuth requirement is now removed. This diversity revision was unit-tested
     but still needs a complete physical GUI run. The first rebuilt retry then
     exposed a separate startup race: one transient unsettled-joint approval
     sample terminated startup home, and cleanup incorrectly requested the
@@ -746,8 +833,8 @@ project:
     reaching it, then spent the remaining records on front/top poses. The session
     planner now scores only achieved accepted FK against staged missing-feature
     objectives: finish the Y side already approached by achieved FK, then the
-    opposite Y side, then 120-degree azimuth,
-    25-degree elevation, then residual pose diversity. Duplicate checks prefer
+    opposite Y side, then 25-degree elevation, then residual pose diversity.
+    The former 120-degree azimuth objective is now removed. Duplicate checks prefer
     achieved position/look, and worker fallbacks must progress toward the same
     objective. The minimum meaningful 3D target-ray step remains six degrees;
     the 7.5-degree azimuth grid supplies compact continuity poses without allowing
@@ -844,8 +931,9 @@ project:
     side and spans. Automatic mode now treats thirteen as the minimum and
     continues one measured-state-replanned capture at a time only while achieved
     feature floors remain missing, with a hard maximum of twenty-four. It succeeds
-    at any count from 13 through 24 only after two views on each Y side, 120 degrees
-    azimuth and 25 degrees elevation are proved; strict no-safe-view completion
+    At that historical revision it succeeded at any count from 13 through 24 only
+    after two views on each Y side, 120 degrees azimuth and 25 degrees elevation
+    were proved; the fixed azimuth requirement is now removed. Strict no-safe-view completion
     requires the same minimum and floors. Missing floors at 24 are a retryable
     quality failure. The bridge preserves the bounded shortlist's balanced
     coverage-leader/nearest-current membership, then attempts materially
@@ -1157,6 +1245,7 @@ entrypoints:
   gui_scan_dds_profile: fastdds_gui_udp_only.xml
   system_handoff: SYSTEM_HANDOFF.md
   mission_roadmap: docs/ai/70-roadmap.yaml
+  active_reconstruction_research_context: docs/ai/65-research-context.yaml
   consolidated_problem_log: docs/ai/80-problem-log.yaml
   arm_driver: start_piper.sh
   manual_arm_ui: start_gui.sh; RunTargetScan client, read-only diagnostics, explicitly labelled manual joints/home-profile tools, and RViz STL digital-twin mirroring
@@ -1173,6 +1262,7 @@ source_of_truth:
   supported_foxy_overlay: source_piper_foxy_environment.sh; generated /home/prl/Piper_arm/install must not exist or be sourced
   current_repository_handoff: SYSTEM_HANDOFF.md
   mission_goal_milestones_and_definition_of_done: docs/ai/70-roadmap.yaml
+  research_prior_art_and_proposed_geometry_direction: docs/ai/65-research-context.yaml
   problem_and_incident_status: docs/ai/80-problem-log.yaml
   ros_interfaces: piper_ros_foxy/src/piper_mobile_manipulation/msg
   node_behavior: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation
@@ -1190,6 +1280,7 @@ read_order:
   - docs/ai/10-system-map.yaml
   - docs/ai/30-contracts.yaml
   - docs/ai/70-roadmap.yaml
+  - docs/ai/65-research-context.yaml
   - docs/ai/20-modules.yaml
   - docs/ai/40-flows.yaml
   - docs/ai/50-guardrails.yaml
@@ -1212,13 +1303,14 @@ update_rules:
   - Update 20-modules and 50-guardrails when ownership or safety boundaries change.
   - Update 30-contracts, 40-flows, and operator procedures when scan proposal, approval, cancellation, capture, or command gating changes.
   - Update 70-roadmap whenever the mission goal, milestone status, acceptance evidence, blockers, next execution order, or definition of done changes.
+  - Update 65-research-context when active-reconstruction prior art, novelty boundaries, proposed per-ray framing geometry, baselines, or research validation changes.
   - Update 80-problem-log whenever a material incident, defect, misleading diagnosis, resolution, physical result, or required retest changes.
   - Update project-structure.txt when top-level or ROS package layout changes.
   - Describe checked-out source, including intentional uncommitted work; never infer behavior solely from generated build/install trees.
 implementation_update_2026_08_10:
   staged_home: A schema-v4 home profile binds rough-home/mission-ready J6, terminal-only PRE_HOME, negative storage J6, positive-only startup and decreasing storage direction. The measured signed branch is checked before enable. Startup executes direct J6-only STARTUP_WRIST then direct ROUGH_HOME through ExecuteHomeStage. Every controllable terminal path executes PRE_HOME, ROUGH_HOME and J6-only STORAGE_WRIST, retains the proved final controller target, then immediately performs feedback-confirmed disable and owned-child cleanup. Autonomous startup/shutdown does not call the redundant hold service. Tesseract is not used for configured-home stages. Robot self-collision planning is intentionally bypassed for these operator-recorded stages, while fresh feedback/motor evidence and dense installed-holder external clearance remain mandatory; Tesseract motion-limit telemetry is not direct-home authority. ROS JointState array sequences are accepted as six-joint inputs. Older profiles remain readable for diagnostics but cannot start an autonomous mission when require_staged_home_profile is true.
   occlusion: Heavy refresh now archives synchronized color, aligned depth and camera intrinsics. Exact response masks are projected with the capture-time TF; pen/marker/stick contact proposals require two associated settled observations, at least five-percent target support and closer-depth occlusion, predicted surface benefit and bounded uncertainty. Contact motion remains blocked by manipulation_model_qualified=false.
-  scanning: Automatic completion combines achieved-FK side/span floors with measured base_link target-surface voxels from persisted RGB-D masks. Eight accepted views seed the model but do not force completion; twenty-four is the safety maximum, and three consecutive novel-surface fractions at or below 0.02 establish convergence.
+  scanning: Automatic completion combines achieved-FK Y-side and elevation floors with measured base_link target-surface voxels from persisted RGB-D masks. Achieved azimuth span is diagnostic only. Eight accepted views seed the model but do not force completion; twenty-four is the safety maximum, and three consecutive novel-surface fractions at or below 0.02 establish convergence.
   reconstruction: Successful safe shutdown allocates a durable mesh job. Only a task/job/manifest-correlated tracked-robot-homed report queues isolated TSDF reconstruction; status and final PLY/hash/quality are durable and queryable.
   validation: [162 defect-focused home/contract/worker/executor tests passed, 387 full mobile-manipulation/Tesseract tests passed, 282 focused ROS/GUI/driver/Tesseract tests passed, piper_mobile_manipulation and piper_tesseract_foxy rebuilt, both exact-profile rootless suites PASS with real_arm_motion false]
 adaptive_nbv_and_geometry_crash_update_2026_08_10: >-
@@ -1227,7 +1319,7 @@ adaptive_nbv_and_geometry_crash_update_2026_08_10: >-
   measured target/scene/history, selects another collision-qualified candidate,
   and repeats. Automatic capture count is now adaptive from an eight-view model
   seed to a hard safety maximum of twenty-four. Success additionally requires
-  both Y-side floors, 120-degree azimuth, 25-degree elevation, and three
+  both Y-side floors, 25-degree elevation, and three
   consecutive measured masked-surface gains at or below 0.02. NextBestSense is
   retained as a later FisherRF/online-3DGS experiment, BundleSDF as a later rigid
   registration/reconstruction option, and the motion-uncertainty NBV paper's
@@ -1397,3 +1489,9 @@ capture_diagnostic_liveness_repair_2026_08_21:
     low-rate safety evidence cannot be starved by high-rate RGB-D callbacks.
   unchanged: [topics, QoS, one-second freshness threshold, GOOD/CLEAR capture gate, retry limit, motion, home, shutdown]
   qualification: Supervised tasks after the repair consumed fresh GOOD/CLEAR evidence across multiple settled captures; the final task succeeded and shut down safely.
+
+post_enable_startup_stability_2026_08_25:
+  status: software_implemented_physical_startup_only_retest_required
+  incident: codex-e2e-20260825-2312-ray-integration began STARTUP_WRIST about 0.05 seconds after enable and stopped on transient controller err_code 11264 before acquisition.
+  correction: Require new post-enable joint/status samples and two continuous seconds of finite stationary, fault-free, all-six-enabled evidence before STARTUP_WRIST. Failure disables before first motion; motor-authority loss retains watchdog-owned no-command containment.
+  unchanged: [0.3-rad direct-home measured-start allowance, measured J1-J5 preservation, positive-only J6 mapping, completed STARTUP_WRIST before simultaneous ROUGH_HOME, immediate in-motion fault stop]

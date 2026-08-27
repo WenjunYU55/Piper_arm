@@ -300,7 +300,8 @@ The 2026-08-20 global-NBV repair keeps
 `closed_loop_min_view_step_deg` and `closed_loop_max_view_step_deg` declared for
 launch/YAML compatibility, but authoritative `voxel_nbv` no longer uses them
 as a movement frontier. `minimum_useful_direction_separation_deg` is the
-accepted-view redundancy threshold. `closed_loop_candidate_limit` is 12 and
+inclusive accepted-view redundancy threshold and is currently 15 degrees.
+`closed_loop_candidate_limit` is 12 and
 `closed_loop_max_aim_offset_deg` is 5; the latter binds only the one fallback
 attempt after exact target aim fails. No ROS message or service schema changed.
 

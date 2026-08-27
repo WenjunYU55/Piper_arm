@@ -99,7 +99,12 @@ def build_ray_samples(
 
 def bounded_ray_interval(
         target_center, minimum_standoff_m, maximum_standoff_m):
-    """Return the static mission ray interval for one measured target."""
+    """Return the configured target-relative mission ray interval.
+
+    The target position validates the frame geometry, but it must not shorten
+    the ray.  Workspace and immutable capability-map evidence own subsequent
+    per-direction culling/bounding before continuous IK runs.
+    """
     target = np.asarray(target_center, dtype=float)
     minimum = float(minimum_standoff_m)
     maximum = float(maximum_standoff_m)
@@ -109,8 +114,7 @@ def bounded_ray_interval(
         raise ValueError('ray minimum standoff must be positive and finite')
     if not math.isfinite(maximum) or maximum < minimum:
         raise ValueError('ray maximum standoff is below its minimum')
-    target_radius = float(np.linalg.norm(target))
-    return minimum, max(minimum, min(target_radius, maximum))
+    return minimum, maximum
 
 
 def ray_probe_id(ray_id, probe_index):
@@ -172,7 +176,34 @@ def bind_shortlisted_ray_intervals(
                 or preferred_maximum < minimum):
             raise ValueError('ray standoff interval is invalid')
         projected = float(np.dot(start - target, direction))
-        primary = min(preferred_maximum, max(minimum, projected))
+        raw_intervals = candidate.get('ray_capability_intervals_m')
+        intervals = []
+        if raw_intervals is not None:
+            if not isinstance(raw_intervals, (list, tuple)):
+                raise ValueError('ray capability intervals are invalid')
+            for raw in raw_intervals:
+                if not isinstance(raw, (list, tuple)) or len(raw) != 2:
+                    raise ValueError('ray capability interval is invalid')
+                lower, upper = float(raw[0]), float(raw[1])
+                if (
+                        not all(math.isfinite(value) for value in (
+                            lower, upper))
+                        or lower < minimum - 1e-9
+                        or upper > maximum + 1e-9 or upper < lower):
+                    raise ValueError('ray capability interval is invalid')
+                intervals.append((lower, upper))
+        if not intervals:
+            intervals = [(minimum, maximum)]
+        primary_candidates = [
+            min(upper, max(lower, projected))
+            for lower, upper in intervals
+            if lower <= preferred_maximum + 1e-9]
+        if not primary_candidates:
+            primary_candidates = [intervals[0][0]]
+        primary = min(
+            primary_candidates,
+            key=lambda value: (abs(value - projected), value))
+        primary = min(preferred_maximum, max(minimum, primary))
         # Preserve the current-pose projection as the first numerical seed.
         # The worker owns the rest of the one-dimensional interval search.
         representative = primary

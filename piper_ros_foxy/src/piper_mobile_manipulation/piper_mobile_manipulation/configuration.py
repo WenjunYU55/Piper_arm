@@ -163,6 +163,7 @@ class ExecutorInterfaceConfig:
     tracked_target_topic: str
     camera_timestamp_health_topic: str
     target_status_topic: str
+    target_shape_topic: str
     obstacle_topic: str
     workflow_status_topic: str
     scan_session_history_topic: str
@@ -333,6 +334,7 @@ def executor_parameter_defaults():
         'tracked_target_topic': '/piper/tracked_target',
         'camera_timestamp_health_topic': '/piper/camera_timestamp_health',
         'target_status_topic': '/piper/target_status',
+        'target_shape_topic': '/piper/target_shape_measurement',
         'obstacle_topic': '/piper/obstacle_instances_3d',
         'workflow_status_topic': '/piper/supervised_workflow_status',
         'scan_session_history_topic': '/piper/scan_session_history',
@@ -494,7 +496,8 @@ def _interface_config(values):
         'reachable_viewpoints_topic', 'joint_states_topic', 'arm_status_topic',
         'motion_limits_topic', 'tracking_health_topic',
         'tracked_target_topic', 'camera_timestamp_health_topic',
-        'target_status_topic', 'obstacle_topic', 'workflow_status_topic',
+        'target_status_topic', 'target_shape_topic', 'obstacle_topic',
+        'workflow_status_topic',
         'scan_session_history_topic', 'joint_command_topic', 'plan_topic',
         'status_topic', 'capture_service', 'finish_scan_service',
         'rgbd_capture_service', 'heavy_refresh_request_topic',
