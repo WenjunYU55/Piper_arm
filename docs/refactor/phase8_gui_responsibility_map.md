@@ -31,8 +31,9 @@ runtime owner or side effects.
 ## Current architecture
 
 - `piper_gui_native.py` contains Tk presentation plus explicit commissioning
-  controls and the ROS node adapter for joint/status/diagnostic topics,
-  `/enable_srv`, `/piper/run_target_scan`, and
+  controls and re-exports the ROS adapter for compatibility.
+- `piper_gui/ros_node.py` owns the ROS node adapter for
+  joint/status/diagnostic topics, `/enable_srv`, `/piper/run_target_scan`, and
   `/piper/report_tracked_robot_homed`.
 - `piper_gui/view_model.py` is Tk/ROS-free immutable presentation state. It
   validates operator input and reflects action lifecycle, feedback and result;

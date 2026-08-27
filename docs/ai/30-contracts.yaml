@@ -20,6 +20,10 @@ tesseract_internal_contract_2026_08_27:
   owners: {candidate validation and shortlist policy: piper_tesseract_foxy/candidate_selection.py, schema constants canonical validation and hashes: piper_tesseract_foxy/protocol/contract.py, atomic queues and heartbeat file: piper_tesseract_foxy/protocol/spool.py, old import path: piper_tesseract_foxy/contract.py}
   compatibility: The old contract module explicitly re-exports identical owner objects. Candidate helpers formerly defined on bridge_node remain identical attributes imported from candidate_selection.
   external_change: none; schema-v5 bytes hashes paths permissions queue names request response validation ROS messages topics services and readiness semantics are unchanged.
+gui_internal_adapter_contract_2026_08_27:
+  owner: piper_gui/ros_node.py
+  compatibility: piper_gui_native.PiperGuiRos is the identical owner class.
+  external_change: none; ROS endpoint names message types QoS depths action fields commissioning commands event payloads and Tk behavior are unchanged.
 ray_review_operator_name_contract_2026_08_27:
   internal_basename: RayProcesses - HH:MM - DD-MM-YYYY
   files: [RayProcesses - HH:MM - DD-MM-YYYY.json, RayProcesses - HH:MM - DD-MM-YYYY.html]

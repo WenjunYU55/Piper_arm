@@ -36,6 +36,10 @@ tesseract_package_guardrails_2026_08_27:
   invariants: [candidate_selection protocol contract protocol spool and worker remain ROS-free, bridge remains command-free, old contract imports and former bridge helper attributes remain compatible, worker.py remains byte-identical because the capability map binds its source hash, schema-v5 canonical bytes hashes queue paths permissions limits timing shortlist order worker isolation and failure classifications are unchanged]
   blast_radius: [all rough acquisition and multiview planning, readiness, request response integrity, worker process transfer, executor plan admission]
   must_retest_if_changed: [test_contract.py, test_bridge_feedback_freshness.py, test_worker_validation.py, complete Tesseract suite, test_architecture_boundaries.py, full mobile suite, package build, interface tree diff, both command-free qualifications before final completion]
+gui_adapter_guardrails_2026_08_27:
+  invariants: [ros_node owns ROS mechanics only, piper_gui_native owns Tk and explicit commissioning interaction, autonomous progression remains outside the GUI, piper_gui_native.PiperGuiRos remains identical to the owner, endpoint names QoS action fields command format event names and presentation are unchanged]
+  blast_radius: [operator GUI startup, diagnostics, manual commissioning, mission submission cancellation, reconstruction home handshake]
+  must_retest_if_changed: [all test_piper_gui files, reconstruction GUI-support tests, isolated-domain GUI launch and close, changed-file lint and compile, no hardware command]
 ray_diagnostics_storage_guardrails_2026_08_27:
   invariants:
     - Every future default writer and historical replay output uses PIPER_ARM_ROOT/datasets/ray_diagnostics.

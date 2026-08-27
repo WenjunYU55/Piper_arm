@@ -30,6 +30,10 @@ tesseract_boundary_maintenance_2026_08_27:
   inspect: [piper_tesseract_foxy/candidate_selection.py, piper_tesseract_foxy/protocol/contract.py, piper_tesseract_foxy/protocol/spool.py, piper_tesseract_foxy/bridge_node.py, piper_tesseract_foxy/worker.py, piper_tesseract_foxy/contract.py compatibility facade]
   rule: Put candidate shortlist policy in candidate_selection, canonical schema and hash validation in protocol/contract, and atomic queue or heartbeat mechanics in protocol/spool. Keep the old contract path and former bridge helper attributes import-compatible. Never introduce ROS into the worker or protocol owners.
   required_retests: [test_contract.py, test_bridge_feedback_freshness.py, test_worker_validation.py, complete Tesseract suite, test_architecture_boundaries.py, package build, final command-free qualifications]
+gui_ros_adapter_maintenance_2026_08_27:
+  inspect: [piper_gui/ros_node.py, piper_gui/ros_client.py, piper_gui_native.py, test_piper_gui_acquisition_service.py, test_piper_gui_phase8.py, test_piper_gui_automation.py]
+  rule: ROS endpoint creation conversion and delivery belong in ros_node; action future handling belongs in ros_client; Tk presentation and explicit commissioning interaction remain in piper_gui_native. Keep the old PiperGuiRos import available from piper_gui_native.
+  required_retests: [all test_piper_gui files, reconstruction GUI-support tests, changed-file lint and compile, no hardware command]
 ray_diagnostics_storage_root_2026_08_27:
   inspect: [scan_viewpoint_planner_node.py ray_diagnostics_root, viewpoint_reachability_filter_node.py ray_diagnostics_root, piper_tesseract_foxy/bridge_node.py ray_diagnostics_root, target_scan_mission_node.py terminal diagnostics store, tools/simulate_size_aware_ray_review.py report_root, piper_gui/ray_reports.py canonical and legacy roots]
   rule: Every new writer and replay uses datasets/ray_diagnostics. Keep datasets/active_scan/ray_diagnostics read-only compatible in the GUI for historical reports, but never select it as a future writer default or silently migrate its contents.

@@ -114,6 +114,7 @@ reconstruction/tsdf_reconstruct.py - immutable target-only TSDF fusion with sele
 piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/bridge_node.py - command-free ROS snapshot, spool and proposal-publication adapter
 piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/candidate_selection.py - ROS-free candidate validation, direction-diverse bounded NBV shortlist and typed exhaustive-ray endpoint-static classification
 piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/protocol/{contract,spool}.py - ROS-free schema-v5 canonical validation/hash owner and atomic permission-bounded queue/heartbeat owner; root contract.py is an import-only facade
+piper_gui/ros_node.py - native GUI ROS endpoint and conversion adapter; piper_gui_native.py re-exports PiperGuiRos while retaining Tk presentation and commissioning controls
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/execution/recovery.py - typed retry/reacquire/replan/abort policy
 piper_ros_foxy/src/piper_mobile_manipulation/test/test_phase7_viewpoint_components.py - Phase 7 component and recovery-matrix regressions
 piper_ros_foxy/src/piper_mobile_manipulation/test/test_gpu_geometry_launch.py - critical GPU-geometry child-exit supervision contract

@@ -98,10 +98,14 @@ def test_legacy_recovery_helpers_are_not_used_by_production_gui():
     source = (
         Path(__file__).resolve().parent / 'piper_gui_native.py'
     ).read_text(encoding='utf-8')
-    assert 'prepare_scan_from_current_lock' not in source
-    assert 'step45_auto_recovery' not in source
-    assert 'scan_approval' not in source
-    assert 'MissionActionClient' in source
+    ros_source = (
+        Path(__file__).resolve().parent / 'piper_gui' / 'ros_node.py'
+    ).read_text(encoding='utf-8')
+    production_source = source + ros_source
+    assert 'prepare_scan_from_current_lock' not in production_source
+    assert 'step45_auto_recovery' not in production_source
+    assert 'scan_approval' not in production_source
+    assert 'MissionActionClient' in ros_source
 
 
 def test_automatic_scan_is_a_separate_one_start_button_tab():

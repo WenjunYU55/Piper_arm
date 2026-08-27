@@ -41,6 +41,13 @@ responsibility_packages_2026_08_27:
     owns: ROS-free candidate-policy validation and shortlist selection, schema-v5 canonical validation and hash binding, and permission-bounded atomic filesystem transfer.
     allowed_edit_paths: [Tesseract candidate and protocol owners, explicit contract and bridge compatibility exports, Tesseract tests, architecture boundary tests, docs/ai]
     must_not_move_without: [schema version and canonical bytes, request response and trajectory hashes, exact queue and heartbeat behavior, bridge readiness and ROS publication, worker isolation and planning order, capability map source_sha256 binding to worker.py, executor validation]
+  gui_ros_adapter:
+    owner_module: piper_gui/ros_node.py
+    supporting_owner: piper_gui/ros_client.py
+    runtime_adapter: piper_gui_native.py
+    owns: ROS endpoint creation, unchanged RunTargetScan goal conversion, commissioning joint and enable transport, diagnostic delivery and tracked-base reconstruction handshake.
+    allowed_edit_paths: [piper_gui/ros_node.py, piper_gui/ros_client.py, piper_gui_native.py compatibility import and Tk call sites, GUI tests, docs/ai]
+    must_not_move_without: [GUI event names, action goal and outcome mapping, commissioning publisher ownership lock, joint command format, diagnostic topics, ReportTrackedRobotHomed identity]
 capture_one_model_seed_2026_08_26:
   owner_module: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture_node.py
   supporting_owners: {shape transform seed schema and digest: target_envelope.py, private response admission and accepted promotion: scan_viewpoint_executor_node.py, validated history transport: scan_session_memory.py, envelope and qualified population freeze: scan_viewpoint_planner_node.py}

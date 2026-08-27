@@ -276,7 +276,8 @@ def test_commissioning_disable_calls_feedback_proved_service_without_hold_gate()
 
 def test_commissioning_motion_starts_locked_until_graph_ownership_is_proved():
     source = open('piper_gui_native.py', encoding='utf-8').read()
-    ros_init = source.split('class PiperGuiRos(Node):', 1)[1].split(
+    ros_source = open('piper_gui/ros_node.py', encoding='utf-8').read()
+    ros_init = ros_source.split('class PiperGuiRos(Node):', 1)[1].split(
         '    def feedback_callback', 1)[0]
     restore = source.split(
         '    def _restore_manual_controls_if_unowned(self):', 1)[1].split(

@@ -144,3 +144,16 @@ old-path facade import, because the committed camera capability map binds the
 exact worker source hash. The complete Tesseract suite passes 163 tests,
 including facade and former-bridge export identity checks; touched files pass
 flake8/pep257 and the dependency-ordered three-package build passes.
+
+## Phase 8a: native GUI ROS adapter
+
+The complete `PiperGuiRos` class moved intact from the Tk launcher to
+`piper_gui/ros_node.py`. `piper_gui_native.py` imports and exposes the identical
+class, so established imports and bootstrap behavior remain compatible. ROS
+topics, services, actions, QoS, event tuple names, goal conversion and command
+messages are unchanged; Tk presentation and explicit commissioning controls
+remain in the native module.
+
+All 106 GUI and reconstruction-control tests pass. Source-characterization
+tests inspect both production modules, the class identity is regression-tested,
+and touched files pass flake8, pep257 and byte compilation.

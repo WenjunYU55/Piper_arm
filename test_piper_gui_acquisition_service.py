@@ -5,10 +5,12 @@ import queue
 import rclpy
 
 from piper_gui_native import PiperGuiRos
+from piper_gui.ros_node import PiperGuiRos as PiperGuiRosOwner
 from piper_gui.view_model import validate_mission_request
 
 
 def test_gui_exposes_action_client_without_legacy_acquisition_services():
+    assert PiperGuiRos is PiperGuiRosOwner
     events = queue.Queue()
     rclpy.init()
     gui = PiperGuiRos(events)

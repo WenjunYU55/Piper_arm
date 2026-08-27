@@ -1,7 +1,7 @@
 schema_version: 1
 document: ai_context_index
 architecture_cleanup_2026_08_27:
-  status: phase_7_tesseract_boundary_cleanup_in_progress
+  status: phase_8_gui_and_reconstruction_cleanup_in_progress
   branch: reintegrate/selected-archived-features
   baseline: origin/main at 904dc39e96d5ad36b659cb240b1ad2ab0845775e
   implementation_record: docs/refactor/architecture_cleanup_2026_08_27.md
@@ -42,6 +42,12 @@ tesseract_package_routing_2026_08_27:
   compatibility: piper_tesseract_foxy/contract.py remains an explicit import-only facade, and former bridge helper attributes resolve to the identical candidate-selection objects.
   preserved: [schema version, canonical bytes and hashes, queue names and paths, file permissions and atomic operations, readiness heartbeat, shortlist order and limits, candidate geometry, planning budgets, worker isolation, ROS interfaces]
   validation: [complete Tesseract suite has 163 passes, changed-file flake8 and pep257 pass, three-package dependency build passes, no ROS graph or hardware command]
+gui_adapter_routing_2026_08_27:
+  owner: piper_gui/ros_node.py
+  owns: Native GUI ROS subscriptions, publishers, service clients, action goal conversion and event delivery; it contains no Tk widgets or mission progression policy.
+  compatibility: piper_gui_native.py imports and exposes the identical PiperGuiRos class while retaining Tk presentation and commissioning controls.
+  preserved: [all topic service and action names, QoS depths, goal fields, command message format, commissioning lock behavior, GUI presentation]
+  validation: [106 GUI and reconstruction-control tests pass, old and new class identity is tested, touched-file lint and compile pass, no hardware command]
 ray_diagnostics_storage_root_2026_08_27:
   behavior: All new live mission, reachability, Tesseract, terminal, historical replay and offline simulation ray diagnostics use datasets/ray_diagnostics/<mission_id-or-session_id>/ as their one canonical root.
   compatibility: The GUI continues to discover, validate and open historical reports under datasets/active_scan/ray_diagnostics without migrating or rewriting them. Plain artifact selections prefer the canonical root; GUI selections carry an internal current or legacy root qualifier.

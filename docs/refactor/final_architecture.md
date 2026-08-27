@@ -98,8 +98,9 @@ hash is part of the committed capability-map provenance.
 |---|---|
 | `piper_gui/view_model.py` | Immutable, Tk/ROS-free presentation state and operator-input validation. |
 | `piper_gui/ros_client.py` | `RunTargetScan` goal, feedback, cancellation, and result mapping. |
+| `piper_gui/ros_node.py` | Native GUI ROS subscriptions, publishers, services, action goal conversion, and event delivery. |
 | `piper_gui/app.py` | GUI/ROS bootstrap. |
-| `piper_gui_native.py` | Tk presentation, read-only diagnostics, and clearly separated commissioning controls. Its only child process is the preview-only RViz joint editor. |
+| `piper_gui_native.py` | Tk presentation, read-only diagnostics, and clearly separated commissioning controls; it re-exports the ROS adapter for compatibility. Its only child process is the preview-only RViz joint editor. |
 
 The GUI is not an autonomous controller. It does not own production retries,
 replanning, occlusion decisions, scan sequencing, mission safety, or production
