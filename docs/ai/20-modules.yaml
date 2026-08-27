@@ -1,5 +1,11 @@
 schema_version: 1
 document: module_ownership
+architecture_characterization_2026_08_27:
+  owner_module: piper_ros_foxy/src/piper_mobile_manipulation/test/test_architecture_boundaries.py
+  owns: Static characterization of established ROS-free application and domain modules, the ROS-free Tesseract worker and contract, and cycle-free internal imports for both production Python packages.
+  allowed_edit_paths: [piper_ros_foxy/src/piper_mobile_manipulation/test/test_architecture_boundaries.py, piper_ros_foxy/src/piper_mobile_manipulation/CMakeLists.txt, docs/refactor/architecture_cleanup_2026_08_27.md, docs/ai]
+  must_not_move_without: [external contract characterization, subsystem-specific behavior tests, compatibility wrappers for installed ROS executable and Python import paths]
+  required_retests: [test_architecture_boundaries.py, complete mobile tests, affected package build, AI YAML parse]
 capture_one_model_seed_2026_08_26:
   owner_module: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture_node.py
   supporting_owners: {shape transform seed schema and digest: target_envelope.py, private response admission and accepted promotion: scan_viewpoint_executor_node.py, validated history transport: scan_session_memory.py, envelope and qualified population freeze: scan_viewpoint_planner_node.py}

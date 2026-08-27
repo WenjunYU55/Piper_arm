@@ -155,6 +155,21 @@ if(BUILD_TESTING)
   ament_add_pytest_test(
     test_ray_mission_diagnostics test/test_ray_mission_diagnostics.py)
   ament_add_pytest_test(test_configuration test/test_configuration.py)
+  ament_add_pytest_test(
+    test_architecture_boundaries test/test_architecture_boundaries.py)
+  ament_add_pytest_test(
+    test_gpu_geometry_launch test/test_gpu_geometry_launch.py)
+  ament_add_pytest_test(
+    test_reintegrated_features test/test_reintegrated_features.py)
+  ament_add_pytest_test(
+    test_surface_coverage test/test_surface_coverage.py)
+  ament_add_pytest_test(
+    test_target_cloud_refined_cache test/test_target_cloud_refined_cache.py)
+  ament_add_pytest_test(
+    test_viewpoint_feedback_freshness
+    test/test_viewpoint_feedback_freshness.py)
+  ament_add_pytest_test(
+    test_viewpoint_rays test/test_viewpoint_rays.py)
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)

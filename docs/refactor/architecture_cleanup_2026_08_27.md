@@ -1,0 +1,55 @@
+# Behaviour-preserving architecture cleanup
+
+## Branch and baseline
+
+This cleanup is implemented only for
+`reintegrate/selected-archived-features`. Its integration commit preserves the
+old reintegration tip and `origin/main` as parents while using the exact
+`origin/main` tree at `904dc39e96d5ad36b659cb240b1ad2ab0845775e` as the
+behavior baseline. No main-branch commit is changed.
+
+The architecture audit and target design are governed by
+`current_architecture.md`, `external_contracts.md`, `safety_invariants.md`,
+`refactor_risks.md`, and `docs/ai/`.
+
+## Phase 0 baseline
+
+- Five ROS packages build with `colcon build --symlink-install`.
+- The complete mobile source test directory produced 848 passes, one skip and
+  one missing ignored local-home-profile fixture. Linking the same deployed
+  local profile into the isolated worktree made that exact test pass.
+- Tesseract Python tests: 162 passed.
+- Driver: 69 passed and one copyright skip.
+- Robot description: 18 passed.
+- Root GUI, reconstruction and L515 calibration selection: 193 passed and one
+  existing environment-dependent skip.
+- GroundingDINO target selection: 25 passed.
+- No hardware-facing process or command was started.
+
+The command-free rootless core Tesseract qualification loaded the production
+model and passed model, six-joint timing, five-percent timing, thin-obstacle
+detour, zero-start and centerline-zero-start stages. The unchanged baseline
+then exceeded its internal 150-second planning budget in the dual-limit-start
+case. This is baseline performance evidence, not a cleanup regression.
+
+## Phase 1: characterization and test registration
+
+All existing `piper_mobile_manipulation/test/test_*.py` files are now
+registered in CMake. `test_architecture_boundaries.py` additionally freezes:
+
+- the named ROS-free mission, execution, planning, perception and
+  infrastructure owners;
+- the ROS-free Tesseract worker and contract boundary; and
+- absence of internal import cycles in both production Python packages.
+
+Focused Phase 1 validation passes 48 tests. The complete mobile source suite
+passes 852 tests with one hardware-dependent skip, and all seven newly
+registered CMake targets pass through the installed ROS overlay with 55 test
+results. Runtime source, interfaces, configuration and behavior are unchanged.
+
+## Incremental change rule
+
+Each later phase adds the new responsibility owner first, retains an explicit
+old-path facade, migrates callers, runs the linked tests, and updates AI docs.
+Compatibility removal is a separate evidence-gated cleanup. Safety checks at
+distinct trust boundaries are not deduplicated as part of structural work.

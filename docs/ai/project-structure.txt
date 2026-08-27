@@ -104,6 +104,7 @@ piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/executor_
 piper_ros_foxy/src/piper_mobile_manipulation/test/test_phase7_viewpoint_components.py - Phase 7 component and recovery-matrix regressions
 piper_ros_foxy/src/piper_mobile_manipulation/test/test_gpu_geometry_launch.py - critical GPU-geometry child-exit supervision contract
 piper_ros_foxy/src/piper_mobile_manipulation/test/test_heavy_refresh_bridge.py - correlated busy-worker retention and exactly-once deferred refresh regressions
+piper_ros_foxy/src/piper_mobile_manipulation/test/test_architecture_boundaries.py - ROS-free owner, ROS-free Tesseract worker/contract and internal import-cycle characterization; every mobile Python test file is registered in CMake before structural moves
 piper_ros_foxy/src/piper_tesseract_foxy/test/test_worker_validation.py - planning budgets, preloaded first clean scene, candidate feasibility and collision validation regressions
 piper_ros_foxy/src/piper_mobile_manipulation/msg/MeshJobStatus.msg - transient-local reconstruction status contract
 piper_ros_foxy/src/piper_mobile_manipulation/srv/ReportTrackedRobotHomed.srv - tracked-base home handshake

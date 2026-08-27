@@ -1,5 +1,17 @@
 schema_version: 1
 document: guardrails
+architecture_cleanup_guardrails_2026_08_27:
+  invariants:
+    - Structural moves do not change ROS action topic service message QoS frame parameter launch shell dataset reconstruction GUI or command behavior.
+    - MissionEngine remains the sole mission and shutdown progression authority.
+    - The viewpoint executor remains the sole optional autonomous joint-command publisher.
+    - Established pure domain and application owners remain importable without ROS.
+    - Tesseract worker and contract code remain ROS-free and never call back dynamically into their compatibility facades.
+    - Every moved public Python module and installed ROS executable retains an old-path compatibility facade until all callers and tests are migrated.
+    - Internal package imports remain acyclic and dependencies point from adapters toward application and domain owners.
+    - Duplicate safety validation at trust boundaries is retained unless a separate behavior change is explicitly authorized and physically requalified.
+  blast_radius: [all Python imports, ROS installed executable paths, launch composition, mission and executor state, Tesseract spool compatibility, operator scripts]
+  must_retest_if_changed: [test_architecture_boundaries.py, Phase 1 external mission and executor characterization, complete affected subsystem tests, complete mobile tests, affected package build, public interface hashes, AI YAML parse]
 ray_diagnostics_storage_guardrails_2026_08_27:
   invariants:
     - Every future default writer and historical replay output uses PIPER_ARM_ROOT/datasets/ray_diagnostics.

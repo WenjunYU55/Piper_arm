@@ -1,5 +1,10 @@
 schema_version: 1
 document: maintenance_routing
+architecture_cleanup_routing_2026_08_27:
+  inspect: [docs/refactor/architecture_cleanup_2026_08_27.md, test_architecture_boundaries.py, piper_mobile_manipulation/CMakeLists.txt, docs/ai/20-modules.yaml, docs/ai/50-guardrails.yaml, docs/ai/60-debt.yaml]
+  rule: Move one responsibility at a time from the origin/main behavior baseline. Add the new owner first, keep an explicit old-path compatibility facade, migrate consumers, run the linked characterization, and only then consider facade removal. Domain modules must not import ROS adapters and no move may create an internal import cycle.
+  required_retests: [test_architecture_boundaries.py, changed subsystem characterization, complete mobile tests, affected package build, public interface hashes, AI YAML parse]
+  branch_rule: Commit and push only the history-preserving reintegrate/selected-archived-features line. Never update main as part of this cleanup.
 ray_diagnostics_storage_root_2026_08_27:
   inspect: [scan_viewpoint_planner_node.py ray_diagnostics_root, viewpoint_reachability_filter_node.py ray_diagnostics_root, piper_tesseract_foxy/bridge_node.py ray_diagnostics_root, target_scan_mission_node.py terminal diagnostics store, tools/simulate_size_aware_ray_review.py report_root, piper_gui/ray_reports.py canonical and legacy roots]
   rule: Every new writer and replay uses datasets/ray_diagnostics. Keep datasets/active_scan/ray_diagnostics read-only compatible in the GUI for historical reports, but never select it as a future writer default or silently migrate its contents.

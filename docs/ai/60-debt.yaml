@@ -1,5 +1,11 @@
 schema_version: 1
 document: technical_debt
+architecture_cleanup_2026_08_27:
+  status: phase_1_characterization_complete_later_phases_pending
+  resolution: The cleanup branch now starts from an exact origin/main tree while preserving both the historical reintegration and main parents. All existing mobile Python test files are registered with CMake and a static architecture test freezes ROS-free owners and cycle-free imports before file moves.
+  remaining: [move pure owners into responsibility packages with compatibility facades, thin mission planner executor and capture ROS adapters, split Tesseract contract without duplicated constants or circular worker callbacks, decompose GUI and reconstruction by cohesive responsibility, perform conservative driver helper extraction, clean the root with operator wrappers, update final ARCHITECTURE.md and equivalence report]
+  baseline_limit: Rootless core Tesseract qualification exceeded the pre-existing 150-second internal budget in dual_limit_start_acquisition on the unchanged origin/main tree; Python Tesseract tests and the full ROS build pass. Recheck qualification at Tesseract-sensitive phases and final validation without weakening the budget.
+  must_retest_each_phase: [test_architecture_boundaries.py, subsystem characterization, complete mobile tests, affected package build, public interface hashes, AI YAML parse]
 ray_diagnostics_storage_root_2026_08_27:
   resolution: Future live mission, reachability, Tesseract, terminal, replay and simulated ray evidence now converges under datasets/ray_diagnostics. The GUI retains contained read access to the former datasets/active_scan/ray_diagnostics tree without moving or rewriting historical evidence.
   remaining_limitations: [historical files remain physically split until an explicitly requested migration, all already-running diagnostic nodes must be restarted together before the next mission]
