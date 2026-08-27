@@ -86,3 +86,17 @@ the complete mobile suite passes 859 tests with one hardware-dependent skip,
 and changed-file lint and the focused package build pass. Action, queue, topic,
 service, state-transition, process-signal, dataset-format, launch and hardware
 behavior are unchanged.
+
+## Phase 4: execution responsibility package
+
+The existing ROS-free authorization, capture coordination, execution-mode,
+motion validation, recovery, trajectory monitoring and schedule-validation
+modules moved intact under `execution/`. Production consumers use those owners;
+the seven former module paths remain explicit one-way facades whose exports are
+identity-tested. Only inward imports and five docstring layout corrections were
+made; numerical and state behavior is unchanged.
+
+Focused execution, mission and external-contract validation passes 373 tests.
+The complete mobile suite passes 860 tests with one hardware-dependent skip,
+and changed-file flake8/pep257 pass. The executor node remains the sole command
+publisher and all safety, timing, capture and recovery gates are retained.

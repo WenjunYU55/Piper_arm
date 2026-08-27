@@ -25,7 +25,7 @@ from piper_mobile_manipulation.msg import (
 from piper_mobile_manipulation.occlusion_policy import (
     OccluderEvidence, evidence_rejection,
 )
-from piper_mobile_manipulation.scan_execution_modes import (
+from piper_mobile_manipulation.execution.modes import (
     measured_target_lock_rejection,
 )
 from piper_mobile_manipulation.supervised_workflow import (
@@ -334,8 +334,11 @@ class SupervisedCubeWorkflowNode(Node):
             self.abort(
                 'full-resolution cloud capture failed: %s'
                 % self.cloud_status.get('error', 'unknown refinement failure'))
-        elif self.state == 'WAIT_CAPTURE' and self.cloud_status.get('state') == 'accumulating' and \
-                self.cloud_status.get('mask_source') == 'full_resolution_refinement':
+        elif (
+                self.state == 'WAIT_CAPTURE'
+                and self.cloud_status.get('state') == 'accumulating'
+                and self.cloud_status.get('mask_source')
+                == 'full_resolution_refinement'):
             self.accepted_views += 1
             self.state = 'SCAN_READY'
             self.process_pending_cloud()

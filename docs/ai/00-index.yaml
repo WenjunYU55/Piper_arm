@@ -22,6 +22,11 @@ mission_adapter_cleanup_2026_08_27:
   retained_in_ros_node: [action and queue mechanics, ROS publishers subscribers services clients and TF, telemetry callbacks, dependency readiness and service waits, result feedback and durable adapter calls]
   behavior_change: none
   validation: [187 focused mission tests pass, complete mobile suite has 859 passes and one hardware-dependent skip, changed-file lint passes, focused package build passes]
+execution_package_routing_2026_08_27:
+  owners: {plan authorization and direct-home admission: execution/authorization.py, settled capture handoff: execution/capture.py, execution-mode semantics: execution/modes.py, kinematics collision limits and path gates: execution/motion.py, typed recovery: execution/recovery.py, authorized trajectory monitoring: execution/trajectory.py, Tesseract schedule validation: execution/validation.py}
+  compatibility_facades: [plan_authorizer.py, capture_coordinator.py, scan_execution_modes.py, scan_motion.py, executor_recovery.py, trajectory_runner.py, scan_trajectory.py]
+  preserved: [sole command publisher remains scan_viewpoint_executor_node.py, all safety checks and constants, all plan and capture semantics, old import paths]
+  validation: [373 focused execution mission and external-contract tests pass, complete mobile suite has 860 passes and one hardware-dependent skip, changed-file lint passes]
 ray_diagnostics_storage_root_2026_08_27:
   behavior: All new live mission, reachability, Tesseract, terminal, historical replay and offline simulation ray diagnostics use datasets/ray_diagnostics/<mission_id-or-session_id>/ as their one canonical root.
   compatibility: The GUI continues to discover, validate and open historical reports under datasets/active_scan/ray_diagnostics without migrating or rewriting them. Plain artifact selections prefer the canonical root; GUI selections carry an internal current or legacy root qualifier.

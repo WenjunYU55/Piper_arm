@@ -12,7 +12,7 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
-from piper_mobile_manipulation.scan_motion import motor_control_reasons
+from piper_mobile_manipulation.execution.motion import motor_control_reasons
 from piper_mobile_manipulation.capability_map import (
     load_capability_map,
     sha256_file,

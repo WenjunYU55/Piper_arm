@@ -34,6 +34,13 @@ PURE_MOBILE_MODULES = frozenset({
     'collision_environment.py',
     'configuration.py',
     'executor_recovery.py',
+    'execution/authorization.py',
+    'execution/capture.py',
+    'execution/modes.py',
+    'execution/motion.py',
+    'execution/recovery.py',
+    'execution/trajectory.py',
+    'execution/validation.py',
     'failure_model.py',
     'heavy_refresh_contract.py',
     'home_pose.py',
@@ -250,6 +257,26 @@ def test_mission_compatibility_facades_preserve_public_objects():
             'piper_mobile_manipulation.mission.' + owner_name)
         assert set(facade.__all__) == symbols
         for symbol in symbols:
+            assert getattr(facade, symbol) is getattr(owner, symbol)
+
+
+def test_execution_compatibility_facades_preserve_public_objects():
+    """Keep execution imports stable while moving their authority package."""
+    owner_by_facade = {
+        'capture_coordinator': 'capture',
+        'executor_recovery': 'recovery',
+        'plan_authorizer': 'authorization',
+        'scan_execution_modes': 'modes',
+        'scan_motion': 'motion',
+        'scan_trajectory': 'validation',
+        'trajectory_runner': 'trajectory',
+    }
+    for facade_name, owner_name in owner_by_facade.items():
+        facade = import_module('piper_mobile_manipulation.' + facade_name)
+        owner = import_module(
+            'piper_mobile_manipulation.execution.' + owner_name)
+        assert facade.__all__
+        for symbol in facade.__all__:
             assert getattr(facade, symbol) is getattr(owner, symbol)
 
 

@@ -58,10 +58,11 @@ algorithm, or Tesseract behavior changed during Phase 10.
 | `mission/spool.py` | Atomic, permission-bounded mission task, status and result persistence. |
 | `infrastructure/process_supervisor.py` | Exact owned-process generations, environment construction, health checks, reverse-order group shutdown, and shutdown reports. |
 | `safety_evaluator.py` | Pure named immutable runtime-gate policy mapping. It contains no ROS, thresholds, telemetry evaluator, command or second permission authority. |
-| `plan_authorizer.py` | Exact mission/plan identity, expiry, target drift, dependency evidence, typed authorization decisions, and configured-home stage/endpoint policy. |
-| `trajectory_runner.py` | Pure scheduling and feedback decisions for one already-authorized Tesseract trajectory. |
-| `capture_coordinator.py` | Settling-to-capture sequencing and typed capture retry/replacement/abort decisions. |
-| `executor_recovery.py` | Typed retry, reacquire, replan, and abort policy. |
+| `execution/authorization.py` | Exact mission/plan identity, expiry, target drift, dependency evidence, typed authorization decisions, and configured-home stage/endpoint policy. |
+| `execution/trajectory.py` | Pure scheduling and feedback decisions for one already-authorized Tesseract trajectory. |
+| `execution/capture.py` | Settling-to-capture sequencing and typed capture retry/replacement/abort decisions. |
+| `execution/recovery.py` | Typed retry, reacquire, replan, and abort policy. |
+| `execution/modes.py`, `execution/motion.py`, `execution/validation.py` | Execution-mode semantics, conservative kinematics/path validation, and exact scheduled-trajectory validation. |
 | Scan/perception helpers | Geometry, acquisition, coverage, scan history, motion validation, occlusion policy, capture persistence, and reconstruction job contracts. |
 
 The former root-level names remain explicit import-only compatibility facades;

@@ -107,7 +107,7 @@ from piper_mobile_manipulation.msg import (
     TesseractReadiness,
 )
 from piper_mobile_manipulation.scan_capture import rigid_transform_matrix
-from piper_mobile_manipulation.scan_motion import (
+from piper_mobile_manipulation.execution.motion import (
     energized_hold_target,
     startup_measured_hold_reference,
     motor_control_reasons,

@@ -4,6 +4,10 @@ responsibility_package_contract_2026_08_27:
   internal_owners: {mission core: piper_mobile_manipulation/mission/core.py, mission progression and engine construction: piper_mobile_manipulation/mission/engine.py, mission-bound guarded resources: piper_mobile_manipulation/mission/resources.py, mission spool: piper_mobile_manipulation/mission/spool.py, typed failures: piper_mobile_manipulation/infrastructure/failure_model.py, telemetry: piper_mobile_manipulation/infrastructure/telemetry_store.py, child processes: piper_mobile_manipulation/infrastructure/process_supervisor.py}
   compatibility: The six former root-level modules remain installed one-way facades with explicit __all__ exports referring to the identical owner objects. ROS messages services actions topics parameters spool bytes hashes and process escalation are unchanged.
   forbidden: [duplicate implementation in a facade, owner import from facade, facade-specific mutable state, silent symbol fallback]
+execution_package_contract_2026_08_27:
+  internal_owners: [execution/authorization.py, execution/capture.py, execution/modes.py, execution/motion.py, execution/recovery.py, execution/trajectory.py, execution/validation.py]
+  compatibility: Former module paths retain explicit __all__ exports pointing to identical owner objects. Constants arrays functions dataclasses enums exception behavior and return shapes are unchanged.
+  external_change: none
 ray_review_operator_name_contract_2026_08_27:
   internal_basename: RayProcesses - HH:MM - DD-MM-YYYY
   files: [RayProcesses - HH:MM - DD-MM-YYYY.json, RayProcesses - HH:MM - DD-MM-YYYY.html]

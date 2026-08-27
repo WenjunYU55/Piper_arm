@@ -14,6 +14,10 @@ mission_resource_maintenance_2026_08_27:
   inspect: [mission/resources.py, target_scan_mission_node.py imported compatibility names, test_mission_resources.py, test_reintegrated_features.py, test_phase1_mission_characterization.py]
   rule: Keep calibration provenance hashing failed-dataset containment and exact stale-process selection ROS-free. The node may invoke and re-export these functions but must not duplicate them.
   required_retests: [test_mission_resources.py, test_mission_engine.py, test_mission_core.py, Phase 1 mission characterization, complete mobile suite, package build, AI YAML parse]
+execution_package_maintenance_2026_08_27:
+  inspect: [execution/authorization.py, execution/capture.py, execution/modes.py, execution/motion.py, execution/recovery.py, execution/trajectory.py, execution/validation.py, scan_viewpoint_executor_node.py, compatibility facades]
+  rule: Behavior belongs in execution package owners. Root-level former modules are export-only facades. Keep exact motion constants safety gates command timing capture and recovery decisions unchanged unless separately authorized and qualified.
+  required_retests: [test_architecture_boundaries.py, test_phase7_viewpoint_components.py, test_scan_motion.py, test_scan_viewpoint_angles.py, Phase 1 executor characterization, complete mobile suite, package build, AI YAML parse]
 ray_diagnostics_storage_root_2026_08_27:
   inspect: [scan_viewpoint_planner_node.py ray_diagnostics_root, viewpoint_reachability_filter_node.py ray_diagnostics_root, piper_tesseract_foxy/bridge_node.py ray_diagnostics_root, target_scan_mission_node.py terminal diagnostics store, tools/simulate_size_aware_ray_review.py report_root, piper_gui/ray_reports.py canonical and legacy roots]
   rule: Every new writer and replay uses datasets/ray_diagnostics. Keep datasets/active_scan/ray_diagnostics read-only compatible in the GUI for historical reports, but never select it as a future writer default or silently migrate its contents.

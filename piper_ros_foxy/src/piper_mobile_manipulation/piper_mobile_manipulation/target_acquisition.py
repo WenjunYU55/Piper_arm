@@ -4,7 +4,7 @@ import math
 
 import numpy as np
 
-from piper_mobile_manipulation.scan_motion import orbit_camera_view
+from piper_mobile_manipulation.execution.motion import orbit_camera_view
 
 
 ROUGH_ACQUISITION = 'ROUGH_ACQUISITION'

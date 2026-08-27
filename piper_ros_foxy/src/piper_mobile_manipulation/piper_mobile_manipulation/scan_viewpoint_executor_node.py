@@ -31,21 +31,21 @@ from piper_mobile_manipulation.configuration import (
     configured_value,
     load_executor_configuration,
 )
-from piper_mobile_manipulation.capture_coordinator import (
+from piper_mobile_manipulation.execution.capture import (
     CaptureAction,
     CaptureCoordinator,
     rgbd_capture_handoff_action as _rgbd_capture_handoff_action,
     retryable_rgbd_capture_rejection as _retryable_capture_rejection,
     visual_capture_rejection as _visual_capture_rejection,
 )
-from piper_mobile_manipulation.executor_recovery import (
+from piper_mobile_manipulation.execution.recovery import (
     RecoveryAction,
     RecoveryContext,
     RecoveryPolicy,
     runtime_gate_action as _runtime_gate_action,
     runtime_refresh_action,
 )
-from piper_mobile_manipulation.plan_authorizer import (
+from piper_mobile_manipulation.execution.authorization import (
     configured_home_endpoint_rejection,
     direct_home_stage_rejection,
     direct_home_stage_targets,
@@ -54,7 +54,7 @@ from piper_mobile_manipulation.plan_authorizer import (
     target_drift_before_approval_rejection as _target_drift_rejection,
     trajectory_count_rejection,
 )
-from piper_mobile_manipulation.scan_execution_modes import (
+from piper_mobile_manipulation.execution.modes import (
     acquired_target_rejection,
     commanded_speed_percent,
     correlated_obstacle_scene_status,
@@ -66,7 +66,7 @@ from piper_mobile_manipulation.scan_execution_modes import (
     ROUGH_ACQUISITION,
     uses_bootstrap_static_scene,
 )
-from piper_mobile_manipulation.scan_motion import (
+from piper_mobile_manipulation.execution.motion import (
     camera_target_path_reasons,
     bootstrap_recovery_declaration_reasons,
     bootstrap_start_limit_recovery_reasons,
@@ -86,7 +86,7 @@ from piper_mobile_manipulation.scan_motion import (
 )
 from piper_mobile_manipulation.motion_limit_stability import MotionLimitStability
 from piper_mobile_manipulation.viewpoint_rays import decoded_ray_id
-from piper_mobile_manipulation.scan_trajectory import (
+from piper_mobile_manipulation.execution.validation import (
     TIMING_POLICY_VERSION,
     validate_sdk_movej_waypoint_path,
     validate_tesseract_point,
@@ -115,7 +115,7 @@ from piper_mobile_manipulation.target_envelope import (
     validate_shape_measurement,
     validate_shape_rejection,
 )
-from piper_mobile_manipulation.trajectory_runner import (
+from piper_mobile_manipulation.execution.trajectory import (
     joint_progress_error,
     TrajectoryAction,
     TrajectoryRunner,

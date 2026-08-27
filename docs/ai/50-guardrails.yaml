@@ -20,6 +20,10 @@ mission_resource_guardrails_2026_08_27:
   invariants: [calibration identity hashes exact file bytes, failed dataset deletion is limited to one direct child of the configured dataset root with matching task and mission identity and zero completed captures, symlinks and unknown artifacts fail closed, a live driver blocks old-generation cleanup without fresh six-disabled proof, resource helpers remain ROS-free]
   blast_radius: [capture provenance, dataset preservation, mission admission, previous process generation, terminal failure handling]
   must_retest_if_changed: [test_mission_resources.py, failed-dataset tests in test_reintegrated_features.py, previous-generation tests in Phase 1 mission characterization, test_mission_engine.py, complete mobile suite, package build]
+execution_package_guardrails_2026_08_27:
+  invariants: [execution owners remain ROS-free, scan_viewpoint_executor_node.py remains the sole optional autonomous command publisher, former root modules remain explicit export-only facades, every facade export is identical to the owner object, safety constants numerical checks configured-home exceptions schedule policy capture decisions and recovery actions are unchanged]
+  blast_radius: [all scan motion, direct home, runtime safety, capture admission, trajectory timing, rough acquisition, mission shutdown]
+  must_retest_if_changed: [test_architecture_boundaries.py, test_phase7_viewpoint_components.py, test_scan_motion.py, test_scan_viewpoint_angles.py, Phase 1 executor characterization, test_reintegrated_features.py, complete mobile suite, package build, physical requalification for any later behavior edit]
 ray_diagnostics_storage_guardrails_2026_08_27:
   invariants:
     - Every future default writer and historical replay output uses PIPER_ARM_ROOT/datasets/ray_diagnostics.

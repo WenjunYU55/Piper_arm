@@ -84,6 +84,8 @@ piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_sc
 piper_ros_foxy/src/piper_mobile_manipulation/test/test_process_supervisor.py - fake-process startup/crash/escalation/repeated-generation/ownership regressions
 piper_ros_foxy/src/piper_mobile_manipulation/test/test_mission_resources.py - exact calibration hash, missing provenance, driver cleanup gate, dataset discovery and node compatibility regressions
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/safety_evaluator.py - pure named immutable runtime evidence policies; no ROS, thresholds, telemetry evaluation or second permission authority
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/execution/{authorization,capture,modes,motion,recovery,trajectory,validation}.py - ROS-free execution authorization, mode policy, conservative motion/schedule validation, monitoring, settled capture and recovery owners
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/{plan_authorizer,capture_coordinator,scan_execution_modes,scan_motion,executor_recovery,trajectory_runner,scan_trajectory}.py - explicit old-path compatibility facades only
 piper_ros_foxy/src/piper_mobile_manipulation/test/test_safety_evaluator.py - all-mode named-policy boundary and immutability regressions
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/plan_authorizer.py - pure exact plan/mission authorization decisions
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/trajectory_runner.py - pure authorized trajectory schedule and monitoring decisions

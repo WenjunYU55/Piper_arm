@@ -25,7 +25,7 @@ from piper_mobile_manipulation.nbv_coverage import (
     rank_next_best_views,
     VoxelCoverageConfig,
 )
-from piper_mobile_manipulation.scan_motion import orbit_camera_view
+from piper_mobile_manipulation.execution.motion import orbit_camera_view
 from piper_mobile_manipulation.target_envelope import (
     build_revolution_envelope,
     coverage_sphere_from_envelope,

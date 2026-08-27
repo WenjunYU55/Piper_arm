@@ -10,6 +10,11 @@ mission_resource_extraction_2026_08_27:
   owner: mission/resources.py
   compatibility: target_scan_mission_node.py imports the same function objects for downstream callers while runtime calls use the owner directly.
   evidence: [five dedicated calibration dataset process and compatibility tests, 187 focused mission tests, 859 complete mobile tests with one skip, clean changed-file lint, focused package build]
+execution_responsibility_package_2026_08_27:
+  status: structurally_moved_behavior_preserved
+  owners: [execution/authorization.py, execution/capture.py, execution/modes.py, execution/motion.py, execution/recovery.py, execution/trajectory.py, execution/validation.py]
+  compatibility: Seven former root module paths explicitly export identical owner objects.
+  evidence: [373 focused execution mission and external-contract tests, 860 complete mobile tests with one skip, facade identity and cycle tests, changed-file flake8 and pep257 pass]
 capture_one_bound_model_seed_2026_08_26:
   status: physically_retested_generation_one_and_three_captures_passed
   capability: The first accepted model is derived from capture one's exact persisted semantic mask confidence-qualified target depth CameraInfo and recorded base-from-camera transform. Shape and transform are one hash-bound private seed persisted in frame metadata, returned by scan capture, admitted before workflow acceptance and promoted in accepted scan history. The planner builds the revolution directly from the recorded matrix, so TF cache lifetime cannot empty generation one.
