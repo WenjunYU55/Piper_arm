@@ -194,11 +194,24 @@ def test_named_domain_and_application_modules_remain_ros_independent():
 def test_tesseract_worker_and_contract_remain_ros_independent():
     """Keep the isolated planner process free of ROS imports."""
     violations = []
-    for filename in ('contract.py', 'worker.py'):
+    for filename in (
+            'candidate_selection.py', 'contract.py',
+            'protocol/contract.py', 'protocol/spool.py', 'worker.py'):
         for imported in imported_modules(TESSERACT_ROOT / filename):
             if imported.split('.', 1)[0] in ROS_IMPORT_ROOTS:
                 violations.append((filename, imported))
     assert violations == []
+
+
+def test_tesseract_contract_facade_preserves_public_objects():
+    """Keep the established Tesseract contract import path compatible."""
+    facade = import_module('piper_tesseract_foxy.contract')
+    contract_owner = import_module('piper_tesseract_foxy.protocol.contract')
+    spool_owner = import_module('piper_tesseract_foxy.protocol.spool')
+    assert facade.__all__
+    for symbol in facade.__all__:
+        owner = spool_owner if symbol == 'Spool' else contract_owner
+        assert getattr(facade, symbol) is getattr(owner, symbol)
 
 
 def test_infrastructure_compatibility_facades_preserve_public_objects():

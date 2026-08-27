@@ -5,7 +5,9 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from piper_tesseract_foxy.bridge_node import (
+import piper_tesseract_foxy.bridge_node as bridge_module
+import piper_tesseract_foxy.candidate_selection as candidate_selection_module
+from piper_tesseract_foxy.candidate_selection import (
     balanced_closed_loop_candidates,
     bounded_candidate_attempt_limit,
     bounded_nbv_candidates,
@@ -19,10 +21,10 @@ from piper_tesseract_foxy.bridge_node import (
     relax_closed_loop_candidate_aims,
     select_diverse_smooth_view_path,
     target_envelope_obstacles,
-    TesseractPlanBridge,
     uses_authoritative_nbv_order,
     validate_candidate_policy_batch,
 )
+from piper_tesseract_foxy.bridge_node import TesseractPlanBridge
 from piper_tesseract_foxy.contract import ContractError
 from piper_mobile_manipulation.view_generation import view_policy_capabilities
 from piper_mobile_manipulation.motion_limit_stability import MotionLimitStability
@@ -30,6 +32,32 @@ from piper_mobile_manipulation.target_envelope import (
     build_revolution_envelope,
     trusted_silhouette_measurement,
 )
+
+
+def test_bridge_preserves_extracted_candidate_selection_exports():
+    """Keep historical bridge helper imports identical during migration."""
+    names = (
+        'FINAL_AIM_EXECUTION_MARGIN_DEG',
+        'RAY_DIRECTION_ATTEMPT_LIMIT',
+        'balanced_closed_loop_candidates',
+        'bounded_candidate_attempt_limit',
+        'bounded_current_look_direction',
+        'bounded_nbv_candidates',
+        'exact_target_aim_candidates',
+        'information_ranked_ray_candidates',
+        'local_view_frontier_candidates',
+        'maximize_successive_view_distance',
+        'obstacle_scene_rejection_reason',
+        'permanent_ray_ids_from_response',
+        'relax_closed_loop_candidate_aims',
+        'select_diverse_smooth_view_path',
+        'target_envelope_obstacles',
+        'uses_authoritative_nbv_order',
+        'validate_candidate_policy_batch',
+    )
+    for name in names:
+        assert getattr(bridge_module, name) is getattr(
+            candidate_selection_module, name)
 
 
 class _Recorder:

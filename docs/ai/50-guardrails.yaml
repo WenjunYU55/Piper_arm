@@ -32,6 +32,10 @@ perception_package_guardrails_2026_08_27:
   invariants: [perception owners remain ROS-free, old paths remain export-only facades, facade exports are identical owner objects, exact-stamp and crop validation are unchanged, capture-one seed and envelope hashes remain stable, obstacle and occlusion label policies are not merged, repeated contact evidence remains mandatory]
   blast_radius: [target acquisition tracking seed revolution planning centre obstacle scene occlusion workflow and capture acceptance]
   must_retest_if_changed: [test_architecture_boundaries.py, depth target envelope acquisition landmark obstacle occlusion tracking capture session and planner tests, complete mobile and Tesseract suites, package build, command-free replay]
+tesseract_package_guardrails_2026_08_27:
+  invariants: [candidate_selection protocol contract protocol spool and worker remain ROS-free, bridge remains command-free, old contract imports and former bridge helper attributes remain compatible, worker.py remains byte-identical because the capability map binds its source hash, schema-v5 canonical bytes hashes queue paths permissions limits timing shortlist order worker isolation and failure classifications are unchanged]
+  blast_radius: [all rough acquisition and multiview planning, readiness, request response integrity, worker process transfer, executor plan admission]
+  must_retest_if_changed: [test_contract.py, test_bridge_feedback_freshness.py, test_worker_validation.py, complete Tesseract suite, test_architecture_boundaries.py, full mobile suite, package build, interface tree diff, both command-free qualifications before final completion]
 ray_diagnostics_storage_guardrails_2026_08_27:
   invariants:
     - Every future default writer and historical replay output uses PIPER_ARM_ROOT/datasets/ray_diagnostics.

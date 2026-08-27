@@ -126,3 +126,21 @@ Focused perception, capture, session and planner validation passes 199 tests;
 the complete mobile suite passes 862 tests with one hardware-dependent skip,
 and changed-file lint passes. Exact timestamps, seed/envelope hashes, crop gates,
 obstacle classifications, repeated occlusion proof and ROS contracts are unchanged.
+
+## Phase 7: Tesseract boundary cleanup
+
+The command-free bridge now delegates its existing pure candidate validation,
+shortlist construction and typed endpoint classification to
+`candidate_selection.py`. The schema-v5 canonical request/response contract is
+owned by `protocol/contract.py`, while atomic permission-bounded queue and
+heartbeat mechanics are owned by `protocol/spool.py`. The former `contract.py`
+path is an explicit facade, and the bridge retains identical helper attributes
+for compatibility.
+
+No function body, shortlist constant, schema version, canonical encoding,
+hash, queue name, path, permission, heartbeat operation, planning budget or
+worker algorithm changed. `worker.py` remains byte-identical, including its
+old-path facade import, because the committed camera capability map binds the
+exact worker source hash. The complete Tesseract suite passes 163 tests,
+including facade and former-bridge export identity checks; touched files pass
+flake8/pep257 and the dependency-ordered three-package build passes.

@@ -11,7 +11,7 @@ import numpy as np
 from scipy.stats import qmc
 import yaml
 
-from piper_mobile_manipulation.capability_map import (
+from piper_mobile_manipulation.planning.capability import (
     capability_key,
     DEFAULT_DIRECTION_BIN_DEG,
     DEFAULT_DIRECTION_TOLERANCE_DEG,
@@ -20,7 +20,7 @@ from piper_mobile_manipulation.capability_map import (
     sha256_file,
     write_capability_map,
 )
-from piper_mobile_manipulation.scan_motion import (
+from piper_mobile_manipulation.execution.motion import (
     load_conservative_joint_limits,
 )
 from piper_tesseract_foxy.worker import TesseractBackend

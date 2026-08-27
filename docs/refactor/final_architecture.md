@@ -83,6 +83,15 @@ they contain no duplicate implementation or policy.
 | PiPER driver | CAN/SDK authority, arm enable service, command input, and low-level feedback/limit publication. |
 | Tesseract bridge/worker | Typed spool planning contract, collision/IK/path qualification, bounded pass-through smoothing with dense fallback, and DIRECT_MOVEJ-versus-streamed-detour evidence. It no longer owns production configured-home planning. |
 
+Within that boundary, `bridge_node.py` is the ROS snapshot/spool adapter,
+`candidate_selection.py` owns ROS-free candidate-policy validation and
+shortlisting, `protocol/contract.py` owns schema-v5 canonical validation and
+hashes, `protocol/spool.py` owns atomic permission-bounded transfer, and
+`worker.py` retains the cohesive exact planning backend. The installed
+`contract.py` path remains an explicit compatibility facade and is
+intentionally still imported by byte-identical `worker.py`, whose exact source
+hash is part of the committed capability-map provenance.
+
 ### GUI boundary
 
 | Module | Ownership |

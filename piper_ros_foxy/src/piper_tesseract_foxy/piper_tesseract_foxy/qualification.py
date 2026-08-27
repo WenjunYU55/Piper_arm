@@ -8,12 +8,12 @@ import sys
 import numpy as np
 import yaml
 
-from piper_mobile_manipulation.scan_motion import PiperScanKinematics
+from piper_mobile_manipulation.execution.motion import PiperScanKinematics
 from piper_mobile_manipulation.home_pose import load_home_pose
 from piper_mobile_manipulation.target_acquisition import (
     build_acquisition_viewpoints,
 )
-from piper_tesseract_foxy.contract import ContractError, JOINT_NAMES
+from piper_tesseract_foxy.protocol.contract import ContractError, JOINT_NAMES
 from piper_tesseract_foxy.worker import (
     sdk_movej_waypoint_trajectory,
     TesseractBackend,
