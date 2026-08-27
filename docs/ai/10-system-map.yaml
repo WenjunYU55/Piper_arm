@@ -23,6 +23,9 @@ gui_adapter_load_order_2026_08_27:
 reconstruction_input_load_order_2026_08_27:
   sequence: [input_provenance validates immutable manifest artifacts calibration and capture schema, optional offline resegmentation produces hash-bound derived masks, tsdf_reconstruct loads admitted frames, unchanged registration and TSDF fusion run, unchanged quality report and outputs are written]
   load_order_contracts: [input admission precedes Open3D integration, offline_resegment imports input_provenance rather than the orchestrator, tsdf_reconstruct exposes one-way compatibility aliases, direct script execution retains its local import fallback]
+driver_joint_policy_load_order_2026_08_27:
+  sequence: [driver receives raw CAN or ROS command evidence, joint_state_policy deterministically decodes maps or validates it, PiperRosNode retains all SDK state timing watchdog publication and command side effects]
+  load_order_contracts: [joint_state_policy imports only math, driver depends one-way on policy, no CAN SDK ROS threading or time source moved into policy, old driver exports remain compatible]
 ray_diagnostics_storage_path_2026_08_27:
   runtime_load_order: [planner reachability filter bridge and coordinator resolve PIPER_ARM_ROOT, every writer constructs datasets/ray_diagnostics, unique mission or session directory is created, the existing per-directory lock selects or retains its report basename, GUI discovers canonical and legacy roots but historical replay writes only canonical]
   load_order_contracts: [deploy and restart all diagnostic-producing nodes together so one mission cannot split across old and new roots, preserve one root per new mission, canonical root is searched before the legacy root for unqualified historical selections, path containment is enforced independently for each root]

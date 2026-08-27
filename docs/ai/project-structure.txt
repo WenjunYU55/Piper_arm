@@ -127,3 +127,4 @@ piper_ros_foxy/src/piper_mobile_manipulation/srv/ReportTrackedRobotHomed.srv - t
 piper_ros_foxy/src/piper_mobile_manipulation/srv/GetMeshJobResult.srv - durable reconstruction result query
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/startup_gates.py - pure pre-enable and post-enable joint/status stability validation
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission/engine.py - enable, powered stability proof, STARTUP_WRIST, simultaneous ROUGH_HOME and terminal ordering
+piper_ros_foxy/src/piper/piper/joint_state_policy.py - side-effect-free controller command clamping, J6 startup mapping and raw CAN joint-cycle coherence; piper_ctrl_single_node.py retains hardware lifecycle and compatible exports

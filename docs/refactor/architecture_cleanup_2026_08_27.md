@@ -170,3 +170,18 @@ CLI orchestration remain in `tsdf_reconstruct.py`.
 AST comparison proves all 15 moved function bodies are unchanged. Fifty-four
 reconstruction tests pass, direct CLI help works outside the repository working
 directory, and the touched files pass flake8, pep257 and byte compilation.
+
+## Phase 9: conservative driver seam
+
+Only the nine deterministic, already-characterized joint mapping and coherent
+raw-feedback functions moved to `piper/joint_state_policy.py`. The driver module
+re-exports identical functions and equal constants. CAN collection, every SDK
+call, ROS callbacks/publishers/timers, enable/disable sequencing, motor
+watchdog, command caching and command emission remain in `PiperRosNode`.
+
+AST comparison proves every moved function body unchanged. The 68 driver
+handshake and feedback tests pass, the changed files pass targeted
+flake8/pep257 and byte compilation, and the driver plus description packages
+build. The package-wide style tests remain unusable because they scan the
+entire repository build/install tree and report the established generated and
+historical lint baseline; no finding is in a changed file.

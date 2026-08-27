@@ -1,5 +1,7 @@
 import math
 
+import piper.joint_state_policy as joint_state_policy
+import piper.piper_ctrl_single_node as driver_module
 from piper.piper_ctrl_single_node import (
     JOINT_FEEDBACK_RAW_TO_RAD,
     JOINT6_STARTUP_WRAP_TARGET_RAD,
@@ -13,6 +15,37 @@ from piper.piper_ctrl_single_node import (
     startup_joint6_controller_target,
     startup_joint6_direction_update,
 )
+
+
+def test_driver_preserves_joint_state_policy_exports():
+    functions = (
+        'controller_command_position', 'continuous_joint6_feedback',
+        'standard_joint6_feedback', 'startup_joint6_direction_update',
+        'startup_joint6_controller_target',
+        'reset_startup_joint6_transaction', 'decode_joint_feedback_pair',
+        'coherent_joint_feedback', 'joint_feedback_warning_due',
+    )
+    constants = (
+        'JOINT6_LIMIT_RAD', 'JOINT6_STARTUP_LIMIT_RAD', 'JOINT6_WRAP_RAD',
+        'JOINT6_STARTUP_READY_TOLERANCE_RAD',
+        'JOINT6_STARTUP_COMMAND_EPSILON_RAD',
+        'JOINT6_STARTUP_WRAP_TARGET_RAD',
+        'JOINT6_STARTUP_WRAP_SETTLE_TOLERANCE_RAD',
+        'JOINT6_STARTUP_DIRECTION_TRIP_RAD',
+        'JOINT6_STARTUP_CONTROLLER_MAX_DEG',
+        'JOINT6_STARTUP_CONTROLLER_REQUIRED_DEG',
+        'JOINT6_STARTUP_CONTROLLER_LIMIT_TIMEOUT_SEC',
+        'JOINT6_STARTUP_COMMAND_FRAME', 'JOINT6_HOLD_COMMAND_FRAME',
+        'JOINT6_COMMISSIONING_COMMAND_FRAME', 'DEFAULT_JOINT_BOUNDS',
+        'JOINT_FEEDBACK_CAN_IDS', 'JOINT_FEEDBACK_CAN_INDEX',
+        'JOINT_FEEDBACK_RAW_TO_RAD', 'JOINT_FEEDBACK_CAN_MAX_AGE_SEC',
+        'JOINT_FEEDBACK_CAN_MAX_SKEW_SEC',
+        'JOINT_FEEDBACK_WARNING_GAP_SEC', 'CONTROLLER_COMMAND_BOUNDS',
+    )
+    for name in functions:
+        assert getattr(driver_module, name) is getattr(joint_state_policy, name)
+    for name in constants:
+        assert getattr(driver_module, name) == getattr(joint_state_policy, name)
 
 
 def test_joint6_startup_limit_is_exactly_240_degrees():

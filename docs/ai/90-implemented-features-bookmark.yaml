@@ -40,6 +40,11 @@ reconstruction_input_cleanup_2026_08_27:
   owner: reconstruction/input_provenance.py
   compatibility: tsdf_reconstruct re-exports identical input-admission constants and functions.
   evidence: [15 moved function ASTs identical to rollback commit, 54 reconstruction tests, direct out-of-tree CLI smoke, changed-file flake8 pep257 and compile]
+driver_joint_policy_cleanup_2026_08_27:
+  status: structurally_extracted_behavior_preserved
+  owner: piper/piper/joint_state_policy.py
+  compatibility: piper_ctrl_single_node retains identical function objects and equal constants.
+  evidence: [nine moved function ASTs identical, 68 driver functional tests, piper_description and piper builds, targeted lint pep257 and compile, no CAN access]
 capture_one_bound_model_seed_2026_08_26:
   status: physically_retested_generation_one_and_three_captures_passed
   capability: The first accepted model is derived from capture one's exact persisted semantic mask confidence-qualified target depth CameraInfo and recorded base-from-camera transform. Shape and transform are one hash-bound private seed persisted in frame metadata, returned by scan capture, admitted before workflow acceptance and promoted in accepted scan history. The planner builds the revolution directly from the recorded matrix, so TF cache lifetime cannot empty generation one.

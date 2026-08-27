@@ -44,6 +44,10 @@ reconstruction_input_guardrails_2026_08_27:
   invariants: [input_provenance remains independent of Open3D and GUI, moved function bodies and constants remain unchanged, tsdf_reconstruct compatibility exports are identical owner objects, manifest containment hashes calibration capture schema offline-mask provenance CLI and outputs are unchanged]
   blast_radius: [every reconstruction input, diagnostic certification, offline resegmentation cache, gateway reconstruction jobs, GUI reconstruction]
   must_retest_if_changed: [all reconstruction tests, compatibility identity and AST comparison, direct CLI smoke, root GUI reconstruction and calibration suite, immutable dataset replay, changed-file lint pep257 and compile]
+driver_joint_policy_guardrails_2026_08_27:
+  invariants: [all nine moved bodies and numerical constants are unchanged, policy imports no ROS SDK CAN threading or clock, piper_ctrl_single_node retains CAN receive SDK operations timers callbacks enable disable motor watchdog and command emission, old imports remain compatible]
+  blast_radius: [all joint feedback, J6 startup, driver command mapping, limit qualification, motion authorization and motor fault handling]
+  must_retest_if_changed: [test_joint_feedback_continuity.py, test_enable_handshake.py, test_piper_joint6_zero.py, test_piper_motion_limits_transport.py, full piper mobile and Tesseract functional suites, driver and description builds, changed-file lint and compile, supervised physical requalification for any later behavior edit]
 ray_diagnostics_storage_guardrails_2026_08_27:
   invariants:
     - Every future default writer and historical replay output uses PIPER_ARM_ROOT/datasets/ray_diagnostics.

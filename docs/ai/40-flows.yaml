@@ -42,6 +42,11 @@ reconstruction_input_migration_2026_08_27:
   sequence: [validate immutable scan through input_provenance, resolve the same exact artifacts and optional offline masks, pass unchanged values to tsdf_reconstruct fusion and registration, write unchanged mesh cloud and quality outputs]
   manual_smoke_checks: [prove all old exports are identical owner objects, compare moved function ASTs to the rollback commit, run direct CLI help from outside the repository, reconstruct an immutable fixture when Open3D is available]
   mandatory_retests: [test_tsdf_reconstruct.py, test_offline_resegment.py, test_gui_support.py, root GUI reconstruction and calibration suite, changed-file lint pep257 and compile]
+driver_joint_policy_migration_2026_08_27:
+  runtime_change: none
+  sequence: [PiperRosNode retains raw CAN collection and SDK lifecycle, joint_state_policy maps one already-received sample or command without side effects, PiperRosNode retains coherent state publication watchdog and command emission]
+  manual_smoke_checks: [prove old function identities and constant equality, compare all moved function ASTs, replay signed-pi and positive-only startup traces, decode complete stale skewed and missing CAN cycles, start no driver and access no CAN]
+  mandatory_retests: [test_joint_feedback_continuity.py, test_enable_handshake.py, driver and description builds, full mobile and Tesseract suites, targeted lint pep257 and compile]
 ray_diagnostics_storage_flow_2026_08_27:
   sequence: [resolve project root, select datasets/ray_diagnostics as the canonical writer root, create the unique mission or session directory, merge all planner filter bridge and terminal observations under its fixed lock, let GUI discovery combine canonical and legacy roots, encode the selected root internally, validate containment, open the canonical JSON in the command-free viewer]
   failure_modes: [mixed deployed defaults -> one mission can split evidence across roots so restart all writers together, missing canonical root -> writer creates it on first record, legacy-only report -> GUI opens it without migration, same artifact ID in both roots -> root-qualified GUI selection opens the exact listed path, traversal -> reject, diagnostics write failure -> runtime planning and safety remain unchanged]

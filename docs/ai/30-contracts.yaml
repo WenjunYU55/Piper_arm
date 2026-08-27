@@ -28,6 +28,10 @@ reconstruction_input_contract_2026_08_27:
   owner: reconstruction/input_provenance.py
   compatibility: tsdf_reconstruct exports the identical fifteen functions and three constants used by existing tests and scripts.
   external_change: none; manifest bytes hashes calibration and schema admission offline-mask identity CLI arguments output files quality JSON and dataset formats are unchanged.
+driver_joint_policy_contract_2026_08_27:
+  owner: piper/piper/joint_state_policy.py
+  compatibility: piper_ctrl_single_node exports identical policy functions and equal constants.
+  external_change: none; ROS topics services messages CAN IDs raw scaling J6 mapping numerical thresholds SDK calls command bytes feedback timing and watchdog behavior are unchanged.
 ray_review_operator_name_contract_2026_08_27:
   internal_basename: RayProcesses - HH:MM - DD-MM-YYYY
   files: [RayProcesses - HH:MM - DD-MM-YYYY.json, RayProcesses - HH:MM - DD-MM-YYYY.html]

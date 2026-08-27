@@ -38,6 +38,10 @@ reconstruction_input_maintenance_2026_08_27:
   inspect: [reconstruction/input_provenance.py, reconstruction/tsdf_reconstruct.py compatibility exports and reconstruction orchestrator, reconstruction/offline_resegment.py, reconstruction/test_tsdf_reconstruct.py, reconstruction/test_offline_resegment.py]
   rule: Put immutable capture-set artifact calibration schema and offline-mask admission in input_provenance. Keep fusion registration quality selection output writing and CLI orchestration in tsdf_reconstruct. Preserve old tsdf_reconstruct symbol imports until external users are migrated.
   required_retests: [all reconstruction tests, old/new export identity, direct CLI invocation outside repository cwd, root GUI and reconstruction suite, changed-file lint pep257 and compile]
+driver_joint_policy_maintenance_2026_08_27:
+  inspect: [piper/piper/joint_state_policy.py, piper/piper/piper_ctrl_single_node.py, piper/test/test_joint_feedback_continuity.py, piper/test/test_enable_handshake.py]
+  rule: Put only deterministic joint mapping and coherent raw-feedback policy in joint_state_policy. Keep CAN reads SDK operations ROS publishers callbacks timers enable disable watchdog and command emission in piper_ctrl_single_node. Never tune constants or reorder calls as cleanup.
+  required_retests: [driver handshake and joint-feedback suites, old/new export identity, moved-function AST comparison, driver and description builds, full mobile and Tesseract suites, targeted lint and compile, no hardware command]
 ray_diagnostics_storage_root_2026_08_27:
   inspect: [scan_viewpoint_planner_node.py ray_diagnostics_root, viewpoint_reachability_filter_node.py ray_diagnostics_root, piper_tesseract_foxy/bridge_node.py ray_diagnostics_root, target_scan_mission_node.py terminal diagnostics store, tools/simulate_size_aware_ray_review.py report_root, piper_gui/ray_reports.py canonical and legacy roots]
   rule: Every new writer and replay uses datasets/ray_diagnostics. Keep datasets/active_scan/ray_diagnostics read-only compatible in the GUI for historical reports, but never select it as a future writer default or silently migrate its contents.

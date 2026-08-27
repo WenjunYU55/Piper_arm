@@ -55,6 +55,12 @@ responsibility_packages_2026_08_27:
     owns: Immutable capture-set count, manifest artifact hashes and containment, exact metadata artifact resolution, calibration and confidence-schema provenance, offline mask generation admission and camera extrinsic conversion.
     allowed_edit_paths: [reconstruction/input_provenance.py, tsdf_reconstruct compatibility exports and call sites, offline_resegment owner imports, reconstruction tests, docs/ai]
     must_not_move_without: [manifest and file digests, dataset containment, capture schema 2, calibration identity, offline derived-mask identity, report provenance, GUI reconstruction command]
+  driver_joint_state_policy:
+    owner_module: piper_ros_foxy/src/piper/piper/joint_state_policy.py
+    hardware_adapter: piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py
+    owns: Deterministic gravity-droop command clamping, J6 feedback wrapping and startup controller mapping, startup-direction evidence, raw joint-pair decode, coherent six-joint cycle admission and warning cadence.
+    allowed_edit_paths: [joint_state_policy.py, piper_ctrl_single_node compatibility aliases and call sites, driver handshake and continuity tests, docs/ai]
+    must_not_move_without: [positive-only J6 startup contract, logical signed-pi normal range, raw controller limit qualification, coherent CAN cycle thresholds, motor watchdog, SDK command mapping, capability map and home profiles]
 capture_one_model_seed_2026_08_26:
   owner_module: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture_node.py
   supporting_owners: {shape transform seed schema and digest: target_envelope.py, private response admission and accepted promotion: scan_viewpoint_executor_node.py, validated history transport: scan_session_memory.py, envelope and qualified population freeze: scan_viewpoint_planner_node.py}
@@ -259,6 +265,7 @@ phase7_viewpoint_application_ownership_2026_08_14:
 latest_motor_authority_2026_08_11:
   arm_driver:
     owner_module: piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py
+    joint_policy_owner: piper_ros_foxy/src/piper/piper/joint_state_policy.py
     allowed_edit_paths: [piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py, piper_ros_foxy/src/piper_msgs/msg/PiperStatusMsg.msg, piper_ros_foxy/src/piper/test]
     owns: Cached low-speed feedback validity, six per-axis driver-enable flags, parsed motor faults, watchdog reason, typed /arm_status publication, all-axis fail-closed disable, and reset of incomplete J6 startup direction/high-water state after a proved disable or direction trip so a later commissioning enable starts from fresh coherent feedback.
     must_not_move_without: [autonomous_target_scan, supervised_scan_execution, piper_msgs interface rebuild]

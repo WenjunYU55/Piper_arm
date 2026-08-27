@@ -110,6 +110,15 @@ conversion and optional offline-mask preparation. `tsdf_reconstruct.py` retains
 Open3D frame loading, registration, TSDF fusion, quality selection, output
 writing and CLI orchestration, and re-exports the input symbols for compatibility.
 
+### Robot driver boundary
+
+`piper/joint_state_policy.py` owns only deterministic controller-position
+clamping, J6 logical/controller mapping, startup-direction evidence and coherent
+raw joint-cycle admission. `piper_ctrl_single_node.py` retains the complete
+hardware boundary: CAN, PiPER SDK lifecycle, ROS interfaces, motor watchdog,
+enable/disable sequencing, timing and command emission. The driver re-exports
+the policy symbols for established callers.
+
 The GUI is not an autonomous controller. It does not own production retries,
 replanning, occlusion decisions, scan sequencing, mission safety, or production
 child-process lifecycle.
