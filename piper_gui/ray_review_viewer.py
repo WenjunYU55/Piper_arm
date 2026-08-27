@@ -63,6 +63,166 @@ GROUND_Z_M = -0.466
 REVOLVED_MODEL = (0.10, 0.72, 0.68)
 PLANNING_BOX = (0.15, 0.92, 0.86)
 SOURCE_OUTLINE = (1.00, 0.55, 0.16)
+WORLD_UP = np.asarray([0.0, 0.0, 1.0], dtype=float)
+STANDARD_CAMERA_VIEWS = {
+    'front': ('Front (+X)', (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
+    'back': ('Back (-X)', (-1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
+    'left': ('Left (+Y)', (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
+    'right': ('Right (-Y)', (0.0, -1.0, 0.0), (0.0, 0.0, 1.0)),
+    'top': ('Top (+Z)', (0.0, 0.0, 1.0), (0.0, 1.0, 0.0)),
+    'bottom': ('Bottom (-Z)', (0.0, 0.0, -1.0), (0.0, 1.0, 0.0)),
+    'isometric': ('Isometric', (1.0, -1.0, 1.0), (0.0, 0.0, 1.0)),
+}
+
+
+def _upright_view_up(position, focal_point):
+    """Return a roll-free view-up vector using base_link +Z as world up."""
+    view = np.asarray(focal_point, dtype=float) - np.asarray(
+        position, dtype=float)
+    length = float(np.linalg.norm(view))
+    if not np.isfinite(length) or length < 1e-9:
+        return (0.0, 0.0, 1.0)
+    view /= length
+    projected = WORLD_UP - float(np.dot(WORLD_UP, view)) * view
+    if float(np.linalg.norm(projected)) < 1e-4:
+        # At the top and bottom poles, +Z cannot define image-up. Use +Y so
+        # those views have a stable, repeatable orientation instead of roll.
+        fallback = np.asarray([0.0, 1.0, 0.0], dtype=float)
+        projected = fallback - float(np.dot(fallback, view)) * view
+    projected /= max(1e-12, float(np.linalg.norm(projected)))
+    return tuple(float(value) for value in projected)
+
+
+class CameraNavigator:
+    """Shared roll-free VTK orbit and standard-view control."""
+
+    def __init__(self, widget, renderer, minimum_z=None):
+        self.widget = widget
+        self.renderer = renderer
+        self.minimum_z = minimum_z
+        self.last_valid_camera = None
+        self.interactor = widget.GetRenderWindow().GetInteractor()
+        self.interactor_style = vtk.vtkInteractorStyleTrackballCamera()
+        self.interactor_style.SetMouseWheelMotionFactor(1.2)
+        self.interactor.SetInteractorStyle(self.interactor_style)
+        self.interactor.AddObserver('InteractionEvent', self._interaction)
+
+    def _remember(self):
+        camera = self.renderer.GetActiveCamera()
+        self.last_valid_camera = (
+            tuple(camera.GetPosition()),
+            tuple(camera.GetFocalPoint()),
+            tuple(camera.GetViewUp()),
+        )
+
+    def sync(self, render=False):
+        """Remove roll and restore the last view if orbit crossed the floor."""
+        camera = self.renderer.GetActiveCamera()
+        position = tuple(camera.GetPosition())
+        if self.minimum_z is not None and position[2] < self.minimum_z:
+            if self.last_valid_camera is not None:
+                previous_position, previous_focal, previous_up = (
+                    self.last_valid_camera)
+                camera.SetPosition(*previous_position)
+                camera.SetFocalPoint(*previous_focal)
+                camera.SetViewUp(*previous_up)
+            else:
+                camera.SetPosition(position[0], position[1], self.minimum_z)
+        else:
+            camera.SetViewUp(*_upright_view_up(
+                camera.GetPosition(), camera.GetFocalPoint()))
+            camera.OrthogonalizeViewUp()
+            self._remember()
+        self.renderer.ResetCameraClippingRange()
+        if render:
+            self.widget.GetRenderWindow().Render()
+
+    def _interaction(self, _caller=None, _event=None):
+        self.sync()
+
+    def focus(self, focal_point):
+        values = np.asarray(focal_point, dtype=float)
+        if values.shape != (3,) or not np.all(np.isfinite(values)):
+            return
+        camera = self.renderer.GetActiveCamera()
+        position = np.asarray(camera.GetPosition(), dtype=float)
+        focal = np.asarray(camera.GetFocalPoint(), dtype=float)
+        offset = position - focal
+        if float(np.linalg.norm(offset)) < 1e-6:
+            offset = np.asarray([0.9, -1.1, 0.65], dtype=float)
+        camera.SetFocalPoint(*values)
+        camera.SetPosition(*(values + offset))
+        self.sync(render=True)
+
+    def set_standard_view(self, name):
+        """Set a named view while preserving the focal point and zoom range."""
+        if name not in STANDARD_CAMERA_VIEWS:
+            return False
+        _label, direction, view_up = STANDARD_CAMERA_VIEWS[name]
+        camera = self.renderer.GetActiveCamera()
+        focal = np.asarray(camera.GetFocalPoint(), dtype=float)
+        position = np.asarray(camera.GetPosition(), dtype=float)
+        distance = float(np.linalg.norm(position - focal))
+        if not np.isfinite(distance) or distance < 0.05:
+            distance = 1.0
+        direction = np.asarray(direction, dtype=float)
+        direction /= float(np.linalg.norm(direction))
+        if direction[2] < 0.0 and self.minimum_z is not None:
+            available = float(focal[2]) - float(self.minimum_z)
+            if available < 0.05:
+                return False
+            distance = min(distance, available)
+        camera.SetFocalPoint(*focal)
+        camera.SetPosition(*(focal + direction * distance))
+        camera.SetViewUp(*view_up)
+        camera.OrthogonalizeViewUp()
+        self.sync(render=True)
+        return True
+
+
+class CameraViewDialog(QtWidgets.QDialog):
+    """Compact SolidWorks-style standard orientation chooser."""
+
+    def __init__(self, navigator, parent=None):
+        super().__init__(parent)
+        self.navigator = navigator
+        self.setWindowTitle('Select Camera View')
+        self.setModal(True)
+        self.setMinimumWidth(390)
+        outer = QtWidgets.QVBoxLayout(self)
+        prompt = QtWidgets.QLabel(
+            'Choose a base_link view. The current target and zoom are kept.')
+        prompt.setAlignment(QtCore.Qt.AlignCenter)
+        outer.addWidget(prompt)
+        grid = QtWidgets.QGridLayout()
+        placements = {
+            'top': (0, 1),
+            'left': (1, 0),
+            'front': (1, 1),
+            'right': (1, 2),
+            'back': (1, 3),
+            'bottom': (2, 1),
+            'isometric': (3, 1),
+        }
+        for name, (row, column) in placements.items():
+            label = STANDARD_CAMERA_VIEWS[name][0]
+            button = QtWidgets.QToolButton(self)
+            button.setText(label)
+            button.setMinimumSize(88, 52)
+            button.setToolTip(
+                'Place the virtual review camera at %s from its focal point'
+                % label)
+            button.clicked.connect(
+                lambda _checked=False, selected=name: self._select(selected))
+            grid.addWidget(button, row, column)
+        outer.addLayout(grid)
+        close = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Cancel)
+        close.rejected.connect(self.reject)
+        outer.addWidget(close)
+
+    def _select(self, name):
+        if self.navigator.set_standard_view(name):
+            self.accept()
 
 
 def _vtk_matrix(array):
@@ -142,17 +302,12 @@ class MissionScene:
         self.renderer = vtk.vtkRenderer()
         self.renderer.SetBackground(*BACKGROUND)
         widget.GetRenderWindow().AddRenderer(self.renderer)
-        self.interactor = widget.GetRenderWindow().GetInteractor()
-        self.interactor_style = vtk.vtkInteractorStyleTrackballCamera()
-        self.interactor_style.SetMouseWheelMotionFactor(1.2)
-        self.interactor.SetInteractorStyle(self.interactor_style)
         self.dynamic = []
         self.robot_actors = []
         self.camera_source = None
         self.reference_joints = {}
         self.assembly = None
         self.ground_z_m = GROUND_Z_M
-        self.last_valid_camera = None
         self._load_robot()
         axes = vtk.vtkAxesActor()
         axes.SetTotalLength(0.07, 0.07, 0.07)
@@ -174,9 +329,9 @@ class MissionScene:
         self.renderer.ResetCamera()
         self._add_ground()
         self.renderer.ResetCameraClippingRange()
-        self._remember_camera()
-        self.interactor.AddObserver(
-            'InteractionEvent', self._keep_camera_above_ground)
+        self.camera_navigation = CameraNavigator(
+            widget, self.renderer, self.ground_z_m + 0.015)
+        self.camera_navigation.sync()
 
     def _add_ground(self):
         plane = vtk.vtkPlaneSource()
@@ -206,48 +361,8 @@ class MissionScene:
         grid.PickableOff()
         self.renderer.AddActor(grid)
 
-    def _remember_camera(self):
-        camera = self.renderer.GetActiveCamera()
-        self.last_valid_camera = (
-            tuple(camera.GetPosition()),
-            tuple(camera.GetFocalPoint()),
-            tuple(camera.GetViewUp()),
-        )
-
-    def _keep_camera_above_ground(self, _caller=None, _event=None):
-        camera = self.renderer.GetActiveCamera()
-        position = camera.GetPosition()
-        minimum_z = self.ground_z_m + 0.015
-        if position[2] >= minimum_z:
-            self._remember_camera()
-            return
-        if self.last_valid_camera is not None:
-            previous_position, previous_focal, previous_up = (
-                self.last_valid_camera)
-            camera.SetPosition(*previous_position)
-            camera.SetFocalPoint(*previous_focal)
-            camera.SetViewUp(*previous_up)
-        else:
-            camera.SetPosition(position[0], position[1], minimum_z)
-        self.renderer.ResetCameraClippingRange()
-        self.widget.GetRenderWindow().Render()
-
     def focus_target(self, target):
-        values = np.asarray(target, dtype=float)
-        if values.shape != (3,) or not np.all(np.isfinite(values)):
-            return
-        camera = self.renderer.GetActiveCamera()
-        position = np.asarray(camera.GetPosition(), dtype=float)
-        focal = np.asarray(camera.GetFocalPoint(), dtype=float)
-        offset = position - focal
-        if float(np.linalg.norm(offset)) < 1e-6:
-            offset = np.asarray([0.9, -1.1, 0.65], dtype=float)
-        camera.SetFocalPoint(*values)
-        camera.SetPosition(*(values + offset))
-        self.renderer.ResetCameraClippingRange()
-        self._keep_camera_above_ground()
-        self._remember_camera()
-        self.widget.GetRenderWindow().Render()
+        self.camera_navigation.focus(target)
 
     def _load_robot(self):
         urdf = self.project_root / (
@@ -829,12 +944,15 @@ class MissionTab(QtWidgets.QWidget):
         self.full_replay = QtWidgets.QToolButton()
         self.full_replay.setText('Restart lifecycle')
         self.full_replay.setDisabled(True)
+        self.views = QtWidgets.QToolButton()
+        self.views.setText('Views…')
+        self.views.setToolTip('Choose a standard camera orientation (Space)')
         self.position = QtWidgets.QLabel('No report')
         self.navigation_help = QtWidgets.QLabel(
-            'Left drag: rotate · Middle drag: pan · Wheel: zoom · Q/E: step')
+            'Upright orbit · Space: views · P: replay · Q/E: step')
         for item in (self.previous, self.play, self.next, self.speed_box,
                      self.follow, self.display_mode, self.full_replay,
-                     self.position):
+                     self.views, self.position):
             toolbar.addWidget(item)
         toolbar.addStretch(1)
         toolbar.addWidget(self.navigation_help)
@@ -888,6 +1006,7 @@ class MissionTab(QtWidgets.QWidget):
         self.display_mode.currentIndexChanged.connect(
             self._display_mode_changed)
         self.full_replay.clicked.connect(self.replay_full_lifecycle)
+        self.views.clicked.connect(self.open_view_chooser)
         self.inspector.filters_changed.connect(self.refresh)
         self.inspector.ray_selected.connect(self.selected_ray_changed)
         self.installEventFilter(self)
@@ -1098,6 +1217,9 @@ class MissionTab(QtWidgets.QWidget):
             self.inspector.show_planning_boxes.isChecked(),
             self.inspector.show_source_outline.isChecked())
 
+    def open_view_chooser(self):
+        CameraViewDialog(self.scene.camera_navigation, self).exec_()
+
     def eventFilter(self, watched, event):
         if event.type() == QtCore.QEvent.KeyPress:
             key = event.key()
@@ -1107,7 +1229,9 @@ class MissionTab(QtWidgets.QWidget):
             if key == QtCore.Qt.Key_Right: self.next_event(); return True
             if key == QtCore.Qt.Key_Q: self.previous_event(); return True
             if key == QtCore.Qt.Key_E: self.next_event(); return True
-            if key == QtCore.Qt.Key_Space: self.play.toggle(); return True
+            if key == QtCore.Qt.Key_Space:
+                self.open_view_chooser(); return True
+            if key == QtCore.Qt.Key_P: self.play.toggle(); return True
         return super().eventFilter(watched, event)
 
 
@@ -1125,26 +1249,29 @@ class CapabilityTab(QtWidgets.QWidget):
         self.vtk_widget = QVTKRenderWindowInteractor(self)
         self.renderer = vtk.vtkRenderer(); self.renderer.SetBackground(*BACKGROUND)
         self.vtk_widget.GetRenderWindow().AddRenderer(self.renderer)
-        self.interactor = self.vtk_widget.GetRenderWindow().GetInteractor()
-        self.interactor_style = vtk.vtkInteractorStyleTrackballCamera()
-        self.interactor_style.SetMouseWheelMotionFactor(1.2)
-        self.interactor.SetInteractorStyle(self.interactor_style)
+        self.camera_navigation = CameraNavigator(
+            self.vtk_widget, self.renderer)
         self.vtk_widget.installEventFilter(self)
         self.vtk_widget.setFocusPolicy(QtCore.Qt.StrongFocus)
         panel = QtWidgets.QWidget(); form = QtWidgets.QFormLayout(panel)
         navigation = QtWidgets.QLabel(
-            'Left drag: rotate\nMiddle drag: pan\nWheel: zoom\nQ/E: process step')
+            'Upright orbit\nSpace: standard views\nQ/E: process step')
+        self.views = QtWidgets.QToolButton()
+        self.views.setText('Views…')
+        self.views.setToolTip('Choose a standard camera orientation (Space)')
         self.color = QtWidgets.QComboBox(); self.color.addItems(['Direction density', 'Maximum floor / clearance'])
         self.axis = QtWidgets.QComboBox(); self.axis.addItems(['All', 'X', 'Y', 'Z'])
         self.slice = QtWidgets.QSlider(QtCore.Qt.Horizontal); self.slice.setRange(0, 1000); self.slice.setValue(500)
         self.info = QtWidgets.QPlainTextEdit(); self.info.setReadOnly(True)
         self.heatmap = QtWidgets.QLabel(); self.heatmap.setMinimumSize(280, 150); self.heatmap.setScaledContents(True)
         form.addRow(navigation)
+        form.addRow(self.views)
         form.addRow('Color', self.color); form.addRow('Slice axis', self.axis); form.addRow('Slice', self.slice)
         form.addRow('Azimuth/elevation support', self.heatmap); form.addRow(self.info)
         layout.addWidget(self.vtk_widget, 4); layout.addWidget(panel, 1)
         self.color.currentIndexChanged.connect(self.render)
         self.axis.currentIndexChanged.connect(self.render); self.slice.valueChanged.connect(self.render)
+        self.views.clicked.connect(self.open_view_chooser)
 
     def eventFilter(self, watched, event):
         if watched is self.vtk_widget \
@@ -1155,7 +1282,13 @@ class CapabilityTab(QtWidgets.QWidget):
             if event.key() == QtCore.Qt.Key_E:
                 self.process_step_requested.emit(1)
                 return True
+            if event.key() == QtCore.Qt.Key_Space:
+                self.open_view_chooser()
+                return True
         return super().eventFilter(watched, event)
+
+    def open_view_chooser(self):
+        CameraViewDialog(self.camera_navigation, self).exec_()
 
     def load(self):
         path = self.project_root / (
@@ -1194,6 +1327,7 @@ class CapabilityTab(QtWidgets.QWidget):
                                     QtGui.QColor.fromHsvF(0.65 - 0.65 * value, 0.85, 0.25 + 0.75 * value))
         self.heatmap.setPixmap(QtGui.QPixmap.fromImage(image))
         self.render(); self.renderer.ResetCamera()
+        self.camera_navigation.sync(render=True)
 
     def render(self):
         if self.view is None: return

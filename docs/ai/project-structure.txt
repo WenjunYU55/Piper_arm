@@ -50,7 +50,7 @@ Piper_arm/
 ├── piper_gui_native.py              Production RunTargetScan client UI plus a next-mission legacy/exact-point voxel-NBV/frozen-ray-NBV selector with target-sector/upper-hemisphere/full-sphere and ray-count controls, read-only mission/perception diagnostics and explicitly separated manual/home-profile/RViz-preview commissioning controls; commissioning motion starts publisher-locked until sole ownership is proved and explicit no-home disable sends no motion; owns no production scan children, phase transitions, plan approvals, retries, replans or autonomous shutdown
 ├── piper_gui/ray_reports.py         Command-free discovery, one-child stdin protocol, compatibility HTML opening and immutable historical-dataset replay helpers
 ├── piper_gui/ray_review_model.py    ROS-free schema-v1/v2 event-time state, target-envelope presentation mesh, exact coverage, URDF/FK and read-only capability-map model
-├── piper_gui/ray_review_viewer.py   Freely resizable two-tab PyQt5/VTK Mission Process and Capability Map review process with independent target-evidence layer controls
+├── piper_gui/ray_review_viewer.py   Freely resizable two-tab PyQt5/VTK Mission Process and Capability Map review process with independent target-evidence layers, base_link-Z-upright orbit, and Space standard-view chooser
 ├── test_piper_gui_ray_reports.py    Path-containment, report discovery/opening and native-GUI ray-control regressions
 ├── test_piper_gui_ray_review.py     Journal isolation, child reuse, full URDF triangle count and immutable capability-map characterization
 ├── test_ray_hard_culls.py           Population/revision ledger, pre-rank survivor, event-time reevaluation and deferred-shortlist regressions

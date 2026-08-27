@@ -20,11 +20,11 @@ first_scan_ray_framing_2026_08_26:
   invariant: Rough ACQUIRED never classifies border contact or seeds the revolution. Generation zero uses one same-session un-enveloped provisional ray pool around the tracked centre and is independent of live shape timestamp ordering. The executor uses a source-stamped post-settle silhouette only for achieved-aim and border admission. Scan capture rebuilds the authoritative shape from the exact persisted mask/depth and binds the recorded transform; the executor promotes that seed only after capture-one acceptance and discards it on rejection. Scan history is the planner's only model-seed input. A farther retry preserves the ray ID and direction, increases only its minimum standoff, recomputes the endpoint look vector toward the frozen target, and passes ordinary Tesseract and executor gates.
 ray_review_target_layer_ownership_2026_08_26:
   owner_module: piper_gui/ray_review_viewer.py
-  split_owners: {recorded_source_outline: target_envelope.py, immutable_event_transport: ray_mission_diagnostics.py, testable_smooth_presentation_mesh: piper_gui/ray_review_model.py, VTK_layer_controls: piper_gui/ray_review_viewer.py}
+  split_owners: {recorded_source_outline: target_envelope.py, immutable_event_transport: ray_mission_diagnostics.py, testable_smooth_presentation_mesh: piper_gui/ray_review_model.py, VTK_layer_controls_and_camera_navigation: piper_gui/ray_review_viewer.py}
   allowed_edit_paths: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_envelope.py, piper_gui/ray_review_model.py, piper_gui/ray_review_viewer.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_target_envelope.py, test_piper_gui_ray_review.py, docs/ai]
-  owns: [optional hash-bound base_link source outline, smooth presentation mesh, independently selectable viewer layers]
+  owns: [optional hash-bound base_link source outline, smooth presentation mesh, independently selectable viewer layers, base_link-Z-upright orbit presentation, command-free standard camera view chooser]
   does_not_own: [collision obstacle authority, envelope construction policy, NBV, Tesseract feasibility, capture, motion, safety, home or shutdown]
-  must_not_move_without: [trusted_target_envelope_2026_08_25, mission_ray_diagnostics_2026_08_25, command-free GUI process boundary, legacy report loading]
+  must_not_move_without: [trusted_target_envelope_2026_08_25, mission_ray_diagnostics_2026_08_25, command-free GUI process boundary, base_link coordinate convention, mission-viewer ground-plane bound, legacy report loading]
 proposed_per_ray_fov_ownership_2026_08_26:
   status: proposed_not_implemented
   owner_module: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_envelope.py

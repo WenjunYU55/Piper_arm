@@ -47,6 +47,15 @@ ray_review_target_layer_guardrails_2026_08_26:
     - All layer controls remain inside the ROS-free viewer and have no publisher, service, action, worker request, map write or motion owner.
   blast_radius: [private envelope digest and payload size for new missions, additive private worker scene evidence while collision obstacles remain unchanged, diagnostic artifact size, command-free Ray Review rendering]
   must_retest_if_changed: [test_target_envelope.py, test_ray_mission_diagnostics.py, test_bridge_feedback_freshness.py, test_piper_gui_ray_review.py, test_piper_gui_ray_reports.py, complete mobile and Tesseract suites, GUI tests, affected package build, no hardware command]
+ray_review_camera_navigation_guardrails_2026_08_27:
+  invariants:
+    - Camera navigation remains inside the ROS-free Ray Review child and cannot publish call services send actions write maps or command motion.
+    - Upright means base_link positive Z projected into the image plane; top and bottom use base_link positive Y because positive Z is parallel to the optical direction there.
+    - Standard-view selection preserves the active focal point and camera distance except that the Mission Process bottom distance may only shrink to respect its existing above-ground camera bound.
+    - Camera orientation changes presentation only. They do not change recorded camera poses ray directions culls ranks capability evidence target geometry or replay event state.
+    - Space replaces its old replay shortcut only over the 3D review controls; P remains the keyboard replay toggle and the replay toolbar button is unchanged.
+  blast_radius: [Mission Process camera interaction, Capability Map camera interaction, viewer keyboard navigation and help text]
+  must_retest_if_changed: [test_piper_gui_ray_review.py, test_piper_gui_ray_reports.py, command-free standard-view smoke, manual orbit and Space chooser smoke, no hardware command]
 proposed_per_ray_fov_guardrails_2026_08_26:
   status: applies_when_the_proposed_change_is_implemented
   invariants:

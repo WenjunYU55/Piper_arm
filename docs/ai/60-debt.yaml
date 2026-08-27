@@ -1,5 +1,9 @@
 schema_version: 1
 document: technical_debt
+ray_review_camera_navigation_2026_08_27:
+  resolution: Both Ray Review VTK canvases now share a command-free camera navigator that removes roll against base_link positive Z, uses a stable positive-Y pole orientation, preserves focal point and zoom for seven standard views, and retains the Mission Process ground-plane camera bound. Space opens the chooser over a 3D canvas and P now owns replay toggle.
+  remaining_limitations: [the chooser is a labelled orientation panel rather than an interactive rendered navigation cube, upright correction occurs at VTK interaction events rather than replacing VTK trackball orbit mathematics]
+  validation: [pure upright and standard-view tests, focused Ray Review tests, command-free seven-orientation camera and ground-bound smoke, YAML parse, no ROS or hardware command]
 capture_one_delayed_tf_failure_2026_08_26:
   status: physically_retested_generation_one_and_three_captures_passed
   task: codex-e2e-qualified-rays-20260826-2331

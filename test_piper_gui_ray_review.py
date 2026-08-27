@@ -16,6 +16,10 @@ from piper_gui.ray_review_model import (
     state_at_event,
 )
 from piper_gui.ray_reports import RayReviewProcess
+from piper_gui.ray_review_viewer import (
+    STANDARD_CAMERA_VIEWS,
+    _upright_view_up,
+)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -206,7 +210,8 @@ def test_v1_loading_is_truthfully_partial(tmp_path):
 
     assert document['legacy_v1'] is True
     assert document['journal_complete'] is False
-    assert [item['stage'] for item in document['events']] == ['legacy_snapshot']
+    assert [item['stage'] for item in document['events']] == [
+        'legacy_snapshot']
 
 
 def test_v1_scrubbing_recovers_its_recorded_target_center(tmp_path):
@@ -226,7 +231,8 @@ def test_v1_scrubbing_recovers_its_recorded_target_center(tmp_path):
 
 
 def test_viewer_source_contains_no_ros_or_motion_ownership():
-    source = (ROOT / 'piper_gui/ray_review_viewer.py').read_text(encoding='utf-8')
+    source = (ROOT / 'piper_gui/ray_review_viewer.py').read_text(
+        encoding='utf-8')
     forbidden = ('import rclpy', 'create_publisher', 'create_client',
                  'ActionClient', 'Enable', 'MoveJ')
     assert not any(value in source for value in forbidden)
@@ -237,14 +243,36 @@ def test_viewer_navigation_and_ground_regressions_are_present():
         encoding='utf-8')
 
     assert 'axes.SetTotalLength(0.07, 0.07, 0.07)' in source
-    assert source.count('vtk.vtkInteractorStyleTrackballCamera()') == 2
-    assert source.count('SetMouseWheelMotionFactor(1.2)') == 2
+    assert source.count('vtk.vtkInteractorStyleTrackballCamera()') == 1
+    assert 'class CameraNavigator:' in source
+    assert source.count('CameraNavigator(') == 2
+    assert source.count('SetMouseWheelMotionFactor(1.2)') == 1
     assert 'event.type() == QtCore.QEvent.Wheel' not in source
     assert 'QtCore.Qt.Key_Q' in source
     assert 'QtCore.Qt.Key_E' in source
     assert 'vtk.vtkPlaneSource()' in source
     assert "visual.link == 'bunker_chassis_collision'" in source
-    assert '_keep_camera_above_ground' in source
+    assert 'self.ground_z_m + 0.015' in source
+    assert 'CameraViewDialog' in source
+    assert 'QtCore.Qt.Key_Space' in source
+    assert 'QtCore.Qt.Key_P' in source
+
+
+def test_upright_camera_math_uses_world_z_and_stable_pole_fallback():
+    assert np.allclose(_upright_view_up(
+        [1.0, 0.0, 0.0], [0.0, 0.0, 0.0]), [0.0, 0.0, 1.0])
+    assert np.allclose(_upright_view_up(
+        [0.0, 0.0, 1.0], [0.0, 0.0, 0.0]), [0.0, 1.0, 0.0])
+    tilted = np.asarray(_upright_view_up(
+        [1.0, 0.0, 1.0], [0.0, 0.0, 0.0]))
+    view = np.asarray([-1.0, 0.0, -1.0]) / np.sqrt(2.0)
+    assert np.dot(tilted, view) == pytest.approx(0.0)
+    assert tilted[2] > 0.0
+
+
+def test_standard_camera_chooser_exposes_axis_and_isometric_views():
+    assert set(STANDARD_CAMERA_VIEWS) == {
+        'front', 'back', 'left', 'right', 'top', 'bottom', 'isometric'}
 
 
 def test_rank_colours_and_transient_culls_are_explained_in_the_viewer():
@@ -372,7 +400,7 @@ def test_process_manager_reuses_one_child_and_sends_stdin_json(tmp_path):
     manager.open('two')
 
     assert len(children) == 1
-    assert [json.loads(value)['command'] for value in children[0].stdin.values] == [
-        'open', 'open']
+    assert [json.loads(value)['command']
+            for value in children[0].stdin.values] == ['open', 'open']
     manager.shutdown()
     assert json.loads(children[0].stdin.values[-1])['command'] == 'shutdown'
