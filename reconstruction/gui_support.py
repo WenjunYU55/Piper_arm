@@ -44,8 +44,42 @@ def reconstruction_python(project_root):
     return Path(project_root).resolve() / 'reconstruction' / '.venv' / 'bin' / 'python'
 
 
+def existing_reconstruction_outputs(project_root, selection):
+    """Return inspectable saved outputs for one selected dataset, if present."""
+    dataset = validated_dataset_path(project_root, selection)
+    expected_root = dataset.resolve()
+    report_path = (
+        dataset / 'reconstruction' / 'validation' /
+        'target_mesh.ply.quality.json')
+    if not report_path.is_file():
+        return None
+    report = load_quality_report(report_path)
+
+    def saved_mesh(key):
+        value = str(report.get(key, '')).strip()
+        if not value:
+            return None
+        path = Path(value).resolve()
+        try:
+            path.relative_to(expected_root)
+        except ValueError as exc:
+            raise ValueError('reported mesh escapes selected dataset') from exc
+        return path if path.is_file() else None
+
+    cleaned = saved_mesh('mesh_path')
+    if cleaned is None:
+        return None
+    return {
+        'report': report,
+        'report_path': report_path.resolve(),
+        'output_path': cleaned,
+        'raw_output_path': saved_mesh('raw_mesh_path'),
+        'measured_cloud_path': saved_mesh('measured_cloud_path'),
+    }
+
+
 def reconstruction_command(project_root, selection, dimensions_mm,
-                           registration_mode='auto', voxel_length_mm=1.0,
+                           registration_mode='auto', voxel_length_mm=3.0,
                            mask_source='captured'):
     root = Path(project_root).resolve()
     dataset = validated_dataset_path(root, selection)
@@ -94,8 +128,8 @@ def viewer_command(project_root, report_path, show_input=False,
     if not python.is_file() or not report.is_file():
         raise ValueError('viewer environment or quality report is missing')
     variant = str(mesh_variant)
-    if variant not in ('cleaned', 'raw'):
-        raise ValueError('mesh variant must be cleaned or raw')
+    if variant not in ('cleaned', 'raw', 'measured'):
+        raise ValueError('mesh variant must be cleaned, raw or measured')
     command = [
         str(python), str(root / 'reconstruction' / 'view_reconstruction.py'),
         '--report', str(report), '--mesh', variant,
@@ -150,6 +184,10 @@ def quality_summary(report):
             % (
                 raw_mesh.get('connected_component_count', '?'),
                 mesh.get('connected_component_count', '?')))
+    if report.get('measured_cloud_path'):
+        lines.append(
+            'Full-resolution measured cloud: %s accepted depth points'
+            % report.get('measured_point_count', '?'))
     lines.extend([
         'TSDF mesh voxel: %.2f mm (smaller permits more polygons)' % (
             1000.0 * float(configuration.get(

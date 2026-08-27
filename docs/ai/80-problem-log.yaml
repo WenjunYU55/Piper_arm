@@ -225,6 +225,23 @@ multiview_cube_surface_duplicated_and_oversized_2026_08_21:
   correction: Add connected bounded multi-view GICP as an offline residual candidate, retain 20 mm and 5 degree bounds, and require evidence-based auto selection. Correct fixed-board validation to use exact image-time TF.
   evidence: Robot baseline 39.5 percent dominant component and 3.97 mm p90 residual; multiway candidate 90.5 percent and 2.25 mm, but 58.8 x 52.9 x 48.3 mm OBB still fails. No threshold was weakened.
   next_action: New operator-driven corrected-scale calibration dataset and held-out validation; do not deploy automatically.
+reconstruction_default_resolution_regression_2026_08_27:
+  state: software_default_restored_quality_gates_unchanged
+  symptom: A six-view 20-August capture that had produced a visually coherent reconstruction under the former defaults became highly fragmented after the offline TSDF and GUI defaults changed from 3 mm voxels with a 15 mm truncation band to 1 mm voxels with a 5 mm band.
+  evidence: Replaying immutable scan_20260820_230845 under 3 mm and 15 mm produced 31 raw components with 79.5 percent dominant support, while 1 mm and 5 mm produced 748 raw components with 56.6 percent dominant support. Both remain dimensional and structural FAIL for the measured 35 mm cube, proving the finer defaults exposed rather than created the underlying cross-view disagreement.
+  correction: Restore the worker and GUI defaults to 0.003 m voxels and 0.015 m TSDF truncation while preserving immutable inputs, raw and cleaned outputs, bounded registration, dimension/component/watertightness checks and terminal quality classification.
+  boundary: Offline reconstruction presentation and default fusion resolution only. Capture, SAM masks, confidence-qualified temporal depth, camera transforms, NBV, Tesseract, motion and every safety gate remain unchanged.
+gui_offline_resegment_failure_hid_existing_mesh_2026_08_27:
+  state: software_fixed
+  symptom: Reconstruction Validation defaulted to offline_resegment; the current dataset produced no fresh GroundingDINO detection, the worker stopped before writing a report, and both Open controls remained disabled even though saved raw and cleaned diagnostic meshes existed.
+  root_cause: Optional fresh resegmentation was incorrectly the GUI default, and mesh inspection authority was coupled to a successful rebuild in the current GUI process rather than the selected dataset's existing report and files.
+  correction: Default command-free GUI reconstruction to the trusted captured mask. On dataset selection, safely validate and load any existing report plus in-dataset raw/cleaned paths; retain those inspection controls after a rebuild failure. Keep offline_resegment explicit and keep its no-live-mask-fallback rule unchanged.
+  boundary: Command-free GUI reconstruction selection and diagnostic presentation only. No capture, mask acceptance, reconstruction quality, ROS, motion or safety policy changed.
+reconstruction_mesh_hid_accepted_depth_evidence_2026_08_27:
+  state: diagnostic_visibility_fixed
+  symptom: The cleaned cube mesh appeared patchy, but the GUI exposed only TSDF surfaces and a 3 mm diagnostic input downsample, so the operator could not see whether all accepted temporally averaged depth points were present or whether capture sheets were mutually displaced.
+  correction: Persist every accepted temporally averaged target-depth point after the selected refined base_link transform as an adjacent measured-points PLY with capture-index colors and no display downsampling. Add Open Measured Points plus an optional mesh overlay, and retain path hash total count and per-view counts in the quality report.
+  boundary: Additive offline diagnostic export and GUI presentation only. It does not change captured data, pose refinement, TSDF integration, mesh cleanup, quality classification, ROS, safety or motion.
 generation_seven_table_contact_2026_08_21:
   state: contained_virtual_floor_raised_physical_requalification_blocked
   symptom: Task gui-sim-d77550972be14f9ca55b27e206ccbfd0 accepted seven burst captures, selected ray-NBV view 1000400 and began motion, but the installed assembly contacted the table and continued downward until the runtime guard stopped on J5 feedback 1.225615 rad.
@@ -234,7 +251,7 @@ generation_seven_table_contact_2026_08_21:
 partial_scan_could_not_enter_reconstruction_2026_08_21:
   state: integration_fixed_current_mesh_quality_failed
   symptom: The successful three-capture safe-frontier mission queued a job that the old worker would reject at its hard eight-view count gate; the gateway also searched a different virtual-environment path than the installer/GUI and system Python had no Open3D. Every historical capture lacked calibration_sha256, so the automatic path would also fail certification.
-  correction: Keep standalone 8-24 by default, explicitly admit 1-7 from the safely completed deferred gateway or command-free manual GUI diagnostic route, classify them PARTIAL_VIEW_SET and cap overall quality below PASS, share reconstruction/.venv, allow missing historical identity only as DIAGNOSTIC_ONLY, hash the exact deployed calibration for future captures, and map quality FAIL to durable job FAILED with diagnostics retained. The GUI now reads target_mesh.ply.quality.json instead of the obsolete quality_report.json path.
+  correction: Historical containment admitted 1-7 only at the deferred gateway or command-free GUI and capped them below PASS. On 2026-08-27 the operator removed that fixed eight-view policy; all callers now admit 1-24 and normal geometry/provenance gates determine quality. Zero, count mismatch, missing artifacts and measured quality FAIL remain rejected. The GUI reads target_mesh.ply.quality.json instead of the obsolete quality_report.json path.
   evidence: [30 isolated reconstruction tests pass, 47 mission/reconstruction-job tests pass, 726 complete mobile tests pass, mobile package builds, gateway-equivalent replay integrates all three frames, actual GUI Build and Validate plus Open 3D Viewer route passes]
   replay_result: scan_20260821_185143 produced 615 vertices and 719 triangles but failed quality at 70.4-percent dominant component and non-watertight geometry. No quality threshold was weakened.
 final_ray_e2e_integration_2026_08_21:

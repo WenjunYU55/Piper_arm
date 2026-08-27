@@ -117,7 +117,7 @@ shared_settled_capture_deadline_2026_08_22:
   preserved: [20-frame requirement, temporal median and confidence thresholds, capture acceptance, retry semantics, NBV, Tesseract, motion, home, disable, cleanup, public ROS interfaces]
 offline_resegmented_reconstruction_masks_2026_08_22:
   status: software_implemented_dataset_replay_improved_but_quality_failed
-  capability: Reconstruction Validation defaults to selectable offline_resegment, which runs one fresh GroundingDINO and SAM2 image pass per immutable RGB, rejects live-mask fallback, stores hash-bound derived masks and comparison overlays, and intersects only with existing confidence-qualified target support.
+  capability: Reconstruction Validation defaults to the trusted captured mask and exposes offline_resegment explicitly. That optional mode runs one fresh GroundingDINO and SAM2 image pass per immutable RGB, rejects live-mask fallback, stores hash-bound derived masks and comparison overlays, and intersects only with existing confidence-qualified target support. Dataset selection loads existing raw/cleaned outputs for inspection even when their quality is FAIL or a later optional resegmentation attempt fails.
   evidence: [44 focused reconstruction and GUI tests pass, 45 perception and native-GUI tests pass, seven fresh masks generated from scan_20260821_220003, view-004 shadow support reduced from 7342 to 4976 pixels, auto mesh OBB improved to 51.48 x 49.00 x 45.77 mm but remains FAIL]
   preserved: [immutable capture artifacts, live SAM2 audit mask, captured depth authority, registration choices and bounds, reconstruction quality gates, public ROS interfaces, tracking, NBV, Tesseract, motion, home and shutdown]
 selectable_static_scene_pose_graph_reconstruction_2026_08_22:
@@ -132,11 +132,15 @@ bounded_multiway_reconstruction_2026_08_21:
   evidence: [36 reconstruction and GUI-support tests pass, 7 fixed-board tests pass, scan_20260821_220003 improved to 90.5 percent dominant component and 2.25 mm p90 residual but correctly remains FAIL against the 35 mm cube]
   preserved: [immutable captures, robot-pose baseline, public ROS interfaces, capture and NBV, Tesseract, motion, home, shutdown, calibration deployment authority]
 gui_selectable_mesh_density_2026_08_21:
-  capability: Manual command-free reconstruction exposes a 0.5-through-3.0 mm TSDF voxel slider, defaults to 1.0 mm, passes the selected resolution through the existing CLI and displays actual vertices/triangles plus quality evidence.
+  capability: Manual command-free reconstruction exposes a 0.5-through-3.0 mm TSDF voxel slider, defaults to the restored 3.0 mm field-usable fusion value, passes the selected resolution through the existing CLI and displays actual vertices/triangles plus unchanged quality evidence. The worker default truncation band is restored to 15 mm.
   boundary: It does not change input capture density, GICP resolution, automatic mesh jobs, registration acceptance or any robot subsystem.
+full_resolution_measured_cloud_viewer_2026_08_27:
+  capability: Every reconstruction persists all accepted temporally averaged target-depth points after the selected refined base_link transform as a capture-colored PLY with no display downsampling. Reconstruction Validation can open that cloud directly or overlay it on the raw or cleaned mesh, including for FAIL-quality reports.
+  provenance: Quality JSON records measured_cloud_path measured_cloud_sha256 measured_point_count and per-view point counts/colors. Colors identify capture index only.
+  boundary: Diagnostic export and presentation only; capture evidence, registration, TSDF, cleanup, quality gates, ROS, safety and motion are unchanged.
 partial_safe_frontier_reconstruction_2026_08_21:
   status: software_implemented_current_dataset_diagnostic_fail
-  capability: The safely completed deferred path and explicitly operator-selected command-free GUI diagnostic path can integrate 1-7 immutable captures as an explicitly partial model while standalone TSDF retains its 8-24 default. Mesh generation and durable success are separate; only PASS or WARN succeeds, while FAIL preserves diagnostic outputs and fails the durable job.
+  capability: Deferred and command-free GUI reconstruction admit 1-24 immutable captures without a fixed eight-view admission or PASS floor. Mesh generation and durable success are separate; only PASS or WARN succeeds, while FAIL preserves diagnostic outputs and fails the durable job.
   provenance: Future missions bind the exact deployed hand-eye calibration file SHA-256. Historical missing-identity scans remain DIAGNOSTIC_ONLY and are never rewritten.
   environment: reconstruction/.venv is shared by installer GUI and gateway.
   evidence: [scan_20260821_185143 three-view gateway replay, actual GUI Build and Validate plus Open 3D Viewer replay, 615 vertices, 719 triangles, overall FAIL correctly retained, 30 reconstruction tests, 47 mission/job tests, 726 mobile tests, package build]

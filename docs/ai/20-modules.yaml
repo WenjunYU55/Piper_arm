@@ -112,7 +112,7 @@ target_local_occluder_classification_2026_08_23:
 connected_target_mesh_filter_ownership_2026_08_23:
   owner_module: reconstruction/tsdf_reconstruct.py
   allowed_edit_paths: [reconstruction/tsdf_reconstruct.py, reconstruction/view_reconstruction.py, reconstruction/gui_support.py, reconstruction/test_tsdf_reconstruct.py, reconstruction/test_gui_support.py, piper_gui_native.py, test_piper_gui_phase8.py, docs/ai]
-  owns: Atomic raw extracted-mesh persistence, post-TSDF connected-component classification, removal of sub-five-percent surface fragments into a separate cleaned mesh, retention and explicit rejection of multiple substantial components, and additive dual-output provenance.
+  owns: Atomic raw extracted-mesh persistence, post-TSDF connected-component classification, removal of sub-five-percent surface fragments into a separate cleaned mesh, retention and explicit rejection of multiple substantial components, full-resolution selected-pose measured-point diagnostic export, and additive output provenance.
   separate_owners: {capture_support: scan_capture_node.py, semantic_mask_selection: reconstruction/offline_resegment.py plus tsdf_reconstruct.py, registration: reconstruction/tsdf_reconstruct.py, GUI_presentation: reconstruction/gui_support.py plus piper_gui_native.py}
   must_not_move_without: [raw pre-filter registration selection and quality evidence, structural quality gates, dimensions and residuals, immutable input cloud, command-free reconstruction boundary]
 offline_resegmentation_ownership_2026_08_22:
@@ -312,8 +312,8 @@ modules:
     must_not_move_without: [autonomous_target_scan, operator_tools, camera_timestamp_safety, tesseract_planning]
   reconstruction_export:
     owner_module: reconstruction/tsdf_reconstruct.py
-    allowed_edit_paths: [reconstruction/tsdf_reconstruct.py, reconstruction/test_tsdf_reconstruct.py, reconstruction/requirements.txt]
-    owns: Offline masked RGB-D TSDF integration for immutable successful automatic scan datasets, including the default 8-to-24 feature-complete contract, explicit 1-to-7 PARTIAL_VIEW_SET admission only at an authorized caller boundary, exact manifest-to-frame-metadata count agreement, timestamped camera-transform validation, robot-pose baseline, optional sequential or connected bounded target-only GICP and target-excluded static-scene RGB-D pose-graph residual refinement, conservative connected-target fragment filtering, evidence-based auto selection, and mesh quality report.
+    allowed_edit_paths: [reconstruction/tsdf_reconstruct.py, reconstruction/view_reconstruction.py, reconstruction/gui_support.py, reconstruction/test_tsdf_reconstruct.py, reconstruction/test_gui_support.py, reconstruction/requirements.txt, piper_gui_native.py, test_piper_gui_phase8.py]
+    owns: Offline masked RGB-D TSDF integration for immutable successful automatic scan datasets, including the 1-to-24 view-count contract without a fixed eight-view quality cap, exact manifest-to-frame-metadata count agreement, timestamped camera-transform validation, robot-pose baseline, optional sequential or connected bounded target-only GICP and target-excluded static-scene RGB-D pose-graph residual refinement, conservative connected-target fragment filtering, full-resolution accepted measured-point diagnostic export, evidence-based auto selection, and mesh quality report.
     must_not_move_without: [autonomous_target_scan, supervised_scan_execution, scan_and_obstacles]
 startup_home_ownership_2026_08_04:
   mission_owner: target_scan_mission_node.py selects nonterminal hold versus terminal cancel and requests STARTUP_WRIST then ROUGH_HOME at startup, and PRE_HOME then ROUGH_HOME then STORAGE_WRIST at terminal shutdown.
@@ -368,7 +368,7 @@ selected_reintegration_ownership_2026_08_15:
     owner_module: reconstruction/tsdf_reconstruct.py
     allowed_edit_paths: [reconstruction, piper_gui_native.py]
     must_not_move_without: [dataset manifest and capture provenance, calibration hash, confidence availability, output quality report, command-free GUI boundary]
-    resolution_contract: {target_cloud_owner: target_cloud_node.py, accepted_target_pixel_stride: 1, accepted_target_voxel_m: 0.001, tsdf_voxel_m: 0.001, tsdf_truncation_m: 0.005, unchanged_nbv_voxel_m: 0.005, unchanged_scene_voxel_m: 0.015}
+    resolution_contract: {target_cloud_owner: target_cloud_node.py, accepted_target_pixel_stride: 1, accepted_target_voxel_m: 0.001, tsdf_default_voxel_m: 0.003, tsdf_default_truncation_m: 0.015, unchanged_nbv_voxel_m: 0.005, unchanged_scene_voxel_m: 0.015}
     registration_contract: {baseline: robot_pose, optional_modes: [bounded_gicp, multiway_gicp, scene_pose_graph], scene_registration_source: target-excluded aligned static-scene RGB-D, fusion_source: confidence-qualified target-only depth/support, maximum_translation_correction_m: 0.020, maximum_rotation_correction_deg: 5.0, auto_requires_material_structural_improvement: true}
   target_depth_selection:
     owner_module: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/utils/target_depth.py

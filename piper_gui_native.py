@@ -52,6 +52,7 @@ from piper_gui.scan_policy import (
 )
 from piper_gui.view_model import MissionViewModel
 from reconstruction.gui_support import (
+    existing_reconstruction_outputs,
     list_scan_datasets,
     load_quality_report,
     quality_summary,
@@ -625,12 +626,12 @@ class PiperGuiApp:
         self.reconstruction_dataset_var = tk.StringVar(value='')
         self.reconstruction_mode_var = tk.StringVar(value='auto')
         self.reconstruction_mask_source_var = tk.StringVar(
-            value='offline_resegment')
+            value='captured')
         self.reconstruction_dimension_vars = [
             tk.StringVar(value='35') for _axis in range(3)]
-        self.reconstruction_voxel_mm_var = tk.DoubleVar(value=1.0)
+        self.reconstruction_voxel_mm_var = tk.DoubleVar(value=3.0)
         self.reconstruction_voxel_status_var = tk.StringVar(
-            value='1.0 mm voxel — baseline mesh detail')
+            value='3.0 mm voxel — baseline mesh detail')
         self.reconstruction_show_input_var = tk.BooleanVar(value=False)
         self.reconstruction_status_var = tk.StringVar(
             value='Select a completed scan dataset')
@@ -1048,6 +1049,8 @@ class PiperGuiApp:
             state='readonly', width=36)
         self.reconstruction_dataset_combo.grid(
             row=0, column=1, columnspan=3, sticky='ew', padx=(8, 8))
+        self.reconstruction_dataset_combo.bind(
+            '<<ComboboxSelected>>', self.load_existing_reconstruction_outputs)
         ttk.Button(
             inputs, text='Refresh',
             command=self.refresh_reconstruction_datasets).grid(
@@ -1116,10 +1119,16 @@ class PiperGuiApp:
             state='disabled')
         self.reconstruction_raw_view_button.grid(
             row=0, column=2, padx=(8, 0))
+        self.reconstruction_measured_view_button = ttk.Button(
+            controls, text='Open Measured Points',
+            command=lambda: self.open_reconstruction_viewer('measured'),
+            state='disabled')
+        self.reconstruction_measured_view_button.grid(
+            row=0, column=3, padx=(8, 0))
         ttk.Checkbutton(
-            controls, text='Show accepted input clouds',
+            controls, text='Overlay measured points',
             variable=self.reconstruction_show_input_var).grid(
-                row=0, column=3, padx=(12, 0))
+                row=0, column=4, padx=(12, 0))
         result = ttk.LabelFrame(parent, text='Quality report', padding=12)
         result.grid(row=4, column=0, sticky='ew')
         ttk.Label(
@@ -1134,7 +1143,7 @@ class PiperGuiApp:
     def update_reconstruction_voxel_status(self, _value=None) -> None:
         """Explain mesh density without claiming additional measured detail."""
         voxel_mm = round(float(self.reconstruction_voxel_mm_var.get()), 1)
-        relative = 1.0 / (voxel_mm * voxel_mm)
+        relative = (3.0 / voxel_mm) ** 2
         self.reconstruction_voxel_status_var.set(
             '%.1f mm voxel — approximately %.1fx baseline surface density; '
             'does not repair missing or misregistered geometry'
@@ -1148,6 +1157,42 @@ class PiperGuiApp:
         if not names:
             self.reconstruction_status_var.set(
                 'No completed datasets found under datasets/active_scan')
+            return
+        self.load_existing_reconstruction_outputs()
+
+    def load_existing_reconstruction_outputs(
+            self, _event=None, update_status=True) -> bool:
+        """Expose saved diagnostic meshes independently of rebuild success."""
+        self.reconstruction_report_path = None
+        self.reconstruction_output_path = None
+        self.reconstruction_view_button.configure(state='disabled')
+        self.reconstruction_raw_view_button.configure(state='disabled')
+        self.reconstruction_measured_view_button.configure(state='disabled')
+        try:
+            saved = existing_reconstruction_outputs(
+                PROJECT_ROOT, self.reconstruction_dataset_var.get())
+        except (OSError, TypeError, ValueError) as exc:
+            if update_status:
+                self.reconstruction_status_var.set(str(exc))
+            return False
+        if saved is None:
+            if update_status:
+                self.reconstruction_status_var.set(
+                    'No existing reconstruction for the selected dataset')
+            return False
+        self.reconstruction_report_path = saved['report_path']
+        self.reconstruction_output_path = saved['output_path']
+        self.reconstruction_view_button.configure(state='normal')
+        if saved['raw_output_path'] is not None:
+            self.reconstruction_raw_view_button.configure(state='normal')
+        if saved['measured_cloud_path'] is not None:
+            self.reconstruction_measured_view_button.configure(state='normal')
+        self.reconstruction_summary_var.set(
+            quality_summary(saved['report']))
+        if update_status:
+            self.reconstruction_status_var.set(
+                'Existing reconstruction loaded for inspection')
+        return True
 
     def start_reconstruction(self) -> None:
         if (self.reconstruction_process is not None
@@ -1169,6 +1214,7 @@ class PiperGuiApp:
         self.reconstruction_build_button.configure(state='disabled')
         self.reconstruction_view_button.configure(state='disabled')
         self.reconstruction_raw_view_button.configure(state='disabled')
+        self.reconstruction_measured_view_button.configure(state='disabled')
         self.reconstruction_status_var.set(
             'Reconstruction is running offline at %.1f mm mesh voxels using %s'
             % (
@@ -1193,6 +1239,8 @@ class PiperGuiApp:
                     'report_path': report_path,
                     'output_path': output,
                     'raw_output_path': report.get('raw_mesh_path', ''),
+                    'measured_cloud_path': report.get(
+                        'measured_cloud_path', ''),
                 }))
             except (OSError, RuntimeError, ValueError) as exc:
                 self.events.put(('reconstruction_complete', {
@@ -2197,6 +2245,16 @@ class PiperGuiApp:
                         if raw_mesh_path and Path(raw_mesh_path).is_file():
                             self.reconstruction_raw_view_button.configure(
                                 state='normal')
+                        measured_path = str(payload.get(
+                            'measured_cloud_path', ''))
+                        if measured_path and Path(measured_path).is_file():
+                            self.reconstruction_measured_view_button.configure(
+                                state='normal')
+                    elif self.load_existing_reconstruction_outputs(
+                            update_status=False):
+                        self.reconstruction_status_var.set(
+                            '%s; previous saved outputs remain available'
+                            % payload['status'])
                 elif name == 'ray_replay_complete':
                     self.ray_replay_in_progress = False
                     self.ray_replay_button.configure(state='normal')

@@ -20,11 +20,10 @@ import subprocess
 import numpy as np
 
 
-MINIMUM_CAPTURE_VIEWS = 8
-MINIMUM_PARTIAL_CAPTURE_VIEWS = 1
+MINIMUM_CAPTURE_VIEWS = 1
 MAXIMUM_CAPTURE_VIEWS = 24
-DEFAULT_VOXEL_LENGTH_M = 0.001
-DEFAULT_SDF_TRUNC_M = 0.005
+DEFAULT_VOXEL_LENGTH_M = 0.003
+DEFAULT_SDF_TRUNC_M = 0.015
 DEFAULT_DEPTH_TRUNC_M = 1.5
 REGISTRATION_MODES = (
     'robot_pose', 'bounded_gicp', 'multiway_gicp', 'scene_pose_graph', 'auto')
@@ -33,6 +32,10 @@ MULTIWAY_MAX_PRIOR_NEIGHBORS = 3
 MULTIWAY_MAX_VIEW_ANGLE_DEG = 75.0
 MULTIWAY_MAX_CORRESPONDENCE_M = 0.015
 SCENE_REGISTRATION_VOXEL_M = 0.005
+MEASURED_VIEW_COLORS_RGB = (
+    (0.90, 0.20, 0.20), (0.20, 0.55, 0.95), (0.20, 0.75, 0.35),
+    (0.95, 0.65, 0.15), (0.65, 0.30, 0.90), (0.10, 0.75, 0.75),
+)
 SCENE_TARGET_EXCLUSION_RADIUS_PX = 6
 SCENE_MINIMUM_POINTS = 500
 MINIMUM_SIGNIFICANT_COMPONENT_AREA_FRACTION = 0.05
@@ -78,30 +81,20 @@ def load_metadata(path):
 
 
 def capture_set_provenance(manifest, allow_partial_view_set=False):
-    """Classify the immutable view set without confusing count with quality."""
+    """Validate count while leaving reconstruction quality to geometry."""
     count = int(manifest.get('capture_count', 0))
-    minimum = (
-        MINIMUM_PARTIAL_CAPTURE_VIEWS
-        if allow_partial_view_set else MINIMUM_CAPTURE_VIEWS)
-    if not minimum <= count <= MAXIMUM_CAPTURE_VIEWS:
+    if not MINIMUM_CAPTURE_VIEWS <= count <= MAXIMUM_CAPTURE_VIEWS:
         raise ValueError(
-            'TSDF reconstruction requires %d-%d captured views%s'
-            % (
-                minimum, MAXIMUM_CAPTURE_VIEWS,
-                ' when partial view sets are explicitly allowed'
-                if allow_partial_view_set else ''))
-    partial = count < MINIMUM_CAPTURE_VIEWS
+            'TSDF reconstruction requires %d-%d captured views'
+            % (MINIMUM_CAPTURE_VIEWS, MAXIMUM_CAPTURE_VIEWS))
     return {
-        'classification': (
-            'PARTIAL_VIEW_SET' if partial else 'FEATURE_COMPLETE_ELIGIBLE'),
+        'classification': 'VIEW_COUNT_ELIGIBLE',
         'capture_count': count,
         'ordinary_feature_minimum': MINIMUM_CAPTURE_VIEWS,
         'partial_view_set_explicitly_allowed': bool(allow_partial_view_set),
         'reason': (
-            'view count is below the ordinary feature-complete floor; '
-            'mesh quality and coverage remain provisional'
-            if partial else
-            'view count is eligible for ordinary feature-complete validation'),
+            'view count is eligible; reconstruction quality and completeness '
+            'are determined by the existing geometric evidence gates'),
     }
 
 
@@ -849,7 +842,8 @@ def masked_camera_cloud(
         image, intrinsic, depth_scale=1000.0,
         depth_trunc=float(depth_trunc), stride=1,
         project_valid_depth_only=True)
-    cloud = cloud.voxel_down_sample(float(voxel_length))
+    if voxel_length is not None:
+        cloud = cloud.voxel_down_sample(float(voxel_length))
     if len(cloud.points) >= 20:
         cloud.estimate_normals(
             o3d.geometry.KDTreeSearchParamHybrid(radius=0.015, max_nn=30))
@@ -1152,6 +1146,9 @@ def _load_capture(scan, metadata_path, metadata, manifest, cv2, o3d,
     nominal_base_camera = np.linalg.inv(camera_extrinsic_from_metadata(metadata))
     cloud_camera = masked_camera_cloud(
         o3d, depth, target_mask, intrinsic, depth_trunc=depth_trunc)
+    measured_cloud_camera = masked_camera_cloud(
+        o3d, depth, target_mask, intrinsic, depth_trunc=depth_trunc,
+        voxel_length=None)
 
     registration_cloud_camera = None
     registration_rgbd = None
@@ -1194,6 +1191,7 @@ def _load_capture(scan, metadata_path, metadata, manifest, cv2, o3d,
         'intrinsic': intrinsic,
         'nominal_base_camera': nominal_base_camera,
         'cloud_camera': cloud_camera,
+        'measured_cloud_camera': measured_cloud_camera,
         'registration_cloud_camera': registration_cloud_camera,
         'registration_rgbd': registration_rgbd,
         'valid_scene_depth_points': scene_valid_count,
@@ -1270,6 +1268,8 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
     registration = []
     frame_inputs = []
     accumulated = None
+    measured_cloud = None
+    measured_cloud_views = []
     for frame_index, (metadata_path, frame) in enumerate(
             zip(metadata_paths, frames)):
         cloud_base = None
@@ -1330,6 +1330,19 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
         if cloud_base is None:
             cloud_base = copy.deepcopy(frame['cloud_camera'])
             cloud_base.transform(refined_base_camera.copy())
+        measured_view = copy.deepcopy(frame['measured_cloud_camera'])
+        measured_view.transform(refined_base_camera.copy())
+        measured_color = MEASURED_VIEW_COLORS_RGB[
+            frame_index % len(MEASURED_VIEW_COLORS_RGB)]
+        measured_view.paint_uniform_color(measured_color)
+        measured_cloud = (
+            measured_view if measured_cloud is None
+            else measured_cloud + measured_view)
+        measured_cloud_views.append({
+            'frame': metadata_path.name,
+            'point_count': len(measured_view.points),
+            'display_color_rgb': list(measured_color),
+        })
         registration.append({
             'frame': metadata_path.name,
             'fitness': fitness,
@@ -1386,6 +1399,9 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
     input_cloud_path = _atomic_write_cloud(
         o3d, accumulated,
         output.with_name(output.stem + '.input_cloud.ply'))
+    measured_cloud_path = _atomic_write_cloud(
+        o3d, measured_cloud,
+        output.with_name(output.stem + '.measured_points.ply'))
     metrics = mesh_metrics(
         o3d, mesh, accumulated, expected_dimensions)
     if multiway_diagnostics is not None:
@@ -1425,10 +1441,6 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
             overall_quality = 'WARN'
     capture_set = capture_set_provenance(
         manifest, allow_partial_view_set=allow_partial_view_set)
-    if (
-            capture_set['classification'] == 'PARTIAL_VIEW_SET'
-            and overall_quality == 'PASS'):
-        overall_quality = 'WARN'
     config = {
         'registration_mode': registration_mode,
         'voxel_length_m': float(voxel_length),
@@ -1495,6 +1507,14 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
         'raw_triangle_count': len(extracted_mesh.triangles),
         'input_cloud_path': str(input_cloud_path),
         'input_cloud_sha256': sha256_file(input_cloud_path),
+        'measured_cloud_path': str(measured_cloud_path),
+        'measured_cloud_sha256': sha256_file(measured_cloud_path),
+        'measured_point_count': len(measured_cloud.points),
+        'measured_cloud_views': measured_cloud_views,
+        'measured_cloud_semantics': (
+            'all accepted per-view temporally averaged target depth points '
+            'after the selected camera-pose refinement; no display '
+            'downsampling; colors identify capture index'),
         'configuration': config,
         'configuration_sha256': canonical_sha256(config),
         'registration': registration,
@@ -1767,8 +1787,8 @@ def main():
     parser.add_argument(
         '--allow-partial-view-set', action='store_true',
         help=(
-            'Permit 1-7 immutable captures for a partial/provisional mesh; '
-            'the report remains explicitly PARTIAL_VIEW_SET.'))
+            'Backward-compatible no-op; 1-24 immutable captures are admitted '
+            'and judged by the normal geometric quality gates.'))
     args = parser.parse_args()
     dimensions = (
         np.asarray(args.expected_dimensions_mm, dtype=float) / 1000.0

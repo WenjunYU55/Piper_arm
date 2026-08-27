@@ -202,8 +202,11 @@ connected_target_mesh_filter_guardrail_2026_08_23:
     - Retain every substantial component; more than one substantial component is an explicit connectivity failure, not permission to select the visually preferred surface.
     - Registration selection and terminal quality use complete raw_mesh_metrics. Cleanup never launders fragmented evidence into PASS.
     - Keep immutable captures, input cloud, registration poses, expected dimensions, residuals, watertightness and visual-review requirements unchanged.
+    - The measured-points PLY contains all accepted temporally averaged target-depth points after the selected refined base_link transform, with no visualization voxel downsampling; its capture-index colors are diagnostic metadata only.
+    - Opening or overlaying measured points must never alter registration, TSDF integration, component filtering, terminal quality, capture, ROS, safety or motion behavior.
+    - A failed optional offline-resegmentation attempt must not hide or disable inspection of an existing raw/cleaned diagnostic pair. Opening a FAIL mesh is visual diagnosis, not quality acceptance.
     - Do not couple this command-free output cleanup to capture, target tracking, NBV, Tesseract, motion or hardware.
-  must_retest_if_changed: [reconstruction/test_tsdf_reconstruct.py, reconstruction/test_gui_support.py, test_piper_gui_phase8.py, GUI import, captured and offline-resegmented immutable replay, raw and cleaned mesh path/hash inspection, YAML parse]
+  must_retest_if_changed: [reconstruction/test_tsdf_reconstruct.py, reconstruction/test_gui_support.py, test_piper_gui_phase8.py, GUI import, captured and offline-resegmented immutable replay, raw cleaned and measured path/hash inspection, measured per-view point-count sum, Open Measured Points smoke check, YAML parse]
 hand_eye_accuracy_guardrail_2026_08_22:
   invariants:
     - Keep firmware S-V1.5-8 on PiPER modified-DH mode 0; do not select mode 1 from a numerically attractive fit.
@@ -239,9 +242,9 @@ raised_support_plane_guardrail_2026_08_21:
   must_retest_if_changed: [test_configuration.py, test_scan_motion.py holder regressions, test_worker_validation.py, mobile and Tesseract builds, supervised low-speed clearance qualification]
 partial_reconstruction_guardrail_2026_08_21:
   invariants:
-    - Do not lower the standalone TSDF default below eight; partial admission must be explicit at either the safely completed deferred gateway boundary or the command-free operator GUI diagnostic boundary.
+    - Offline TSDF admits 1-24 immutable captures without a fixed eight-view PASS cap; this does not change the automatic mission's independent capture/coverage policy.
     - Never reconstruct zero captures or a count that disagrees with immutable frame metadata.
-    - PARTIAL_VIEW_SET may be useful diagnostically but cannot receive overall PASS and never proves complete target coverage.
+    - View count alone cannot prove complete target coverage; geometry, dimension, connectivity, residual, watertightness, provenance and visual review remain authoritative.
     - Missing historical calibration may be DIAGNOSTIC_ONLY only through the explicit flag; future production captures must bind the exact deployed hand-eye file SHA-256.
     - A generated PLY is not job success. Only measured PASS or WARN quality completes the durable job; FAIL retains diagnostics and makes the job FAILED.
     - Do not mutate an old manifest to retrofit calibration identity or completion provenance.
@@ -673,7 +676,7 @@ feature_capture_budget_guardrail_2026_08_06:
     - Counts 8-23 continue whenever any achieved Y-side/elevation or three-view measured-surface convergence floor is missing and stop immediately once all pass. Azimuth span cannot keep the mission open.
     - Count 24 with any blocker is retryable INSUFFICIENT_CAPTURE_QUALITY, never count-only success.
     - Strict zero-safe-view proof may finish below the normal seed only when the entire prequalified ray pool was exhausted through request-correlated Tesseract attempts and accepted achieved-history proves every persisted capture.
-    - Reconstruction defaults to 8-24 and requires manifest-to-frame metadata count equality. The deferred safe-success gateway may explicitly admit 1-7 as PARTIAL_VIEW_SET; zero remains rejected and mesh quality remains separately authoritative.
+    - Reconstruction admits 1-24 and requires manifest-to-frame metadata count equality. Zero remains rejected and mesh quality remains separately authoritative.
   blast_radius: [automatic mission loop, executor session maximum and terminal home timing, planner/workflow history bounds, action progress semantics, durable result capture_count, reconstruction input validation]
   must_retest_if_changed: [mission feature_capture_decision tests, history maximum validation, executor closed-loop boundary tests, bridge material-progress ordering tests, reconstruction capture-set tests, 5-percent GUI feature-diversity mission with home/disable/cleanup audit]
 capture_rejection_recovery_guardrail_2026_08_06:
@@ -813,7 +816,7 @@ target_geometry_resolution_guardrail_2026_08_21:
   invariants:
     - Persisted schema-2 target depth remains native-resolution confidence-qualified evidence; never manufacture spatial detail by interpolating it.
     - Accepted refined target cloud uses pixel stride 1 and 0.001 m cells. Its 250000-cell bound remains mandatory.
-    - Offline TSDF uses 0.001 m voxels with a 0.005 m truncation band; mesh triangle count alone is not a quality pass.
+    - Offline TSDF defaults to 0.003 m voxels with a matched 0.015 m truncation band; mesh triangle count or visual smoothness alone is not a quality pass.
     - Keep the collision/support scene cloud at 0.015 m and NBV coverage at 0.005 m. Geometry display density cannot silently expand planning cost or motion authority.
   must_retest_if_changed: [test_target_cloud_refined_cache.py, test_scan_capture.py, reconstruction test_tsdf_reconstruct.py and test_gui_support.py, complete mobile suite, package build, one supervised burst E2E, resulting command-free reconstruction quality report]
 
