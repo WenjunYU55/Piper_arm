@@ -868,4 +868,6 @@ generic_motion_planner_contract_2026_08_27:
   timing: TIMED_STREAM with timed_stream_v1 is authoritative; TESSERACT_STREAM and tesseract_stream_v3 remain compatibility input aliases with unchanged numeric validation.
   supported_plan_kinds: {tesseract: [MULTIVIEW_SCAN, ROUGH_ACQUISITION, RETURN_HOME, current legacy kinds], curobo: [MULTIVIEW_SCAN, ROUGH_ACQUISITION within canonical joint limits, RETURN_HOME]}
   unsupported_curobo: [OCCLUSION_PROBE, OCCLUDER_PICK_PLACE, OCCLUDER_PUSH, folded bootstrap outside canonical joint limits]
+  curobo_runtime_contract: {python: explicit Python 3.10 interpreter, curobo: 0.7.8 at d64c4b005459db10c5dd867d8b30a87d5bda9bdb, warp: 1.11.1, inherited_foxy_pythonpath: forbidden, driver_commands: forbidden}
+  model_contract: Gripper joints 7 and 8 are locked at zero outside the six-axis planning cspace; model provenance records non-conservative sphere approximation, deduplication and rigid-mount seams and stays hardware_qualified false until reviewed comparison passes.
   compatibility: Legacy RequestTesseractPlan, TesseractPlan, TesseractReadiness and /tesseract_plan_bridge endpoints are published only for Tesseract and are not the production shared boundary.

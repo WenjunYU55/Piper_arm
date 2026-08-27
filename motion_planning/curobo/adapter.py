@@ -13,6 +13,7 @@ UNSUPPORTED_PLAN_KINDS = (
 COMMAND_RATE_HZ = 20.0
 MAXIMUM_JOINT_STEP_RAD = 0.05
 MOVEJ_NOMINAL_VELOCITY_RAD_S = (5.0, 5.0, 5.0, 5.0, 5.0, 3.0)
+FIXED_MOUNT_SEAM_M = 0.010
 
 
 class CuroboContractError(ValueError):
@@ -158,7 +159,12 @@ def obstacle_cuboids(request, floor_z_m=None):
             raise CuroboContractError('floor_z_m is not finite')
         result.append({
             'name': 'configured_support_floor',
-            'pose': [0.0, 0.0, floor - 0.05, 1.0, 0.0, 0.0, 0.0],
+            # Match the rigid mounting contact exception in the canonical
+            # Tesseract SRDF without disabling floor collision for moving
+            # links: the world box stops just below the fixed mount plane.
+            'pose': [
+                0.0, 0.0, floor - FIXED_MOUNT_SEAM_M - 0.05,
+                1.0, 0.0, 0.0, 0.0],
             'dims': [4.0, 4.0, 0.10],
         })
     return tuple(result)

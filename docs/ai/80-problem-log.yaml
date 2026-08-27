@@ -1025,11 +1025,16 @@ latest_hardware_diagnostics_2026_08_23:
 
 curobo_integration_diagnostics_2026_08_27:
   - id: curobo_runtime_not_installed_and_nvcc_missing
-    status: explicit_readiness_failure_gpu_tests_blocked
+    status: resolved_2026_08_28_user_local_isolated_install
     symptom: Host CUDA runtime and PyTorch can use the RTX 3090, but importing cuRobo and compiling its CUDA extension are unavailable.
     root_cause: The pinned cuRobo 0.7.8 package is not installed and its setup uses CUDAExtension while the host has no nvcc toolkit compiler.
-    correction: Keep ROS and system environments unchanged; use the documented explicit isolated interpreter, install a compatible CUDA toolkit, install the pinned commit, then run only the opt-in command-free GPU suite.
+    correction: Installed toolkit-only CUDA 12.8.93 under /home/prl/.local, cuRobo 0.7.8 and Warp 1.11.1 under the explicit Python 3.10 environment; native extensions, GPU initialization, model warm-up, heartbeat and cleanup pass without changing ROS, system Python or driver.
   - id: curobo_collision_model_unqualified
     status: fail_closed
     symptom: Canonical PiPER assets can be converted to conservative moving-link spheres and fixed world cuboids, but physical equivalence to the Tesseract model is not proved.
     correction: Worker readiness and collision_qualified remain false unless reviewed model provenance says hardware_qualified and the operator explicitly enables qualification. Environment opt-in alone cannot bypass provenance.
+  - id: curobo_coarse_bunker_cuboids_reject_interpolated_path
+    status: fail_closed_physical_qualification_blocker
+    symptom: Start and goal states and free-space joint planning pass, but enabling the fixed Bunker chassis AABB set yields MotionGen DT_EXCEPTION for the tested command-free trajectory.
+    root_cause: The canonical decomposed chassis meshes are converted to many large overlapping AABBs; this is not collision-equivalent to Tesseract mesh geometry.
+    correction: Keep hardware_qualified false and real motion blocked; replace or consolidate the world representation, then rerun frozen-request GPU and Tesseract comparison tests. Do not disable collision checking or increase shared limits.

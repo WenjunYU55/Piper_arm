@@ -975,5 +975,7 @@ generic_motion_planner_guardrail_2026_08_27:
     - Unknown, stale, uncorrelated, malformed, unsupported or collision-unqualified planner results fail closed.
     - cuRobo readiness requires reviewed model provenance plus explicit collision-model qualification; environment flags alone cannot qualify a model.
     - Real-arm motion remains disabled by default and planner selection grants no motion authority.
+    - cuRobo v0.7.8 requires Warp 1.11.1 in the isolated environment; do not let login-shell Foxy Python 3.8 paths enter its Python 3.10 worker.
+    - Do not mark the current Bunker AABB model hardware_qualified or suppress its DT_EXCEPTION; geometry equivalence and the complete command-free GPU suite must pass first.
   blast_radius: [mission identity, planner process ownership, readiness, world and target freshness, collision evidence, plan hashing, execution authorization, GUI next-mission configuration]
   must_retest_if_changed: [test_planner_backend.py, test_contract.py, test_execution_validation.py, test_execution_authorization.py, test_phase1_external_contract_characterization.py, tests/curobo, GUI planner tests, full mobile and Tesseract suites, five-package build]

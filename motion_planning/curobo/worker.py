@@ -15,7 +15,8 @@ import uuid
 
 import numpy as np
 
-from motion_planning.curobo import PINNED_COMMIT, PINNED_VERSION
+from motion_planning.curobo import (
+    PINNED_COMMIT, PINNED_VERSION, PINNED_WARP_VERSION)
 from motion_planning.curobo.adapter import (
     attach_digest,
     CuroboContractError,
@@ -126,6 +127,7 @@ class CuroboBackend:
         try:
             import torch
             import curobo
+            import warp
             import yaml
             from curobo.geom.types import Cuboid, WorldConfig
             from curobo.types.base import TensorDeviceType
@@ -141,6 +143,11 @@ class CuroboBackend:
             raise BackendUnavailable(
                 'cuRobo version %s does not match pinned %s'
                 % (version, PINNED_VERSION))
+        warp_version = str(getattr(warp, '__version__', ''))
+        if warp_version != PINNED_WARP_VERSION:
+            raise BackendUnavailable(
+                'Warp version %s does not match pinned %s'
+                % (warp_version or 'unknown', PINNED_WARP_VERSION))
         if not torch.cuda.is_available():
             raise BackendUnavailable('PyTorch reports CUDA unavailable')
         try:
@@ -213,6 +220,7 @@ class CuroboBackend:
             'cudnn_version': int(torch.backends.cudnn.version() or 0),
             'curobo_version': self.version,
             'curobo_commit': PINNED_COMMIT,
+            'warp_version': warp_version,
         }
 
     def _joint_state(self, positions):

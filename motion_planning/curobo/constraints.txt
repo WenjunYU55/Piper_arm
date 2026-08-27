@@ -1,0 +1,4 @@
+# Runtime versions qualified with cuRobo v0.7.8 on this project.
+# Warp 1.13+ removed warp.torch, which cuRobo v0.7.8 still imports.
+torch==2.11.0+cu128
+warp-lang==1.11.1

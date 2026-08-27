@@ -127,7 +127,7 @@ piper_ros_foxy/src/piper_mobile_manipulation/srv/GetMeshJobResult.srv - durable 
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/startup_gates.py - pure pre-enable and post-enable joint/status stability validation
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission/engine.py - enable, powered stability proof, STARTUP_WRIST, simultaneous ROUGH_HOME and terminal ordering
 piper_ros_foxy/src/piper/piper/joint_state_policy.py - side-effect-free controller command clamping, J6 startup mapping and raw CAN joint-cycle coherence; piper_ctrl_single_node.py retains hardware lifecycle and compatible exports
-motion_planning/curobo/ - ROS-free pinned-cuRobo MotionGen worker, canonical-model generator, atomic spool protocol, native-result adapter and explicit interpreter launcher; never imports rclpy or commands PiPER
+motion_planning/curobo/ - ROS-free pinned-cuRobo MotionGen worker, canonical-model generator, pinned runtime constraints, atomic spool protocol, native-result adapter and explicit interpreter/CUDA launcher; never imports rclpy or commands PiPER
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/planning/backend.py - immutable backend-neutral PlannerBackend, PlannerReadiness, MotionPlanRequest and MotionPlanResult concepts
 piper_ros_foxy/src/piper_mobile_manipulation/msg/{MotionPlan,PlannerReadiness,MotionPlanStatus}.msg - generic planner transport, readiness and status contracts consumed by shared mission/executor code
 piper_ros_foxy/src/piper_mobile_manipulation/srv/RequestMotionPlan.srv - backend-neutral plan request boundary; legacy RequestTesseractPlan remains compatibility-only

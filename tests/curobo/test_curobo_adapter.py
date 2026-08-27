@@ -56,6 +56,8 @@ def test_request_and_world_conversion_preserve_authoritative_geometry():
     assert cuboids[0]['pose'][:3] == pytest.approx([0.25, 0.0, 0.1])
     assert cuboids[0]['dims'] == pytest.approx([0.1, 0.2, 0.2])
     assert cuboids[-1]['name'] == 'configured_support_floor'
+    assert cuboids[-1]['pose'][2] == pytest.approx(-0.055)
+    assert cuboids[-1]['dims'] == pytest.approx([4.0, 4.0, 0.10])
 
 
 @pytest.mark.parametrize('mutation', [

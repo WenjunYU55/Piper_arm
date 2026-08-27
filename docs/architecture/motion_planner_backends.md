@@ -182,8 +182,11 @@ grant motion authority.
 - current PyTorch: 2.11.0+cu128
 - torch CUDA: 12.8; CUDA available: yes
 - cuDNN: 9.19.0
-- current cuRobo import: unavailable
-- current CUDA compiler: unavailable (`nvcc` missing)
+- installed cuRobo: 0.7.8 at commit
+  `d64c4b005459db10c5dd867d8b30a87d5bda9bdb`
+- installed Warp: 1.11.1 (pinned because 1.13+ removes the `warp.torch`
+  API used by cuRobo 0.7.8)
+- current CUDA compiler: 12.8.93 at `/home/prl/.local/cuda-12.8/bin/nvcc`
 
 The v0.7.8 documentation supports Ubuntu 20.04/22.04, Volta-or-newer NVIDIA
 GPUs with at least 4 GB, Python 3.8–3.10, and PyTorch 1.15+ (2.x recommended).
@@ -195,12 +198,11 @@ it changes the public planner API.
 ## Deterministic environment setup
 
 Do not install into Foxy's Python and do not alter the driver or system Python.
-After configuring NVIDIA's CUDA repository for this Ubuntu installation, the
-minimal missing system component is the 12.8 toolkit/compiler:
+This workstation uses a toolkit-only, non-root CUDA install. The driver, ROS,
+system Python and system CUDA packages were not changed:
 
 ```bash
-sudo apt-get install cuda-toolkit-12-8
-/usr/local/cuda-12.8/bin/nvcc --version
+/home/prl/.local/cuda-12.8/bin/nvcc --version
 ```
 
 Create an isolated environment from the available Python 3.10 interpreter:
@@ -212,23 +214,37 @@ CUROBO_PYTHON=/home/prl/.venvs/piper-curobo-v0.7.8/bin/python
 "$CUROBO_PYTHON" -m pip install --upgrade pip setuptools wheel ninja
 "$CUROBO_PYTHON" -m pip install torch==2.11.0 \
   --index-url https://download.pytorch.org/whl/cu128
+"$CUROBO_PYTHON" -m pip install -c \
+  /home/prl/Piper_arm/motion_planning/curobo/constraints.txt \
+  warp-lang==1.11.1
 git lfs install
 git clone https://github.com/NVlabs/curobo.git \
   /home/prl/.venvs/curobo-src-v0.7.8
 git -C /home/prl/.venvs/curobo-src-v0.7.8 checkout \
   d64c4b005459db10c5dd867d8b30a87d5bda9bdb
-CUDA_HOME=/usr/local/cuda-12.8 \
-PATH=/usr/local/cuda-12.8/bin:"$PATH" \
+CUDA_HOME=/home/prl/.local/cuda-12.8 \
+PATH=/home/prl/.local/cuda-12.8/bin:"$PATH" \
   "$CUROBO_PYTHON" -m pip install -e \
-  /home/prl/.venvs/curobo-src-v0.7.8 --no-build-isolation
+  /home/prl/.venvs/curobo-src-v0.7.8 --no-build-isolation \
+  -c /home/prl/Piper_arm/motion_planning/curobo/constraints.txt
 ```
 
 Verify before configuring the mission:
 
 ```bash
 CUROBO_PYTHON=/home/prl/.venvs/piper-curobo-v0.7.8/bin/python
-"$CUROBO_PYTHON" -c 'import curobo, torch; print(curobo.__version__, torch.__version__, torch.version.cuda, torch.cuda.is_available(), torch.cuda.get_device_name(0))'
+env -u PYTHONPATH "$CUROBO_PYTHON" -c 'import curobo, torch, warp; print(curobo.__version__, warp.__version__, torch.__version__, torch.version.cuda, torch.cuda.is_available(), torch.cuda.get_device_name(0))'
 ```
+
+Qualification on 2026-08-28 proved native extension import, CUDA tensor
+execution, MotionGen model warm-up, a command-free free-space joint plan,
+healthy worker publication and bounded Ctrl-C cleanup. The generated PiPER
+model locks gripper joints 7/8 at zero for six-axis arm planning, deduplicates
+overlapping decomposed-mesh spheres, and encodes the fixed mounting seam below
+the Bunker/floor. It remains `hardware_qualified: false`: the coarse Bunker
+cuboid approximation still produces a `DT_EXCEPTION` for the tested canonical
+platform trajectory, so full platform planning and physical motion are not
+qualified or claimed equivalent to Tesseract.
 
 Version and installation references:
 
@@ -251,6 +267,8 @@ cuRobo command-free startup (it remains unready for hardware until qualified):
 cd /home/prl/Piper_arm
 PIPER_PLANNER_BACKEND=curobo \
 PIPER_CUROBO_PYTHON=/home/prl/.venvs/piper-curobo-v0.7.8/bin/python \
+PIPER_CUROBO_CUDA_HOME=/home/prl/.local/cuda-12.8 \
+PATH=/home/prl/.local/cuda-12.8/bin:"$PATH" \
 ./run_target_scan_mission.sh
 ```
 

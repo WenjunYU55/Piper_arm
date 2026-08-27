@@ -16,9 +16,14 @@ from motion_planning.curobo import PINNED_COMMIT, PINNED_VERSION
 
 
 JOINT_NAMES = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
+# The canonical PiPER URDF includes the two independently commanded gripper
+# fingers.  Arm motion plans intentionally remain six-DOF, so cuRobo must fold
+# both fingers into the fixed kinematic model at the neutral position rather
+# than trying to reconcile them with the arm-only cspace below.
+LOCKED_JOINTS = {'joint7': 0.0, 'joint8': 0.0}
 FIXED_WORLD_LINKS = {
-    'base_link', 'bunker_chassis_collision',
-    'bunker_sensor_station_collision'}
+    'bunker_chassis_collision', 'bunker_sensor_station_collision'}
+RIGID_MOUNT_SEAM_Z_M = -0.005
 
 
 def sha256_file(path):
@@ -133,11 +138,17 @@ def collision_bounds(collision, description_root):
 
 
 def covering_spheres(low, high, cell_size):
-    """Cover an AABB completely with a deterministic regular sphere grid."""
+    """Approximate an AABB with a deterministic regular sphere grid.
+
+    Using the cell diagonal as the radius covers every AABB corner but
+    substantially inflates PiPER's narrow links and creates false self
+    collisions.  cuRobo robot models are sphere approximations, so use an
+    explicitly recorded 4 mm inset from half the largest cell dimension.
+    """
     extent = np.asarray(high) - np.asarray(low)
     counts = np.maximum(1, np.ceil(extent / float(cell_size)).astype(int))
     steps = extent / counts
-    radius = float(np.linalg.norm(steps) * 0.5 + 0.001)
+    radius = float(max(0.002, np.max(steps) * 0.5 - 0.004))
     result = []
     for ix in range(int(counts[0])):
         for iy in range(int(counts[1])):
@@ -149,6 +160,35 @@ def covering_spheres(low, high, cell_size):
                     'radius': round(radius, 9),
                 })
     return result
+
+
+def deduplicate_spheres(spheres, cell_size):
+    """Keep one deterministic representative per overlapping grid cell."""
+    selected = {}
+    size = float(cell_size)
+    for sphere in spheres:
+        center = np.asarray(sphere['center'], dtype=float)
+        key = tuple(int(round(value / size)) for value in center)
+        grid_center = np.asarray(key, dtype=float) * size
+        rank = (
+            float(np.linalg.norm(center - grid_center)),
+            float(sphere['radius']),
+            tuple(float(value) for value in center),
+        )
+        if key not in selected or rank < selected[key][0]:
+            selected[key] = (rank, sphere)
+    return [selected[key][1] for key in sorted(selected)]
+
+
+def fixed_world_bounds(name, low, high):
+    """Apply the SRDF rigid-mount contact seam to fixed world geometry."""
+    low = np.asarray(low, dtype=float).copy()
+    high = np.asarray(high, dtype=float).copy()
+    if name == 'bunker_chassis_collision':
+        high[2] = min(high[2], RIGID_MOUNT_SEAM_Z_M)
+    if np.any(low >= high):
+        raise ValueError('fixed world collision bounds are empty')
+    return low, high
 
 
 def disabled_collision_pairs(srdf_path):
@@ -178,6 +218,7 @@ def build(
         for collision_index, collision in enumerate(collisions):
             low, high = collision_bounds(collision, description_root)
             if name in FIXED_WORLD_LINKS:
+                low, high = fixed_world_bounds(name, low, high)
                 platform_cuboids.append({
                     'name': '%s_%03d' % (name, collision_index),
                     'pose': [
@@ -192,7 +233,7 @@ def build(
             link_spheres.extend(covering_spheres(low, high, cell_size_m))
         if link_spheres:
             collision_links.append(name)
-            spheres[name] = link_spheres
+            spheres[name] = deduplicate_spheres(link_spheres, cell_size_m)
     if not spheres:
         raise ValueError('planning URDF contains no collision geometry')
     collision_link_set = set(collision_links)
@@ -211,7 +252,7 @@ def build(
                 # model_builder.py creates this calibrated eye-in-hand frame.
                 'ee_link': 'camera_optical_frame',
                 'link_names': None,
-                'lock_joints': None,
+                'lock_joints': LOCKED_JOINTS,
                 'extra_links': None,
                 'collision_link_names': collision_links,
                 'collision_spheres': spheres,
@@ -240,9 +281,12 @@ def build(
                 collision_manifest_path),
             'curobo_version': PINNED_VERSION,
             'curobo_commit': PINNED_COMMIT,
-            'covering_shape': 'per_collision_aabb_sphere_grid',
+            'covering_shape': 'per_collision_aabb_regular_sphere_grid',
             'cell_size_m': float(cell_size_m),
-            'conservative_geometry': True,
+            'sphere_surface_inset_m': 0.004,
+            'deduplication_grid_m': float(cell_size_m),
+            'rigid_mount_seam_z_m': RIGID_MOUNT_SEAM_Z_M,
+            'conservative_geometry': False,
             'hardware_qualified': False,
             # The Bunker is fixed in base_link during arm planning. Per-piece
             # AABBs remain world geometry so they do not consume thousands of

@@ -29,7 +29,9 @@ PYTHONPATH="$ROOT/piper_ros_foxy/src/piper_tesseract_foxy" \
   --manifest "$MANIFEST" \
   --output "$URDF"
 
-PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" \
+# Keep the CUDA/Python 3.10 model conversion isolated from Foxy's Python 3.8
+# path, which a sourced ROS shell may have placed in the environment.
+PYTHONPATH="$ROOT" \
   "$CUROBO_PYTHON" -m motion_planning.curobo.generate_robot_config \
   --urdf "$URDF" \
   --srdf "$SRDF" \

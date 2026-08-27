@@ -693,3 +693,5 @@ motion_planner_backend_routing_2026_08_27:
   rule: Route backend choice only at the planner adapter/process boundary. MissionEngine, NBV, authorization, execution safety, capture and the PiPER command path remain backend-neutral.
   incident_checks: [frozen mission backend and authorization correlation, selected worker generation, planner readiness backend, MotionPlan backend and hashes, collision qualification, bounded worker shutdown]
   tests: [test_planner_backend.py, test_contract.py, tests/curobo, tests/gui/test_piper_gui_planner_backend.py, mobile and Tesseract regression suites]
+  curobo_runtime: Use only /home/prl/.venvs/piper-curobo-v0.7.8/bin/python with Warp 1.11.1 and the user-local CUDA 12.8 toolkit. The launcher replaces inherited Foxy PYTHONPATH. Healthy worker_ready does not imply collision_model_qualified.
+  current_blocker: Fixed Bunker AABB geometry causes a command-free MotionGen DT_EXCEPTION on the tested canonical-platform path; keep provenance hardware_qualified false and do not attempt physical cuRobo motion.
