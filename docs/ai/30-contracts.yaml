@@ -1,5 +1,12 @@
 schema_version: 1
 document: runtime_contracts
+acquisition_workflow_handoff_contract_2026_08_27:
+  acquisition_adapter_output: A correlated command-free ROUGH_ACQUISITION plan request only.
+  mission_transition: MissionEngine owns ACQUIRED-to-workflow assessment; target_scan_mission_node.py is the sole automatic-mission caller of /supervised_cube_workflow/start.
+  ready_predicate: diagnostic state equals SCAN_READY and measured_lock_ready is exactly true.
+  transient_predicate: SCAN_READY with measured_lock_ready false remains a bounded wait under workflow_assessment_timeout_sec and grants no planning or motion authority.
+  unchanged_failures: [assessment timeout, ABORTED, malformed diagnostic JSON, incompatible workflow state]
+  public_ros_interface_change: none
 responsibility_package_contract_2026_08_27:
   internal_owners: {mission core: piper_mobile_manipulation/mission/core.py, mission progression and engine construction: piper_mobile_manipulation/mission/engine.py, mission-bound guarded resources: piper_mobile_manipulation/mission/resources.py, mission spool: piper_mobile_manipulation/mission/spool.py, typed failures: piper_mobile_manipulation/infrastructure/failure_model.py, telemetry: piper_mobile_manipulation/infrastructure/telemetry_store.py, child processes: piper_mobile_manipulation/infrastructure/process_supervisor.py}
   compatibility: The six former root-level modules remain installed one-way facades with explicit __all__ exports referring to the identical owner objects. ROS messages services actions topics parameters spool bytes hashes and process escalation are unchanged.
@@ -528,7 +535,7 @@ scan_execution:
     first_look_scene: Schema-v5 observation_mode=bootstrap_static deliberately carries obstacles=[] and does not require a preexisting /piper/obstacle_instances_3d callback. Only the first ROUGH_ACQUISITION path may use this exception; normal scan and every later acquisition path remain perception-scene gated.
     target_absent_scene: A target_mask_missing result with no detected obstacles publishes one typed empty ObstacleInstance3DArray at the exact result stamp. If obstacles exist, target ID 1 remains reserved, GroundingDINO emits IDs 2+, and SAM2 propagates those masks for normal depth projection. No later move occurs until that correlated scene is fresh and its exact path passes obstacle-box validation.
     success: Requires post-result target/status/health callbacks, target_status exactly LOCKED, TrackingHealth TRACKING with camera_settled=true and prediction_only=false, a valid stable TrackedTarget in base_link whose measurement stamp is not older than the GroundingDINO image, and Euclidean distance from the rough hint no more than 0.30 m.
-    handoff: ACQUIRED publishes a hold, cancels remaining acquisition poses, calls /supervised_cube_workflow/start once, and waits for SCAN_READY and fresh normal reachable viewpoints. MissionEngine owns the later closed-loop MULTIVIEW_SCAN transition; the GUI has no plan-request authority.
+    handoff: ACQUIRED publishes a hold and cancels remaining acquisition poses. MissionEngine then calls /supervised_cube_workflow/start once through its ROS boundary and waits for SCAN_READY plus measured_lock_ready before the later closed-loop MULTIVIEW_SCAN transition; scan_target_acquisition has no workflow-start authority and the GUI has no production plan-request authority.
   normal_scan_plan_request:
     name: /tesseract_plan_bridge/request_plan
     type: piper_mobile_manipulation/srv/RequestTesseractPlan

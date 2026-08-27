@@ -1,5 +1,10 @@
 schema_version: 1
 document: runtime_flows
+acquisition_to_workflow_flow_2026_08_27:
+  sequence: [acquisition adapter requests one correlated rough plan, executor settles and reports ACQUIRED while holding, MissionEngine advances the phase, mission ROS boundary starts the supervised workflow, coordinator polls diagnostic state, transient SCAN_READY without measured lock waits, SCAN_READY with measured lock continues to one-view planning]
+  failure_modes: [workflow deadline expires, workflow ABORTED, invalid diagnostic JSON, incompatible workflow state]
+  manual_smoke_checks: [prove scan_target_acquisition has no workflow start client or workflow/execution terminal subscriptions, inject SCAN_READY lock-false then lock-true and require recovery, inject persistent lock-false and require bounded failure, run physical E2E only with separate authorization]
+  mandatory_retests: [test_scan_target_acquisition.py, test_mission_core.py, test_mission_engine.py, test_phase1_mission_characterization.py, complete mobile suite, package build]
 responsibility_package_flow_2026_08_27:
   runtime_change: none
   import_flow: [ROS adapter, mission or infrastructure package owner, unchanged domain decision or side effect]
@@ -451,7 +456,7 @@ flows:
       - At each settled pose the executor creates a unique request ID and a minimum camera stamp after settling. The heavy bridge waits up to 10 seconds for a matching new frame or idle worker, and the executor accepts only correlated status/image stamps.
       - The exact GroundingDINO job may run for up to 60 seconds. target_mask_missing does not move immediately: the executor waits up to 15 seconds for a typed scene stamped at or after that result. Zero obstacles emits an exact clear scene; obstacle-only detections reserve target ID 1, propagate IDs 2+ through SAM2, and use normal depth projection. Only then is the next exact Tesseract segment rechecked against fresh boxes. Infrastructure, malformed, stale-image, scene, or correlation failures abort and hold.
       - After a matching detection, the executor waits up to 10 seconds for callbacks newer than the result: target_status LOCKED, measured nonprediction TRACKING with a settled camera, and a valid stable base_link TrackedTarget stamped after the processed image and within 0.30 m of the hint.
-      - Success causes a current-position hold, ACQUIRED, and cancellation of remaining poses. The acquisition coordinator starts the supervised workflow once and waits for SCAN_READY plus normal tracked-target viewpoints, but deliberately does not request the normal scan.
+      - Success causes a current-position hold, ACQUIRED, and cancellation of remaining poses. MissionEngine owns the transition; target_scan_mission_node.py starts the supervised workflow once and waits for SCAN_READY plus measured_lock_ready, while the acquisition adapter deliberately stops at rough-plan handoff.
       - If acquisition terminates but perception subsequently has a fresh authoritative measured TRACKING/LOCKED target, explicit Prepare Scan from Current Lock may adopt that lock as a new scan phase, start/restart workflow assessment, and wait for SCAN_READY. It does not relabel the terminal acquisition or reuse its approval.
       - After the adopted/current measured lock and SCAN_READY, the GUI issues one /tesseract_plan_bridge/request_plan call, correlates the returned short plan ID to that exact request, and accepts only a collision-qualified plan containing exactly 13 views.
       - If all accepted looks fail to produce measured tracking, the executor holds and reports ACQUISITION_FAILED; a new hint or explicit retry is required.

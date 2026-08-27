@@ -1,5 +1,18 @@
 schema_version: 1
 document: technical_debt
+acquisition_workflow_duplicate_owner_2026_08_27:
+  status: resolved_and_physically_retested
+  incident: Automatic mission gui-sim-d685f5b321ba4e61bc52f3568bd094f9 reached ACQUIRED after its second look. scan_target_acquisition and the mission coordinator both started the supervised workflow, after which a transient SCAN_READY diagnostic with measured_lock_ready=false was classified as incompatible and the mission ended with zero captures.
+  resolution: Removed workflow/execution terminal subscriptions and the workflow-start client from scan_target_acquisition. MissionEngine through target_scan_mission_node.py is now the only automatic workflow-start authority. The coordinator waits through transient SCAN_READY lock loss under its existing assessment deadline and still requires measured_lock_ready=true to progress.
+  evidence: [new ownership and transient-readiness regressions failed before the production patch and pass after it, 185 focused tests pass, 866 complete mobile tests pass, changed-file lint and compile pass, mobile package symlink build passes, task gui-sim-d23434471b1c4640bac2829abe39390d passed workflow readiness and persisted four captures]
+  remaining: [the same task later failed independently because all eight generation-four prequalified rays returned typed RAY_IK_FAILURE before the eight-view coverage floor]
+tesseract_stream_executor_starvation_2026_08_27:
+  status: diagnosed_fix_pending
+  incident: Task gui-sim-d23434471b1c4640bac2829abe39390d preserved ordered collision-qualified points and low following error but accumulated 777 late stream ticks. Planned 12.0, 22.5 and 4.5 second segments took approximately 58.0, 89.7 and 17.4 wall seconds, yielding about 4.1 to 5.2 Hz instead of 20 Hz.
+  diagnosis: The normal rclpy single-threaded executor services the 200 Hz state-machine timer and every feedback, tracking, shape, obstacle, workflow and planning callback on one queue. Post-lock callback traffic can starve the command timer; per-tick synchronous warnings amplify load. stream_schedule_paused_sec then intentionally preserves every point by stretching time, while existing completion telemetry subtracts those pauses and therefore overstates achieved rate.
+  safety_evidence: [no point burst or shortcut was reported, maximum following error on degraded scan segments remained approximately 0.011 to 0.012 rad against the existing 0.30 rad corridor, four captures persisted, terminal home disable and cleanup passed]
+  required_fix_properties: [retain every approved point and exact order, preserve runtime freshness following-error cancellation and hold gates, isolate command scheduling from non-control callback starvation, rate-limit lateness reporting, record true wall duration and true delivered command rate, do not loosen timing or motion limits]
+  must_retest: [trajectory scheduling characterization, runtime-gate and following-error tests, full mobile suite, package build, command-free callback-load stress, separately authorized low-speed physical E2E]
 architecture_cleanup_2026_08_27:
   status: phase_7_tesseract_boundary_cleanup_in_progress
   resolution: The cleanup branch starts from an exact origin/main tree while preserving both historical parents. Every mobile Python test is registered. Mission infrastructure execution planning and perception responsibilities now have package owners with one-way compatibility facades. Tesseract candidate selection, protocol validation and atomic spool mechanics now have ROS-free owners without changing their bytes or policy.

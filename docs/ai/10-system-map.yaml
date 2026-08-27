@@ -1,5 +1,9 @@
 schema_version: 1
 document: system_map
+acquisition_workflow_ownership_2026_08_27:
+  flow: [scan_target_acquisition prepares and requests ROUGH_ACQUISITION plan, executor reports ACQUIRED and holds, MissionEngine observes acquisition completion, target_scan_mission_node calls /supervised_cube_workflow/start once, coordinator polls diagnostic state, SCAN_READY plus measured_lock_ready authorizes continued mission planning]
+  exclusion: scan_target_acquisition does not consume scan execution/workflow status and cannot start the supervised workflow.
+  transient_rule: SCAN_READY without current measured-lock authority remains inside bounded assessment polling; it never authorizes planning or motion.
 responsibility_package_load_order_2026_08_27:
   sequence: [ROS nodes import mission infrastructure and execution owners, mission engine imports mission core and infrastructure failure model, execution authorization imports execution motion, mission spool imports mission core, compatibility facades import one-way from owners, pure owners never import facades or ROS nodes]
   load_order_contracts: [facade imports are one-way only, package owners remain ROS-free, mission engine remains the only mission progression authority, process supervisor owns mechanics but not mission policy, no facade may dynamically call back into its legacy module]
@@ -340,7 +344,7 @@ runtime_surfaces:
   rough_target_acquisition:
     process: scan_target_acquisition_node.py
     role: Exposes the typed /scan_target_acquisition/prepare service, which atomically binds a unique session_id to one fresh finite base_link PointStamped. An exact duplicate request is idempotent; the same ID cannot be rebound to different target data. It uses current camera TF to create a minimum-translation centered look plus left/right/up/down 15-degree fallbacks at the lesser of the live camera-target range and the configured 0.45 m maximum, then requests a command-free ROUGH_ACQUISITION proposal after matching reachability. source_request_id is preserved through candidates, schema-v5 planning, executor normalization, and GUI acceptance. Its two-thread executor keeps TF subscriptions runnable while the service obtains the current transform; the bounded handoff allows only one bridge call in flight.
-    handoff: On executor ACQUIRED, calls /supervised_cube_workflow/start once and waits for SCAN_READY plus matching tracked-target viewpoints. It does not request the normal plan. If acquisition terminates while a fresh authoritative measured lock is nevertheless available, explicit Prepare Scan from Current Lock may adopt that lock as a new scan phase, call /supervised_cube_workflow/start, and wait for SCAN_READY; it does not change the acquisition terminal result or reuse its approval. The GUI owns the explicit later /tesseract_plan_bridge/request_plan call. The coordinator never approves a plan, publishes /joint_ctrl_single, or calls /enable_srv.
+    handoff: It stops at the command-free acquisition-plan request. On executor ACQUIRED, MissionEngine through target_scan_mission_node.py solely calls /supervised_cube_workflow/start and waits for SCAN_READY plus measured_lock_ready. If acquisition terminates while a fresh authoritative measured lock is nevertheless available, explicit Prepare Scan from Current Lock may adopt that lock as a new scan phase and use the same mission-owned workflow assessment; it does not change the acquisition terminal result or reuse its approval. The GUI owns the explicit later /tesseract_plan_bridge/request_plan call. The acquisition adapter never approves a plan, starts mission progression, publishes /joint_ctrl_single, or calls /enable_srv.
   tesseract_foxy_bridge:
     process: piper_tesseract_foxy/tesseract_plan_bridge
     role: >-

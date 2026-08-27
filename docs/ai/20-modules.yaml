@@ -1,5 +1,11 @@
 schema_version: 1
 document: module_ownership
+acquisition_workflow_authority_2026_08_27:
+  owner_module: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission/engine.py
+  ros_boundary: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_scan_mission_node.py
+  acquisition_adapter: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_target_acquisition_node.py
+  rule: MissionEngine is the sole mission-progression owner; its ROS boundary is the sole automatic-mission workflow-start client. The acquisition adapter may prepare candidates and request an acquisition plan but must not observe ACQUIRED to start the workflow.
+  must_not_move_without: [autonomous_target_scan, supervised_workflow, supervised_scan_execution, scan_and_obstacles]
 architecture_characterization_2026_08_27:
   owner_module: piper_ros_foxy/src/piper_mobile_manipulation/test/test_architecture_boundaries.py
   owns: Static characterization of established ROS-free application and domain modules, the ROS-free Tesseract worker and contract, and cycle-free internal imports for both production Python packages.

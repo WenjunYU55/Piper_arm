@@ -1,5 +1,10 @@
 schema_version: 1
 document: maintenance_routing
+acquisition_workflow_handoff_maintenance_2026_08_27:
+  inspect: [mission/engine.py, target_scan_mission_node.py, scan_target_acquisition_node.py, supervised_cube_workflow_node.py, test_mission_core.py, test_scan_target_acquisition.py]
+  ownership: target_scan_mission_node.py is the sole automatic-mission client of /supervised_cube_workflow/start. scan_target_acquisition_node.py must not subscribe to workflow/execution terminal state or start mission progression.
+  diagnostic_rule: SCAN_READY with measured_lock_ready=false is a bounded transient wait, not success and not an immediate incompatible-state failure. The existing workflow deadline remains authoritative.
+  required_retests: [test_scan_target_acquisition.py, test_mission_core.py, test_mission_engine.py, test_phase1_mission_characterization.py, complete mobile suite, package build, separately authorized physical E2E]
 architecture_cleanup_routing_2026_08_27:
   inspect: [docs/refactor/architecture_cleanup_2026_08_27.md, test_architecture_boundaries.py, piper_mobile_manipulation/CMakeLists.txt, docs/ai/20-modules.yaml, docs/ai/50-guardrails.yaml, docs/ai/60-debt.yaml]
   rule: Move one responsibility at a time from the origin/main behavior baseline. Add the new owner first, keep an explicit old-path compatibility facade, migrate consumers, run the linked characterization, and only then consider facade removal. Domain modules must not import ROS adapters and no move may create an internal import cycle.

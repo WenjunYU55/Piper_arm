@@ -1813,8 +1813,11 @@ class TargetScanMissionNode(Node):
             except json.JSONDecodeError as exc:
                 raise MissionFailure('workflow diagnostic is invalid JSON: %s' % exc)
             state = str(payload.get('state', ''))
-            if state == 'SCAN_READY' and payload.get('measured_lock_ready'):
-                return payload
+            if state == 'SCAN_READY':
+                if payload.get('measured_lock_ready'):
+                    return payload
+                time.sleep(0.25)
+                continue
             if state == 'PLAN_READY':
                 return payload
             if state == 'ABORTED':

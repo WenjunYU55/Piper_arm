@@ -1,5 +1,11 @@
 schema_version: 1
 document: ai_context_index
+acquisition_workflow_ownership_fix_2026_08_27:
+  incident: A physical automatic mission reached ACQUIRED, but both scan_target_acquisition and the mission coordinator called /supervised_cube_workflow/start. The duplicate owner exposed a transient SCAN_READY diagnostic with measured_lock_ready=false, which the coordinator incorrectly treated as an incompatible terminal state.
+  authority: MissionEngine through target_scan_mission_node.py is the sole automatic-mission owner of post-acquisition workflow start and progression. scan_target_acquisition_node.py owns only typed rough-target candidate generation and the command-free acquisition-plan handoff.
+  fail_closed_behavior: SCAN_READY advances only with measured_lock_ready=true. A transient false value is polled within the existing workflow assessment deadline; timeout, ABORTED, malformed diagnostics and genuinely incompatible states still fail.
+  external_change: none; ROS names, planning, motion, safety, capture, dataset and shutdown behavior are unchanged.
+  validation: [two regressions failed before the production fix and pass after it, 185 focused acquisition mission tests pass, complete mobile suite has 866 passes, changed-file lint and compile pass, mobile package symlink build passes, task gui-sim-d23434471b1c4640bac2829abe39390d passed the corrected ACQUIRED-to-SCAN_READY handoff and persisted four captures before an unrelated generation-four ray-frontier exhaustion]
 architecture_cleanup_2026_08_27:
   status: implementation_and_final_validation_complete_push_pending
   branch: reintegrate/selected-archived-features
@@ -1204,8 +1210,8 @@ project:
     not move, and every temporary validation process was stopped afterward. No planner, collision,
     limit, command, or J6 behavior changed.
     On 2026-07-27 the acquisition/scan handoff was split at the measured-lock and SCAN_READY
-    boundary. scan_target_acquisition now starts the workflow only; the GUI owns the explicit fresh
-    MULTIVIEW_SCAN request and the separate exact scan confirmation. A 2026-07-29 live 5-percent
+    boundary. The production mission coordinator now solely starts the workflow; scan_target_acquisition
+    owns only rough-plan handoff. The GUI owns the explicit fresh MULTIVIEW_SCAN request and the separate exact scan confirmation. A 2026-07-29 live 5-percent
     acquisition showed that timed_movej_v2 sent 7281 tiny targets even though PiPER MoveJ consumes
     only joint positions and one aggregate speed; its qdot/qddot fields were not controller inputs.
     That endpoint-only adapter later completed a 13-view physical run, but could not preserve an OMPL
