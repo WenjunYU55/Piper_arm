@@ -54,6 +54,7 @@ algorithm, or Tesseract behavior changed during Phase 10.
 | `configuration.py` | Typed immutable startup configuration for the mission coordinator and viewpoint executor, preserving all ROS names/defaults/overrides. |
 | `mission/core.py` | Mission phases, session state, queue/deduplication records, and result primitives. |
 | `mission/engine.py` | The admitted autonomous mission sequence and terminal shutdown sequence. |
+| `mission/resources.py` | Mission-bound calibration provenance, guarded failed zero-capture dataset lifecycle, and previous-generation cleanup target selection. |
 | `mission/spool.py` | Atomic, permission-bounded mission task, status and result persistence. |
 | `infrastructure/process_supervisor.py` | Exact owned-process generations, environment construction, health checks, reverse-order group shutdown, and shutdown reports. |
 | `safety_evaluator.py` | Pure named immutable runtime-gate policy mapping. It contains no ROS, thresholds, telemetry evaluator, command or second permission authority. |

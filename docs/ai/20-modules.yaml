@@ -8,9 +8,14 @@ architecture_characterization_2026_08_27:
   required_retests: [test_architecture_boundaries.py, complete mobile tests, affected package build, AI YAML parse]
 responsibility_packages_2026_08_27:
   mission:
-    owner_modules: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission/core.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission/engine.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission/spool.py]
+    owner_modules: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission/core.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission/engine.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission/resources.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission/spool.py]
     allowed_edit_paths: [mission package owners, explicit root-level mission compatibility facades, mission ROS adapters, mission tests, docs/ai]
     must_not_move_without: [MissionPhase and MissionSession identity, MissionEngine sole progression authority, spool hashes and atomic filesystem contract, target_scan_mission_node ROS action adapter, external import compatibility]
+  mission_resources:
+    owner_module: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission/resources.py
+    owns: Exact calibration-file provenance identity, guarded failed zero-capture dataset discovery and removal, and safe exact-handle selection for a previous process generation.
+    allowed_edit_paths: [mission/resources.py, target_scan_mission_node.py invocation and compatibility imports, test_mission_resources.py, existing failed-dataset and previous-generation tests, docs/ai]
+    must_not_move_without: [calibration environment and digest contract, dataset root containment and task mission identity, completed-capture preservation, six-disabled driver cleanup gate, MissionFailure mapping]
   infrastructure:
     owner_modules: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/infrastructure/failure_model.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/infrastructure/telemetry_store.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/infrastructure/process_supervisor.py]
     allowed_edit_paths: [infrastructure package owners, explicit root-level infrastructure compatibility facades, their production consumers, focused tests, docs/ai]

@@ -77,10 +77,12 @@ piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/infrastru
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/infrastructure/telemetry_store.py - thread-safe immutable arm, perception and mission observation snapshots
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission/core.py - mission admission, phase, session, registry, queue and result contracts
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission/engine.py - sole mission/shutdown authority including first-scan-ray framing retry and public too-close/too-large mapping plus non-command release during operator recovery
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission/resources.py - ROS-free calibration provenance, guarded failed zero-capture dataset lifecycle and previous-generation cleanup target selection
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission/spool.py - permission-bounded atomic mission task, status and result persistence
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/{mission_core,mission_engine,mission_spool,failure_model,telemetry_store,process_supervisor}.py - explicit old-path compatibility facades only; no behavior ownership
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/target_scan_mission_node.py - ROS adapter and fresh-six-disabled reconciliation of exact previous-generation process handles before admission; legacy acquisition-framing helpers remain private compatibility seams
 piper_ros_foxy/src/piper_mobile_manipulation/test/test_process_supervisor.py - fake-process startup/crash/escalation/repeated-generation/ownership regressions
+piper_ros_foxy/src/piper_mobile_manipulation/test/test_mission_resources.py - exact calibration hash, missing provenance, driver cleanup gate, dataset discovery and node compatibility regressions
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/safety_evaluator.py - pure named immutable runtime evidence policies; no ROS, thresholds, telemetry evaluation or second permission authority
 piper_ros_foxy/src/piper_mobile_manipulation/test/test_safety_evaluator.py - all-mode named-policy boundary and immutability regressions
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/plan_authorizer.py - pure exact plan/mission authorization decisions

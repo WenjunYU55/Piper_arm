@@ -72,3 +72,17 @@ skip; changed Python lint/compile, the five-package build and all AI YAML parsin
 pass. Public ROS interface, launch and configuration trees are byte-identical
 to the baseline. No spool format, state transition, signal escalation, safety
 decision or hardware behavior changed.
+
+## Phase 3: mission adapter cleanup, first seam
+
+`mission/resources.py` now owns the exact calibration provenance hash, guarded
+failed zero-capture dataset discovery/removal, and previous-generation cleanup
+selection. `mission/engine.py` now also owns construction from typed config and
+the characterization fallback. The ROS node imports these owners and retains
+the established resource-function names for downstream compatibility.
+
+Dedicated resource characterization plus mission regression passes 187 tests;
+the complete mobile suite passes 859 tests with one hardware-dependent skip,
+and changed-file lint and the focused package build pass. Action, queue, topic,
+service, state-transition, process-signal, dataset-format, launch and hardware
+behavior are unchanged.

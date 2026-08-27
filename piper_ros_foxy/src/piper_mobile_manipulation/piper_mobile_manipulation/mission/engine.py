@@ -213,6 +213,42 @@ def planning_rejection_allows_current_state_home(reason):
     return as_failure(reason).has(FailureTag.PLAN_REJECTION_HOME_ALLOWED)
 
 
+def mission_engine_for(owner, operations):
+    """Inject typed production config while retaining old pure test seams."""
+    configuration = getattr(owner, 'configuration', None)
+    if configuration is None:
+        if not hasattr(owner, 'param_bool'):
+            return MissionEngine(
+                operations,
+                motion_config=MissionMotionConfig(
+                    enable_real_arm_motion=False,
+                    motion_speed_profile_qualified=False,
+                    free_motion_speed_percent=30.0,
+                    contact_speed_percent=10.0,
+                    home_pose_path='',
+                    require_staged_home_profile=True,
+                ),
+                capture_config=MissionCaptureConfig(
+                    required_captures=8, maximum_captures=24),
+                workflow_config=MissionWorkflowConfig(),
+            )
+        return MissionEngine(operations)
+    return MissionEngine(
+        operations,
+        motion_config=configuration.motion,
+        capture_config=configuration.capture,
+        workflow_config=configuration.workflow,
+    )
+
+
+def workflow_config_for(owner):
+    """Return frozen production workflow config or characterization defaults."""
+    configuration = getattr(owner, 'configuration', None)
+    if configuration is None:
+        return MissionWorkflowConfig()
+    return configuration.workflow
+
+
 class MissionEngine:
     """
     Run the existing mission workflow through injected operations.

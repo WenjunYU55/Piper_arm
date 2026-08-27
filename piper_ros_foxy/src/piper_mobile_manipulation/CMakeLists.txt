@@ -158,6 +158,8 @@ if(BUILD_TESTING)
   ament_add_pytest_test(
     test_architecture_boundaries test/test_architecture_boundaries.py)
   ament_add_pytest_test(
+    test_mission_resources test/test_mission_resources.py)
+  ament_add_pytest_test(
     test_gpu_geometry_launch test/test_gpu_geometry_launch.py)
   ament_add_pytest_test(
     test_reintegrated_features test/test_reintegrated_features.py)

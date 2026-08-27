@@ -11,11 +11,17 @@ architecture_cleanup_2026_08_27:
   validation: [five-package symlink build passes, complete post-characterization mobile suite has 852 passes and one hardware-dependent skip, all seven newly registered CMake targets pass through colcon with 55 test results, 162 Tesseract Python tests pass, 69 driver tests pass with one copyright skip, 18 description tests pass, 193 root GUI reconstruction and calibration tests pass with one environment skip, 25 GroundingDINO selection tests pass, no hardware command]
   baseline_limit: The command-free rootless core qualification reached dual_limit_start_acquisition but exceeded its existing internal 150-second planning budget on this host before any refactor edit; retain this as baseline performance evidence rather than classifying it as a refactor regression.
 responsibility_package_routing_2026_08_27:
-  mission_owners: {mission contracts and state: piper_mobile_manipulation/mission/core.py, sole mission progression: piper_mobile_manipulation/mission/engine.py, durable mission spool: piper_mobile_manipulation/mission/spool.py}
+  mission_owners: {mission contracts and state: piper_mobile_manipulation/mission/core.py, sole mission progression and engine construction: piper_mobile_manipulation/mission/engine.py, guarded mission-bound calibration dataset and prior-process resources: piper_mobile_manipulation/mission/resources.py, durable mission spool: piper_mobile_manipulation/mission/spool.py}
   infrastructure_owners: {typed failures: piper_mobile_manipulation/infrastructure/failure_model.py, immutable telemetry snapshots: piper_mobile_manipulation/infrastructure/telemetry_store.py, exact-handle child process mechanics: piper_mobile_manipulation/infrastructure/process_supervisor.py}
   compatibility_facades: [mission_core.py, mission_engine.py, mission_spool.py, failure_model.py, telemetry_store.py, process_supervisor.py]
   interpretation: Older short-name references elsewhere in the AI pack identify the same responsibility through its retained facade; edit the responsibility-package owner and keep the facade export-only.
   validation: [333 focused mission infrastructure compatibility and external-contract tests pass, complete mobile suite has 854 passes and one hardware-dependent skip, changed Python lint and compile pass, five-package build passes, all 12 AI YAML files parse, public ROS interface launch and configuration trees are unchanged]
+mission_adapter_cleanup_2026_08_27:
+  status: first_cohesive_extraction_complete
+  extracted: [mission-bound calibration identity and hash, guarded failed zero-capture dataset discovery and removal, exact prior-generation cleanup target selection, typed MissionEngine construction and workflow-config selection]
+  retained_in_ros_node: [action and queue mechanics, ROS publishers subscribers services clients and TF, telemetry callbacks, dependency readiness and service waits, result feedback and durable adapter calls]
+  behavior_change: none
+  validation: [187 focused mission tests pass, complete mobile suite has 859 passes and one hardware-dependent skip, changed-file lint passes, focused package build passes]
 ray_diagnostics_storage_root_2026_08_27:
   behavior: All new live mission, reachability, Tesseract, terminal, historical replay and offline simulation ray diagnostics use datasets/ray_diagnostics/<mission_id-or-session_id>/ as their one canonical root.
   compatibility: The GUI continues to discover, validate and open historical reports under datasets/active_scan/ray_diagnostics without migrating or rewriting them. Plain artifact selections prefer the canonical root; GUI selections carry an internal current or legacy root qualifier.

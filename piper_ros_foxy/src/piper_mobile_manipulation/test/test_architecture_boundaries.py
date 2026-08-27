@@ -45,6 +45,7 @@ PURE_MOBILE_MODULES = frozenset({
     'mission_spool.py',
     'mission/core.py',
     'mission/engine.py',
+    'mission/resources.py',
     'mission/spool.py',
     'motion_limit_stability.py',
     'nbv_coverage.py',

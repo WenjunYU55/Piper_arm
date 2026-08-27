@@ -6,10 +6,14 @@ architecture_cleanup_routing_2026_08_27:
   required_retests: [test_architecture_boundaries.py, changed subsystem characterization, complete mobile tests, affected package build, public interface hashes, AI YAML parse]
   branch_rule: Commit and push only the history-preserving reintegrate/selected-archived-features line. Never update main as part of this cleanup.
 responsibility_package_maintenance_2026_08_27:
-  mission: [piper_mobile_manipulation/mission/core.py, piper_mobile_manipulation/mission/engine.py, piper_mobile_manipulation/mission/spool.py]
+  mission: [piper_mobile_manipulation/mission/core.py, piper_mobile_manipulation/mission/engine.py, piper_mobile_manipulation/mission/resources.py, piper_mobile_manipulation/mission/spool.py]
   infrastructure: [piper_mobile_manipulation/infrastructure/failure_model.py, piper_mobile_manipulation/infrastructure/telemetry_store.py, piper_mobile_manipulation/infrastructure/process_supervisor.py]
   facades_are_not_owners: [mission_core.py, mission_engine.py, mission_spool.py, failure_model.py, telemetry_store.py, process_supervisor.py]
   rule: Put behavior edits in the package owner. Facades may only explicitly re-export the frozen public symbols and must not gain callbacks state policy or fallback implementations.
+mission_resource_maintenance_2026_08_27:
+  inspect: [mission/resources.py, target_scan_mission_node.py imported compatibility names, test_mission_resources.py, test_reintegrated_features.py, test_phase1_mission_characterization.py]
+  rule: Keep calibration provenance hashing failed-dataset containment and exact stale-process selection ROS-free. The node may invoke and re-export these functions but must not duplicate them.
+  required_retests: [test_mission_resources.py, test_mission_engine.py, test_mission_core.py, Phase 1 mission characterization, complete mobile suite, package build, AI YAML parse]
 ray_diagnostics_storage_root_2026_08_27:
   inspect: [scan_viewpoint_planner_node.py ray_diagnostics_root, viewpoint_reachability_filter_node.py ray_diagnostics_root, piper_tesseract_foxy/bridge_node.py ray_diagnostics_root, target_scan_mission_node.py terminal diagnostics store, tools/simulate_size_aware_ray_review.py report_root, piper_gui/ray_reports.py canonical and legacy roots]
   rule: Every new writer and replay uses datasets/ray_diagnostics. Keep datasets/active_scan/ray_diagnostics read-only compatible in the GUI for historical reports, but never select it as a future writer default or silently migrate its contents.

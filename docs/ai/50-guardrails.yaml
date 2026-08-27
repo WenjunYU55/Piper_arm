@@ -16,6 +16,10 @@ responsibility_package_guardrails_2026_08_27:
   invariants: [root-level compatibility modules are explicit export-only facades, every facade symbol is identical to its package-owner object, package owners remain ROS-free, owner imports never point back to facades, MissionEngine remains the sole mission and terminal shutdown progression authority, process signal escalation and telemetry copy semantics are unchanged]
   blast_radius: [all autonomous mission imports, action result mapping, startup and shutdown, executor failure handling, telemetry decisions, child-process cleanup, external Python imports]
   must_retest_if_changed: [test_architecture_boundaries.py, test_failure_model.py, test_telemetry_store.py, test_process_supervisor.py, test_mission_core.py, test_mission_engine.py, Phase 1 mission and executor characterization, complete mobile suite, package build, public interface hashes]
+mission_resource_guardrails_2026_08_27:
+  invariants: [calibration identity hashes exact file bytes, failed dataset deletion is limited to one direct child of the configured dataset root with matching task and mission identity and zero completed captures, symlinks and unknown artifacts fail closed, a live driver blocks old-generation cleanup without fresh six-disabled proof, resource helpers remain ROS-free]
+  blast_radius: [capture provenance, dataset preservation, mission admission, previous process generation, terminal failure handling]
+  must_retest_if_changed: [test_mission_resources.py, failed-dataset tests in test_reintegrated_features.py, previous-generation tests in Phase 1 mission characterization, test_mission_engine.py, complete mobile suite, package build]
 ray_diagnostics_storage_guardrails_2026_08_27:
   invariants:
     - Every future default writer and historical replay output uses PIPER_ARM_ROOT/datasets/ray_diagnostics.
