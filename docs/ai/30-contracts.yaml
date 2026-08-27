@@ -8,6 +8,10 @@ execution_package_contract_2026_08_27:
   internal_owners: [execution/authorization.py, execution/capture.py, execution/modes.py, execution/motion.py, execution/recovery.py, execution/trajectory.py, execution/validation.py]
   compatibility: Former module paths retain explicit __all__ exports pointing to identical owner objects. Constants arrays functions dataclasses enums exception behavior and return shapes are unchanged.
   external_change: none
+planning_package_contract_2026_08_27:
+  internal_owners: [planning/capability.py, planning/coverage.py, planning/generation.py, planning/measured_surface.py, planning/ray_culls.py, planning/rays.py]
+  compatibility: Six former paths explicitly export identical owner objects. Ray IDs population hashes generation payloads capability-map bytes coverage snapshot fields ranking keys and return shapes are unchanged.
+  external_change: none
 ray_review_operator_name_contract_2026_08_27:
   internal_basename: RayProcesses - HH:MM - DD-MM-YYYY
   files: [RayProcesses - HH:MM - DD-MM-YYYY.json, RayProcesses - HH:MM - DD-MM-YYYY.html]

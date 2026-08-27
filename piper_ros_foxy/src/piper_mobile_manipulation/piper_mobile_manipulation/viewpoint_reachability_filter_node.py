@@ -13,11 +13,11 @@ from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
 from piper_mobile_manipulation.execution.motion import motor_control_reasons
-from piper_mobile_manipulation.capability_map import (
+from piper_mobile_manipulation.planning.capability import (
     load_capability_map,
     sha256_file,
 )
-from piper_mobile_manipulation.ray_hard_culls import (
+from piper_mobile_manipulation.planning.ray_culls import (
     hard_cull_snapshot,
     population_key,
     stable_revision,

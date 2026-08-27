@@ -85,7 +85,7 @@ from piper_mobile_manipulation.execution.motion import (
     validate_joint_path,
 )
 from piper_mobile_manipulation.motion_limit_stability import MotionLimitStability
-from piper_mobile_manipulation.viewpoint_rays import decoded_ray_id
+from piper_mobile_manipulation.planning.rays import decoded_ray_id
 from piper_mobile_manipulation.execution.validation import (
     TIMING_POLICY_VERSION,
     validate_sdk_movej_waypoint_path,

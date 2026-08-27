@@ -17,7 +17,7 @@ from std_msgs.msg import String
 import yaml
 
 from piper_mobile_manipulation.msg import Target3D, TrackedTarget
-from piper_mobile_manipulation.nbv_coverage import (
+from piper_mobile_manipulation.planning.coverage import (
     candidate_meets_minimum_information,
     MINIMUM_USEFUL_MARGINAL_INFORMATION_FRACTION,
     ObjectCoverageModel,
@@ -42,7 +42,7 @@ from piper_mobile_manipulation.ray_mission_diagnostics import (
     planner_generation_snapshot,
     RayMissionDiagnosticsStore,
 )
-from piper_mobile_manipulation.ray_hard_culls import (
+from piper_mobile_manipulation.planning.ray_culls import (
     HardCullLedger,
     prune_hard_culled_rays,
     ray_population_identity,
@@ -52,11 +52,11 @@ from piper_mobile_manipulation.scan_session_memory import (
     history_coverage_target_center,
     validate_history_payload,
 )
-from piper_mobile_manipulation.view_generation import (
+from piper_mobile_manipulation.planning.generation import (
     make_view_generation,
     view_policy_capabilities,
 )
-from piper_mobile_manipulation.viewpoint_rays import (
+from piper_mobile_manipulation.planning.rays import (
     bounded_ray_interval,
     build_ray_samples,
 )

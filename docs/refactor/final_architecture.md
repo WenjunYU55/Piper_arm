@@ -64,6 +64,8 @@ algorithm, or Tesseract behavior changed during Phase 10.
 | `execution/recovery.py` | Typed retry, reacquire, replan, and abort policy. |
 | `execution/modes.py`, `execution/motion.py`, `execution/validation.py` | Execution-mode semantics, conservative kinematics/path validation, and exact scheduled-trajectory validation. |
 | Scan/perception helpers | Geometry, acquisition, coverage, scan history, motion validation, occlusion policy, capture persistence, and reconstruction job contracts. |
+| `planning/capability.py`, `planning/coverage.py`, `planning/generation.py` | Capability lookup, accepted object-centric NBV evidence/ranking, and immutable proposal-generation identity. |
+| `planning/measured_surface.py`, `planning/ray_culls.py`, `planning/rays.py` | Persisted measured coverage, permanent ray-elimination protocol, and bounded target-centred ray geometry. |
 
 The former root-level names remain explicit import-only compatibility facades;
 they contain no duplicate implementation or policy.

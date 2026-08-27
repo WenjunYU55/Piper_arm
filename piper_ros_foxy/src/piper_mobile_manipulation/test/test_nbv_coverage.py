@@ -6,8 +6,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from piper_mobile_manipulation import nbv_coverage
-from piper_mobile_manipulation.nbv_coverage import (
+from piper_mobile_manipulation.planning import coverage as nbv_coverage
+from piper_mobile_manipulation.planning.coverage import (
     candidate_meets_minimum_information,
     candidate_information,
     ObjectCoverageModel,

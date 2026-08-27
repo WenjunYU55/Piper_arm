@@ -100,3 +100,16 @@ Focused execution, mission and external-contract validation passes 373 tests.
 The complete mobile suite passes 860 tests with one hardware-dependent skip,
 and changed-file flake8/pep257 pass. The executor node remains the sole command
 publisher and all safety, timing, capture and recovery gates are retained.
+
+## Phase 5: planning responsibility package
+
+The existing ROS-free capability map, object coverage/NBV, generation identity,
+persisted surface coverage, permanent ray cull and bounded ray modules moved
+intact under `planning/`. Production imports use the owners; six old module
+paths remain explicit identity-tested facades. White-box NBV tests now patch the
+owner module so test injection follows implementation ownership.
+
+Focused planning validation passes 161 tests with one existing replay skip;
+the complete mobile suite passes 861 tests with one hardware-dependent skip,
+and changed-file lint passes. Candidate IDs, hashes, cull lifetime, ranking,
+coverage, capability schema, ROS contracts and Tesseract authority are unchanged.

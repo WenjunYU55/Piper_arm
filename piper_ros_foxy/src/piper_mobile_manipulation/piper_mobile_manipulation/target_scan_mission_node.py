@@ -126,14 +126,14 @@ from piper_mobile_manipulation.startup_gates import (
     readiness_stability_update,
     worker_health_rejection,
 )
-from piper_mobile_manipulation.surface_coverage import (
+from piper_mobile_manipulation.planning.measured_surface import (
     measured_surface_coverage,
     persisted_achieved_history,
 )
 from piper_mobile_manipulation.infrastructure.telemetry_store import (
     TelemetryStore,
 )
-from piper_mobile_manipulation.view_generation import (
+from piper_mobile_manipulation.planning.generation import (
     generation_matches_expected,
 )
 from piper_mobile_manipulation.srv import (

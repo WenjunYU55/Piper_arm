@@ -24,7 +24,7 @@ import time
 import numpy as np
 import yaml
 
-from piper_mobile_manipulation.ray_hard_culls import (
+from piper_mobile_manipulation.planning.ray_culls import (
     canonical_ray_population,
     ray_universe_sha256,
 )
@@ -1137,7 +1137,7 @@ def replay_historical_dataset(dataset_dir, output_root):
             coverage_error = 'target-model artifacts unavailable'
             if frozen_center is not None:
                 try:
-                    from piper_mobile_manipulation.nbv_coverage import (
+                    from piper_mobile_manipulation.planning.coverage import (
                         ObjectCoverageModel, persist_coverage_snapshot)
                     model = ObjectCoverageModel()
                     coverage = model.rebuild_from_scan(

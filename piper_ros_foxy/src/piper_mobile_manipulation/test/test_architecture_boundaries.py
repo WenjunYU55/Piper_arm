@@ -59,6 +59,12 @@ PURE_MOBILE_MODULES = frozenset({
     'obstacle_geometry.py',
     'occlusion_policy.py',
     'plan_authorizer.py',
+    'planning/capability.py',
+    'planning/coverage.py',
+    'planning/generation.py',
+    'planning/measured_surface.py',
+    'planning/ray_culls.py',
+    'planning/rays.py',
     'process_supervisor.py',
     'ray_hard_culls.py',
     'ray_mission_diagnostics.py',
@@ -275,6 +281,25 @@ def test_execution_compatibility_facades_preserve_public_objects():
         facade = import_module('piper_mobile_manipulation.' + facade_name)
         owner = import_module(
             'piper_mobile_manipulation.execution.' + owner_name)
+        assert facade.__all__
+        for symbol in facade.__all__:
+            assert getattr(facade, symbol) is getattr(owner, symbol)
+
+
+def test_planning_compatibility_facades_preserve_public_objects():
+    """Keep planning imports stable while moving their authority package."""
+    owner_by_facade = {
+        'capability_map': 'capability',
+        'nbv_coverage': 'coverage',
+        'ray_hard_culls': 'ray_culls',
+        'surface_coverage': 'measured_surface',
+        'view_generation': 'generation',
+        'viewpoint_rays': 'rays',
+    }
+    for facade_name, owner_name in owner_by_facade.items():
+        facade = import_module('piper_mobile_manipulation.' + facade_name)
+        owner = import_module(
+            'piper_mobile_manipulation.planning.' + owner_name)
         assert facade.__all__
         for symbol in facade.__all__:
             assert getattr(facade, symbol) is getattr(owner, symbol)

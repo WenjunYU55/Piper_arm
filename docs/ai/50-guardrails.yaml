@@ -24,6 +24,10 @@ execution_package_guardrails_2026_08_27:
   invariants: [execution owners remain ROS-free, scan_viewpoint_executor_node.py remains the sole optional autonomous command publisher, former root modules remain explicit export-only facades, every facade export is identical to the owner object, safety constants numerical checks configured-home exceptions schedule policy capture decisions and recovery actions are unchanged]
   blast_radius: [all scan motion, direct home, runtime safety, capture admission, trajectory timing, rough acquisition, mission shutdown]
   must_retest_if_changed: [test_architecture_boundaries.py, test_phase7_viewpoint_components.py, test_scan_motion.py, test_scan_viewpoint_angles.py, Phase 1 executor characterization, test_reintegrated_features.py, complete mobile suite, package build, physical requalification for any later behavior edit]
+planning_package_guardrails_2026_08_27:
+  invariants: [planning owners remain ROS-free, old paths remain explicit export-only facades, facade exports are identical owner objects, population and generation identity are unchanged, permanent culls remain monotonic within a population, only accepted evidence updates coverage, Tesseract remains exact feasibility authority]
+  blast_radius: [all ray generation culling ranking reachability diagnostic replay and mission completion]
+  must_retest_if_changed: [test_architecture_boundaries.py, all capability NBV generation ray cull surface and diagnostic tests, planner characterization, complete mobile and Tesseract suites, package build, command-free replay]
 ray_diagnostics_storage_guardrails_2026_08_27:
   invariants:
     - Every future default writer and historical replay output uses PIPER_ARM_ROOT/datasets/ray_diagnostics.
