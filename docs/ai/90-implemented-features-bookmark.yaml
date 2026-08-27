@@ -652,8 +652,9 @@ post_enable_startup_stability_2026_08_25:
   preserved: [direct-home relaxation buffer, measured J1-J5 preservation, positive-only J6 startup, wrist completion before simultaneous rough home, in-motion fault stop]
 
 architecture_cleanup_2026_08_27:
-  state: implementation_complete_final_regression_pending
+  state: implementation_and_final_regression_complete_push_pending
   branch: reintegrate/selected-archived-features
   implemented: [mission and infrastructure responsibility packages, execution package, planning package, perception package, Tesseract candidate and protocol boundaries, native GUI ROS adapter, reconstruction input provenance, conservative driver joint-state policy seam, responsibility-grouped development tests, historical-doc routing, large-asset policy]
   preserved: [ROS and GUI external interfaces, configuration and launch semantics, mission safety planner driver reconstruction and dataset behavior, root operator commands, runtime asset paths]
   evidence: docs/refactor/architecture_cleanup_2026_08_27.md
+  final_deliverables: [ARCHITECTURE.md, docs/refactor/final_equivalence_report.md, docs/architecture/asset_policy.md, docs/ai/project-structure.txt]

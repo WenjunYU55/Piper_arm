@@ -273,22 +273,24 @@ linked characterization, build, and command-free planning checks. The
 2026-08-17 policy cleanup did not promote a new safety authority; it removed
 the unused duplicate and requires separate physical requalification.
 
-## Phase 10 validation record
+## Final cleanup validation record
 
-Validation on 2026-08-15 was software-only. No arm, camera, GPU worker, driver,
-GUI, coordinator, or other hardware-facing process was started.
+Validation on 2026-08-27 was software-only. No arm, camera, driver, GUI,
+coordinator, or other hardware-facing process was started.
 
-- complete `piper_mobile_manipulation` suite: 580 passed;
-- root GUI/reconstruction/calibration selection: 69 passed, 1 existing
-  hardware-dependent skip;
-- isolated perception suites: 5 heavy-worker, 6 SAM2-worker, and 19 target
-  selection tests passed;
+- complete `piper_mobile_manipulation` suite: 863 passed, 1 hardware skip;
+- complete Tesseract Python suite: 163 passed;
+- driver functional, description, cross-package GUI/driver/planning, L515,
+  reconstruction and GroundingDINO selection: 305 passed, 1 environment skip;
+- isolated perception suites: 6 heavy-worker and 7 SAM2-worker tests passed;
 - normal five-package Foxy `colcon build --symlink-install`: passed;
 - registered `colcon test`: every functional, message, XML, and CMake-lint
-  target passed; the two existing mobile-package style targets remain nonzero;
-- style baseline: 87 Flake8 and 21 PEP257 findings, improved from the Phase 9
-  baseline of 95 and 21; all Phase 10-touched Python files pass both linters;
-- no repository type checker or automatic formatter is configured; Python 3.8
-  byte compilation, AI YAML parsing, and `git diff --check` passed;
-- both rootless Tesseract qualifications passed with backend `0.35.0.6`,
-  collision-model qualification true, and `real_arm_motion=false`.
+  target passed; the existing mobile-package Flake8/PEP257 targets reproduce
+  76 historical style findings;
+- all added Python files pass Flake8 at the repository's 99-column convention;
+- Python byte compilation, all 12 AI YAML files, interface-tree comparison and
+  `git diff --check` passed;
+- rootless Tesseract compact qualification passed with backend `0.35.0.6`,
+  collision qualification true and `real_arm_motion=false`; the core suite
+  passed all preceding stages and reproduced the baseline 150-second planning
+  limit at `dual_limit_start_acquisition`.

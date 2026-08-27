@@ -1451,3 +1451,10 @@ repository_layout_and_asset_debt_2026_08_27:
   retained_root_files: [operator shell entrypoints, piper_gui_native.py, piper_gui_automation.py compatibility fixture, calibration utilities, DDS XML, joint bounds, installation and operation documents]
   optional_future_work: [evaluate Git LFS for binary meshes in a separately coordinated migration, define archival criteria for superseded raw calibration sessions, remove compatibility facades only after their evidence gates]
   must_not_bundle_with: [runtime geometry regeneration, capability-map regeneration, calibration replacement, ROS interface or operator-command changes]
+
+post_cleanup_architecture_debt_2026_08_27:
+  large_adapters: [scan_viewpoint_executor_node.py, target_scan_mission_node.py, piper_gui_native.py, scan_capture_node.py, scan_viewpoint_planner_node.py]
+  rule: Further extraction requires callback and state characterization plus the linked supervised requalification; do not split for line count alone.
+  style: Package-wide mobile Flake8 and PEP257 retain 76 historical findings; added files pass the 99-column project convention.
+  planner_performance: Rootless core qualification still exceeds its internal 150-second budget at dual_limit_start_acquisition exactly as the pre-refactor baseline did. Do not weaken the planning bound as an architecture cleanup.
+  compatibility: Import facades remain until downstream callers migrate and identity tests permit a separate removal.

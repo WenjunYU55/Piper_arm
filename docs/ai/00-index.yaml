@@ -1,14 +1,14 @@
 schema_version: 1
 document: ai_context_index
 architecture_cleanup_2026_08_27:
-  status: phase_10_root_layout_complete_final_validation_pending
+  status: implementation_and_final_validation_complete_push_pending
   branch: reintegrate/selected-archived-features
   baseline: origin/main at 904dc39e96d5ad36b659cb240b1ad2ab0845775e
   implementation_record: docs/refactor/architecture_cleanup_2026_08_27.md
-  navigation: [docs/refactor/current_architecture.md, docs/refactor/external_contracts.md, docs/refactor/safety_invariants.md, docs/refactor/refactor_risks.md, docs/architecture/asset_policy.md, docs/ai/20-modules.yaml, docs/ai/40-flows.yaml, docs/ai/50-guardrails.yaml, docs/ai/60-debt.yaml]
+  navigation: [ARCHITECTURE.md, docs/refactor/final_equivalence_report.md, docs/refactor/current_architecture.md, docs/refactor/external_contracts.md, docs/refactor/safety_invariants.md, docs/refactor/refactor_risks.md, docs/architecture/asset_policy.md, docs/ai/20-modules.yaml, docs/ai/40-flows.yaml, docs/ai/50-guardrails.yaml, docs/ai/60-debt.yaml]
   phase_1_result: Every mobile-manipulation Python test file is registered with CMake and test_architecture_boundaries.py freezes ROS-free owners, the ROS-free Tesseract worker/contract boundary, and cycle-free internal package imports before structural moves.
   preserved: [all ROS interfaces, launch behavior, configuration values, mission and safety authority, motion and capture behavior, dataset formats, GUI behavior, operator commands]
-  validation: [five-package symlink build passes, complete post-characterization mobile suite has 852 passes and one hardware-dependent skip, all seven newly registered CMake targets pass through colcon with 55 test results, 162 Tesseract Python tests pass, 69 driver tests pass with one copyright skip, 18 description tests pass, 193 root GUI reconstruction and calibration tests pass with one environment skip, 25 GroundingDINO selection tests pass, no hardware command]
+  baseline_validation: [five-package symlink build passes, complete post-characterization mobile suite has 852 passes and one hardware-dependent skip, all seven newly registered CMake targets pass through colcon with 55 test results, 162 Tesseract Python tests pass, 69 driver tests pass with one copyright skip, 18 description tests pass, 193 root GUI reconstruction and calibration tests pass with one environment skip, 25 GroundingDINO selection tests pass, no hardware command]
   baseline_limit: The command-free rootless core qualification reached dual_limit_start_acquisition but exceeded its existing internal 150-second planning budget on this host before any refactor edit; retain this as baseline performance evidence rather than classifying it as a refactor regression.
 responsibility_package_routing_2026_08_27:
   mission_owners: {mission contracts and state: piper_mobile_manipulation/mission/core.py, sole mission progression and engine construction: piper_mobile_manipulation/mission/engine.py, guarded mission-bound calibration dataset and prior-process resources: piper_mobile_manipulation/mission/resources.py, durable mission spool: piper_mobile_manipulation/mission/spool.py}
@@ -1572,3 +1572,9 @@ repository_layout_cleanup_2026_08_27:
   asset_policy: docs/architecture/asset_policy.md
   preserved_root_interfaces: [operator shell entrypoints, piper_gui_native.py, calibration utilities, DDS XML, joint bounds, installation and operation documents]
   validation: [121 relocated tests pass with one environment skip, combined relocated L515 and reconstruction suite has 194 passes and one skip, no runtime asset moved or deleted]
+
+architecture_cleanup_final_validation_2026_08_27:
+  results: [863 mobile tests pass with one hardware skip, 163 Tesseract tests pass, 305 combined driver description GUI reconstruction L515 and GroundingDINO tests pass with one environment skip, heavy worker 6 pass, SAM2 live worker 7 pass, five-package build passes, added-file lint and byte compilation pass, all AI YAML parses, external interface tree unchanged]
+  colcon: All functional XML and CMake targets pass; the package-wide mobile style targets reproduce 76 historical Flake8 and PEP257 findings.
+  rootless_planner: Compact qualification passes with backend 0.35.0.6 collision qualified and real_arm_motion false. Core passes all earlier stages then reproduces the baseline internal 150-second budget limit at dual_limit_start_acquisition.
+  hardware: not started

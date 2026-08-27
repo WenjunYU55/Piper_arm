@@ -1,4 +1,5 @@
 Piper_arm/
+├── ARCHITECTURE.md                  Concise subsystem ownership, dependency direction, runtime pipeline, compatibility and extension guide
 ├── integration/track_robot_description/  Ready two-file tracked-root description bundle, pinned manifest, install and odom-target contract
 ├── tools/build_track_robot_description_bundle.py  Deterministic current-arm to tracked-master exporter
 ├── tools/validate_capability_map.py  Command-free convergence replay and smallest-qualified-checkpoint selector

@@ -209,3 +209,27 @@ none were deleted, regenerated, renamed or moved. Generated datasets, model
 weights, bags, point clouds, build/install/log trees and Python caches remain
 untracked. `docs/architecture/asset_policy.md` records the separate retention,
 archive and optional Git LFS recommendations.
+
+## Final regression and equivalence audit
+
+The final source suites pass 863 mobile tests with one hardware skip, 163
+Tesseract tests, and 305 combined driver, description, relocated GUI/driver/
+planning, L515, reconstruction and GroundingDINO tests with one environment
+skip. The isolated heavy and SAM2 workers pass 6 and 7 tests. The five-package
+symlink build passes.
+
+Registered `colcon test` passes every functional, XML and CMake target. Its
+package-wide mobile style targets reproduce 76 historical Flake8/PEP257
+findings; added files pass Flake8 at the repository's 99-column convention.
+Python byte compilation, all 12 AI YAML files, whitespace checks and an exact
+public-interface/launch/config/shell/XML tree comparison pass.
+
+Command-free rootless Tesseract compact qualification passes with backend
+0.35.0.6, collision qualification true and `real_arm_motion=false`. Core
+qualification passes every preceding stage and then reproduces the pre-refactor
+150-second budget limit at `dual_limit_start_acquisition`.
+
+The final architecture, old-to-new mapping, retained-large-module rationale,
+compatibility surfaces, asset recommendations, test evidence and remaining
+debt are recorded in `ARCHITECTURE.md` and
+`docs/refactor/final_equivalence_report.md`.
