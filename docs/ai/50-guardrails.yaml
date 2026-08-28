@@ -976,6 +976,8 @@ generic_motion_planner_guardrail_2026_08_27:
     - cuRobo readiness requires reviewed model provenance plus explicit collision-model qualification; environment flags alone cannot qualify a model.
     - Real-arm motion remains disabled by default and planner selection grants no motion authority.
     - cuRobo v0.7.8 requires Warp 1.11.1 in the isolated environment; do not let login-shell Foxy Python 3.8 paths enter its Python 3.10 worker.
-    - Do not mark the current Bunker AABB model hardware_qualified or suppress its DT_EXCEPTION; geometry equivalence and the complete command-free GPU suite must pass first.
+    - Exact fixed Bunker Mesh records must retain canonical names, identity base-frame poses and matching source hashes; do not replace them with decomposed AABB clouds without rerunning exact-world planning and collision tests.
+    - cuRobo articulated geometry remains a non-conservative sphere approximation. Never call it exact, hide its per-link sampled-surface gaps, or set hardware_qualified until the complete command-free GPU and Tesseract comparison suites pass.
+    - Do not increase sphere count into cuRobo's large self-collision kernel or add ignored self-collision pairs merely to make a test pose pass; prove changes against exact geometry and known safe plus colliding states.
   blast_radius: [mission identity, planner process ownership, readiness, world and target freshness, collision evidence, plan hashing, execution authorization, GUI next-mission configuration]
-  must_retest_if_changed: [test_planner_backend.py, test_contract.py, test_execution_validation.py, test_execution_authorization.py, test_phase1_external_contract_characterization.py, tests/curobo, GUI planner tests, full mobile and Tesseract suites, five-package build]
+  must_retest_if_changed: [test_planner_backend.py, test_contract.py, test_execution_validation.py, test_execution_authorization.py, test_phase1_external_contract_characterization.py, tests/curobo including opt-in exact-world and blocking-world GPU checks, Tesseract collision-profile and model-builder tests, GUI planner tests, full mobile and Tesseract suites, five-package build]

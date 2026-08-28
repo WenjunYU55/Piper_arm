@@ -641,5 +641,7 @@ generic_motion_planner_load_order_2026_08_27:
     - The GUI persists only the next-mission choice; the action goal and authorization freeze the active backend.
     - The bridge must not accept a response whose backend, request identity, hashes, generation, world or collision evidence does not match the active request.
     - cuRobo and torch load only inside the explicitly configured ROS-free worker interpreter.
+    - Before CUDA initialization, the cuRobo worker validates schema-2 hashes for the generated URDF, SRDF, collision manifest, moving-link source meshes and exact fixed Bunker meshes; incomplete or changed provenance fails readiness.
+    - cuRobo loads articulated PiPER, gripper and L515 geometry as audited spheres, exact Bunker chassis and sensor station as fixed Mesh obstacles, then adds the selected floor and request-correlated dynamic obstacle cuboids.
     - The selected worker stops with its mission generation; no planner process survives mission cleanup.
   compatibility: Legacy Tesseract messages, services, topics, executable name, validation functions and TESSERACT_STREAM parsing remain aliases for existing tooling; shared production code uses generic interfaces.

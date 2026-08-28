@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Derive a conservative cuRobo sphere model from the canonical planning URDF."""
+"""Derive and audit cuRobo collision geometry from the canonical planning model.
+
+cuRobo 0.7.8 represents articulated robot collision geometry with spheres, but
+supports triangle meshes for fixed world obstacles.  The generated document
+therefore keeps the existing bounded sphere proposal for moving links, records
+its measured error against every source collision surface, and uses the exact
+hash-bound Bunker meshes for the fixed world.
+"""
 
 import argparse
 import hashlib
@@ -23,7 +30,11 @@ JOINT_NAMES = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
 LOCKED_JOINTS = {'joint7': 0.0, 'joint8': 0.0}
 FIXED_WORLD_LINKS = {
     'bunker_chassis_collision', 'bunker_sensor_station_collision'}
-RIGID_MOUNT_SEAM_Z_M = -0.005
+FIXED_WORLD_MESH_FILES = {
+    'bunker_chassis_collision': 'bunker_chassis_collision.STL',
+    'bunker_sensor_station_collision':
+        'bunker_sensor_station_collision.STL',
+}
 
 
 def sha256_file(path):
@@ -98,6 +109,12 @@ def stl_vertices(path):
 
 
 def collision_bounds(collision, description_root):
+    vertices, _sources = collision_vertices(collision, description_root)
+    return vertices.min(axis=0), vertices.max(axis=0)
+
+
+def collision_vertices(collision, description_root):
+    """Return collision-surface samples and their canonical source records."""
     origin = collision.find('origin')
     translation = values(
         None if origin is None else origin.get('xyz'), 3, [0.0, 0.0, 0.0])
@@ -117,7 +134,11 @@ def collision_bounds(collision, description_root):
         vertices = stl_vertices(path)
         scale = values(mesh.get('scale'), 3, [1.0, 1.0, 1.0])
         vertices = (vertices * scale[None, :]) @ rotation.T + translation
-        return vertices.min(axis=0), vertices.max(axis=0)
+        return vertices, [{
+            'path': str(path),
+            'sha256': sha256_file(path),
+            'scale': [float(item) for item in scale],
+        }]
     if box is not None:
         half = values(box.get('size'), 3, [0.0, 0.0, 0.0]) * 0.5
     elif cylinder is not None:
@@ -134,7 +155,7 @@ def collision_bounds(collision, description_root):
         for y in (-half[1], half[1])
         for z in (-half[2], half[2])])
     corners = corners @ rotation.T + translation
-    return corners.min(axis=0), corners.max(axis=0)
+    return corners, []
 
 
 def covering_spheres(low, high, cell_size):
@@ -162,33 +183,82 @@ def covering_spheres(low, high, cell_size):
     return result
 
 
-def deduplicate_spheres(spheres, cell_size):
-    """Keep one deterministic representative per overlapping grid cell."""
-    selected = {}
-    size = float(cell_size)
-    for sphere in spheres:
+def deduplicate_spheres(spheres, cell_size, separation_ratio=0.75):
+    """Prune redundant overlapping centres without merging grid neighbours.
+
+    The previous cell-size rounding merged legitimate adjacent grid centres
+    (Python's ties-to-even rounding made ``-0.5`` and ``+0.5`` especially
+    destructive) and then retained the smaller radius.  Process largest-first
+    and use an explicit Euclidean separation smaller than one grid step.  This
+    removes duplicate/near-duplicate decomposition cells, retains 40 mm grid
+    neighbours, and keeps cuRobo below its slow large-self-collision kernel.
+    """
+    separation = float(cell_size) * float(separation_ratio)
+    if not math.isfinite(separation) or separation <= 0.0:
+        raise ValueError('sphere centre separation must be positive')
+    selected = []
+    ordered = sorted(spheres, key=lambda item: (
+        -float(item['radius']),
+        tuple(float(value) for value in item['center']),
+    ))
+    for sphere in ordered:
         center = np.asarray(sphere['center'], dtype=float)
-        key = tuple(int(round(value / size)) for value in center)
-        grid_center = np.asarray(key, dtype=float) * size
-        rank = (
-            float(np.linalg.norm(center - grid_center)),
-            float(sphere['radius']),
-            tuple(float(value) for value in center),
+        if all(
+                float(np.linalg.norm(
+                    center - np.asarray(item['center'], dtype=float)))
+                >= separation
+                for item in selected):
+            selected.append(sphere)
+    return sorted(selected, key=lambda item: tuple(item['center']))
+
+
+def surface_coverage(vertices, spheres, chunk_size=20000):
+    """Measure signed surface gap to a sphere union without large allocations.
+
+    A positive gap is uncovered source surface.  A non-positive gap lies in at
+    least one sphere.  This audit is deliberately independent from cuRobo so it
+    also runs in ordinary CPU-only tests.
+    """
+    points = np.asarray(vertices, dtype=float).reshape((-1, 3))
+    centers = np.asarray([item['center'] for item in spheres], dtype=float)
+    radii = np.asarray([item['radius'] for item in spheres], dtype=float)
+    if not len(points) or not len(centers):
+        raise ValueError('surface coverage requires vertices and spheres')
+    covered = 0
+    maximum_gap = -math.inf
+    for start in range(0, len(points), int(chunk_size)):
+        block = points[start:start + int(chunk_size)]
+        gaps = np.min(
+            np.linalg.norm(
+                block[:, None, :] - centers[None, :, :], axis=2)
+            - radii[None, :],
+            axis=1,
         )
-        if key not in selected or rank < selected[key][0]:
-            selected[key] = (rank, sphere)
-    return [selected[key][1] for key in sorted(selected)]
+        covered += int(np.count_nonzero(gaps <= 1e-9))
+        maximum_gap = max(maximum_gap, float(np.max(gaps)))
+    return {
+        'sample_count': int(len(points)),
+        'covered_sample_count': covered,
+        'covered_fraction': round(float(covered) / float(len(points)), 9),
+        'maximum_uncovered_gap_m': round(max(0.0, maximum_gap), 9),
+    }
 
 
-def fixed_world_bounds(name, low, high):
-    """Apply the SRDF rigid-mount contact seam to fixed world geometry."""
-    low = np.asarray(low, dtype=float).copy()
-    high = np.asarray(high, dtype=float).copy()
-    if name == 'bunker_chassis_collision':
-        high[2] = min(high[2], RIGID_MOUNT_SEAM_Z_M)
-    if np.any(low >= high):
-        raise ValueError('fixed world collision bounds are empty')
-    return low, high
+def fixed_world_meshes(description_root):
+    """Describe the exact base-frame Bunker meshes with immutable hashes."""
+    mesh_root = Path(description_root).resolve() / 'meshes'
+    result = []
+    for name in sorted(FIXED_WORLD_MESH_FILES):
+        path = (mesh_root / FIXED_WORLD_MESH_FILES[name]).resolve()
+        if not path.is_file():
+            raise ValueError('fixed world collision mesh is missing: %s' % path)
+        result.append({
+            'name': name,
+            'file_path': str(path),
+            'pose': [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+            'sha256': sha256_file(path),
+        })
+    return result
 
 
 def disabled_collision_pairs(srdf_path):
@@ -208,32 +278,37 @@ def build(
     root = ET.parse(urdf_path).getroot()
     spheres = {}
     collision_links = []
-    platform_cuboids = []
+    coverage = {}
+    moving_mesh_sources = {}
     for link in root.findall('link'):
         name = str(link.get('name', ''))
         collisions = link.findall('collision')
         if not name or not collisions:
             continue
         link_spheres = []
-        for collision_index, collision in enumerate(collisions):
-            low, high = collision_bounds(collision, description_root)
+        link_vertices = []
+        link_sources = []
+        for collision in collisions:
             if name in FIXED_WORLD_LINKS:
-                low, high = fixed_world_bounds(name, low, high)
-                platform_cuboids.append({
-                    'name': '%s_%03d' % (name, collision_index),
-                    'pose': [
-                        round(float((low[axis] + high[axis]) * 0.5), 9)
-                        for axis in range(3)
-                    ] + [1.0, 0.0, 0.0, 0.0],
-                    'dims': [
-                        round(float(high[axis] - low[axis]), 9)
-                        for axis in range(3)],
-                })
                 continue
+            vertices, sources = collision_vertices(
+                collision, description_root)
+            low, high = vertices.min(axis=0), vertices.max(axis=0)
             link_spheres.extend(covering_spheres(low, high, cell_size_m))
+            link_vertices.append(vertices)
+            link_sources.extend(sources)
         if link_spheres:
             collision_links.append(name)
             spheres[name] = deduplicate_spheres(link_spheres, cell_size_m)
+            coverage[name] = surface_coverage(
+                np.concatenate(link_vertices), spheres[name])
+            unique_sources = {
+                (item['path'], item['sha256'], tuple(item['scale'])):
+                    item
+                for item in link_sources
+            }
+            moving_mesh_sources[name] = [
+                unique_sources[key] for key in sorted(unique_sources)]
     if not spheres:
         raise ValueError('planning URDF contains no collision geometry')
     collision_link_set = set(collision_links)
@@ -274,9 +349,12 @@ def build(
             },
         },
         'piper_curobo_provenance': {
-            'schema_version': 1,
+            'schema_version': 2,
+            'source_srdf_path': str(Path(srdf_path).resolve()),
             'source_urdf_sha256': sha256_file(urdf_path),
             'source_srdf_sha256': sha256_file(srdf_path),
+            'source_collision_manifest_path': str(
+                Path(collision_manifest_path).resolve()),
             'source_collision_manifest_sha256': sha256_file(
                 collision_manifest_path),
             'curobo_version': PINNED_VERSION,
@@ -284,14 +362,15 @@ def build(
             'covering_shape': 'per_collision_aabb_regular_sphere_grid',
             'cell_size_m': float(cell_size_m),
             'sphere_surface_inset_m': 0.004,
-            'deduplication_grid_m': float(cell_size_m),
-            'rigid_mount_seam_z_m': RIGID_MOUNT_SEAM_Z_M,
+            'minimum_sphere_center_separation_m': round(
+                float(cell_size_m) * 0.75, 9),
+            'moving_link_surface_coverage': coverage,
+            'moving_link_mesh_sources': moving_mesh_sources,
             'conservative_geometry': False,
             'hardware_qualified': False,
-            # The Bunker is fixed in base_link during arm planning. Per-piece
-            # AABBs remain world geometry so they do not consume thousands of
-            # robot spheres while still colliding with every moving arm link.
-            'fixed_world_cuboids': platform_cuboids,
+            # The two meshes are already transformed into base_link by the
+            # canonical Tesseract model builder and its hash-locked manifest.
+            'fixed_world_meshes': fixed_world_meshes(description_root),
         },
     }
     return config

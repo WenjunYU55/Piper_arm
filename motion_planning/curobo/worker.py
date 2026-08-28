@@ -30,6 +30,10 @@ from motion_planning.curobo.adapter import (
 from motion_planning.curobo.spool import Spool
 
 
+REQUIRED_FIXED_WORLD_MESHES = {
+    'bunker_chassis_collision', 'bunker_sensor_station_collision'}
+
+
 class BackendUnavailable(RuntimeError):
     """Report a deterministic startup/runtime dependency failure."""
 
@@ -53,6 +57,124 @@ def sha256_file(path):
         for block in iter(lambda: stream.read(1024 * 1024), b''):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _validated_hash_bound_path(record, path_key='path'):
+    """Resolve one provenance path and prove that its content is unchanged."""
+    path = Path(str(record.get(path_key, ''))).resolve()
+    expected_hash = str(record.get('sha256', ''))
+    if (
+            not path.is_file()
+            or len(expected_hash) != 64
+            or sha256_file(path) != expected_hash):
+        raise ValueError('hash-bound model input is invalid: %s' % path)
+    return path
+
+
+def validate_model_provenance(config_document):
+    """Validate generated collision evidence before initializing CUDA.
+
+    Schema 1 remains readable for already generated development models.  A
+    schema-2 model fails closed unless its moving-link audit and both canonical
+    fixed-world meshes are complete and still match their recorded hashes.
+    """
+    if not isinstance(config_document, dict):
+        raise ValueError('robot model document is not a mapping')
+    provenance = config_document.get('piper_curobo_provenance', {})
+    if not isinstance(provenance, dict):
+        raise ValueError('robot model provenance is not a mapping')
+    if (
+            provenance.get('curobo_version') != PINNED_VERSION
+            or provenance.get('curobo_commit') != PINNED_COMMIT):
+        raise ValueError('robot model is not bound to the pinned cuRobo release')
+    kinematics = config_document.get('robot_cfg', {}).get('kinematics', {})
+    configured_urdf = str(kinematics.get('urdf_path', ''))
+    if (
+            len(str(provenance.get('source_urdf_sha256', ''))) != 64
+            or sha256_file(configured_urdf) !=
+            provenance['source_urdf_sha256']):
+        raise ValueError('robot model URDF provenance does not match its URDF')
+
+    schema_version = int(provenance.get('schema_version', 1))
+    fixed_world_meshes = []
+    mesh_names = set()
+    for item in provenance.get('fixed_world_meshes', []):
+        if not isinstance(item, dict):
+            raise ValueError('fixed world mesh entry is not a mapping')
+        path = _validated_hash_bound_path(item, 'file_path')
+        name = str(item.get('name', path.stem))
+        pose = item.get('pose')
+        if (
+                not name or name in mesh_names
+                or not isinstance(pose, list) or len(pose) != 7
+                or not all(math.isfinite(float(value)) for value in pose)):
+            raise ValueError('fixed world mesh provenance is invalid: %s' % path)
+        mesh_names.add(name)
+        fixed_world_meshes.append({
+            'name': name,
+            'file_path': str(path),
+            'pose': [float(value) for value in pose],
+        })
+
+    if schema_version >= 2:
+        if mesh_names != REQUIRED_FIXED_WORLD_MESHES:
+            raise ValueError(
+                'schema-2 model must contain both canonical Bunker meshes')
+        if provenance.get('conservative_geometry') is not False:
+            raise ValueError(
+                'schema-2 moving-link sphere approximation must declare '
+                'conservative_geometry false')
+        if not isinstance(provenance.get('hardware_qualified'), bool):
+            raise ValueError('hardware qualification flag is missing')
+        for path_key, hash_key in (
+                ('source_srdf_path', 'source_srdf_sha256'),
+                ('source_collision_manifest_path',
+                 'source_collision_manifest_sha256')):
+            _validated_hash_bound_path({
+                'path': provenance.get(path_key, ''),
+                'sha256': provenance.get(hash_key, ''),
+            })
+        collision_links = set(kinematics.get('collision_link_names') or [])
+        coverage = provenance.get('moving_link_surface_coverage')
+        if not isinstance(coverage, dict) or set(coverage) != collision_links:
+            raise ValueError(
+                'moving-link surface audit does not match collision links')
+        for name, report in coverage.items():
+            if not isinstance(report, dict):
+                raise ValueError('surface audit is malformed for %s' % name)
+            sample_count = int(report.get('sample_count', -1))
+            covered_count = int(report.get('covered_sample_count', -1))
+            fraction = float(report.get('covered_fraction', math.nan))
+            maximum_gap = float(
+                report.get('maximum_uncovered_gap_m', math.nan))
+            if (
+                    sample_count <= 0 or covered_count < 0
+                    or covered_count > sample_count
+                    or not math.isfinite(fraction) or not 0.0 <= fraction <= 1.0
+                    or not math.isfinite(maximum_gap) or maximum_gap < 0.0):
+                raise ValueError('surface audit is invalid for %s' % name)
+        mesh_sources = provenance.get('moving_link_mesh_sources')
+        if not isinstance(mesh_sources, dict):
+            raise ValueError('moving-link mesh sources are missing')
+        if not set(mesh_sources).issubset(collision_links):
+            raise ValueError('moving-link mesh sources contain an unknown link')
+        for name, records in mesh_sources.items():
+            if not isinstance(records, list):
+                raise ValueError('mesh source list is malformed for %s' % name)
+            for record in records:
+                if not isinstance(record, dict):
+                    raise ValueError('mesh source entry is malformed for %s' % name)
+                _validated_hash_bound_path(record)
+
+    return {
+        'provenance': dict(provenance),
+        'collision_link_names': list(
+            kinematics.get('collision_link_names') or []),
+        'fixed_platform_cuboids': list(provenance.get(
+            'fixed_world_cuboids', provenance.get(
+                'fixed_platform_cuboids', []))),
+        'fixed_world_meshes': fixed_world_meshes,
+    }
 
 
 def matrix_quaternion_wxyz(matrix):
@@ -129,7 +251,7 @@ class CuroboBackend:
             import curobo
             import warp
             import yaml
-            from curobo.geom.types import Cuboid, WorldConfig
+            from curobo.geom.types import Cuboid, Mesh, WorldConfig
             from curobo.types.base import TensorDeviceType
             from curobo.types.math import Pose
             from curobo.types.state import JointState
@@ -148,6 +270,22 @@ class CuroboBackend:
             raise BackendUnavailable(
                 'Warp version %s does not match pinned %s'
                 % (warp_version or 'unknown', PINNED_WARP_VERSION))
+        config_path = Path(robot_config_path).resolve()
+        if not config_path.is_file():
+            raise BackendUnavailable(
+                'cuRobo robot configuration is missing: %s' % config_path)
+        try:
+            config_document = yaml.safe_load(
+                config_path.read_text(encoding='utf-8'))
+            validated = validate_model_provenance(config_document)
+            self.model_provenance = validated['provenance']
+            self.collision_link_names = validated['collision_link_names']
+            self.robot_config_sha256 = sha256_file(config_path)
+            self.fixed_platform_cuboids = validated['fixed_platform_cuboids']
+            self.fixed_world_meshes = validated['fixed_world_meshes']
+        except (OSError, TypeError, ValueError, yaml.YAMLError) as error:
+            raise BackendUnavailable(
+                'cuRobo PiPER model provenance is malformed: %s' % error)
         if not torch.cuda.is_available():
             raise BackendUnavailable('PyTorch reports CUDA unavailable')
         try:
@@ -155,43 +293,14 @@ class CuroboBackend:
             torch.cuda.synchronize()
         except Exception as error:
             raise BackendUnavailable('CUDA initialization failed: %s' % error)
-        config_path = Path(robot_config_path).resolve()
-        if not config_path.is_file():
-            raise BackendUnavailable(
-                'cuRobo robot configuration is missing: %s' % config_path)
         self.torch = torch
         self.Cuboid = Cuboid
+        self.Mesh = Mesh
         self.WorldConfig = WorldConfig
         self.Pose = Pose
         self.JointState = JointState
         self.MotionGenPlanConfig = MotionGenPlanConfig
         self.tensor_args = TensorDeviceType()
-        try:
-            config_document = yaml.safe_load(
-                config_path.read_text(encoding='utf-8'))
-            provenance = config_document.get(
-                'piper_curobo_provenance', {})
-            if (
-                    provenance.get('curobo_version') != PINNED_VERSION
-                    or provenance.get('curobo_commit') != PINNED_COMMIT):
-                raise ValueError(
-                    'robot model is not bound to the pinned cuRobo release')
-            configured_urdf = config_document.get(
-                'robot_cfg', {}).get('kinematics', {}).get('urdf_path', '')
-            if (
-                    len(str(provenance.get('source_urdf_sha256', ''))) != 64
-                    or sha256_file(configured_urdf) !=
-                    provenance['source_urdf_sha256']):
-                raise ValueError(
-                    'robot model URDF provenance does not match its URDF')
-            self.model_provenance = dict(provenance)
-            self.robot_config_sha256 = sha256_file(config_path)
-            self.fixed_platform_cuboids = list(provenance.get(
-                'fixed_world_cuboids', provenance.get(
-                    'fixed_platform_cuboids', [])))
-        except (OSError, TypeError, ValueError, yaml.YAMLError) as error:
-            raise BackendUnavailable(
-                'cuRobo PiPER model provenance is malformed: %s' % error)
         try:
             config = MotionGenConfig.load_from_robot_config(
                 str(config_path),
@@ -232,7 +341,9 @@ class CuroboBackend:
         world_cuboids = list(self.fixed_platform_cuboids)
         world_cuboids.extend(obstacle_cuboids(request, self.floor_z_m))
         cuboids = [self.Cuboid(**value) for value in world_cuboids]
-        self.motion_gen.update_world(self.WorldConfig(cuboid=cuboids))
+        meshes = [self.Mesh(**value) for value in self.fixed_world_meshes]
+        self.motion_gen.update_world(self.WorldConfig(
+            cuboid=cuboids, mesh=meshes))
 
     def _path(self, result, speed):
         if not bool(result.success.item()):

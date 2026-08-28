@@ -1031,10 +1031,10 @@ curobo_integration_diagnostics_2026_08_27:
     correction: Installed toolkit-only CUDA 12.8.93 under /home/prl/.local, cuRobo 0.7.8 and Warp 1.11.1 under the explicit Python 3.10 environment; native extensions, GPU initialization, model warm-up, heartbeat and cleanup pass without changing ROS, system Python or driver.
   - id: curobo_collision_model_unqualified
     status: fail_closed
-    symptom: Canonical PiPER assets can be converted to conservative moving-link spheres and fixed world cuboids, but physical equivalence to the Tesseract model is not proved.
-    correction: Worker readiness and collision_qualified remain false unless reviewed model provenance says hardware_qualified and the operator explicitly enables qualification. Environment opt-in alone cannot bypass provenance.
+    symptom: Canonical PiPER moving assets require articulated collision spheres in cuRobo 0.7.8; the current 167-sphere model has sampled-surface gaps from 4.2 to 31.0 mm, so physical equivalence to the exact Tesseract model is not proved.
+    correction: Schema-2 generation records per-link surface coverage and hash-binds every moving source mesh. Worker readiness and collision_qualified remain false unless reviewed model provenance says hardware_qualified and the operator explicitly enables qualification. Environment opt-in alone cannot bypass provenance.
   - id: curobo_coarse_bunker_cuboids_reject_interpolated_path
-    status: fail_closed_physical_qualification_blocker
+    status: resolved_2026_08_28_exact_fixed_world_meshes
     symptom: Start and goal states and free-space joint planning pass, but enabling the fixed Bunker chassis AABB set yields MotionGen DT_EXCEPTION for the tested command-free trajectory.
     root_cause: The canonical decomposed chassis meshes are converted to many large overlapping AABBs; this is not collision-equivalent to Tesseract mesh geometry.
-    correction: Keep hardware_qualified false and real motion blocked; replace or consolidate the world representation, then rerun frozen-request GPU and Tesseract comparison tests. Do not disable collision checking or increase shared limits.
+    correction: Skip the 62 decomposed platform cells at cuRobo conversion, hash-bind the canonical base-frame chassis and sensor-station STLs, and load them as exact fixed Mesh obstacles. Neutral-to-qualified-scan and reverse plans pass and a blocking dynamic box rejects. Moving-link qualification remains independently blocked; no collision check or shared limit was weakened.

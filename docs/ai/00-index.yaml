@@ -1633,7 +1633,7 @@ architecture_cleanup_final_validation_2026_08_27:
   hardware: not started
 
 generic_motion_planner_and_curobo_2026_08_27:
-  status: isolated_runtime_installed_worker_ready_physical_collision_qualification_blocked
+  status: isolated_runtime_installed_exact_fixed_world_integrated_moving_sphere_qualification_blocked
   branch: curobo-integration
   default_backend: tesseract
   backends: [tesseract, curobo]
@@ -1641,4 +1641,6 @@ generic_motion_planner_and_curobo_2026_08_27:
   boundary: Both adapters emit MotionPlan and then share normalization, execution validation, ScanExecutionPlan, PlanAuthorizer, runtime gates, TrajectoryRunner and the PiPER command path.
   safety: [backend frozen per mission, no automatic fallback, planners cannot command the robot, real motion remains disabled by default, malformed or unqualified output fails closed]
   runtime: cuRobo 0.7.8 at d64c4b005459db10c5dd867d8b30a87d5bda9bdb, Warp 1.11.1, Python 3.10.20, PyTorch 2.11.0+cu128 and user-local CUDA toolkit 12.8.93 are installed in isolated paths; real CUDA extensions, MotionGen warm-up, worker heartbeat, free-space joint planning and bounded cleanup pass.
-  blocker: The generated approximate collision model remains hardware_qualified false. Its coarse fixed Bunker cuboids reproduce a MotionGen DT_EXCEPTION for the tested canonical-platform trajectory; do not claim Tesseract collision equivalence or physical cuRobo readiness.
+  collision_model: Schema-2 provenance hash-binds the generated URDF, SRDF, collision manifest, every moving-link mesh and both exact base-frame Bunker STL meshes. Articulated links use 167 audited spheres because cuRobo 0.7.8 does not support articulated triangle meshes; fixed Bunker geometry uses exact Mesh obstacles.
+  evidence: Exact-world command-free neutral-to-qualified-scan and reverse plans pass on the RTX 3090; a deliberately blocking dynamic box rejects. The former 62-cuboid Bunker DT_EXCEPTION is resolved.
+  blocker: Moving-link sampled-surface gaps remain 4.2 to 31.0 mm and the representation declares conservative_geometry false and hardware_qualified false. Complete frozen-request GPU and Tesseract comparison suites remain required; do not claim collision equivalence or physical cuRobo readiness.

@@ -80,3 +80,53 @@ def test_real_planner_rejects_a_deliberately_blocked_scene(backend):
     request = attach_digest(request, 'request_sha256')
     with pytest.raises(CuroboContractError):
         backend.plan(validate_request(request))
+
+
+def test_exact_bunker_world_preserves_known_joint_path(backend):
+    """Exercise the generated model without requiring mission fixtures."""
+    provenance = backend.model_provenance
+    assert provenance['schema_version'] == 2
+    assert provenance['hardware_qualified'] is False
+    assert provenance['conservative_geometry'] is False
+    assert {
+        item['name'] for item in provenance['fixed_world_meshes']
+    } == {
+        'bunker_chassis_collision',
+        'bunker_sensor_station_collision',
+    }
+    assert set(provenance['moving_link_surface_coverage']) == set(
+        backend.collision_link_names)
+
+    backend._update_world({'scene': {'obstacles': []}})
+    neutral = [0.0, 0.8, -0.7, 0.0, 0.7, 0.0]
+    qualified_scan = [
+        0.3189509166, 0.7800870124, -1.6258884709,
+        -0.6660237320, -0.2154052887, 0.0403545644,
+    ]
+    request = {'planning': {'effective_speed_percent': 5.0}}
+    outbound, _outbound_duration = backend._plan_joint_goal(
+        neutral, qualified_scan, request)
+    inbound, _inbound_duration = backend._plan_joint_goal(
+        qualified_scan, neutral, request)
+    assert len(outbound) >= 2
+    assert len(inbound) >= 2
+    assert outbound[-1]['positions_rad'] == pytest.approx(qualified_scan)
+    assert inbound[-1]['positions_rad'] == pytest.approx(neutral)
+
+
+def test_exact_world_still_rejects_blocking_dynamic_geometry(backend):
+    backend._update_world({'scene': {'obstacles': [{
+        'id': 'gpu_test_blocking_volume',
+        'type': 'box',
+        'minimum_m': [-2.0, -2.0, -2.0],
+        'maximum_m': [2.0, 2.0, 2.0],
+    }]}})
+    neutral = [0.0, 0.8, -0.7, 0.0, 0.7, 0.0]
+    qualified_scan = [
+        0.3189509166, 0.7800870124, -1.6258884709,
+        -0.6660237320, -0.2154052887, 0.0403545644,
+    ]
+    with pytest.raises(CuroboContractError):
+        backend._plan_joint_goal(
+            neutral, qualified_scan,
+            {'planning': {'effective_speed_percent': 5.0}})

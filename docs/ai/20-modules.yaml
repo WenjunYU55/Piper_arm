@@ -507,6 +507,7 @@ motion_planner_backend_ownership_2026_08_27:
   backend_router: piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/bridge_node.py
   tesseract_backend: [motion_planning/tesseract, piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/worker.py]
   curobo_backend: motion_planning/curobo
+  curobo_collision_owners: {moving_link_generation_and_audit: motion_planning/curobo/generate_robot_config.py, fixed_and_dynamic_world_loading: motion_planning/curobo/worker.py, canonical_sources: [generated Tesseract planning URDF, piper_bunker.srdf, collision_model.yaml, piper_description meshes]}
   gui_selection: [piper_gui/planner_backend.py, piper_gui/ros_node.py, piper_gui/view_model.py, piper_gui/native_app.py]
   allowed_edit_paths: [piper_mobile_manipulation/planning/backend.py, piper_tesseract_foxy, motion_planning/tesseract, motion_planning/curobo, piper_gui, planner_backend.yaml, planner ROS messages and services, planner tests, docs/ai]
-  must_not_move_without: [mission backend freeze, ProcessSupervisor generation ownership, request and world freshness, collision qualification, MotionPlan to ScanExecutionPlan normalization, PlanAuthorizer, runtime safety gates, legacy Tesseract compatibility]
+  must_not_move_without: [mission backend freeze, ProcessSupervisor generation ownership, request and world freshness, collision qualification, MotionPlan to ScanExecutionPlan normalization, PlanAuthorizer, runtime safety gates, legacy Tesseract compatibility, canonical mesh hashes, fixed Bunker base-frame transforms, moving-link sphere coverage audit]

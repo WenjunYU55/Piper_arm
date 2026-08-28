@@ -1487,13 +1487,13 @@ post_cleanup_architecture_debt_2026_08_27:
   compatibility: Import facades remain until downstream callers migrate and identity tests permit a separate removal.
 
 curobo_runtime_and_collision_qualification_debt_2026_08_27:
-  status: runtime_installed_command_free_worker_qualified_physical_collision_model_blocked
+  status: runtime_installed_exact_fixed_world_qualified_moving_collision_model_blocked
   pinned_release: {version: 0.7.8, commit: d64c4b005459db10c5dd867d8b30a87d5bda9bdb}
   installed_runtime: {python: 3.10.20, torch: 2.11.0+cu128, cuda_toolkit: 12.8.93 user-local, warp: 1.11.1, gpu: NVIDIA GeForce RTX 3090, driver: 570.133.07}
-  completed: [five native CUDA extensions build and import, CUDA tensor execution, canonical model generation, gripper joints locked outside six-axis cspace, sphere deduplication, MotionGen warm-up, command-free free-space joint plan, healthy worker heartbeat, Ctrl-C cleanup with no orphan GPU process]
-  blockers: [generated sphere/cuboid collision approximation is not physically qualified, coarse fixed Bunker cuboids cause DT_EXCEPTION for the tested canonical-platform trajectory, complete frozen-request GPU suite cannot pass until that geometry conversion is corrected and reviewed]
+  completed: [five native CUDA extensions build and import, CUDA tensor execution, schema-2 canonical model generation, gripper joints locked outside six-axis cspace, corrected largest-first sphere pruning that preserves grid neighbours, exact hash-bound Bunker Mesh world, MotionGen warm-up, command-free neutral-to-qualified-scan and reverse plans, deliberately blocked dynamic-world rejection, healthy worker heartbeat, Ctrl-C cleanup with no orphan GPU process]
+  blockers: [moving articulated geometry remains a non-conservative 167-sphere approximation with sampled-surface gaps from 4.2 to 31.0 mm, complete frozen-request GPU suite and Tesseract collision/path comparison remain pending, no physical cuRobo test]
   explicit_limitations: [folded bootstrap outside canonical joint limits unsupported, occlusion and manipulation plan kinds unsupported, no claim of Tesseract collision equivalence, no physical robot test]
-  next_cut: Replace or consolidate the coarse decomposed Bunker AABB world representation using version-matched cuRobo geometry, rerun all frozen-request and blocked-scene GPU tests, compare paths/collisions against Tesseract, then review model provenance before any explicitly authorized physical motion.
+  next_cut: Curate and validate the moving-link sphere model against exact Tesseract contacts across known safe, near-contact and collision states; then run all frozen-request GPU tests and compare paths/collisions before any reviewed hardware_qualified change or explicitly authorized physical motion.
   must_not_resolve_by: [weakening shared validators, faking planner success, bypassing collision qualification, importing CUDA into ROS, automatic fallback, enabling real motion]
 
 repository_presentation_and_install_docs_2026_08_28:
