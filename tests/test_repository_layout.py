@@ -12,6 +12,11 @@ PUBLIC_ENTRY_POINTS = (
     "run_target_scan_gateway.sh",
     "start_gui.sh",
     "start_piper.sh",
+    "piper_gui_native.py",
+)
+
+
+RELOCATED_SCRIPT_ENTRY_POINTS = (
     "scripts/setup/install_host_dependencies.sh",
     "scripts/setup/install_piper_can_service.sh",
     "scripts/robot/check_piper_can.sh",
@@ -23,14 +28,14 @@ PUBLIC_ENTRY_POINTS = (
 
 
 def test_public_entry_points_exist_and_are_executable():
-    for relative_path in PUBLIC_ENTRY_POINTS:
+    for relative_path in PUBLIC_ENTRY_POINTS + RELOCATED_SCRIPT_ENTRY_POINTS:
         path = ROOT / relative_path
         assert path.is_file(), relative_path
         assert path.stat().st_mode & stat.S_IXUSR, relative_path
 
 
 def test_relocated_scripts_resolve_the_repository_root():
-    for relative_path in PUBLIC_ENTRY_POINTS[4:]:
+    for relative_path in RELOCATED_SCRIPT_ENTRY_POINTS:
         source = (ROOT / relative_path).read_text(encoding="utf-8")
         if relative_path == "scripts/robot/check_piper_can.sh":
             continue

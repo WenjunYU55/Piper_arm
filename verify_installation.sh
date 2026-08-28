@@ -73,6 +73,7 @@ for script in \
   run_target_scan_gateway.sh \
   start_gui.sh \
   start_piper.sh \
+  piper_gui_native.py \
   scripts/setup/install_host_dependencies.sh \
   scripts/setup/install_piper_can_service.sh \
   scripts/robot/check_piper_can.sh \
