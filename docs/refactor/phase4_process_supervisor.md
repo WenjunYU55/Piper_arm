@@ -84,7 +84,7 @@ real child. It covers:
 These paths were inspected and deliberately remain outside the autonomous
 mission extraction because their ownership and escalation policies differ:
 
-- `piper_gui_native.py` owns its manual Tesseract/scan groups and uses
+- `piper_gui/native_app.py` owns its manual Tesseract/scan groups and uses
   SIGINT/SIGTERM/SIGKILL; its preview process has a separate direct-child
   policy. It is a candidate for a later policy-explicit migration.
 - `target_scan_gateway_node.py` uses bounded `subprocess.run` for offline TSDF

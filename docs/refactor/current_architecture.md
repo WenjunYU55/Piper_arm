@@ -33,8 +33,8 @@ artifacts but are not source-of-truth code. The primary architecture map remains
 | `motion_planning/tesseract` | Isolated Ubuntu 24.04/Tesseract runtime, rootless launch/build/qualification scripts |
 | `reconstruction` | Offline target-mask RGB-D TSDF reconstruction and tests |
 | `deployment` | System-level deployment assets |
-| `piper_gui_native.py` and `piper_gui/` | Tk presentation, production `RunTargetScan` client, read-only diagnostics, manual/preview commissioning; no autonomous workflow or production process ownership |
-| `piper_gui_automation.py` | Archived pre-Phase-8 pure workflow characterization; not imported by the production GUI |
+| `piper_gui/native_app.py` and `piper_gui/` | Tk presentation, production `RunTargetScan` client, read-only diagnostics, manual/preview commissioning; no autonomous workflow or production process ownership |
+| `tests/fixtures/piper_gui_automation.py` | Archived pre-Phase-8 pure workflow characterization; not imported by the production GUI |
 | root `*.sh`/`*.py` | Operator startup, shutdown, diagnostics, calibration and qualification entry points |
 | `docs/ai` | Machine-readable ownership, contracts, flows, guardrails, debt and maintenance routing |
 

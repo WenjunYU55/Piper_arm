@@ -2,7 +2,7 @@
 
 Phase 8 update: the Phase 0 GUI complexity/process/retry findings below remain
 historical characterization, but the production GUI no longer imports or runs
-that alternate Step 1-5 controller. `piper_gui_native.py` delegates action
+that alternate Step 1-5 controller. `piper_gui/native_app.py` delegates action
 lifecycle to `piper_gui/ros_client.py`, presentation state to
 `piper_gui/view_model.py`, and owns only a preview RViz child. See
 `phase8_gui_responsibility_map.md`.
@@ -28,7 +28,7 @@ McCabe score. Repository interfaces, launch/config sources, tests and
 |---|---:|---:|---:|---|
 | `target_scan_mission_node.py` | 2,684 | 95 | 18 | `run_pipeline`: 313 LOC, branch indicator 33 |
 | `scan_viewpoint_executor_node.py` | 3,878 | 114 | 10 | `tesseract_plan_cb`: 517 LOC, branch indicator 143 |
-| `piper_gui_native.py` | 3,715 | 102 | 11 | `drain_events`: 549 LOC, branch indicator 127 |
+| `piper_gui/native_app.py` | 3,715 | 102 | 11 | `drain_events`: 549 LOC, branch indicator 127 |
 
 ### Long/high-complexity functions
 

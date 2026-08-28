@@ -1,4 +1,7 @@
-# Supervised cube workflow verification handoff
+# Historical supervised cube workflow verification handoff
+
+> Historical snapshot through 30 July 2026. Do not use this file as the current
+> operator procedure; use `OPERATOR_COMMANDS.md`.
 
 Status updated 2026-07-30. Rough acquisition retains the collision-qualified
 15-degree primary sweep. An exact post-settle `target_mask_missing` result with
@@ -277,7 +280,7 @@ the process existed. A later call appeared to wait and was not diagnosed before 
 ## Resume remotely (no arm motion)
 
 1. Start the perception and coordinator terminals with `ROS_DOMAIN_ID=42` and
-   `ROS_LOCALHOST_ONLY=1`. Never run `enable_piper.sh` for this test.
+   `ROS_LOCALHOST_ONLY=1`. Never run `scripts/robot/enable_piper.sh` for this test.
 2. Start monitors for `/piper/supervised_workflow_status` and `/piper/removal_plan` before calling
    `/supervised_cube_workflow/start` because they carry event messages.
 3. Confirm the service exists with:

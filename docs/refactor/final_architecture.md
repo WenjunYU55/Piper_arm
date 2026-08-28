@@ -100,7 +100,7 @@ hash is part of the committed capability-map provenance.
 | `piper_gui/ros_client.py` | `RunTargetScan` goal, feedback, cancellation, and result mapping. |
 | `piper_gui/ros_node.py` | Native GUI ROS subscriptions, publishers, services, action goal conversion, and event delivery. |
 | `piper_gui/app.py` | GUI/ROS bootstrap. |
-| `piper_gui_native.py` | Tk presentation, read-only diagnostics, and clearly separated commissioning controls; it re-exports the ROS adapter for compatibility. Its only child process is the preview-only RViz joint editor. |
+| `piper_gui/native_app.py` | Tk presentation, read-only diagnostics, and clearly separated commissioning controls; it re-exports the ROS adapter for compatibility. Its only child process is the preview-only RViz joint editor. |
 
 ### Reconstruction boundary
 
@@ -253,7 +253,7 @@ The following apparent cleanup candidates are intentionally retained:
 - `latest_*` and executor receipt-time mirrors still consumed by diagnostics
   and characterization seams;
 - `ManagedProcessSet` and configuration exports used by compatibility tests;
-- `piper_gui_automation.py`, retained as archived Phase 1 characterization for
+- `tests/fixtures/piper_gui_automation.py`, retained as archived Phase 1 characterization for
   the review period specified in `docs/ai/60-debt.yaml`;
 - legacy/fake commissioning ROS nodes, whose installed ROS interfaces remain
   documented external contracts;

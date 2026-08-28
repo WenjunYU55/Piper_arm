@@ -35,7 +35,7 @@ architecture_cleanup_2026_08_27:
   planning_progress: Six existing ROS-free capability generation ray cull and coverage components now have one planning package with old-path facades. Planner ROS-node geometry/Tesseract request orchestration and perception-derived target envelope remain later cohesive seams.
   perception_progress: Five existing ROS-free acquisition target-envelope landmark obstacle and occlusion components now have one perception package with old-path facades. Large ROS nodes still mix callback adaptation with depth/tracking state and should be thinned only after additional characterization.
   tesseract_progress: Candidate validation and shortlist policy moved intact out of the ROS bridge; schema validation moved under protocol and atomic queue plus heartbeat mechanics moved into protocol/spool.py. The former contract path and bridge helper attributes remain compatible. worker.py remains byte-identical and intentionally uses the facade because piper_camera_capability_map.npz binds its exact source hash; it also remains intentionally large until a state-free planning seam is characterized. Do not split or even reformat the cohesive backend without regenerating and requalifying that artifact.
-  gui_progress: The complete PiperGuiRos endpoint and conversion adapter moved intact to piper_gui/ros_node.py. piper_gui_native.py remains a large but cohesive Tk view/controller with explicit commissioning controls; later decomposition should prefer whole tabs or presenters and must not fragment widget callbacks into trivial files.
+  gui_progress: The complete PiperGuiRos endpoint and conversion adapter moved intact to piper_gui/ros_node.py. piper_gui/native_app.py remains a large but cohesive Tk view/controller with explicit commissioning controls; later decomposition should prefer whole tabs or presenters and must not fragment widget callbacks into trivial files.
   reconstruction_progress: Immutable input admission and provenance moved intact to reconstruction/input_provenance.py with identical old-module exports. tsdf_reconstruct.py retains registration Open3D integration output selection and CLI orchestration; later extraction may separate registration policy from fusion only with report-equivalence fixtures and must not split numerical helpers individually.
   driver_progress: Nine heavily characterized side-effect-free joint mapping and coherent raw-feedback functions moved intact to piper/joint_state_policy.py. The remaining PiperRosNode intentionally retains CAN SDK ROS timing watchdog enable command and feedback cohesion; do not split those stateful paths without hardware timing characterization and supervised requalification.
   baseline_limit: Rootless core Tesseract qualification exceeded the pre-existing 150-second internal budget in dual_limit_start_acquisition on the unchanged origin/main tree; Python Tesseract tests and the full ROS build pass. Recheck qualification at Tesseract-sensitive phases and final validation without weakening the budget.
@@ -470,9 +470,9 @@ deferred_cleanup:
   - id: phase8_archived_gui_workflow_helpers_2026_08_14
     status: removed_from_runtime_import_graph_retained_for_characterization
     issue: >-
-      piper_gui_automation.py retains the pure Phase 1 Step 1-5 validation and
+      tests/fixtures/piper_gui_automation.py retains the pure Phase 1 Step 1-5 validation and
       session helpers so the historical behavior remains testable, but
-      piper_gui_native.py no longer imports or executes it. Keeping it forever
+      piper_gui/native_app.py no longer imports or executes it. Keeping it forever
       could confuse maintainers into treating the retired GUI workflow as a
       supported alternate controller.
     next_cut: >-
@@ -913,7 +913,7 @@ deferred_cleanup:
   - id: stale_operator_docs
     status: resolved_2026-08-11_current_setup_release
     issue: OPERATOR_COMMANDS previously referenced a reverted GitHub main while the active worktree contained substantial uncommitted recovery changes.
-    next_cut: Keep OPERATOR_COMMANDS, SYSTEM_HANDOFF and docs/ai/80-problem-log.yaml aligned with each reviewed release and never present a stale commit as the active hardware baseline.
+    next_cut: Keep OPERATOR_COMMANDS.md, ARCHITECTURE.md and docs/ai/80-problem-log.yaml aligned with each reviewed release; retain dated handoffs under docs/historical only and never present them as the active hardware baseline.
   - id: duplicate_build_tree
     status: resolved_2026-07-25
     issue: An obsolete generated repository-root build/install/log tree shadowed piper_ros_foxy/install, lacked scan_capture and the schema-v3 bootstrap-recovery message fields, and caused GUI Step 2 child-process failure.
@@ -1473,13 +1473,14 @@ post_enable_transient_angle_limit_2026_08_25:
   required_retests: [full software suite, package build, explicit five-percent startup-only run, inspect enable-to-command interval and controller status, cancel/home/disable smoke before E2E]
 
 repository_layout_and_asset_debt_2026_08_27:
-  completed: [thirteen root development tests grouped by GUI driver and planning responsibility, two dated notes archived, documented test commands and AI routing updated, large assets classified without runtime path changes]
-  retained_root_files: [operator shell entrypoints, piper_gui_native.py, piper_gui_automation.py compatibility fixture, calibration utilities, DDS XML, joint bounds, installation and operation documents]
+  completed: [thirteen root development tests grouped by GUI driver and planning responsibility, dated handoffs archived, setup robot and calibration scripts grouped under scripts, calibration implementations and dangerous historical resets grouped under tools, obsolete Docker experiment isolated under deployment/legacy, GUI implementation moved under piper_gui with a root compatibility facade, documented commands and AI routing updated, large assets classified without runtime path changes]
+  retained_root_files: [daily mission driver and GUI shell entrypoints, piper_gui_native.py compatibility facade, DDS XML, measured joint bounds, installation and operation documents]
+  path_compatibility: Daily run_target_scan_mission.sh, run_target_scan_gateway.sh, start_piper.sh and start_gui.sh commands are unchanged. Moved maintenance commands intentionally use their responsibility-qualified scripts or tools paths; their internal repository-root derivation was updated and is regression tested.
   optional_future_work: [evaluate Git LFS for binary meshes in a separately coordinated migration, define archival criteria for superseded raw calibration sessions, remove compatibility facades only after their evidence gates]
   must_not_bundle_with: [runtime geometry regeneration, capability-map regeneration, calibration replacement, ROS interface or operator-command changes]
 
 post_cleanup_architecture_debt_2026_08_27:
-  large_adapters: [scan_viewpoint_executor_node.py, target_scan_mission_node.py, piper_gui_native.py, scan_capture_node.py, scan_viewpoint_planner_node.py]
+  large_adapters: [scan_viewpoint_executor_node.py, target_scan_mission_node.py, piper_gui/native_app.py, scan_capture_node.py, scan_viewpoint_planner_node.py]
   rule: Further extraction requires callback and state characterization plus the linked supervised requalification; do not split for line count alone.
   style: Package-wide mobile Flake8 and PEP257 retain 76 historical findings; added files pass the 99-column project convention.
   planner_performance: Rootless core qualification still exceeds its internal 150-second budget at dual_limit_start_acquisition exactly as the pre-refactor baseline did. Do not weaken the planning bound as an architecture cleanup.

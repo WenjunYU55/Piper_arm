@@ -82,7 +82,7 @@ Piper_arm/
 | `target_landmark_geometry.py`, `obstacle_geometry.py`, `occlusion_policy.py` | `perception/landmark_geometry.py`, `perception/obstacle_geometry.py`, `perception/occlusion.py` |
 | Tesseract `contract.py` | `protocol/contract.py` plus `protocol/spool.py` |
 | Candidate helpers in `bridge_node.py` | `candidate_selection.py` |
-| `PiperGuiRos` in `piper_gui_native.py` | `piper_gui/ros_node.py` |
+| `PiperGuiRos` in `piper_gui/native_app.py` | `piper_gui/ros_node.py` |
 | Reconstruction input helpers in `tsdf_reconstruct.py` | `reconstruction/input_provenance.py` |
 | Deterministic driver joint helpers in `piper_ctrl_single_node.py` | `piper/joint_state_policy.py` |
 | Root `test_*.py` files | `tests/gui`, `tests/driver`, and `tests/planning` |
@@ -92,7 +92,7 @@ Piper_arm/
 The 24 former flat mobile modules in the table remain explicit import-only
 facades with fixed `__all__` surfaces. The Tesseract `contract.py` facade
 exports both protocol validation and `Spool`; the bridge retains its candidate
-helper attributes. `piper_gui_native.py`, `tsdf_reconstruct.py`, and
+helper attributes. `piper_gui/native_app.py`, `tsdf_reconstruct.py`, and
 `piper_ctrl_single_node.py` re-export their moved public objects. Tests assert
 object identity rather than merely checking that imports resolve.
 
@@ -106,7 +106,7 @@ a later, separately tested migration.
 | `scan_viewpoint_executor_node.py` | 5,082 → 5,084 | Safety-critical ROS integration and sole command authority. Existing pure policies were organised, but moving live callbacks/state without deeper characterization would add risk. |
 | Tesseract `worker.py` | 3,051 → 3,051 | Cohesive ROS-free planning backend; its exact source hash participates in capability-map provenance. |
 | `target_scan_mission_node.py` | 2,832 → 2,683 | Still a large ROS/action/service adapter; the first safe resource seam moved, while lifecycle callbacks remain coupled to Foxy action behavior. |
-| `piper_gui_native.py` | 2,341 → 2,040 | Cohesive Tk view/controller shell after ROS extraction; further widget extraction needs GUI interaction tests. |
+| `piper_gui/native_app.py` | 2,341 → 2,040 | Cohesive Tk view/controller shell after ROS extraction; further widget extraction needs GUI interaction tests. |
 | `ray_mission_diagnostics.py` | 1,726 → 1,726 | One append-only diagnostic schema, replay and compatibility owner; splitting the schema lifecycle would reduce cohesion. |
 | `piper_ctrl_single_node.py` | 1,999 → 1,710 | Hardware boundary retains CAN, SDK, enable/disable, watchdog and timing assumptions by design. |
 | Tesseract `bridge_node.py` | 2,387 → 1,658 | Remaining code is the ROS snapshot/spool/planning adapter; candidate policy was extracted. |

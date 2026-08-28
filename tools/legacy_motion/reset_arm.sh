@@ -3,7 +3,8 @@ set -e
 
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
-PIPER_WORKSPACE="${PIPER_WORKSPACE:-$SCRIPT_DIR/piper_ros_foxy}"
+ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PIPER_WORKSPACE="${PIPER_WORKSPACE:-$ROOT/piper_ros_foxy}"
 PIPER_ROS_DOMAIN_ID="${PIPER_ROS_DOMAIN_ID:-42}"
 export ROS_DOMAIN_ID="$PIPER_ROS_DOMAIN_ID"
 

@@ -91,7 +91,7 @@ boundaries stay explicit rather than being hidden behind a framework.
   validation and atomic spool transfer. `motion_planning/tesseract/` and
   `motion_planning/curobo/` are isolated backends. Both produce `MotionPlan`;
   neither has a PiPER command interface.
-- `piper_gui/ros_node.py` owns GUI ROS transport, while `piper_gui_native.py`
+- `piper_gui/ros_node.py` owns GUI ROS transport, while `piper_gui/native_app.py`
   owns Tk presentation and explicit commissioning controls.
 - `reconstruction/input_provenance.py` owns immutable input admission.
   `tsdf_reconstruct.py` owns registration, fusion, quality selection and output.
@@ -140,7 +140,7 @@ evidence gate is satisfied.
   authority outside the executor.
 - New reconstruction method: `reconstruction/`, consuming admitted immutable
   capture inputs.
-- New GUI feature: presentation in `piper_gui_native.py` or a focused
+- New GUI feature: presentation in `piper_gui/native_app.py` or a focused
   `piper_gui/` component; ROS transport belongs in `piper_gui/ros_node.py`.
 
 Large runtime assets are governed by `docs/architecture/asset_policy.md`.

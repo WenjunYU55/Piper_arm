@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from piper_gui_automation import (
+from tests.fixtures.piper_gui_automation import (
     ACQUISITION_PLAN_TIMEOUT_SEC,
     ACQUISITION_SERVICE_TIMEOUT_SEC,
     AcquisitionPhase,
@@ -99,7 +99,7 @@ def test_step45_auto_recovery_is_bounded_and_never_hides_operator_blockers():
 
 def test_legacy_recovery_helpers_are_not_used_by_production_gui():
     source = (
-        PROJECT_ROOT / 'piper_gui_native.py'
+        PROJECT_ROOT / 'piper_gui' / 'native_app.py'
     ).read_text(encoding='utf-8')
     ros_source = (
         PROJECT_ROOT / 'piper_gui' / 'ros_node.py'
@@ -113,7 +113,7 @@ def test_legacy_recovery_helpers_are_not_used_by_production_gui():
 
 def test_automatic_scan_is_a_separate_one_start_button_tab():
     source = (
-        PROJECT_ROOT / 'piper_gui_native.py'
+        PROJECT_ROOT / 'piper_gui' / 'native_app.py'
     ).read_text(encoding='utf-8')
     assert 'notebook.add(automatic, text="Automatic Scan")' in source
     automatic = source.split('def _build_automatic_scan', 1)[1].split(
@@ -470,14 +470,14 @@ def test_gui_phase_and_timeout_contracts_are_explicit():
 
 def test_gui_joint6_fallback_uses_full_turn_limit():
     source = (
-        PROJECT_ROOT / 'piper_gui_native.py'
+        PROJECT_ROOT / 'piper_gui' / 'native_app.py'
     ).read_text(encoding='utf-8')
     assert '("joint6", -math.pi, math.pi, "rad")' in source
 
 
 def test_production_gui_has_no_step2_service_or_retry_state():
     source = (
-        PROJECT_ROOT / 'piper_gui_native.py'
+        PROJECT_ROOT / 'piper_gui' / 'native_app.py'
     ).read_text(encoding='utf-8')
     assert '_fresh_acquisition_prepare_client' not in source
     assert 'pending_acquisition_session_id' not in source
@@ -487,7 +487,7 @@ def test_production_gui_has_no_step2_service_or_retry_state():
 
 def test_production_gui_does_not_classify_acquisition_failures():
     source = (
-        PROJECT_ROOT / 'piper_gui_native.py'
+        PROJECT_ROOT / 'piper_gui' / 'native_app.py'
     ).read_text(encoding='utf-8')
     assert 'Acquisition proposal invalidated' not in source
     assert '_acquisition_fail' not in source
@@ -496,7 +496,7 @@ def test_production_gui_does_not_classify_acquisition_failures():
 
 def test_production_gui_does_not_approve_executor_plans():
     source = (
-        PROJECT_ROOT / 'piper_gui_native.py'
+        PROJECT_ROOT / 'piper_gui' / 'native_app.py'
     ).read_text(encoding='utf-8')
     assert '/scan_viewpoint_executor/approve' not in source
     assert 'ApproveScanExecution' not in source
@@ -506,7 +506,7 @@ def test_production_gui_does_not_approve_executor_plans():
 
 def test_production_action_owns_enable_and_plan_invalidation():
     source = (
-        PROJECT_ROOT / 'piper_gui_native.py'
+        PROJECT_ROOT / 'piper_gui' / 'native_app.py'
     ).read_text(encoding='utf-8')
     assert 'arm_enable_confirmed' not in source
     assert 'prepare_acquisition' not in source
@@ -518,7 +518,7 @@ def test_production_action_owns_enable_and_plan_invalidation():
 
 def test_commissioning_disable_is_direct_but_mission_cancel_still_homes():
     source = (
-        PROJECT_ROOT / 'piper_gui_native.py'
+        PROJECT_ROOT / 'piper_gui' / 'native_app.py'
     ).read_text(encoding='utf-8')
     assert 'command=self.request_safe_disable' in source
     safe_disable = source.split(

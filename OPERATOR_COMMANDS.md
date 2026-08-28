@@ -22,7 +22,7 @@ Current operating boundary:
 | cuRobo | Command-free planning only; current collision approximation is `hardware_qualified: false`. |
 
 Historical incidents, qualification runs, and detailed acceptance evidence are
-kept in [`SYSTEM_HANDOFF.md`](SYSTEM_HANDOFF.md) and
+kept in [`docs/historical/system_handoff_2026_08_11.md`](docs/historical/system_handoff_2026_08_11.md) and
 [`docs/ai/80-problem-log.yaml`](docs/ai/80-problem-log.yaml), not in this quick
 start.
 
@@ -31,7 +31,7 @@ start.
 Install the CAN boot service once on a new computer:
 
 ```bash
-./install_piper_can_service.sh
+./scripts/setup/install_piper_can_service.sh
 ```
 
 Enter the sudo password only during this installation. It configures `can0`
@@ -55,7 +55,7 @@ Before every session:
 ```bash
 cd ~/Piper_arm
 ./verify_installation.sh
-./check_piper_can.sh
+./scripts/robot/check_piper_can.sh
 ```
 
 `verify_installation.sh` proves the installed software contract, not physical

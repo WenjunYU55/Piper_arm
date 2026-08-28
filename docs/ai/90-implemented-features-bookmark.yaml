@@ -149,7 +149,7 @@ tracked_robot_drop_in_description_2026_08_24:
   boundary: No ROS interface, gateway behavior, planner, motion, calibration or hardware command changed.
 bunker_collision_profile_2026_08_24:
   feature: Permanent combined PiPER/L515/Bunker visual and collision model with an idle-GUI-selectable next-mission support-floor height.
-  authority: [piper_description.xacro, collision_environment.yaml, collision_environment.py, piper_gui_native.py, collision_model.yaml, collision_model_ground.yaml, piper_bunker.srdf, floor_profile.sh, platform_sources/PROVENANCE.md, platform_planning_150mm/collision_mesh_manifest.json, collision_meshes.py, model_builder.py]
+  authority: [piper_description.xacro, collision_environment.yaml, collision_environment.py, piper_gui/native_app.py, collision_model.yaml, collision_model_ground.yaml, piper_bunker.srdf, floor_profile.sh, platform_sources/PROVENANCE.md, platform_planning_150mm/collision_mesh_manifest.json, collision_meshes.py, model_builder.py]
   proven: [exact external source hashes, deterministic transforms and bounds, every source triangle retained, visual-only platform links become decomposed planning collision links, atomic GUI floor persistence, per-mission snapshot, model load, positive neutral clearance, mixed worker/bridge model blocks readiness]
   not_yet_proven: [generic core acquisition qualification, motors-disabled visual inspection, physical collision accuracy, supervised motion]
 deadline_terminal_home_authorization_2026_08_24:
@@ -354,7 +354,7 @@ active_rollback_features:
       only after the graph proves no other writer. Unfinished startup J6
       retains positive-only direction authority, and the explicit no-home
       commissioning disable sends no motion before the driver's all-six proof.
-    authority: [piper_gui_native.py, RunTargetScan.action]
+    authority: [piper_gui/native_app.py, RunTargetScan.action]
 
   - id: managed_stack_lifecycle
     status: [ACTIVE, PHYSICALLY_DEMONSTRATED]
@@ -504,7 +504,7 @@ active_rollback_features:
       action or mutating a live stream. 640x480 at 30 Hz remains the
       operationally evidenced profile while higher RGB modes are available for
       benchmarking and calibration.
-    authority: [piper_gui_native.py, piper_gui/camera_profile.py, L515_camera/rgb_profile.conf, start_l515_camera.sh, start_l515_camera_low_bandwidth.sh]
+    authority: [piper_gui/native_app.py, piper_gui/camera_profile.py, L515_camera/rgb_profile.conf, start_l515_camera.sh, start_l515_camera_low_bandwidth.sh]
 
   - id: baseline_offline_masked_tsdf
     status: [ACTIVE, SOFTWARE_QUALIFIED]
@@ -629,7 +629,7 @@ later_feature_reintegration_status:
       Reconstruction compared robot-pose TSDF with bounded local GICP, enforced
       manifest/calibration/confidence provenance, produced PLY/quality reports,
       and added command-free GUI previews and Open3D inspection.
-    authority: [reconstruction/tsdf_reconstruct.py, reconstruction/gui_support.py, reconstruction/view_reconstruction.py, piper_gui_native.py]
+    authority: [reconstruction/tsdf_reconstruct.py, reconstruction/gui_support.py, reconstruction/view_reconstruction.py, piper_gui/native_app.py]
 
 known_incomplete_or_unproven:
   - Complete physical E2E success from target submission through diverse scan, home, disable and cleanup has not been re-established after restoring the rollback.

@@ -147,7 +147,7 @@ else
         echo "ERROR: CAN interface $CAN_PORT is not provisioned for headless startup."
         echo "Run once from an operator terminal:"
         echo "  cd $SCRIPT_DIR"
-        echo "  PIPER_CAN_PORT=$CAN_PORT ./install_piper_can_service.sh"
+        echo "  PIPER_CAN_PORT=$CAN_PORT ./scripts/setup/install_piper_can_service.sh"
         exit 1
     fi
     echo "CAN is not ready; starting the interactive development-host setup."
@@ -163,7 +163,7 @@ if ! can_is_ready; then
     echo "ERROR: CAN interface did not become UP at $CAN_BITRATE bit/s."
     echo ""
     echo "Provision it once with:"
-    echo "  PIPER_CAN_PORT=$CAN_PORT ./install_piper_can_service.sh"
+    echo "  PIPER_CAN_PORT=$CAN_PORT ./scripts/setup/install_piper_can_service.sh"
     exit 1
 fi
 
@@ -174,7 +174,7 @@ echo "Launching PiPER driver."
 echo "ROS_DOMAIN_ID is $ROS_DOMAIN_ID."
 echo "Using UDP-only Fast DDS transport: $FASTRTPS_DEFAULT_PROFILES_FILE"
 echo "Arm will NOT auto-enable."
-echo "Use a second terminal for enable_piper.sh, disable_piper.sh, and topic commands."
+echo "Use scripts/robot/enable_piper.sh or scripts/robot/disable_piper.sh only for explicit commissioning."
 echo "WARNING: once enabled, reset/gui/joint commands can move the real arm."
 
 ros2 launch piper start_single_piper.launch.py \

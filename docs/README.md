@@ -22,7 +22,8 @@ maintenance records.
 | Package responsibilities and dependency direction | [`ARCHITECTURE.md`](../ARCHITECTURE.md) |
 | Tesseract/cuRobo selection and generic plan contract | [`architecture/motion_planner_backends.md`](architecture/motion_planner_backends.md) |
 | Canonical and generated asset policy | [`architecture/asset_policy.md`](architecture/asset_policy.md) |
-| Current validated state and limitations | [`SYSTEM_HANDOFF.md`](../SYSTEM_HANDOFF.md) |
+| Current architecture and limitations | [`ARCHITECTURE.md`](../ARCHITECTURE.md) and [`reference/validated-environments.md`](reference/validated-environments.md) |
+| Dated August 2026 handoff snapshot | [`historical/system_handoff_2026_08_11.md`](historical/system_handoff_2026_08_11.md) |
 | Tracked-robot integration contract | [`integration/track_robot_description/README.md`](../integration/track_robot_description/README.md) |
 
 ## Develop and test

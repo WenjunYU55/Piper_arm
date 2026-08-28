@@ -183,7 +183,7 @@ and runtime outputs are ignored.
 | Configure Tesseract or cuRobo | [Motion-planner backends](docs/architecture/motion_planner_backends.md) |
 | Check proven hardware/software versions | [Validated environments](docs/reference/validated-environments.md) |
 | Navigate all project documentation | [Documentation index](docs/README.md) |
-| Review known limitations and handoff state | [System handoff](SYSTEM_HANDOFF.md) |
+| Review dated handoff evidence | [Historical system handoff](docs/historical/system_handoff_2026_08_11.md) |
 
 Machine-oriented architecture and maintenance routing live under `docs/ai/`.
 They are kept in sync with the code and should be read before structural work.

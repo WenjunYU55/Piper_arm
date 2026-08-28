@@ -1,8 +1,14 @@
 Piper_arm/
 ├── ARCHITECTURE.md                  Concise subsystem ownership, dependency direction, runtime pipeline, compatibility and extension guide
 ├── integration/track_robot_description/  Ready two-file tracked-root description bundle, pinned manifest, install and odom-target contract
-├── tools/build_track_robot_description_bundle.py  Deterministic current-arm to tracked-master exporter
-├── tools/validate_capability_map.py  Command-free convergence replay and smallest-qualified-checkpoint selector
+├── scripts/                         Operator-facing setup, robot commissioning, and guarded calibration entry points grouped by responsibility
+│   ├── setup/                       Host dependency and one-time CAN service installation
+│   ├── robot/                       Passive CAN preflight and explicit software enable/disable commands
+│   └── calibration/                 Supported joint-bound and J6 calibration launchers
+├── tools/                           Developer, diagnostic, calibration implementation, and legacy-motion tools
+│   ├── calibration/                 Calibration implementations invoked by scripts/calibration
+│   └── legacy_motion/               Quarantined unsupported direct-motion reset utilities
+├── deployment/                      Host service and udev deployment assets; legacy Docker experiment is isolated below deployment/legacy
 ├── docs/ai/                         AI-first architecture, contracts, flows, guardrails, debt, 65-research-context.yaml prior art/design notes, authoritative 70-roadmap.yaml milestones, consolidated 80-problem-log.yaml incident history, and implemented-feature rewrite bookmark
 ├── docs/refactor/                   Phase baselines, responsibility maps, architecture records, equivalence evidence, and staged physical requalification checklist
 ├── docs/historical/                 Time-specific scan and session handoff notes retained for provenance, not current operator routing
@@ -45,30 +51,29 @@ Piper_arm/
 ├── docs/architecture/system-overview.md  Operator-readable process/environment and mission-lifecycle diagrams
 ├── docs/reference/validated-environments.md  Dated reference-workstation evidence and explicitly unverified Jetson target matrix
 ├── docs/historical/docker_foxy_commands.md  Unsupported legacy Ubuntu 22.04/Docker manual composition reference
-├── SYSTEM_HANDOFF.md                Whole-system architecture, validated state, limitations, and continuation
 ├── OPERATOR_COMMANDS.md             Supported runtime and safety command reference
 ├── run_target_scan_mission.sh       Singleton-locking mission coordinator launcher; exits 73 if another owner is active; coordinator holds command-free for bounded between-view visual reacquisition
-├── SUPERVISED_WORKFLOW_HANDOFF.md   Last dry-run workflow verification status
+├── docs/historical/                 Dated handoffs and the superseded Docker experiment retained for provenance only
 ├── source_piper_foxy_environment.sh Canonical Foxy + piper_ros_foxy overlay loader and interface preflight
 ├── start_piper.sh                   CAN setup and real driver launch, auto-enable off by default
-├── check_piper_can.sh               Passive no-transmit CAN state/frame preflight
+├── scripts/robot/check_piper_can.sh               Passive no-transmit CAN state/frame preflight
 ├── tools/debug_piper_gripper.py      Single-owner no-zero direct-SDK gripper status/monitor and explicitly confirmed command diagnostics
 ├── start_gui.sh                     Native real-arm GUI launcher
 ├── fastdds_gui_udp_only.xml         Foxy GUI/scan loopback-only UDP profile; disables stale shared-memory graph transport
-├── enable_piper.sh / disable_piper.sh  Explicit software motor control
-├── piper_gui_native.py              Production RunTargetScan client UI plus a next-mission legacy/exact-point voxel-NBV/frozen-ray-NBV selector with target-sector/upper-hemisphere/full-sphere and ray-count controls, read-only mission/perception diagnostics with index-bound RayProcesses filename selection, and explicitly separated manual/home-profile/RViz-preview commissioning controls; commissioning motion starts publisher-locked until sole ownership is proved and explicit no-home disable sends no motion; owns no production scan children, phase transitions, plan approvals, retries, replans or autonomous shutdown
+├── scripts/robot/enable_piper.sh / scripts/robot/disable_piper.sh  Explicit software motor control
+├── piper_gui/native_app.py          Production RunTargetScan client UI plus a next-mission legacy/exact-point voxel-NBV/frozen-ray-NBV selector with target-sector/upper-hemisphere/full-sphere and ray-count controls, read-only mission/perception diagnostics with index-bound RayProcesses filename selection, and explicitly separated manual/home-profile/RViz-preview commissioning controls; commissioning motion starts publisher-locked until sole ownership is proved and explicit no-home disable sends no motion; owns no production scan children, phase transitions, plan approvals, retries, replans or autonomous shutdown
+├── piper_gui_native.py              Compatibility launcher/import facade for existing operator commands and downstream imports; implementation ownership is piper_gui/native_app.py
 ├── piper_gui/ray_reports.py         Command-free canonical datasets/ray_diagnostics plus historical active_scan report discovery, root-qualified unique-directory RayProcesses selection, one-child stdin protocol, compatibility HTML opening and canonical-root immutable historical-dataset replay helpers
 ├── piper_gui/ray_review_model.py    ROS-free schema-v1/v2 event-time state, target-envelope presentation mesh, exact coverage, URDF/FK and read-only capability-map model
 ├── piper_gui/ray_review_viewer.py   Freely resizable two-tab PyQt5/VTK Mission Process and Capability Map review process with independent target-evidence layers, base_link-Z-upright orbit, and Space standard-view chooser
-├── piper_gui_automation.py          Archived side-effect-free pre-Phase-8 GUI workflow characterization helpers; not imported by the production GUI
+├── tests/fixtures/piper_gui_automation.py          Archived side-effect-free pre-Phase-8 GUI workflow characterization helpers; not imported by the production GUI
 ├── tests/                           Cross-package development tests; conftest preserves the historical repository-root working directory
 │   ├── gui/                         Native GUI, GUI ROS adapter, ray-review, scan-policy, camera-profile and transport regressions
 │   ├── driver/                      Fake-SDK gripper, J6 convention and DDS motion-limit transport regressions
 │   └── planning/                    Cross-GUI/ROS permanent ray-cull characterization
 ├── piper_joint_bounds.json          Measured hard joint-bound records
 ├── piper_home_pose.json             Ignored local hash-bound schema-v4 rough/ready, terminal PRE_HOME and negative-storage profile; startup J6 is positive-only and positive non-ready feedback blocks before enable
-├── piper_calibrate_bounds.py        Joint-bound recorder
-└── piper_joint6_zero.py             Direct-SDK J6 diagnostic/calibration utility
+└── verify_installation.sh           Command-free host, overlay, package, dependency, and public-entry-point verification
 
 Generated/non-source trees: piper_ros_foxy/{build,install,log}, RealSense install output,
 Python virtual environments, model checkpoints, captures, datasets, /tmp GPU spools, and the
@@ -120,7 +125,7 @@ reconstruction/tsdf_reconstruct.py - immutable target-only TSDF fusion with sele
 piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/bridge_node.py - command-free ROS snapshot, spool and proposal-publication adapter
 piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/candidate_selection.py - ROS-free candidate validation, direction-diverse bounded NBV shortlist and typed exhaustive-ray endpoint-static classification
 piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/protocol/{contract,spool}.py - ROS-free schema-v5 canonical validation/hash owner and atomic permission-bounded queue/heartbeat owner; root contract.py is an import-only facade
-piper_gui/ros_node.py - native GUI ROS endpoint and conversion adapter; piper_gui_native.py re-exports PiperGuiRos while retaining Tk presentation and commissioning controls
+piper_gui/ros_node.py - native GUI ROS endpoint and conversion adapter; piper_gui/native_app.py re-exports PiperGuiRos while retaining Tk presentation and commissioning controls
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/execution/recovery.py - typed retry/reacquire/replan/abort policy
 piper_ros_foxy/src/piper_mobile_manipulation/test/test_phase7_viewpoint_components.py - Phase 7 component and recovery-matrix regressions
 piper_ros_foxy/src/piper_mobile_manipulation/test/test_gpu_geometry_launch.py - critical GPU-geometry child-exit supervision contract

@@ -137,7 +137,7 @@ def test_duplicate_minute_labels_keep_unique_internal_selections(tmp_path):
 
 
 def test_native_gui_exposes_command_free_report_controls():
-    source = Path('piper_gui_native.py').read_text(encoding='utf-8')
+    source = Path('piper_gui/native_app.py').read_text(encoding='utf-8')
 
     assert 'Open Ray Review' in source
     assert 'Open 3D Ray Report' not in source

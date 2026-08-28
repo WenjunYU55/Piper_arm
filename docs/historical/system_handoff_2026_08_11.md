@@ -1,4 +1,8 @@
-# PiPER eye-in-hand system handoff
+# Historical PiPER eye-in-hand system handoff
+
+> Historical snapshot through 11 August 2026. This is not the current operator
+> procedure or architecture authority. Use `README.md`, `OPERATOR_COMMANDS.md`,
+> `ARCHITECTURE.md`, and `docs/ai/` for the current system.
 
 Status updated through 2026-08-11 from the checked-out source, architecture records, test results,
 operator confirmations, historical scan acceptance, and the joint-5 terminal-home contact incident.
@@ -259,7 +263,7 @@ do not reset, clean, or overwrite it when resuming.
   viewers, timestamp recovery, and operator launch scripts.
 - `AI_perception_tests`: ROS-free GroundingDINO/SAM2 workers, offline datasets, and model tests.
 - `docs/ai`: primary architecture memory. Read it before broad repository searches or edits.
-- `OPERATOR_COMMANDS.md`: authoritative runtime and real-arm operating procedures.
+- `../../OPERATOR_COMMANDS.md`: authoritative runtime and real-arm operating procedures.
 
 The required architecture read order is `docs/ai/00-index.yaml`, `05-admin.yaml`,
 `10-system-map.yaml`, and `30-contracts.yaml`, followed by modules, flows, guardrails, and debt.
@@ -521,7 +525,7 @@ ROS and communicate through atomic filesystem spools, so they cannot command the
 ## Resume references
 
 - Architecture and risk map: `docs/ai/`
-- Supported commands and smoke checks: `OPERATOR_COMMANDS.md`
-- Detailed supervised workflow history: `SUPERVISED_WORKFLOW_HANDOFF.md`
+- Supported commands and smoke checks: `../../OPERATOR_COMMANDS.md`
+- Detailed supervised workflow history: `supervised_workflow_handoff_2026_07_30.md`
 - Camera/perception operation: `L515_camera/README.md`
-- Installation and dependency boundaries: `README.md` and `CLEAN_INSTALL.md`
+- Installation and dependency boundaries: `../../README.md` and `../../CLEAN_INSTALL.md`

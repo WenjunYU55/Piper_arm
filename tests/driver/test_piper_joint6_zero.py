@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import tempfile
 import unittest
 
-import piper_joint6_zero as joint6
+from tools.calibration import piper_joint6_zero as joint6
 
 
 def ns(**kwargs):

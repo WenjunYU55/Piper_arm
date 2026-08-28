@@ -72,11 +72,13 @@ Installation verification passed. Hardware connectivity is not tested.
 
 ## Rebuild The Docker Image
 
-Run this on the host after editing `Dockerfile.foxy`:
+Run this on the historical host after editing
+`deployment/legacy/docker/Dockerfile.foxy`:
 
 ```bash
 cd /home/wenjun/prl/Piper_arm
-sudo docker build -f Dockerfile.foxy -t piper-arm-foxy:local .
+sudo docker build -f deployment/legacy/docker/Dockerfile.foxy \
+  -t piper-arm-foxy:local .
 ```
 
 ## Rebuild ROS Workspaces
@@ -137,7 +139,7 @@ Terminal 5, Docker: view the tracking debug image.
 ## Real PiPER Arm Runtime
 
 These commands can enable or move the physical arm. Keep the workspace clear and use the physical
-emergency-stop/power procedure for emergencies. `disable_piper.sh` is only a software disable request.
+emergency-stop/power procedure for emergencies. `scripts/robot/disable_piper.sh` is only a software disable request.
 
 Use separate host terminals. Start Docker in each terminal with the command from "Start A Foxy Terminal".
 
@@ -167,13 +169,13 @@ PIPER_ROS_DOMAIN_ID=42 ./start_piper.sh
 Terminal 2, Docker: enable the real arm after the driver is running.
 
 ```bash
-./enable_piper.sh
+./scripts/robot/enable_piper.sh
 ```
 
 Disable the arm through the ROS service:
 
 ```bash
-./disable_piper.sh
+./scripts/robot/disable_piper.sh
 ```
 
 Show arm status:
@@ -191,13 +193,13 @@ ros2 topic echo /joint_states_single
 Move to all-zero joint target:
 
 ```bash
-./reset_piper.sh
+./tools/legacy_motion/reset_piper.sh
 ```
 
 Move to the saved reset/home pose:
 
 ```bash
-./reset_arm.sh
+./tools/legacy_motion/reset_arm.sh
 ```
 
 Start the manual PiPER GUI:
@@ -209,7 +211,7 @@ Start the manual PiPER GUI:
 Record measured joint bounds:
 
 ```bash
-./calibrate_bounds.sh
+./scripts/calibration/calibrate_bounds.sh
 ```
 
 ## Real Arm Shutdown
@@ -217,7 +219,7 @@ Record measured joint bounds:
 1. Disable the arm:
 
 ```bash
-./disable_piper.sh
+./scripts/robot/disable_piper.sh
 ```
 
 2. Stop GUI/reset/manual command programs with `Ctrl+C`.

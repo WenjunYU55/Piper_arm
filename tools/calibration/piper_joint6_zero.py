@@ -14,7 +14,9 @@ from typing import Any, Dict, Iterable, List, Optional
 JOINT_INDEX = 6
 SET_ZERO_MAGIC = 0xAE
 CONFIRMATION = "SET JOINT 6 ZERO"
-DEFAULT_BOUNDS_PATH = Path(__file__).with_name("piper_joint_bounds.json")
+DEFAULT_BOUNDS_PATH = (
+    Path(__file__).resolve().parents[2] / "piper_joint_bounds.json"
+)
 CONFLICT_MARKERS = (
     "piper_ctrl_single_node",
     "start_single_piper.launch.py",
