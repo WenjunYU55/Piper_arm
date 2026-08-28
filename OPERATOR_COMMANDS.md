@@ -37,7 +37,7 @@ cd /home/prl/Piper_arm
 Install the CAN boot service once on a new computer:
 
 ```bash
-./install_piper_can_service.sh
+./scripts/setup/install_piper_can_service.sh
 ```
 
 Enter the sudo password only during this installation. It configures `can0`

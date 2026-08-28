@@ -89,7 +89,7 @@ tesseract_package_routing_2026_08_27:
 gui_adapter_routing_2026_08_27:
   owner: piper_gui/ros_node.py
   owns: Native GUI ROS subscriptions, publishers, service clients, action goal conversion and event delivery; it contains no Tk widgets or mission progression policy.
-  compatibility: piper_gui_native.py imports and exposes the identical PiperGuiRos class while retaining Tk presentation and commissioning controls.
+  compatibility: piper_gui/native_app.py imports and exposes the identical PiperGuiRos class while retaining Tk presentation and commissioning controls.
   preserved: [all topic service and action names, QoS depths, goal fields, command message format, commissioning lock behavior, GUI presentation]
   validation: [106 GUI and reconstruction-control tests pass, old and new class identity is tested, touched-file lint and compile pass, no hardware command]
 reconstruction_input_routing_2026_08_27:
@@ -112,7 +112,7 @@ ray_diagnostics_storage_root_2026_08_27:
 ray_review_operator_naming_2026_08_27:
   behavior: New mission and historical Ray Review JSON and HTML artifacts are internally named RayProcesses - HH:MM - DD-MM-YYYY using the earliest event in local time, and the GUI selector plus viewer title show that exact file stem.
   preserved: [unique mission and session parent directory identity, fixed hidden per-directory writer lock, atomic multi-writer merge, duplicate same-minute basenames in separate unique directories, report ordering, path validation, legacy ray_mission_diagnostics read and append compatibility, command-free viewer ownership]
-  routing: [ray_mission_diagnostics.py owns basename creation under its existing file lock, piper_gui/ray_reports.py discovers new and legacy artifacts, piper_gui_native.py maps visible combo indexes back to unique parent directories, piper_gui/ray_review_viewer.py displays the file stem]
+  routing: [ray_mission_diagnostics.py owns basename creation under its existing file lock, piper_gui/ray_reports.py discovers new and legacy artifacts, piper_gui/native_app.py maps visible combo indexes back to unique parent directories, piper_gui/ray_review_viewer.py displays the file stem]
   validation: [focused GUI report and viewer tests, existing-report display-name smoke, changed-file lint and compile, all AI YAML parse, no ROS or hardware command]
 capture_one_model_seed_tf_repair_2026_08_26:
   incident: Physical task codex-e2e-qualified-rays-20260826-2331 completed startup, reached the first qualified endpoint and persisted capture one, then generation one remained at zero candidates until NO_REACHABLE_PLAN. The planner tried to transform pre-capture framing shape stamp 1787783660.558 after TF history began at 1787783844.354. Capture one actually persisted a newer semantic mask at 1787783668.446 and a synchronized base-to-camera transform at 1787783668.413.
@@ -429,7 +429,7 @@ voxel_nbv_generation_handoff_2026_08_17:
   physical_status: Software verified only after the incident; a new supervised E2E is required.
 gui_viewpoint_policy_selector_2026_08_17:
   goal: Let the operator select the existing legacy or voxel-NBV viewpoint policy without duplicating planner logic in the GUI.
-  boundary: piper_gui_native.py changes only view_selection_policy, ray_sampling_region and ray_count in the source scan_planning_params.yaml through piper_gui/scan_policy.py. MissionEngine still owns startup and starts a fresh scan stack which reads those parameters; the GUI does not change a running stack, action schema, planning, safety, retry, motion, or shutdown behavior.
+  boundary: piper_gui/native_app.py changes only view_selection_policy, ray_sampling_region and ray_count in the source scan_planning_params.yaml through piper_gui/scan_policy.py. MissionEngine still owns startup and starts a fresh scan stack which reads those parameters; the GUI does not change a running stack, action schema, planning, safety, retry, motion, or shutdown behavior.
   selectable_policies: [legacy, voxel_nbv, ray_nbv]
   ray_regions: [target_sector, upper_hemisphere, full_sphere]
   current_saved_policy: ray_nbv
@@ -1357,7 +1357,7 @@ repo_shape:
 entrypoints:
   canonical_foxy_environment: source_piper_foxy_environment.sh
   gui_scan_dds_profile: fastdds_gui_udp_only.xml
-  system_handoff: SYSTEM_HANDOFF.md
+  historical_system_handoff: docs/historical/system_handoff_2026_08_11.md
   mission_roadmap: docs/ai/70-roadmap.yaml
   active_reconstruction_research_context: docs/ai/65-research-context.yaml
   consolidated_problem_log: docs/ai/80-problem-log.yaml
@@ -1374,7 +1374,7 @@ entrypoints:
   operator_reference: OPERATOR_COMMANDS.md
 source_of_truth:
   supported_foxy_overlay: source_piper_foxy_environment.sh; generated /home/prl/Piper_arm/install must not exist or be sourced
-  current_repository_handoff: SYSTEM_HANDOFF.md
+  current_repository_architecture: ARCHITECTURE.md
   mission_goal_milestones_and_definition_of_done: docs/ai/70-roadmap.yaml
   research_prior_art_and_proposed_geometry_direction: docs/ai/65-research-context.yaml
   problem_and_incident_status: docs/ai/80-problem-log.yaml
@@ -1405,7 +1405,7 @@ hot_paths:
   gpu_refresh: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/heavy_refresh_bridge_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/heavy_refresh_contract.py, AI_perception_tests/heavy_model_worker.py, AI_perception_tests/sam2_live_worker.py]
   camera_clock_safety: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/camera_timestamp_watchdog_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/camera_timestamp_health.py, L515_camera/run_gpu_vision_pipeline.sh]
   camera_motion_compensation: [L515_camera/publish_hand_eye_tf.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/motion_compensated_prompt_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/utils/mask_reprojection.py]
-  hardware_commands: [piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py, piper_gui_native.py commissioning only, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_motion.py, start_piper.sh]
+  hardware_commands: [piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py, piper_gui/native_app.py commissioning only, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_motion.py, start_piper.sh]
   supervised_dry_run: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/supervised_cube_workflow_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/supervised_workflow.py]
   supervised_scan_motion: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_trajectory.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_target_acquisition_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_motion.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture_node.py, piper_ros_foxy/src/piper_mobile_manipulation/config/scan_execution_params.yaml, piper_ros_foxy/src/piper_mobile_manipulation/config/scan_capture_params.yaml]
   timed_stream_callback_isolation: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/infrastructure/telemetry_store.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_scan_motion.py, piper_ros_foxy/src/piper_mobile_manipulation/test/test_phase1_executor_characterization.py]
@@ -1615,7 +1615,7 @@ repository_layout_cleanup_2026_08_27:
   development_tests: {GUI: tests/gui, driver: tests/driver, cross-stack planning: tests/planning}
   historical_notes: docs/historical
   asset_policy: docs/architecture/asset_policy.md
-  preserved_root_interfaces: [operator shell entrypoints, piper_gui_native.py, calibration utilities, DDS XML, joint bounds, installation and operation documents]
+  preserved_root_interfaces: [operator shell entrypoints, piper_gui/native_app.py, calibration utilities, DDS XML, joint bounds, installation and operation documents]
   validation: [121 relocated tests pass with one environment skip, combined relocated L515 and reconstruction suite has 194 passes and one skip, no runtime asset moved or deleted]
 
 architecture_cleanup_final_validation_2026_08_27:

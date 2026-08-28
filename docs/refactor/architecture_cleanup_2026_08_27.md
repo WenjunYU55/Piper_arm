@@ -148,7 +148,7 @@ flake8/pep257 and the dependency-ordered three-package build passes.
 ## Phase 8a: native GUI ROS adapter
 
 The complete `PiperGuiRos` class moved intact from the Tk launcher to
-`piper_gui/ros_node.py`. `piper_gui_native.py` imports and exposes the identical
+`piper_gui/ros_node.py`. `piper_gui/native_app.py` imports and exposes the identical
 class, so established imports and bootstrap behavior remain compatible. ROS
 topics, services, actions, QoS, event tuple names, goal conversion and command
 messages are unchanged; Tk presentation and explicit commissioning controls

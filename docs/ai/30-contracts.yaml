@@ -58,7 +58,7 @@ ray_review_operator_name_contract_2026_08_27:
   files: [RayProcesses - HH:MM - DD-MM-YYYY.json, RayProcesses - HH:MM - DD-MM-YYYY.html]
   time_basis: earliest positive event timestamp in the first locked snapshot converted to the writer machine local timezone and truncated to the minute; current local time only when that snapshot has no usable event
   identity_boundary: The filename may duplicate across missions. Unique mission_id or session_id parent directories remain artifact identity, and the fixed legacy-compatible .ray_mission_diagnostics.lock makes the first basename authoritative for every later updated writer and generation in that directory.
-  consumers: [RayMissionDiagnosticsStore JSON and HTML writer, piper_gui_native.py Diagnostics report selector, piper_gui/ray_review_viewer.py window title]
+  consumers: [RayMissionDiagnosticsStore JSON and HTML writer, piper_gui/native_app.py Diagnostics report selector, piper_gui/ray_review_viewer.py window title]
   compatibility: [legacy ray_mission_diagnostics.json and HTML discovery and continued append, existing report ordering, live atomic replacement, path containment, historical replay, same-minute reports in separate parent directories, command-free ownership]
 capture_one_model_seed_contract_2026_08_26:
   private_capture_result: {transport: std_srvs/Trigger response.message JSON, capture_result_schema_version: 1, required_field: qualified_target_model_seed, public_api: false}
@@ -433,11 +433,11 @@ core_topics:
   driver_launch_parameters: {supported: [can_port, auto_enable, joint_ctrl_topic, gripper_exist, enable_timeout, joint_bounds_path], invariant: auto_enable defaults false; removed aliases girpper_exist and rviz_ctrl_flag are rejected as unsupported rather than silently changing gripper units}
   live_manual_motion_validation: On 2026-07-20 one exclusive GUI-equivalent publisher commanded a supervised J6-only +0.02 rad round trip at 5 percent. Feedback measured +0.02029 rad outward and a 0.00210 rad final return error with err_code zero. On 2026-07-30 the production J2 lower limit was aligned to exact enabled compact-pose feedback -0.044796192 rad after OMPL demonstrably clamped the live start to the previous bound. The compact start is covered by a qualified acquisition-only recovery; snapshots still must not be clipped and collision pairs remain enabled.
 gui_3d_joint_preview:
-  set_topic: {name: /piper_gui/preview_set, type: sensor_msgs/JointState, effect: preview only, writer: piper_gui_native.py}
+  set_topic: {name: /piper_gui/preview_set, type: sensor_msgs/JointState, effect: preview only, writer: piper_gui/native_app.py}
   state_topic: {name: /piper_gui/preview_joint_states, type: sensor_msgs/JointState, effect: preview only, writer: piper_joint_preview_node.py, invariant: first six values are clamped URDF joint angles}
   tf: {root: preview_world, frames: preview_base_link through preview_link8, source: namespaced robot_state_publisher using an in-memory preview_-prefixed copy of the source URDF}
   interaction: {server: /piper_gui_joint_editor, update: /piper_gui_joint_editor/update, controls: six ROTATE_AXIS markers located from URDF joint origins}
-  mirror: {topic: /joint_ctrl_single, writer: piper_gui_native.py only after confirmation, speed_percent: 1 to 10, preserves: current gripper position, gates: [feedback age at most 1 second, arm err_code zero, conservative joint and robot/floor path valid with 60 mm nonadjacent-link proxy clearance]}
+  mirror: {topic: /joint_ctrl_single, writer: piper_gui/native_app.py only after confirmation, speed_percent: 1 to 10, preserves: current gripper position, gates: [feedback age at most 1 second, arm err_code zero, conservative joint and robot/floor path valid with 60 mm nonadjacent-link proxy clearance]}
   limitation: The mirror path check has no live obstacle boxes; clear-workspace supervision remains mandatory.
 tf_contracts:
   robot_chain: {path: "world -> base_link -> link1 -> link2 -> link3 -> link4 -> link5 -> link6", source: piper_description/display_live_robot.launch.py, joint_input: /joint_states_single, invariant: URDF origins match piper_sdk modified-DH mode 0 and visualization publishes no command topic}
@@ -591,7 +591,7 @@ scan_execution:
     tesseract_policy: Collision-aware Tesseract planning treats J1-J6 equally, applying the available controller/URDF limits and ordinary collision checks. There is no J6 lock or J6-specific soft cost; camera-cable clearance is scene geometry.
     historical_records: The pre-zero measured J6 bounds remain invalid historical data, and the rejected analytical hand-eye compensation remains historical and must not be reinstated. The operator's 2026-08-10 [-pi,+pi] correction is the current software fallback/model contract, not a newly measured bounds record and not proof of endpoint qualification. The reported approximately 0.04 rad neutral error was corrected by a guarded physical-neutral controller write at 18:18; independent read-only feedback then remained exactly 0.00000 rad for three seconds with J6 disabled and no faults.
 gui_production_client:
-  owner: [piper_gui_native.py, piper_gui/view_model.py, piper_gui/ros_client.py, piper_gui/app.py, piper_gui/scan_policy.py]
+  owner: [piper_gui/native_app.py, piper_gui/view_model.py, piper_gui/ros_client.py, piper_gui/app.py, piper_gui/scan_policy.py]
   mission_interface: {name: /piper/run_target_scan, type: piper_mobile_manipulation/action/RunTargetScan, role: submit/cancel and display feedback/result only}
   reconstruction_interface: {name: /piper/report_tracked_robot_homed, type: piper_mobile_manipulation/srv/ReportTrackedRobotHomed, role: explicit tracked-base home report after a successful safe-shutdown result}
   goal_compatibility: {task_id_prefix: gui-sim-, task_type: SCAN_3D, frame: base_link, target_confidence: 1.0, deadline_sec: 1200.0, position_covariance_diagonal: 0.01}

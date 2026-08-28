@@ -1,3 +1,5 @@
+# Historical Docker development image. The validated workstation uses native
+# Ubuntu 20.04 / ROS 2 Foxy; see docs/historical/docker_foxy_commands.md.
 FROM ros:foxy-ros-base-focal
 
 ENV DEBIAN_FRONTEND=noninteractive

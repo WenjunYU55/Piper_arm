@@ -57,7 +57,7 @@ grep -qxF 'source /opt/ros/foxy/setup.bash' ~/.bashrc || \
 cd ~
 git clone https://github.com/WenjunYU55/Piper_arm.git
 cd Piper_arm
-./install_host_dependencies.sh
+./scripts/setup/install_host_dependencies.sh
 ```
 
 The installer installs build, ROS, GUI, CAN, rootless-worker, and Python dependencies, including
@@ -179,7 +179,7 @@ Install the narrowly scoped boot/hot-plug service for the default `can0`
 interface and PiPER's 1 Mbps bitrate:
 
 ```bash
-./install_piper_can_service.sh
+./scripts/setup/install_piper_can_service.sh
 ip -details link show can0
 systemctl status --no-pager piper-can@can0.service
 ```
@@ -191,7 +191,7 @@ is hot-plugged. It configures SocketCAN only; it does not start the ROS driver
 or enable any arm motor.
 
 The result must contain `UP`, `can state ERROR-ACTIVE`, and `bitrate 1000000`. Use
-`PIPER_CAN_PORT=can1 ./install_piper_can_service.sh` during provisioning and
+`PIPER_CAN_PORT=can1 ./scripts/setup/install_piper_can_service.sh` during provisioning and
 `PIPER_CAN_PORT=can1` with runtime scripts if the adapter appears as `can1`.
 
 `start_piper.sh` reuses an interface that is already UP at the exact bitrate.
@@ -316,7 +316,7 @@ cd ~/Piper_arm
 ./start_gui.sh
 ```
 
-Do not use `enable_piper.sh` for the supervised scan workflow. Clear and support the workspace,
+Do not use `scripts/robot/enable_piper.sh` for the supervised scan workflow. Clear and support the workspace,
 prepare an emergency-stop method, then use the GUI Enable button. The Acquire & Scan tab performs a
 separately approved rough-coordinate acquisition followed by a separately approved correlated
 13-view plan. Neither approval is reusable.

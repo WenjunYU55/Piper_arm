@@ -68,7 +68,18 @@ else
   fail "autonomous target-scan interfaces (rebuild piper_mobile_manipulation)"
 fi
 
-for script in run_target_scan_mission.sh run_target_scan_gateway.sh; do
+for script in \
+  run_target_scan_mission.sh \
+  run_target_scan_gateway.sh \
+  start_gui.sh \
+  start_piper.sh \
+  scripts/setup/install_host_dependencies.sh \
+  scripts/setup/install_piper_can_service.sh \
+  scripts/robot/check_piper_can.sh \
+  scripts/robot/enable_piper.sh \
+  scripts/robot/disable_piper.sh \
+  scripts/calibration/calibrate_bounds.sh \
+  scripts/calibration/calibrate_joint6_zero.sh; do
   if [ -x "$ROOT/$script" ]; then
     pass "executable: $script"
   else

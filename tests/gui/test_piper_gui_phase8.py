@@ -224,7 +224,7 @@ def test_gui_bootstrap_lifecycle_without_tk_or_ros():
 
 
 def test_native_gui_has_no_production_process_or_scan_controller_logic():
-    source = open('piper_gui_native.py', encoding='utf-8').read()
+    source = open('piper_gui/native_app.py', encoding='utf-8').read()
     assert source.count('subprocess.Popen') == 1
     assert 'joint_preview.launch.py' in source
     assert 'start_new_session' not in source
@@ -236,7 +236,7 @@ def test_native_gui_has_no_production_process_or_scan_controller_logic():
 
 
 def test_native_gui_exposes_all_staged_home_recording_controls():
-    source = open('piper_gui_native.py', encoding='utf-8').read()
+    source = open('piper_gui/native_app.py', encoding='utf-8').read()
 
     assert 'Record Rough / Ready Home' in source
     assert 'Record Pre-Home (Shutdown Only)' in source
@@ -244,7 +244,7 @@ def test_native_gui_exposes_all_staged_home_recording_controls():
 
 
 def test_native_gui_defaults_reconstruction_reference_to_35mm_cube():
-    source = open('piper_gui_native.py', encoding='utf-8').read()
+    source = open('piper_gui/native_app.py', encoding='utf-8').read()
 
     assert "tk.StringVar(value='35') for _axis in range(3)" in source
     assert 'expected cube is 35 mm' in source
@@ -257,14 +257,14 @@ def test_native_gui_defaults_reconstruction_reference_to_35mm_cube():
 
 
 def test_native_gui_preserves_pre_home_when_other_stages_are_recorded():
-    source = open('piper_gui_native.py', encoding='utf-8').read()
+    source = open('piper_gui/native_app.py', encoding='utf-8').read()
 
     assert 'pre_home_positions_rad=existing_pre_home' in source
     assert "pre_home_positions_rad=profile.get(" in source
 
 
 def test_commissioning_disable_uses_feedback_service_without_hold_gate():
-    source = open('piper_gui_native.py', encoding='utf-8').read()
+    source = open('piper_gui/native_app.py', encoding='utf-8').read()
     request_source = source.split(
         '    def request_safe_disable(self) -> None:', 1)[1].split(
         '    def use_feedback(self) -> None:', 1)[0]
@@ -277,7 +277,7 @@ def test_commissioning_disable_uses_feedback_service_without_hold_gate():
 
 
 def test_commissioning_motion_starts_locked_until_graph_ownership_is_proved():
-    source = open('piper_gui_native.py', encoding='utf-8').read()
+    source = open('piper_gui/native_app.py', encoding='utf-8').read()
     ros_source = open('piper_gui/ros_node.py', encoding='utf-8').read()
     ros_init = ros_source.split('class PiperGuiRos(Node):', 1)[1].split(
         '    def feedback_callback', 1)[0]

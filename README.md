@@ -42,8 +42,9 @@ are in `integration/track_robot_description/`. It preserves the tracked
 robot's `odom -> base_link`, mounts the PiPER at `arm_base_link`, and exposes a
 geometry-free identity `piper_base_link` frame for the gateway.
 
-For the current whole-system architecture, validated behavior, limitations, safety boundaries, and
-recommended continuation point, see [`SYSTEM_HANDOFF.md`](SYSTEM_HANDOFF.md).
+For the current whole-system architecture and responsibility boundaries, see
+[`ARCHITECTURE.md`](ARCHITECTURE.md). Historical handoffs are archived under
+[`docs/historical/`](docs/historical/).
 
 For the durable product goal, milestone status, definition of done, and required next work, see
 [`docs/ai/70-roadmap.yaml`](docs/ai/70-roadmap.yaml).
@@ -54,8 +55,9 @@ For a fresh machine, runtime commands, generated-asset policy, and CPU/GPU/Jetso
 For day-to-day operation commands and what each script does, see
 [`OPERATOR_COMMANDS.md`](OPERATOR_COMMANDS.md).
 
-For the current Ubuntu 22.04 host, use the Docker-based Foxy environment documented in
-[`DOCKER_FOXY_COMMANDS.md`](DOCKER_FOXY_COMMANDS.md).
+The former Ubuntu 22.04 Docker experiment is retained only as historical reference in
+[`docs/historical/docker_foxy_commands.md`](docs/historical/docker_foxy_commands.md). The supported
+clean-install path is the Ubuntu 20.04/Foxy procedure in `CLEAN_INSTALL.md`.
 
 This repository contains four separate dependency surfaces:
 
@@ -78,8 +80,8 @@ ROS 2 Foxy must already be installed at `/opt/ros/foxy`. Foxy is end-of-life, so
 From the repository root:
 
 ```bash
-chmod +x install_host_dependencies.sh
-./install_host_dependencies.sh
+chmod +x scripts/setup/install_host_dependencies.sh
+./scripts/setup/install_host_dependencies.sh
 source /opt/ros/foxy/setup.bash
 cd piper_ros_foxy
 colcon build --symlink-install
@@ -104,12 +106,12 @@ rosdep check --from-paths piper_ros_foxy/src --ignore-src --rosdistro foxy
 Real-arm convenience launchers are included as explicit `.sh` / `.py` tools only:
 
 - `start_piper.sh` starts the PiPER ROS driver and CAN interface, but does not auto-enable the arm by default.
-- `enable_piper.sh` and `disable_piper.sh` call the PiPER enable service.
-- `reset_piper.sh` / `reset_piper.py` and `reset_arm.sh` / `reset_arm.py` publish joint commands and can move the real arm.
-- `start_gui.sh` / `piper_gui_native.py` opens manual/Graphical controls plus a publisher-exclusive
+- `scripts/robot/enable_piper.sh` and `scripts/robot/disable_piper.sh` call the PiPER enable service.
+- `tools/legacy_motion/` quarantines unsupported historical direct-motion utilities; they are not normal recovery tools.
+- `start_gui.sh` / `piper_gui/native_app.py` opens manual/Graphical controls plus a publisher-exclusive
   Acquire & Scan tab for rough-coordinate acquisition and one exact 13-view session.
-- `calibrate_bounds.sh` / `piper_calibrate_bounds.py` records measured joint limits into `piper_joint_bounds.json`.
-- `calibrate_joint6_zero.sh` / `piper_joint6_zero.py` diagnoses joint-six feedback and, only with
+- `scripts/calibration/calibrate_bounds.sh` records measured joint limits into `piper_joint_bounds.json`.
+- `scripts/calibration/calibrate_joint6_zero.sh` diagnoses joint-six feedback and, only with
   `--calibrate` plus two typed confirmations, writes the physically aligned J6 position as controller zero.
   The software J6 range is `[-pi,+pi]`; a neutral error must be corrected with this controller procedure,
   not with a camera TF, URDF-origin, or one-sided command offset.
@@ -207,7 +209,7 @@ AI_perception_tests/groundingdino_test/check_env.sh
 ## Dependency files
 
 - ROS packages: each `piper_ros_foxy/src/*/package.xml`
-- Host and CAN tools: `install_host_dependencies.sh`
+- Host and CAN tools: `scripts/setup/install_host_dependencies.sh`
 - L515 build tools: `L515_camera/install_realsense_build_deps.sh`
 - Basic offline analysis: `AI_perception_tests/requirements_basic.txt`
 - Grounded-SAM-2: `AI_perception_tests/groundingdino_test/requirements_ai.txt`

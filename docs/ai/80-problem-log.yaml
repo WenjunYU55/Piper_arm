@@ -575,7 +575,7 @@ problem_groups:
       symptom: After the failed E2E run, commissioning Enable returned true but posted manual poses never moved. Commissioning Safe Disable then timed out saying its current-feedback hold did not settle.
       root_cause: Driver logs prove every piper_native_gui command, including the GUI's disable hold, was rejected while stale STARTUP_WRIST authority remained. The running driver predated the transaction-reset rebuild. Independently, the GUI created its publisher immediately even while scan_viewpoint_executor remained a writer, and refused to call /enable_srv false until a strict 0.025/0.005-rad hold window passed.
       correction: Start GUI commissioning motion without a publisher and acquire it only after an empty command-topic proof. Give explicit GUI commands a bounded unfinished-startup contract—measured-J6 hold with J1-J5 motion, or positive J6-only movement toward zero. Replace the misleading settle-gated commissioning disable with an explicitly labelled no-home/no-motion direct service request; preserve autonomous Cancel/Home unchanged.
-      evidence: [/run/user/1000/piper_target_scan_logs/driver.log, piper_gui_native.py, piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py, piper_ros_foxy/src/piper/test/test_enable_handshake.py, tests/gui/test_piper_gui_phase8.py, tests/gui/test_piper_gui_automation.py]
+      evidence: [/run/user/1000/piper_target_scan_logs/driver.log, piper_gui/native_app.py, piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py, piper_ros_foxy/src/piper/test/test_enable_handshake.py, tests/gui/test_piper_gui_phase8.py, tests/gui/test_piper_gui_automation.py]
     - id: gripper_feedback_all_zero_2026_08_16
       status: resolved_expected_position_control_absolute_reference_pending
       symptom: The gripper now mechanically operates but is reported not stiff after enable; earlier J7/J8 ROS feedback appeared fixed at zero.
@@ -641,7 +641,7 @@ problem_groups:
       symptom: The GUI showed no pre-home recording button, and recording either rough/ready home or storage J6 could silently erase the valid shutdown-only pre-home from schema-v4.
       root_cause: Both single-stage save calls omitted pre_home_positions_rad and save_home_pose correctly interpreted the omission as pre_home_configured=false.
       correction: Add Record Pre-Home (Shutdown Only), display its six joints, and preserve every unaffected home stage whenever one stage is recorded.
-      evidence: [piper_gui_native.py, tests/gui/test_piper_gui_phase8.py, piper_home_pose.json]
+      evidence: [piper_gui/native_app.py, tests/gui/test_piper_gui_phase8.py, piper_home_pose.json]
     - id: configured_storage_self_collision_false_block
       status: resolved
       symptom: Conservative robot collision geometry rejected the intentionally supported stored fold.

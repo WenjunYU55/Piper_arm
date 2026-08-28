@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CAN_PORT="${PIPER_CAN_PORT:-can0}"
 UNIT_SOURCE="$ROOT/deployment/piper-can@.service"
 RULE_TEMPLATE="$ROOT/deployment/80-piper-can.rules.in"

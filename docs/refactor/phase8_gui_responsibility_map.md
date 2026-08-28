@@ -4,7 +4,7 @@ Date: 2026-08-14
 
 ## Pre-change responsibility map
 
-| Category | Previous owner in `piper_gui_native.py` | Phase 8 disposition |
+| Category | Previous owner in `piper_gui/native_app.py` | Phase 8 disposition |
 |---|---|---|
 | A. Presentation | Tk tabs, labels, dialogs, status text | Retained |
 | B. GUI state | widget state, manual targets, preview state, mission display state | Retained; mission display state moved to `piper_gui/view_model.py` |
@@ -24,13 +24,13 @@ states, approves a trajectory, classifies autonomous retries, requests an
 autonomous return home, disables after autonomous shutdown, or terminates
 production mission children.
 
-`piper_gui_automation.py` is no longer imported by production GUI code. It is
+`tests/fixtures/piper_gui_automation.py` is no longer imported by production GUI code. It is
 retained temporarily as an archived Phase 1 characterization fixture; it has no
 runtime owner or side effects.
 
 ## Current architecture
 
-- `piper_gui_native.py` contains Tk presentation plus explicit commissioning
+- `piper_gui/native_app.py` contains Tk presentation plus explicit commissioning
   controls and re-exports the ROS adapter for compatibility.
 - `piper_gui/ros_node.py` owns the ROS node adapter for
   joint/status/diagnostic topics, `/enable_srv`, `/piper/run_target_scan`, and
