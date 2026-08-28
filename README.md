@@ -1,215 +1,222 @@
-# PiPER Arm, L515 Camera, and Offline Perception
+# PiPER Active-View 3D Scanning
 
-## Autonomous target-scan mission
+<p align="center">
+  Autonomous eye-in-hand object scanning with ROS 2, Intel RealSense L515,
+  GroundingDINO, SAM 2, next-best-view planning, and fail-closed robot execution.
+</p>
 
-The production entry point is the typed ROS 2 action `/piper/run_target_scan`.
-It accepts one labelled rough target pose, runs bounded acquisition and a
-adaptive 8-to-24-view feature-driven scan, returns to the approved home pose, proves a settled current-pose
-hold, disables the motors, stops every PiPER-owned child, and only then reports
-a successful dataset result. The GUI now opens with a separate **Automatic
-Scan** tab: after entering rough XYZ, one button submits the whole mission
-through the same action. The five-step **Acquire & Scan** tab remains available
-only as the commissioning harness.
+<p align="center">
+  <img alt="Ubuntu 20.04" src="https://img.shields.io/badge/Ubuntu-20.04-E95420?logo=ubuntu&amp;logoColor=white">
+  <img alt="ROS 2 Foxy" src="https://img.shields.io/badge/ROS_2-Foxy-22314E?logo=ros&amp;logoColor=white">
+  <img alt="Python 3.8 and 3.10" src="https://img.shields.io/badge/Python-3.8_%7C_3.10-3776AB?logo=python&amp;logoColor=white">
+  <img alt="Hardware status: research prototype" src="https://img.shields.io/badge/Hardware-Research_Prototype-orange">
+</p>
 
-The automatic mission advances by observed readiness, not startup sleeps. It
-requires a fresh, settled joint stream from the driver generation it started;
-healthy camera timestamps and ready GroundingDINO/SAM2 CUDA workers; a new
-hand-eye transform; a new healthy Tesseract worker generation; and finally
-typed acquisition readiness. Each barrier has a bounded timeout and reports
-the component that failed to become ready. The arm is not enabled until all of
-those barriers and a second pre-enable joint-stream stability check pass.
+This repository combines a PiPER six-axis arm, an eye-in-hand L515 RGB-D
+camera, semantic segmentation, target-centred next-best-view (NBV) selection,
+collision-aware planning, supervised trajectory execution, dataset capture,
+and offline reconstruction in one mission pipeline.
 
-The listener is command-free unless real motion is explicitly selected:
+> [!CAUTION]
+> This is a robotics research prototype. Real-arm motion is disabled by
+> default. Planner selection alone never grants motion authority, and software
+> cancel is not a physical emergency stop. Begin with the proposal-only path
+> and follow the [operator procedure](OPERATOR_COMMANDS.md) before enabling any
+> hardware motion.
+
+## What the system does
+
+| Stage | Responsibility |
+|---|---|
+| Acquire | Move to a bounded target-facing observation from a rough target position. |
+| Understand | Combine GroundingDINO, SAM 2, aligned depth, and hand-eye transforms into a measured target lock. |
+| Select | Track measured coverage and rank target-centric NBV candidates. |
+| Plan | Use one frozen planner backend—Tesseract or cuRobo—to produce a generic, collision-qualified `MotionPlan`. |
+| Execute | Apply common normalization, authorization, freshness, drift, following-error, timeout, and motor-health gates. |
+| Capture | Save synchronized RGB-D, mask, joints, camera pose, and planner provenance at accepted settled views. |
+| Reconstruct | Build and inspect target-only point clouds and meshes offline without changing the completed robot mission result. |
+
+## How it works
+
+```mermaid
+flowchart TD
+    O["Operator<br/>PiPER GUI or external coordinator"]
+    M["Target-scan coordinator<br/>RunTargetScan + MissionEngine"]
+    S["Mission-owned startup<br/>disabled driver · L515/perception · hand-eye<br/>selected planner worker · scan stack"]
+    G["Fail-closed preflight<br/>fresh feedback · readiness · authorization"]
+    A["Rough acquisition<br/>GroundingDINO + SAM 2 + aligned depth"]
+    T["Measured target lock"]
+    N["NBV and candidate rays"]
+    P["Frozen planner backend<br/>Tesseract or cuRobo"]
+    MP["Generic MotionPlan"]
+    V["Common normalization and validation<br/>ScanExecutionPlan · PlanAuthorizer · runtime gates"]
+    E["Scan executor<br/>TrajectoryRunner → PiPER driver"]
+    C["Settle and revalidate<br/>aim · framing · quality · occlusion<br/>save synchronized observation"]
+    U["Measured coverage update"]
+    X["Terminal recovery<br/>home · hold · disable · bounded cleanup"]
+    D["Immutable dataset and durable mission result"]
+
+    O -->|Start Automatic Scan| M
+    M --> S --> G --> A --> T --> N --> P --> MP --> V --> E --> C --> U
+    U -->|more useful surface remains| N
+    U -->|complete or frontier exhausted| X
+    M -->|cancel or fail| X
+    X --> D
+```
+
+The mission and NBV logic do not depend on the selected planner. Tesseract and
+cuRobo are isolated workers; neither can publish PiPER commands. Every accepted
+plan enters the same authorization and execution-safety path. See the
+[system architecture](docs/architecture/system-overview.md) for process and
+environment boundaries.
+
+## Start here
+
+### 1. Install and verify
+
+The reference installation is Ubuntu 20.04 with ROS 2 Foxy. Follow the
+[clean installation](CLEAN_INSTALL.md), then run:
 
 ```bash
+cd ~/Piper_arm
+./verify_installation.sh
+./AI_perception_tests/groundingdino_test/check_env.sh
+```
+
+The first command validates software and overlays; it does not prove physical
+arm, CAN, camera, firmware, cable, or workspace safety.
+
+### 2. Run a proposal-only startup
+
+Use two terminals:
+
+```bash
+# Terminal 1: coordinator; no real-motion opt-in
+cd ~/Piper_arm
 ./run_target_scan_mission.sh
 ```
 
-The 30% transit/10% contact speed profile has a separate deployment gate and
-must remain unqualified until its staged physical acceptance is recorded.
-
-For two-host deployment, the tracked-robot network sees only
-`run_target_scan_gateway.sh`. The gateway snapshots
-`odom -> piper_base_link` and uses a private hashed filesystem spool to reach
-the loopback-only motion domain. On two computers, both launchers must receive
-the same secured shared path through `PIPER_MISSION_SPOOL_ROOT`; their default
-local `/tmp` path is only for one computer. Automatic leaf/branch contact remains
-fail-closed until the installed gripper/contact collision model passes physical
-qualification; a hand/person is always a terminal blocker.
-
-The ready-to-copy tracked-root robot description and its installation contract
-are in `integration/track_robot_description/`. It preserves the tracked
-robot's `odom -> base_link`, mounts the PiPER at `arm_base_link`, and exposes a
-geometry-free identity `piper_base_link` frame for the gateway.
-
-For the current whole-system architecture, validated behavior, limitations, safety boundaries, and
-recommended continuation point, see [`SYSTEM_HANDOFF.md`](SYSTEM_HANDOFF.md).
-
-For the durable product goal, milestone status, definition of done, and required next work, see
-[`docs/ai/70-roadmap.yaml`](docs/ai/70-roadmap.yaml).
-
-For a fresh machine, runtime commands, generated-asset policy, and CPU/GPU/Jetson selection, see
-[`CLEAN_INSTALL.md`](CLEAN_INSTALL.md).
-
-For day-to-day operation commands and what each script does, see
-[`OPERATOR_COMMANDS.md`](OPERATOR_COMMANDS.md).
-
-For the current Ubuntu 22.04 host, use the Docker-based Foxy environment documented in
-[`DOCKER_FOXY_COMMANDS.md`](DOCKER_FOXY_COMMANDS.md).
-
-This repository contains four separate dependency surfaces:
-
-1. The PiPER ROS 2 workspace in `piper_ros_foxy/`.
-2. Intel RealSense L515 source-build helpers in `L515_camera/`.
-3. Offline AI experiments in `AI_perception_tests/`.
-4. The isolated CPU Tesseract 0.35 worker in `motion_planning/tesseract/`, connected to Foxy only
-   through the command-free `piper_tesseract_foxy` filesystem adapter.
-
-Do not install the offline AI packages into the ROS Python environment.
-
-## Supported host
-
-The scripts target Ubuntu 20.04 (Focal), ROS 2 Foxy, and Python 3.8 for ROS nodes. The optional Grounded-SAM-2 environment requires Python 3.10 or newer. A PiPER arm also requires a SocketCAN-compatible USB-CAN adapter; camera workflows require an Intel RealSense L515.
-
-ROS 2 Foxy must already be installed at `/opt/ros/foxy`. Foxy is end-of-life, so use a dedicated compatible host or container and do not substitute another ROS distribution without porting and testing the launch files and dependencies.
-
-## Install the PiPER ROS stack
-
-From the repository root:
-
 ```bash
-chmod +x install_host_dependencies.sh
-./install_host_dependencies.sh
-source /opt/ros/foxy/setup.bash
-cd piper_ros_foxy
-colcon build --symlink-install
-cd ..
-source source_piper_foxy_environment.sh
+# Terminal 2: GUI
+cd ~/Piper_arm
+./start_gui.sh
 ```
 
-`source_piper_foxy_environment.sh` is the supported runtime loader for GUI and scan tools. It clears
-inherited overlay paths, sources Foxy plus the canonical `piper_ros_foxy/install`, and verifies the
-installed scan packages and recovery-bearing message schema. Do not create or source a generated
-repository-root `install/`; it can shadow the canonical ROS interfaces.
+This is the correct first smoke test on a new installation. It does not grant
+the coordinator permission to enable or move the arm.
 
-The installer installs the ROS, Python, GUI, build, and CAN packages used by the checked-in code. It also installs the tested `piper_sdk==0.6.1` and Python 3.8-compatible `python-can==4.5.0` with pip because the SDK has no ROS dependency key and Ubuntu 20.04's Python CAN package is too old. It then runs `rosdep` against every package manifest.
+### 3. Operate the complete system
 
-Verify the dependency declarations:
+Before any supervised physical run, use the
+[operator quick start](OPERATOR_COMMANDS.md). It defines:
 
-```bash
-source /opt/ros/foxy/setup.bash
-rosdep check --from-paths piper_ros_foxy/src --ignore-src --rosdistro foxy
+- CAN and all-six-joint preflight checks;
+- coordinator, GUI, and RViz startup order;
+- next-mission planner and scan-policy selection;
+- the current real-motion qualification boundary;
+- cancellation, homing, disable, and emergency procedures;
+- dataset locations and shutdown proof.
+
+Do not infer a safe physical command from examples elsewhere in the repository.
+The operator guide is the authority.
+
+## Planner backends
+
+| Backend | Purpose | Current status |
+|---|---|---|
+| Tesseract | Exact configured mesh/convex collision model and established planning path. | Regression baseline and current supervised-planning reference. Physical use still depends on the active model and all mission gates. |
+| cuRobo 0.7.8 | CUDA MotionGen backend behind the same generic planner contract. | Installed and command-free GPU planning is verified. The current Bunker approximation is **not hardware-qualified**, so physical cuRobo motion remains blocked. |
+
+The GUI selection applies to the **next** mission and becomes immutable when
+that mission starts. There is no automatic fallback or mid-mission backend
+switch. See [motion-planner backends](docs/architecture/motion_planner_backends.md).
+
+## Validated environment
+
+The current reference workstation was checked on **28 August 2026**:
+
+| Component | Verified reference |
+|---|---|
+| Host | Ubuntu 20.04, Linux 5.15, Intel Core i9-10900X (10 cores / 20 threads), 125 GiB RAM |
+| GPU | NVIDIA GeForce RTX 3090, 24 GiB, driver 570.133.07, compute capability 8.6 |
+| ROS | ROS 2 Foxy, system Python 3.8.10 |
+| Perception | Python 3.10.20, PyTorch 2.11.0+cu128, CUDA 12.8, cuDNN 9.19 |
+| Planning | Tesseract 0.35 isolated worker; cuRobo 0.7.8 in a separate Python 3.10 environment |
+| Camera | Intel RealSense L515; librealsense 2.50.0 and realsense-ros 4.0.4 |
+| Arm interface | `piper-sdk==0.6.1`, `python-can==4.5.0`, SocketCAN at 1 Mbps |
+
+The full evidence and validation commands are in
+[validated environments](docs/reference/validated-environments.md). Jetson is
+a planned deployment target, not a currently proven installation; its JetPack,
+CUDA, architecture, ROS, model, and latency results will be recorded there only
+after an end-to-end validation.
+
+## Repository map
+
+```text
+Piper_arm/
+├── piper_ros_foxy/        ROS packages: mission, planning adapters, safety, execution, driver
+├── piper_gui/             Native GUI views, clients, configuration, and scan controls
+├── L515_camera/           Pinned RealSense build, calibration, diagnostics, and launch tools
+├── AI_perception_tests/   Isolated GroundingDINO/SAM 2 environment and perception tests
+├── motion_planning/       ROS-free Tesseract and cuRobo workers and qualification tools
+├── reconstruction/       Offline point-cloud and TSDF reconstruction
+├── integration/          Tracked-robot frame and gateway integration contracts
+├── tests/                 Cross-package regression and adapter tests
+├── tools/                 Development, diagnostics, and asset-generation utilities
+└── docs/                  Architecture, operation, environment, research, and AI routing docs
 ```
 
-Real-arm convenience launchers are included as explicit `.sh` / `.py` tools only:
+Root-level shell scripts are intentionally retained as stable operator entry
+points. Implementation code and generated artifacts belong in the subsystem
+directories above; datasets, build trees, environments, downloaded weights,
+and runtime outputs are ignored.
 
-- `start_piper.sh` starts the PiPER ROS driver and CAN interface, but does not auto-enable the arm by default.
-- `enable_piper.sh` and `disable_piper.sh` call the PiPER enable service.
-- `reset_piper.sh` / `reset_piper.py` and `reset_arm.sh` / `reset_arm.py` publish joint commands and can move the real arm.
-- `start_gui.sh` / `piper_gui_native.py` opens manual/Graphical controls plus a publisher-exclusive
-  Acquire & Scan tab for rough-coordinate acquisition and one exact 13-view session.
-- `calibrate_bounds.sh` / `piper_calibrate_bounds.py` records measured joint limits into `piper_joint_bounds.json`.
-- `calibrate_joint6_zero.sh` / `piper_joint6_zero.py` diagnoses joint-six feedback and, only with
-  `--calibrate` plus two typed confirmations, writes the physically aligned J6 position as controller zero.
-  The software J6 range is `[-pi,+pi]`; a neutral error must be corrected with this controller procedure,
-  not with a camera TF, URDF-origin, or one-sided command offset.
-- `L515_camera/run_supervised_viewpoint_execution.sh` starts a separate proposal-first scan executor.
-  It has no joint-command publisher by default; real motion requires launch opt-in, an exact fresh-plan
-  approval, healthy tracking/obstacles/workflow, and a separately enabled arm. See `OPERATOR_COMMANDS.md`.
+## Documentation
 
-The selectable Tesseract backend has Foxy interfaces, a command-free bridge, an isolated rootless
-Ubuntu 24.04 worker, model builder, tests, and a collision manifest initially qualified on
-2026-07-23 and requalified with deterministic seed handling on 2026-07-24 for its
-declared supervised guarded scope. Automatic motion still requires launch opt-in, a fresh exact
-approval, and every executor health gate. On 2026-07-29 rough-coordinate acquisition and an exact
-13-view Tesseract plan completed supervised physical acceptance at 5 percent, with all 13
-capture/model handoffs succeeding. J6 is fully safe by operator confirmation and the Tesseract path
-treats J1-J6 equally with no J6-specific lock or cost. The bounded acquisition cone aims camera
-optical +Z around the rough hint;
-the first exact segment uses a schema-v5 static bootstrap without DINO/SAM obstacle output, while
-retaining robot/camera/cable/floor collision and runtime gates. GroundingDINO is then bound to a
-post-settle frame and exact request. A second look cannot start until the matching typed semantic
-scene is ready, and a measured stable lock within 0.30 m starts the normal workflow. The GUI manages
-only the worker/scan stack and never enables motors. Acquisition uses one exact confirmation;
-after measured lock plus `SCAN_READY`, explicit Prepare Scan from Current Lock creates one fresh
-correlated 13-view request, which requires a separate exact confirmation. There is no reusable
-15-minute authorization.
+| Need | Document |
+|---|---|
+| Install on a clean workstation | [Clean installation](CLEAN_INSTALL.md) |
+| Run, cancel, recover, and shut down | [Operator quick start](OPERATOR_COMMANDS.md) |
+| Understand the complete system | [System architecture](docs/architecture/system-overview.md) |
+| Understand package ownership | [Architecture reference](ARCHITECTURE.md) |
+| Configure Tesseract or cuRobo | [Motion-planner backends](docs/architecture/motion_planner_backends.md) |
+| Check proven hardware/software versions | [Validated environments](docs/reference/validated-environments.md) |
+| Navigate all project documentation | [Documentation index](docs/README.md) |
+| Review known limitations and handoff state | [System handoff](SYSTEM_HANDOFF.md) |
 
-Automation speed is now selected in the GUI from 1 through 100 percent, default 5, for both rough
-acquisition and the later scan. The executor clamps only to the PiPER SDK's 1-100 percent range.
-It creates hash-bound, collision-validated all-six-joint SDK MoveJ target paths for acquisition and
-scan motion and issues one arm-only target per viewpoint. A folded acquisition start may use one
-separately proven bootstrap target first. Dedicated zero-capture RETURN_HOME stages are intentionally
-different: the operator-confirmed supported fold is sent as one direct configured joint target with
-robot self-collision validation explicitly exempted. The exact CAD-derived installed holder/L515
-envelope must still retain at least 5 mm support-plane/external clearance at the measured start and
-every dense path sample. Hard/controller limits, exact start/goal hashes, fresh feedback, per-motor
-health, convergence, final hold and disable remain mandatory. Dense validation samples are validation-only and
-are never sent to the arm. PiPER
-MoveJ uses aggregate speed rather than Tesseract qdot/qddot, and automation cannot command the
-gripper. The packages build, 324 focused tests and both rootless command-free qualifications pass.
-The target-only adapter completed the 13-view physical acceptance at 5 percent; higher-speed
-dynamics remain unqualified. At every
-accepted settled scan viewpoint, the supervised stack additionally records synchronized RGB, raw
-depth, a 16-bit millimetre depth PNG, mask, intrinsics, joints, and plan/view metadata under
-`datasets/active_scan`. GUI Safe Disable commands and verifies a settled current-feedback hold
-before requesting motor disable. The historical live acceptance remains at 5 percent; higher
-selections still require a live repeatability audit.
+Machine-oriented architecture and maintenance routing live under `docs/ai/`.
+They are kept in sync with the code and should be read before structural work.
 
-The no-extension wrapper shortcuts are intentionally not included. Use the `.sh` filenames directly on a fresh clone.
-The L515 perception and temporal tracking pipeline and the supervised cube coordinator remain
-read-only. Only the separately opted-in and approved viewpoint executor can publish slow scan targets.
+## Development and tests
 
-## Install the L515 camera stack
-
-The L515 integration builds pinned source versions: librealsense `v2.50.0` and realsense-ros `4.0.4`.
+Source the canonical overlay before running ROS-aware tests:
 
 ```bash
-cd L515_camera
-./fetch_realsense_sources.sh
-./install_realsense_build_deps.sh
-./install_l515_host_fixes.sh
-./build_realsense_ws.sh
-./check_l515_ros.sh
-cd ..
-./verify_installation.sh
+cd ~/Piper_arm
+source ./source_piper_foxy_environment.sh
+python3 -m pytest -q tests
 ```
 
-The install scripts require `sudo`. Fetching sources requires network access. See `L515_camera/README.md` and `L515_camera/realsense_l515_version_notes.md` before changing SDK, ROS driver, kernel, or firmware versions.
+Package-specific and GPU commands are documented in the
+[documentation index](docs/README.md). Ordinary ROS/Foxy tests do not import
+cuRobo; GPU integration tests are opt-in and never command the physical robot.
 
-The source build disables librealsense's optional examples and graphical examples. The ROS camera driver does not require them, and disabling them avoids unrelated OpenGL, GLFW, and GTK dependencies on a clean robot host.
+## Project status
 
-`verify_installation.sh` checks the host version, ROS environments, overlays, commands, Python imports and pinned versions, and installed ROS packages. It does not prove that the arm, CAN adapter, L515, USB permissions, firmware, or network are physically working.
+- ROS 2 Foxy is end-of-life; the validated workstation remains pinned to its
+  compatible Ubuntu 20.04 environment.
+- Real motion remains opt-in and fail-closed. Higher speeds, new collision
+  models, new mounts, and new deployment platforms require explicit
+  requalification.
+- cuRobo is architecturally integrated but its current mobile-platform
+  collision approximation is not physically qualified.
+- Jetson deployment is planned and deliberately marked unverified until the
+  clean install and complete command-free/hardware test matrix pass.
 
-## Basic offline perception tools
+## Acknowledgements
 
-The static analysis scripts do not need ROS or model frameworks:
-
-```bash
-python3 -m venv AI_perception_tests/.venv
-AI_perception_tests/.venv/bin/python -m pip install -r AI_perception_tests/requirements_basic.txt
-```
-
-## Optional Grounded-SAM-2 tests
-
-Use a separate Python 3.10 environment:
-
-```bash
-python3.10 -m venv AI_perception_tests/groundingdino_test/envs/grounded_sam2_py310
-AI_perception_tests/groundingdino_test/envs/grounded_sam2_py310/bin/python -m pip install --upgrade pip
-SAM2_BUILD_CUDA=0 AI_perception_tests/groundingdino_test/envs/grounded_sam2_py310/bin/python -m pip install -r AI_perception_tests/groundingdino_test/requirements_ai.txt
-AI_perception_tests/groundingdino_test/fetch_ai_assets.sh
-AI_perception_tests/groundingdino_test/check_env.sh
-```
-
-`python3.10` is not supplied by the standard Ubuntu 20.04 repositories; provide it through an isolated Conda environment, pyenv, or another maintained Python distribution. `SAM2_BUILD_CUDA=0` provides the reproducible CPU installation. CUDA installations depend on the host GPU, driver, CUDA toolkit, and the matching PyTorch wheel; validate those separately before enabling CUDA. Model checkpoints are not committed; `fetch_ai_assets.sh` downloads the two required checkpoints and checks out the tested source revision.
-
-## Dependency files
-
-- ROS packages: each `piper_ros_foxy/src/*/package.xml`
-- Host and CAN tools: `install_host_dependencies.sh`
-- L515 build tools: `L515_camera/install_realsense_build_deps.sh`
-- Basic offline analysis: `AI_perception_tests/requirements_basic.txt`
-- Grounded-SAM-2: `AI_perception_tests/groundingdino_test/requirements_ai.txt`
-
-Generated ROS build directories, downloaded model repositories, virtual environments, model weights, captures, and analysis outputs are intentionally not dependencies committed to this repository.
+This research stack builds on ROS 2, Intel RealSense, GroundingDINO, SAM 2,
+Tesseract Robotics, cuRobo, Open3D, and the PiPER SDK. Their upstream licenses
+and model terms continue to apply to the corresponding dependencies and
+downloaded assets.

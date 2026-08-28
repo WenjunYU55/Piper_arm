@@ -1350,11 +1350,16 @@ live_obstacle_tf_runtime_recovery_update_2026_08_06: >-
 repo_shape:
   CAD: Physical reference photos remain in CAD/. The originally supplied cameraHolder STL and Intel RealSense L515 STEP were converted/copied into owned piper_description runtime STLs; those original CAD source files are not present in the current CAD directory.
   piper_ros_foxy: ROS workspace containing piper, piper_description, piper_msgs, piper_mobile_manipulation, and the command-free piper_tesseract_foxy adapter.
-  motion_planning: Isolated Tesseract 0.35 worker container plus rootless Bubblewrap userspace and qualification scripts; CPU-only and ROS/CAN/GPU/network isolated at runtime.
+  motion_planning: Isolated command-free Tesseract 0.35 and cuRobo 0.7.8 workers, model adapters, spool contracts, and qualification scripts; neither planner owns ROS motor publication or CAN.
   L515_camera: Camera build/start scripts, hand-eye calibration, launch wrappers, viewers, and dataset capture tools.
   AI_perception_tests: Offline analysis plus isolated GroundingDINO/SAM2 workers and their unit tests.
   root_tools: Real-arm startup, enable/disable/reset/calibration, native GUI, installation, and operator documentation.
 entrypoints:
+  repository_overview: README.md
+  documentation_index: docs/README.md
+  operator_system_overview: docs/architecture/system-overview.md
+  clean_install: CLEAN_INSTALL.md
+  validated_environments: docs/reference/validated-environments.md
   canonical_foxy_environment: source_piper_foxy_environment.sh
   gui_scan_dds_profile: fastdds_gui_udp_only.xml
   system_handoff: SYSTEM_HANDOFF.md
@@ -1373,6 +1378,9 @@ entrypoints:
   tesseract_worker_run: motion_planning/tesseract/run_worker.sh
   operator_reference: OPERATOR_COMMANDS.md
 source_of_truth:
+  documentation_routing: docs/README.md
+  clean_workstation_install: CLEAN_INSTALL.md
+  verified_host_and_jetson_status: docs/reference/validated-environments.md
   supported_foxy_overlay: source_piper_foxy_environment.sh; generated /home/prl/Piper_arm/install must not exist or be sourced
   current_repository_handoff: SYSTEM_HANDOFF.md
   mission_goal_milestones_and_definition_of_done: docs/ai/70-roadmap.yaml

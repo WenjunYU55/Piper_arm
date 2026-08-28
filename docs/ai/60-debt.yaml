@@ -1494,3 +1494,10 @@ curobo_runtime_and_collision_qualification_debt_2026_08_27:
   explicit_limitations: [folded bootstrap outside canonical joint limits unsupported, occlusion and manipulation plan kinds unsupported, no claim of Tesseract collision equivalence, no physical robot test]
   next_cut: Replace or consolidate the coarse decomposed Bunker AABB world representation using version-matched cuRobo geometry, rerun all frozen-request and blocked-scene GPU tests, compare paths/collisions against Tesseract, then review model provenance before any explicitly authorized physical motion.
   must_not_resolve_by: [weakening shared validators, faking planner success, bypassing collision qualification, importing CUDA into ROS, automatic fallback, enabling real motion]
+
+repository_presentation_and_install_docs_2026_08_28:
+  status: professional_entrypoint_and_routing_completed_followup_install_hardening_open
+  completed: [README reduced to an operator-oriented overview, proposal-only startup leads the public path, system and process diagrams added, documentation index added, exact reference workstation recorded, Jetson explicitly marked unverified, stale Docker guide archived, operator tabletop/ground/curobo qualification contradiction corrected, reconstruction setup and variable-view contract corrected, contribution and issue templates added]
+  verified_reference: [Ubuntu 20.04.6, ROS 2 Foxy, complete verify_installation pass, GroundingDINO and SAM2 import/CUDA check pass, RTX 3090, Tesseract isolated runtime, cuRobo 0.7.8 command-free runtime]
+  remaining_install_debt: [pin Micromamba download instead of latest URL, add SHA-256 verification for downloaded AI checkpoints, replace L515 diagnostic absolute path, provide one complete bare-host cuRobo toolkit/environment installer, execute and record a real Jetson clean install]
+  guardrail: Never present a package import, command-free plan, another host, or upstream support statement as physical hardware or Jetson qualification.

@@ -1,9 +1,18 @@
 # Clean Installation
 
-This procedure recreates the PiPER arm and Intel RealSense L515 system on a clean host. Run commands as
-your normal user; the installers request `sudo` only for host changes.
+This procedure recreates the PiPER arm and Intel RealSense L515 system on the
+validated x86_64 workstation platform. Run commands as your normal user; the
+installers request `sudo` only for host changes.
 
 For normal operation after installation, use [`OPERATOR_COMMANDS.md`](OPERATOR_COMMANDS.md).
+The exact reference hardware and verification evidence are recorded in
+[`docs/reference/validated-environments.md`](docs/reference/validated-environments.md).
+
+> [!IMPORTANT]
+> This is not a Jetson installation guide. The current Tesseract root filesystem,
+> Micromamba bootstrap, and CUDA/PyTorch packages are x86_64-specific. Jetson is
+> explicitly unverified until a separate clean install and end-to-end test matrix
+> are recorded.
 
 ## 1. Supported host
 
@@ -76,9 +85,10 @@ source source_piper_foxy_environment.sh
 
 The build must finish with all five packages successful: `piper_description`, `piper_msgs`,
 `piper_mobile_manipulation`, `piper_tesseract_foxy`, and `piper`.
-The helper must report no error. It rejects stale inherited overlays and verifies that the scan
-capture module and recovery-bearing Tesseract message come from this canonical workspace. Do not
-run colcon from `~/Piper_arm` or source `~/Piper_arm/install/setup.bash`.
+The helper must report no error. It rejects stale inherited overlays and
+verifies that the scan capture module, generic planner contracts, and retained
+compatibility schemas come from this canonical workspace. Do not run colcon
+from `~/Piper_arm` or source `~/Piper_arm/install/setup.bash`.
 
 Confirm the autonomous mission interfaces and launchers:
 
@@ -132,6 +142,19 @@ cd ~/Piper_arm
 
 Both the core and compact qualification suites must pass. The runtime is generated under
 `motion_planning/tesseract/.runtime/` and is intentionally not committed.
+
+### Optional: install cuRobo
+
+cuRobo is not required for the default Tesseract mission. Its worker must use a
+separate Python 3.10/CUDA environment and must never be installed into Foxy's
+Python 3.8 environment. The pinned v0.7.8 environment, exact commit, CUDA toolkit
+requirement, installation commands, model preparation, and GPU tests are in
+[`docs/architecture/motion_planner_backends.md`](docs/architecture/motion_planner_backends.md#deterministic-environment-setup).
+
+The reference workstation passes command-free cuRobo import, CUDA, model warm-up,
+free-space planning, readiness, and cleanup tests. Its current mobile-platform
+collision approximation remains `hardware_qualified: false`; installing cuRobo
+does not authorize physical motion.
 
 ## 6. Build and configure the L515
 
@@ -225,16 +248,17 @@ not qualify the real-time GPU scan launcher.
 Keep Open3D outside Foxy's Python environment:
 
 ```bash
-python3 -m venv reconstruction/.venv
-reconstruction/.venv/bin/pip install -r reconstruction/requirements.txt
+./reconstruction/setup_environment.sh
 reconstruction/.venv/bin/python reconstruction/tsdf_reconstruct.py \
   datasets/active_scan/<completed-scan> --output /tmp/target_mesh.ply
 ```
 
-The prototype requires exactly 13 RGB/depth/mask records, calibrated
-intrinsics, and the timestamped `base_link -> camera_color_optical_frame` 4x4
-matrix saved with each view. Reconstruction is an asynchronous post-scan job;
-mesh failure does not change the already completed arm shutdown result.
+The setup script creates the supported isolated Python 3.10/Open3D environment;
+do not install Open3D into Foxy's Python 3.8 environment. Reconstruction accepts
+a completed 1-to-24-view dataset with calibrated intrinsics and the timestamped
+`base_link -> camera_color_optical_frame` matrix saved with each view. It is an
+asynchronous post-scan job; mesh failure does not change the already completed
+arm shutdown result.
 
 ## 10. Verify the installation
 
@@ -246,7 +270,8 @@ cd ~/Piper_arm
 ```
 
 Every line must report `PASS`. This verifies the OS, Foxy, the canonical PiPER and RealSense
-overlays, the isolated Tesseract runtime, Python imports and versions, and ROS package discovery.
+overlays, generic planner interfaces plus retained Tesseract compatibility aliases, the isolated
+Tesseract runtime, Python imports and versions, and ROS package discovery.
 Also validate the isolated AI environment:
 
 ```bash
@@ -280,61 +305,30 @@ At minimum, verify these topics exist:
 
 Stop the camera with `Ctrl+C` in its terminal.
 
-## 10. Start the supported GUI system
+## 11. Start the supported system
 
-Camera and read-only perception commands are listed in order in
-[`OPERATOR_COMMANDS.md`](OPERATOR_COMMANDS.md#read-only-l515-perception-runtime). The camera workflow
-does not move the arm.
+The autonomous coordinator owns the driver, camera/perception, hand-eye,
+selected planner worker, and scan stack in dependency order. Do not compose the
+old four-terminal driver/TF/vision workflow for an automatic mission.
 
-Use four terminals. Start the real PiPER driver without automatically enabling motion:
+First run a proposal-only startup:
 
 ```bash
+# Terminal 1
 cd ~/Piper_arm
-./start_piper.sh
+./run_target_scan_mission.sh
 ```
 
-Leave that terminal running. Wait until it reports that the PiPER node has started, then use a second
-terminal for the accepted hand-eye transform:
-
 ```bash
-cd ~/Piper_arm
-./L515_camera/run_hand_eye_tf.sh
-```
-
-Start the L515, camera timestamp watchdog, GroundingDINO, SAM2, and geometry pipeline in the third
-terminal:
-
-```bash
-cd ~/Piper_arm
-./L515_camera/run_gpu_vision_pipeline.sh
-```
-
-When camera and perception health are ready, start the GUI in the fourth terminal:
-
-```bash
+# Terminal 2
 cd ~/Piper_arm
 ./start_gui.sh
 ```
 
-Do not use `enable_piper.sh` for the supervised scan workflow. Clear and support the workspace,
-prepare an emergency-stop method, then use the GUI Enable button. The Acquire & Scan tab performs a
-separately approved rough-coordinate acquisition followed by a separately approved correlated
-13-view plan. Neither approval is reusable.
-
-At completion or before shutdown, press GUI **Disable**. The GUI must first command the fresh
-current-feedback pose, prove target error no greater than 0.025 rad and sample motion no greater than
-0.005 rad continuously for one second, and only then report a successful motor disable. If that
-eight-second proof fails, the motors remain enabled; do not stop the driver until the arm is safely
-supported and Disable succeeds.
-
-After the arm is disabled, stop the managed scan stack from the GUI, then stop camera and perception:
-
-```bash
-cd ~/Piper_arm
-./L515_camera/stop_gpu_vision_pipeline.sh
-```
-
-Close the GUI and stop the hand-eye and driver terminals only after the disable acknowledgement.
+This command does not permit arm enable or motion. Use
+[`OPERATOR_COMMANDS.md`](OPERATOR_COMMANDS.md) for the RViz command, exact
+physical preflight, qualified Tesseract/tabletop 5% opt-in, cancellation,
+homing, disable proof, emergency boundary, and shutdown order.
 
 ## Troubleshooting
 

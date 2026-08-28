@@ -38,7 +38,13 @@ Piper_arm/
 │   └── groundingdino_test/          Grounded-SAM-2 environment, scripts, requirements, asset fetch
 ├── reconstruction/                  Offline target-only RGB-D TSDF with selectable captured or fresh manifest/model-hash-bound GroundingDINO/SAM2 masks, captured-support-only semantic intersection, robot-pose/bounded target-GICP/target-excluded static-scene registration, raw/cleaned meshes, full-resolution capture-colored measured-cloud diagnostics, provenance/quality reports, comparison overlays and Open3D validation
 ├── datasets/ray_diagnostics/        Canonical future mission/session RayProcesses JSON, HTML and exact coverage evidence; former datasets/active_scan/ray_diagnostics remains historical read compatibility only
-├── README.md                        Dependency surfaces and installation overview
+├── README.md                        Professional project overview, safe proposal-only quick start, runtime diagram, validated-platform summary and documentation routing
+├── CONTRIBUTING.md                  Architecture, safety, testing and documentation expectations for focused changes
+├── .github/                         Structured bug-report and pull-request templates
+├── docs/README.md                   Human-facing documentation index and authority order
+├── docs/architecture/system-overview.md  Operator-readable process/environment and mission-lifecycle diagrams
+├── docs/reference/validated-environments.md  Dated reference-workstation evidence and explicitly unverified Jetson target matrix
+├── docs/historical/docker_foxy_commands.md  Unsupported legacy Ubuntu 22.04/Docker manual composition reference
 ├── SYSTEM_HANDOFF.md                Whole-system architecture, validated state, limitations, and continuation
 ├── OPERATOR_COMMANDS.md             Supported runtime and safety command reference
 ├── run_target_scan_mission.sh       Singleton-locking mission coordinator launcher; exits 73 if another owner is active; coordinator holds command-free for bounded between-view visual reacquisition

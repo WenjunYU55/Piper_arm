@@ -8,12 +8,14 @@ mission admission, and is copied into the immutable mission goal/hash. There
 is no automatic fallback and no mid-mission switch.
 
 Tesseract is the regression baseline. The cuRobo adapter is real MotionGen
-integration against cuRobo v0.7.8, but this host cannot yet build/import that
-release because the CUDA 12.8 toolkit compiler (`nvcc`) is absent. The
-generated PiPER sphere/cuboid collision approximation is deliberately marked
-`hardware_qualified: false`. Therefore cuRobo readiness remains fail-closed
-until GPU tests and collision-model qualification are completed. No planner in
-this architecture directly commands the robot.
+integration against cuRobo v0.7.8. On 28 August 2026 the reference host passed
+native-extension import, CUDA tensor execution, model warm-up, command-free
+free-space planning, worker readiness, and bounded cleanup. The generated PiPER
+sphere/cuboid collision approximation remains deliberately marked
+`hardware_qualified: false`, and the current Bunker approximation still rejects
+the tested canonical platform path with `DT_EXCEPTION`. Physical cuRobo motion
+therefore remains fail-closed. No planner in this architecture directly
+commands the robot.
 
 ## Runtime architecture
 

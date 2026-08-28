@@ -253,6 +253,10 @@ voxel_nbv_generation_diagnostics_2026_08_17:
   capture_audit: Read frames/*_metadata.yaml view_selection. available=true must bind plan_id, view_selection_session_id, view_selection_generation, view_selection_policy, nbv_rank and gain fields for a voxel-NBV capture. candidate_diagnostics records shortlisted failures and the selected pose so an information-ranking problem can be distinguished from Tesseract feasibility exhaustion.
   never_do: Do not widen data_timeout_sec, add sleeps, reuse a previous-session receipt, or treat preliminary reachability-filter acceptance as IK/collision proof to hide generation races.
 where_to_start:
+  repository_overview: README.md
+  documentation_index: docs/README.md
+  operator_system_overview: docs/architecture/system-overview.md
+  validated_environment_and_jetson_status: docs/reference/validated-environments.md
   whole_system_handoff: SYSTEM_HANDOFF.md
   implemented_features_and_rewrite_bookmark: docs/ai/90-implemented-features-bookmark.yaml
   phase0_behavior_preserving_refactor_baseline: docs/refactor/current_architecture.md
@@ -290,6 +294,8 @@ where_to_start:
   consolidated_problem_history: docs/ai/80-problem-log.yaml
   run_the_system: OPERATOR_COMMANDS.md
   clean_install: CLEAN_INSTALL.md
+  verified_host_or_jetson_support_claim: docs/reference/validated-environments.md
+  repository_documentation_routing: docs/README.md
   camera_or_usb: L515_camera/README.md
   gpu_model_quality: AI_perception_tests/README.md
   ros_perception_code: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation

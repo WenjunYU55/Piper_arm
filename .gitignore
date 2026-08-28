@@ -27,6 +27,9 @@ motion_planning/tesseract/.runtime/
 *.bag
 *.db3
 datasets/
+# Local exported inspection mesh; canonical camera geometry lives under
+# piper_description and must not be replaced by this generated visualization.
+l515_attached_assembly_colored.ply
 piper_joint_bounds.json
 piper_home_pose.json
 piper_home_pose_*.png

@@ -1,36 +1,30 @@
 # PiPER Scan — Operator Quick Start
 
-This is the complete command list for the current one-button adaptive scan
-workflow. Run every command from:
+This is the authoritative operating procedure for the one-button adaptive scan
+workflow. Run commands from the repository root:
 
 ```bash
-cd /home/prl/Piper_arm
+cd ~/Piper_arm
 ```
 
-> **Current hardware state — 11 August 2026:** The earlier J6 startup fault,
-> J5 table contact and powered J5 dropout remain required incident history.
-> Their fail-closed containment is active. The historical v1 50-percent task
-> completed STARTUP_WRIST, 24 accepted captures, direct rough/storage
-> home, stable hold, all-six disable and child cleanup with
-> `safe_shutdown=true`; it failed only the independent coverage result at
-> 113.5/120 degrees azimuth and without measured convergence. The current
-> `tesseract_stream_v3` timing policy has command-free/rootless evidence and a
-> supervised 20-percent physical run. Task
-> `gui-sim-e9629c41e1224425b5adb0454b61ee3f` delivered acquisition and scan
-> segments at approximately 19-20 Hz, persisted 15 GOOD/CLEAR captures, and
-> the operator judged its speed consistent with direct MoveJ behavior. Its
-> later `NO_REACHABLE_PLAN` result was an independent adaptive-NBV frontier
-> exhaustion (65.3/120 degrees azimuth and unconverged measured surface), not
-> a stream-timing or shutdown failure; staged home, all-six disable, and exact
-> child cleanup completed with `safe_shutdown=true`.
-> It streams at 20 Hz and schedules J1-J5 from `5 rad/s * speed%` and J6
-> from `3 rad/s * speed%`; the 0.05-rad step ceiling currently preserves that
-> relationship through 20 percent. Higher settings remain capped and
-> unqualified.
-> Repeat the read-only CAN/all-six preflight before every mission. The 20-percent
-> observation does not replace the remaining staged 1/5/10-percent checks or a
-> deliberate cancel-to-hold test. No result qualifies
-> 100-percent dynamics yet.
+> [!CAUTION]
+> Software cancel is not an emergency stop. Keep the physical emergency-stop
+> method ready whenever the arm can be powered. Real motion is disabled by
+> default and must remain disabled for an unqualified planner, collision model,
+> floor profile, mount, speed, or workspace.
+
+Current operating boundary:
+
+| Selection | Status |
+|---|---|
+| Tesseract + tabletop profile | Current supervised reference; real motion still requires all explicit 5% opt-ins and every runtime gate. |
+| Tesseract + tracked-robot ground profile | Proposal-only; `qualified_for_hardware: false`. |
+| cuRobo | Command-free planning only; current collision approximation is `hardware_qualified: false`. |
+
+Historical incidents, qualification runs, and detailed acceptance evidence are
+kept in [`SYSTEM_HANDOFF.md`](SYSTEM_HANDOFF.md) and
+[`docs/ai/80-problem-log.yaml`](docs/ai/80-problem-log.yaml), not in this quick
+start.
 
 ## One-time host setup
 
@@ -54,16 +48,46 @@ ip -details link show can0
 The expected output is `active`, `state UP`, `can state ERROR-ACTIVE`, and
 `bitrate 1000000`.
 
+## Preflight
+
+Before every session:
+
+```bash
+cd ~/Piper_arm
+./verify_installation.sh
+./check_piper_can.sh
+```
+
+`verify_installation.sh` proves the installed software contract, not physical
+safety. Inspect the arm, camera mount, cable, support plane, target workspace,
+saved home path, and all six motor states before a powered run.
+
 ## Normal startup
 
 Use three terminals. Do not separately run `start_piper.sh`, the camera/GPU
-pipeline, hand-eye TF, or the Tesseract worker. The coordinator owns and starts
-all of them in the required order.
+pipeline, hand-eye TF, or a planner worker. The coordinator owns and starts the
+selected generation in the required order.
 
-### Terminal 1 — mission coordinator
+### Terminal 1 — proposal-only coordinator
 
 ```bash
-cd /home/prl/Piper_arm
+cd ~/Piper_arm
+./run_target_scan_mission.sh
+```
+
+This is the default and recommended first startup. It starts the coordinator
+without permission to enable or move the arm. Tesseract is the default planner.
+
+### Terminal 1 — supervised physical motion
+
+Use this instead of the proposal-only command only after the tabletop Tesseract
+profile, saved home, full installed geometry, current workspace, and 5% speed
+gate have been checked for the exact session:
+
+```bash
+cd ~/Piper_arm
+PIPER_PLANNER_BACKEND=tesseract \
+PIPER_FLOOR_PROFILE=tabletop \
 PIPER_MISSION_ENABLE_REAL_MOTION=1 \
 PIPER_MISSION_SPEEDS_QUALIFIED=1 \
 PIPER_MISSION_FREE_MOTION_SPEED_PERCENT=5 \
@@ -71,32 +95,36 @@ PIPER_MISSION_CONTACT_SPEED_PERCENT=5 \
 ./run_target_scan_mission.sh
 ```
 
+Do not substitute `curobo` or `ground` in this physical-motion command. Those
+paths are not currently hardware-qualified and must fail closed.
+
 This launcher is a singleton. A second invocation exits with code 73 before
 starting ROS nodes or mission children. Before submitting a GUI goal, require
 exactly one `/piper/run_target_scan` action server.
 
 The combined PiPER/L515/Bunker model is always loaded and shown in RViz. In the
-GUI, **Collision environment for next mission** selects only the support plane:
+GUI, **Motion planner for next mission** selects Tesseract or cuRobo and
+**Collision environment for next mission** selects only the support plane:
 `Tabletop floor (z = +0.005 m)` or `Tracked-robot ground (z = -0.466 m)`.
-Apply the selection while idle; the coordinator snapshots it when the next
-mission starts. Both choices deliberately report
-`collision_model_qualified=false`, so keep real motion disabled until the
-combined platform model completes supervised physical qualification. For a
-command-line override, start the coordinator with
+Apply selections while idle; the coordinator snapshots them when the next
+mission starts. The tabletop Tesseract manifest is hardware-qualified for its
+declared supervised scope. The ground profile and current cuRobo approximation
+are not. For a command-line override, start the coordinator with
 `PIPER_FLOOR_PROFILE=tabletop` or `PIPER_FLOOR_PROFILE=ground`; omit it to use
-the saved GUI choice.
+the saved GUI choice. Planner selection is similarly frozen for the mission and
+never falls back automatically.
 
 ### Terminal 2 — GUI
 
 ```bash
-cd /home/prl/Piper_arm
+cd ~/Piper_arm
 ./start_gui.sh
 ```
 
 ### Terminal 3 — RViz
 
 ```bash
-cd /home/prl/Piper_arm
+cd ~/Piper_arm
 source ./source_piper_foxy_environment.sh
 export ROS_DOMAIN_ID=42
 export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/fastdds_gui_udp_only.xml"
@@ -129,7 +157,8 @@ the physical emergency-stop procedure for an actual emergency; do not use a
 second coordinator or force-kill mission children.
 
 The coordinator starts the disabled driver, proves feedback, starts camera/GPU
-perception, hand-eye TF, Tesseract and the scan stack, enables the arm, performs
+perception, hand-eye TF, the frozen planner backend and the scan stack, enables
+the arm, performs
 rough acquisition, runs a separate request-correlated semantic occlusion probe,
 then plans and captures at most one synchronized RGB-D view per measured-state
 transaction until 8-24 are accepted and feature/coverage gates pass. Eight is only the model-seed floor; measured convergence selects the terminal count. Each next automatic view is selected by cumulative global information gain across the configured target-centric region; the bounded Tesseract handoff retains global leaders plus one informative continuity fallback and imposes no maximum angular step. The executor rejects a joint
@@ -206,14 +235,3 @@ After the GUI confirms home, hold, and disable:
 3. Press `Ctrl+C` in the RViz terminal.
 
 The CAN boot service may remain active; it does not enable or command the arm.
-
-## Proposal-only software check
-
-To test startup without permitting arm enable or motion:
-
-```bash
-cd /home/prl/Piper_arm
-./run_target_scan_mission.sh
-```
-
-Do not set the real-motion variables for a proposal-only check.
