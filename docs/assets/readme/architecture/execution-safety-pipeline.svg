@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="1640" viewBox="0 0 1100 1640" role="img">
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1640" viewBox="0 0 1280 1640" role="img">
 <title>Guarded Execution, Feedback and Recovery</title>
 <desc>The sole command path, its live feedback, and the split between recoverable evidence loss and terminal faults</desc>
 <defs>
@@ -19,21 +19,22 @@
 <path d="M0,0 L0,6 L9,3 z" fill="#929AA5"/>
 </marker>
 <style>
-.title{font:700 34px Arial,Helvetica,sans-serif;fill:#17212B}
-.subtitle{font:15px Arial,Helvetica,sans-serif;fill:#52606D}
-.lane-title{font:700 18px Arial,Helvetica,sans-serif;fill:#24303C}
-.lane-subtitle{font:12px Arial,Helvetica,sans-serif;fill:#687684}
-.node-title{font:700 16px Arial,Helvetica,sans-serif;fill:#17212B}
-.detail{font:12.5px Arial,Helvetica,sans-serif;fill:#344250}
-.edge-label{font:700 11.5px Arial,Helvetica,sans-serif;fill:#344250;paint-order:stroke;stroke:#fff;stroke-width:5px;stroke-linejoin:round}
-.badge{font:700 10px Arial,Helvetica,sans-serif;fill:#fff;letter-spacing:.3px}
-.legend{font:12px Arial,Helvetica,sans-serif;fill:#46515E}
-.note{font:12.5px Arial,Helvetica,sans-serif;fill:#52606D}
+.title{font:700 40px Arial,Helvetica,sans-serif;fill:#17212B}
+.subtitle{font:18px Arial,Helvetica,sans-serif;fill:#52606D}
+.lane-title{font:700 20px Arial,Helvetica,sans-serif;fill:#24303C}
+.lane-subtitle{font:14px Arial,Helvetica,sans-serif;fill:#687684}
+.node-title{font:700 21px Arial,Helvetica,sans-serif;fill:#17212B}
+.detail{font:16.5px Arial,Helvetica,sans-serif;fill:#344250}
+.edge-label-bg{fill:#fff;fill-opacity:.96}
+.edge-label{font:700 14.5px Arial,Helvetica,sans-serif;fill:#344250}
+.badge{font:700 12.5px Arial,Helvetica,sans-serif;fill:#fff;letter-spacing:.35px}
+.legend{font:14.5px Arial,Helvetica,sans-serif;fill:#46515E}
+.note{font:15px Arial,Helvetica,sans-serif;fill:#52606D}
 </style>
 </defs>
 <rect width="100%" height="100%" fill="#FFFFFF"/>
-<text x="550.0" y="49" class="title" text-anchor="middle">Guarded Execution, Feedback and Recovery</text>
-<text x="550.0" y="78" class="subtitle" text-anchor="middle">The sole command path, its live feedback, and the split between recoverable evidence loss and terminal faults</text>
+<text x="640.0" y="49" class="title" text-anchor="middle">Guarded Execution, Feedback and Recovery</text>
+<text x="640.0" y="78" class="subtitle" text-anchor="middle">The sole command path, its live feedback, and the split between recoverable evidence loss and terminal faults</text>
 <line x1="65" y1="108" x2="103" y2="108" stroke="#52606D" stroke-width="3" marker-end="url(#data-arrow)"/>
 <text x="113" y="112" class="legend" text-anchor="start">data / evidence</text>
 <line x1="270" y1="108" x2="308" y2="108" stroke="#2563A6" stroke-width="3" marker-end="url(#control-arrow)"/>
@@ -44,63 +45,81 @@
 <text x="728" y="112" class="legend" text-anchor="start">motor command</text>
 <line x1="885" y1="108" x2="923" y2="108" stroke="#929AA5" stroke-width="3" stroke-dasharray="8 6" marker-end="url(#optional-arrow)"/>
 <text x="933" y="112" class="legend" text-anchor="start">branch-only / optional</text>
-<polyline points="550.0,300 550.0,370" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<polyline points="550.0,550 550.0,620" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="550.0" y="578.0" class="edge-label" text-anchor="middle">ScanExecutionPlan</text>
-<polyline points="550.0,800 550.0,870" fill="none" stroke="#2563A6" stroke-width="2.2" marker-end="url(#control-arrow)"/>
-<text x="550.0" y="828.0" class="edge-label" text-anchor="middle">exact approval</text>
-<polyline points="550.0,1070 550.0,1140" fill="none" stroke="#2563A6" stroke-width="2.2" marker-end="url(#control-arrow)"/>
-<text x="550.0" y="1098.0" class="edge-label" text-anchor="middle">dispatch allowed</text>
-<polyline points="550.0,1330 550.0,1400" fill="none" stroke="#B33A3A" stroke-width="2.2" marker-end="url(#command-arrow)"/>
-<text x="550.0" y="1358.0" class="edge-label" text-anchor="middle">MoveJ samples</text>
-<polyline points="720,1487.5 750,1487 750,1235 720,1235 720,1235.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="742" y="1360" class="edge-label" text-anchor="middle">joint + motor feedback</text>
-<polyline points="720,1487.5 1080,1487 1080,460 720,460 720,460.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="1072" y="980" class="edge-label" text-anchor="middle">controller-limit generation</text>
-<polyline points="380,1487.5 345,1487 345,970 380,970 380,970.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="270" y="1480" class="edge-label" text-anchor="middle">fresh all-six health</text>
-<polyline points="720,1235.0 780,1235.0" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="750.0" y="1228.0" class="edge-label" text-anchor="middle">settled status</text>
-<polyline points="380,970.0 320,970.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="350.0" y="963.0" class="edge-label" text-anchor="middle">stale but recoverable</text>
-<polyline points="180.0,870 180,835 345,835 345,970 380,970 380,970.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="250" y="828" class="edge-label" text-anchor="middle">fresh evidence -&gt; resume</text>
-<polyline points="40,970.0 20,970 20,222 380,222 380,222.5" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="155" y="963" class="edge-label" text-anchor="middle">target drift -&gt; replan</text>
-<polyline points="380,970.0 25,970 25,1487 40,1487 320,1487.5" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="140" y="1130" class="edge-label" text-anchor="middle">hard fault / cancel</text>
-<polyline points="380,1235.0 330,1235 330,1487 320,1487 320,1487.5" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="245" y="1228" class="edge-label" text-anchor="middle">timeout / following failure</text>
-<rect x="380" y="145" width="340" height="155" rx="13" fill="#FFF3D9" stroke="#B77900" stroke-width="1.8"/>
-<text x="550.0" y="176" class="node-title" text-anchor="middle">Planner proposal</text>
-<text x="550.0" y="203" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">plan/backend/request/trajectory hashes</tspan><tspan x="550.0" dy="18">collision qualification + timed path</tspan><tspan x="550.0" dy="18">command-free until independently approved</tspan></text>
-<rect x="380" y="370" width="340" height="180" rx="13" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.8"/>
-<text x="550.0" y="401" class="node-title" text-anchor="middle">Normalize and validate</text>
-<text x="550.0" y="428" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">six finite joints + increasing timestamps</tspan><tspan x="550.0" dy="18">20 Hz / 0.05 rad step / speed policy</tspan><tspan x="550.0" dy="18">fresh matching controller limits</tspan><tspan x="550.0" dy="18">fresh start and complete path semantics</tspan></text>
-<rect x="380" y="620" width="340" height="180" rx="13" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.8"/>
-<text x="550.0" y="651" class="node-title" text-anchor="middle">PlanAuthorizer</text>
-<text x="550.0" y="678" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">live task/hash/backend authorization</tspan><tspan x="550.0" dy="18">exact plan + trajectory confirmation</tspan><tspan x="550.0" dy="18">TTL, target drift, dependencies</tspan><tspan x="550.0" dy="18">path and collision evidence</tspan></text>
-<rect x="380" y="870" width="340" height="200" rx="13" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.8"/>
-<text x="550.0" y="901" class="node-title" text-anchor="middle">Runtime safety profile</text>
-<text x="550.0" y="928" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">fresh joints, arm, limits and camera clock</tspan><tspan x="550.0" dy="18">tracking and approved obstacle authority</tspan><tspan x="550.0" dy="18">external holder/floor clearance</tspan><tspan x="550.0" dy="18">motor faults, following error and timeout</tspan><tspan x="550.0" dy="18">cancel token and mission deadline</tspan></text>
-<rect x="380" y="1140" width="340" height="190" rx="13" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.8"/>
-<text x="550.0" y="1171" class="node-title" text-anchor="middle">TrajectoryRunner + executor</text>
-<text x="550.0" y="1198" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">sole autonomous /joint_ctrl_single publisher</tspan><tspan x="550.0" dy="18">never burst or skip overdue samples</tspan><tspan x="550.0" dy="18">monitor endpoint, progress and settling</tspan><tspan x="550.0" dy="18">publish execution state after every change</tspan></text>
-<rect x="588" y="1149" width="122" height="21" rx="10" fill="#B33A3A"/>
-<text x="649.0" y="1164" class="badge" text-anchor="middle">COMMAND OWNER</text>
-<rect x="380" y="1400" width="340" height="175" rx="13" fill="#EEF1F4" stroke="#46515E" stroke-width="1.8"/>
-<text x="550.0" y="1431" class="node-title" text-anchor="middle">PiPER driver / SocketCAN</text>
-<text x="550.0" y="1458" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">MoveJ targets + aggregate speed</tspan><tspan x="550.0" dy="18">enable/disable and motor watchdogs</tspan><tspan x="550.0" dy="18">joint, arm and motion-limit feedback</tspan><tspan x="550.0" dy="18">all-six feedback proof</tspan></text>
-<rect x="620" y="1409" width="90" height="21" rx="10" fill="#46515E"/>
-<text x="665.0" y="1424" class="badge" text-anchor="middle">CAN OWNER</text>
-<rect x="780" y="1140" width="280" height="190" rx="13" fill="#E5F7F3" stroke="#147D70" stroke-width="1.8"/>
-<text x="920.0" y="1171" class="node-title" text-anchor="middle">Settled capture</text>
-<text x="920.0" y="1198" class="detail" text-anchor="middle"><tspan x="920.0" dy="0">actual FK and target-facing aim</tspan><tspan x="920.0" dy="18">stationary feedback + healthy clock</tspan><tspan x="920.0" dy="18">CAPTURING_RGBD service gate</tspan></text>
-<rect x="40" y="870" width="280" height="200" rx="13" fill="#E5F7F3" stroke="#147D70" stroke-width="1.8"/>
-<text x="180.0" y="901" class="node-title" text-anchor="middle">Transient recovery</text>
-<text x="180.0" y="928" class="detail" text-anchor="middle"><tspan x="180.0" dy="0">publish current-position hold</tspan><tspan x="180.0" dy="18">wait for exact fresh evidence</tspan><tspan x="180.0" dy="18">resume unchanged stage only</tspan><tspan x="180.0" dy="18">or replan after target drift</tspan></text>
-<rect x="40" y="1400" width="280" height="175" rx="13" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.8"/>
-<text x="180.0" y="1431" class="node-title" text-anchor="middle">Terminal recovery</text>
-<text x="180.0" y="1458" class="detail" text-anchor="middle"><tspan x="180.0" dy="0">PRE_HOME -&gt; ROUGH_HOME</tspan><tspan x="180.0" dy="18">-&gt; STORAGE_WRIST -&gt; disable all six</tspan><tspan x="180.0" dy="18">motor authority loss: no new command</tspan><tspan x="180.0" dy="18">revoke mission and clean children</tspan></text>
-<text x="550.0" y="1616" class="note" text-anchor="middle">Planner output is necessary but never sufficient: authorization and live feedback remain independent authorities.</text>
+<polyline points="640.0000000000001,300 640.0000000000001,370" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="640.0000000000001,550 640.0000000000001,620" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="640.0000000000001,800 640.0000000000001,870" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="640.0000000000001,1070 640.0000000000001,1140" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="640.0000000000001,1330 640.0000000000001,1400" fill="none" stroke="#B33A3A" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#command-arrow)"/>
+<polyline points="827.0000000000001,1487.5 860.0000000000001,1487 860.0000000000001,1235 827.0000000000001,1235 827.0000000000001,1235.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="827.0000000000001,1487.5 1223.0,1487 1223.0,460 827.0000000000001,460 827.0000000000001,460.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="453.00000000000006,1487.5 414.50000000000006,1487 414.50000000000006,970 453.00000000000006,970 453.00000000000006,970.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="827.0000000000001,1235.0 893.0000000000001,1235.0" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="453.00000000000006,970.0 387.0,970.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="233.0,870 233.00000000000003,835 414.50000000000006,835 414.50000000000006,970 453.00000000000006,970 453.00000000000006,970.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="79.0,970.0 57.0,970 57.0,222 453.00000000000006,222 453.00000000000006,222.5" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="453.00000000000006,970.0 62.5,970 62.5,1487 79.0,1487 387.0,1487.5" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="453.00000000000006,1235.0 398.00000000000006,1235 398.00000000000006,1487 387.0,1487 387.0,1487.5" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<rect x="453.00000000000006" y="145" width="374.00000000000006" height="155" rx="14" fill="#FFF3D9" stroke="#B77900" stroke-width="1.6"/>
+<rect x="453.00000000000006" y="145" width="7" height="155" rx="3.5" fill="#B77900" opacity="0.9"/>
+<text x="477.00000000000006" y="180" class="node-title" text-anchor="start">Planner proposal</text>
+<text x="477.00000000000006" y="211" class="detail" text-anchor="start"><tspan x="477.00000000000006" dy="0">plan/backend/request/trajectory hashes</tspan><tspan x="477.00000000000006" dy="23">collision qualification + timed path</tspan><tspan x="477.00000000000006" dy="23">command-free until independently approved</tspan></text>
+<rect x="453.00000000000006" y="370" width="374.00000000000006" height="180" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
+<rect x="453.00000000000006" y="370" width="7" height="180" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<text x="477.00000000000006" y="405" class="node-title" text-anchor="start">Normalize and validate</text>
+<text x="477.00000000000006" y="436" class="detail" text-anchor="start"><tspan x="477.00000000000006" dy="0">six finite joints + increasing timestamps</tspan><tspan x="477.00000000000006" dy="23">20 Hz / 0.05 rad step / speed policy</tspan><tspan x="477.00000000000006" dy="23">fresh matching controller limits</tspan><tspan x="477.00000000000006" dy="23">fresh start and complete path semantics</tspan></text>
+<rect x="453.00000000000006" y="620" width="374.00000000000006" height="180" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
+<rect x="453.00000000000006" y="620" width="7" height="180" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<text x="477.00000000000006" y="655" class="node-title" text-anchor="start">PlanAuthorizer</text>
+<text x="477.00000000000006" y="686" class="detail" text-anchor="start"><tspan x="477.00000000000006" dy="0">live task/hash/backend authorization</tspan><tspan x="477.00000000000006" dy="23">exact plan + trajectory confirmation</tspan><tspan x="477.00000000000006" dy="23">TTL, target drift, dependencies</tspan><tspan x="477.00000000000006" dy="23">path and collision evidence</tspan></text>
+<rect x="453.00000000000006" y="870" width="374.00000000000006" height="200" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
+<rect x="453.00000000000006" y="870" width="7" height="200" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<text x="477.00000000000006" y="905" class="node-title" text-anchor="start">Runtime safety profile</text>
+<text x="477.00000000000006" y="936" class="detail" text-anchor="start"><tspan x="477.00000000000006" dy="0">fresh joints, arm, limits and camera clock</tspan><tspan x="477.00000000000006" dy="23">tracking and approved obstacle authority</tspan><tspan x="477.00000000000006" dy="23">external holder/floor clearance</tspan><tspan x="477.00000000000006" dy="23">motor faults, following error and timeout</tspan><tspan x="477.00000000000006" dy="23">cancel token and mission deadline</tspan></text>
+<rect x="453.00000000000006" y="1140" width="374.00000000000006" height="190" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
+<rect x="453.00000000000006" y="1140" width="7" height="190" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<text x="477.00000000000006" y="1197" class="node-title" text-anchor="start">TrajectoryRunner + executor</text>
+<text x="477.00000000000006" y="1228" class="detail" text-anchor="start"><tspan x="477.00000000000006" dy="0">sole autonomous /joint_ctrl_single publisher</tspan><tspan x="477.00000000000006" dy="23">never burst or skip overdue samples</tspan><tspan x="477.00000000000006" dy="23">monitor endpoint, progress and settling</tspan><tspan x="477.00000000000006" dy="23">publish execution state after every change</tspan></text>
+<rect x="477.00000000000006" y="1153" width="128.6" height="23" rx="11.5" fill="#B33A3A"/>
+<text x="541.3000000000001" y="1169" class="badge" text-anchor="middle">COMMAND OWNER</text>
+<rect x="453.00000000000006" y="1400" width="374.00000000000006" height="175" rx="14" fill="#EEF1F4" stroke="#46515E" stroke-width="1.6"/>
+<rect x="453.00000000000006" y="1400" width="7" height="175" rx="3.5" fill="#46515E" opacity="0.9"/>
+<text x="477.00000000000006" y="1457" class="node-title" text-anchor="start">PiPER driver / SocketCAN</text>
+<text x="477.00000000000006" y="1488" class="detail" text-anchor="start"><tspan x="477.00000000000006" dy="0">MoveJ targets + aggregate speed</tspan><tspan x="477.00000000000006" dy="23">enable/disable and motor watchdogs</tspan><tspan x="477.00000000000006" dy="23">joint, arm and motion-limit feedback</tspan><tspan x="477.00000000000006" dy="23">all-six feedback proof</tspan></text>
+<rect x="477.00000000000006" y="1413" width="96" height="23" rx="11.5" fill="#46515E"/>
+<text x="525.0" y="1429" class="badge" text-anchor="middle">CAN OWNER</text>
+<rect x="893.0000000000001" y="1140" width="308.0" height="190" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
+<rect x="893.0000000000001" y="1140" width="7" height="190" rx="3.5" fill="#147D70" opacity="0.9"/>
+<text x="917.0000000000001" y="1175" class="node-title" text-anchor="start">Settled capture</text>
+<text x="917.0000000000001" y="1206" class="detail" text-anchor="start"><tspan x="917.0000000000001" dy="0">actual FK and target-facing aim</tspan><tspan x="917.0000000000001" dy="23">stationary feedback + healthy clock</tspan><tspan x="917.0000000000001" dy="23">CAPTURING_RGBD service gate</tspan></text>
+<rect x="79.0" y="870" width="308.0" height="200" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
+<rect x="79.0" y="870" width="7" height="200" rx="3.5" fill="#147D70" opacity="0.9"/>
+<text x="103.0" y="905" class="node-title" text-anchor="start">Transient recovery</text>
+<text x="103.0" y="936" class="detail" text-anchor="start"><tspan x="103.0" dy="0">publish current-position hold</tspan><tspan x="103.0" dy="23">wait for exact fresh evidence</tspan><tspan x="103.0" dy="23">resume unchanged stage only</tspan><tspan x="103.0" dy="23">or replan after target drift</tspan></text>
+<rect x="79.0" y="1400" width="308.0" height="175" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
+<rect x="79.0" y="1400" width="7" height="175" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<text x="103.0" y="1435" class="node-title" text-anchor="start">Terminal recovery</text>
+<text x="103.0" y="1466" class="detail" text-anchor="start"><tspan x="103.0" dy="0">PRE_HOME -&gt; ROUGH_HOME</tspan><tspan x="103.0" dy="23">-&gt; STORAGE_WRIST -&gt; disable all six</tspan><tspan x="103.0" dy="23">motor authority loss: no new command</tspan><tspan x="103.0" dy="23">revoke mission and clean children</tspan></text>
+<rect x="566.4000000000001" y="561.0" width="147.2" height="23" rx="5" class="edge-label-bg"/>
+<text x="640.0000000000001" y="578.0" class="edge-label" text-anchor="middle">ScanExecutionPlan</text>
+<rect x="577.8000000000001" y="811.0" width="124.39999999999999" height="23" rx="5" class="edge-label-bg"/>
+<text x="640.0000000000001" y="828.0" class="edge-label" text-anchor="middle">exact approval</text>
+<rect x="570.2000000000002" y="1081.0" width="139.6" height="23" rx="5" class="edge-label-bg"/>
+<text x="640.0000000000001" y="1098.0" class="edge-label" text-anchor="middle">dispatch allowed</text>
+<rect x="581.6000000000001" y="1341.0" width="116.8" height="23" rx="5" class="edge-label-bg"/>
+<text x="640.0000000000001" y="1358.0" class="edge-label" text-anchor="middle">MoveJ samples</text>
+<rect x="758.6" y="1343" width="185.2" height="23" rx="5" class="edge-label-bg"/>
+<text x="851.2" y="1360" class="edge-label" text-anchor="middle">joint + motor feedback</text>
+<rect x="998.0" y="963" width="223.2" height="23" rx="5" class="edge-label-bg"/>
+<text x="1214.2" y="980" class="edge-label" text-anchor="end">controller-limit generation</text>
+<rect x="235.00000000000006" y="1358" width="170.0" height="23" rx="5" class="edge-label-bg"/>
+<text x="398.00000000000006" y="1375" class="edge-label" text-anchor="end">fresh all-six health</text>
+<rect x="209.8" y="811" width="200.39999999999998" height="23" rx="5" class="edge-label-bg"/>
+<text x="310.0" y="828" class="edge-label" text-anchor="middle">fresh evidence -&gt; resume</text>
+<rect x="77.5" y="683" width="185.2" height="23" rx="5" class="edge-label-bg"/>
+<text x="84.5" y="700" class="edge-label" text-anchor="start">target drift -&gt; replan</text>
+<rect x="107.8" y="1113" width="162.4" height="23" rx="5" class="edge-label-bg"/>
+<text x="189.0" y="1130" class="edge-label" text-anchor="middle">hard fault / cancel</text>
+<rect x="192.9" y="1211" width="223.2" height="23" rx="5" class="edge-label-bg"/>
+<text x="304.5" y="1228" class="edge-label" text-anchor="middle">timeout / following failure</text>
+<text x="640.0" y="1616" class="note" text-anchor="middle">Planner output is necessary but never sufficient: authorization and live feedback remain independent authorities.</text>
 </svg>

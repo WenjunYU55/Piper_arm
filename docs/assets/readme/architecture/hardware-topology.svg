@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="1595" viewBox="0 0 1100 1595" role="img">
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1595" viewBox="0 0 1280 1595" role="img">
 <title>Hardware, Compute and Command Boundaries</title>
 <desc>What is physically installed, what owns motor authority, and what remains optional CAD provision</desc>
 <defs>
@@ -19,21 +19,22 @@
 <path d="M0,0 L0,6 L9,3 z" fill="#929AA5"/>
 </marker>
 <style>
-.title{font:700 34px Arial,Helvetica,sans-serif;fill:#17212B}
-.subtitle{font:15px Arial,Helvetica,sans-serif;fill:#52606D}
-.lane-title{font:700 18px Arial,Helvetica,sans-serif;fill:#24303C}
-.lane-subtitle{font:12px Arial,Helvetica,sans-serif;fill:#687684}
-.node-title{font:700 16px Arial,Helvetica,sans-serif;fill:#17212B}
-.detail{font:12.5px Arial,Helvetica,sans-serif;fill:#344250}
-.edge-label{font:700 11.5px Arial,Helvetica,sans-serif;fill:#344250;paint-order:stroke;stroke:#fff;stroke-width:5px;stroke-linejoin:round}
-.badge{font:700 10px Arial,Helvetica,sans-serif;fill:#fff;letter-spacing:.3px}
-.legend{font:12px Arial,Helvetica,sans-serif;fill:#46515E}
-.note{font:12.5px Arial,Helvetica,sans-serif;fill:#52606D}
+.title{font:700 40px Arial,Helvetica,sans-serif;fill:#17212B}
+.subtitle{font:18px Arial,Helvetica,sans-serif;fill:#52606D}
+.lane-title{font:700 20px Arial,Helvetica,sans-serif;fill:#24303C}
+.lane-subtitle{font:14px Arial,Helvetica,sans-serif;fill:#687684}
+.node-title{font:700 21px Arial,Helvetica,sans-serif;fill:#17212B}
+.detail{font:16.5px Arial,Helvetica,sans-serif;fill:#344250}
+.edge-label-bg{fill:#fff;fill-opacity:.96}
+.edge-label{font:700 14.5px Arial,Helvetica,sans-serif;fill:#344250}
+.badge{font:700 12.5px Arial,Helvetica,sans-serif;fill:#fff;letter-spacing:.35px}
+.legend{font:14.5px Arial,Helvetica,sans-serif;fill:#46515E}
+.note{font:15px Arial,Helvetica,sans-serif;fill:#52606D}
 </style>
 </defs>
 <rect width="100%" height="100%" fill="#FFFFFF"/>
-<text x="550.0" y="49" class="title" text-anchor="middle">Hardware, Compute and Command Boundaries</text>
-<text x="550.0" y="78" class="subtitle" text-anchor="middle">What is physically installed, what owns motor authority, and what remains optional CAD provision</text>
+<text x="640.0" y="49" class="title" text-anchor="middle">Hardware, Compute and Command Boundaries</text>
+<text x="640.0" y="78" class="subtitle" text-anchor="middle">What is physically installed, what owns motor authority, and what remains optional CAD provision</text>
 <line x1="65" y1="108" x2="103" y2="108" stroke="#52606D" stroke-width="3" marker-end="url(#data-arrow)"/>
 <text x="113" y="112" class="legend" text-anchor="start">data / evidence</text>
 <line x1="270" y1="108" x2="308" y2="108" stroke="#2563A6" stroke-width="3" marker-end="url(#control-arrow)"/>
@@ -44,53 +45,70 @@
 <text x="728" y="112" class="legend" text-anchor="start">motor command</text>
 <line x1="885" y1="108" x2="923" y2="108" stroke="#929AA5" stroke-width="3" stroke-dasharray="8 6" marker-end="url(#optional-arrow)"/>
 <text x="933" y="112" class="legend" text-anchor="start">branch-only / optional</text>
-<polyline points="550.0,300 550.0,370" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="550.0" y="328.0" class="edge-label" text-anchor="middle">mount + power</text>
-<polyline points="550.0,525 550.0,595" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="550.0" y="553.0" class="edge-label" text-anchor="middle">rigid mounting tree</text>
-<polyline points="550.0,775 550.0,845" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="550.0" y="803.0" class="edge-label" text-anchor="middle">eye-in-hand transform</text>
-<polyline points="550.0,1015 195.0,1110" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="372.5" y="1055.5" class="edge-label" text-anchor="middle">ROS camera streams</text>
-<polyline points="550.0,1015 550.0,1110" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="550.0" y="1055.5" class="edge-label" text-anchor="middle">RGB-D spool input</text>
-<polyline points="720,685.0 1075,685 1075,1197 1055,1197 1055,1197.5" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="1067" y="930" class="edge-label" text-anchor="middle">URDF/SRDF + current state</text>
-<polyline points="195.0,1110 195,1075 345,1075 345,685 380,685 380,685.0" fill="none" stroke="#B33A3A" stroke-width="2.2" marker-end="url(#command-arrow)"/>
-<text x="265" y="1068" class="edge-label" text-anchor="middle">sole MoveJ command</text>
-<polyline points="380,685.0 20,685 20,1075 195,1075 195.0,1110" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="130" y="678" class="edge-label" text-anchor="middle">joints / status / limits</text>
-<polyline points="400,1197.5 345,1197.5" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="372.5" y="1190.5" class="edge-label" text-anchor="middle">mask / target / scene</text>
-<polyline points="755,1197.5 345,1197.5" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="550.0" y="1190.5" class="edge-label" text-anchor="middle">command-free plan</text>
-<polyline points="720,447.5 1070,447 1070,1455 720,1455 720,1455.0" fill="none" stroke="#929AA5" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#optional-arrow)"/>
-<text x="1062" y="950" class="edge-label" text-anchor="middle">mechanical provision</text>
-<rect x="380" y="145" width="340" height="155" rx="13" fill="#EEF1F4" stroke="#46515E" stroke-width="1.8"/>
-<text x="550.0" y="176" class="node-title" text-anchor="middle">Bunker Pro 2 tracked base</text>
-<text x="550.0" y="203" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">physical carrier + enclosure + arm mount</tspan><tspan x="550.0" dy="18">external brake/localization authority</tspan><tspan x="550.0" dy="18">stationary during PiPER motion</tspan><tspan x="550.0" dy="18">no chassis command from this repository</tspan></text>
-<rect x="380" y="370" width="340" height="155" rx="13" fill="#EAF3FF" stroke="#2563A6" stroke-width="1.8"/>
-<text x="550.0" y="401" class="node-title" text-anchor="middle">Enclosure v4 + compute</text>
-<text x="550.0" y="428" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">panels, frame, battery and mounts</tspan><tspan x="550.0" dy="18">Ubuntu 20.04 / ROS 2 Foxy host</tspan><tspan x="550.0" dy="18">RTX 3090 reference CUDA workstation</tspan></text>
-<rect x="380" y="595" width="340" height="180" rx="13" fill="#EEF1F4" stroke="#46515E" stroke-width="1.8"/>
-<text x="550.0" y="626" class="node-title" text-anchor="middle">PiPER 6-DOF arm</text>
-<text x="550.0" y="653" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">piper_base_link -&gt; base_link mount</tspan><tspan x="550.0" dy="18">driver -&gt; USB-CAN -&gt; SocketCAN</tspan><tspan x="550.0" dy="18">six motor controllers + MoveJ</tspan><tspan x="550.0" dy="18">joint/arm/limit feedback returns to ROS</tspan></text>
-<rect x="380" y="845" width="340" height="170" rx="13" fill="#EAF3FF" stroke="#2563A6" stroke-width="1.8"/>
-<text x="550.0" y="876" class="node-title" text-anchor="middle">Qualified eye-in-hand L515</text>
-<text x="550.0" y="903" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">camera holder + calibrated optical frame</tspan><tspan x="550.0" dy="18">RGB, depth, confidence and intrinsics</tspan><tspan x="550.0" dy="18">camera motion is the active scan sensor</tspan></text>
-<rect x="45" y="1110" width="300" height="175" rx="13" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.8"/>
-<text x="195.0" y="1141" class="node-title" text-anchor="middle">ROS 2 Foxy control environment</text>
-<text x="195.0" y="1168" class="detail" text-anchor="middle"><tspan x="195.0" dy="0">mission, NBV, bridge and executor</tspan><tspan x="195.0" dy="18">PiPER SDK / CAN driver</tspan><tspan x="195.0" dy="18">Python 3.8; sole command boundary</tspan></text>
-<rect x="400" y="1110" width="300" height="175" rx="13" fill="#F2EAFF" stroke="#7851A9" stroke-width="1.8"/>
-<text x="550.0" y="1141" class="node-title" text-anchor="middle">Isolated perception environment</text>
-<text x="550.0" y="1168" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">Python 3.10 + CUDA</tspan><tspan x="550.0" dy="18">GroundingDINO + SAM 2</tspan><tspan x="550.0" dy="18">file spools; no motor interface</tspan></text>
-<rect x="755" y="1110" width="300" height="175" rx="13" fill="#FFF3D9" stroke="#B77900" stroke-width="1.8"/>
-<text x="905.0" y="1141" class="node-title" text-anchor="middle">Isolated planner environments</text>
-<text x="905.0" y="1168" class="detail" text-anchor="middle"><tspan x="905.0" dy="0">rootless Tesseract runtime</tspan><tspan x="905.0" dy="18">cuRobo Python/CUDA on branch</tspan><tspan x="905.0" dy="18">file spools; no motor interface</tspan></text>
-<rect x="380" y="1370" width="340" height="170" rx="13" fill="#F7F7F8" stroke="#929AA5" stroke-width="1.8"/>
-<text x="550.0" y="1401" class="node-title" text-anchor="middle">Optional CAD sensor provision</text>
-<text x="550.0" y="1428" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">ZED camera and LiDAR mounts</tspan><tspan x="550.0" dy="18">mechanical files only</tspan><tspan x="550.0" dy="18">not current perception inputs</tspan><tspan x="550.0" dy="18">not collision-qualified by CAD alone</tspan></text>
-<rect x="580" y="1379" width="130" height="21" rx="10" fill="#929AA5"/>
-<text x="645.0" y="1394" class="badge" text-anchor="middle">NOT IN RUNTIME</text>
-<text x="550.0" y="1571" class="note" text-anchor="middle">Design CAD supports fabrication; URDF/planner collision assets and calibration retain separate qualification ownership.</text>
+<polyline points="640.0000000000001,300 640.0000000000001,370" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="640.0000000000001,525 640.0000000000001,595" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="640.0000000000001,775 640.0000000000001,845" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="640.0000000000001,1015 249.5,1110" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="640.0000000000001,1015 640.0,1110" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="827.0000000000001,685.0 1217.5,685 1217.5,1197 1195.5,1197 1195.5,1197.5" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="249.5,1110 249.50000000000003,1075 414.50000000000006,1075 414.50000000000006,685 453.00000000000006,685 453.00000000000006,685.0" fill="none" stroke="#B33A3A" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#command-arrow)"/>
+<polyline points="453.00000000000006,685.0 57.0,685 57.0,1075 249.50000000000003,1075 249.5,1110" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="475.00000000000006,1197.5 414.5,1197.5" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="755,1285 865.5000000000001,1320 414.50000000000006,1320 345,1285" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="827.0000000000001,447.5 1212.0,447 1212.0,1455 827.0000000000001,1455 827.0000000000001,1455.0" fill="none" stroke="#929AA5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#optional-arrow)"/>
+<rect x="453.00000000000006" y="145" width="374.00000000000006" height="155" rx="14" fill="#EEF1F4" stroke="#46515E" stroke-width="1.6"/>
+<rect x="453.00000000000006" y="145" width="7" height="155" rx="3.5" fill="#46515E" opacity="0.9"/>
+<text x="477.00000000000006" y="180" class="node-title" text-anchor="start">Bunker Pro 2 tracked base</text>
+<text x="477.00000000000006" y="211" class="detail" text-anchor="start"><tspan x="477.00000000000006" dy="0">physical carrier + enclosure + arm mount</tspan><tspan x="477.00000000000006" dy="23">external brake/localization authority</tspan><tspan x="477.00000000000006" dy="23">stationary during PiPER motion</tspan><tspan x="477.00000000000006" dy="23">no chassis command from this repository</tspan></text>
+<rect x="453.00000000000006" y="370" width="374.00000000000006" height="155" rx="14" fill="#EAF3FF" stroke="#2563A6" stroke-width="1.6"/>
+<rect x="453.00000000000006" y="370" width="7" height="155" rx="3.5" fill="#2563A6" opacity="0.9"/>
+<text x="477.00000000000006" y="405" class="node-title" text-anchor="start">Enclosure v4 + compute</text>
+<text x="477.00000000000006" y="436" class="detail" text-anchor="start"><tspan x="477.00000000000006" dy="0">panels, frame, battery and mounts</tspan><tspan x="477.00000000000006" dy="23">Ubuntu 20.04 / ROS 2 Foxy host</tspan><tspan x="477.00000000000006" dy="23">RTX 3090 reference CUDA workstation</tspan></text>
+<rect x="453.00000000000006" y="595" width="374.00000000000006" height="180" rx="14" fill="#EEF1F4" stroke="#46515E" stroke-width="1.6"/>
+<rect x="453.00000000000006" y="595" width="7" height="180" rx="3.5" fill="#46515E" opacity="0.9"/>
+<text x="477.00000000000006" y="630" class="node-title" text-anchor="start">PiPER 6-DOF arm</text>
+<text x="477.00000000000006" y="661" class="detail" text-anchor="start"><tspan x="477.00000000000006" dy="0">piper_base_link -&gt; base_link mount</tspan><tspan x="477.00000000000006" dy="23">driver -&gt; USB-CAN -&gt; SocketCAN</tspan><tspan x="477.00000000000006" dy="23">six motor controllers + MoveJ</tspan><tspan x="477.00000000000006" dy="23">joint/arm/limit feedback returns to ROS</tspan></text>
+<rect x="453.00000000000006" y="845" width="374.00000000000006" height="170" rx="14" fill="#EAF3FF" stroke="#2563A6" stroke-width="1.6"/>
+<rect x="453.00000000000006" y="845" width="7" height="170" rx="3.5" fill="#2563A6" opacity="0.9"/>
+<text x="477.00000000000006" y="880" class="node-title" text-anchor="start">Qualified eye-in-hand L515</text>
+<text x="477.00000000000006" y="911" class="detail" text-anchor="start"><tspan x="477.00000000000006" dy="0">camera holder + calibrated optical frame</tspan><tspan x="477.00000000000006" dy="23">RGB, depth, confidence and intrinsics</tspan><tspan x="477.00000000000006" dy="23">camera motion is the active scan sensor</tspan></text>
+<rect x="84.5" y="1110" width="330.0" height="175" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
+<rect x="84.5" y="1110" width="7" height="175" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<text x="108.5" y="1145" class="node-title" text-anchor="start">ROS 2 Foxy control environment</text>
+<text x="108.5" y="1176" class="detail" text-anchor="start"><tspan x="108.5" dy="0">mission, NBV, bridge and executor</tspan><tspan x="108.5" dy="23">PiPER SDK / CAN driver</tspan><tspan x="108.5" dy="23">Python 3.8; sole command boundary</tspan></text>
+<rect x="475.00000000000006" y="1110" width="330.0" height="175" rx="14" fill="#F2EAFF" stroke="#7851A9" stroke-width="1.6"/>
+<rect x="475.00000000000006" y="1110" width="7" height="175" rx="3.5" fill="#7851A9" opacity="0.9"/>
+<text x="499.00000000000006" y="1145" class="node-title" text-anchor="start">Isolated perception environment</text>
+<text x="499.00000000000006" y="1176" class="detail" text-anchor="start"><tspan x="499.00000000000006" dy="0">Python 3.10 + CUDA</tspan><tspan x="499.00000000000006" dy="23">GroundingDINO + SAM 2</tspan><tspan x="499.00000000000006" dy="23">file spools; no motor interface</tspan></text>
+<rect x="865.5000000000001" y="1110" width="330.0" height="175" rx="14" fill="#FFF3D9" stroke="#B77900" stroke-width="1.6"/>
+<rect x="865.5000000000001" y="1110" width="7" height="175" rx="3.5" fill="#B77900" opacity="0.9"/>
+<text x="889.5000000000001" y="1145" class="node-title" text-anchor="start">Isolated planner environments</text>
+<text x="889.5000000000001" y="1176" class="detail" text-anchor="start"><tspan x="889.5000000000001" dy="0">rootless Tesseract runtime</tspan><tspan x="889.5000000000001" dy="23">cuRobo Python/CUDA on branch</tspan><tspan x="889.5000000000001" dy="23">file spools; no motor interface</tspan></text>
+<rect x="453.00000000000006" y="1370" width="374.00000000000006" height="170" rx="14" fill="#F7F7F8" stroke="#929AA5" stroke-width="1.6"/>
+<rect x="453.00000000000006" y="1370" width="7" height="170" rx="3.5" fill="#929AA5" opacity="0.9"/>
+<text x="477.00000000000006" y="1427" class="node-title" text-anchor="start">Optional CAD sensor provision</text>
+<text x="477.00000000000006" y="1458" class="detail" text-anchor="start"><tspan x="477.00000000000006" dy="0">ZED camera and LiDAR mounts</tspan><tspan x="477.00000000000006" dy="23">mechanical files only</tspan><tspan x="477.00000000000006" dy="23">not current perception inputs</tspan><tspan x="477.00000000000006" dy="23">not collision-qualified by CAD alone</tspan></text>
+<rect x="477.00000000000006" y="1383" width="136.79999999999998" height="23" rx="11.5" fill="#929AA5"/>
+<text x="545.4000000000001" y="1399" class="badge" text-anchor="middle">NOT IN RUNTIME</text>
+<rect x="581.6000000000001" y="311.0" width="116.8" height="23" rx="5" class="edge-label-bg"/>
+<text x="640.0000000000001" y="328.0" class="edge-label" text-anchor="middle">mount + power</text>
+<rect x="558.8000000000001" y="536.0" width="162.4" height="23" rx="5" class="edge-label-bg"/>
+<text x="640.0000000000001" y="553.0" class="edge-label" text-anchor="middle">rigid mounting tree</text>
+<rect x="551.2000000000002" y="786.0" width="177.6" height="23" rx="5" class="edge-label-bg"/>
+<text x="640.0000000000001" y="803.0" class="edge-label" text-anchor="middle">eye-in-hand transform</text>
+<rect x="367.3500000000001" y="1038.5" width="154.79999999999998" height="23" rx="5" class="edge-label-bg"/>
+<text x="444.75000000000006" y="1055.5" class="edge-label" text-anchor="middle">ROS camera streams</text>
+<rect x="566.4" y="1038.5" width="147.2" height="23" rx="5" class="edge-label-bg"/>
+<text x="640.0" y="1055.5" class="edge-label" text-anchor="middle">RGB-D spool input</text>
+<rect x="1007.7" y="913" width="208.0" height="23" rx="5" class="edge-label-bg"/>
+<text x="1208.7" y="930" class="edge-label" text-anchor="end">URDF/SRDF + current state</text>
+<rect x="249.10000000000002" y="1051" width="154.79999999999998" height="23" rx="5" class="edge-label-bg"/>
+<text x="326.5" y="1068" class="edge-label" text-anchor="middle">sole MoveJ command</text>
+<rect x="77.80000000000001" y="661" width="200.39999999999998" height="23" rx="5" class="edge-label-bg"/>
+<text x="178.0" y="678" class="edge-label" text-anchor="middle">joints / status / limits</text>
+<rect x="566.4" y="1295" width="147.2" height="23" rx="5" class="edge-label-bg"/>
+<text x="640.0" y="1312" class="edge-label" text-anchor="middle">command-free plan</text>
+<rect x="1101.0" y="1003" width="109.19999999999999" height="23" rx="5" class="edge-label-bg"/>
+<text x="1203.2" y="1020" class="edge-label" text-anchor="end">optional CAD</text>
+<text x="640.0" y="1571" class="note" text-anchor="middle">Design CAD supports fabrication; URDF/planner collision assets and calibration retain separate qualification ownership.</text>
 </svg>

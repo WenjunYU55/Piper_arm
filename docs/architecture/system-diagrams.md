@@ -44,7 +44,7 @@ The map keeps five ownership facts visible:
 ## Perception and reacquisition
 
 <div align="center">
-  <a href="../assets/readme/architecture/perception-pipeline.svg"><img src="../assets/readme/architecture/perception-pipeline.svg" alt="Target perception, measured geometry, tracking degradation and reacquisition feedback" width="760"></a>
+  <a href="../assets/readme/architecture/perception-pipeline.svg"><img src="../assets/readme/architecture/perception-pipeline.svg" alt="Target perception, measured geometry, tracking degradation and reacquisition feedback" width="1000"></a>
 </div>
 
 Fresh L515 time, mask identity and ambiguity-qualified depth are independent gates. A short tracker outage may publish `LOW_CONFIDENCE` prediction, but planning requires a fresh measured lock. Lost/invalid evidence returns through hold and correlated heavy reacquisition; it cannot update coverage.
@@ -52,7 +52,7 @@ Fresh L515 time, mask identity and ambiguity-qualified depth are independent gat
 ## Accepted-only NBV loop
 
 <div align="center">
-  <a href="../assets/readme/architecture/viewpoint-planning-pipeline.svg"><img src="../assets/readme/architecture/viewpoint-planning-pipeline.svg" alt="Next-best-view planning with accept, retry, reject, retire and replan feedback" width="760"></a>
+  <a href="../assets/readme/architecture/viewpoint-planning-pipeline.svg"><img src="../assets/readme/architecture/viewpoint-planning-pipeline.svg" alt="Next-best-view planning with accept, retry, reject, retire and replan feedback" width="1000"></a>
 </div>
 
 The diagram separates the effects that were previously collapsed:
@@ -66,7 +66,7 @@ The diagram separates the effects that were previously collapsed:
 ## Planner backend and transport
 
 <div align="center">
-  <a href="../assets/readme/architecture/planner-backend-pipeline.svg"><img src="../assets/readme/architecture/planner-backend-pipeline.svg" alt="Frozen Tesseract or cuRobo backend, worker readiness, validated response, generic transport and unchanged common execution" width="760"></a>
+  <a href="../assets/readme/architecture/planner-backend-pipeline.svg"><img src="../assets/readme/architecture/planner-backend-pipeline.svg" alt="Frozen Tesseract or cuRobo backend, worker readiness, validated response, generic transport and unchanged common execution" width="1000"></a>
 </div>
 
 On `main`, the bridge uses the Tesseract worker and `TesseractPlan`. On `curobo-integration`, the generic bridge publishes backend-neutral `MotionPlan`, `MotionPlanStatus`, `PlannerReadiness` and provenance while retaining Tesseract aliases only in Tesseract mode. Worker heartbeat, generation, schema, backend and model hashes must match the frozen request.
@@ -76,7 +76,7 @@ The branch-only cuRobo worker uses MotionGen 0.7.8 `plan_single` for camera pose
 ## Execution feedback and recovery
 
 <div align="center">
-  <a href="../assets/readme/architecture/execution-safety-pipeline.svg"><img src="../assets/readme/architecture/execution-safety-pipeline.svg" alt="Plan validation, authorization, runtime physical feedback, hold-refresh-resume and terminal recovery" width="760"></a>
+  <a href="../assets/readme/architecture/execution-safety-pipeline.svg"><img src="../assets/readme/architecture/execution-safety-pipeline.svg" alt="Plan validation, authorization, runtime physical feedback, hold-refresh-resume and terminal recovery" width="1000"></a>
 </div>
 
 Common plan validation checks six finite joints, time order, 20 Hz scheduling, maximum step, speed-scaled MoveJ limits and fresh matching hashes. Authorization then checks mission identity, TTL, backend, target drift, dependencies and the complete path.
@@ -86,7 +86,7 @@ During execution, joints, arm status, controller limits, camera timing, target t
 ## Capture admission, rejection and reconstruction
 
 <div align="center">
-  <a href="../assets/readme/architecture/capture-reconstruction-pipeline.svg"><img src="../assets/readme/architecture/capture-reconstruction-pipeline.svg" alt="Settled capture, confidence-qualified burst, atomic commit, rejection feedback, safe terminal state and reconstruction" width="760"></a>
+  <a href="../assets/readme/architecture/capture-reconstruction-pipeline.svg"><img src="../assets/readme/architecture/capture-reconstruction-pipeline.svg" alt="Settled capture, confidence-qualified burst, atomic commit, rejection feedback, safe terminal state and reconstruction" width="1000"></a>
 </div>
 
 The capture service uses the exact mask/RGB stamp and exactly 20 new native depth/confidence frames. Admission requires confidence grade ≥ 8, at least 0.50 support, per-pixel median depth, calibrated intrinsics/TF, achieved FK, plan provenance, and fresh quality/occlusion evidence. Atomic artifacts and their manifest SHA form one schema-2 observation; partial files never count.
@@ -96,7 +96,7 @@ After the safe mission terminal and optional tracked-base-home correlation, reco
 ## Hardware and compute boundaries
 
 <div align="center">
-  <a href="../assets/readme/architecture/hardware-topology.svg"><img src="../assets/readme/architecture/hardware-topology.svg" alt="Robot hardware, isolated compute environments and motor-command boundary" width="760"></a>
+  <a href="../assets/readme/architecture/hardware-topology.svg"><img src="../assets/readme/architecture/hardware-topology.svg" alt="Robot hardware, isolated compute environments and motor-command boundary" width="1000"></a>
 </div>
 
 The eye-in-hand L515 is the qualified active scan sensor. ZED and LiDAR parts under [`CAD/`](../../CAD/) are mechanical provision, not current runtime inputs. The tracked base remains stationary and externally controlled; this repository sends no chassis command.

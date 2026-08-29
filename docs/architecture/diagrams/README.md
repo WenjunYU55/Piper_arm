@@ -10,6 +10,12 @@ python3 docs/architecture/diagrams/generate_diagrams.py
 
 The generator uses only the Python standard library and writes deterministic UTF-8 SVG.
 
+Run the structural checks after regeneration:
+
+```bash
+python3 docs/architecture/diagrams/validate_diagrams.py
+```
+
 ## Diagram set
 
 - `system-overview.svg`: one detailed end-to-end map covering mission ownership, perception, accepted-only NBV, backend selection, authorization/execution, capture feedback, terminal recovery and reconstruction.
@@ -23,6 +29,8 @@ The generator uses only the Python standard library and writes deterministic UTF
 ## Maintenance rules
 
 - Keep the whole-system map predominantly vertical and detailed enough to show all state-changing features. It is the canonical overview; focused diagrams explain individual loops rather than replacing it.
+- Keep focused canvases at 1280 px and embed every diagram at up to 1000 px. At GitHub desktop width, body text must remain at least 11 px and edge labels at least 10 px.
+- Draw connector paths first, cards second and opaque label capsules last. Feedback buses must stay outside lane headings and status badges must occupy their own header row.
 - Never hide branch status. A branch-only path must use gray dashed edges and an explicit status badge. Hardware qualification must be stated independently from software availability.
 - Keep planner workers command-free. Only `scan_viewpoint_executor` may be labelled as the autonomous joint publisher, and only the PiPER driver may be labelled as the CAN owner.
 - Show feedback where it changes behavior: worker readiness, target loss, planner rejection, runtime safety, capture retry/rejection, accepted-history generation, terminal recovery and disable proof.
@@ -34,4 +42,4 @@ The generator uses only the Python standard library and writes deterministic UTF
 
 ## Visual verification
 
-Generated SVG is the deliverable, but it must be rendered before review. Check the full system map at its native aspect ratio and each focused diagram at normal GitHub README width. Confirm that text is legible, legends are not clipped, arrows terminate at the intended boxes, and feedback loops are visually distinguishable from command flow.
+Generated SVG is the deliverable, but it must be rendered before review. Run `validate_diagrams.py`, check the full system map at its native aspect ratio and inspect each focused diagram at normal GitHub README width. Confirm that text is legible, legends and labels are not clipped, status pills do not collide with titles, arrows terminate at the intended boxes, and feedback loops stay visually distinct from command flow.

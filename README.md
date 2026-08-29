@@ -70,7 +70,7 @@ See the [diagram audit and implementation evidence](docs/architecture/system-dia
 The eye-in-hand L515 publishes synchronized RGB, native/aligned depth, confidence, intrinsics and timestamp health. GroundingDINO provides open-label acquisition, SAM2 propagates the mask, and ambiguity-aware depth produces a measured `Target3D`. A timestamped Kalman tracker may bridge a short outage as `LOW_CONFIDENCE`, but planning still requires a fresh measured lock.
 
 <div align="center">
-  <a href="docs/assets/readme/architecture/perception-pipeline.svg"><img src="docs/assets/readme/architecture/perception-pipeline.svg" alt="Perception and reacquisition flow with freshness and rejection feedback" width="760"></a>
+  <a href="docs/assets/readme/architecture/perception-pipeline.svg"><img src="docs/assets/readme/architecture/perception-pipeline.svg" alt="Perception and reacquisition flow with freshness and rejection feedback" width="1000"></a>
 </div>
 
 The feedback is intentional: stale camera time, invalid depth, a lost target, or blocking occlusion prevents dispatch or capture and requests a correlated heavy refresh. Predicted geometry may guide planning, but it never becomes measured coverage or reconstruction input.
@@ -80,7 +80,7 @@ The feedback is intentional: stale camera time, invalid depth, a lost target, or
 Coverage is rebuilt only at the exact generation of an accepted schema-2 capture. The NBV policy ranks marginal information before travel, removes duplicate and hard-culled directions, then shortlists at most 12 voxel candidates or 6 ray directions for exact planning.
 
 <div align="center">
-  <a href="docs/assets/readme/architecture/viewpoint-planning-pipeline.svg"><img src="docs/assets/readme/architecture/viewpoint-planning-pipeline.svg" alt="Closed-loop NBV flow showing accept, same-pose retry, exclusion, and replanning" width="760"></a>
+  <a href="docs/assets/readme/architecture/viewpoint-planning-pipeline.svg"><img src="docs/assets/readme/architecture/viewpoint-planning-pipeline.svg" alt="Closed-loop NBV flow showing accept, same-pose retry, exclusion, and replanning" width="1000"></a>
 </div>
 
 The three observation outcomes have different effects:
@@ -94,7 +94,7 @@ The mission is bounded to 8–24 views, but completion is based on measured surf
 ## Frozen planner backend and common motion contract
 
 <div align="center">
-  <a href="docs/assets/readme/architecture/planner-backend-pipeline.svg"><img src="docs/assets/readme/architecture/planner-backend-pipeline.svg" alt="Tesseract and branch-only cuRobo planning backends feeding a common execution contract" width="760"></a>
+  <a href="docs/assets/readme/architecture/planner-backend-pipeline.svg"><img src="docs/assets/readme/architecture/planner-backend-pipeline.svg" alt="Tesseract and branch-only cuRobo planning backends feeding a common execution contract" width="1000"></a>
 </div>
 
 On `curobo-integration`, the next-mission planner selection is validated before goal admission and frozen into the `RunTargetScan` goal and canonical mission hash. `ProcessSupervisor` starts exactly one planner worker. The generic bridge snapshots fresh joints, controller limits, target provenance, camera health, obstacles, robot/world hashes, and hand-eye calibration before writing a schema-v5 command-free request.
@@ -104,7 +104,7 @@ Both backends return a correlated, hashed, time-parameterized six-joint proposal
 ## Guarded execution and physical feedback
 
 <div align="center">
-  <a href="docs/assets/readme/architecture/execution-safety-pipeline.svg"><img src="docs/assets/readme/architecture/execution-safety-pipeline.svg" alt="Motion authorization, sole command ownership, physical feedback, recovery, and disable proof" width="760"></a>
+  <a href="docs/assets/readme/architecture/execution-safety-pipeline.svg"><img src="docs/assets/readme/architecture/execution-safety-pipeline.svg" alt="Motion authorization, sole command ownership, physical feedback, recovery, and disable proof" width="1000"></a>
 </div>
 
 Plans are normalized to a 20 Hz schedule and checked for finite six-joint samples, step size, speed-scaled MoveJ limits, identity hashes, TTL, backend, target drift, path validity and fresh dependencies. `scan_viewpoint_executor` is the sole autonomous `/joint_ctrl_single` publisher; `piper_ctrl_single_node` alone owns MoveJ, SocketCAN, enable/disable and all-six-motor feedback.
@@ -114,7 +114,7 @@ Runtime joint error, timeout, settle state, holder/floor clearance, camera healt
 ## Capture admission and reconstruction
 
 <div align="center">
-  <a href="docs/assets/readme/architecture/capture-reconstruction-pipeline.svg"><img src="docs/assets/readme/architecture/capture-reconstruction-pipeline.svg" alt="Settled RGB-D burst admission, immutable commit, rejection feedback, base-home correlation, and reconstruction" width="760"></a>
+  <a href="docs/assets/readme/architecture/capture-reconstruction-pipeline.svg"><img src="docs/assets/readme/architecture/capture-reconstruction-pipeline.svg" alt="Settled RGB-D burst admission, immutable commit, rejection feedback, base-home correlation, and reconstruction" width="1000"></a>
 </div>
 
 A settled capture uses the exact mask/RGB stamp plus 20 new native depth/confidence frames. Admission requires calibrated intrinsics and TF, confidence grade ≥ 8, at least 0.50 target support, fresh quality/occlusion evidence, achieved FK, and the matching plan provenance. Partial artifacts never count: the accepted schema-2 record and SHA-256 manifest are committed atomically.
@@ -124,7 +124,7 @@ After safe terminal/home-and-disable evidence—and tracked-base-home correlatio
 ## Hardware and compute boundaries
 
 <div align="center">
-  <a href="docs/assets/readme/architecture/hardware-topology.svg"><img src="docs/assets/readme/architecture/hardware-topology.svg" alt="PiPER, L515, enclosure, tracked platform, compute environments, and command boundaries" width="760"></a>
+  <a href="docs/assets/readme/architecture/hardware-topology.svg"><img src="docs/assets/readme/architecture/hardware-topology.svg" alt="PiPER, L515, enclosure, tracked platform, compute environments, and command boundaries" width="1000"></a>
 </div>
 
 | Layer | Current implementation |
