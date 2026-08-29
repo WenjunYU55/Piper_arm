@@ -4,11 +4,11 @@
 
 **A safety-gated ROS 2 system for open-label target perception, closed-loop next-best-view planning, autonomous arm motion, and multi-view 3D reconstruction on a tracked mobile manipulator.**
 
-<a href="https://raw.githubusercontent.com/WenjunYU55/Piper_arm/main/docs/assets/readme/media/ray-process.mp4">
-  <img src="docs/assets/readme/media/ray-process-preview.gif" alt="Animated PiPER ray-planning and camera-view demonstration" width="900">
+<a href="docs/assets/readme/media/piper-active-scanning.png">
+  <img src="docs/assets/readme/media/piper-active-scanning.png" alt="PiPER arm planning target-centred camera viewpoints around an object on the Bunker Pro 2 tracked platform" width="900">
 </a>
 
-<sub>Inline accelerated preview · <a href="https://raw.githubusercontent.com/WenjunYU55/Piper_arm/main/docs/assets/readme/media/ray-process.mp4">play or download the full-quality H.264 MP4</a></sub>
+<sub>Target-centred viewpoints and candidate camera rays around the PiPER arm and tracked platform.</sub>
 
 ![ROS 2 Foxy](https://img.shields.io/badge/ROS_2-Foxy-22314E?logo=ros&logoColor=white)
 ![Ubuntu 20.04](https://img.shields.io/badge/Ubuntu-20.04-E95420?logo=ubuntu&logoColor=white)
@@ -47,6 +47,23 @@ The diagram deliberately combines two audited repository states:
 - **`curobo-integration`:** adds a frozen `tesseract | curobo` mission choice, a backend-neutral `MotionPlan` contract, and an isolated cuRobo 0.7.8 MotionGen worker. The current 167-sphere moving-link model is marked `hardware_qualified=false`, so cuRobo plans are blocked from physical execution. There is no automatic fallback or mid-mission backend switch.
 
 See the [diagram audit and implementation evidence](docs/architecture/system-diagrams.md) for the exact commits and source paths used.
+
+## Demonstration gallery
+
+<table>
+  <tr>
+    <td width="64%" align="center">
+      <a href="https://raw.githubusercontent.com/WenjunYU55/Piper_arm/main/docs/assets/readme/media/ray-process.mp4"><img src="docs/assets/readme/media/ray-process-preview.gif" alt="Animated target-centred ray and camera-view planning around the PiPER arm" width="100%"></a>
+    </td>
+    <td width="36%" align="center">
+      <img src="docs/assets/readme/media/cube-reconstruction.png" alt="Multi-view RGB-D reconstruction of a cube" width="100%">
+    </td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Active viewpoint planning</strong><br><sub>Animated ray-planning preview; click to play or download the full H.264 MP4.</sub></td>
+    <td align="center"><strong>RGB-D reconstruction</strong><br><sub>Registered multi-view surface evidence and reconstructed cube geometry.</sub></td>
+  </tr>
+</table>
 
 ## Perception, tracking and reacquisition
 
