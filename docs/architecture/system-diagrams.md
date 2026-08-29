@@ -27,7 +27,7 @@ The branches are diverged. These figures document their contracts and status; th
 
 <div align="center">
   <a href="../assets/readme/architecture/system-overview.svg">
-    <img src="../assets/readme/architecture/system-overview.svg" alt="Detailed PiPER architecture from mission request through perception, NBV, planner backend, execution feedback, capture and reconstruction" width="900">
+    <img src="../assets/readme/architecture/system-overview.svg" alt="Detailed PiPER architecture from mission request through perception, NBV, planner backend, execution feedback, capture and reconstruction" width="1000">
   </a>
   <br>
   <sub>Click for the full-resolution SVG.</sub>

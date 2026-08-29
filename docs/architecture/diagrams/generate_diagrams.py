@@ -69,8 +69,11 @@ def box(node):
     x, y, width, height = (
         node["x"], node["y"], node["w"], node["h"]
     )
-    title_y = y + 31
-    detail_y = y + 58
+    title_y = y + node.get("title_offset", 31)
+    detail_y = y + node.get("detail_offset", 58)
+    if node.get("stack_status"):
+        title_y = y + 46
+        detail_y = y + 78
     result = [
         f'<rect x="{x}" y="{y}" width="{width}" height="{height}" '
         f'rx="13" fill="{fill}" stroke="{stroke}" stroke-width="1.8"/>',
@@ -179,8 +182,12 @@ def legend(y, width=1400):
         ("command", "motor command"),
         ("optional", "branch-only / optional"),
     ]
-    x = 170 if width >= 1300 else 65
-    spacing = 225 if width >= 1300 else 205
+    if width >= 1600:
+        x, spacing = 270, 260
+    elif width >= 1300:
+        x, spacing = 170, 225
+    else:
+        x, spacing = 65, 205
     result = []
     for kind, label in items:
         color = EDGE_COLORS[kind]
@@ -201,14 +208,18 @@ def write_svg(filename, body):
 
 
 def render_system():
-    width, height = 1400, 2980
+    # The system map is intentionally roomier than the focused diagrams.  Its
+    # original 1400 px layout is scaled as a unit, then receives larger type so
+    # the block contents remain readable at normal GitHub README width.
+    scale = 1.25
+    width, height = 1750, 4075
     title = "PiPER Active-View Scanning: Detailed System Architecture"
     subtitle = "Implementation map for main plus the explicitly labelled cuRobo integration path"
     nodes = {
         "operator": dict(x=60, y=180, w=280, h=110, title="Operator / supervisor", lines=("Native GUI, RViz and E-stop", "select next-mission settings", "start, observe or cancel"), color="external"),
         "gateway": dict(x=385, y=170, w=310, h=130, title="Tracked-robot gateway", lines=("SCAN_3D request + rough target", "odom -> piper_base_link snapshot", "2 Hz task heartbeat / home report", "base remains stationary and braked"), color="external"),
         "gui": dict(x=740, y=180, w=300, h=110, title="PiPER native GUI", lines=("Automatic scan + ray review", "planner for next mission", "status, diagnostics and results"), color="external"),
-        "config": dict(x=1080, y=170, w=270, h=130, title="Frozen mission configuration", lines=("target label/profile", "floor + scan/NBV policy", "backend + speed + motion opt-ins", "canonical mission SHA-256"), color="state"),
+        "config": dict(x=1080, y=170, w=270, h=130, title="Frozen mission config", lines=("target label/profile", "floor + scan/NBV policy", "backend + speed + motion opt-ins", "canonical mission SHA-256"), color="state"),
         "coordinator": dict(x=60, y=410, w=335, h=155, title="RunTargetScan coordinator", lines=("queue and admission adapter", "immutable goal / backend identity", "publishes action feedback", "returns typed result + dataset"), color="state"),
         "supervisor": dict(x=445, y=390, w=405, h=195, title="ProcessSupervisor", lines=("owns exact process generations", "driver -> vision -> hand-eye", "one selected planner worker", "scan stack; heartbeats; bounded cleanup", "never adopts unrelated processes"), color="safety"),
         "mission": dict(x=900, y=380, w=440, h=215, title="MissionEngine lifecycle", lines=("preflight -> enable/hold -> startup wrist", "rough home -> bounded target acquisition", "workflow ready -> one-view closed loop", "terminal PRE_HOME -> ROUGH_HOME", "STORAGE_WRIST -> all-six disable", "motor loss: no further motion command"), color="safety"),
@@ -229,16 +240,22 @@ def render_system():
         "authorize": dict(x=390, y=1940, w=300, h=180, title="PlanAuthorizer", lines=("live mission authorization + TTL", "plan/trajectory/backend identity", "target drift + dependency readiness", "fresh path revalidation"), color="safety"),
         "executor": dict(x=730, y=1905, w=335, h=250, title="scan_viewpoint_executor", lines=("sole autonomous joint publisher", "TrajectoryRunner schedule", "runtime freshness + scene gates", "following-error / timeout / settle", "hold, refresh, replan or recovery", "publishes ScanExecutionStatus"), color="safety", status="COMMAND OWNER"),
         "driver": dict(x=1105, y=1940, w=245, h=180, title="PiPER driver", lines=("/joint_ctrl_single -> MoveJ", "SocketCAN at 1 Mbps", "enable/disable + watchdogs", "six motors + coherent feedback"), color="actuation", status="CAN OWNER"),
-        "settle": dict(x=45, y=2320, w=285, h=150, title="Settled capture request", lines=("actual FK + final aim check", "stationary joints + healthy clock", "executor enters CAPTURING_RGBD"), color="safety"),
+        "settle": dict(x=45, y=2320, w=285, h=150, title="Settled capture request", lines=("actual FK + final aim check", "stationary joints + healthy clock", "executor enters", "CAPTURING_RGBD"), color="safety"),
         "burst": dict(x=365, y=2300, w=300, h=190, title="Confidence-qualified burst", lines=("exact mask/RGB stamp identity", "20 new native depth frames", "grade >=8 and >=0.50 support", "per-pixel median; calibrated TF", "target component ambiguity gate"), color="input"),
-        "admission": dict(x=705, y=2300, w=280, h=190, title="Capture admission", lines=("GOOD target + fresh diagnostics", "CLEAR or correlated semantic proof", "atomic artifacts + manifest hashes", "accept, same-pose retry or reject"), color="safety"),
+        "admission": dict(x=705, y=2300, w=280, h=190, title="Capture admission", lines=("GOOD target + fresh diagnostics", "CLEAR or correlated", "semantic occlusion proof", "atomic artifacts + manifest hashes", "accept, retry or reject"), color="safety"),
         "dataset": dict(x=1025, y=2290, w=325, h=205, title="Immutable schema-2 dataset", lines=("RGB, raw/qualified depth, mask", "intrinsics, joints, capture-time TF", "plan/view provenance + quality", "target-only support and model seed", "transactional manifest SHA-256"), color="state"),
-        "rejected": dict(x=365, y=2530, w=300, h=105, title="Rejected observation", lines=("hold achieved FK; one heavy refresh", "then exclude/replan; no coverage"), color="safety"),
-        "history": dict(x=705, y=2530, w=280, h=105, title="Accepted history generation", lines=("commit achieved pose + evidence", "rebuild coverage and request next view"), color="state"),
-        "recovery": dict(x=75, y=2735, w=360, h=165, title="Safe terminal recovery", lines=("cancel, completion or bounded failure", "PRE_HOME -> ROUGH_HOME -> STORAGE_WRIST", "feedback-confirmed all-six disable", "revoke authorization + stop owned children"), color="safety"),
+        "rejected": dict(x=365, y=2530, w=300, h=125, title="Rejected observation", lines=("hold achieved FK", "one bounded heavy refresh", "then exclude/replan; no coverage"), color="safety"),
+        "history": dict(x=705, y=2530, w=280, h=125, title="Accepted history generation", lines=("commit achieved pose + evidence", "rebuild measured coverage", "request the next view"), color="state"),
+        "recovery": dict(x=75, y=2735, w=360, h=165, title="Safe terminal recovery", lines=("cancel, completion or bounded failure", "PRE_HOME -> ROUGH_HOME", "-> STORAGE_WRIST -> disable all six", "revoke authorization + stop owned children"), color="safety"),
         "base_home": dict(x=515, y=2735, w=350, h=165, title="Tracked-base correlation", lines=("arm result may wait for base home", "exact task/job/manifest identity", "gateway accepts idempotent report", "repository still sends no chassis command"), color="external"),
         "reconstruct": dict(x=945, y=2720, w=385, h=195, title="Offline reconstruction", lines=("immutable input admission", "target-only Open3D TSDF (3 mm default)", "optional bounded GICP / scene pose graph", "mesh + cloud + metrics + provenance", "failure does not rewrite mission result"), color="state"),
     }
+    for node_value in nodes.values():
+        node_value.setdefault("line_step", 21)
+        node_value.setdefault("title_offset", 34)
+        node_value.setdefault("detail_offset", 65)
+        if node_value.get("status"):
+            node_value["stack_status"] = True
     edges = [
         dict(src="operator", dst="coordinator", kind="control", label="start / cancel", src_side="bottom", dst_side="top"),
         dict(src="gateway", dst="coordinator", kind="control", label="RunTargetScan", src_side="bottom", dst_side="top"),
@@ -292,16 +309,48 @@ def render_system():
         dict(src="dataset", dst="reconstruct", kind="data", label="immutable captures", src_side="right", dst_side="right", via=((1370, 2392), (1370, 2818), (1330, 2818)), label_at=(1363, 2605)),
     ]
 
+    # Reserve a genuine header band in every lane.  The original compact map
+    # placed subtitles almost on top of the first row; these insertions move
+    # nodes, edge waypoints and labels together while retaining their routing.
+    header_insertions = (160, 375, 670, 1100, 1425, 1875, 2265, 2695)
+
+    def expanded_y(value):
+        return value + 35 * sum(value >= threshold for threshold in header_insertions)
+
+    for node_value in nodes.values():
+        node_value["y"] = expanded_y(node_value["y"])
+    for item in edges:
+        if "via" in item:
+            item["via"] = tuple((x, expanded_y(y)) for x, y in item["via"])
+        if "label_at" in item:
+            label_x, label_y = item["label_at"]
+            item["label_at"] = (label_x, expanded_y(label_y))
+
     body = svg_header(width, height, title, subtitle)
-    body.extend(legend(108, width))
-    body.extend(lane(135, 195, "1  Mission request and frozen operator intent", "External task ownership; the tracked base is never commanded here."))
-    body.extend(lane(350, 275, "2  Mission orchestration and process ownership", "One coordinator, one process generation and one autonomous command owner."))
-    body.extend(lane(645, 410, "3  Eye-in-hand sensing, perception and measured scene state", "Only timestamp-correlated measurements become target or scene evidence."))
-    body.extend(lane(1075, 305, "4  Accepted-only coverage and next-best-view selection", "Prediction may rank a view; it never becomes measured reconstruction input."))
-    body.extend(lane(1400, 425, "5  Frozen motion-planner backend and command-free proposal", "Tesseract is on main; cuRobo is explicitly branch-only and hardware-unqualified."))
-    body.extend(lane(1850, 370, "6  Common authorization, execution and physical feedback", "Every backend must traverse the same fail-closed execution boundary."))
-    body.extend(lane(2240, 410, "7  Settled observation, immutable commit and closed-loop feedback", "Accepted and rejected observations deliberately have different state effects."))
-    body.extend(lane(2670, 270, "8  Terminal safety, tracked-base correlation and reconstruction", "Reconstruction begins only from immutable data after the required safe-state evidence."))
+    body.extend([
+        "<style>",
+        ".title{font-size:42px}",
+        ".subtitle{font-size:18px}",
+        ".legend{font-size:14px}",
+        ".system-map .lane-title{font-size:22px}",
+        ".system-map .lane-subtitle{font-size:15px}",
+        ".system-map .node-title{font-size:20px}",
+        ".system-map .detail{font-size:17.5px}",
+        ".system-map .edge-label{font-size:14px;stroke-width:6px}",
+        ".system-map .badge{font-size:12px}",
+        ".system-map .note{font-size:15.5px}",
+        "</style>",
+    ])
+    body.extend(legend(122, width))
+    body.append(f'<g class="system-map" transform="scale({scale})">')
+    body.extend(lane(expanded_y(135), 230, "1  Mission request and frozen operator intent", "External task ownership; the tracked base is never commanded here."))
+    body.extend(lane(expanded_y(350), 310, "2  Mission orchestration and process ownership", "One coordinator, one process generation and one autonomous command owner."))
+    body.extend(lane(expanded_y(645), 445, "3  Eye-in-hand sensing, perception and measured scene state", "Only timestamp-correlated measurements become target or scene evidence."))
+    body.extend(lane(expanded_y(1075), 340, "4  Accepted-only coverage and next-best-view selection", "Prediction may rank a view; it never becomes measured reconstruction input."))
+    body.extend(lane(expanded_y(1400), 460, "5  Frozen motion-planner backend and command-free proposal", "Tesseract is on main; cuRobo is explicitly branch-only and hardware-unqualified."))
+    body.extend(lane(expanded_y(1850), 405, "6  Common authorization, execution and physical feedback", "Every backend must traverse the same fail-closed execution boundary."))
+    body.extend(lane(expanded_y(2240), 445, "7  Settled observation, immutable commit and closed-loop feedback", "Accepted and rejected observations deliberately have different state effects."))
+    body.extend(lane(expanded_y(2670), 305, "8  Terminal safety, tracked-base correlation and reconstruction", "Reconstruction begins only from immutable data after the required safe-state evidence."))
     for item in edges:
         body.extend(edge(nodes, item))
     for node_value in nodes.values():
@@ -309,10 +358,11 @@ def render_system():
     body.extend([
         text(
             width / 2,
-            2962,
-            "Command authority: planner workers propose; scan_viewpoint_executor publishes autonomous joints; the PiPER driver owns CAN, motors and feedback.",
+            expanded_y(2962),
+            "Command chain: planner proposal -> executor joint command -> PiPER driver CAN + feedback.",
             "note",
         ),
+        "</g>",
         "</svg>",
     ])
     write_svg("system-overview.svg", body)

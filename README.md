@@ -35,7 +35,7 @@ This is the complete feature map, from mission request to immutable reconstructi
 
 <div align="center">
   <a href="docs/assets/readme/architecture/system-overview.svg">
-    <img src="docs/assets/readme/architecture/system-overview.svg" alt="Detailed PiPER active-view scanning architecture with mission, perception, NBV, planner, execution, capture, feedback, and reconstruction" width="900">
+    <img src="docs/assets/readme/architecture/system-overview.svg" alt="Detailed PiPER active-view scanning architecture with mission, perception, NBV, planner, execution, capture, feedback, and reconstruction" width="1000">
   </a>
   <br>
   <sub>Click to open the full-resolution SVG. Backend and command-authority status are labelled inside the diagram.</sub>
