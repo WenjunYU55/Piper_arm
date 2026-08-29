@@ -43,7 +43,10 @@ robot's `odom -> base_link`, mounts the PiPER at `arm_base_link`, and exposes a
 geometry-free identity `piper_base_link` frame for the gateway.
 
 For the current whole-system architecture and responsibility boundaries, see
-[`ARCHITECTURE.md`](ARCHITECTURE.md). Historical handoffs are archived under
+[`ARCHITECTURE.md`](ARCHITECTURE.md). Rendered hardware, runtime-flow and CAD
+diagrams are in [`docs/architecture/system-diagrams.md`](docs/architecture/system-diagrams.md),
+and the editable enclosure and sensor-mount CAD is documented under
+[`CAD/`](CAD/). Historical handoffs are archived under
 [`docs/historical/`](docs/historical/).
 
 For the durable product goal, milestone status, definition of done, and required next work, see
@@ -68,6 +71,30 @@ This repository contains four separate dependency surfaces:
    through the command-free `piper_tesseract_foxy` filesystem adapter.
 
 Do not install the offline AI packages into the ROS Python environment.
+
+## System overview
+
+```mermaid
+flowchart LR
+  TASK["GUI or tracked-robot task"] --> MISSION["MissionEngine"]
+  L515["Eye-in-hand L515"] --> PERCEPTION["Target and scene perception"]
+  MISSION --> PERCEPTION
+  PERCEPTION --> NBV["Measured coverage and NBV"]
+  NBV --> TESS["Tesseract IK / collision / path"]
+  TESS --> EXEC["Safety-gated executor"]
+  EXEC --> DRIVER["PiPER CAN driver"]
+  DRIVER --> ARM["PiPER arm"]
+  EXEC --> CAPTURE["Settled RGB-D capture"]
+  CAPTURE --> DATASET["Validated dataset"]
+  DATASET --> NBV
+  DATASET --> RECON["Offline reconstruction"]
+  BASE["Tracked base"] -. gateway and fixed mount .-> MISSION
+```
+
+The tracked base is an integration boundary: this repository receives its task
+and pose snapshot but does not command chassis motion. See the
+[full system diagrams](docs/architecture/system-diagrams.md) for command
+authority, safety boundaries and the CAD-to-runtime relationship.
 
 ## Supported host
 

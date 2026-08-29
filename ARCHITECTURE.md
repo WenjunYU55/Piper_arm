@@ -138,5 +138,9 @@ evidence gate is satisfied.
   `piper_gui/` component; ROS transport belongs in `piper_gui/ros_node.py`.
 
 Large runtime assets are governed by `docs/architecture/asset_policy.md`.
+Source and fabrication CAD is documented under `CAD/`; it is not a drop-in
+replacement for collision-qualified runtime meshes. Rendered hardware,
+mission-flow and CAD-relationship diagrams are maintained in
+`docs/architecture/system-diagrams.md`.
 Cross-package development tests belong under `tests/`; package-specific tests
 remain with their package.
