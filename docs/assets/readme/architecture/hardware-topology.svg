@@ -112,4 +112,3 @@
 <text x="1203.2" y="1020" class="edge-label" text-anchor="end">optional CAD</text>
 <text x="640.0" y="1571" class="note" text-anchor="middle">Design CAD supports fabrication; URDF/planner collision assets and calibration retain separate qualification ownership.</text>
 </svg>
-

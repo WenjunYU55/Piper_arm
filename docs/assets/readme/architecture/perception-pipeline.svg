@@ -126,4 +126,3 @@
 <text x="827.0000000000001" y="323" class="edge-label" text-anchor="middle">one correlated settled refresh</text>
 <text x="640.0" y="1556" class="note" text-anchor="middle">Short prediction gaps never become measured coverage; a recovered fresh measurement must pass the same gates again.</text>
 </svg>
-

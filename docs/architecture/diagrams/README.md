@@ -43,4 +43,3 @@ python3 docs/architecture/diagrams/validate_diagrams.py
 ## Visual verification
 
 Generated SVG is the deliverable, but it must be rendered before review. Run `validate_diagrams.py`, check the full system map at its native aspect ratio and inspect each focused diagram at normal GitHub README width. Confirm that text is legible, legends and labels are not clipped, status pills do not collide with titles, arrows terminate at the intended boxes, and feedback loops stay visually distinct from command flow.
-

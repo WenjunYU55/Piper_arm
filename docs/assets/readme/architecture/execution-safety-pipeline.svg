@@ -123,4 +123,3 @@
 <text x="304.5" y="1228" class="edge-label" text-anchor="middle">timeout / following failure</text>
 <text x="640.0" y="1616" class="note" text-anchor="middle">Planner output is necessary but never sufficient: authorization and live feedback remain independent authorities.</text>
 </svg>
-

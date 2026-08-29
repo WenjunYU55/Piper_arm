@@ -57,11 +57,11 @@ Fresh L515 time, mask identity and ambiguity-qualified depth are independent gat
 
 The diagram separates the effects that were previously collapsed:
 
-- accepted observation â†’ immutable commit â†’ new history generation â†’ measured-coverage rebuild;
-- retryable observation â†’ hold achieved FK â†’ one same-pose heavy refresh â†’ re-admit;
-- rejected observation â†’ no coverage update â†’ exclude the view and replan;
-- exact planner rejection â†’ optionally retire a hard-infeasible ray and request another candidate;
-- target loss â†’ hold â†’ reacquire measured target â†’ produce a fresh plan that must be authorized again.
+- accepted observation → immutable commit → new history generation → measured-coverage rebuild;
+- retryable observation → hold achieved FK → one same-pose heavy refresh → re-admit;
+- rejected observation → no coverage update → exclude the view and replan;
+- exact planner rejection → optionally retire a hard-infeasible ray and request another candidate;
+- target loss → hold → reacquire measured target → produce a fresh plan that must be authorized again.
 
 ## Planner backend and transport
 
@@ -81,7 +81,7 @@ The branch-only cuRobo worker uses MotionGen 0.7.8 `plan_single` for camera pose
 
 Common plan validation checks six finite joints, time order, 20 Hz scheduling, maximum step, speed-scaled MoveJ limits and fresh matching hashes. Authorization then checks mission identity, TTL, backend, target drift, dependencies and the complete path.
 
-During execution, joints, arm status, controller limits, camera timing, target tracking, scene quality, following error, timeout, settle state and holder/floor clearance return to the executor. Transient evidence follows hold â†’ refresh â†’ re-authorize â†’ resume of the exact interrupted stage. Cancellation or hard fault follows the bounded home/disable recovery sequence. Motor-authority loss allows no further command.
+During execution, joints, arm status, controller limits, camera timing, target tracking, scene quality, following error, timeout, settle state and holder/floor clearance return to the executor. Transient evidence follows hold → refresh → re-authorize → resume of the exact interrupted stage. Cancellation or hard fault follows the bounded home/disable recovery sequence. Motor-authority loss allows no further command.
 
 ## Capture admission, rejection and reconstruction
 
@@ -89,7 +89,7 @@ During execution, joints, arm status, controller limits, camera timing, target t
   <a href="../assets/readme/architecture/capture-reconstruction-pipeline.svg"><img src="../assets/readme/architecture/capture-reconstruction-pipeline.svg" alt="Settled capture, confidence-qualified burst, atomic commit, rejection feedback, safe terminal state and reconstruction" width="1000"></a>
 </div>
 
-The capture service uses the exact mask/RGB stamp and exactly 20 new native depth/confidence frames. Admission requires confidence grade â‰¥ 8, at least 0.50 support, per-pixel median depth, calibrated intrinsics/TF, achieved FK, plan provenance, and fresh quality/occlusion evidence. Atomic artifacts and their manifest SHA form one schema-2 observation; partial files never count.
+The capture service uses the exact mask/RGB stamp and exactly 20 new native depth/confidence frames. Admission requires confidence grade ≥ 8, at least 0.50 support, per-pixel median depth, calibrated intrinsics/TF, achieved FK, plan provenance, and fresh quality/occlusion evidence. Atomic artifacts and their manifest SHA form one schema-2 observation; partial files never count.
 
 After the safe mission terminal and optional tracked-base-home correlation, reconstruction validates immutable input, then runs target-only TSDF by default with optional bounded GICP and target-excluded scene pose-graph refinement. Reconstruction failure is reported without changing the mission result.
 
@@ -133,4 +133,3 @@ python3 docs/architecture/diagrams/generate_diagrams.py
 ```
 
 After any architecture change, regenerate all figures, render them to raster images for visual inspection, and verify that branch status, command ownership and every state-changing feedback path are still explicit. See the [diagram-source rules](diagrams/README.md).
-

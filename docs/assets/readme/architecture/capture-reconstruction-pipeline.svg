@@ -124,4 +124,3 @@
 <text x="640.0" y="1795.5" class="edge-label" text-anchor="middle">validated frames</text>
 <text x="640.0" y="2051" class="note" text-anchor="middle">Reconstruction is asynchronous and command-free; its failure cannot retroactively change a safely completed arm mission.</text>
 </svg>
-

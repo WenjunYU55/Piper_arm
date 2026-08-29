@@ -118,4 +118,3 @@
 <text x="310.0" y="1028" class="edge-label" text-anchor="middle">fresh measurement</text>
 <text x="640.0" y="1716" class="note" text-anchor="middle">The planner proves feasibility; NBV chooses what to try next; capture acceptance alone changes measured coverage.</text>
 </svg>
-

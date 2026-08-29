@@ -330,4 +330,3 @@
 <text x="660.0" y="5010" class="note" text-anchor="middle">Red is the sole motor-command edge. Dashed green paths are measured feedback, retry or replanning.</text>
 </g>
 </svg>
-
