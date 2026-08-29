@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="1740" viewBox="0 0 1100 1740" role="img">
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1740" viewBox="0 0 1280 1740" role="img">
 <title>Closed-Loop Next-Best-View Planning</title>
 <desc>One accepted observation changes coverage; rejection changes achieved state but never manufactures evidence</desc>
 <defs>
@@ -19,21 +19,22 @@
 <path d="M0,0 L0,6 L9,3 z" fill="#929AA5"/>
 </marker>
 <style>
-.title{font:700 34px Arial,Helvetica,sans-serif;fill:#17212B}
-.subtitle{font:15px Arial,Helvetica,sans-serif;fill:#52606D}
-.lane-title{font:700 18px Arial,Helvetica,sans-serif;fill:#24303C}
-.lane-subtitle{font:12px Arial,Helvetica,sans-serif;fill:#687684}
-.node-title{font:700 16px Arial,Helvetica,sans-serif;fill:#17212B}
-.detail{font:12.5px Arial,Helvetica,sans-serif;fill:#344250}
-.edge-label{font:700 11.5px Arial,Helvetica,sans-serif;fill:#344250;paint-order:stroke;stroke:#fff;stroke-width:5px;stroke-linejoin:round}
-.badge{font:700 10px Arial,Helvetica,sans-serif;fill:#fff;letter-spacing:.3px}
-.legend{font:12px Arial,Helvetica,sans-serif;fill:#46515E}
-.note{font:12.5px Arial,Helvetica,sans-serif;fill:#52606D}
+.title{font:700 40px Arial,Helvetica,sans-serif;fill:#17212B}
+.subtitle{font:18px Arial,Helvetica,sans-serif;fill:#52606D}
+.lane-title{font:700 20px Arial,Helvetica,sans-serif;fill:#24303C}
+.lane-subtitle{font:14px Arial,Helvetica,sans-serif;fill:#687684}
+.node-title{font:700 21px Arial,Helvetica,sans-serif;fill:#17212B}
+.detail{font:16.5px Arial,Helvetica,sans-serif;fill:#344250}
+.edge-label-bg{fill:#fff;fill-opacity:.96}
+.edge-label{font:700 14.5px Arial,Helvetica,sans-serif;fill:#344250}
+.badge{font:700 12.5px Arial,Helvetica,sans-serif;fill:#fff;letter-spacing:.35px}
+.legend{font:14.5px Arial,Helvetica,sans-serif;fill:#46515E}
+.note{font:15px Arial,Helvetica,sans-serif;fill:#52606D}
 </style>
 </defs>
 <rect width="100%" height="100%" fill="#FFFFFF"/>
-<text x="550.0" y="49" class="title" text-anchor="middle">Closed-Loop Next-Best-View Planning</text>
-<text x="550.0" y="78" class="subtitle" text-anchor="middle">One accepted observation changes coverage; rejection changes achieved state but never manufactures evidence</text>
+<text x="640.0" y="49" class="title" text-anchor="middle">Closed-Loop Next-Best-View Planning</text>
+<text x="640.0" y="78" class="subtitle" text-anchor="middle">One accepted observation changes coverage; rejection changes achieved state but never manufactures evidence</text>
 <line x1="65" y1="108" x2="103" y2="108" stroke="#52606D" stroke-width="3" marker-end="url(#data-arrow)"/>
 <text x="113" y="112" class="legend" text-anchor="start">data / evidence</text>
 <line x1="270" y1="108" x2="308" y2="108" stroke="#2563A6" stroke-width="3" marker-end="url(#control-arrow)"/>
@@ -44,57 +45,77 @@
 <text x="728" y="112" class="legend" text-anchor="start">motor command</text>
 <line x1="885" y1="108" x2="923" y2="108" stroke="#929AA5" stroke-width="3" stroke-dasharray="8 6" marker-end="url(#optional-arrow)"/>
 <text x="933" y="112" class="legend" text-anchor="start">branch-only / optional</text>
-<polyline points="550.0,300 550.0,365" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="550.0" y="325.5" class="edge-label" text-anchor="middle">commit generation</text>
-<polyline points="550.0,525 550.0,595" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="550.0" y="553.0" class="edge-label" text-anchor="middle">measured evidence</text>
-<polyline points="720,445.0 760,445.0" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="740.0" y="438.0" class="edge-label" text-anchor="middle">coverage metrics</text>
-<polyline points="900.0,525 900,560 740,560 740,685 720,685.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="840" y="553" class="edge-label" text-anchor="middle">more surface required</text>
-<polyline points="550.0,775 550.0,845" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<polyline points="550.0,1005 550.0,1075" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="550.0" y="1033.0" class="edge-label" text-anchor="middle">bounded shortlist</text>
-<polyline points="550.0,1225 550.0,1295" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="550.0" y="1253.0" class="edge-label" text-anchor="middle">qualified proposal</text>
-<polyline points="550.0,1455 550.0,1525" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="550.0" y="1483.0" class="edge-label" text-anchor="middle">settled evidence</text>
-<polyline points="720,1600.0 1060,1600 1060,225 720,225 720,225.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="1052" y="900" class="edge-label" text-anchor="middle">ACCEPT: update coverage</text>
-<polyline points="380,1600.0 20,1600 20,685 380,685 380,685.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="170" y="1593" class="edge-label" text-anchor="middle">REJECT: achieved FK, no coverage</text>
-<polyline points="720,1150.0 750,1150 750,685 720,685 720,685.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="742" y="920" class="edge-label" text-anchor="middle">retire hard-infeasible ray</text>
-<polyline points="380,1150.0 320,1150.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="350.0" y="1143.0" class="edge-label" text-anchor="middle">stale / lost target</text>
-<polyline points="180.0,1075 180,1035 340,1035 340,685 380,685 380,685.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="250" y="1028" class="edge-label" text-anchor="middle">fresh measurement</text>
-<rect x="380" y="150" width="340" height="150" rx="13" fill="#E5F7F3" stroke="#147D70" stroke-width="1.8"/>
-<text x="550.0" y="181" class="node-title" text-anchor="middle">Accepted schema-2 capture</text>
-<text x="550.0" y="208" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">manifest-verified target depth/support</tspan><tspan x="550.0" dy="18">capture-time camera transform + achieved FK</tspan><tspan x="550.0" dy="18">rejected observations are excluded</tspan></text>
-<rect x="380" y="365" width="340" height="160" rx="13" fill="#E5F7F3" stroke="#147D70" stroke-width="1.8"/>
-<text x="550.0" y="396" class="node-title" text-anchor="middle">Measured surface coverage</text>
-<text x="550.0" y="423" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">rebuild at exact accepted generation</tspan><tspan x="550.0" dy="18">unknown / observed / visible voxels</tspan><tspan x="550.0" dy="18">completion and novelty evidence</tspan></text>
-<rect x="380" y="595" width="340" height="180" rx="13" fill="#FFF3D9" stroke="#B77900" stroke-width="1.8"/>
-<text x="550.0" y="626" class="node-title" text-anchor="middle">Candidate policy</text>
-<text x="550.0" y="653" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">legacy points | voxel_nbv | frozen ray_nbv</tspan><tspan x="550.0" dy="18">seed from current FK when no model exists</tspan><tspan x="550.0" dy="18">marginal information before travel</tspan><tspan x="550.0" dy="18">duplicate directions and hard culls removed</tspan></text>
-<rect x="380" y="845" width="340" height="160" rx="13" fill="#FFF3D9" stroke="#B77900" stroke-width="1.8"/>
-<text x="550.0" y="876" class="node-title" text-anchor="middle">Prequalification and shortlist</text>
-<text x="550.0" y="903" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">workspace / capability evidence</tspan><tspan x="550.0" dy="18">safe target-facing aim + bounded fallback</tspan><tspan x="550.0" dy="18">12 voxel points or 6 ray directions max</tspan></text>
-<rect x="380" y="1075" width="340" height="150" rx="13" fill="#FFF3D9" stroke="#B77900" stroke-width="1.8"/>
-<text x="550.0" y="1106" class="node-title" text-anchor="middle">Exact planner backend</text>
-<text x="550.0" y="1133" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">fresh scene, joints, limits and hashes</tspan><tspan x="550.0" dy="18">first feasible complete collision-qualified path</tspan><tspan x="550.0" dy="18">structured rejection remains correlated</tspan></text>
-<rect x="380" y="1295" width="340" height="160" rx="13" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.8"/>
-<text x="550.0" y="1326" class="node-title" text-anchor="middle">Authorize, execute and settle</text>
-<text x="550.0" y="1353" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">common safety path; one view</tspan><tspan x="550.0" dy="18">record actual FK even if capture is rejected</tspan><tspan x="550.0" dy="18">final aim, target drift and framing checks</tspan></text>
-<rect x="380" y="1525" width="340" height="150" rx="13" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.8"/>
-<text x="550.0" y="1556" class="node-title" text-anchor="middle">Observation decision</text>
-<text x="550.0" y="1583" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">ACCEPT -&gt; immutable commit</tspan><tspan x="550.0" dy="18">RETRY -&gt; one same-pose refresh</tspan><tspan x="550.0" dy="18">REJECT -&gt; exclude and replan</tspan></text>
-<rect x="760" y="365" width="280" height="160" rx="13" fill="#E5F7F3" stroke="#147D70" stroke-width="1.8"/>
-<text x="900.0" y="396" class="node-title" text-anchor="middle">Completion decision</text>
-<text x="900.0" y="423" class="detail" text-anchor="middle"><tspan x="900.0" dy="0">bounded 8-24 view policy</tspan><tspan x="900.0" dy="18">useful-face / convergence evidence</tspan><tspan x="900.0" dy="18">or safe-frontier exhaustion</tspan></text>
-<rect x="40" y="1075" width="280" height="150" rx="13" fill="#F2EAFF" stroke="#7851A9" stroke-width="1.8"/>
-<text x="180.0" y="1106" class="node-title" text-anchor="middle">Visual reacquisition</text>
-<text x="180.0" y="1133" class="detail" text-anchor="middle"><tspan x="180.0" dy="0">hold current pose; no command</tspan><tspan x="180.0" dy="18">recover fresh measured target</tspan><tspan x="180.0" dy="18">new plan must be re-approved</tspan></text>
-<text x="550.0" y="1716" class="note" text-anchor="middle">The planner proves feasibility; NBV chooses what to try next; capture acceptance alone changes measured coverage.</text>
+<polyline points="640.0000000000001,300 640.0000000000001,365" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="640.0000000000001,525 640.0000000000001,595" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="827.0000000000001,445.0 871.0000000000001,445.0" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="1025.0,525 1025.0,560 849.0000000000001,560 849.0000000000001,685 827.0000000000001,685.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="640.0000000000001,775 640.0000000000001,845" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="640.0000000000001,1005 640.0000000000001,1075" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="640.0000000000001,1225 640.0000000000001,1295" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="640.0000000000001,1455 640.0000000000001,1525" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="827.0000000000001,1600.0 1201.0,1600 1201.0,225 827.0000000000001,225 827.0000000000001,225.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="453.00000000000006,1600.0 57.0,1600 57.0,685 453.00000000000006,685 453.00000000000006,685.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="827.0000000000001,1150.0 1179.0,1150 1179.0,685 827.0000000000001,685 827.0000000000001,685.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="453.00000000000006,1150.0 387.0,1150.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="233.0,1075 233.00000000000003,1035 409.00000000000006,1035 409.00000000000006,685 453.00000000000006,685 453.00000000000006,685.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<rect x="453.00000000000006" y="150" width="374.00000000000006" height="150" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
+<rect x="453.00000000000006" y="150" width="7" height="150" rx="3.5" fill="#147D70" opacity="0.9"/>
+<text x="477.00000000000006" y="185" class="node-title" text-anchor="start">Accepted schema-2 capture</text>
+<text x="477.00000000000006" y="216" class="detail" text-anchor="start"><tspan x="477.00000000000006" dy="0">manifest-verified target depth/support</tspan><tspan x="477.00000000000006" dy="23">capture-time camera transform + achieved FK</tspan><tspan x="477.00000000000006" dy="23">rejected observations are excluded</tspan></text>
+<rect x="453.00000000000006" y="365" width="374.00000000000006" height="160" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
+<rect x="453.00000000000006" y="365" width="7" height="160" rx="3.5" fill="#147D70" opacity="0.9"/>
+<text x="477.00000000000006" y="400" class="node-title" text-anchor="start">Measured surface coverage</text>
+<text x="477.00000000000006" y="431" class="detail" text-anchor="start"><tspan x="477.00000000000006" dy="0">rebuild at exact accepted generation</tspan><tspan x="477.00000000000006" dy="23">unknown / observed / visible voxels</tspan><tspan x="477.00000000000006" dy="23">completion and novelty evidence</tspan></text>
+<rect x="453.00000000000006" y="595" width="374.00000000000006" height="180" rx="14" fill="#FFF3D9" stroke="#B77900" stroke-width="1.6"/>
+<rect x="453.00000000000006" y="595" width="7" height="180" rx="3.5" fill="#B77900" opacity="0.9"/>
+<text x="477.00000000000006" y="630" class="node-title" text-anchor="start">Candidate policy</text>
+<text x="477.00000000000006" y="661" class="detail" text-anchor="start"><tspan x="477.00000000000006" dy="0">legacy points | voxel_nbv | frozen ray_nbv</tspan><tspan x="477.00000000000006" dy="23">seed from current FK when no model exists</tspan><tspan x="477.00000000000006" dy="23">marginal information before travel</tspan><tspan x="477.00000000000006" dy="23">duplicate directions and hard culls removed</tspan></text>
+<rect x="453.00000000000006" y="845" width="374.00000000000006" height="160" rx="14" fill="#FFF3D9" stroke="#B77900" stroke-width="1.6"/>
+<rect x="453.00000000000006" y="845" width="7" height="160" rx="3.5" fill="#B77900" opacity="0.9"/>
+<text x="477.00000000000006" y="880" class="node-title" text-anchor="start">Prequalification and shortlist</text>
+<text x="477.00000000000006" y="911" class="detail" text-anchor="start"><tspan x="477.00000000000006" dy="0">workspace / capability evidence</tspan><tspan x="477.00000000000006" dy="23">safe target-facing aim + bounded fallback</tspan><tspan x="477.00000000000006" dy="23">12 voxel points or 6 ray directions max</tspan></text>
+<rect x="453.00000000000006" y="1075" width="374.00000000000006" height="150" rx="14" fill="#FFF3D9" stroke="#B77900" stroke-width="1.6"/>
+<rect x="453.00000000000006" y="1075" width="7" height="150" rx="3.5" fill="#B77900" opacity="0.9"/>
+<text x="477.00000000000006" y="1110" class="node-title" text-anchor="start">Exact planner backend</text>
+<text x="477.00000000000006" y="1141" class="detail" text-anchor="start"><tspan x="477.00000000000006" dy="0">fresh scene, joints, limits and hashes</tspan><tspan x="477.00000000000006" dy="23">first feasible complete collision-qualified path</tspan><tspan x="477.00000000000006" dy="23">structured rejection remains correlated</tspan></text>
+<rect x="453.00000000000006" y="1295" width="374.00000000000006" height="160" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
+<rect x="453.00000000000006" y="1295" width="7" height="160" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<text x="477.00000000000006" y="1330" class="node-title" text-anchor="start">Authorize, execute and settle</text>
+<text x="477.00000000000006" y="1361" class="detail" text-anchor="start"><tspan x="477.00000000000006" dy="0">common safety path; one view</tspan><tspan x="477.00000000000006" dy="23">record actual FK even if capture is rejected</tspan><tspan x="477.00000000000006" dy="23">final aim, target drift and framing checks</tspan></text>
+<rect x="453.00000000000006" y="1525" width="374.00000000000006" height="150" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
+<rect x="453.00000000000006" y="1525" width="7" height="150" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<text x="477.00000000000006" y="1560" class="node-title" text-anchor="start">Observation decision</text>
+<text x="477.00000000000006" y="1591" class="detail" text-anchor="start"><tspan x="477.00000000000006" dy="0">ACCEPT -&gt; immutable commit</tspan><tspan x="477.00000000000006" dy="23">RETRY -&gt; one same-pose refresh</tspan><tspan x="477.00000000000006" dy="23">REJECT -&gt; exclude and replan</tspan></text>
+<rect x="871.0000000000001" y="365" width="308.0" height="160" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
+<rect x="871.0000000000001" y="365" width="7" height="160" rx="3.5" fill="#147D70" opacity="0.9"/>
+<text x="895.0000000000001" y="400" class="node-title" text-anchor="start">Completion decision</text>
+<text x="895.0000000000001" y="431" class="detail" text-anchor="start"><tspan x="895.0000000000001" dy="0">bounded 8-24 view policy</tspan><tspan x="895.0000000000001" dy="23">useful-face / convergence evidence</tspan><tspan x="895.0000000000001" dy="23">or safe-frontier exhaustion</tspan></text>
+<rect x="79.0" y="1075" width="308.0" height="150" rx="14" fill="#F2EAFF" stroke="#7851A9" stroke-width="1.6"/>
+<rect x="79.0" y="1075" width="7" height="150" rx="3.5" fill="#7851A9" opacity="0.9"/>
+<text x="103.0" y="1110" class="node-title" text-anchor="start">Visual reacquisition</text>
+<text x="103.0" y="1141" class="detail" text-anchor="start"><tspan x="103.0" dy="0">hold current pose; no command</tspan><tspan x="103.0" dy="23">recover fresh measured target</tspan><tspan x="103.0" dy="23">new plan must be re-approved</tspan></text>
+<rect x="566.4000000000001" y="308.5" width="147.2" height="23" rx="5" class="edge-label-bg"/>
+<text x="640.0000000000001" y="325.5" class="edge-label" text-anchor="middle">commit generation</text>
+<rect x="566.4000000000001" y="536.0" width="147.2" height="23" rx="5" class="edge-label-bg"/>
+<text x="640.0000000000001" y="553.0" class="edge-label" text-anchor="middle">measured evidence</text>
+<rect x="870.2000000000002" y="536" width="177.6" height="23" rx="5" class="edge-label-bg"/>
+<text x="959.0000000000001" y="553" class="edge-label" text-anchor="middle">more surface required</text>
+<rect x="566.4000000000001" y="1016.0" width="147.2" height="23" rx="5" class="edge-label-bg"/>
+<text x="640.0000000000001" y="1033.0" class="edge-label" text-anchor="middle">bounded shortlist</text>
+<rect x="562.6000000000001" y="1236.0" width="154.79999999999998" height="23" rx="5" class="edge-label-bg"/>
+<text x="640.0000000000001" y="1253.0" class="edge-label" text-anchor="middle">qualified proposal</text>
+<rect x="570.2000000000002" y="1466.0" width="139.6" height="23" rx="5" class="edge-label-bg"/>
+<text x="640.0000000000001" y="1483.0" class="edge-label" text-anchor="middle">settled evidence</text>
+<rect x="1006.4000000000001" y="883" width="192.79999999999998" height="23" rx="5" class="edge-label-bg"/>
+<text x="1192.2" y="900" class="edge-label" text-anchor="end">ACCEPT: update coverage</text>
+<rect x="91.40000000000003" y="1576" width="261.2" height="23" rx="5" class="edge-label-bg"/>
+<text x="222.00000000000003" y="1593" class="edge-label" text-anchor="middle">REJECT: achieved FK, no coverage</text>
+<rect x="1050.6" y="1013" width="124.39999999999999" height="23" rx="5" class="edge-label-bg"/>
+<text x="1168.0" y="1030" class="edge-label" text-anchor="end">infeasible ray</text>
+<rect x="369.20000000000005" y="1023" width="101.6" height="23" rx="5" class="edge-label-bg"/>
+<text x="420.00000000000006" y="1040" class="edge-label" text-anchor="middle">target lost</text>
+<rect x="236.4" y="1011" width="147.2" height="23" rx="5" class="edge-label-bg"/>
+<text x="310.0" y="1028" class="edge-label" text-anchor="middle">fresh measurement</text>
+<text x="640.0" y="1716" class="note" text-anchor="middle">The planner proves feasibility; NBV chooses what to try next; capture acceptance alone changes measured coverage.</text>
 </svg>
+

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="2075" viewBox="0 0 1100 2075" role="img">
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="2075" viewBox="0 0 1280 2075" role="img">
 <title>Settled Capture, Feedback and Reconstruction</title>
 <desc>Why acceptance changes NBV state, rejection does not, and reconstruction waits for immutable safe-state evidence</desc>
 <defs>
@@ -19,21 +19,22 @@
 <path d="M0,0 L0,6 L9,3 z" fill="#929AA5"/>
 </marker>
 <style>
-.title{font:700 34px Arial,Helvetica,sans-serif;fill:#17212B}
-.subtitle{font:15px Arial,Helvetica,sans-serif;fill:#52606D}
-.lane-title{font:700 18px Arial,Helvetica,sans-serif;fill:#24303C}
-.lane-subtitle{font:12px Arial,Helvetica,sans-serif;fill:#687684}
-.node-title{font:700 16px Arial,Helvetica,sans-serif;fill:#17212B}
-.detail{font:12.5px Arial,Helvetica,sans-serif;fill:#344250}
-.edge-label{font:700 11.5px Arial,Helvetica,sans-serif;fill:#344250;paint-order:stroke;stroke:#fff;stroke-width:5px;stroke-linejoin:round}
-.badge{font:700 10px Arial,Helvetica,sans-serif;fill:#fff;letter-spacing:.3px}
-.legend{font:12px Arial,Helvetica,sans-serif;fill:#46515E}
-.note{font:12.5px Arial,Helvetica,sans-serif;fill:#52606D}
+.title{font:700 40px Arial,Helvetica,sans-serif;fill:#17212B}
+.subtitle{font:18px Arial,Helvetica,sans-serif;fill:#52606D}
+.lane-title{font:700 20px Arial,Helvetica,sans-serif;fill:#24303C}
+.lane-subtitle{font:14px Arial,Helvetica,sans-serif;fill:#687684}
+.node-title{font:700 21px Arial,Helvetica,sans-serif;fill:#17212B}
+.detail{font:16.5px Arial,Helvetica,sans-serif;fill:#344250}
+.edge-label-bg{fill:#fff;fill-opacity:.96}
+.edge-label{font:700 14.5px Arial,Helvetica,sans-serif;fill:#344250}
+.badge{font:700 12.5px Arial,Helvetica,sans-serif;fill:#fff;letter-spacing:.35px}
+.legend{font:14.5px Arial,Helvetica,sans-serif;fill:#46515E}
+.note{font:15px Arial,Helvetica,sans-serif;fill:#52606D}
 </style>
 </defs>
 <rect width="100%" height="100%" fill="#FFFFFF"/>
-<text x="550.0" y="49" class="title" text-anchor="middle">Settled Capture, Feedback and Reconstruction</text>
-<text x="550.0" y="78" class="subtitle" text-anchor="middle">Why acceptance changes NBV state, rejection does not, and reconstruction waits for immutable safe-state evidence</text>
+<text x="640.0" y="49" class="title" text-anchor="middle">Settled Capture, Feedback and Reconstruction</text>
+<text x="640.0" y="78" class="subtitle" text-anchor="middle">Why acceptance changes NBV state, rejection does not, and reconstruction waits for immutable safe-state evidence</text>
 <line x1="65" y1="108" x2="103" y2="108" stroke="#52606D" stroke-width="3" marker-end="url(#data-arrow)"/>
 <text x="113" y="112" class="legend" text-anchor="start">data / evidence</text>
 <line x1="270" y1="108" x2="308" y2="108" stroke="#2563A6" stroke-width="3" marker-end="url(#control-arrow)"/>
@@ -44,67 +45,83 @@
 <text x="728" y="112" class="legend" text-anchor="start">motor command</text>
 <line x1="885" y1="108" x2="923" y2="108" stroke="#929AA5" stroke-width="3" stroke-dasharray="8 6" marker-end="url(#optional-arrow)"/>
 <text x="933" y="112" class="legend" text-anchor="start">branch-only / optional</text>
-<polyline points="550.0,300 550.0,370" fill="none" stroke="#2563A6" stroke-width="2.2" marker-end="url(#control-arrow)"/>
-<text x="550.0" y="328.0" class="edge-label" text-anchor="middle">capture service</text>
-<polyline points="550.0,560 550.0,630" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<polyline points="550.0,820 550.0,890" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="550.0" y="848.0" class="edge-label" text-anchor="middle">ACCEPT</text>
-<polyline points="380,725.0 320,725.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="350.0" y="718.0" class="edge-label" text-anchor="middle">RETRY / REJECT</text>
-<polyline points="180.0,630 180,595 345,595 345,725 380,725 380,725.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="250" y="588" class="edge-label" text-anchor="middle">one fresh re-evaluation</text>
-<polyline points="40,725.0 20,725 20,222 380,222 380,222.5" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="150" y="718" class="edge-label" text-anchor="middle">exclude + new NBV</text>
-<polyline points="720,977.5 760,977.5" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="740.0" y="970.5" class="edge-label" text-anchor="middle">accepted generation</text>
-<polyline points="1050,977.5 1070,977 1070,222 720,222 720,222.5" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="1062" y="600" class="edge-label" text-anchor="middle">next qualified view</text>
-<polyline points="550.0,1065 550.0,1140" fill="none" stroke="#2563A6" stroke-width="2.2" marker-end="url(#control-arrow)"/>
-<text x="550.0" y="1095.5" class="edge-label" text-anchor="middle">complete / terminal</text>
-<polyline points="550.0,1305 550.0,1375" fill="none" stroke="#2563A6" stroke-width="2.2" marker-end="url(#control-arrow)"/>
-<polyline points="550.0,1530 550.0,1600" fill="none" stroke="#2563A6" stroke-width="2.2" marker-end="url(#control-arrow)"/>
-<polyline points="550.0,1765 230.0,1840" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<polyline points="550.0,1765 550.0,1840" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="550.0" y="1795.5" class="edge-label" text-anchor="middle">validated frames</text>
-<polyline points="380,1930.0 410,1930.0" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="395.0" y="1923.0" class="edge-label" text-anchor="middle">bounded poses</text>
-<polyline points="690,1930.0 720,1930.0" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="705.0" y="1923.0" class="edge-label" text-anchor="middle">mesh / cloud</text>
-<rect x="380" y="145" width="340" height="155" rx="13" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.8"/>
-<text x="550.0" y="176" class="node-title" text-anchor="middle">Executor-settled viewpoint</text>
-<text x="550.0" y="203" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">achieved FK + final aim/drift checks</tspan><tspan x="550.0" dy="18">fresh target/scene + healthy clock</tspan><tspan x="550.0" dy="18">CAPTURING_RGBD request identity</tspan></text>
-<rect x="380" y="370" width="340" height="190" rx="13" fill="#EAF3FF" stroke="#2563A6" stroke-width="1.8"/>
-<text x="550.0" y="401" class="node-title" text-anchor="middle">Synchronized observation</text>
-<text x="550.0" y="428" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">exact mask/RGB stamp</tspan><tspan x="550.0" dy="18">20 new native depth/confidence frames</tspan><tspan x="550.0" dy="18">per-pixel median with &gt;=0.50 support</tspan><tspan x="550.0" dy="18">intrinsics + capture-time transforms</tspan><tspan x="550.0" dy="18">joints + plan provenance</tspan></text>
-<rect x="380" y="630" width="340" height="190" rx="13" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.8"/>
-<text x="550.0" y="661" class="node-title" text-anchor="middle">Semantic and quality gate</text>
-<text x="550.0" y="688" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">unambiguous target depth component</tspan><tspan x="550.0" dy="18">GOOD target / fresh diagnostics</tspan><tspan x="550.0" dy="18">CLEAR or exact correlated occlusion proof</tspan><tspan x="550.0" dy="18">atomic write must finish completely</tspan></text>
-<rect x="380" y="890" width="340" height="175" rx="13" fill="#E5F7F3" stroke="#147D70" stroke-width="1.8"/>
-<text x="550.0" y="921" class="node-title" text-anchor="middle">Immutable schema-2 commit</text>
-<text x="550.0" y="948" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">target-only support/depth + RGB/mask</tspan><tspan x="550.0" dy="18">manifest and per-artifact SHA-256</tspan><tspan x="550.0" dy="18">achieved pose + view selection metadata</tspan><tspan x="550.0" dy="18">partial files never increment count</tspan></text>
-<rect x="760" y="890" width="290" height="175" rx="13" fill="#E5F7F3" stroke="#147D70" stroke-width="1.8"/>
-<text x="905.0" y="921" class="node-title" text-anchor="middle">Accepted feedback</text>
-<text x="905.0" y="948" class="detail" text-anchor="middle"><tspan x="905.0" dy="0">history generation advances</tspan><tspan x="905.0" dy="18">measured coverage rebuilds</tspan><tspan x="905.0" dy="18">NBV replans or completes</tspan></text>
-<rect x="40" y="630" width="280" height="190" rx="13" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.8"/>
-<text x="180.0" y="661" class="node-title" text-anchor="middle">Rejected / stale feedback</text>
-<text x="180.0" y="688" class="detail" text-anchor="middle"><tspan x="180.0" dy="0">hold the achieved pose</tspan><tspan x="180.0" dy="18">one correlated heavy refresh</tspan><tspan x="180.0" dy="18">retry same observation once</tspan><tspan x="180.0" dy="18">then exclude and replan</tspan></text>
-<rect x="380" y="1140" width="340" height="165" rx="13" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.8"/>
-<text x="550.0" y="1171" class="node-title" text-anchor="middle">Safe mission terminal</text>
-<text x="550.0" y="1198" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">home stages + all-six disable</tspan><tspan x="550.0" dy="18">mission result and dataset become durable</tspan><tspan x="550.0" dy="18">optionally WAITING_FOR_BASE_HOME</tspan></text>
-<rect x="380" y="1375" width="340" height="155" rx="13" fill="#EFF6FF" stroke="#3B6EA5" stroke-width="1.8"/>
-<text x="550.0" y="1406" class="node-title" text-anchor="middle">Exact tracked-base-home report</text>
-<text x="550.0" y="1433" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">task + job + manifest correlation</tspan><tspan x="550.0" dy="18">wrong or repeated identities fail/idempotent</tspan><tspan x="550.0" dy="18">gateway launches isolated reconstruction</tspan></text>
-<rect x="380" y="1600" width="340" height="165" rx="13" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.8"/>
-<text x="550.0" y="1631" class="node-title" text-anchor="middle">Immutable input admission</text>
-<text x="550.0" y="1658" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">manifest and every frame hash</tspan><tspan x="550.0" dy="18">capture-time TF/calibration/confidence</tspan><tspan x="550.0" dy="18">reject tamper, escape or incomplete data</tspan></text>
-<rect x="80" y="1840" width="300" height="180" rx="13" fill="#FFF3D9" stroke="#B77900" stroke-width="1.8"/>
-<text x="230.0" y="1871" class="node-title" text-anchor="middle">Registration candidates</text>
-<text x="230.0" y="1898" class="detail" text-anchor="middle"><tspan x="230.0" dy="0">robot_pose baseline</tspan><tspan x="230.0" dy="18">optional bounded target GICP</tspan><tspan x="230.0" dy="18">optional target-excluded scene pose graph</tspan><tspan x="230.0" dy="18">every correction remains bounded</tspan></text>
-<rect x="410" y="1840" width="280" height="180" rx="13" fill="#E5F7F3" stroke="#147D70" stroke-width="1.8"/>
-<text x="550.0" y="1871" class="node-title" text-anchor="middle">Target-only TSDF</text>
-<text x="550.0" y="1898" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">3 mm voxel / 15 mm truncation default</tspan><tspan x="550.0" dy="18">qualified masked depth only</tspan><tspan x="550.0" dy="18">predicted geometry never fused</tspan></text>
-<rect x="720" y="1840" width="300" height="180" rx="13" fill="#E5F7F3" stroke="#147D70" stroke-width="1.8"/>
-<text x="870.0" y="1871" class="node-title" text-anchor="middle">Validated products</text>
-<text x="870.0" y="1898" class="detail" text-anchor="middle"><tspan x="870.0" dy="0">raw + cleaned PLY meshes</tspan><tspan x="870.0" dy="18">coloured measured clouds</tspan><tspan x="870.0" dy="18">quality metrics + visual preview</tspan><tspan x="870.0" dy="18">complete provenance report</tspan></text>
-<text x="550.0" y="2051" class="note" text-anchor="middle">Reconstruction is asynchronous and command-free; its failure cannot retroactively change a safely completed arm mission.</text>
+<polyline points="640.0000000000001,300 640.0000000000001,370" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="640.0000000000001,560 640.0000000000001,630" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="640.0000000000001,820 640.0000000000001,890" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="453.00000000000006,725.0 387.0,725.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="233.0,630 233.00000000000003,595 414.50000000000006,595 414.50000000000006,725 453.00000000000006,725 453.00000000000006,725.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="79.0,725.0 57.0,725 57.0,222 453.00000000000006,222 453.00000000000006,222.5" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="827.0000000000001,977.5 871.0000000000001,977.5" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="1190.0,977.5 1212.0,977 1212.0,222 827.0000000000001,222 827.0000000000001,222.5" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="640.0000000000001,1065 640.0000000000001,1140" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="640.0000000000001,1305 640.0000000000001,1375" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="640.0000000000001,1530 640.0000000000001,1600" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="640.0000000000001,1765 288.0,1840" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="640.0000000000001,1765 640.0,1840" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="453.0,1930.0 486.00000000000006,1930.0" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="794.0,1930.0 827.0000000000001,1930.0" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<rect x="453.00000000000006" y="145" width="374.00000000000006" height="155" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
+<rect x="453.00000000000006" y="145" width="7" height="155" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<text x="477.00000000000006" y="180" class="node-title" text-anchor="start">Executor-settled viewpoint</text>
+<text x="477.00000000000006" y="211" class="detail" text-anchor="start"><tspan x="477.00000000000006" dy="0">achieved FK + final aim/drift checks</tspan><tspan x="477.00000000000006" dy="23">fresh target/scene + healthy clock</tspan><tspan x="477.00000000000006" dy="23">CAPTURING_RGBD request identity</tspan></text>
+<rect x="453.00000000000006" y="370" width="374.00000000000006" height="190" rx="14" fill="#EAF3FF" stroke="#2563A6" stroke-width="1.6"/>
+<rect x="453.00000000000006" y="370" width="7" height="190" rx="3.5" fill="#2563A6" opacity="0.9"/>
+<text x="477.00000000000006" y="405" class="node-title" text-anchor="start">Synchronized observation</text>
+<text x="477.00000000000006" y="436" class="detail" text-anchor="start"><tspan x="477.00000000000006" dy="0">exact mask/RGB stamp</tspan><tspan x="477.00000000000006" dy="23">20 new native depth/confidence frames</tspan><tspan x="477.00000000000006" dy="23">per-pixel median with &gt;=0.50 support</tspan><tspan x="477.00000000000006" dy="23">intrinsics + capture-time transforms</tspan><tspan x="477.00000000000006" dy="23">joints + plan provenance</tspan></text>
+<rect x="453.00000000000006" y="630" width="374.00000000000006" height="190" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
+<rect x="453.00000000000006" y="630" width="7" height="190" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<text x="477.00000000000006" y="665" class="node-title" text-anchor="start">Semantic and quality gate</text>
+<text x="477.00000000000006" y="696" class="detail" text-anchor="start"><tspan x="477.00000000000006" dy="0">unambiguous target depth component</tspan><tspan x="477.00000000000006" dy="23">GOOD target / fresh diagnostics</tspan><tspan x="477.00000000000006" dy="23">CLEAR or exact correlated occlusion proof</tspan><tspan x="477.00000000000006" dy="23">atomic write must finish completely</tspan></text>
+<rect x="453.00000000000006" y="890" width="374.00000000000006" height="175" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
+<rect x="453.00000000000006" y="890" width="7" height="175" rx="3.5" fill="#147D70" opacity="0.9"/>
+<text x="477.00000000000006" y="925" class="node-title" text-anchor="start">Immutable schema-2 commit</text>
+<text x="477.00000000000006" y="956" class="detail" text-anchor="start"><tspan x="477.00000000000006" dy="0">target-only support/depth + RGB/mask</tspan><tspan x="477.00000000000006" dy="23">manifest and per-artifact SHA-256</tspan><tspan x="477.00000000000006" dy="23">achieved pose + view selection metadata</tspan><tspan x="477.00000000000006" dy="23">partial files never increment count</tspan></text>
+<rect x="871.0000000000001" y="890" width="319.0" height="175" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
+<rect x="871.0000000000001" y="890" width="7" height="175" rx="3.5" fill="#147D70" opacity="0.9"/>
+<text x="895.0000000000001" y="925" class="node-title" text-anchor="start">Accepted feedback</text>
+<text x="895.0000000000001" y="956" class="detail" text-anchor="start"><tspan x="895.0000000000001" dy="0">history generation advances</tspan><tspan x="895.0000000000001" dy="23">measured coverage rebuilds</tspan><tspan x="895.0000000000001" dy="23">NBV replans or completes</tspan></text>
+<rect x="79.0" y="630" width="308.0" height="190" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
+<rect x="79.0" y="630" width="7" height="190" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<text x="103.0" y="665" class="node-title" text-anchor="start">Rejected / stale feedback</text>
+<text x="103.0" y="696" class="detail" text-anchor="start"><tspan x="103.0" dy="0">hold the achieved pose</tspan><tspan x="103.0" dy="23">one correlated heavy refresh</tspan><tspan x="103.0" dy="23">retry same observation once</tspan><tspan x="103.0" dy="23">then exclude and replan</tspan></text>
+<rect x="453.00000000000006" y="1140" width="374.00000000000006" height="165" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
+<rect x="453.00000000000006" y="1140" width="7" height="165" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<text x="477.00000000000006" y="1175" class="node-title" text-anchor="start">Safe mission terminal</text>
+<text x="477.00000000000006" y="1206" class="detail" text-anchor="start"><tspan x="477.00000000000006" dy="0">home stages + all-six disable</tspan><tspan x="477.00000000000006" dy="23">mission result and dataset become durable</tspan><tspan x="477.00000000000006" dy="23">optionally WAITING_FOR_BASE_HOME</tspan></text>
+<rect x="453.00000000000006" y="1375" width="374.00000000000006" height="155" rx="14" fill="#EFF6FF" stroke="#3B6EA5" stroke-width="1.6"/>
+<rect x="453.00000000000006" y="1375" width="7" height="155" rx="3.5" fill="#3B6EA5" opacity="0.9"/>
+<text x="477.00000000000006" y="1410" class="node-title" text-anchor="start">Exact tracked-base-home report</text>
+<text x="477.00000000000006" y="1441" class="detail" text-anchor="start"><tspan x="477.00000000000006" dy="0">task + job + manifest correlation</tspan><tspan x="477.00000000000006" dy="23">wrong or repeated identities fail/idempotent</tspan><tspan x="477.00000000000006" dy="23">gateway launches isolated reconstruction</tspan></text>
+<rect x="453.00000000000006" y="1600" width="374.00000000000006" height="165" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
+<rect x="453.00000000000006" y="1600" width="7" height="165" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<text x="477.00000000000006" y="1635" class="node-title" text-anchor="start">Immutable input admission</text>
+<text x="477.00000000000006" y="1666" class="detail" text-anchor="start"><tspan x="477.00000000000006" dy="0">manifest and every frame hash</tspan><tspan x="477.00000000000006" dy="23">capture-time TF/calibration/confidence</tspan><tspan x="477.00000000000006" dy="23">reject tamper, escape or incomplete data</tspan></text>
+<rect x="123.0" y="1840" width="330.0" height="180" rx="14" fill="#FFF3D9" stroke="#B77900" stroke-width="1.6"/>
+<rect x="123.0" y="1840" width="7" height="180" rx="3.5" fill="#B77900" opacity="0.9"/>
+<text x="147.0" y="1875" class="node-title" text-anchor="start">Registration candidates</text>
+<text x="147.0" y="1906" class="detail" text-anchor="start"><tspan x="147.0" dy="0">robot_pose baseline</tspan><tspan x="147.0" dy="23">optional bounded target GICP</tspan><tspan x="147.0" dy="23">optional target-excluded scene pose graph</tspan><tspan x="147.0" dy="23">every correction remains bounded</tspan></text>
+<rect x="486.00000000000006" y="1840" width="308.0" height="180" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
+<rect x="486.00000000000006" y="1840" width="7" height="180" rx="3.5" fill="#147D70" opacity="0.9"/>
+<text x="510.00000000000006" y="1875" class="node-title" text-anchor="start">Target-only TSDF</text>
+<text x="510.00000000000006" y="1906" class="detail" text-anchor="start"><tspan x="510.00000000000006" dy="0">3 mm voxel / 15 mm truncation default</tspan><tspan x="510.00000000000006" dy="23">qualified masked depth only</tspan><tspan x="510.00000000000006" dy="23">predicted geometry never fused</tspan></text>
+<rect x="827.0000000000001" y="1840" width="330.0" height="180" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
+<rect x="827.0000000000001" y="1840" width="7" height="180" rx="3.5" fill="#147D70" opacity="0.9"/>
+<text x="851.0000000000001" y="1875" class="node-title" text-anchor="start">Validated products</text>
+<text x="851.0000000000001" y="1906" class="detail" text-anchor="start"><tspan x="851.0000000000001" dy="0">raw + cleaned PLY meshes</tspan><tspan x="851.0000000000001" dy="23">coloured measured clouds</tspan><tspan x="851.0000000000001" dy="23">quality metrics + visual preview</tspan><tspan x="851.0000000000001" dy="23">complete provenance report</tspan></text>
+<rect x="574.0000000000001" y="311.0" width="132.0" height="23" rx="5" class="edge-label-bg"/>
+<text x="640.0000000000001" y="328.0" class="edge-label" text-anchor="middle">capture service</text>
+<rect x="608.2000000000002" y="831.0" width="63.599999999999994" height="23" rx="5" class="edge-label-bg"/>
+<text x="640.0000000000001" y="848.0" class="edge-label" text-anchor="middle">ACCEPT</text>
+<rect x="213.60000000000002" y="571" width="192.79999999999998" height="23" rx="5" class="edge-label-bg"/>
+<text x="310.0" y="588" class="edge-label" text-anchor="middle">one fresh re-evaluation</text>
+<rect x="77.5" y="483" width="147.2" height="23" rx="5" class="edge-label-bg"/>
+<text x="84.5" y="500" class="edge-label" text-anchor="start">exclude + new NBV</text>
+<rect x="1047.8" y="583" width="162.4" height="23" rx="5" class="edge-label-bg"/>
+<text x="1203.2" y="600" class="edge-label" text-anchor="end">next qualified view</text>
+<rect x="558.8000000000001" y="1078.5" width="162.4" height="23" rx="5" class="edge-label-bg"/>
+<text x="640.0000000000001" y="1095.5" class="edge-label" text-anchor="middle">complete / terminal</text>
+<rect x="570.2" y="1778.5" width="139.6" height="23" rx="5" class="edge-label-bg"/>
+<text x="640.0" y="1795.5" class="edge-label" text-anchor="middle">validated frames</text>
+<text x="640.0" y="2051" class="note" text-anchor="middle">Reconstruction is asynchronous and command-free; its failure cannot retroactively change a safely completed arm mission.</text>
 </svg>
+

@@ -17,7 +17,7 @@
 ![Integration planner](https://img.shields.io/badge/curobo--integration-cuRobo_0.7.8-8A94A3)
 ![RGB-D](https://img.shields.io/badge/Sensor-RealSense_L515-0071C5)
 
-[Architecture](ARCHITECTURE.md) · [Detailed system map](docs/architecture/system-diagrams.md) · [cuRobo integration](https://github.com/WenjunYU55/Piper_arm/tree/curobo-integration) · [Installation](CLEAN_INSTALL.md) · [Operator commands](OPERATOR_COMMANDS.md) · [CAD](CAD/)
+[Architecture](ARCHITECTURE.md) Â· [Detailed system map](docs/architecture/system-diagrams.md) Â· [cuRobo integration](https://github.com/WenjunYU55/Piper_arm/tree/curobo-integration) Â· [Installation](CLEAN_INSTALL.md) Â· [Operator commands](OPERATOR_COMMANDS.md) Â· [CAD](CAD/)
 
 </div>
 
@@ -70,7 +70,7 @@ See the [diagram audit and implementation evidence](docs/architecture/system-dia
 The eye-in-hand L515 publishes synchronized RGB, native/aligned depth, confidence, intrinsics and timestamp health. GroundingDINO provides open-label acquisition, SAM2 propagates the mask, and ambiguity-aware depth produces a measured `Target3D`. A timestamped Kalman tracker may bridge a short outage as `LOW_CONFIDENCE`, but planning still requires a fresh measured lock.
 
 <div align="center">
-  <a href="docs/assets/readme/architecture/perception-pipeline.svg"><img src="docs/assets/readme/architecture/perception-pipeline.svg" alt="Perception and reacquisition flow with freshness and rejection feedback" width="760"></a>
+  <a href="docs/assets/readme/architecture/perception-pipeline.svg"><img src="docs/assets/readme/architecture/perception-pipeline.svg" alt="Perception and reacquisition flow with freshness and rejection feedback" width="1000"></a>
 </div>
 
 The feedback is intentional: stale camera time, invalid depth, a lost target, or blocking occlusion prevents dispatch or capture and requests a correlated heavy refresh. Predicted geometry may guide planning, but it never becomes measured coverage or reconstruction input.
@@ -80,7 +80,7 @@ The feedback is intentional: stale camera time, invalid depth, a lost target, or
 Coverage is rebuilt only at the exact generation of an accepted schema-2 capture. The NBV policy ranks marginal information before travel, removes duplicate and hard-culled directions, then shortlists at most 12 voxel candidates or 6 ray directions for exact planning.
 
 <div align="center">
-  <a href="docs/assets/readme/architecture/viewpoint-planning-pipeline.svg"><img src="docs/assets/readme/architecture/viewpoint-planning-pipeline.svg" alt="Closed-loop NBV flow showing accept, same-pose retry, exclusion, and replanning" width="760"></a>
+  <a href="docs/assets/readme/architecture/viewpoint-planning-pipeline.svg"><img src="docs/assets/readme/architecture/viewpoint-planning-pipeline.svg" alt="Closed-loop NBV flow showing accept, same-pose retry, exclusion, and replanning" width="1000"></a>
 </div>
 
 The three observation outcomes have different effects:
@@ -89,12 +89,12 @@ The three observation outcomes have different effects:
 - **Retry:** hold the achieved pose, run one correlated heavy perception refresh, and re-evaluate without inventing coverage.
 - **Reject:** record the achieved FK, exclude or retire the failed view, and replan. A planner rejection can also retire a hard-infeasible ray.
 
-The mission is bounded to 8–24 views, but completion is based on measured surface/feature convergence or safe-frontier exhaustion rather than an unconditional view count.
+The mission is bounded to 8â€“24 views, but completion is based on measured surface/feature convergence or safe-frontier exhaustion rather than an unconditional view count.
 
 ## Frozen planner backend and common motion contract
 
 <div align="center">
-  <a href="docs/assets/readme/architecture/planner-backend-pipeline.svg"><img src="docs/assets/readme/architecture/planner-backend-pipeline.svg" alt="Tesseract and branch-only cuRobo planning backends feeding a common execution contract" width="760"></a>
+  <a href="docs/assets/readme/architecture/planner-backend-pipeline.svg"><img src="docs/assets/readme/architecture/planner-backend-pipeline.svg" alt="Tesseract and branch-only cuRobo planning backends feeding a common execution contract" width="1000"></a>
 </div>
 
 On `curobo-integration`, the next-mission planner selection is validated before goal admission and frozen into the `RunTargetScan` goal and canonical mission hash. `ProcessSupervisor` starts exactly one planner worker. The generic bridge snapshots fresh joints, controller limits, target provenance, camera health, obstacles, robot/world hashes, and hand-eye calibration before writing a schema-v5 command-free request.
@@ -104,27 +104,27 @@ Both backends return a correlated, hashed, time-parameterized six-joint proposal
 ## Guarded execution and physical feedback
 
 <div align="center">
-  <a href="docs/assets/readme/architecture/execution-safety-pipeline.svg"><img src="docs/assets/readme/architecture/execution-safety-pipeline.svg" alt="Motion authorization, sole command ownership, physical feedback, recovery, and disable proof" width="760"></a>
+  <a href="docs/assets/readme/architecture/execution-safety-pipeline.svg"><img src="docs/assets/readme/architecture/execution-safety-pipeline.svg" alt="Motion authorization, sole command ownership, physical feedback, recovery, and disable proof" width="1000"></a>
 </div>
 
 Plans are normalized to a 20 Hz schedule and checked for finite six-joint samples, step size, speed-scaled MoveJ limits, identity hashes, TTL, backend, target drift, path validity and fresh dependencies. `scan_viewpoint_executor` is the sole autonomous `/joint_ctrl_single` publisher; `piper_ctrl_single_node` alone owns MoveJ, SocketCAN, enable/disable and all-six-motor feedback.
 
-Runtime joint error, timeout, settle state, holder/floor clearance, camera health, tracking and scene evidence feed back on every stage. Transient evidence causes hold → refresh → re-authorize → resume of the exact stage. Cancellation or hard failure enters bounded terminal recovery. Loss of motor authority permits no further command and waits for disable proof.
+Runtime joint error, timeout, settle state, holder/floor clearance, camera health, tracking and scene evidence feed back on every stage. Transient evidence causes hold â†’ refresh â†’ re-authorize â†’ resume of the exact stage. Cancellation or hard failure enters bounded terminal recovery. Loss of motor authority permits no further command and waits for disable proof.
 
 ## Capture admission and reconstruction
 
 <div align="center">
-  <a href="docs/assets/readme/architecture/capture-reconstruction-pipeline.svg"><img src="docs/assets/readme/architecture/capture-reconstruction-pipeline.svg" alt="Settled RGB-D burst admission, immutable commit, rejection feedback, base-home correlation, and reconstruction" width="760"></a>
+  <a href="docs/assets/readme/architecture/capture-reconstruction-pipeline.svg"><img src="docs/assets/readme/architecture/capture-reconstruction-pipeline.svg" alt="Settled RGB-D burst admission, immutable commit, rejection feedback, base-home correlation, and reconstruction" width="1000"></a>
 </div>
 
-A settled capture uses the exact mask/RGB stamp plus 20 new native depth/confidence frames. Admission requires calibrated intrinsics and TF, confidence grade ≥ 8, at least 0.50 target support, fresh quality/occlusion evidence, achieved FK, and the matching plan provenance. Partial artifacts never count: the accepted schema-2 record and SHA-256 manifest are committed atomically.
+A settled capture uses the exact mask/RGB stamp plus 20 new native depth/confidence frames. Admission requires calibrated intrinsics and TF, confidence grade â‰¥ 8, at least 0.50 target support, fresh quality/occlusion evidence, achieved FK, and the matching plan provenance. Partial artifacts never count: the accepted schema-2 record and SHA-256 manifest are committed atomically.
 
-After safe terminal/home-and-disable evidence—and tracked-base-home correlation where required—offline reconstruction validates immutable inputs and runs target-only TSDF fusion (3 mm voxels, 15 mm truncation by default), with optional bounded GICP and scene pose-graph refinement. Reconstruction failure is reported separately and does not rewrite the mission result.
+After safe terminal/home-and-disable evidenceâ€”and tracked-base-home correlation where requiredâ€”offline reconstruction validates immutable inputs and runs target-only TSDF fusion (3 mm voxels, 15 mm truncation by default), with optional bounded GICP and scene pose-graph refinement. Reconstruction failure is reported separately and does not rewrite the mission result.
 
 ## Hardware and compute boundaries
 
 <div align="center">
-  <a href="docs/assets/readme/architecture/hardware-topology.svg"><img src="docs/assets/readme/architecture/hardware-topology.svg" alt="PiPER, L515, enclosure, tracked platform, compute environments, and command boundaries" width="760"></a>
+  <a href="docs/assets/readme/architecture/hardware-topology.svg"><img src="docs/assets/readme/architecture/hardware-topology.svg" alt="PiPER, L515, enclosure, tracked platform, compute environments, and command boundaries" width="1000"></a>
 </div>
 
 | Layer | Current implementation |
@@ -169,22 +169,22 @@ Real motion requires explicit opt-in and the staged checks in [OPERATOR_COMMANDS
 
 ```text
 Piper_arm/
-├── piper_ros_foxy/src/
-│   ├── piper_msgs/                 ROS interfaces
-│   ├── piper_description/          URDF and qualified runtime meshes
-│   ├── piper/                      PiPER CAN / SDK driver
-│   ├── piper_mobile_manipulation/  mission, perception, NBV and execution
-│   └── piper_tesseract_foxy/       Foxy bridge and isolated planner workers
-├── L515_camera/                    RealSense build and hand-eye calibration
-├── AI_perception_tests/            GroundingDINO / SAM2 workers and tests
-├── motion_planning/                isolated planner tooling
-├── reconstruction/                 immutable-input 3D reconstruction
-├── piper_gui/                      operator interface and ray review
-├── integration/                    tracked-root robot-description contract
-├── CAD/                            enclosure source and fabrication files
-├── docs/                           architecture, contracts and evidence
-├── tests/                          cross-package tests
-└── tools/                          diagnostics, replay and calibration
+â”œâ”€â”€ piper_ros_foxy/src/
+â”‚   â”œâ”€â”€ piper_msgs/                 ROS interfaces
+â”‚   â”œâ”€â”€ piper_description/          URDF and qualified runtime meshes
+â”‚   â”œâ”€â”€ piper/                      PiPER CAN / SDK driver
+â”‚   â”œâ”€â”€ piper_mobile_manipulation/  mission, perception, NBV and execution
+â”‚   â””â”€â”€ piper_tesseract_foxy/       Foxy bridge and isolated planner workers
+â”œâ”€â”€ L515_camera/                    RealSense build and hand-eye calibration
+â”œâ”€â”€ AI_perception_tests/            GroundingDINO / SAM2 workers and tests
+â”œâ”€â”€ motion_planning/                isolated planner tooling
+â”œâ”€â”€ reconstruction/                 immutable-input 3D reconstruction
+â”œâ”€â”€ piper_gui/                      operator interface and ray review
+â”œâ”€â”€ integration/                    tracked-root robot-description contract
+â”œâ”€â”€ CAD/                            enclosure source and fabrication files
+â”œâ”€â”€ docs/                           architecture, contracts and evidence
+â”œâ”€â”€ tests/                          cross-package tests
+â””â”€â”€ tools/                          diagnostics, replay and calibration
 ```
 
 The cuRobo adapter, worker and tests exist on [`curobo-integration`](https://github.com/WenjunYU55/Piper_arm/tree/curobo-integration), not on `main`.
@@ -217,3 +217,4 @@ Manufacturing CAD is not a substitute for collision-qualified URDF/planner geome
 - ROS 2 Foxy is end-of-life. Porting the qualified Ubuntu 20.04/Foxy baseline requires deliberate interface and hardware requalification.
 
 This is research engineering software for a physical robot. Review the current qualification evidence and operator procedure before any hardware run.
+

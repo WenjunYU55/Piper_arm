@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1750" height="4075" viewBox="0 0 1750 4075" role="img">
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="5050" viewBox="0 0 1320 5050" role="img">
 <title>PiPER Active-View Scanning: Detailed System Architecture</title>
-<desc>Implementation map for main plus the explicitly labelled cuRobo integration path</desc>
+<desc>One command path, accepted-only evidence, and explicit feedback from request to reconstruction</desc>
 <defs>
 <marker id="data-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
 <path d="M0,0 L0,6 L9,3 z" fill="#52606D"/>
@@ -19,275 +19,315 @@
 <path d="M0,0 L0,6 L9,3 z" fill="#929AA5"/>
 </marker>
 <style>
-.title{font:700 34px Arial,Helvetica,sans-serif;fill:#17212B}
-.subtitle{font:15px Arial,Helvetica,sans-serif;fill:#52606D}
-.lane-title{font:700 18px Arial,Helvetica,sans-serif;fill:#24303C}
-.lane-subtitle{font:12px Arial,Helvetica,sans-serif;fill:#687684}
-.node-title{font:700 16px Arial,Helvetica,sans-serif;fill:#17212B}
-.detail{font:12.5px Arial,Helvetica,sans-serif;fill:#344250}
-.edge-label{font:700 11.5px Arial,Helvetica,sans-serif;fill:#344250;paint-order:stroke;stroke:#fff;stroke-width:5px;stroke-linejoin:round}
-.badge{font:700 10px Arial,Helvetica,sans-serif;fill:#fff;letter-spacing:.3px}
-.legend{font:12px Arial,Helvetica,sans-serif;fill:#46515E}
-.note{font:12.5px Arial,Helvetica,sans-serif;fill:#52606D}
+.title{font:700 40px Arial,Helvetica,sans-serif;fill:#17212B}
+.subtitle{font:18px Arial,Helvetica,sans-serif;fill:#52606D}
+.lane-title{font:700 20px Arial,Helvetica,sans-serif;fill:#24303C}
+.lane-subtitle{font:14px Arial,Helvetica,sans-serif;fill:#687684}
+.node-title{font:700 21px Arial,Helvetica,sans-serif;fill:#17212B}
+.detail{font:16.5px Arial,Helvetica,sans-serif;fill:#344250}
+.edge-label-bg{fill:#fff;fill-opacity:.96}
+.edge-label{font:700 14.5px Arial,Helvetica,sans-serif;fill:#344250}
+.badge{font:700 12.5px Arial,Helvetica,sans-serif;fill:#fff;letter-spacing:.35px}
+.legend{font:14.5px Arial,Helvetica,sans-serif;fill:#46515E}
+.note{font:15px Arial,Helvetica,sans-serif;fill:#52606D}
 </style>
 </defs>
 <rect width="100%" height="100%" fill="#FFFFFF"/>
-<text x="875.0" y="49" class="title" text-anchor="middle">PiPER Active-View Scanning: Detailed System Architecture</text>
-<text x="875.0" y="78" class="subtitle" text-anchor="middle">Implementation map for main plus the explicitly labelled cuRobo integration path</text>
+<text x="660.0" y="49" class="title" text-anchor="middle">PiPER Active-View Scanning: Detailed System Architecture</text>
+<text x="660.0" y="78" class="subtitle" text-anchor="middle">One command path, accepted-only evidence, and explicit feedback from request to reconstruction</text>
 <style>
-.title{font-size:42px}
+.title{font-size:40px}
 .subtitle{font-size:18px}
 .legend{font-size:14px}
-.system-map .lane-title{font-size:22px}
-.system-map .lane-subtitle{font-size:15px}
-.system-map .node-title{font-size:20px}
-.system-map .detail{font-size:17.5px}
-.system-map .edge-label{font-size:14px;stroke-width:6px}
-.system-map .badge{font-size:12px}
-.system-map .note{font-size:15.5px}
+.system-map .lane-title{font-size:24px}
+.system-map .lane-subtitle{font-size:16px}
+.system-map .node-title{font-size:21px}
+.system-map .detail{font-size:16.5px}
+.system-map .edge-label{font-size:15px}
+.system-map .badge{font-size:12.5px}
+.system-map .note{font-size:15px}
 </style>
-<line x1="270" y1="122" x2="308" y2="122" stroke="#52606D" stroke-width="3" marker-end="url(#data-arrow)"/>
-<text x="318" y="126" class="legend" text-anchor="start">data / evidence</text>
-<line x1="530" y1="122" x2="568" y2="122" stroke="#2563A6" stroke-width="3" marker-end="url(#control-arrow)"/>
-<text x="578" y="126" class="legend" text-anchor="start">mission control</text>
-<line x1="790" y1="122" x2="828" y2="122" stroke="#147D70" stroke-width="3" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="838" y="126" class="legend" text-anchor="start">feedback / retry</text>
-<line x1="1050" y1="122" x2="1088" y2="122" stroke="#B33A3A" stroke-width="3" marker-end="url(#command-arrow)"/>
-<text x="1098" y="126" class="legend" text-anchor="start">motor command</text>
-<line x1="1310" y1="122" x2="1348" y2="122" stroke="#929AA5" stroke-width="3" stroke-dasharray="8 6" marker-end="url(#optional-arrow)"/>
-<text x="1358" y="126" class="legend" text-anchor="start">branch-only / optional</text>
-<g class="system-map" transform="scale(1.25)">
-<rect x="28" y="135" width="1344" height="230" rx="18" fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>
-<text x="50" y="165" class="lane-title" text-anchor="start">1  Mission request and frozen operator intent</text>
-<text x="50" y="187" class="lane-subtitle" text-anchor="start">External task ownership; the tracked base is never commanded here.</text>
-<rect x="28" y="385" width="1344" height="310" rx="18" fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>
-<text x="50" y="415" class="lane-title" text-anchor="start">2  Mission orchestration and process ownership</text>
-<text x="50" y="437" class="lane-subtitle" text-anchor="start">One coordinator, one process generation and one autonomous command owner.</text>
-<rect x="28" y="715" width="1344" height="445" rx="18" fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>
-<text x="50" y="745" class="lane-title" text-anchor="start">3  Eye-in-hand sensing, perception and measured scene state</text>
-<text x="50" y="767" class="lane-subtitle" text-anchor="start">Only timestamp-correlated measurements become target or scene evidence.</text>
-<rect x="28" y="1180" width="1344" height="340" rx="18" fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>
-<text x="50" y="1210" class="lane-title" text-anchor="start">4  Accepted-only coverage and next-best-view selection</text>
-<text x="50" y="1232" class="lane-subtitle" text-anchor="start">Prediction may rank a view; it never becomes measured reconstruction input.</text>
-<rect x="28" y="1540" width="1344" height="460" rx="18" fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>
-<text x="50" y="1570" class="lane-title" text-anchor="start">5  Frozen motion-planner backend and command-free proposal</text>
-<text x="50" y="1592" class="lane-subtitle" text-anchor="start">Tesseract is on main; cuRobo is explicitly branch-only and hardware-unqualified.</text>
-<rect x="28" y="2025" width="1344" height="405" rx="18" fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>
-<text x="50" y="2055" class="lane-title" text-anchor="start">6  Common authorization, execution and physical feedback</text>
-<text x="50" y="2077" class="lane-subtitle" text-anchor="start">Every backend must traverse the same fail-closed execution boundary.</text>
-<rect x="28" y="2450" width="1344" height="445" rx="18" fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>
-<text x="50" y="2480" class="lane-title" text-anchor="start">7  Settled observation, immutable commit and closed-loop feedback</text>
-<text x="50" y="2502" class="lane-subtitle" text-anchor="start">Accepted and rejected observations deliberately have different state effects.</text>
-<rect x="28" y="2915" width="1344" height="305" rx="18" fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>
-<text x="50" y="2945" class="lane-title" text-anchor="start">8  Terminal safety, tracked-base correlation and reconstruction</text>
-<text x="50" y="2967" class="lane-subtitle" text-anchor="start">Reconstruction begins only from immutable data after the required safe-state evidence.</text>
-<polyline points="200.0,325 227.5,480" fill="none" stroke="#2563A6" stroke-width="2.2" marker-end="url(#control-arrow)"/>
-<text x="213.75" y="395.5" class="edge-label" text-anchor="middle">start / cancel</text>
-<polyline points="540.0,335 227.5,480" fill="none" stroke="#2563A6" stroke-width="2.2" marker-end="url(#control-arrow)"/>
-<text x="383.75" y="400.5" class="edge-label" text-anchor="middle">RunTargetScan</text>
-<polyline points="1040,270.0 1080,270.0" fill="none" stroke="#2563A6" stroke-width="2.2" marker-end="url(#control-arrow)"/>
-<text x="1060.0" y="263.0" class="edge-label" text-anchor="middle">apply for next mission</text>
-<polyline points="1215.0,335 1215,370 228,370 227.5,480" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="750" y="364" class="edge-label" text-anchor="middle">frozen goal + hash</text>
-<polyline points="395,557.5 445,557.5" fill="none" stroke="#2563A6" stroke-width="2.2" marker-end="url(#control-arrow)"/>
-<text x="420.0" y="550.5" class="edge-label" text-anchor="middle">own generation</text>
-<polyline points="395,557.5 420,690 880,690 900,557.5" fill="none" stroke="#2563A6" stroke-width="2.2" marker-end="url(#control-arrow)"/>
-<text x="650" y="683" class="edge-label" text-anchor="middle">MissionContext</text>
-<polyline points="647.5,655 648,720 185,720 185.0,835" fill="none" stroke="#2563A6" stroke-width="2.2" marker-end="url(#control-arrow)"/>
-<text x="410" y="713" class="edge-label" text-anchor="middle">ordered startup</text>
-<polyline points="647.5,655 815.0,805" fill="none" stroke="#2563A6" stroke-width="2.2" marker-end="url(#control-arrow)"/>
-<text x="731.25" y="723.0" class="edge-label" text-anchor="middle">vision process group</text>
-<polyline points="315,917.5 345,917.5" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="330.0" y="910.5" class="edge-label" text-anchor="middle">timestamps + frames</text>
-<polyline points="315,917.5 330,795 640,795 655,910.0" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="480" y="788" class="edge-label" text-anchor="middle">settled RGB-D</text>
-<polyline points="625,917.5 640,1035 990,1035 1005,910.0" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="815" y="1028" class="edge-label" text-anchor="middle">TF + calibration</text>
-<polyline points="975,910.0 1005,910.0" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="990.0" y="903.0" class="edge-label" text-anchor="middle">mask / detection</text>
-<polyline points="1005,910.0 975,1090.0" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="990.0" y="993.0" class="edge-label" text-anchor="middle">Target3D / tracker</text>
-<polyline points="1175.0,1015 1175.0,1040" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="1175.0" y="1020.5" class="edge-label" text-anchor="middle">scene + diagnostics</text>
-<polyline points="815.0,1140 660.0,1270" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="737.5" y="1198.0" class="edge-label" text-anchor="middle">target centre</text>
-<polyline points="1175.0,1140 1122.5,1290" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="1148.75" y="1208.0" class="edge-label" text-anchor="middle">safe scene</text>
-<polyline points="385,1380.0 445,1380.0" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="415.0" y="1373.0" class="edge-label" text-anchor="middle">accepted evidence</text>
-<polyline points="875,1380.0 935,1380.0" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="905.0" y="1373.0" class="edge-label" text-anchor="middle">candidate rays/views</text>
-<polyline points="1122.5,1470 1122,1530 252,1530 252.5,1655" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="690" y="1523" class="edge-label" text-anchor="middle">shortlist</text>
-<polyline points="1345,1090.0 1370,1090 1370,1635 450,1635 450,1772.5" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="1080" y="1628" class="edge-label" text-anchor="middle">fresh target / scene snapshot</text>
-<polyline points="450,1772.5 505,1687.5" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="477.5" y="1723.0" class="edge-label" text-anchor="middle">schema-v5 spool</text>
-<polyline points="450,1772.5 475,1950 485,1950 505,1885.0" fill="none" stroke="#929AA5" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#optional-arrow)"/>
-<text x="480" y="1943" class="edge-label" text-anchor="middle">selected branch backend</text>
-<polyline points="895,1687.5 960,1785.0" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="927.5" y="1729.25" class="edge-label" text-anchor="middle">validated response</text>
-<polyline points="895,1885.0 960,1785.0" fill="none" stroke="#929AA5" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#optional-arrow)"/>
-<text x="927.5" y="1828.0" class="edge-label" text-anchor="middle">MotionGen response</text>
-<polyline points="1145.0,1895 1145,2020 200,2020 200.0,2150" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="680" y="2013" class="edge-label" text-anchor="middle">proposal only</text>
-<polyline points="350,2240.0 390,2240.0" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="370.0" y="2233.0" class="edge-label" text-anchor="middle">ScanExecutionPlan</text>
-<polyline points="690,2240.0 730,2240.0" fill="none" stroke="#2563A6" stroke-width="2.2" marker-end="url(#control-arrow)"/>
-<text x="710.0" y="2233.0" class="edge-label" text-anchor="middle">exact approval</text>
-<polyline points="1065,2240.0 1105,2240.0" fill="none" stroke="#B33A3A" stroke-width="2.2" marker-end="url(#command-arrow)"/>
-<text x="1085.0" y="2233.0" class="edge-label" text-anchor="middle">/joint_ctrl_single</text>
-<polyline points="1227.5,2150 1227,2045 898,2045 897.5,2115" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="1060" y="2038" class="edge-label" text-anchor="middle">joints / arm / limits</text>
-<polyline points="1350,2240.0 1380,2240 1380,1645 450,1645 450,1772.5" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="1090" y="1638" class="edge-label" text-anchor="middle">current start + controller limits</text>
-<polyline points="1350,2240.0 1390,2240 1390,690 1340,690 1340,557.5" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="1365" y="1165" class="edge-label" text-anchor="middle">enable / disable proof</text>
-<polyline points="345,917.5 25,917 25,2085 730,2085 730,2240.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="250" y="2043" class="edge-label" text-anchor="middle">runtime freshness</text>
-<polyline points="1345,1090.0 1360,1090 1360,2090 1065,2090 1065,2240.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="1200" y="2048" class="edge-label" text-anchor="middle">tracking / obstacle / quality gates</text>
-<polyline points="897.5,2365 898,2410 187,2410 187.5,2565" fill="none" stroke="#2563A6" stroke-width="2.2" marker-end="url(#control-arrow)"/>
-<text x="550" y="2403" class="edge-label" text-anchor="middle">settled view</text>
-<polyline points="330,2640.0 365,2640.0" fill="none" stroke="#2563A6" stroke-width="2.2" marker-end="url(#control-arrow)"/>
-<text x="347.5" y="2633.0" class="edge-label" text-anchor="middle">capture service</text>
-<polyline points="665,2640.0 705,2640.0" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="685.0" y="2633.0" class="edge-label" text-anchor="middle">qualified observation</text>
-<polyline points="985,2640.0 1025,2637.5" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="1005.0" y="2631.75" class="edge-label" text-anchor="middle">atomic accept</text>
-<polyline points="845.0,2735 515.0,2775" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="680.0" y="2748.0" class="edge-label" text-anchor="middle">retry / reject</text>
-<polyline points="1187.5,2740 1187,2805 1000,2805 985,2837.5" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="1090" y="2798" class="edge-label" text-anchor="middle">commit</text>
-<polyline points="705,2837.5 25,2827 25,1380 55,1380 55,1380.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="130" y="2820" class="edge-label" text-anchor="middle">new accepted generation</text>
-<polyline points="365,2837.5 18,2827 18,910 655,910 655,910.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="210" y="2820" class="edge-label" text-anchor="middle">bounded heavy refresh / reacquire</text>
-<polyline points="515.0,2775 515,2750 915,2750 915,1520 660,1520 660.0,1490" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="810" y="2743" class="edge-label" text-anchor="middle">replan from achieved FK</text>
-<polyline points="55,1772.5 35,1773 35,1380 445,1380 445,1380.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="190" y="1766" class="edge-label" text-anchor="middle">reject / retire ray; no fallback</text>
-<polyline points="55,1772.5 20,1773 20,557 60,557 60,557.5" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="160" y="1766" class="edge-label" text-anchor="middle">readiness + status blockers</text>
-<polyline points="1340,557.5 1390,557 1390,2930 435,2930 435,3097.5" fill="none" stroke="#2563A6" stroke-width="2.2" marker-end="url(#control-arrow)"/>
-<text x="1230" y="2923" class="edge-label" text-anchor="middle">complete / cancel / fail</text>
-<polyline points="55,1380.0 30,1380 30,3098 75,3098 75,3097.5" fill="none" stroke="#2563A6" stroke-width="2.2" marker-end="url(#control-arrow)"/>
-<text x="175" y="2988" class="edge-label" text-anchor="middle">completion / exhaustion</text>
-<polyline points="730,2240.0 25,2240 25,3098 75,3098 75,3097.5" fill="none" stroke="#147D70" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<text x="160" y="2233" class="edge-label" text-anchor="middle">fault or cancellation</text>
-<polyline points="435,3097.5 515,3097.5" fill="none" stroke="#2563A6" stroke-width="2.2" marker-end="url(#control-arrow)"/>
-<text x="475.0" y="3090.5" class="edge-label" text-anchor="middle">WAITING_FOR_BASE_HOME</text>
-<polyline points="865,3097.5 945,3097.5" fill="none" stroke="#2563A6" stroke-width="2.2" marker-end="url(#control-arrow)"/>
-<text x="905.0" y="3090.5" class="edge-label" text-anchor="middle">exact correlated report</text>
-<polyline points="1350,2637.5 1370,2637 1370,3098 1330,3098 1330,3097.5" fill="none" stroke="#52606D" stroke-width="2.2" marker-end="url(#data-arrow)"/>
-<text x="1363" y="2850" class="edge-label" text-anchor="middle">immutable captures</text>
-<rect x="60" y="215" width="280" height="110" rx="13" fill="#EFF6FF" stroke="#3B6EA5" stroke-width="1.8"/>
-<text x="200.0" y="249" class="node-title" text-anchor="middle">Operator / supervisor</text>
-<text x="200.0" y="280" class="detail" text-anchor="middle"><tspan x="200.0" dy="0">Native GUI, RViz and E-stop</tspan><tspan x="200.0" dy="21">select next-mission settings</tspan><tspan x="200.0" dy="21">start, observe or cancel</tspan></text>
-<rect x="385" y="205" width="310" height="130" rx="13" fill="#EFF6FF" stroke="#3B6EA5" stroke-width="1.8"/>
-<text x="540.0" y="239" class="node-title" text-anchor="middle">Tracked-robot gateway</text>
-<text x="540.0" y="270" class="detail" text-anchor="middle"><tspan x="540.0" dy="0">SCAN_3D request + rough target</tspan><tspan x="540.0" dy="21">odom -&gt; piper_base_link snapshot</tspan><tspan x="540.0" dy="21">2 Hz task heartbeat / home report</tspan><tspan x="540.0" dy="21">base remains stationary and braked</tspan></text>
-<rect x="740" y="215" width="300" height="110" rx="13" fill="#EFF6FF" stroke="#3B6EA5" stroke-width="1.8"/>
-<text x="890.0" y="249" class="node-title" text-anchor="middle">PiPER native GUI</text>
-<text x="890.0" y="280" class="detail" text-anchor="middle"><tspan x="890.0" dy="0">Automatic scan + ray review</tspan><tspan x="890.0" dy="21">planner for next mission</tspan><tspan x="890.0" dy="21">status, diagnostics and results</tspan></text>
-<rect x="1080" y="205" width="270" height="130" rx="13" fill="#E5F7F3" stroke="#147D70" stroke-width="1.8"/>
-<text x="1215.0" y="239" class="node-title" text-anchor="middle">Frozen mission config</text>
-<text x="1215.0" y="270" class="detail" text-anchor="middle"><tspan x="1215.0" dy="0">target label/profile</tspan><tspan x="1215.0" dy="21">floor + scan/NBV policy</tspan><tspan x="1215.0" dy="21">backend + speed + motion opt-ins</tspan><tspan x="1215.0" dy="21">canonical mission SHA-256</tspan></text>
-<rect x="60" y="480" width="335" height="155" rx="13" fill="#E5F7F3" stroke="#147D70" stroke-width="1.8"/>
-<text x="227.5" y="514" class="node-title" text-anchor="middle">RunTargetScan coordinator</text>
-<text x="227.5" y="545" class="detail" text-anchor="middle"><tspan x="227.5" dy="0">queue and admission adapter</tspan><tspan x="227.5" dy="21">immutable goal / backend identity</tspan><tspan x="227.5" dy="21">publishes action feedback</tspan><tspan x="227.5" dy="21">returns typed result + dataset</tspan></text>
-<rect x="445" y="460" width="405" height="195" rx="13" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.8"/>
-<text x="647.5" y="494" class="node-title" text-anchor="middle">ProcessSupervisor</text>
-<text x="647.5" y="525" class="detail" text-anchor="middle"><tspan x="647.5" dy="0">owns exact process generations</tspan><tspan x="647.5" dy="21">driver -&gt; vision -&gt; hand-eye</tspan><tspan x="647.5" dy="21">one selected planner worker</tspan><tspan x="647.5" dy="21">scan stack; heartbeats; bounded cleanup</tspan><tspan x="647.5" dy="21">never adopts unrelated processes</tspan></text>
-<rect x="900" y="450" width="440" height="215" rx="13" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.8"/>
-<text x="1120.0" y="484" class="node-title" text-anchor="middle">MissionEngine lifecycle</text>
-<text x="1120.0" y="515" class="detail" text-anchor="middle"><tspan x="1120.0" dy="0">preflight -&gt; enable/hold -&gt; startup wrist</tspan><tspan x="1120.0" dy="21">rough home -&gt; bounded target acquisition</tspan><tspan x="1120.0" dy="21">workflow ready -&gt; one-view closed loop</tspan><tspan x="1120.0" dy="21">terminal PRE_HOME -&gt; ROUGH_HOME</tspan><tspan x="1120.0" dy="21">STORAGE_WRIST -&gt; all-six disable</tspan><tspan x="1120.0" dy="21">motor loss: no further motion command</tspan></text>
-<rect x="55" y="835" width="260" height="165" rx="13" fill="#EAF3FF" stroke="#2563A6" stroke-width="1.8"/>
-<text x="185.0" y="869" class="node-title" text-anchor="middle">Eye-in-hand L515</text>
-<text x="185.0" y="900" class="detail" text-anchor="middle"><tspan x="185.0" dy="0">RGB + aligned depth</tspan><tspan x="185.0" dy="21">native depth + 4-bit confidence</tspan><tspan x="185.0" dy="21">CameraInfo + source timestamps</tspan><tspan x="185.0" dy="21">30 Hz synchronized evidence</tspan></text>
-<rect x="345" y="825" width="280" height="185" rx="13" fill="#EAF3FF" stroke="#2563A6" stroke-width="1.8"/>
-<text x="485.0" y="859" class="node-title" text-anchor="middle">Timing, TF and calibration</text>
-<text x="485.0" y="890" class="detail" text-anchor="middle"><tspan x="485.0" dy="0">camera timestamp watchdog</tspan><tspan x="485.0" dy="21">accepted hand-eye transform</tspan><tspan x="485.0" dy="21">base_link &lt;-&gt; optical frame</tspan><tspan x="485.0" dy="21">fresh joints and camera pose</tspan><tspan x="485.0" dy="21">fault can restart owned vision stack</tspan></text>
-<rect x="655" y="805" width="320" height="210" rx="13" fill="#F2EAFF" stroke="#7851A9" stroke-width="1.8"/>
-<text x="815.0" y="839" class="node-title" text-anchor="middle">Isolated CUDA perception</text>
-<text x="815.0" y="870" class="detail" text-anchor="middle"><tspan x="815.0" dy="0">GroundingDINO acquisition/refresh</tspan><tspan x="815.0" dy="21">SAM 2 seed + live mask propagation</tspan><tspan x="815.0" dy="21">permission-bounded file spools</tspan><tspan x="815.0" dy="21">current-run worker readiness</tspan><tspan x="815.0" dy="21">ROS-free workers; no motor interface</tspan></text>
-<rect x="1005" y="805" width="340" height="210" rx="13" fill="#F2EAFF" stroke="#7851A9" stroke-width="1.8"/>
-<text x="1175.0" y="839" class="node-title" text-anchor="middle">ROS perception geometry</text>
-<text x="1175.0" y="870" class="detail" text-anchor="middle"><tspan x="1175.0" dy="0">mask -&gt; detection -&gt; qualified depth</tspan><tspan x="1175.0" dy="21">Target3D + Kalman tracked target</tspan><tspan x="1175.0" dy="21">target cloud / landmark / envelope</tspan><tspan x="1175.0" dy="21">obstacle boxes + quality + occlusion</tspan><tspan x="1175.0" dy="21">freshness and correlation metadata</tspan></text>
-<rect x="655" y="1040" width="320" height="100" rx="13" fill="#E5F7F3" stroke="#147D70" stroke-width="1.8"/>
-<text x="815.0" y="1074" class="node-title" text-anchor="middle">Measured target state</text>
-<text x="815.0" y="1105" class="detail" text-anchor="middle"><tspan x="815.0" dy="0">stable base-frame target + covariance</tspan><tspan x="815.0" dy="21">TRACKING / LOW_CONFIDENCE / LOST</tspan></text>
-<rect x="1005" y="1040" width="340" height="100" rx="13" fill="#E5F7F3" stroke="#147D70" stroke-width="1.8"/>
-<text x="1175.0" y="1074" class="node-title" text-anchor="middle">Scene safety evidence</text>
-<text x="1175.0" y="1105" class="detail" text-anchor="middle"><tspan x="1175.0" dy="0">obstacles, target envelope, framing</tspan><tspan x="1175.0" dy="21">occlusion, quality and tracking health</tspan></text>
-<rect x="55" y="1290" width="330" height="180" rx="13" fill="#E5F7F3" stroke="#147D70" stroke-width="1.8"/>
-<text x="220.0" y="1324" class="node-title" text-anchor="middle">Accepted-only scan memory</text>
-<text x="220.0" y="1355" class="detail" text-anchor="middle"><tspan x="220.0" dy="0">schema-2 captures + achieved FK</tspan><tspan x="220.0" dy="21">0.005 m measured coverage grid</tspan><tspan x="220.0" dy="21">unknown / observed target surface</tspan><tspan x="220.0" dy="21">rejected views never add coverage</tspan></text>
-<rect x="445" y="1270" width="430" height="220" rx="13" fill="#FFF3D9" stroke="#B77900" stroke-width="1.8"/>
-<text x="660.0" y="1304" class="node-title" text-anchor="middle">Closed-loop NBV and ray policy</text>
-<text x="660.0" y="1335" class="detail" text-anchor="middle"><tspan x="660.0" dy="0">legacy, voxel_nbv or frozen ray_nbv</tspan><tspan x="660.0" dy="21">seed from actual current FK</tspan><tspan x="660.0" dy="21">rank marginal information before travel</tspan><tspan x="660.0" dy="21">direction novelty + bounded standoff</tspan><tspan x="660.0" dy="21">one accepted view per generation</tspan><tspan x="660.0" dy="21">completion or safe-frontier exhaustion</tspan></text>
-<rect x="935" y="1290" width="375" height="180" rx="13" fill="#FFF3D9" stroke="#B77900" stroke-width="1.8"/>
-<text x="1122.5" y="1324" class="node-title" text-anchor="middle">Command-free prequalification</text>
-<text x="1122.5" y="1355" class="detail" text-anchor="middle"><tspan x="1122.5" dy="0">capability-map / workspace evidence</tspan><tspan x="1122.5" dy="21">target-facing aim and &lt;=5 deg fallback</tspan><tspan x="1122.5" dy="21">static hard culls + shortlist</tspan><tspan x="1122.5" dy="21">publishes reachable candidates</tspan></text>
-<rect x="55" y="1655" width="395" height="235" rx="13" fill="#FFF3D9" stroke="#B77900" stroke-width="1.8"/>
-<text x="252.5" y="1689" class="node-title" text-anchor="middle">MotionPlannerBridge (ROS 2 Foxy)</text>
-<text x="252.5" y="1720" class="detail" text-anchor="middle"><tspan x="252.5" dy="0">freezes tesseract or curobo per mission</tspan><tspan x="252.5" dy="21">requires worker heartbeat/readiness</tspan><tspan x="252.5" dy="21">snapshots joints, controller limits, target</tspan><tspan x="252.5" dy="21">camera clock, obstacles, hashes and views</tspan><tspan x="252.5" dy="21">writes schema-v5 private request</tspan><tspan x="252.5" dy="21">publishes status/readiness/provenance</tspan></text>
-<rect x="505" y="1610" width="390" height="155" rx="13" fill="#FFF3D9" stroke="#B77900" stroke-width="1.8"/>
-<text x="700.0" y="1656" class="node-title" text-anchor="middle">Tesseract 0.35 worker</text>
-<text x="700.0" y="1688" class="detail" text-anchor="middle"><tspan x="700.0" dy="0">ROS-free exact IK/collision/path</tspan><tspan x="700.0" dy="21">configured moving + fixed meshes</tspan><tspan x="700.0" dy="21">qualified baseline and bootstrap recovery</tspan><tspan x="700.0" dy="21">atomic request/response spool</tspan></text>
-<rect x="763" y="1619" width="122" height="21" rx="10" fill="#B77900"/>
-<text x="824.0" y="1634" class="badge" text-anchor="middle">MAIN + BRANCH</text>
-<rect x="505" y="1795" width="390" height="180" rx="13" fill="#F7F7F8" stroke="#929AA5" stroke-width="1.8"/>
-<text x="700.0" y="1841" class="node-title" text-anchor="middle">cuRobo 0.7.8 MotionGen worker</text>
-<text x="700.0" y="1873" class="detail" text-anchor="middle"><tspan x="700.0" dy="0">Python 3.10 + CUDA; ROS-free</tspan><tspan x="700.0" dy="21">exact fixed Bunker meshes</tspan><tspan x="700.0" dy="21">167-sphere articulated approximation</tspan><tspan x="700.0" dy="21">hardware_qualified=false; motion blocked</tspan><tspan x="700.0" dy="21">no fallback to Tesseract</tspan></text>
-<rect x="779" y="1804" width="106" height="21" rx="10" fill="#929AA5"/>
-<text x="832.0" y="1819" class="badge" text-anchor="middle">BRANCH ONLY</text>
-<rect x="960" y="1675" width="370" height="220" rx="13" fill="#E5F7F3" stroke="#147D70" stroke-width="1.8"/>
-<text x="1145.0" y="1709" class="node-title" text-anchor="middle">Planner transport</text>
-<text x="1145.0" y="1740" class="detail" text-anchor="middle"><tspan x="1145.0" dy="0">main: TesseractPlan</tspan><tspan x="1145.0" dy="21">curobo branch: generic MotionPlan</tspan><tspan x="1145.0" dy="21">IDs + backend + hashes + plan kind</tspan><tspan x="1145.0" dy="21">complete timed six-joint trajectories</tspan><tspan x="1145.0" dy="21">collision qualification + diagnostics</tspan><tspan x="1145.0" dy="21">invalid/rejected results stay correlated</tspan></text>
-<rect x="50" y="2150" width="300" height="180" rx="13" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.8"/>
-<text x="200.0" y="2184" class="node-title" text-anchor="middle">Common plan normalization</text>
-<text x="200.0" y="2215" class="detail" text-anchor="middle"><tspan x="200.0" dy="0">joint order, finite values and times</tspan><tspan x="200.0" dy="21">20 Hz schedule + 0.05 rad step</tspan><tspan x="200.0" dy="21">speed-scaled MoveJ limits</tspan><tspan x="200.0" dy="21">fresh-start and trajectory hashes</tspan></text>
-<rect x="390" y="2150" width="300" height="180" rx="13" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.8"/>
-<text x="540.0" y="2184" class="node-title" text-anchor="middle">PlanAuthorizer</text>
-<text x="540.0" y="2215" class="detail" text-anchor="middle"><tspan x="540.0" dy="0">live mission authorization + TTL</tspan><tspan x="540.0" dy="21">plan/trajectory/backend identity</tspan><tspan x="540.0" dy="21">target drift + dependency readiness</tspan><tspan x="540.0" dy="21">fresh path revalidation</tspan></text>
-<rect x="730" y="2115" width="335" height="250" rx="13" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.8"/>
-<text x="897.5" y="2161" class="node-title" text-anchor="middle">scan_viewpoint_executor</text>
-<text x="897.5" y="2193" class="detail" text-anchor="middle"><tspan x="897.5" dy="0">sole autonomous joint publisher</tspan><tspan x="897.5" dy="21">TrajectoryRunner schedule</tspan><tspan x="897.5" dy="21">runtime freshness + scene gates</tspan><tspan x="897.5" dy="21">following-error / timeout / settle</tspan><tspan x="897.5" dy="21">hold, refresh, replan or recovery</tspan><tspan x="897.5" dy="21">publishes ScanExecutionStatus</tspan></text>
-<rect x="933" y="2124" width="122" height="21" rx="10" fill="#B33A3A"/>
-<text x="994.0" y="2139" class="badge" text-anchor="middle">COMMAND OWNER</text>
-<rect x="1105" y="2150" width="245" height="180" rx="13" fill="#EEF1F4" stroke="#46515E" stroke-width="1.8"/>
-<text x="1227.5" y="2196" class="node-title" text-anchor="middle">PiPER driver</text>
-<text x="1227.5" y="2228" class="detail" text-anchor="middle"><tspan x="1227.5" dy="0">/joint_ctrl_single -&gt; MoveJ</tspan><tspan x="1227.5" dy="21">SocketCAN at 1 Mbps</tspan><tspan x="1227.5" dy="21">enable/disable + watchdogs</tspan><tspan x="1227.5" dy="21">six motors + coherent feedback</tspan></text>
-<rect x="1250" y="2159" width="90" height="21" rx="10" fill="#46515E"/>
-<text x="1295.0" y="2174" class="badge" text-anchor="middle">CAN OWNER</text>
-<rect x="45" y="2565" width="285" height="150" rx="13" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.8"/>
-<text x="187.5" y="2599" class="node-title" text-anchor="middle">Settled capture request</text>
-<text x="187.5" y="2630" class="detail" text-anchor="middle"><tspan x="187.5" dy="0">actual FK + final aim check</tspan><tspan x="187.5" dy="21">stationary joints + healthy clock</tspan><tspan x="187.5" dy="21">executor enters</tspan><tspan x="187.5" dy="21">CAPTURING_RGBD</tspan></text>
-<rect x="365" y="2545" width="300" height="190" rx="13" fill="#EAF3FF" stroke="#2563A6" stroke-width="1.8"/>
-<text x="515.0" y="2579" class="node-title" text-anchor="middle">Confidence-qualified burst</text>
-<text x="515.0" y="2610" class="detail" text-anchor="middle"><tspan x="515.0" dy="0">exact mask/RGB stamp identity</tspan><tspan x="515.0" dy="21">20 new native depth frames</tspan><tspan x="515.0" dy="21">grade &gt;=8 and &gt;=0.50 support</tspan><tspan x="515.0" dy="21">per-pixel median; calibrated TF</tspan><tspan x="515.0" dy="21">target component ambiguity gate</tspan></text>
-<rect x="705" y="2545" width="280" height="190" rx="13" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.8"/>
-<text x="845.0" y="2579" class="node-title" text-anchor="middle">Capture admission</text>
-<text x="845.0" y="2610" class="detail" text-anchor="middle"><tspan x="845.0" dy="0">GOOD target + fresh diagnostics</tspan><tspan x="845.0" dy="21">CLEAR or correlated</tspan><tspan x="845.0" dy="21">semantic occlusion proof</tspan><tspan x="845.0" dy="21">atomic artifacts + manifest hashes</tspan><tspan x="845.0" dy="21">accept, retry or reject</tspan></text>
-<rect x="1025" y="2535" width="325" height="205" rx="13" fill="#E5F7F3" stroke="#147D70" stroke-width="1.8"/>
-<text x="1187.5" y="2569" class="node-title" text-anchor="middle">Immutable schema-2 dataset</text>
-<text x="1187.5" y="2600" class="detail" text-anchor="middle"><tspan x="1187.5" dy="0">RGB, raw/qualified depth, mask</tspan><tspan x="1187.5" dy="21">intrinsics, joints, capture-time TF</tspan><tspan x="1187.5" dy="21">plan/view provenance + quality</tspan><tspan x="1187.5" dy="21">target-only support and model seed</tspan><tspan x="1187.5" dy="21">transactional manifest SHA-256</tspan></text>
-<rect x="365" y="2775" width="300" height="125" rx="13" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.8"/>
-<text x="515.0" y="2809" class="node-title" text-anchor="middle">Rejected observation</text>
-<text x="515.0" y="2840" class="detail" text-anchor="middle"><tspan x="515.0" dy="0">hold achieved FK</tspan><tspan x="515.0" dy="21">one bounded heavy refresh</tspan><tspan x="515.0" dy="21">then exclude/replan; no coverage</tspan></text>
-<rect x="705" y="2775" width="280" height="125" rx="13" fill="#E5F7F3" stroke="#147D70" stroke-width="1.8"/>
-<text x="845.0" y="2809" class="node-title" text-anchor="middle">Accepted history generation</text>
-<text x="845.0" y="2840" class="detail" text-anchor="middle"><tspan x="845.0" dy="0">commit achieved pose + evidence</tspan><tspan x="845.0" dy="21">rebuild measured coverage</tspan><tspan x="845.0" dy="21">request the next view</tspan></text>
-<rect x="75" y="3015" width="360" height="165" rx="13" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.8"/>
-<text x="255.0" y="3049" class="node-title" text-anchor="middle">Safe terminal recovery</text>
-<text x="255.0" y="3080" class="detail" text-anchor="middle"><tspan x="255.0" dy="0">cancel, completion or bounded failure</tspan><tspan x="255.0" dy="21">PRE_HOME -&gt; ROUGH_HOME</tspan><tspan x="255.0" dy="21">-&gt; STORAGE_WRIST -&gt; disable all six</tspan><tspan x="255.0" dy="21">revoke authorization + stop owned children</tspan></text>
-<rect x="515" y="3015" width="350" height="165" rx="13" fill="#EFF6FF" stroke="#3B6EA5" stroke-width="1.8"/>
-<text x="690.0" y="3049" class="node-title" text-anchor="middle">Tracked-base correlation</text>
-<text x="690.0" y="3080" class="detail" text-anchor="middle"><tspan x="690.0" dy="0">arm result may wait for base home</tspan><tspan x="690.0" dy="21">exact task/job/manifest identity</tspan><tspan x="690.0" dy="21">gateway accepts idempotent report</tspan><tspan x="690.0" dy="21">repository still sends no chassis command</tspan></text>
-<rect x="945" y="3000" width="385" height="195" rx="13" fill="#E5F7F3" stroke="#147D70" stroke-width="1.8"/>
-<text x="1137.5" y="3034" class="node-title" text-anchor="middle">Offline reconstruction</text>
-<text x="1137.5" y="3065" class="detail" text-anchor="middle"><tspan x="1137.5" dy="0">immutable input admission</tspan><tspan x="1137.5" dy="21">target-only Open3D TSDF (3 mm default)</tspan><tspan x="1137.5" dy="21">optional bounded GICP / scene pose graph</tspan><tspan x="1137.5" dy="21">mesh + cloud + metrics + provenance</tspan><tspan x="1137.5" dy="21">failure does not rewrite mission result</tspan></text>
-<text x="875.0" y="3242" class="note" text-anchor="middle">Command chain: planner proposal -&gt; executor joint command -&gt; PiPER driver CAN + feedback.</text>
+<line x1="170" y1="112" x2="208" y2="112" stroke="#52606D" stroke-width="3" marker-end="url(#data-arrow)"/>
+<text x="218" y="116" class="legend" text-anchor="start">data / evidence</text>
+<line x1="395" y1="112" x2="433" y2="112" stroke="#2563A6" stroke-width="3" marker-end="url(#control-arrow)"/>
+<text x="443" y="116" class="legend" text-anchor="start">mission control</text>
+<line x1="620" y1="112" x2="658" y2="112" stroke="#147D70" stroke-width="3" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<text x="668" y="116" class="legend" text-anchor="start">feedback / retry</text>
+<line x1="845" y1="112" x2="883" y2="112" stroke="#B33A3A" stroke-width="3" marker-end="url(#command-arrow)"/>
+<text x="893" y="116" class="legend" text-anchor="start">motor command</text>
+<line x1="1070" y1="112" x2="1108" y2="112" stroke="#929AA5" stroke-width="3" stroke-dasharray="8 6" marker-end="url(#optional-arrow)"/>
+<text x="1118" y="116" class="legend" text-anchor="start">branch-only / optional</text>
+<g class="system-map">
+<rect x="90" y="140" width="1140" height="420" rx="18" fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>
+<path d="M 90 210 H 1230" stroke="#D7DDE5" stroke-width="1.2"/>
+<text x="114" y="170" class="lane-title" text-anchor="start">1  Request and freeze mission intent</text>
+<text x="114" y="194" class="lane-subtitle" text-anchor="start">External task ownership; the tracked base is never commanded here.</text>
+<rect x="90" y="585" width="1140" height="500" rx="18" fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>
+<path d="M 90 655 H 1230" stroke="#D7DDE5" stroke-width="1.2"/>
+<text x="114" y="615" class="lane-title" text-anchor="start">2  Orchestrate one owned mission</text>
+<text x="114" y="639" class="lane-subtitle" text-anchor="start">Admission, process generations and terminal lifecycle remain correlated.</text>
+<rect x="90" y="1110" width="1140" height="680" rx="18" fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>
+<path d="M 90 1180 H 1230" stroke="#D7DDE5" stroke-width="1.2"/>
+<text x="114" y="1140" class="lane-title" text-anchor="start">3  Produce measured target and scene evidence</text>
+<text x="114" y="1164" class="lane-subtitle" text-anchor="start">Timestamped RGB-D, calibration and isolated AI feed ROS safety evidence.</text>
+<rect x="90" y="1815" width="1140" height="485" rx="18" fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>
+<path d="M 90 1885 H 1230" stroke="#D7DDE5" stroke-width="1.2"/>
+<text x="114" y="1845" class="lane-title" text-anchor="start">4  Select the next useful and feasible view</text>
+<text x="114" y="1869" class="lane-subtitle" text-anchor="start">Accepted captures alone change measured coverage.</text>
+<rect x="90" y="2325" width="1140" height="760" rx="18" fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>
+<path d="M 90 2395 H 1230" stroke="#D7DDE5" stroke-width="1.2"/>
+<text x="114" y="2355" class="lane-title" text-anchor="start">5  Propose motion through one frozen backend</text>
+<text x="114" y="2379" class="lane-subtitle" text-anchor="start">Tesseract is on main; cuRobo is branch-only and hardware-unqualified.</text>
+<rect x="90" y="3110" width="1140" height="555" rx="18" fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>
+<path d="M 90 3180 H 1230" stroke="#D7DDE5" stroke-width="1.2"/>
+<text x="114" y="3140" class="lane-title" text-anchor="start">6  Authorize and execute through one command owner</text>
+<text x="114" y="3164" class="lane-subtitle" text-anchor="start">All planner backends traverse the same fail-closed physical boundary.</text>
+<rect x="90" y="3690" width="1140" height="710" rx="18" fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>
+<path d="M 90 3760 H 1230" stroke="#D7DDE5" stroke-width="1.2"/>
+<text x="114" y="3720" class="lane-title" text-anchor="start">7  Admit or reject the settled observation</text>
+<text x="114" y="3744" class="lane-subtitle" text-anchor="start">Acceptance, retry and rejection deliberately have different feedback effects.</text>
+<rect x="90" y="4425" width="1140" height="500" rx="18" fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>
+<path d="M 90 4495 H 1230" stroke="#D7DDE5" stroke-width="1.2"/>
+<text x="114" y="4455" class="lane-title" text-anchor="start">8  Recover safely, correlate base home and reconstruct</text>
+<text x="114" y="4479" class="lane-subtitle" text-anchor="start">Offline reconstruction consumes immutable evidence after the required safe state.</text>
+<polyline points="380,390 380,402 480,402 480,415" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="940,390 940,402 840,402 840,415" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="660,570 660,655 380,655 380,675" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="630,757.5 690,762.5" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="940,850 940,875" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="380,1085 380,1200" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="630,1280.0 690,1292.5" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="380,1350 380,1395" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="940,1370 940,1395" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="630,1487.5 690,1487.5" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="850,1570 850,1582 380,1582 380,1595" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="1030,1570 1030,1582 940,1582 940,1595" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="630,2010.0 690,2010.0" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="380,1720 380,1765 1210,1765 1210,1885 940,1885 940,1905" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="940,1720 1220,1720 1220,2120 940,2120 940,2140" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="940,2115 940,2127 760,2127 760,2140" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="660,2305 660,2415" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="520,2625 520,2637 380,2637 380,2650" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="800,2625 800,2637 940,2637 940,2650" fill="none" stroke="#929AA5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#optional-arrow)"/>
+<polyline points="380,2855 380,2867 520,2867 520,2880" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="940,2855 940,2867 800,2867 800,2880" fill="none" stroke="#929AA5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#optional-arrow)"/>
+<polyline points="520,3090 520,3180 380,3180 380,3200" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="630,3282.5 690,3282.5" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="940,3365 940,3377 380,3377 380,3390" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="630,3470 690,3470" fill="none" stroke="#B33A3A" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#command-arrow)"/>
+<polyline points="690,3550 630,3550" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="380,3610 380,3780" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="630,3870.0 690,3875.0" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="940,3960 940,3972 380,3972 380,3985" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="630,4080.0 690,4080.0" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="380,4175 380,4200" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="940,4175 940,4200" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="690,4272.5 75,4272 75,2010 130,2010 130,2010.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="130,4272.5 45,4272 45,1482 130,1482 130,1487.5" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="270,4200 270,4185 60,4185 60,2010 690,2010 690,2010.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="220,2520.0 55,2520 55,1980 690,1980 690,2010.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="1190,1657.5 1240,1657 1240,3500 630,3500 630,3500.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="1190,3500.0 1270,3500 1270,2510 1100,2510 1100,2520.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="1190,3450 1290,3450 1290,970 1100,970 1100,980.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="1100,980.0 1250,980 1250,4495 630,4495 630,4602.5" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="630,4602.5 690,4602.5" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="940,4690 940,4702 800,4702 800,4715" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="1190,4080.0 1215,4080 1215,4810 1100,4810 1100,4810.0" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<rect x="130" y="230" width="500" height="160" rx="14" fill="#EFF6FF" stroke="#3B6EA5" stroke-width="1.6"/>
+<rect x="130" y="230" width="7" height="160" rx="3.5" fill="#3B6EA5" opacity="0.9"/>
+<text x="154" y="267" class="node-title" text-anchor="start">Operator, native GUI and E-stop</text>
+<text x="154" y="300" class="detail" text-anchor="start"><tspan x="154" dy="0">choose target and next-mission settings</tspan><tspan x="154" dy="23">review rays, status and diagnostics</tspan><tspan x="154" dy="23">start, observe or cancel</tspan><tspan x="154" dy="23">emergency stop remains independent</tspan></text>
+<rect x="690" y="230" width="500" height="160" rx="14" fill="#EFF6FF" stroke="#3B6EA5" stroke-width="1.6"/>
+<rect x="690" y="230" width="7" height="160" rx="3.5" fill="#3B6EA5" opacity="0.9"/>
+<text x="714" y="267" class="node-title" text-anchor="start">Tracked-robot gateway</text>
+<text x="714" y="300" class="detail" text-anchor="start"><tspan x="714" dy="0">SCAN_3D request + rough target</tspan><tspan x="714" dy="23">odom -&gt; piper_base_link snapshot</tspan><tspan x="714" dy="23">task heartbeat + home report</tspan><tspan x="714" dy="23">base remains stationary and braked</tspan></text>
+<rect x="220" y="415" width="880" height="155" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
+<rect x="220" y="415" width="7" height="155" rx="3.5" fill="#147D70" opacity="0.9"/>
+<text x="244" y="452" class="node-title" text-anchor="start">Frozen mission contract</text>
+<text x="244" y="485" class="detail" text-anchor="start"><tspan x="244" dy="0">target profile + scan/NBV policy</tspan><tspan x="244" dy="23">planner backend + speed + motion opt-ins</tspan><tspan x="244" dy="23">validated before admission; immutable in flight</tspan><tspan x="244" dy="23">canonical mission SHA-256 binds every downstream result</tspan></text>
+<rect x="130" y="675" width="500" height="165" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
+<rect x="130" y="675" width="7" height="165" rx="3.5" fill="#147D70" opacity="0.9"/>
+<text x="154" y="712" class="node-title" text-anchor="start">RunTargetScan coordinator</text>
+<text x="154" y="745" class="detail" text-anchor="start"><tspan x="154" dy="0">queues and admits one immutable goal</tspan><tspan x="154" dy="23">binds task, target and backend identity</tspan><tspan x="154" dy="23">publishes typed action feedback</tspan><tspan x="154" dy="23">returns mission result + dataset reference</tspan></text>
+<rect x="690" y="675" width="500" height="175" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
+<rect x="690" y="675" width="7" height="175" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<text x="714" y="712" class="node-title" text-anchor="start">ProcessSupervisor</text>
+<text x="714" y="745" class="detail" text-anchor="start"><tspan x="714" dy="0">owns one exact process generation</tspan><tspan x="714" dy="23">starts driver -&gt; vision -&gt; calibration</tspan><tspan x="714" dy="23">starts exactly one selected planner</tspan><tspan x="714" dy="23">monitors heartbeats and bounded cleanup</tspan><tspan x="714" dy="23">never adopts unrelated processes</tspan></text>
+<rect x="220" y="875" width="880" height="210" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
+<rect x="220" y="875" width="7" height="210" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<text x="244" y="912" class="node-title" text-anchor="start">MissionEngine lifecycle</text>
+<text x="244" y="945" class="detail" text-anchor="start"><tspan x="244" dy="0">preflight -&gt; enable/hold -&gt; startup wrist</tspan><tspan x="244" dy="23">rough home -&gt; bounded target acquisition</tspan><tspan x="244" dy="23">workflow ready -&gt; one-view closed loop</tspan><tspan x="244" dy="23">terminal PRE_HOME -&gt; ROUGH_HOME -&gt; STORAGE_WRIST</tspan><tspan x="244" dy="23">prove all-six disable and revoke authorization</tspan><tspan x="244" dy="23">motor-authority loss permits no new command</tspan></text>
+<rect x="130" y="1200" width="500" height="160" rx="14" fill="#EAF3FF" stroke="#2563A6" stroke-width="1.6"/>
+<rect x="130" y="1200" width="7" height="160" rx="3.5" fill="#2563A6" opacity="0.9"/>
+<text x="154" y="1237" class="node-title" text-anchor="start">Eye-in-hand L515 evidence</text>
+<text x="154" y="1270" class="detail" text-anchor="start"><tspan x="154" dy="0">RGB + aligned/native depth</tspan><tspan x="154" dy="23">4-bit confidence + CameraInfo</tspan><tspan x="154" dy="23">source timestamps at 30 Hz</tspan><tspan x="154" dy="23">settled capture uses new synchronized frames</tspan></text>
+<rect x="690" y="1200" width="500" height="185" rx="14" fill="#EAF3FF" stroke="#2563A6" stroke-width="1.6"/>
+<rect x="690" y="1200" width="7" height="185" rx="3.5" fill="#2563A6" opacity="0.9"/>
+<text x="714" y="1237" class="node-title" text-anchor="start">Timing, TF and hand-eye calibration</text>
+<text x="714" y="1270" class="detail" text-anchor="start"><tspan x="714" dy="0">camera timestamp watchdog</tspan><tspan x="714" dy="23">accepted optical-frame transform</tspan><tspan x="714" dy="23">base_link &lt;-&gt; optical frame</tspan><tspan x="714" dy="23">fresh joints and camera pose</tspan><tspan x="714" dy="23">fault may restart only owned vision work</tspan></text>
+<rect x="130" y="1395" width="500" height="185" rx="14" fill="#F2EAFF" stroke="#7851A9" stroke-width="1.6"/>
+<rect x="130" y="1395" width="7" height="185" rx="3.5" fill="#7851A9" opacity="0.9"/>
+<text x="154" y="1432" class="node-title" text-anchor="start">Isolated CUDA perception</text>
+<text x="154" y="1465" class="detail" text-anchor="start"><tspan x="154" dy="0">GroundingDINO acquire / correlated refresh</tspan><tspan x="154" dy="23">SAM 2 seed + live mask propagation</tspan><tspan x="154" dy="23">permission-bounded request/result spools</tspan><tspan x="154" dy="23">current-generation readiness and heartbeat</tspan><tspan x="154" dy="23">ROS-free workers; no motor interface</tspan></text>
+<rect x="690" y="1395" width="500" height="185" rx="14" fill="#F2EAFF" stroke="#7851A9" stroke-width="1.6"/>
+<rect x="690" y="1395" width="7" height="185" rx="3.5" fill="#7851A9" opacity="0.9"/>
+<text x="714" y="1432" class="node-title" text-anchor="start">ROS perception geometry</text>
+<text x="714" y="1465" class="detail" text-anchor="start"><tspan x="714" dy="0">mask -&gt; detection -&gt; qualified depth</tspan><tspan x="714" dy="23">Target3D + Kalman target tracker</tspan><tspan x="714" dy="23">target cloud, landmark and envelope</tspan><tspan x="714" dy="23">obstacles + quality + occlusion</tspan><tspan x="714" dy="23">freshness and correlation metadata</tspan></text>
+<rect x="130" y="1595" width="500" height="125" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
+<rect x="130" y="1595" width="7" height="125" rx="3.5" fill="#147D70" opacity="0.9"/>
+<text x="154" y="1632" class="node-title" text-anchor="start">Measured target state</text>
+<text x="154" y="1665" class="detail" text-anchor="start"><tspan x="154" dy="0">stable base-frame target + covariance</tspan><tspan x="154" dy="23">TRACKING / LOW_CONFIDENCE / LOST</tspan></text>
+<rect x="690" y="1595" width="500" height="125" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
+<rect x="690" y="1595" width="7" height="125" rx="3.5" fill="#147D70" opacity="0.9"/>
+<text x="714" y="1632" class="node-title" text-anchor="start">Scene safety evidence</text>
+<text x="714" y="1665" class="detail" text-anchor="start"><tspan x="714" dy="0">obstacles, target envelope and framing</tspan><tspan x="714" dy="23">occlusion, quality and tracking health</tspan></text>
+<rect x="130" y="1905" width="500" height="210" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
+<rect x="130" y="1905" width="7" height="210" rx="3.5" fill="#147D70" opacity="0.9"/>
+<text x="154" y="1942" class="node-title" text-anchor="start">Accepted-only scan memory</text>
+<text x="154" y="1975" class="detail" text-anchor="start"><tspan x="154" dy="0">schema-2 captures + achieved FK</tspan><tspan x="154" dy="23">5 mm measured coverage grid</tspan><tspan x="154" dy="23">unknown / observed target surface</tspan><tspan x="154" dy="23">accepted generation is explicit</tspan><tspan x="154" dy="23">rejected views never add coverage</tspan></text>
+<rect x="690" y="1905" width="500" height="210" rx="14" fill="#FFF3D9" stroke="#B77900" stroke-width="1.6"/>
+<rect x="690" y="1905" width="7" height="210" rx="3.5" fill="#B77900" opacity="0.9"/>
+<text x="714" y="1942" class="node-title" text-anchor="start">Closed-loop NBV and ray policy</text>
+<text x="714" y="1975" class="detail" text-anchor="start"><tspan x="714" dy="0">legacy, voxel_nbv or frozen ray_nbv</tspan><tspan x="714" dy="23">seed from actual current FK</tspan><tspan x="714" dy="23">rank marginal information before travel</tspan><tspan x="714" dy="23">direction novelty + bounded standoff</tspan><tspan x="714" dy="23">one accepted view per generation</tspan><tspan x="714" dy="23">complete or exhaust the safe frontier</tspan></text>
+<rect x="220" y="2140" width="880" height="165" rx="14" fill="#FFF3D9" stroke="#B77900" stroke-width="1.6"/>
+<rect x="220" y="2140" width="7" height="165" rx="3.5" fill="#B77900" opacity="0.9"/>
+<text x="244" y="2177" class="node-title" text-anchor="start">Command-free prequalification</text>
+<text x="244" y="2210" class="detail" text-anchor="start"><tspan x="244" dy="0">workspace/capability evidence removes hard culls</tspan><tspan x="244" dy="23">target-facing aim with bounded orientation fallback</tspan><tspan x="244" dy="23">shortlist at most 12 voxel points or 6 ray directions</tspan><tspan x="244" dy="23">no motor command is possible at this stage</tspan></text>
+<rect x="220" y="2415" width="880" height="210" rx="14" fill="#FFF3D9" stroke="#B77900" stroke-width="1.6"/>
+<rect x="220" y="2415" width="7" height="210" rx="3.5" fill="#B77900" opacity="0.9"/>
+<text x="244" y="2452" class="node-title" text-anchor="start">MotionPlannerBridge (ROS 2 Foxy)</text>
+<text x="244" y="2485" class="detail" text-anchor="start"><tspan x="244" dy="0">freezes tesseract or curobo for the mission</tspan><tspan x="244" dy="23">requires matching worker generation and readiness</tspan><tspan x="244" dy="23">snapshots joints, limits, target, camera and scene</tspan><tspan x="244" dy="23">binds robot/world/calibration hashes and requested views</tspan><tspan x="244" dy="23">writes private command-free schema-v5 request</tspan><tspan x="244" dy="23">publishes correlated status, blockers and provenance</tspan></text>
+<rect x="130" y="2650" width="500" height="205" rx="14" fill="#FFF3D9" stroke="#B77900" stroke-width="1.6"/>
+<rect x="130" y="2650" width="7" height="205" rx="3.5" fill="#B77900" opacity="0.9"/>
+<text x="154" y="2707" class="node-title" text-anchor="start">Tesseract 0.35 worker</text>
+<text x="154" y="2738" class="detail" text-anchor="start"><tspan x="154" dy="0">ROS-free exact IK, collision and path</tspan><tspan x="154" dy="23">configured moving + fixed meshes</tspan><tspan x="154" dy="23">qualified baseline and startup recovery</tspan><tspan x="154" dy="23">atomic request/response spool</tspan></text>
+<rect x="154" y="2663" width="128.6" height="23" rx="11.5" fill="#B77900"/>
+<text x="218.3" y="2679" class="badge" text-anchor="middle">MAIN + BRANCH</text>
+<rect x="690" y="2650" width="500" height="205" rx="14" fill="#F7F7F8" stroke="#929AA5" stroke-width="1.6"/>
+<rect x="690" y="2650" width="7" height="205" rx="3.5" fill="#929AA5" opacity="0.9"/>
+<text x="714" y="2707" class="node-title" text-anchor="start">cuRobo 0.7.8 MotionGen worker</text>
+<text x="714" y="2738" class="detail" text-anchor="start"><tspan x="714" dy="0">Python 3.10 + CUDA; ROS-free</tspan><tspan x="714" dy="23">exact fixed Bunker meshes</tspan><tspan x="714" dy="23">167-sphere articulated approximation</tspan><tspan x="714" dy="23">hardware_qualified=false; motion blocked</tspan><tspan x="714" dy="23">no automatic Tesseract fallback</tspan></text>
+<rect x="714" y="2663" width="112.19999999999999" height="23" rx="11.5" fill="#929AA5"/>
+<text x="770.1" y="2679" class="badge" text-anchor="middle">BRANCH ONLY</text>
+<rect x="220" y="2880" width="880" height="210" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
+<rect x="220" y="2880" width="7" height="210" rx="3.5" fill="#147D70" opacity="0.9"/>
+<text x="244" y="2917" class="node-title" text-anchor="start">Validated planner transport</text>
+<text x="244" y="2950" class="detail" text-anchor="start"><tspan x="244" dy="0">main: TesseractPlan</tspan><tspan x="244" dy="23">integration branch: generic MotionPlan</tspan><tspan x="244" dy="23">backend, request, plan and trajectory hashes</tspan><tspan x="244" dy="23">complete timed six-joint trajectory + metrics</tspan><tspan x="244" dy="23">collision qualification and rejection diagnostics</tspan><tspan x="244" dy="23">planner output remains a proposal only</tspan></text>
+<rect x="130" y="3200" width="500" height="165" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
+<rect x="130" y="3200" width="7" height="165" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<text x="154" y="3237" class="node-title" text-anchor="start">Common plan normalization</text>
+<text x="154" y="3270" class="detail" text-anchor="start"><tspan x="154" dy="0">six finite joints in canonical order</tspan><tspan x="154" dy="23">20 Hz schedule + 0.05 rad step</tspan><tspan x="154" dy="23">speed-scaled MoveJ limits</tspan><tspan x="154" dy="23">fresh-start and trajectory hashes</tspan></text>
+<rect x="690" y="3200" width="500" height="165" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
+<rect x="690" y="3200" width="7" height="165" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<text x="714" y="3237" class="node-title" text-anchor="start">PlanAuthorizer</text>
+<text x="714" y="3270" class="detail" text-anchor="start"><tspan x="714" dy="0">live mission + backend authorization</tspan><tspan x="714" dy="23">exact plan and trajectory identity</tspan><tspan x="714" dy="23">TTL, target drift and dependencies</tspan><tspan x="714" dy="23">fresh complete-path revalidation</tspan></text>
+<rect x="130" y="3390" width="500" height="220" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
+<rect x="130" y="3390" width="7" height="220" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<text x="154" y="3447" class="node-title" text-anchor="start">scan_viewpoint_executor</text>
+<text x="154" y="3478" class="detail" text-anchor="start"><tspan x="154" dy="0">sole autonomous joint publisher</tspan><tspan x="154" dy="23">TrajectoryRunner owns the 20 Hz schedule</tspan><tspan x="154" dy="23">runtime freshness + scene gates</tspan><tspan x="154" dy="23">following error, timeout and settle proof</tspan><tspan x="154" dy="23">hold, refresh, replan or recover</tspan><tspan x="154" dy="23">publishes ScanExecutionStatus</tspan></text>
+<rect x="154" y="3403" width="128.6" height="23" rx="11.5" fill="#B33A3A"/>
+<text x="218.3" y="3419" class="badge" text-anchor="middle">COMMAND OWNER</text>
+<rect x="690" y="3390" width="500" height="220" rx="14" fill="#EEF1F4" stroke="#46515E" stroke-width="1.6"/>
+<rect x="690" y="3390" width="7" height="220" rx="3.5" fill="#46515E" opacity="0.9"/>
+<text x="714" y="3447" class="node-title" text-anchor="start">PiPER driver / SocketCAN</text>
+<text x="714" y="3478" class="detail" text-anchor="start"><tspan x="714" dy="0">/joint_ctrl_single -&gt; MoveJ</tspan><tspan x="714" dy="23">SocketCAN at 1 Mbps</tspan><tspan x="714" dy="23">enable/disable + motor watchdogs</tspan><tspan x="714" dy="23">six motors + coherent joint feedback</tspan></text>
+<rect x="714" y="3403" width="96" height="23" rx="11.5" fill="#46515E"/>
+<text x="762.0" y="3419" class="badge" text-anchor="middle">CAN OWNER</text>
+<rect x="130" y="3780" width="500" height="180" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
+<rect x="130" y="3780" width="7" height="180" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<text x="154" y="3817" class="node-title" text-anchor="start">Settled capture request</text>
+<text x="154" y="3850" class="detail" text-anchor="start"><tspan x="154" dy="0">actual FK + target-facing aim</tspan><tspan x="154" dy="23">stationary joints + healthy clock</tspan><tspan x="154" dy="23">fresh target/scene evidence</tspan><tspan x="154" dy="23">executor enters CAPTURING_RGBD</tspan></text>
+<rect x="690" y="3780" width="500" height="190" rx="14" fill="#EAF3FF" stroke="#2563A6" stroke-width="1.6"/>
+<rect x="690" y="3780" width="7" height="190" rx="3.5" fill="#2563A6" opacity="0.9"/>
+<text x="714" y="3817" class="node-title" text-anchor="start">Confidence-qualified RGB-D burst</text>
+<text x="714" y="3850" class="detail" text-anchor="start"><tspan x="714" dy="0">exact mask/RGB stamp identity</tspan><tspan x="714" dy="23">20 new depth + confidence frames</tspan><tspan x="714" dy="23">grade &gt;=8 and &gt;=0.50 support</tspan><tspan x="714" dy="23">median depth + capture-time TF</tspan><tspan x="714" dy="23">target-component ambiguity gate</tspan></text>
+<rect x="130" y="3985" width="500" height="190" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
+<rect x="130" y="3985" width="7" height="190" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<text x="154" y="4022" class="node-title" text-anchor="start">Capture admission</text>
+<text x="154" y="4055" class="detail" text-anchor="start"><tspan x="154" dy="0">GOOD target + fresh diagnostics</tspan><tspan x="154" dy="23">CLEAR or correlated occlusion proof</tspan><tspan x="154" dy="23">matching achieved FK and plan provenance</tspan><tspan x="154" dy="23">atomic artifacts + manifest hashes</tspan><tspan x="154" dy="23">decide ACCEPT, RETRY or REJECT</tspan></text>
+<rect x="690" y="3985" width="500" height="190" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
+<rect x="690" y="3985" width="7" height="190" rx="3.5" fill="#147D70" opacity="0.9"/>
+<text x="714" y="4022" class="node-title" text-anchor="start">Immutable schema-2 dataset</text>
+<text x="714" y="4055" class="detail" text-anchor="start"><tspan x="714" dy="0">RGB, raw/qualified depth and mask</tspan><tspan x="714" dy="23">intrinsics, joints and capture-time TF</tspan><tspan x="714" dy="23">view/plan provenance + quality</tspan><tspan x="714" dy="23">target support and model seed</tspan><tspan x="714" dy="23">transactional manifest SHA-256</tspan></text>
+<rect x="130" y="4200" width="500" height="145" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
+<rect x="130" y="4200" width="7" height="145" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<text x="154" y="4237" class="node-title" text-anchor="start">Retry / rejected observation</text>
+<text x="154" y="4270" class="detail" text-anchor="start"><tspan x="154" dy="0">hold achieved FK; add no coverage</tspan><tspan x="154" dy="23">one correlated heavy refresh</tspan><tspan x="154" dy="23">then exclude and replan from actual pose</tspan></text>
+<rect x="690" y="4200" width="500" height="145" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
+<rect x="690" y="4200" width="7" height="145" rx="3.5" fill="#147D70" opacity="0.9"/>
+<text x="714" y="4237" class="node-title" text-anchor="start">Accepted history generation</text>
+<text x="714" y="4270" class="detail" text-anchor="start"><tspan x="714" dy="0">commit achieved pose + evidence</tspan><tspan x="714" dy="23">rebuild measured coverage</tspan><tspan x="714" dy="23">request the next qualified view</tspan></text>
+<rect x="130" y="4515" width="500" height="175" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
+<rect x="130" y="4515" width="7" height="175" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<text x="154" y="4552" class="node-title" text-anchor="start">Safe terminal recovery</text>
+<text x="154" y="4585" class="detail" text-anchor="start"><tspan x="154" dy="0">cancel, completion or bounded failure</tspan><tspan x="154" dy="23">PRE_HOME -&gt; ROUGH_HOME -&gt; STORAGE_WRIST</tspan><tspan x="154" dy="23">disable all six and revoke authorization</tspan><tspan x="154" dy="23">stop only mission-owned child processes</tspan></text>
+<rect x="690" y="4515" width="500" height="175" rx="14" fill="#EFF6FF" stroke="#3B6EA5" stroke-width="1.6"/>
+<rect x="690" y="4515" width="7" height="175" rx="3.5" fill="#3B6EA5" opacity="0.9"/>
+<text x="714" y="4552" class="node-title" text-anchor="start">Tracked-base correlation</text>
+<text x="714" y="4585" class="detail" text-anchor="start"><tspan x="714" dy="0">arm result may wait for base home</tspan><tspan x="714" dy="23">bind task, job and manifest identity</tspan><tspan x="714" dy="23">gateway accepts idempotent report</tspan><tspan x="714" dy="23">this repository sends no chassis command</tspan></text>
+<rect x="220" y="4715" width="880" height="190" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
+<rect x="220" y="4715" width="7" height="190" rx="3.5" fill="#147D70" opacity="0.9"/>
+<text x="244" y="4752" class="node-title" text-anchor="start">Offline reconstruction</text>
+<text x="244" y="4785" class="detail" text-anchor="start"><tspan x="244" dy="0">admit immutable inputs and verify every hash</tspan><tspan x="244" dy="23">target-only Open3D TSDF; 3 mm voxels by default</tspan><tspan x="244" dy="23">optional bounded GICP / scene pose graph</tspan><tspan x="244" dy="23">mesh + cloud + quality metrics + provenance</tspan><tspan x="244" dy="23">failure is separate and never rewrites mission safety</tspan></text>
+<rect x="462.6" y="561" width="154.79999999999998" height="23" rx="5" class="edge-label-bg"/>
+<text x="540" y="578" class="edge-label" text-anchor="middle">frozen goal + hash</text>
+<rect x="298.8" y="1085" width="162.4" height="23" rx="5" class="edge-label-bg"/>
+<text x="380" y="1102" class="edge-label" text-anchor="middle">ordered acquisition</text>
+<rect x="325.4" y="1348.5" width="109.19999999999999" height="23" rx="5" class="edge-label-bg"/>
+<text x="380.0" y="1365.5" class="edge-label" text-anchor="middle">RGB-D frames</text>
+<rect x="862.6" y="1358.5" width="154.79999999999998" height="23" rx="5" class="edge-label-bg"/>
+<text x="940.0" y="1375.5" class="edge-label" text-anchor="middle">TF + camera health</text>
+<rect x="537.6" y="1561" width="154.79999999999998" height="23" rx="5" class="edge-label-bg"/>
+<text x="615" y="1578" class="edge-label" text-anchor="middle">qualified Target3D</text>
+<rect x="903.8" y="1561" width="162.4" height="23" rx="5" class="edge-label-bg"/>
+<text x="985" y="1578" class="edge-label" text-anchor="middle">quality + obstacles</text>
+<rect x="1007.8" y="1741" width="109.19999999999999" height="23" rx="5" class="edge-label-bg"/>
+<text x="1110" y="1758" class="edge-label" text-anchor="end">fresh target</text>
+<rect x="1121.0" y="2013" width="94.0" height="23" rx="5" class="edge-label-bg"/>
+<text x="1208" y="2030" class="edge-label" text-anchor="end">safe scene</text>
+<rect x="780.2" y="2106" width="139.6" height="23" rx="5" class="edge-label-bg"/>
+<text x="850" y="2123" class="edge-label" text-anchor="middle">ranked shortlist</text>
+<rect x="575.0" y="2299" width="170.0" height="23" rx="5" class="edge-label-bg"/>
+<text x="660" y="2316" class="edge-label" text-anchor="middle">candidate views only</text>
+<rect x="353.6" y="2616" width="192.79999999999998" height="23" rx="5" class="edge-label-bg"/>
+<text x="450" y="2633" class="edge-label" text-anchor="middle">main / selected backend</text>
+<rect x="788.8" y="2616" width="162.4" height="23" rx="5" class="edge-label-bg"/>
+<text x="870" y="2633" class="edge-label" text-anchor="middle">branch-only backend</text>
+<rect x="372.6" y="2846" width="154.79999999999998" height="23" rx="5" class="edge-label-bg"/>
+<text x="450" y="2863" class="edge-label" text-anchor="middle">validated response</text>
+<rect x="792.6" y="2846" width="154.79999999999998" height="23" rx="5" class="edge-label-bg"/>
+<text x="870" y="2863" class="edge-label" text-anchor="middle">MotionGen response</text>
+<rect x="391.6" y="3083" width="116.8" height="23" rx="5" class="edge-label-bg"/>
+<text x="450" y="3100" class="edge-label" text-anchor="middle">proposal only</text>
+<rect x="597.8" y="3356" width="124.39999999999999" height="23" rx="5" class="edge-label-bg"/>
+<text x="660" y="3373" class="edge-label" text-anchor="middle">exact approval</text>
+<rect x="306.4" y="3658" width="147.2" height="23" rx="5" class="edge-label-bg"/>
+<text x="380" y="3675" class="edge-label" text-anchor="middle">settled viewpoint</text>
+<rect x="571.2" y="3951" width="177.6" height="23" rx="5" class="edge-label-bg"/>
+<text x="660" y="3968" class="edge-label" text-anchor="middle">qualified observation</text>
+<rect x="317.8" y="4163.5" width="124.39999999999999" height="23" rx="5" class="edge-label-bg"/>
+<text x="380.0" y="4180.5" class="edge-label" text-anchor="middle">RETRY / REJECT</text>
+<rect x="858.8" y="4163.5" width="162.4" height="23" rx="5" class="edge-label-bg"/>
+<text x="940.0" y="4180.5" class="edge-label" text-anchor="middle">accepted generation</text>
+<rect x="85" y="4363" width="101.6" height="23" rx="5" class="edge-label-bg"/>
+<text x="92" y="4380" class="edge-label" text-anchor="start">F4 accepted</text>
+<rect x="55" y="4338" width="109.19999999999999" height="23" rx="5" class="edge-label-bg"/>
+<text x="62" y="4355" class="edge-label" text-anchor="start">F3 reacquire</text>
+<rect x="65" y="2481" width="147.2" height="23" rx="5" class="edge-label-bg"/>
+<text x="72" y="2498" class="edge-label" text-anchor="start">retire failed ray</text>
+<rect x="1114.2" y="3283" width="116.8" height="23" rx="5" class="edge-label-bg"/>
+<text x="1224" y="3300" class="edge-label" text-anchor="end">F2 live scene</text>
+<rect x="1129.0" y="3083" width="132.0" height="23" rx="5" class="edge-label-bg"/>
+<text x="1254" y="3100" class="edge-label" text-anchor="end">F1 joint limits</text>
+<rect x="1095.8" y="1083" width="185.2" height="23" rx="5" class="edge-label-bg"/>
+<text x="1274" y="1100" class="edge-label" text-anchor="end">motor / disable status</text>
+<rect x="1040.6" y="4395" width="200.39999999999998" height="23" rx="5" class="edge-label-bg"/>
+<text x="1234" y="4412" class="edge-label" text-anchor="end">complete / cancel / fail</text>
+<rect x="758.4" y="4681" width="223.2" height="23" rx="5" class="edge-label-bg"/>
+<text x="870" y="4698" class="edge-label" text-anchor="middle">correlated base-home report</text>
+<rect x="1050.2" y="4433" width="154.79999999999998" height="23" rx="5" class="edge-label-bg"/>
+<text x="1198" y="4450" class="edge-label" text-anchor="end">immutable captures</text>
+<text x="660.0" y="5010" class="note" text-anchor="middle">Red is the sole motor-command edge. Dashed green paths are measured feedback, retry or replanning.</text>
 </g>
 </svg>
+
