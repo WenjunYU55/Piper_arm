@@ -14,7 +14,7 @@ Piper_arm/
 ├── docs/historical/                 Time-specific scan and session handoff notes retained for provenance, not current operator routing
 ├── docs/architecture/               Concise architecture and large-asset policy for maintainers
 ├── piper_gui/                       Phase 8 Tk-independent mission ViewModel, action-client callback adapter, GUI lifecycle bootstrap, bounded next-mission viewpoint selector, command-free Ray Review with independent estimated-revolution/planning-box/source-outline layers and survivor-only post-cull camera glyphs, idle-only next-mission support-floor selector, and validated next-camera-start RGB profile persistence; owns no production mission policy
-├── CAD/                             User-supplied physical reference photos; the holder/L515 runtime STL copies are owned by piper_description/meshes, while original CAD source provenance is currently absent
+├── CAD/                             Checksum-manifested enclosure-v4 SolidWorks sources plus millimetre DXF, STL and 3MF fabrication exports; qualified holder/L515 runtime meshes remain owned by piper_description/meshes
 ├── piper_ros_foxy/                  ROS 2 Foxy colcon workspace
 │   └── src/
 │       ├── piper/                   Real PiPER CAN driver with all-six FOC enable/disable proof, failed-partial-enable rollback, per-motor fail-closed watchdog and typed six-axis motor authority/fault publication; one hardware launch and no command-coupled RViz compatibility launch
