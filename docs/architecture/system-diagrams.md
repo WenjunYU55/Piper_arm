@@ -1,160 +1,96 @@
-# System diagrams
+# System and subsystem diagrams
 
-These diagrams are rendered directly by GitHub from Mermaid source. They
-describe the current repository interfaces and intentionally distinguish
-implemented command paths from mechanical or future integration boundaries.
+These figures provide a readable overview of the production stack while keeping
+the command, measurement and integration boundaries explicit. Generated SVGs
+are committed so GitHub renders them without an external diagram service.
 
-## Hardware and software architecture
+## Visual vocabulary
 
-```mermaid
-flowchart LR
-  subgraph TRACKED["Tracked robot / operator network"]
-    CLIENT["Tracked mission client"]
-    ODOM["Tracked localisation<br/>odom to base_link"]
-    BASE["Bunker Pro 2 tracked base"]
-  end
+| Colour | Meaning |
+|---|---|
+| Blue | Physical sensors and inputs |
+| Violet | Perception and learned models |
+| Teal | State, accepted evidence and data products |
+| Amber | View and motion planning |
+| Red | Safety, authorization and recovery |
+| Graphite | Physical actuation and compute infrastructure |
+| Gray | Optional or non-integrated hardware |
 
-  subgraph GATEWAY["Tracked-to-arm isolation boundary"]
-    GW["target_scan_gateway_node<br/>goal admission and TF snapshot"]
-    MSPOOL["Private mission spool<br/>atomic goals, status and results"]
-  end
+Solid arrows show the main runtime progression. Dashed return arrows show
+feedback, replanning or recovery. A dashed or gray hardware stage is not an
+implemented data or command path.
 
-  subgraph HOST["Arm host: Ubuntu 20.04 / ROS 2 Foxy"]
-    GUI["PiPER operator GUI"]
-    MISSION["target_scan_mission_node<br/>MissionEngine"]
+## Whole-system architecture
 
-    subgraph PERCEPTION["RGB-D perception"]
-      RS["RealSense ROS wrapper"]
-      GEOM["Target, scene, quality<br/>and occlusion geometry"]
-      AI["GroundingDINO and SAM2<br/>isolated workers"]
-    end
+<div align="center">
+  <img src="../assets/readme/architecture/system-overview.svg" alt="Vertical PiPER active RGB-D scanning system architecture" width="820">
+</div>
 
-    subgraph PLANNING["View and motion planning"]
-      NBV["Measured coverage<br/>and next-best-view ranking"]
-      BRIDGE["Foxy Tesseract bridge"]
-      TESS["Isolated Tesseract 0.35 worker<br/>IK, collision and path checks"]
-    end
+The tracked base supplies the physical mount, mission request and pose snapshot.
+This repository does not publish chassis commands; mounted-base collision TF,
+brake authority and repositioning remain integration work.
 
-    EXEC["scan_viewpoint_executor<br/>sole autonomous joint publisher"]
-    DRIVER["piper_ctrl_single_node<br/>CAN and motor authority"]
-    CAPTURE["scan_capture_node"]
-    DATASET["Validated RGB-D, mask,<br/>pose and robot-state dataset"]
-    RECON["Offline TSDF / bounded GICP<br/>reconstruction"]
-  end
+## Target perception and geometric state
 
-  subgraph HARDWARE["Arm hardware"]
-    CAN["USB-CAN / SocketCAN can0"]
-    ARM["PiPER 6-DOF arm"]
-    L515["Intel RealSense L515<br/>eye-in-hand sensor"]
-  end
+<div align="center">
+  <img src="../assets/readme/architecture/perception-pipeline.svg" alt="Vertical target-perception and geometry pipeline" width="760">
+</div>
 
-  CLIENT --> GW
-  ODOM --> GW
-  GW <--> MSPOOL
-  MSPOOL <--> MISSION
-  GUI --> MISSION
+The current production sensing path is the eye-in-hand L515. ZED and LiDAR
+parts in the enclosure CAD are optional mechanical provision and are not shown
+as perception inputs.
 
-  MISSION --> RS
-  MISSION --> EXEC
-  MISSION --> DRIVER
-  L515 --> RS
-  RS --> GEOM
-  GEOM <--> AI
-  GEOM --> NBV
-  NBV --> BRIDGE
-  BRIDGE <--> TESS
-  BRIDGE --> EXEC
-  EXEC --> DRIVER
-  DRIVER <--> CAN
-  CAN <--> ARM
-  EXEC --> CAPTURE
-  RS --> CAPTURE
-  CAPTURE --> DATASET
-  DATASET --> NBV
-  DATASET --> RECON
+## Active viewpoint and motion planning
 
-  ARM --- L515
-  BASE -. fixed mechanical mount .-> ARM
+<div align="center">
+  <img src="../assets/readme/architecture/viewpoint-planning-pipeline.svg" alt="Vertical active-viewpoint and exact motion-planning pipeline" width="760">
+</div>
+
+Accepted measurements may update coverage. Predicted target geometry may guide
+view selection but must not be presented to reconstruction as measured evidence.
+
+## Guarded motion execution and recovery
+
+<div align="center">
+  <img src="../assets/readme/architecture/execution-safety-pipeline.svg" alt="Vertical guarded execution and recovery pipeline" width="760">
+</div>
+
+Tesseract owns exact geometric feasibility, the executor owns autonomous plan
+authorization and joint publication, and the PiPER driver owns CAN, motors and
+feedback. None of these authorities is duplicated by the GUI or AI workers.
+
+## Multi-view capture and reconstruction
+
+<div align="center">
+  <img src="../assets/readme/architecture/capture-reconstruction-pipeline.svg" alt="Vertical capture and reconstruction pipeline" width="760">
+</div>
+
+Reconstruction consumes immutable accepted captures after the mission has
+entered a safe terminal state and, where applicable, the tracked-base home
+report has been correlated.
+
+## Hardware topology
+
+<div align="center">
+  <img src="../assets/readme/architecture/hardware-topology.svg" alt="Vertical robot hardware topology and integration boundaries" width="760">
+</div>
+
+Design CAD under [`CAD/`](../../CAD/) supports manufacturing and design review.
+The collision-qualified meshes used by the URDF and Tesseract keep their
+established runtime ownership and paths.
+
+## Sources and regeneration
+
+The diagrams are generated using only the Python standard library:
+
+```bash
+python3 docs/architecture/diagrams/generate_diagrams.py
 ```
 
-The dashed base-to-arm link is deliberate: the tracked chassis provides the
-mounting frame, task request and pose transform, but this repository does not
-command the base. Mounted-chassis collision TF and brake authority remain
-deferred integration work.
+See [`docs/architecture/diagrams/README.md`](diagrams/README.md) for the visual
+and maintenance rules.
 
-## Autonomous target-scan flow
-
-```mermaid
-flowchart TD
-  GOAL["RunTargetScan goal<br/>label and rough target pose"]
-  SNAP["Optional gateway snapshots<br/>odom to piper_base_link"]
-  READY["Start owned processes and prove readiness<br/>camera, calibration, joints, AI and Tesseract"]
-  START["Enable after fresh all-six-axis evidence<br/>startup wrist and rough home"]
-  ACQUIRE["Acquire target<br/>L515 RGB-D, GroundingDINO, SAM2 and aligned depth"]
-  RANK["Generate and rank candidate views<br/>accepted measured coverage / NBV"]
-  PLAN["Tesseract qualification<br/>exact IK, collision and path feasibility"]
-  AUTH{"Fresh plan identity<br/>and safety gates valid?"}
-  MOVE["Executor sends approved MoveJ path"]
-  SETTLE["Prove convergence and settled feedback"]
-  CAPTURE["Persist synchronized RGB, depth, mask,<br/>intrinsics, camera pose, joints and metadata"]
-  QUALITY{"Fresh GOOD target<br/>and acceptable occlusion?"}
-  ACCEPT["Atomically accept view<br/>and update measured coverage"]
-  DONE{"Completion proof?<br/>8 to 24 views and convergence<br/>or typed safe-frontier exhaustion"}
-  RECOVER{"Bounded retry,<br/>reacquire or replan"}
-  HOME["Pre-home, rough home and storage wrist"]
-  DISABLE["Settled hold, all-six disable<br/>and owned-process cleanup"]
-  RESULT["Immutable dataset and mission result"]
-  RECON["Offline reconstruction"]
-
-  GOAL --> SNAP --> READY --> START --> ACQUIRE --> RANK --> PLAN --> AUTH
-  AUTH -->|yes| MOVE --> SETTLE --> CAPTURE --> QUALITY
-  AUTH -->|no| RECOVER
-  QUALITY -->|yes| ACCEPT --> DONE
-  QUALITY -->|no| RECOVER
-  RECOVER -->|budget remains| RANK
-  RECOVER -->|terminal or unsafe| HOME
-  DONE -->|more information required| RANK
-  DONE -->|complete| HOME
-  HOME --> DISABLE --> RESULT --> RECON
-```
-
-Tesseract proposes collision-qualified motion; the executor remains the sole
-autonomous joint-command publisher, and the PiPER driver owns enable/disable,
-CAN timing, motor health and feedback. GroundingDINO/SAM2 perception does not
-have a command path to the gripper.
-
-## CAD-to-robot relationship
-
-```mermaid
-flowchart LR
-  ASM["FullCase.SLDASM<br/>editable enclosure assembly"]
-  PARTS["SolidWorks part sources"]
-  DXF["DXF panel profiles<br/>laser cutting, mm"]
-  STL["STL fabrication exports<br/>3D printing, mm scale"]
-  MF["Seven-plate 3MF slicer project"]
-  ENC["Tracked-platform enclosure<br/>frame, panels and battery retention"]
-  OPTIONAL["Optional platform sensing<br/>ZED and LiDAR mounts"]
-  WRIST["PiPER wrist L515 holder"]
-  L515["Current L515 RGB-D scan sensor"]
-  RUNTIME["Qualified URDF / Tesseract meshes<br/>separate runtime ownership"]
-
-  ASM --> PARTS
-  PARTS --> DXF
-  PARTS --> STL
-  STL --> MF
-  DXF --> ENC
-  STL --> ENC
-  STL --> OPTIONAL
-  STL --> WRIST
-  WRIST --> L515
-  WRIST -. design source only .-> RUNTIME
-```
-
-The CAD snapshot supports manufacture and design review. Runtime meshes remain
-at their established URDF/Tesseract paths and may only be regenerated through
-the repository's hash-checked geometry and qualification workflow.
-
-## Evidence sources
+## Architecture evidence
 
 - [`README.md`](../../README.md)
 - [`ARCHITECTURE.md`](../../ARCHITECTURE.md)
