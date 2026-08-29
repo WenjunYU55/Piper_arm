@@ -28,7 +28,7 @@ python3 docs/architecture/diagrams/validate_diagrams.py
 
 ## Maintenance rules
 
-- Keep the whole-system map predominantly vertical and detailed enough to show all state-changing features. It is the canonical overview; focused diagrams explain individual loops rather than replacing it.
+- Keep the whole-system map predominantly vertical and detailed enough to show all state-changing features. Give every numbered section a distinct header band, generous inter-row gaps and visible bottom padding; the master should be read section by section, not compressed into a poster. It is the canonical overview; focused diagrams explain individual loops rather than replacing it.
 - Keep focused canvases at 1280 px and embed every diagram at up to 1000 px. At GitHub desktop width, body text must remain at least 11 px and edge labels at least 10 px.
 - Draw connector paths first, cards second and opaque label capsules last. Feedback buses must stay outside lane headings and status badges must occupy their own header row.
 - Never hide branch status. A branch-only path must use gray dashed edges and an explicit status badge. Hardware qualification must be stated independently from software availability.

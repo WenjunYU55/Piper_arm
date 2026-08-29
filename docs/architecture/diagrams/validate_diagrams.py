@@ -25,7 +25,7 @@ def main():
         root = ET.parse(path).getroot()
         dimensions[path.name] = root.attrib["viewBox"].split()[2:]
 
-    assert dimensions["system-overview.svg"] == ["1320", "5050"]
+    assert dimensions["system-overview.svg"] == ["1320", "6370"]
     assert all(dimensions[name][0] == "1280" for name in FOCUSED)
 
     master = (ASSETS / "system-overview.svg").read_text(encoding="utf-8")

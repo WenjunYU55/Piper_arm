@@ -251,7 +251,8 @@ def render_system():
     avoids the previous scaled 1400 px coordinate system, which made the
     canvas larger without making the information easier to read.
     """
-    width, height = 1320, 5050
+    width = 1320
+    compact_height = 5050
     title = "PiPER Active-View Scanning: Detailed System Architecture"
     subtitle = "One command path, accepted-only evidence, and explicit feedback from request to reconstruction"
     nodes = {
@@ -341,6 +342,54 @@ def render_system():
         dict(src="dataset", dst="reconstruct", kind="data", label="immutable captures", src_side="right", dst_side="right", via=((1215, 4080), (1215, 4810), (1100, 4810)), label_at=(1198, 4450), label_anchor="end"),
     ]
 
+    # Add real whitespace between rows without stretching the cards or type.
+    # Each insertion sits in an existing gap, so every downstream node, port,
+    # waypoint and label moves together while the connector topology remains
+    # unchanged.  The result is intentionally tall: the master figure should
+    # be read section by section rather than compressed into a poster.
+    vertical_insertions = (
+        (400, 60),
+        (575, 90),
+        (860, 60),
+        (1090, 90),
+        (1390, 60),
+        (1585, 55),
+        (1730, 90),
+        (2125, 60),
+        (2310, 90),
+        (2630, 60),
+        (2860, 60),
+        (3100, 90),
+        (3375, 60),
+        (3620, 90),
+        (3975, 60),
+        (4185, 55),
+        (4350, 90),
+        (4700, 60),
+        (4910, 40),
+    )
+
+    def expanded_y(value):
+        return value + sum(amount for threshold, amount in vertical_insertions if value >= threshold)
+
+    for node in nodes.values():
+        node["y"] = expanded_y(node["y"])
+    for item in edges:
+        for port_name in ("src_at", "dst_at"):
+            if port_name in item:
+                port_x, port_y = item[port_name]
+                item[port_name] = (port_x, expanded_y(port_y))
+        if "via" in item:
+            item["via"] = tuple((x, expanded_y(y)) for x, y in item["via"])
+        if "label_at" in item:
+            label_x, label_y = item["label_at"]
+            item["label_at"] = (label_x, expanded_y(label_y))
+
+    height = expanded_y(compact_height)
+
+    def section(start, end, heading, description):
+        return lane(expanded_y(start), expanded_y(end) - expanded_y(start), heading, description)
+
     body = svg_header(width, height, title, subtitle)
     body.extend([
         "<style>",
@@ -358,14 +407,14 @@ def render_system():
     ])
     body.extend(legend(112, width))
     body.append('<g class="system-map">')
-    body.extend(lane(140, 420, "1  Request and freeze mission intent", "External task ownership; the tracked base is never commanded here."))
-    body.extend(lane(585, 500, "2  Orchestrate one owned mission", "Admission, process generations and terminal lifecycle remain correlated."))
-    body.extend(lane(1110, 680, "3  Produce measured target and scene evidence", "Timestamped RGB-D, calibration and isolated AI feed ROS safety evidence."))
-    body.extend(lane(1815, 485, "4  Select the next useful and feasible view", "Accepted captures alone change measured coverage."))
-    body.extend(lane(2325, 760, "5  Propose motion through one frozen backend", "Tesseract is on main; cuRobo is branch-only and hardware-unqualified."))
-    body.extend(lane(3110, 555, "6  Authorize and execute through one command owner", "All planner backends traverse the same fail-closed physical boundary."))
-    body.extend(lane(3690, 710, "7  Admit or reject the settled observation", "Acceptance, retry and rejection deliberately have different feedback effects."))
-    body.extend(lane(4425, 500, "8  Recover safely, correlate base home and reconstruct", "Offline reconstruction consumes immutable evidence after the required safe state."))
+    body.extend(section(140, 580, "1  Request and freeze mission intent", "External task ownership; the tracked base is never commanded here."))
+    body.extend(section(585, 1105, "2  Orchestrate one owned mission", "Admission, process generations and terminal lifecycle remain correlated."))
+    body.extend(section(1110, 1805, "3  Produce measured target and scene evidence", "Timestamped RGB-D, calibration and isolated AI feed ROS safety evidence."))
+    body.extend(section(1815, 2315, "4  Select the next useful and feasible view", "Accepted captures alone change measured coverage."))
+    body.extend(section(2325, 3100, "5  Propose motion through one frozen backend", "Tesseract is on main; cuRobo is branch-only and hardware-unqualified."))
+    body.extend(section(3110, 3680, "6  Authorize and execute through one command owner", "All planner backends traverse the same fail-closed physical boundary."))
+    body.extend(section(3690, 4415, "7  Admit or reject the settled observation", "Acceptance, retry and rejection deliberately have different feedback effects."))
+    body.extend(section(4425, 4925, "8  Recover safely, correlate base home and reconstruct", "Offline reconstruction consumes immutable evidence after the required safe state."))
     for item in edges:
         body.extend(edge(nodes, item))
     for node in nodes.values():
@@ -373,7 +422,7 @@ def render_system():
     for item in edges:
         body.extend(edge(nodes, item, labels_only=True))
     body.extend([
-        text(width / 2, 5010, "Red is the sole motor-command edge. Dashed green paths are measured feedback, retry or replanning.", "note"),
+        text(width / 2, expanded_y(5010), "Red is the sole motor-command edge. Dashed green paths are measured feedback, retry or replanning.", "note"),
         "</g>",
         "</svg>",
     ])
