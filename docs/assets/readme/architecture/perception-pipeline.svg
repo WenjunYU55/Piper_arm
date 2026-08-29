@@ -107,4 +107,3 @@
 <text x="550.0" y="1413" class="detail" text-anchor="middle"><tspan x="550.0" dy="0">NBV + planner snapshot | executor runtime safety</tspan><tspan x="550.0" dy="18">settled capture admission | GUI diagnostics</tspan><tspan x="550.0" dy="18">none of these perception paths owns a motor publisher</tspan></text>
 <text x="550.0" y="1556" class="note" text-anchor="middle">Short prediction gaps never become measured coverage; a recovered fresh measurement must pass the same gates again.</text>
 </svg>
-

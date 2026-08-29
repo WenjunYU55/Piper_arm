@@ -98,4 +98,3 @@
 <text x="180.0" y="1133" class="detail" text-anchor="middle"><tspan x="180.0" dy="0">hold current pose; no command</tspan><tspan x="180.0" dy="18">recover fresh measured target</tspan><tspan x="180.0" dy="18">new plan must be re-approved</tspan></text>
 <text x="550.0" y="1716" class="note" text-anchor="middle">The planner proves feasibility; NBV chooses what to try next; capture acceptance alone changes measured coverage.</text>
 </svg>
-

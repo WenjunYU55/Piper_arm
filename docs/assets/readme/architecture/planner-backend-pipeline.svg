@@ -100,4 +100,3 @@
 <text x="175.0" y="1428" class="detail" text-anchor="middle"><tspan x="175.0" dy="0">stale/malformed/unsupported/unready</tspan><tspan x="175.0" dy="18">publish correlated rejection</tspan><tspan x="175.0" dy="18">mission/NBV decides bounded next action</tspan><tspan x="175.0" dy="18">never switch backend automatically</tspan></text>
 <text x="550.0" y="1826" class="note" text-anchor="middle">Selecting cuRobo never grants motor authority; its current collision model intentionally blocks physical execution.</text>
 </svg>
-

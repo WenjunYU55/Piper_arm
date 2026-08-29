@@ -94,4 +94,3 @@
 <text x="645.0" y="1394" class="badge" text-anchor="middle">NOT IN RUNTIME</text>
 <text x="550.0" y="1571" class="note" text-anchor="middle">Design CAD supports fabrication; URDF/planner collision assets and calibration retain separate qualification ownership.</text>
 </svg>
-

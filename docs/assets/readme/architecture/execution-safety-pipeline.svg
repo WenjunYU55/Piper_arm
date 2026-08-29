@@ -104,4 +104,3 @@
 <text x="180.0" y="1458" class="detail" text-anchor="middle"><tspan x="180.0" dy="0">PRE_HOME -&gt; ROUGH_HOME</tspan><tspan x="180.0" dy="18">-&gt; STORAGE_WRIST -&gt; disable all six</tspan><tspan x="180.0" dy="18">motor authority loss: no new command</tspan><tspan x="180.0" dy="18">revoke mission and clean children</tspan></text>
 <text x="550.0" y="1616" class="note" text-anchor="middle">Planner output is necessary but never sufficient: authorization and live feedback remain independent authorities.</text>
 </svg>
-

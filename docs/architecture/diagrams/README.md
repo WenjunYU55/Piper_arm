@@ -35,4 +35,3 @@ The generator uses only the Python standard library and writes deterministic UTF
 ## Visual verification
 
 Generated SVG is the deliverable, but it must be rendered before review. Check the full system map at its native aspect ratio and each focused diagram at normal GitHub README width. Confirm that text is legible, legends are not clipped, arrows terminate at the intended boxes, and feedback loops are visually distinguishable from command flow.
-

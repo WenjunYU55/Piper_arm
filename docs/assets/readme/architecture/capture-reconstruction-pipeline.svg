@@ -108,4 +108,3 @@
 <text x="870.0" y="1898" class="detail" text-anchor="middle"><tspan x="870.0" dy="0">raw + cleaned PLY meshes</tspan><tspan x="870.0" dy="18">coloured measured clouds</tspan><tspan x="870.0" dy="18">quality metrics + visual preview</tspan><tspan x="870.0" dy="18">complete provenance report</tspan></text>
 <text x="550.0" y="2051" class="note" text-anchor="middle">Reconstruction is asynchronous and command-free; its failure cannot retroactively change a safely completed arm mission.</text>
 </svg>
-

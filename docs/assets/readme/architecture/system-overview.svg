@@ -277,4 +277,3 @@
 <text x="1137.5" y="2778" class="detail" text-anchor="middle"><tspan x="1137.5" dy="0">immutable input admission</tspan><tspan x="1137.5" dy="18">target-only Open3D TSDF (3 mm default)</tspan><tspan x="1137.5" dy="18">optional bounded GICP / scene pose graph</tspan><tspan x="1137.5" dy="18">mesh + cloud + metrics + provenance</tspan><tspan x="1137.5" dy="18">failure does not rewrite mission result</tspan></text>
 <text x="700.0" y="2962" class="note" text-anchor="middle">Command authority: planner workers propose; scan_viewpoint_executor publishes autonomous joints; the PiPER driver owns CAN, motors and feedback.</text>
 </svg>
-
