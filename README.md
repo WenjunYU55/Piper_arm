@@ -2,132 +2,145 @@
 
 # PiPER Active RGB-D Scanning
 
-**A safety-gated ROS 2 system for open-label target perception, next-best-view planning, autonomous arm motion, and multi-view 3D reconstruction on a tracked mobile manipulator.**
+**A safety-gated ROS 2 system for open-label target perception, closed-loop next-best-view planning, autonomous arm motion, and multi-view 3D reconstruction on a tracked mobile manipulator.**
 
-<a href="docs/assets/readme/media/ray-process.mp4">
+<a href="docs/assets/readme/media/piper-active-scanning.png">
   <img src="docs/assets/readme/media/piper-active-scanning.png" alt="PiPER arm planning target-centred camera viewpoints around an object on the Bunker Pro 2 tracked platform" width="900">
 </a>
 
-<sub>Target-centred viewpoints and candidate rays around the robot. Click the image to open the full ray-planning video.</sub>
+<sub>Target-centred viewpoints and candidate camera rays around the PiPER arm and tracked platform.</sub>
 
 ![ROS 2 Foxy](https://img.shields.io/badge/ROS_2-Foxy-22314E?logo=ros&logoColor=white)
 ![Ubuntu 20.04](https://img.shields.io/badge/Ubuntu-20.04-E95420?logo=ubuntu&logoColor=white)
 ![Python 3.8](https://img.shields.io/badge/Python-3.8-3776AB?logo=python&logoColor=white)
-![Planner](https://img.shields.io/badge/Planner-Tesseract-9C6500)
+![Main planner](https://img.shields.io/badge/main-Tesseract_0.35-9C6500)
+![Integration planner](https://img.shields.io/badge/curobo--integration-cuRobo_0.7.8-8A94A3)
 ![RGB-D](https://img.shields.io/badge/Sensor-RealSense_L515-0071C5)
-![Platform](https://img.shields.io/badge/Platform-PiPER_%2B_Bunker_Pro_2-2F3437)
 
-[Architecture](ARCHITECTURE.md) · [System diagrams](docs/architecture/system-diagrams.md) · [Clean installation](CLEAN_INSTALL.md) · [Operator commands](OPERATOR_COMMANDS.md) · [Mechanical CAD](CAD/)
+[Architecture](ARCHITECTURE.md) · [Detailed system map](docs/architecture/system-diagrams.md) · [cuRobo integration](https://github.com/WenjunYU55/Piper_arm/tree/curobo-integration) · [Installation](CLEAN_INSTALL.md) · [Operator commands](OPERATOR_COMMANDS.md) · [CAD](CAD/)
 
 </div>
 
-## Core capabilities
+## What the robot does
 
-<table>
-  <tr>
-    <td width="33%" valign="top">
-      <h3>Acquire → Track → Understand</h3>
-      <p>Ground a runtime target label with GroundingDINO, maintain its mask with SAM2, project confidence-qualified L515 depth, and publish target, obstacle and occlusion evidence in the robot frame.</p>
-    </td>
-    <td width="33%" valign="top">
-      <h3>Measure → Plan → Qualify</h3>
-      <p>Build coverage only from accepted RGB-D observations, rank target-centred next-best views, filter reachability, and require exact Tesseract IK, collision and complete-path qualification.</p>
-    </td>
-    <td width="33%" valign="top">
-      <h3>Move → Capture → Reconstruct</h3>
-      <p>Execute through a sole safety-gated joint publisher, prove settled feedback, persist synchronized evidence, and produce target-only TSDF/GICP reconstruction outputs with provenance.</p>
-    </td>
-  </tr>
-</table>
+| 1. Perceive | 2. Choose and prove | 3. Move, measure and learn |
+|---|---|---|
+| Ground a runtime label with GroundingDINO, track its SAM2 mask, and project confidence-qualified L515 depth into `base_link`. | Rebuild coverage from accepted captures, rank target-centred views, and ask one frozen planner backend to prove a complete collision-qualified path. | Authorize through one command chain, settle on measured joint feedback, admit or reject the observation, and feed the result back into the next view. |
 
-## System architecture
+The tracked base carries the enclosure and arm but remains stationary and braked during PiPER motion. This repository exchanges task and base-home correlation data with the tracked-robot gateway; it does not publish chassis commands.
 
-The production system is organised as a closed perception–planning–action loop. Every autonomous motion must pass through one command-authority chain, and only accepted measurements are allowed to update coverage or reconstruction.
+## Detailed system architecture
+
+This is the complete feature map, from mission request to immutable reconstruction. Solid lines carry data or mission control; dashed green lines are runtime feedback, retry, reacquisition, and replanning. Gray dashed paths are explicitly branch-only or optional. Red is reserved for the sole motor-command path.
 
 <div align="center">
-  <img src="docs/assets/readme/architecture/system-overview.svg" alt="Vertical PiPER active RGB-D scanning system architecture" width="820">
+  <a href="docs/assets/readme/architecture/system-overview.svg">
+    <img src="docs/assets/readme/architecture/system-overview.svg" alt="Detailed PiPER active-view scanning architecture with mission, perception, NBV, planner, execution, capture, feedback, and reconstruction" width="1000">
+  </a>
   <br>
-  <sub>The tracked base supplies the mount, task request and pose snapshot. This repository does not command chassis motion.</sub>
+  <sub>Click to open the full-resolution SVG. Backend and command-authority status are labelled inside the diagram.</sub>
 </div>
+
+The diagram deliberately combines two audited repository states:
+
+- **`main`:** Tesseract 0.35 is the active exact motion-planning path and transports `TesseractPlan`.
+- **`curobo-integration`:** adds a frozen `tesseract | curobo` mission choice, a backend-neutral `MotionPlan` contract, and an isolated cuRobo 0.7.8 MotionGen worker. The current 167-sphere moving-link model is marked `hardware_qualified=false`, so cuRobo plans are blocked from physical execution. There is no automatic fallback or mid-mission backend switch.
+
+See the [diagram audit and implementation evidence](docs/architecture/system-diagrams.md) for the exact commits and source paths used.
 
 ## Demonstration gallery
 
 <table>
   <tr>
     <td width="64%" align="center">
-      <a href="docs/assets/readme/media/ray-process.mp4"><img src="docs/assets/readme/media/piper-active-scanning.png" alt="Target-centred ray and camera-view planning around the PiPER arm" width="100%"></a>
+      <a href="https://raw.githubusercontent.com/WenjunYU55/Piper_arm/main/docs/assets/readme/media/ray-process.mp4"><img src="docs/assets/readme/media/ray-process-preview.gif" alt="Animated target-centred ray and camera-view planning around the PiPER arm" width="100%"></a>
     </td>
     <td width="36%" align="center">
       <img src="docs/assets/readme/media/cube-reconstruction.png" alt="Multi-view RGB-D reconstruction of a cube" width="100%">
     </td>
   </tr>
   <tr>
-    <td align="center"><strong>Active viewpoint planning</strong><br><sub>Candidate camera poses and target-centred rays; click to open the MP4.</sub></td>
+    <td align="center"><strong>Active viewpoint planning</strong><br><sub>Animated ray-planning preview; click to play or download the full H.264 MP4.</sub></td>
     <td align="center"><strong>RGB-D reconstruction</strong><br><sub>Registered multi-view surface evidence and reconstructed cube geometry.</sub></td>
   </tr>
 </table>
 
-## Target perception
+## Perception, tracking and reacquisition
 
-The eye-in-hand Intel RealSense L515 provides RGB, aligned depth, confidence, calibration and timing. GroundingDINO performs open-label acquisition; SAM2 maintains a dense target mask; calibrated depth and TF then produce robot-frame target and scene evidence.
-
-<div align="center">
-  <img src="docs/assets/readme/architecture/perception-pipeline.svg" alt="Vertical target-perception and geometry pipeline" width="760">
-</div>
-
-Heavy AI workers use an isolated Python 3.10-or-newer environment and do not share the ROS 2 Foxy Python environment or any motion-command authority.
-
-## Active viewpoint and motion planning
-
-Planning begins with accepted observations, never predictions presented as measurements. The planner creates target-relative camera rays, ranks marginal surface information and novelty, removes obviously unreachable candidates, and sends the shortlist to an isolated Tesseract 0.35 worker for exact qualification.
+The eye-in-hand L515 publishes synchronized RGB, native/aligned depth, confidence, intrinsics and timestamp health. GroundingDINO provides open-label acquisition, SAM2 propagates the mask, and ambiguity-aware depth produces a measured `Target3D`. A timestamped Kalman tracker may bridge a short outage as `LOW_CONFIDENCE`, but planning still requires a fresh measured lock.
 
 <div align="center">
-  <img src="docs/assets/readme/architecture/viewpoint-planning-pipeline.svg" alt="Vertical active-viewpoint and exact motion-planning pipeline" width="760">
+  <a href="docs/assets/readme/architecture/perception-pipeline.svg"><img src="docs/assets/readme/architecture/perception-pipeline.svg" alt="Perception and reacquisition flow with freshness and rejection feedback" width="760"></a>
 </div>
 
-The detailed planner contracts, hashes and data ownership are maintained in [`docs/ai/`](docs/ai/) and summarised in [`ARCHITECTURE.md`](ARCHITECTURE.md).
+The feedback is intentional: stale camera time, invalid depth, a lost target, or blocking occlusion prevents dispatch or capture and requests a correlated heavy refresh. Predicted geometry may guide planning, but it never becomes measured coverage or reconstruction input.
 
-## Guarded execution and recovery
+## Closed-loop next-best-view planning
 
-Tesseract proposes motion; `scan_viewpoint_executor` independently authorizes it and remains the sole autonomous joint-command publisher. `piper_ctrl_single_node` retains enable/disable, SocketCAN, motor-watchdog, command-timing and feedback authority.
+Coverage is rebuilt only at the exact generation of an accepted schema-2 capture. The NBV policy ranks marginal information before travel, removes duplicate and hard-culled directions, then shortlists at most 12 voxel candidates or 6 ray directions for exact planning.
 
 <div align="center">
-  <img src="docs/assets/readme/architecture/execution-safety-pipeline.svg" alt="Vertical guarded motion-execution and recovery pipeline" width="760">
+  <a href="docs/assets/readme/architecture/viewpoint-planning-pipeline.svg"><img src="docs/assets/readme/architecture/viewpoint-planning-pipeline.svg" alt="Closed-loop NBV flow showing accept, same-pose retry, exclusion, and replanning" width="760"></a>
 </div>
 
-Motion is opt-in and fail-closed. Stale identity, calibration, target, scene, motor or safety evidence prevents dispatch. Terminal handling returns through the configured home sequence, proves a settled hold, disables all six axes, and cleans up mission-owned processes.
+The three observation outcomes have different effects:
 
-## Multi-view capture and reconstruction
+- **Accept:** atomically commit RGB-D evidence, advance the accepted-history generation, rebuild coverage, and request the next view.
+- **Retry:** hold the achieved pose, run one correlated heavy perception refresh, and re-evaluate without inventing coverage.
+- **Reject:** record the achieved FK, exclude or retire the failed view, and replan. A planner rejection can also retire a hard-infeasible ray.
 
-Each accepted viewpoint stores synchronized RGB, raw and confidence-qualified depth, the target mask, camera intrinsics, capture-time transform, joints, plan identity and quality metadata. Offline reconstruction consumes only admitted immutable observations.
+The mission is bounded to 8–24 views, but completion is based on measured surface/feature convergence or safe-frontier exhaustion rather than an unconditional view count.
+
+## Frozen planner backend and common motion contract
 
 <div align="center">
-  <img src="docs/assets/readme/architecture/capture-reconstruction-pipeline.svg" alt="Vertical multi-view capture and reconstruction pipeline" width="760">
+  <a href="docs/assets/readme/architecture/planner-backend-pipeline.svg"><img src="docs/assets/readme/architecture/planner-backend-pipeline.svg" alt="Tesseract and branch-only cuRobo planning backends feeding a common execution contract" width="760"></a>
 </div>
 
-The reconstruction package provides target-only Open3D TSDF fusion, optional bounded target GICP registration, raw and cleaned meshes, coloured measured clouds, quality metrics and provenance reports.
+On `curobo-integration`, the next-mission planner selection is validated before goal admission and frozen into the `RunTargetScan` goal and canonical mission hash. `ProcessSupervisor` starts exactly one planner worker. The generic bridge snapshots fresh joints, controller limits, target provenance, camera health, obstacles, robot/world hashes, and hand-eye calibration before writing a schema-v5 command-free request.
 
-## Hardware and software stack
+Both backends return a correlated, hashed, time-parameterized six-joint proposal to the unchanged common safety path. Tesseract uses exact configured robot meshes. The branch-only cuRobo worker uses MotionGen `plan_single` / `plan_single_js`, exact fixed Bunker meshes and an audited articulated-sphere approximation for moving links. Selecting cuRobo does not grant motor authority.
+
+## Guarded execution and physical feedback
 
 <div align="center">
-  <img src="docs/assets/readme/architecture/hardware-topology.svg" alt="Vertical PiPER, L515, enclosure and tracked-platform hardware topology" width="760">
+  <a href="docs/assets/readme/architecture/execution-safety-pipeline.svg"><img src="docs/assets/readme/architecture/execution-safety-pipeline.svg" alt="Motion authorization, sole command ownership, physical feedback, recovery, and disable proof" width="760"></a>
 </div>
 
-| Layer | Current components |
+Plans are normalized to a 20 Hz schedule and checked for finite six-joint samples, step size, speed-scaled MoveJ limits, identity hashes, TTL, backend, target drift, path validity and fresh dependencies. `scan_viewpoint_executor` is the sole autonomous `/joint_ctrl_single` publisher; `piper_ctrl_single_node` alone owns MoveJ, SocketCAN, enable/disable and all-six-motor feedback.
+
+Runtime joint error, timeout, settle state, holder/floor clearance, camera health, tracking and scene evidence feed back on every stage. Transient evidence causes hold → refresh → re-authorize → resume of the exact stage. Cancellation or hard failure enters bounded terminal recovery. Loss of motor authority permits no further command and waits for disable proof.
+
+## Capture admission and reconstruction
+
+<div align="center">
+  <a href="docs/assets/readme/architecture/capture-reconstruction-pipeline.svg"><img src="docs/assets/readme/architecture/capture-reconstruction-pipeline.svg" alt="Settled RGB-D burst admission, immutable commit, rejection feedback, base-home correlation, and reconstruction" width="760"></a>
+</div>
+
+A settled capture uses the exact mask/RGB stamp plus 20 new native depth/confidence frames. Admission requires calibrated intrinsics and TF, confidence grade ≥ 8, at least 0.50 target support, fresh quality/occlusion evidence, achieved FK, and the matching plan provenance. Partial artifacts never count: the accepted schema-2 record and SHA-256 manifest are committed atomically.
+
+After safe terminal/home-and-disable evidence—and tracked-base-home correlation where required—offline reconstruction validates immutable inputs and runs target-only TSDF fusion (3 mm voxels, 15 mm truncation by default), with optional bounded GICP and scene pose-graph refinement. Reconstruction failure is reported separately and does not rewrite the mission result.
+
+## Hardware and compute boundaries
+
+<div align="center">
+  <a href="docs/assets/readme/architecture/hardware-topology.svg"><img src="docs/assets/readme/architecture/hardware-topology.svg" alt="PiPER, L515, enclosure, tracked platform, compute environments, and command boundaries" width="760"></a>
+</div>
+
+| Layer | Current implementation |
 |---|---|
-| Mobile platform | AgileX Bunker Pro 2 tracked base and enclosure; chassis motion is outside this repository's command boundary |
-| Manipulator | AgileX PiPER 6-DOF arm with USB-CAN / SocketCAN interface |
-| Active RGB-D sensing | Intel RealSense L515 in a qualified eye-in-hand holder |
-| Optional mechanical provision | Enclosure-mounted ZED camera and LiDAR CAD; not consumed by the current scan runtime |
-| Middleware | Ubuntu 20.04, ROS 2 Foxy, Python 3.8 for ROS nodes |
-| Target perception | GroundingDINO, SAM2, calibrated RGB-D projection, tracking and occlusion analysis |
-| View and motion planning | Measured voxel coverage, next-best-view ranking, capability filtering, Tesseract 0.35 |
-| Execution | MissionEngine, safety evaluator, sole scan executor, PiPER SDK driver |
+| Mobile carrier | AgileX Bunker Pro 2 and enclosure; stationary during arm dispatch; chassis command remains outside this repository |
+| Manipulator | AgileX PiPER 6-DOF arm over USB-CAN / SocketCAN |
+| Active sensor | Qualified eye-in-hand Intel RealSense L515 |
+| ROS runtime | Ubuntu 20.04, ROS 2 Foxy and Python 3.8 |
+| Isolated AI | Python 3.10+ CUDA GroundingDINO/SAM2 workers over permission-bounded spools; no motor interface |
+| Motion planning | Tesseract 0.35 on `main`; Tesseract or fail-closed cuRobo 0.7.8 on `curobo-integration` |
+| Optional CAD provision | Enclosure-mounted ZED and LiDAR parts; not current runtime perception inputs |
 | Reconstruction | Open3D 0.19, target-only TSDF, optional bounded GICP and provenance reporting |
 
 ## Quick start
 
-The supported host is Ubuntu 20.04 with ROS 2 Foxy already installed at `/opt/ros/foxy`.
+The supported host is Ubuntu 20.04 with ROS 2 Foxy installed at `/opt/ros/foxy`.
 
 ```bash
 git clone https://github.com/WenjunYU55/Piper_arm.git
@@ -141,21 +154,16 @@ cd piper_ros_foxy
 colcon build --symlink-install
 cd ..
 source source_piper_foxy_environment.sh
-```
-
-Verify the installation before connecting real hardware:
-
-```bash
 ./verify_installation.sh
 ```
 
-Start the mission listener:
+Start the command-free mission listener:
 
 ```bash
 ./run_target_scan_mission.sh
 ```
 
-The listener is command-free unless real motion is explicitly selected. Hardware operation requires the staged checks and commands in [`OPERATOR_COMMANDS.md`](OPERATOR_COMMANDS.md); do not infer motion authorization from this quick start.
+Real motion requires explicit opt-in and the staged checks in [OPERATOR_COMMANDS.md](OPERATOR_COMMANDS.md). Do not infer hardware authorization from this quick start.
 
 ## Repository map
 
@@ -165,43 +173,47 @@ Piper_arm/
 │   ├── piper_msgs/                 ROS interfaces
 │   ├── piper_description/          URDF and qualified runtime meshes
 │   ├── piper/                      PiPER CAN / SDK driver
-│   ├── piper_mobile_manipulation/  mission, perception, planning and execution
-│   └── piper_tesseract_foxy/       Foxy bridge and isolated planning worker
+│   ├── piper_mobile_manipulation/  mission, perception, NBV and execution
+│   └── piper_tesseract_foxy/       Foxy bridge and isolated planner workers
 ├── L515_camera/                    RealSense build and hand-eye calibration
 ├── AI_perception_tests/            GroundingDINO / SAM2 workers and tests
-├── motion_planning/tesseract/      rootless Tesseract runtime tooling
+├── motion_planning/                isolated planner tooling
 ├── reconstruction/                 immutable-input 3D reconstruction
 ├── piper_gui/                      operator interface and ray review
 ├── integration/                    tracked-root robot-description contract
-├── CAD/                            enclosure-v4 source and fabrication files
-├── docs/                           architecture, contracts and historical evidence
-├── tests/                           cross-package development tests
-└── tools/                           diagnostics, replay and calibration utilities
+├── CAD/                            enclosure source and fabrication files
+├── docs/                           architecture, contracts and evidence
+├── tests/                          cross-package tests
+└── tools/                          diagnostics, replay and calibration
 ```
+
+The cuRobo adapter, worker and tests exist on [`curobo-integration`](https://github.com/WenjunYU55/Piper_arm/tree/curobo-integration), not on `main`.
 
 ## Mechanical design files
 
-The [`CAD/enclosure-v4/`](CAD/enclosure-v4/) package contains the supplied SolidWorks assembly and parts, millimetre DXFs, printable STLs and seven-plate 3MF project. Its README describes what each component does and records fabrication and safety caveats; `MANIFEST.csv` provides a SHA-256 checksum for every file.
+[`CAD/enclosure-v4/`](CAD/enclosure-v4/) contains the SolidWorks assembly and parts, millimetre DXFs, printable STLs and a seven-plate 3MF project. Its README describes each part and its robot function; `MANIFEST.csv` records a SHA-256 checksum for every file.
 
-Design/manufacturing CAD is not a drop-in replacement for collision-qualified URDF/Tesseract geometry. Follow the repository's [`large-asset policy`](docs/architecture/asset_policy.md) and geometry qualification workflow before changing runtime meshes.
+Manufacturing CAD is not a substitute for collision-qualified URDF/planner geometry. Follow the [large-asset policy](docs/architecture/asset_policy.md) and geometry-qualification workflow before changing runtime meshes.
 
 ## Documentation
 
 - [Architecture and responsibility boundaries](ARCHITECTURE.md)
-- [Rendered system and subsystem diagrams](docs/architecture/system-diagrams.md)
+- [Detailed system and feedback diagrams](docs/architecture/system-diagrams.md)
+- [Planner backend design on `curobo-integration`](https://github.com/WenjunYU55/Piper_arm/blob/curobo-integration/docs/architecture/motion_planner_backends.md)
 - [Clean installation](CLEAN_INSTALL.md)
 - [Operator commands and safety procedures](OPERATOR_COMMANDS.md)
 - [Tracked-platform integration contract](integration/track_robot_description/README.md)
 - [L515 camera and calibration](L515_camera/README.md)
-- [AI-first contracts, flows and roadmap](docs/ai/00-index.yaml)
+- [AI-first contracts and flows](docs/ai/00-index.yaml)
 - [Mechanical CAD](CAD/README.md)
 
 ## Safety status
 
 - Autonomous motion requires explicit launch opt-in, fresh mission authorization, valid perception and geometry, a collision-qualified plan, healthy all-six-axis feedback and a separately enabled arm.
+- The current cuRobo moving-link collision model is not hardware-qualified; the integration branch therefore blocks physical cuRobo execution.
 - The gripper has no autonomous command path in the target-scan mission.
-- A person/hand remains a terminal blocker; automatic contact manipulation is unqualified.
-- The tracked base must remain stationary during arm dispatch. Base repositioning, brake authority and mounted-chassis acceptance are future integration work.
-- ROS 2 Foxy is end-of-life. This repository keeps the qualified Ubuntu 20.04/Foxy baseline; porting to another distribution requires deliberate interface and hardware requalification.
+- A person or hand remains a terminal blocker; automatic contact manipulation is unqualified.
+- The tracked base must remain stationary during arm dispatch. Base repositioning and brake authority remain external integration responsibilities.
+- ROS 2 Foxy is end-of-life. Porting the qualified Ubuntu 20.04/Foxy baseline requires deliberate interface and hardware requalification.
 
-This repository is research engineering software for a physically tested robot. Review the current qualification records and operator procedure before any hardware run.
+This is research engineering software for a physical robot. Review the current qualification evidence and operator procedure before any hardware run.

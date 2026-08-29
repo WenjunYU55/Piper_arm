@@ -1,100 +1,135 @@
-# System and subsystem diagrams
+# System and feedback diagrams
 
-These figures provide a readable overview of the production stack while keeping
-the command, measurement and integration boundaries explicit. Generated SVGs
-are committed so GitHub renders them without an external diagram service.
+These diagrams are based on a source-level audit rather than a conceptual feature list. The whole-system map combines the current `main` behavior with the explicitly labelled planner work on `curobo-integration`; it does not imply that the branch-only code is already merged or hardware-qualified.
+
+## Audited repository states
+
+| Ref | Audited commit | What the diagrams claim |
+|---|---|---|
+| [`main`](https://github.com/WenjunYU55/Piper_arm/tree/9ca95b76e3f94be0cedf8727cb35fa4097b85638) | `9ca95b7` | Production Tesseract path, perception/NBV, common execution, capture, terminal handling and reconstruction |
+| [`curobo-integration`](https://github.com/WenjunYU55/Piper_arm/tree/31c1a248670d2ef8ab8cf3f5ac406b508f31e3f0) | `31c1a24` | Frozen backend choice, generic `MotionPlan` transport and cuRobo 0.7.8 worker; current cuRobo collision model is fail-closed for hardware |
+
+The branches are diverged. These figures document their contracts and status; they do not merge the integration branch.
 
 ## Visual vocabulary
 
-| Colour | Meaning |
+| Mark | Meaning |
 |---|---|
-| Blue | Physical sensors and inputs |
-| Violet | Perception and learned models |
-| Teal | State, accepted evidence and data products |
-| Amber | View and motion planning |
-| Red | Safety, authorization and recovery |
-| Graphite | Physical actuation and compute infrastructure |
-| Gray | Optional or non-integrated hardware |
+| Graphite solid arrow | Data, evidence or a command-free proposal |
+| Blue solid arrow | Mission control or lifecycle ownership |
+| Green dashed arrow | Feedback, retry, reacquisition, replanning or readiness return |
+| Red solid arrow | Physical motor command; intentionally appears only at the executor-to-driver boundary |
+| Gray dashed arrow | Branch-only or optional path |
+| Blue / violet / teal boxes | Physical inputs / perception / measured state and immutable data |
+| Amber / red / graphite boxes | Planning / safety and recovery / physical actuation and infrastructure |
 
-Solid arrows show the main runtime progression. Dashed return arrows show
-feedback, replanning or recovery. A dashed or gray hardware stage is not an
-implemented data or command path.
-
-## Whole-system architecture
+## One detailed system diagram
 
 <div align="center">
-  <img src="../assets/readme/architecture/system-overview.svg" alt="Vertical PiPER active RGB-D scanning system architecture" width="820">
+  <a href="../assets/readme/architecture/system-overview.svg">
+    <img src="../assets/readme/architecture/system-overview.svg" alt="Detailed PiPER architecture from mission request through perception, NBV, planner backend, execution feedback, capture and reconstruction" width="1000">
+  </a>
+  <br>
+  <sub>Click for the full-resolution SVG.</sub>
 </div>
 
-The tracked base supplies the physical mount, mission request and pose snapshot.
-This repository does not publish chassis commands; mounted-base collision TF,
-brake authority and repositioning remain integration work.
+The map keeps five ownership facts visible:
 
-## Target perception and geometric state
+1. The selected planner backend is frozen before mission admission and exactly one worker is supervised.
+2. Perception, NBV and planner workers remain command-free.
+3. `scan_viewpoint_executor` is the sole autonomous joint publisher.
+4. The PiPER driver alone owns MoveJ, SocketCAN, enable/disable and motor feedback.
+5. Only accepted immutable observations advance coverage or reconstruction.
+
+## Perception and reacquisition
 
 <div align="center">
-  <img src="../assets/readme/architecture/perception-pipeline.svg" alt="Vertical target-perception and geometry pipeline" width="760">
+  <a href="../assets/readme/architecture/perception-pipeline.svg"><img src="../assets/readme/architecture/perception-pipeline.svg" alt="Target perception, measured geometry, tracking degradation and reacquisition feedback" width="760"></a>
 </div>
 
-The current production sensing path is the eye-in-hand L515. ZED and LiDAR
-parts in the enclosure CAD are optional mechanical provision and are not shown
-as perception inputs.
+Fresh L515 time, mask identity and ambiguity-qualified depth are independent gates. A short tracker outage may publish `LOW_CONFIDENCE` prediction, but planning requires a fresh measured lock. Lost/invalid evidence returns through hold and correlated heavy reacquisition; it cannot update coverage.
 
-## Active viewpoint and motion planning
+## Accepted-only NBV loop
 
 <div align="center">
-  <img src="../assets/readme/architecture/viewpoint-planning-pipeline.svg" alt="Vertical active-viewpoint and exact motion-planning pipeline" width="760">
+  <a href="../assets/readme/architecture/viewpoint-planning-pipeline.svg"><img src="../assets/readme/architecture/viewpoint-planning-pipeline.svg" alt="Next-best-view planning with accept, retry, reject, retire and replan feedback" width="760"></a>
 </div>
 
-Accepted measurements may update coverage. Predicted target geometry may guide
-view selection but must not be presented to reconstruction as measured evidence.
+The diagram separates the effects that were previously collapsed:
 
-## Guarded motion execution and recovery
+- accepted observation → immutable commit → new history generation → measured-coverage rebuild;
+- retryable observation → hold achieved FK → one same-pose heavy refresh → re-admit;
+- rejected observation → no coverage update → exclude the view and replan;
+- exact planner rejection → optionally retire a hard-infeasible ray and request another candidate;
+- target loss → hold → reacquire measured target → produce a fresh plan that must be authorized again.
+
+## Planner backend and transport
 
 <div align="center">
-  <img src="../assets/readme/architecture/execution-safety-pipeline.svg" alt="Vertical guarded execution and recovery pipeline" width="760">
+  <a href="../assets/readme/architecture/planner-backend-pipeline.svg"><img src="../assets/readme/architecture/planner-backend-pipeline.svg" alt="Frozen Tesseract or cuRobo backend, worker readiness, validated response, generic transport and unchanged common execution" width="760"></a>
 </div>
 
-Tesseract owns exact geometric feasibility, the executor owns autonomous plan
-authorization and joint publication, and the PiPER driver owns CAN, motors and
-feedback. None of these authorities is duplicated by the GUI or AI workers.
+On `main`, the bridge uses the Tesseract worker and `TesseractPlan`. On `curobo-integration`, the generic bridge publishes backend-neutral `MotionPlan`, `MotionPlanStatus`, `PlannerReadiness` and provenance while retaining Tesseract aliases only in Tesseract mode. Worker heartbeat, generation, schema, backend and model hashes must match the frozen request.
 
-## Multi-view capture and reconstruction
+The branch-only cuRobo worker uses MotionGen 0.7.8 `plan_single` for camera poses and `plan_single_js` for home motions. Fixed Bunker geometry uses exact meshes, while moving links use 167 audited spheres. Because that approximation currently declares `hardware_qualified=false`, readiness remains fail-closed for physical cuRobo motion. There is no automatic Tesseract fallback.
+
+## Execution feedback and recovery
 
 <div align="center">
-  <img src="../assets/readme/architecture/capture-reconstruction-pipeline.svg" alt="Vertical capture and reconstruction pipeline" width="760">
+  <a href="../assets/readme/architecture/execution-safety-pipeline.svg"><img src="../assets/readme/architecture/execution-safety-pipeline.svg" alt="Plan validation, authorization, runtime physical feedback, hold-refresh-resume and terminal recovery" width="760"></a>
 </div>
 
-Reconstruction consumes immutable accepted captures after the mission has
-entered a safe terminal state and, where applicable, the tracked-base home
-report has been correlated.
+Common plan validation checks six finite joints, time order, 20 Hz scheduling, maximum step, speed-scaled MoveJ limits and fresh matching hashes. Authorization then checks mission identity, TTL, backend, target drift, dependencies and the complete path.
 
-## Hardware topology
+During execution, joints, arm status, controller limits, camera timing, target tracking, scene quality, following error, timeout, settle state and holder/floor clearance return to the executor. Transient evidence follows hold → refresh → re-authorize → resume of the exact interrupted stage. Cancellation or hard fault follows the bounded home/disable recovery sequence. Motor-authority loss allows no further command.
+
+## Capture admission, rejection and reconstruction
 
 <div align="center">
-  <img src="../assets/readme/architecture/hardware-topology.svg" alt="Vertical robot hardware topology and integration boundaries" width="760">
+  <a href="../assets/readme/architecture/capture-reconstruction-pipeline.svg"><img src="../assets/readme/architecture/capture-reconstruction-pipeline.svg" alt="Settled capture, confidence-qualified burst, atomic commit, rejection feedback, safe terminal state and reconstruction" width="760"></a>
 </div>
 
-Design CAD under [`CAD/`](../../CAD/) supports manufacturing and design review.
-The collision-qualified meshes used by the URDF and Tesseract keep their
-established runtime ownership and paths.
+The capture service uses the exact mask/RGB stamp and exactly 20 new native depth/confidence frames. Admission requires confidence grade ≥ 8, at least 0.50 support, per-pixel median depth, calibrated intrinsics/TF, achieved FK, plan provenance, and fresh quality/occlusion evidence. Atomic artifacts and their manifest SHA form one schema-2 observation; partial files never count.
 
-## Sources and regeneration
+After the safe mission terminal and optional tracked-base-home correlation, reconstruction validates immutable input, then runs target-only TSDF by default with optional bounded GICP and target-excluded scene pose-graph refinement. Reconstruction failure is reported without changing the mission result.
 
-The diagrams are generated using only the Python standard library:
+## Hardware and compute boundaries
+
+<div align="center">
+  <a href="../assets/readme/architecture/hardware-topology.svg"><img src="../assets/readme/architecture/hardware-topology.svg" alt="Robot hardware, isolated compute environments and motor-command boundary" width="760"></a>
+</div>
+
+The eye-in-hand L515 is the qualified active scan sensor. ZED and LiDAR parts under [`CAD/`](../../CAD/) are mechanical provision, not current runtime inputs. The tracked base remains stationary and externally controlled; this repository sends no chassis command.
+
+## Implementation evidence
+
+Primary system descriptions:
+
+- [`ARCHITECTURE.md`](../../ARCHITECTURE.md)
+- [`docs/architecture/system-overview.md`](system-overview.md)
+- [`docs/ai/10-system-map.yaml`](../ai/10-system-map.yaml)
+- [`docs/ai/40-flows.yaml`](../ai/40-flows.yaml)
+
+Planner integration evidence on `curobo-integration`:
+
+- [planner backend contract](https://github.com/WenjunYU55/Piper_arm/blob/curobo-integration/docs/architecture/motion_planner_backends.md)
+- [branch architecture](https://github.com/WenjunYU55/Piper_arm/blob/curobo-integration/ARCHITECTURE.md)
+- [generic planner ROS interfaces](https://github.com/WenjunYU55/Piper_arm/tree/curobo-integration/piper_ros_foxy/src/piper_msgs)
+- [cuRobo tests](https://github.com/WenjunYU55/Piper_arm/tree/curobo-integration/tests/curobo)
+
+Subsystem evidence:
+
+- [`integration/track_robot_description/README.md`](../../integration/track_robot_description/README.md)
+- [`L515_camera/README.md`](../../L515_camera/README.md)
+- [`CAD/enclosure-v4/README.md`](../../CAD/enclosure-v4/README.md)
+- [`reconstruction/`](../../reconstruction/)
+
+## Regeneration and review
+
+The committed SVGs are generated deterministically with the Python standard library:
 
 ```bash
 python3 docs/architecture/diagrams/generate_diagrams.py
 ```
 
-See [`docs/architecture/diagrams/README.md`](diagrams/README.md) for the visual
-and maintenance rules.
-
-## Architecture evidence
-
-- [`README.md`](../../README.md)
-- [`ARCHITECTURE.md`](../../ARCHITECTURE.md)
-- [`docs/ai/10-system-map.yaml`](../ai/10-system-map.yaml)
-- [`docs/ai/40-flows.yaml`](../ai/40-flows.yaml)
-- [`integration/track_robot_description/README.md`](../../integration/track_robot_description/README.md)
-- [`CAD/enclosure-v4/README.md`](../../CAD/enclosure-v4/README.md)
+After any architecture change, regenerate all figures, render them to raster images for visual inspection, and verify that branch status, command ownership and every state-changing feedback path are still explicit. See the [diagram-source rules](diagrams/README.md).
