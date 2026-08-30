@@ -55,8 +55,8 @@ def existing_reconstruction_outputs(project_root, selection):
         return None
     report = load_quality_report(report_path)
 
-    def saved_mesh(key):
-        value = str(report.get(key, '')).strip()
+    def saved_path(value):
+        value = str(value or '').strip()
         if not value:
             return None
         path = Path(value).resolve()
@@ -66,15 +66,36 @@ def existing_reconstruction_outputs(project_root, selection):
             raise ValueError('reported mesh escapes selected dataset') from exc
         return path if path.is_file() else None
 
-    cleaned = saved_mesh('mesh_path')
+    constrained = constrained_output_paths(report)
+    cleaned = saved_path(report.get('mesh_path'))
     if cleaned is None:
         return None
     return {
         'report': report,
         'report_path': report_path.resolve(),
         'output_path': cleaned,
-        'raw_output_path': saved_mesh('raw_mesh_path'),
-        'measured_cloud_path': saved_mesh('measured_cloud_path'),
+        'raw_output_path': saved_path(report.get('raw_mesh_path')),
+        'measured_cloud_path': saved_path(report.get('measured_cloud_path')),
+        'superposition_cloud_path': saved_path(
+            constrained['superposition_cloud_path']),
+        'consensus_cloud_path': saved_path(
+            constrained['consensus_cloud_path']),
+        'textured_mesh_path': saved_path(
+            constrained['textured_mesh_path']),
+    }
+
+
+def constrained_output_paths(report):
+    """Return constrained-result paths from explicit or auto reconstruction."""
+    source = report
+    if str(report.get('registration_mode', '')) != 'constrained_superposition':
+        candidates = report.get('candidate_reports') or {}
+        candidate = candidates.get('constrained_superposition')
+        source = candidate if isinstance(candidate, dict) else {}
+    return {
+        'superposition_cloud_path': source.get('measured_cloud_path', ''),
+        'consensus_cloud_path': source.get('consensus_cloud_path', ''),
+        'textured_mesh_path': source.get('textured_mesh_path', ''),
     }
 
 
@@ -128,8 +149,12 @@ def viewer_command(project_root, report_path, show_input=False,
     if not python.is_file() or not report.is_file():
         raise ValueError('viewer environment or quality report is missing')
     variant = str(mesh_variant)
-    if variant not in ('cleaned', 'raw', 'measured'):
-        raise ValueError('mesh variant must be cleaned, raw or measured')
+    if variant not in (
+            'cleaned', 'raw', 'measured', 'superposition', 'consensus',
+            'textured'):
+        raise ValueError(
+            'mesh variant must be cleaned, raw, measured, superposition or '
+            'consensus, or textured')
     command = [
         str(python), str(root / 'reconstruction' / 'view_reconstruction.py'),
         '--report', str(report), '--mesh', variant,
@@ -188,6 +213,36 @@ def quality_summary(report):
         lines.append(
             'Full-resolution measured cloud: %s accepted depth points'
             % report.get('measured_point_count', '?'))
+    consensus = report.get('cross_capture_consensus') or {}
+    if report.get('consensus_cloud_path'):
+        lines.append(
+            'Cross-view consensus: %s points; median support %.1f captures; '
+            'median spread %.2f mm' % (
+                report.get('consensus_point_count', '?'),
+                float(consensus.get(
+                    'median_capture_support', float('nan'))),
+                1000.0 * float(consensus.get(
+                    'median_maximum_cross_capture_spread_m', float('nan')))))
+    elif consensus.get('available') is False and consensus.get('reason'):
+        lines.append(
+            'Cross-view consensus unavailable: %s'
+            % consensus['reason'])
+    texture_source = report
+    if not report.get('textured_mesh_path'):
+        candidate = (report.get('candidate_reports') or {}).get(
+            'constrained_superposition')
+        if isinstance(candidate, dict):
+            texture_source = candidate
+    texture = texture_source.get('texture_baking') or {}
+    if texture_source.get('textured_mesh_path'):
+        lines.append(
+            'Textured mesh (%s): %s/%s triangles textured from source RGB; '
+            'atlas %sx%s px' % (
+                texture.get('surface_method', 'unknown'),
+                texture.get('textured_triangle_count', '?'),
+                texture.get('triangle_count', '?'),
+                texture.get('atlas_width_px', '?'),
+                texture.get('atlas_height_px', '?')))
     lines.extend([
         'TSDF mesh voxel: %.2f mm (smaller permits more polygons)' % (
             1000.0 * float(configuration.get(

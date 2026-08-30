@@ -45,8 +45,15 @@ from piper_gui.scan_policy import (
     read_scan_settings,
     write_scan_settings,
 )
+from piper_gui.scan_aim import (
+    DEFAULT_AIM_TOLERANCE_DEG,
+    default_scan_aim_path,
+    read_scan_aim,
+    write_scan_aim,
+)
 from piper_gui.view_model import MissionViewModel
 from reconstruction.gui_support import (
+    constrained_output_paths,
     existing_reconstruction_outputs,
     list_scan_datasets,
     load_quality_report,
@@ -274,6 +281,19 @@ class PiperGuiApp:
         self.scan_ray_count_var = tk.StringVar(
             value=str(saved_ray_count))
         self.scan_policy_status_var = tk.StringVar(value=policy_status)
+        self.scan_aim_path = default_scan_aim_path(PROJECT_ROOT)
+        try:
+            saved_aim = read_scan_aim(self.scan_aim_path)
+            saved_aim_tolerance = saved_aim.final_capture_aim_tolerance_deg
+            aim_status = (
+                'Saved for next mission: final camera aim within %.1f°'
+                % saved_aim_tolerance)
+        except (OSError, ValueError) as exc:
+            saved_aim_tolerance = DEFAULT_AIM_TOLERANCE_DEG
+            aim_status = 'Camera aim configuration unavailable: %s' % exc
+        self.scan_aim_tolerance_var = tk.DoubleVar(
+            value=saved_aim_tolerance)
+        self.scan_aim_status_var = tk.StringVar(value=aim_status)
         self.collision_environment_path = default_collision_environment_path(
             PROJECT_ROOT)
         try:
@@ -534,9 +554,36 @@ class PiperGuiApp:
             justify="left",
         ).grid(row=2, column=0, columnspan=5, sticky="w", pady=(4, 0))
 
+        aim = ttk.LabelFrame(
+            parent, text='Camera-on-ray tolerance for next mission', padding=12)
+        aim.grid(row=4, column=0, sticky='ew', pady=(12, 0))
+        ttk.Label(aim, text='Strict').grid(row=0, column=0, sticky='w')
+        self.scan_aim_scale = tk.Scale(
+            aim, from_=1.0, to=90.0, resolution=0.5,
+            orient='horizontal', length=300,
+            variable=self.scan_aim_tolerance_var)
+        self.scan_aim_scale.grid(row=0, column=1, sticky='w', padx=(8, 8))
+        ttk.Label(aim, text='90° maximum').grid(row=0, column=2, sticky='w')
+        self.scan_aim_apply_button = ttk.Button(
+            aim, text='Apply for Next Mission', command=self.apply_scan_aim)
+        self.scan_aim_apply_button.grid(row=0, column=3, padx=(8, 0))
+        ttk.Label(
+            aim, textvariable=self.scan_aim_status_var,
+            foreground='#52606d', wraplength=760, justify='left').grid(
+                row=1, column=0, columnspan=4, sticky='w', pady=(8, 0))
+        ttk.Label(
+            aim,
+            text=(
+                'The setting is frozen when the next mission stack starts. '
+                'Rough acquisition and the first target lock remain capped '
+                'at 5°. Later planned and achieved scan views use this '
+                '1°-90° tolerance.'),
+            foreground='#52606d', wraplength=760, justify='left').grid(
+                row=2, column=0, columnspan=4, sticky='w', pady=(4, 0))
+
         environment = ttk.LabelFrame(
             parent, text='Collision environment for next mission', padding=12)
-        environment.grid(row=4, column=0, sticky='ew', pady=(12, 0))
+        environment.grid(row=5, column=0, sticky='ew', pady=(12, 0))
         self.floor_profile_combo = ttk.Combobox(
             environment,
             textvariable=self.floor_profile_var,
@@ -573,7 +620,7 @@ class PiperGuiApp:
 
         camera = ttk.LabelFrame(
             parent, text="L515 RGB profile for next mission", padding=12)
-        camera.grid(row=5, column=0, sticky="ew", pady=(12, 0))
+        camera.grid(row=6, column=0, sticky="ew", pady=(12, 0))
         self.camera_resolution_combo = ttk.Combobox(
             camera,
             textvariable=self.camera_resolution_var,
@@ -619,7 +666,7 @@ class PiperGuiApp:
         self._camera_resolution_changed()
 
         controls = ttk.Frame(parent)
-        controls.grid(row=6, column=0, sticky="w", pady=(18, 10))
+        controls.grid(row=7, column=0, sticky="w", pady=(18, 10))
         self.mission_start_button = ttk.Button(
             controls,
             text="Start Complete Automated Scan",
@@ -642,7 +689,7 @@ class PiperGuiApp:
         self.report_base_home_button.grid(row=0, column=2, padx=(8, 0))
 
         status = ttk.LabelFrame(parent, text="Mission status", padding=12)
-        status.grid(row=7, column=0, sticky="ew", pady=(6, 0))
+        status.grid(row=8, column=0, sticky="ew", pady=(6, 0))
         status.columnconfigure(0, weight=1)
         ttk.Label(
             status,
@@ -670,7 +717,7 @@ class PiperGuiApp:
             foreground="#8a3b12",
             wraplength=820,
             justify="left",
-        ).grid(row=8, column=0, sticky="ew", pady=(18, 0))
+        ).grid(row=9, column=0, sticky="ew", pady=(18, 0))
 
         ttk.Label(
             parent,
@@ -684,7 +731,7 @@ class PiperGuiApp:
             foreground="#52606d",
             wraplength=820,
             justify="left",
-        ).grid(row=9, column=0, sticky="ew", pady=(12, 0))
+        ).grid(row=10, column=0, sticky="ew", pady=(12, 0))
 
     def _camera_resolution_changed(self, _event=None):
         try:
@@ -767,9 +814,19 @@ class PiperGuiApp:
             inputs, textvariable=self.reconstruction_mode_var,
             values=(
                 'auto', 'robot_pose', 'scene_pose_graph',
-                'bounded_gicp', 'multiway_gicp'),
+                'bounded_gicp', 'multiway_gicp',
+                'constrained_superposition'),
             state='readonly', width=23).grid(
                 row=2, column=1, sticky='w', padx=(8, 0), pady=(10, 0))
+        ttk.Label(
+            inputs,
+            text=(
+                'constrained_superposition fixes capture 0, minimizes later '
+                'capture rotation (45° hard limit), and permits whatever '
+                'translation the overlap evidence requires.'),
+            foreground='#52606d', wraplength=540, justify='left').grid(
+                row=2, column=2, columnspan=3, sticky='w', padx=(8, 0),
+                pady=(10, 0))
         ttk.Label(inputs, text='Target mask').grid(
             row=3, column=0, sticky='w', pady=(10, 0))
         ttk.Combobox(
@@ -819,11 +876,31 @@ class PiperGuiApp:
         self.reconstruction_raw_view_button.grid(
             row=0, column=2, padx=(8, 0))
         self.reconstruction_measured_view_button = ttk.Button(
-            controls, text='Open Measured Points',
+            controls, text='Open All Capture Overlays',
             command=lambda: self.open_reconstruction_viewer('measured'),
             state='disabled')
         self.reconstruction_measured_view_button.grid(
             row=0, column=3, padx=(8, 0))
+        self.reconstruction_consensus_view_button = ttk.Button(
+            controls, text='Open Consensus Points',
+            command=lambda: self.open_reconstruction_viewer('consensus'),
+            state='disabled')
+        self.reconstruction_consensus_view_button.grid(
+            row=1, column=3, sticky='w', padx=(8, 0),
+            pady=(8, 0))
+        self.reconstruction_superposition_view_button = ttk.Button(
+            controls, text='Open Superposition Overlay',
+            command=lambda: self.open_reconstruction_viewer('superposition'),
+            state='disabled')
+        self.reconstruction_superposition_view_button.grid(
+            row=1, column=1, columnspan=2, sticky='w', padx=(8, 0),
+            pady=(8, 0))
+        self.reconstruction_textured_view_button = ttk.Button(
+            controls, text='Open Textured Model',
+            command=lambda: self.open_reconstruction_viewer('textured'),
+            state='disabled')
+        self.reconstruction_textured_view_button.grid(
+            row=1, column=0, sticky='w', pady=(8, 0))
         ttk.Checkbutton(
             controls, text='Overlay measured points',
             variable=self.reconstruction_show_input_var).grid(
@@ -867,6 +944,10 @@ class PiperGuiApp:
         self.reconstruction_view_button.configure(state='disabled')
         self.reconstruction_raw_view_button.configure(state='disabled')
         self.reconstruction_measured_view_button.configure(state='disabled')
+        self.reconstruction_consensus_view_button.configure(state='disabled')
+        self.reconstruction_superposition_view_button.configure(
+            state='disabled')
+        self.reconstruction_textured_view_button.configure(state='disabled')
         try:
             saved = existing_reconstruction_outputs(
                 PROJECT_ROOT, self.reconstruction_dataset_var.get())
@@ -886,6 +967,13 @@ class PiperGuiApp:
             self.reconstruction_raw_view_button.configure(state='normal')
         if saved['measured_cloud_path'] is not None:
             self.reconstruction_measured_view_button.configure(state='normal')
+        if saved['consensus_cloud_path'] is not None:
+            self.reconstruction_consensus_view_button.configure(state='normal')
+        if saved['superposition_cloud_path'] is not None:
+            self.reconstruction_superposition_view_button.configure(
+                state='normal')
+        if saved['textured_mesh_path'] is not None:
+            self.reconstruction_textured_view_button.configure(state='normal')
         self.reconstruction_summary_var.set(
             quality_summary(saved['report']))
         if update_status:
@@ -914,8 +1002,13 @@ class PiperGuiApp:
         self.reconstruction_view_button.configure(state='disabled')
         self.reconstruction_raw_view_button.configure(state='disabled')
         self.reconstruction_measured_view_button.configure(state='disabled')
+        self.reconstruction_consensus_view_button.configure(state='disabled')
+        self.reconstruction_superposition_view_button.configure(
+            state='disabled')
+        self.reconstruction_textured_view_button.configure(state='disabled')
         self.reconstruction_status_var.set(
-            'Reconstruction is running offline at %.1f mm mesh voxels using %s'
+            'Reconstruction is running offline at %.1f mm mesh voxels using '
+            '%s masks'
             % (
                 round(float(self.reconstruction_voxel_mm_var.get()), 1),
                 self.reconstruction_mask_source_var.get()))
@@ -931,6 +1024,7 @@ class PiperGuiApp:
                     raise RuntimeError(
                         (output_text or 'reconstruction failed').strip()[-2000:])
                 report = load_quality_report(report_path)
+                constrained_paths = constrained_output_paths(report)
                 self.events.put(('reconstruction_complete', {
                     'success': True,
                     'status': 'Reconstruction completed',
@@ -940,6 +1034,12 @@ class PiperGuiApp:
                     'raw_output_path': report.get('raw_mesh_path', ''),
                     'measured_cloud_path': report.get(
                         'measured_cloud_path', ''),
+                    'consensus_cloud_path': constrained_paths[
+                        'consensus_cloud_path'],
+                    'superposition_cloud_path': constrained_paths[
+                        'superposition_cloud_path'],
+                    'textured_mesh_path': constrained_paths[
+                        'textured_mesh_path'],
                 }))
             except (OSError, RuntimeError, ValueError) as exc:
                 self.events.put(('reconstruction_complete', {
@@ -1346,6 +1446,23 @@ class PiperGuiApp:
             "Saved for next scan stack: %s; %s; %d rays"
             % (selected_label, self.scan_ray_region_var.get(), ray_count))
 
+    def apply_scan_aim(self):
+        if not self.mission_view_model.state.can_start:
+            self.scan_aim_status_var.set(
+                'Aim tolerance was not changed: wait for the active mission '
+                'to finish.')
+            return
+        try:
+            settings = write_scan_aim(
+                self.scan_aim_path, self.scan_aim_tolerance_var.get())
+        except (OSError, ValueError) as exc:
+            self.scan_aim_status_var.set(
+                'Aim tolerance was not changed: %s' % exc)
+            return
+        self.scan_aim_status_var.set(
+            'Saved for next mission: final camera aim within %.1f°'
+            % settings.final_capture_aim_tolerance_deg)
+
     def apply_floor_profile(self):
         if not self.mission_view_model.state.can_start:
             self.floor_profile_status_var.set(
@@ -1394,6 +1511,10 @@ class PiperGuiApp:
             state="normal" if state.can_start else "disabled")
         self.scan_policy_apply_button.configure(
             state="normal" if state.can_start else "disabled")
+        self.scan_aim_scale.configure(
+            state='normal' if state.can_start else 'disabled')
+        self.scan_aim_apply_button.configure(
+            state='normal' if state.can_start else 'disabled')
         self.floor_profile_combo.configure(
             state='readonly' if state.can_start else 'disabled')
         self.floor_profile_apply_button.configure(
@@ -1948,6 +2069,22 @@ class PiperGuiApp:
                             'measured_cloud_path', ''))
                         if measured_path and Path(measured_path).is_file():
                             self.reconstruction_measured_view_button.configure(
+                                state='normal')
+                        consensus_path = str(payload.get(
+                            'consensus_cloud_path', ''))
+                        if consensus_path and Path(consensus_path).is_file():
+                            self.reconstruction_consensus_view_button.configure(
+                                state='normal')
+                        superposition_path = str(payload.get(
+                            'superposition_cloud_path', ''))
+                        if (superposition_path
+                                and Path(superposition_path).is_file()):
+                            self.reconstruction_superposition_view_button.configure(
+                                state='normal')
+                        textured_path = str(payload.get(
+                            'textured_mesh_path', ''))
+                        if textured_path and Path(textured_path).is_file():
+                            self.reconstruction_textured_view_button.configure(
                                 state='normal')
                     elif self.load_existing_reconstruction_outputs(
                             update_status=False):

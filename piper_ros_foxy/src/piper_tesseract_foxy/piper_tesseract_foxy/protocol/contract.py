@@ -12,7 +12,7 @@ import time
 # worker can be rolled independently without turning the repair into a flag
 # day for the private transport contract.
 SCHEMA_VERSION = 5
-MAX_FINAL_AIM_OFFSET_DEG = 5.0
+MAX_FINAL_AIM_OFFSET_DEG = 90.0
 JOINT_NAMES = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
 TIMING_POLICY = 'tesseract_stream_v3'
 COMMAND_RATE_HZ = 20.0

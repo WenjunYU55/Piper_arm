@@ -421,6 +421,7 @@ def _achieved_view_harness(look_angle_deg=0.0):
         fresh=lambda _key: False,
         get_parameter=lambda name: SimpleNamespace(value={
             'max_target_drift_before_approval_m': 0.015,
+            'final_capture_aim_tolerance_deg': 5.0,
         }[name]),
         kinematics=SimpleNamespace(
             camera_transform=lambda _joints: transform),
@@ -461,7 +462,40 @@ def test_final_capture_aim_accepts_exact_and_rejects_more_than_five_degrees():
         'final_aim_error_deg'] == pytest.approx(6.0)
 
 
-def test_post_motion_target_drift_rejects_capture_and_requests_closed_loop_replan():
+def test_final_capture_aim_uses_tighter_next_mission_tolerance():
+    harness, _events = _achieved_view_harness(4.0)
+    harness.get_parameter = lambda name: SimpleNamespace(value={
+        'max_target_drift_before_approval_m': 0.015,
+        'final_capture_aim_tolerance_deg': 3.0,
+    }[name])
+    assert ScanViewpointExecutorNode.record_latest_achieved_scan_view(harness)
+    rejection = ScanViewpointExecutorNode.final_capture_aim_rejection(harness)
+    assert rejection.endswith('exceeds 3.000deg')
+
+
+def test_first_lock_keeps_five_degree_cap_when_later_gate_is_ninety():
+    harness, _events = _achieved_view_harness(6.0)
+    harness.get_parameter = lambda name: SimpleNamespace(value={
+        'max_target_drift_before_approval_m': 0.015,
+        'final_capture_aim_tolerance_deg': 90.0,
+    }[name])
+    assert ScanViewpointExecutorNode.record_latest_achieved_scan_view(harness)
+    rejection = ScanViewpointExecutorNode.final_capture_aim_rejection(harness)
+    assert rejection.endswith('exceeds 5.000deg')
+
+
+def test_later_capture_uses_selected_ninety_degree_gate():
+    harness, _events = _achieved_view_harness(75.0)
+    harness.scan_history = [{}]
+    harness.get_parameter = lambda name: SimpleNamespace(value={
+        'max_target_drift_before_approval_m': 0.015,
+        'final_capture_aim_tolerance_deg': 90.0,
+    }[name])
+    assert ScanViewpointExecutorNode.record_latest_achieved_scan_view(harness)
+    assert ScanViewpointExecutorNode.final_capture_aim_rejection(harness) == ''
+
+
+def test_post_motion_target_drift_requests_closed_loop_replan():
     harness, _events = _achieved_view_harness(0.0)
     harness.latest_tracked_target = SimpleNamespace(
         valid=True,

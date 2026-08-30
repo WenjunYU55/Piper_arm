@@ -95,3 +95,45 @@ validation_plan:
   baselines: [fixed standoff, current enclosing-sphere FOV bound, proposed per-ray conservative projection]
   metrics: [surviving ray count, standoff distribution, projected pixel occupancy, capability-map survival, Tesseract feasibility, planning latency, accepted-view coverage and reconstruction quality]
   qualification_order: [unit and property tests, command-free 360-ray simulation, rootless Tesseract planning, motors-disabled provenance inspection, separately authorized supervised low-speed qualification]
+
+industry_reconstruction_workflows_2026_08_30:
+  status: research_and_design_only
+  trigger: The experimental Screened Poisson output from five same-hemisphere views was visually rejected and removed. One rear target face had no RGB-D observation, so generic hole closure could not recover or texture it faithfully.
+  primary_sources:
+    - id: kinectfusion_2011
+      citation: Newcombe et al., KinectFusion Real-Time Dense Surface Mapping and Tracking, ISMAR 2011.
+      url: https://www.microsoft.com/en-us/research/publication/kinectfusion-real-time-dense-surface-mapping-tracking/
+      practice: Track each live depth frame against the growing model with coarse-to-fine ICP and fuse the stream into a global implicit volumetric surface.
+    - id: bundlefusion_2017
+      citation: Dai et al., BundleFusion Real-time Globally Consistent 3D Reconstruction using Online Surface Re-integration, ACM TOG 2017.
+      url: https://graphics.stanford.edu/projects/bundlefusion/
+      practice: Globally optimize camera poses from sparse features plus dense geometric and photometric evidence, recover from tracking failures, and re-integrate surfaces after pose corrections.
+    - id: open3d_reconstruction_system
+      citation: Open3D Reconstruction System documentation, register fragments and integrate scene.
+      url: https://www.open3d.org/docs/latest/tutorial/reconstruction_system/index.html
+      practice: Build local RGB-D fragments, pairwise and multiway register them in a pose graph, refine globally, then integrate every aligned RGB-D frame into TSDF and extract the mesh.
+    - id: artec_global_registration_and_fusion
+      citation: Artec Studio official Data Processing documentation.
+      url: https://docs.artec3d.com/as/13/en/process.html
+      practice: Track continuous raw frames, align scans, globally register using geometry or geometry plus texture, inspect errors, remove outliers, fuse, simplify and only then texture. Targets are used when point-cloud geometry alone cannot register reliably.
+    - id: bundlesdf_2023
+      citation: Wen et al., BundleSDF Neural 6-DoF Tracking and 3D Reconstruction of Unknown Objects, CVPR 2023.
+      url: https://research.nvidia.com/publication/2023-06_bundlesdf-neural-6-dof-tracking-and-3d-reconstruction-unknown-objects
+      implementation_url: https://github.com/NVlabs/BundleSDF
+      practice: Jointly optimize unknown-object RGB-D pose graph and a neural object SDF, retaining memory frames and exporting a textured mesh; it still requires observed RGB-D coverage and does not make an unseen side measured.
+  local_recommendation:
+    name: fiducial_or_feature_anchored_object_pose_graph_then_weighted_tsdf
+    sequence:
+      - Acquire substantially overlapping settled RGB-D keyframes across every reachable target side instead of relying on five widely separated snapshots.
+      - Add an asymmetric scan mat or external fiducials around, not on, the target for a stable reference when target geometry or texture is symmetric or feature-poor; exclude the reference from target fusion.
+      - Use capture-time FK and hand-eye as an initial pose and bounded prior, not the sole final registration authority.
+      - Construct a target RGB-D pose graph with adjacent overlap and loop-closure edges using dense point-to-plane and, when useful, photometric residuals; reject weak edges rather than allowing unbounded drift.
+      - Globally optimize poses, then re-integrate every confidence-qualified native depth sample into a fine weighted TSDF once and extract measured geometry.
+      - Maintain directional surface coverage. If a required rear side is unobserved, request a reachable NBV or tracked-base reposition and fail completeness honestly when neither is possible.
+      - Bake texture from original rectified RGB only after final geometry and depth-visible source selection.
+    reason: This is the closest practical equivalent of established handheld and industrial scanning while preserving the repository's immutable evidence, measured-versus-predicted distinction and fail-closed behavior.
+  alternatives:
+    bundlesdf_benchmark: Strong research comparison for unknown objects and pose refinement on the RTX 3090, but substantially heavier and less transparent than the recommended classical baseline; isolate it offline and never let it replace measured coverage admission.
+    photogrammetry: Useful for richly textured opaque objects when many full-orbit overlapping photographs are available; weak on the uniform green cube and does not use the L515's accurate depth as directly as RGB-D fusion.
+    ball_pivoting_or_alpha_shape: Can connect sufficiently dense measured samples but cannot recover a truly unseen face and can bridge unrelated surfaces; diagnostic baseline only.
+    learned_shape_completion: May predict a plausible hidden side but is category-prior output, not measurement. Keep it visibly separate from collision, coverage, reconstruction quality and textured deliverables.

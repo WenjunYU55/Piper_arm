@@ -222,6 +222,7 @@ class TrackingConfig:
     acquisition_target_tolerance_m: float
     acquisition_max_viewpoints: int
     scan_target_max_boresight_deg: float
+    final_capture_aim_tolerance_deg: float
     scan_target_min_distance_m: float
     allow_target_motion_during_scan: bool
     max_target_drift_before_approval_m: float
@@ -397,6 +398,7 @@ def executor_parameter_defaults():
         'acquisition_max_viewpoints': 5,
         'closed_loop_one_view': False,
         'scan_target_max_boresight_deg': 20.0,
+        'final_capture_aim_tolerance_deg': 5.0,
         'scan_target_min_distance_m': 0.22,
         'data_timeout_sec': 2.0,
         'max_tracking_measurement_age_sec': 0.75,
@@ -572,6 +574,12 @@ def load_executor_configuration(node):
         raise ConfigurationError(
             'executor_tick_rate_hz must be at least twice '
             'trajectory_command_rate_hz')
+    final_capture_aim_tolerance_deg = _positive(
+        'final_capture_aim_tolerance_deg',
+        values['final_capture_aim_tolerance_deg'])
+    if not 1.0 <= final_capture_aim_tolerance_deg <= 90.0:
+        raise ConfigurationError(
+            'final_capture_aim_tolerance_deg must be within 1.0-90.0')
     tracking = TrackingConfig(
         data_timeout_sec=_positive(
             'data_timeout_sec', values['data_timeout_sec']),
@@ -600,6 +608,7 @@ def load_executor_configuration(node):
         scan_target_max_boresight_deg=_positive(
             'scan_target_max_boresight_deg',
             values['scan_target_max_boresight_deg']),
+        final_capture_aim_tolerance_deg=final_capture_aim_tolerance_deg,
         scan_target_min_distance_m=_positive(
             'scan_target_min_distance_m',
             values['scan_target_min_distance_m']),

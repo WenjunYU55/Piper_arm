@@ -337,6 +337,16 @@ def test_request_rejects_fallback_beyond_five_degrees():
         validate_request(request)
 
 
+def test_request_accepts_later_view_ninety_degree_protocol_bound():
+    request = request_fixture('MULTIVIEW_SCAN')
+    candidate = request['scene']['candidate_views'][0]
+    candidate['look_direction'] = [1.0, 0.0, 0.0]
+    candidate['fallback_look_directions'] = [[0.0, 1.0, 0.0]]
+    candidate['maximum_final_aim_offset_deg'] = 90.0
+    request = attach_digest(request, 'request_sha256')
+    assert validate_request(request) is request
+
+
 def test_request_and_response_hashes_are_fail_closed():
     request = request_fixture()
     assert validate_request(request) is request

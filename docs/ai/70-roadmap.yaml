@@ -449,3 +449,10 @@ post_enable_startup_requalification_2026_08_25:
   status: software_complete_physical_pending
   completed: [new-after-enable sample boundary, two-second joint stability proof, zero controller-fault proof, all-six motor proof, pre-motion disable on intact-control failure, full mobile software regressions]
   next_execution_order: [explicit five-percent STARTUP_WRIST-only smoke, inspect enable-to-command timing and status, separate ROUGH_HOME then cancel PRE_HOME ROUGH_HOME STORAGE_WRIST disable smoke, only then full E2E]
+
+constrained_superposition_reconstruction_2026_08_29:
+  milestone: M6 reconstruction input accuracy
+  status: selectable_offline_implementation_complete_quality_blocker_retained
+  completed: [exact capture-zero gauge, connected mutual nearest normal-consistent overlap, iterative global point-to-plane translation and camera-origin rotation correction, unbounded translation, one-degree minimum-rotation prior and 45-degree per-capture hard ceiling, full-resolution fusion once, cross-view one-vote-per-capture consensus with median-MAD rejection and robust mean, dense consensus-supported derived mesh, best-source depth-visible RGB projection, OBJ MTL PNG texture atlas, separate GUI selected-mode overlay full superposition overlay consensus and textured viewers, explicit or auto-candidate path resolution, auto evidence comparison, immutable replay]
+  evidence: The revised five-view replay reduced total correction from 31.62 to 23.73 mm and 2.268 to 1.812 degrees, registration median RMSE from 1.947 to 1.299 mm, and raw point-to-mesh median residual from 3.969 to 2.022 mm; the formerly high-tail fifth-view mismatch fell from 9.264 to 2.547 mm p90. The revised six-view replay used 26.92 mm and 2.085 degrees total correction and reached 1.311 mm registration median RMSE and 1.779 mm raw residual. Expected-size and structural gates still fail, so neither replay is physical reconstruction qualification.
+  next_gate: Improve and independently qualify hand-eye calibration or add asymmetric observability evidence before claiming accurate reconstruction; then obtain a PASS or WARN physical mesh.

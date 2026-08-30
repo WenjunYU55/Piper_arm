@@ -121,6 +121,14 @@ A settled capture uses the exact mask/RGB stamp plus 20 new native depth/confide
 
 After safe terminal/home-and-disable evidence—and tracked-base-home correlation where required—offline reconstruction validates immutable inputs and runs target-only TSDF fusion (3 mm voxels, 15 mm truncation by default), with optional bounded GICP and scene pose-graph refinement. Reconstruction failure is reported separately and does not rewrite the mission result.
 
+Constrained superposition provides a diagnostic alternative that fixes capture
+zero as the exact gauge, solves connected mutual normal-consistent overlap,
+allows the translation supported by that solve, and regularizes each
+camera-origin-centred rotation under a 45° per-capture ceiling. It writes the
+full corrected capture overlay, distinct-view consensus points, and a textured
+measured-triangle OBJ. The GUI exposes each artifact independently. Missing
+surfaces remain missing rather than being filled by an unobserved shape prior.
+
 ## Hardware and compute boundaries
 
 <div align="center">

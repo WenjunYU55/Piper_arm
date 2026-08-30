@@ -75,6 +75,7 @@ from piper_tesseract_foxy.candidate_selection import (  # noqa: F401
     bounded_candidate_attempt_limit,
     bounded_current_look_direction,  # noqa: F401 - compatibility export
     bounded_nbv_candidates,
+    effective_final_aim_tolerance,
     exact_target_aim_candidates,
     information_ranked_ray_candidates,
     local_view_frontier_candidates,  # noqa: F401 - compatibility export
@@ -147,6 +148,9 @@ class TesseractPlanBridge(Node):
             # Preserve a comfortable achieved wrist aim when the target stays
             # within this strict subset of the executor's 20-degree cone.
             'closed_loop_max_aim_offset_deg': 5.0,
+            # Generic next-mission source used by planner path validation.
+            # The legacy name remains declared for standalone compatibility.
+            'final_capture_aim_tolerance_deg': 5.0,
             'manipulation_model_qualified': False,
             'ray_diagnostics_enabled': True,
             'ray_diagnostics_root': os.path.join(
@@ -825,8 +829,10 @@ class TesseractPlanBridge(Node):
                     candidates,
                     center,
                     current_look,
-                    self.get_parameter(
-                        'closed_loop_max_aim_offset_deg').value,
+                    effective_final_aim_tolerance(
+                        self.get_parameter(
+                            'final_capture_aim_tolerance_deg').value,
+                        accepted_views),
                 )
             else:
                 candidates = candidates[:candidate_limit]

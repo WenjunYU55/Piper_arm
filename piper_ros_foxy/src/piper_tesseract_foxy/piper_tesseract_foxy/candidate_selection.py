@@ -15,6 +15,20 @@ from piper_tesseract_foxy.protocol.contract import ContractError
 
 RAY_DIRECTION_ATTEMPT_LIMIT = 6
 FINAL_AIM_EXECUTION_MARGIN_DEG = 1.0
+FIRST_LOCK_MAX_AIM_OFFSET_DEG = 5.0
+
+
+def effective_final_aim_tolerance(configured_deg, accepted_views):
+    """Return the frozen tolerance with a 5-degree first-lock ceiling."""
+    tolerance = float(configured_deg)
+    accepted = int(accepted_views)
+    if not math.isfinite(tolerance) or not 1.0 <= tolerance <= 90.0:
+        raise ValueError(
+            'final camera aim tolerance must be within 1-90 degrees')
+    if accepted < 0:
+        raise ValueError('accepted view count cannot be negative')
+    return min(tolerance, FIRST_LOCK_MAX_AIM_OFFSET_DEG) \
+        if accepted == 0 else tolerance
 
 
 def permanent_ray_ids_from_response(request, diagnostics):

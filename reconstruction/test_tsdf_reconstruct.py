@@ -37,6 +37,7 @@ def test_default_reconstruction_preserves_one_millimetre_detail():
     assert MODULE.DEFAULT_SDF_TRUNC_M == pytest.approx(0.015)
     assert 'robot_pose' in MODULE.REGISTRATION_MODES
     assert 'scene_pose_graph' in MODULE.REGISTRATION_MODES
+    assert 'constrained_superposition' in MODULE.REGISTRATION_MODES
     assert MODULE.MASK_SOURCES == ('captured', 'offline_resegment')
 
 
@@ -171,6 +172,322 @@ def test_multiway_spanning_tree_requires_connected_accepted_edges():
     assert len(selected) == 2
     with pytest.raises(ValueError, match='disconnected'):
         MODULE.registration_spanning_tree(4, edges)
+
+
+def test_constrained_superposition_solves_global_translation_without_rotation():
+    constraints = []
+    expected = np.asarray([
+        [0.0, 0.0, 0.0],
+        [0.004, -0.002, 0.001],
+        [-0.003, 0.003, -0.002],
+    ])
+    normals = np.eye(3)
+    for source, target in ((0, 1), (1, 2), (0, 2)):
+        for normal in normals:
+            constraints.append({
+                'source': source,
+                'target': target,
+                'normal_base': normal,
+                'offset_m': float(np.dot(
+                    normal, expected[source] - expected[target])),
+                'edge_constraint_count': 3,
+            })
+    solved = MODULE.solve_constrained_translations(
+        3, constraints, prior_sigma_m=1.0, data_sigma_m=0.0001,
+        huber_delta_m=0.1)
+    assert solved[0] == pytest.approx([0.0, 0.0, 0.0], abs=1e-6)
+    assert solved[1] == pytest.approx(expected[1], abs=1e-5)
+    assert solved[2] == pytest.approx(expected[2], abs=1e-5)
+
+
+def test_constrained_superposition_fails_closed_outside_pose_bound():
+    constraints = [{
+        'source': 0,
+        'target': 1,
+        'normal_base': axis,
+        'offset_m': -0.03 if index == 0 else 0.0,
+        'edge_constraint_count': 3,
+    } for index, axis in enumerate(np.eye(3))]
+    with pytest.raises(ValueError, match='exceeds 20mm'):
+        MODULE.solve_constrained_translations(
+            2, constraints, prior_sigma_m=1.0, data_sigma_m=0.0001,
+            huber_delta_m=0.1)
+
+
+def test_constrained_rigid_superposition_recovers_small_camera_tilt():
+    expected_translation = np.asarray([0.0020, -0.0010, 0.0005])
+    expected_rotation = np.radians(np.asarray([1.0, -0.5, 0.75]))
+    camera_origins = np.asarray([
+        [0.0, 0.0, -0.30],
+        [0.0, 0.0, -0.30],
+    ])
+    constraints = []
+    points = (
+        np.asarray([x, y, z], dtype=float)
+        for x in (-0.02, 0.02)
+        for y in (-0.02, 0.02)
+        for z in (-0.02, 0.02)
+    )
+    for point in points:
+        for normal in np.eye(3):
+            target_point = (
+                point - expected_translation
+                - np.cross(expected_rotation, point - camera_origins[1]))
+            constraints.append({
+                'source': 0,
+                'target': 1,
+                'source_point_base': point,
+                'target_point_base': target_point,
+                'normal_base': normal,
+                'edge_constraint_count': 24,
+            })
+
+    translations, rotations = MODULE.solve_constrained_rigid_corrections(
+        2, constraints, camera_origins,
+        prior_sigma_m=100.0, rotation_prior_sigma_rad=100.0,
+        data_sigma_m=0.0001, huber_delta_m=0.1)
+
+    # Equal robot-pose priors select the minimum-total-correction solution,
+    # distributing the relative correction instead of pinning capture zero.
+    assert translations[0] == pytest.approx(
+        -0.5 * expected_translation, abs=1.5e-4)
+    assert translations[1] == pytest.approx(
+        0.5 * expected_translation, abs=1.5e-4)
+    assert rotations[0] == pytest.approx(
+        -0.5 * expected_rotation, abs=2e-5)
+    assert rotations[1] == pytest.approx(
+        0.5 * expected_rotation, abs=2e-5)
+    assert translations[1] - translations[0] == pytest.approx(
+        expected_translation, abs=1.5e-4)
+    assert rotations[1] - rotations[0] == pytest.approx(
+        expected_rotation, abs=2e-5)
+
+
+def test_constrained_rigid_superposition_rejects_excessive_tilt():
+    camera_origins = np.zeros((2, 3), dtype=float)
+    rotation = np.radians(np.asarray([8.0, 0.0, 0.0]))
+    constraints = []
+    for point in (
+            np.asarray([x, y, z], dtype=float)
+            for x in (-0.02, 0.02)
+            for y in (-0.02, 0.02)
+            for z in (-0.02, 0.02)):
+        for normal in np.eye(3):
+            target_point = point - np.cross(rotation, point)
+            constraints.append({
+                'source': 0,
+                'target': 1,
+                'source_point_base': point,
+                'target_point_base': target_point,
+                'normal_base': normal,
+                'edge_constraint_count': 24,
+            })
+
+    with pytest.raises(ValueError, match='rotation exceeds 5.0deg'):
+        MODULE.solve_constrained_rigid_corrections(
+            2, constraints, camera_origins,
+            prior_sigma_m=100.0, rotation_prior_sigma_rad=100.0,
+            data_sigma_m=0.0001, huber_delta_m=0.1)
+
+
+def test_rigid_camera_correction_rotates_about_camera_origin():
+    origin = np.asarray([0.10, -0.20, 0.30])
+    translation = np.asarray([0.002, -0.001, 0.0005])
+    rotation = np.radians(np.asarray([0.5, -0.25, 0.75]))
+
+    correction = MODULE.rigid_camera_correction_matrix(
+        origin, translation, rotation)
+    transformed_origin = correction @ np.append(origin, 1.0)
+
+    assert transformed_origin[:3] == pytest.approx(origin + translation)
+    assert np.degrees(MODULE.rotation_angle_rad(correction)) == pytest.approx(
+        np.degrees(np.linalg.norm(rotation)), abs=1e-9)
+
+
+def test_capture_zero_translation_anchor_has_no_displacement_limit():
+    expected = np.asarray([0.25, -0.12, 0.08])
+    constraints = [{
+        'source': 0,
+        'target': 1,
+        'normal_base': normal,
+        'offset_m': float(-np.dot(normal, expected)),
+        'edge_constraint_count': 3,
+    } for normal in np.eye(3)]
+
+    translations = MODULE.solve_constrained_translations(
+        2, constraints, prior_sigma_m=1.0e6,
+        data_sigma_m=0.0001, huber_delta_m=1.0,
+        maximum_translation_m=None)
+
+    assert translations[0] == pytest.approx(np.zeros(3), abs=1e-8)
+    assert translations[1] == pytest.approx(expected, abs=1e-6)
+
+
+def test_capture_zero_rigid_anchor_is_fixed_and_rotation_is_bounded():
+    expected_translation = np.asarray([0.002, -0.001, 0.0005])
+    expected_rotation = np.radians(np.asarray([1.0, -0.5, 0.75]))
+    origins = np.asarray([[0.0, 0.0, -0.3], [0.0, 0.0, -0.3]])
+    constraints = []
+    for point in (
+            np.asarray([x, y, z], dtype=float)
+            for x in (-0.02, 0.02)
+            for y in (-0.02, 0.02)
+            for z in (-0.02, 0.02)):
+        for normal in np.eye(3):
+            target = (
+                point - expected_translation
+                - np.cross(expected_rotation, point - origins[1]))
+            constraints.append({
+                'source': 0, 'target': 1,
+                'source_point_base': point,
+                'target_point_base': target,
+                'normal_base': normal,
+                'edge_constraint_count': 24,
+            })
+
+    translations, rotations = MODULE.solve_constrained_rigid_corrections(
+        2, constraints, origins, prior_sigma_m=1.0e6,
+        rotation_prior_sigma_rad=100.0, data_sigma_m=0.0001,
+        huber_delta_m=0.1, maximum_translation_m=None,
+        maximum_rotation_deg=45.0, fixed_reference_index=0)
+
+    assert translations[0] == pytest.approx(np.zeros(3), abs=1e-12)
+    assert rotations[0] == pytest.approx(np.zeros(3), abs=1e-12)
+    assert translations[1] == pytest.approx(expected_translation, abs=1.5e-4)
+    assert rotations[1] == pytest.approx(expected_rotation, abs=2e-5)
+
+
+def test_capture_zero_rigid_anchor_rejects_rotation_above_45_degrees():
+    expected_rotation = np.radians(np.asarray([60.0, 0.0, 0.0]))
+    origins = np.zeros((2, 3), dtype=float)
+    constraints = []
+    for point in (
+            np.asarray([x, y, z], dtype=float)
+            for x in (-0.02, 0.02)
+            for y in (-0.02, 0.02)
+            for z in (-0.02, 0.02)):
+        for normal in np.eye(3):
+            constraints.append({
+                'source': 0, 'target': 1,
+                'source_point_base': point,
+                'target_point_base': point - np.cross(
+                    expected_rotation, point),
+                'normal_base': normal,
+                'edge_constraint_count': 24,
+            })
+
+    with pytest.raises(ValueError, match='rotation exceeds 45.0deg'):
+        MODULE.solve_constrained_rigid_corrections(
+            2, constraints, origins, prior_sigma_m=1.0e6,
+            rotation_prior_sigma_rad=100.0, data_sigma_m=0.0001,
+            huber_delta_m=0.1, maximum_translation_m=None,
+            maximum_rotation_deg=45.0, fixed_reference_index=0)
+
+
+def test_constrained_superposition_single_capture_is_fixed_noop():
+    pose = np.eye(4)
+    pose[:3, 3] = [0.4, -0.1, 0.2]
+
+    refined, diagnostics = MODULE.constrained_superposition_camera_poses(
+        [{'nominal_base_camera': pose}], o3d=None)
+
+    assert len(refined) == 1
+    assert refined[0] == pytest.approx(pose)
+    assert diagnostics['single_capture_noop'] is True
+    assert diagnostics['candidate_pair_count'] == 0
+    assert diagnostics['accepted_pair_count'] == 0
+    assert diagnostics['spanning_tree_pair_count'] == 0
+    assert diagnostics['pose_corrections'] == [{
+        'frame_index': 0,
+        'translation_correction_m': 0.0,
+        'translation_vector_m': [0.0, 0.0, 0.0],
+        'rotation_correction_deg': 0.0,
+        'rotation_vector_rad': [0.0, 0.0, 0.0],
+        'fixed_reference': True,
+    }]
+
+
+def test_constrained_superposition_rejects_zero_captures():
+    with pytest.raises(ValueError, match='at least one view'):
+        MODULE.constrained_superposition_camera_poses([], o3d=None)
+
+
+def test_cross_capture_consensus_allows_only_one_vote_per_view():
+    surfaces = [
+        {
+            'points': np.asarray([
+                [0.0010, 0.0010, 0.0010],
+                [0.0029, 0.0029, 0.0029],
+            ]),
+            'normals': np.asarray([[0.0, 0.0, 1.0]] * 2),
+        },
+        {
+            'points': np.asarray([[0.0031, 0.0029, 0.0030]]),
+            'normals': np.asarray([[0.0, 0.0, 1.0]]),
+        },
+        {
+            'points': np.asarray([[0.0027, 0.0030, 0.0028]]),
+            'normals': np.asarray([[0.0, 0.0, 1.0]]),
+        },
+    ]
+
+    points, normals, support, diagnostics = (
+        MODULE.robust_cross_capture_consensus(
+            surfaces, voxel_length_m=0.010))
+
+    assert points.shape == (1, 3)
+    assert points[0] == pytest.approx(
+        np.mean([
+            [0.0029, 0.0029, 0.0029],
+            [0.0031, 0.0029, 0.0030],
+            [0.0027, 0.0030, 0.0028],
+        ], axis=0))
+    assert normals[0] == pytest.approx([0.0, 0.0, 1.0])
+    assert support.tolist() == [3]
+    assert diagnostics['same_capture_points_averaged_together'] is False
+
+
+def test_cross_capture_consensus_rejects_positional_outlier_before_mean():
+    surfaces = [
+        {
+            'points': np.asarray([[x, 0.0010, 0.0010]]),
+            'normals': np.asarray([[0.0, 0.0, 1.0]]),
+        }
+        for x in (0.0010, 0.0011, 0.0009, 0.0090)
+    ]
+
+    points, _normals, support, diagnostics = (
+        MODULE.robust_cross_capture_consensus(
+            surfaces, voxel_length_m=0.010))
+
+    assert points[0, 0] == pytest.approx(0.0010, abs=1e-9)
+    assert support.tolist() == [3]
+    assert diagnostics['maximum_capture_support'] == 3
+
+
+def test_cross_capture_consensus_excludes_single_view_geometry():
+    surfaces = [
+        {
+            'points': np.asarray([[0.001, 0.001, 0.001]]),
+            'normals': np.asarray([[0.0, 0.0, 1.0]]),
+        },
+        {
+            'points': np.asarray([[0.021, 0.001, 0.001]]),
+            'normals': np.asarray([[0.0, 0.0, 1.0]]),
+        },
+    ]
+
+    with pytest.raises(ValueError, match='no multi-view correspondences'):
+        MODULE.robust_cross_capture_consensus(
+            surfaces, voxel_length_m=0.010)
+
+
+def test_cross_capture_consensus_rejects_malformed_surface():
+    with pytest.raises(ValueError, match='malformed'):
+        MODULE.robust_cross_capture_consensus([{
+            'points': np.asarray([[0.0, 0.0]]),
+            'normals': np.asarray([[0.0, 0.0, 1.0]]),
+        }], voxel_length_m=0.003)
 
 
 def test_manifest_integrity_rejects_changed_artifact(tmp_path):
