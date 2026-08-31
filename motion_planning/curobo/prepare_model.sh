@@ -18,6 +18,7 @@ mkdir -p "$OUTPUT_ROOT"
 chmod 700 "$OUTPUT_ROOT"
 URDF="$OUTPUT_ROOT/piper_planning.urdf"
 CONFIG="$OUTPUT_ROOT/piper_curobo.yml"
+SPHERE_MODEL="$ROOT/motion_planning/curobo/model/piper_collision_spheres.yaml"
 DESCRIPTION_ROOT="$ROOT/piper_ros_foxy/src/piper_description"
 MANIFEST="$ROOT/piper_ros_foxy/src/piper_tesseract_foxy/model/$COLLISION_MANIFEST_NAME"
 SRDF="$ROOT/piper_ros_foxy/src/piper_tesseract_foxy/model/$COLLISION_SRDF_NAME"
@@ -37,6 +38,7 @@ PYTHONPATH="$ROOT" \
   --srdf "$SRDF" \
   --collision-manifest "$MANIFEST" \
   --description-root "$DESCRIPTION_ROOT" \
+  --sphere-model "$SPHERE_MODEL" \
   --output "$CONFIG"
 
 chmod 600 "$URDF" "$CONFIG"

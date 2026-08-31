@@ -1,13 +1,18 @@
 """Pure canonical-model conversion tests; CUDA is deliberately absent."""
 
+import copy
 from pathlib import Path
+import os
 import struct
+import subprocess
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 from motion_planning.curobo import PINNED_WARP_VERSION
 from motion_planning.curobo.generate_robot_config import (
+    build,
     FIXED_WORLD_MESH_FILES,
     FIXED_WORLD_LINKS,
     JOINT_NAMES,
@@ -18,10 +23,39 @@ from motion_planning.curobo.generate_robot_config import (
     stl_vertices,
     surface_coverage,
 )
-from motion_planning.curobo.worker import validate_model_provenance
+from motion_planning.curobo.collision_qualification import sphere_overlaps
+from motion_planning.curobo.worker import CuroboBackend, validate_model_provenance
 
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.fixture(scope='module')
+def curated_model(tmp_path_factory):
+    output_root = tmp_path_factory.mktemp('curated_curobo_model')
+    urdf = output_root / 'piper_planning.urdf'
+    description = ROOT / 'piper_ros_foxy/src/piper_description'
+    tesseract_package = ROOT / 'piper_ros_foxy/src/piper_tesseract_foxy'
+    model = tesseract_package / 'model'
+    environment = dict(os.environ)
+    environment['PYTHONPATH'] = str(tesseract_package)
+    subprocess.run([
+        '/usr/bin/python3', '-m', 'piper_tesseract_foxy.model_builder',
+        '--xacro', str(description / 'urdf/piper_description.xacro'),
+        '--calibration', str(
+            ROOT / 'L515_camera/calibration/hand_eye/'
+            'session_20260808_straight_mount/calibration_result.yaml'),
+        '--manifest', str(model / 'collision_model.yaml'),
+        '--output', str(urdf),
+    ], check=True, env=environment)
+    return build(
+        urdf,
+        model / 'piper_bunker.srdf',
+        model / 'collision_model.yaml',
+        description,
+        0.04,
+        ROOT / 'motion_planning/curobo/model/piper_collision_spheres.yaml',
+    )
 
 
 def test_runtime_constraints_pin_warp_api_used_by_curobo_v078():
@@ -140,6 +174,76 @@ def test_surface_coverage_reports_uncovered_mesh_samples():
         'covered_fraction': pytest.approx(2.0 / 3.0),
         'maximum_uncovered_gap_m': 0.08,
     }
+
+
+def test_curated_spheres_are_bounded_and_preserve_collision_evidence(
+        curated_model):
+    kinematics = curated_model['robot_cfg']['kinematics']
+    provenance = curated_model['piper_curobo_provenance']
+    joint_names = [
+        'joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
+    clear_poses = (
+        [0.0] * 6,
+        [0.0, 0.8, -0.7, 0.0, 0.7, 0.0],
+        [
+            0.3189509166, 0.7800870124, -1.6258884709,
+            -0.6660237320, -0.2154052887, 0.0403545644,
+        ],
+    )
+    for positions in clear_poses:
+        assert sphere_overlaps(
+            kinematics['urdf_path'],
+            kinematics,
+            dict(zip(joint_names, positions)),
+        ) == []
+
+    colliding = sphere_overlaps(
+        kinematics['urdf_path'],
+        kinematics,
+        dict(zip(joint_names, [0.0, 0.0, 0.0, 0.0, 0.43869236, 0.0])),
+    )
+    assert any(
+        {item.first_link, item.second_link} == {'link2', 'link5'}
+        for item in colliding)
+    assert sum(provenance['sphere_count_by_link'].values()) == 67
+    assert provenance['hardware_qualified'] is False
+    assert provenance['conservative_geometry'] is False
+
+
+def test_curated_sphere_provenance_is_hash_bound(curated_model):
+    validate_model_provenance(curated_model)
+    tampered = copy.deepcopy(curated_model)
+    tampered['piper_curobo_provenance'][
+        'curated_sphere_model']['sha256'] = '0' * 64
+    with pytest.raises(ValueError, match='hash-bound model input'):
+        validate_model_provenance(tampered)
+
+
+def test_curated_sphere_counts_fail_closed(curated_model):
+    tampered = copy.deepcopy(curated_model)
+    tampered['piper_curobo_provenance']['sphere_count_by_link']['link5'] -= 1
+    with pytest.raises(ValueError, match='sphere counts'):
+        validate_model_provenance(tampered)
+
+
+def test_backend_restores_both_persistent_collision_constraints():
+    class Constraint:
+        def __init__(self):
+            self.enabled = False
+
+        def enable_cost(self):
+            self.enabled = True
+
+    primitive = Constraint()
+    self_collision = Constraint()
+    backend = object.__new__(CuroboBackend)
+    backend.motion_gen = SimpleNamespace(rollout_fn=SimpleNamespace(
+        primitive_collision_constraint=primitive,
+        robot_self_collision_constraint=self_collision,
+    ))
+    backend._restore_collision_constraints()
+    assert primitive.enabled is True
+    assert self_collision.enabled is True
 
 
 def test_schema_two_collision_provenance_fails_closed_when_incomplete(

@@ -11,9 +11,10 @@ Tesseract is the regression baseline. The cuRobo adapter is real MotionGen
 integration against cuRobo v0.7.8. On 28 August 2026 the reference host passed
 native-extension import, CUDA tensor execution, model warm-up, command-free
 free-space planning, worker readiness, and bounded cleanup. The fixed Bunker
-world now uses its exact hash-bound triangle meshes; moving links use an audited
-167-sphere approximation because cuRobo 0.7.8 does not support articulated
-triangle-mesh collision. That approximation remains deliberately marked
+world now uses its exact hash-bound triangle meshes; moving links use a
+reviewed, hash-bound 67-sphere Isaac/Lula approximation because cuRobo 0.7.8
+does not support articulated triangle-mesh collision. That approximation
+remains deliberately marked
 `conservative_geometry: false` and `hardware_qualified: false`. Physical cuRobo
 motion therefore remains fail-closed. No planner in this architecture directly
 commands the robot.
@@ -155,9 +156,10 @@ authorization, or execution code.
 backends start from the same current Xacro, calibrated L515 frame, SRDF,
 collision manifest, joint order and limits. The cuRobo conversion represents:
 
-- moving PiPER, gripper, holder, cable envelope and L515 geometry as a bounded
-  per-collision sphere grid, with source-mesh hashes and measured surface
-  coverage recorded for every link;
+- moving PiPER, gripper, holder and L515 geometry as a reviewed 67-sphere
+  model exported from the Isaac/Lula editor and refined against exact
+  Tesseract contacts; cable and mount envelopes retain the deterministic
+  bounded fallback generator;
 - moving `base_link` as spheres, like the other articulated robot links;
 - the fixed Bunker chassis and sensor station as their exact base-frame STL
   meshes, not the previous 62 overlapping AABB cuboids;
@@ -168,14 +170,16 @@ Differences from Tesseract are material: Tesseract uses the exact configured
 mesh/convex model for both moving and fixed geometry and reports comparable
 clearances. cuRobo now uses exact fixed Bunker meshes, but articulated links
 remain non-conservative spheres and clearance remains unavailable (`-1`). The
-current audit reports 167 spheres and per-link maximum sampled-surface gaps
-from 4.2 mm to 31.0 mm. cuRobo also lacks Tesseract's qualified out-of-limit
-bootstrap recovery. Collision equivalence is therefore not claimed.
+current audit reports 67 spheres and a worst sampled-surface gap of 43.8 mm.
+The low count avoids cuRobo's large self-collision kernel, but the sparse
+coverage—especially around link 5—means collision equivalence is not claimed.
+cuRobo also lacks Tesseract's qualified out-of-limit bootstrap recovery.
 
 The generated config binds the pinned cuRobo version/commit and SHA-256 hashes
-of its generated URDF, SRDF, collision manifest, every source moving-link mesh,
-and both fixed Bunker meshes. Schema-2 loading fails before CUDA initialization
-if the audit is incomplete or an asset changed. Hardware collision
+of its generated URDF, SRDF, collision manifest, reviewed sphere YAML and
+source Isaac USD, every source moving-link mesh, and both fixed Bunker meshes.
+Schema-2 loading fails before CUDA initialization if the audit is incomplete,
+the sphere counts/owners disagree, or a runtime source asset changed. Hardware collision
 qualification additionally requires both `hardware_qualified: true` in
 reviewed model provenance and
 `PIPER_CUROBO_COLLISION_MODEL_QUALIFIED=1`; the environment flag alone cannot
@@ -246,7 +250,21 @@ CUROBO_PYTHON=/home/prl/.venvs/piper-curobo-v0.7.8/bin/python
 env -u PYTHONPATH "$CUROBO_PYTHON" -c 'import curobo, torch, warp; print(curobo.__version__, warp.__version__, torch.__version__, torch.version.cuda, torch.cuda.is_available(), torch.cuda.get_device_name(0))'
 ```
 
-Qualification on 2026-08-28 proved native extension import, CUDA tensor
+Qualification on 2026-08-31 additionally converted the saved 57-sphere
+Isaac/Lula edit into the canonical 67-sphere collision-owner model. Camera
+holder/L515 spheres are transformed into `l515_attached_assembly`; two envelope
+links remain generated fallbacks. Exact Tesseract checks proved zero, neutral
+and a qualified scan pose clear and the folded retract pose colliding. The
+corresponding pure sphere checks now agree for those classifications, without
+adding any ignored pair. Real CUDA planning passes neutral-to-scan and reverse,
+and a deliberately blocking world is rejected.
+
+The adapter also restores world- and self-collision constraints before and
+after every attempt. This contains a pinned cuRobo v0.7.8 invalid-start path
+which otherwise leaves self-collision disabled after classifying a world
+collision in a persistent worker.
+
+Earlier qualification on 2026-08-28 proved native extension import, CUDA tensor
 execution, MotionGen model warm-up, a command-free free-space joint plan,
 healthy worker publication and bounded Ctrl-C cleanup. The generated PiPER
 model locks gripper joints 7/8 at zero for six-axis arm planning. The corrected
@@ -259,7 +277,7 @@ in the exact Tesseract model too and remains part of Tesseract's special
 bootstrap-recovery problem, not evidence for ignoring cuRobo collisions.
 
 The model remains `hardware_qualified: false`: moving-link spheres have sampled
-surface gaps up to 31.0 mm, the complete frozen mission-request GPU suite and
+surface gaps up to 43.8 mm, the complete frozen mission-request GPU suite and
 cross-backend collision comparison remain pending, and no physical cuRobo test
 has been performed.
 

@@ -135,6 +135,41 @@ def validate_model_provenance(config_document):
                 'sha256': provenance.get(hash_key, ''),
             })
         collision_links = set(kinematics.get('collision_link_names') or [])
+        sphere_sets = kinematics.get('collision_spheres')
+        if not isinstance(sphere_sets, dict) or set(sphere_sets) != collision_links:
+            raise ValueError(
+                'collision sphere sets do not match collision links')
+        sphere_counts = provenance.get('sphere_count_by_link')
+        if sphere_counts is not None and (
+                not isinstance(sphere_counts, dict)
+                or sphere_counts != {
+                    name: len(sphere_sets[name]) for name in sorted(sphere_sets)
+                }):
+            raise ValueError('collision sphere counts do not match the model')
+        curated_model = provenance.get('curated_sphere_model')
+        if curated_model is not None:
+            if not isinstance(curated_model, dict):
+                raise ValueError('curated collision-sphere provenance is invalid')
+            if sphere_counts is None:
+                raise ValueError('curated collision-sphere counts are missing')
+            _validated_hash_bound_path(curated_model)
+            if len(str(curated_model.get('source_usd_sha256', ''))) != 64:
+                raise ValueError('curated collision-sphere USD hash is invalid')
+            curated_links = provenance.get('curated_collision_links')
+            fallback_links = provenance.get(
+                'generated_fallback_collision_links')
+            if (
+                    not isinstance(curated_links, list)
+                    or not isinstance(fallback_links, list)
+                    or len(set(curated_links)) != len(curated_links)
+                    or len(set(fallback_links)) != len(fallback_links)
+                    or set(curated_links) & set(fallback_links)
+                    or set(curated_links) | set(fallback_links)
+                    != collision_links
+                    or sorted(fallback_links) != sorted(curated_model.get(
+                        'generated_fallback_links', []))):
+                raise ValueError(
+                    'curated and fallback collision links are inconsistent')
         coverage = provenance.get('moving_link_surface_coverage')
         if not isinstance(coverage, dict) or set(coverage) != collision_links:
             raise ValueError(
@@ -337,6 +372,20 @@ class CuroboBackend:
         return self.JointState.from_position(
             tensor, joint_names=list(JOINT_NAMES))
 
+    def _restore_collision_constraints(self):
+        """Undo a cuRobo v0.7.8 invalid-start state leak fail-closed.
+
+        ``MotionGen.check_start_state`` disables both constraints while it
+        classifies an invalid start.  Its world-collision return path exits
+        before re-enabling the self-collision constraint.  This backend is a
+        persistent worker, so restore both pinned-v0.7.8 constraints around
+        every attempt rather than allowing one rejected request to weaken the
+        next request.
+        """
+        rollout = self.motion_gen.rollout_fn
+        rollout.primitive_collision_constraint.enable_cost()
+        rollout.robot_self_collision_constraint.enable_cost()
+
     def _update_world(self, request):
         world_cuboids = list(self.fixed_platform_cuboids)
         world_cuboids.extend(obstacle_cuboids(request, self.floor_z_m))
@@ -344,6 +393,7 @@ class CuroboBackend:
         meshes = [self.Mesh(**value) for value in self.fixed_world_meshes]
         self.motion_gen.update_world(self.WorldConfig(
             cuboid=cuboids, mesh=meshes))
+        self._restore_collision_constraints()
 
     def _path(self, result, speed):
         if not bool(result.success.item()):
@@ -377,14 +427,17 @@ class CuroboBackend:
                         [candidate['camera_position_m']]),
                     quaternion=self.tensor_args.to_device([quaternion]),
                 )
-                result = self.motion_gen.plan_single(
-                    self._joint_state(start), goal,
-                    self.MotionGenPlanConfig(
-                        enable_graph=True,
-                        max_attempts=20,
-                        timeout=30.0,
-                        fail_on_invalid_query=True,
-                    ))
+                try:
+                    result = self.motion_gen.plan_single(
+                        self._joint_state(start), goal,
+                        self.MotionGenPlanConfig(
+                            enable_graph=True,
+                            max_attempts=20,
+                            timeout=30.0,
+                            fail_on_invalid_query=True,
+                        ))
+                finally:
+                    self._restore_collision_constraints()
                 diagnostics.append({
                     'roll_rad': float(roll),
                     'success': bool(result.success.item()),
@@ -415,11 +468,14 @@ class CuroboBackend:
         raise CuroboContractError('cuRobo found no collision-safe candidate pose')
 
     def _plan_joint_goal(self, start, goal, request):
-        result = self.motion_gen.plan_single_js(
-            self._joint_state(start), self._joint_state(goal),
-            self.MotionGenPlanConfig(
-                enable_graph=True, max_attempts=20, timeout=30.0,
-                fail_on_invalid_query=True))
+        try:
+            result = self.motion_gen.plan_single_js(
+                self._joint_state(start), self._joint_state(goal),
+                self.MotionGenPlanConfig(
+                    enable_graph=True, max_attempts=20, timeout=30.0,
+                    fail_on_invalid_query=True))
+        finally:
+            self._restore_collision_constraints()
         return (
             self._path(
                 result, request['planning']['effective_speed_percent']),

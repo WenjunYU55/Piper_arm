@@ -130,3 +130,12 @@ def test_exact_world_still_rejects_blocking_dynamic_geometry(backend):
         backend._plan_joint_goal(
             neutral, qualified_scan,
             {'planning': {'effective_speed_percent': 5.0}})
+
+
+def test_curated_model_rejects_known_link2_link5_collision(backend):
+    backend._update_world({'scene': {'obstacles': []}})
+    valid, status = backend.motion_gen.check_start_state(backend._joint_state([
+        0.0, 0.0, 0.0, 0.0, 0.43869236, 0.0,
+    ]))
+    assert valid is False
+    assert str(status).endswith('INVALID_START_STATE_SELF_COLLISION')

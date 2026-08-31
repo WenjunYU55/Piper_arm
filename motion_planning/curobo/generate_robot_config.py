@@ -3,9 +3,10 @@
 
 cuRobo 0.7.8 represents articulated robot collision geometry with spheres, but
 supports triangle meshes for fixed world obstacles.  The generated document
-therefore keeps the existing bounded sphere proposal for moving links, records
+therefore accepts a reviewed, hash-bound sphere model for moving links, records
 its measured error against every source collision surface, and uses the exact
-hash-bound Bunker meshes for the fixed world.
+hash-bound Bunker meshes for the fixed world.  Links not present in the reviewed
+model retain the deterministic bounded generator as an explicit fallback.
 """
 
 import argparse
@@ -35,6 +36,7 @@ FIXED_WORLD_MESH_FILES = {
     'bunker_sensor_station_collision':
         'bunker_sensor_station_collision.STL',
 }
+CURATED_SPHERE_SCHEMA_VERSION = 1
 
 
 def sha256_file(path):
@@ -212,6 +214,87 @@ def deduplicate_spheres(spheres, cell_size, separation_ratio=0.75):
     return sorted(selected, key=lambda item: tuple(item['center']))
 
 
+def load_curated_spheres(path, urdf_path):
+    """Load a portable Isaac-authored sphere model and bind it to the URDF.
+
+    The USD itself is intentionally not a runtime dependency.  Its reviewed
+    sphere centres are stored in a small YAML source asset whose own hash is
+    carried into generated-model provenance.  The source URDF hash prevents a
+    tuned model from being silently reused after kinematic geometry changes.
+    """
+    source_path = Path(path).resolve()
+    if not source_path.is_file():
+        raise ValueError('curated collision-sphere model is missing: %s' % path)
+    try:
+        document = yaml.safe_load(source_path.read_text(encoding='utf-8'))
+    except (OSError, yaml.YAMLError) as error:
+        raise ValueError('curated collision-sphere model is malformed') from error
+    if not isinstance(document, dict):
+        raise ValueError('curated collision-sphere model is not a mapping')
+    if int(document.get('schema_version', 0)) != CURATED_SPHERE_SCHEMA_VERSION:
+        raise ValueError('unsupported curated collision-sphere schema')
+    source = document.get('source')
+    if not isinstance(source, dict):
+        raise ValueError('curated collision-sphere source is missing')
+    urdf_hash = str(source.get('planning_urdf_sha256', ''))
+    if len(urdf_hash) != 64 or urdf_hash != sha256_file(urdf_path):
+        raise ValueError('curated collision spheres do not match the planning URDF')
+    usd_hash = str(source.get('usd_sha256', ''))
+    if len(usd_hash) != 64:
+        raise ValueError('curated collision-sphere USD provenance is missing')
+    configured = document.get('collision_spheres')
+    if not isinstance(configured, dict) or not configured:
+        raise ValueError('curated collision-sphere model contains no links')
+    cleaned = {}
+    source_links = {}
+    for link_name, entries in configured.items():
+        name = str(link_name)
+        if not name or not isinstance(entries, list) or not entries:
+            raise ValueError('curated sphere list is malformed for %s' % name)
+        link_spheres = []
+        provenance_links = set()
+        centers = set()
+        for entry in entries:
+            if not isinstance(entry, dict):
+                raise ValueError('curated sphere entry is malformed for %s' % name)
+            center = np.asarray(entry.get('center'), dtype=float)
+            radius = float(entry.get('radius', math.nan))
+            source_link = str(entry.get('source_link', name))
+            if (
+                    center.shape != (3,) or not np.all(np.isfinite(center))
+                    or not math.isfinite(radius) or not 0.002 <= radius <= 0.15
+                    or not source_link):
+                raise ValueError('curated sphere geometry is invalid for %s' % name)
+            key = tuple(round(float(value), 9) for value in center)
+            if key in centers:
+                raise ValueError('curated sphere centres are duplicated for %s' % name)
+            centers.add(key)
+            provenance_links.add(source_link)
+            link_spheres.append({
+                'center': list(key),
+                'radius': round(radius, 9),
+            })
+        cleaned[name] = link_spheres
+        source_links[name] = sorted(provenance_links)
+    fallbacks = document.get('generated_fallback_links', [])
+    if not isinstance(fallbacks, list) or not all(
+            isinstance(item, str) and item for item in fallbacks):
+        raise ValueError('curated generated-fallback link list is malformed')
+    qualification_notes = document.get('qualification_notes', [])
+    if not isinstance(qualification_notes, list) or not all(
+            isinstance(note, str) and note for note in qualification_notes):
+        raise ValueError('curated qualification notes are malformed')
+    return cleaned, {
+        'path': str(source_path),
+        'sha256': sha256_file(source_path),
+        'model_name': str(document.get('model_name', '')),
+        'source_usd_sha256': usd_hash,
+        'qualification_notes': list(qualification_notes),
+        'source_links_by_collision_owner': source_links,
+        'generated_fallback_links': sorted(set(fallbacks)),
+    }
+
+
 def surface_coverage(vertices, spheres, chunk_size=20000):
     """Measure signed surface gap to a sphere union without large allocations.
 
@@ -274,8 +357,13 @@ def disabled_collision_pairs(srdf_path):
 
 def build(
         urdf_path, srdf_path, collision_manifest_path,
-        description_root, cell_size_m):
+        description_root, cell_size_m, sphere_model_path=None):
     root = ET.parse(urdf_path).getroot()
+    curated_spheres = {}
+    curated_provenance = None
+    if sphere_model_path is not None:
+        curated_spheres, curated_provenance = load_curated_spheres(
+            sphere_model_path, urdf_path)
     spheres = {}
     collision_links = []
     coverage = {}
@@ -299,7 +387,10 @@ def build(
             link_sources.extend(sources)
         if link_spheres:
             collision_links.append(name)
-            spheres[name] = deduplicate_spheres(link_spheres, cell_size_m)
+            if name in curated_spheres:
+                spheres[name] = curated_spheres[name]
+            else:
+                spheres[name] = deduplicate_spheres(link_spheres, cell_size_m)
             coverage[name] = surface_coverage(
                 np.concatenate(link_vertices), spheres[name])
             unique_sources = {
@@ -311,6 +402,19 @@ def build(
                 unique_sources[key] for key in sorted(unique_sources)]
     if not spheres:
         raise ValueError('planning URDF contains no collision geometry')
+    unknown_curated_links = set(curated_spheres) - set(collision_links)
+    if unknown_curated_links:
+        raise ValueError(
+            'curated spheres contain unknown planning links: %s'
+            % ', '.join(sorted(unknown_curated_links)))
+    curated_links = sorted(set(curated_spheres))
+    generated_links = sorted(set(collision_links) - set(curated_spheres))
+    if curated_provenance is not None:
+        expected_fallbacks = curated_provenance['generated_fallback_links']
+        if expected_fallbacks != generated_links:
+            raise ValueError(
+                'generated fallback links do not match the curated model: %s'
+                % ', '.join(generated_links))
     collision_link_set = set(collision_links)
     self_collision_ignore = {
         name: [partner for partner in partners
@@ -359,13 +463,21 @@ def build(
                 collision_manifest_path),
             'curobo_version': PINNED_VERSION,
             'curobo_commit': PINNED_COMMIT,
-            'covering_shape': 'per_collision_aabb_regular_sphere_grid',
+            'covering_shape': (
+                'isaac_lula_hand_tuned_with_generated_fallback'
+                if curated_provenance is not None
+                else 'per_collision_aabb_regular_sphere_grid'),
             'cell_size_m': float(cell_size_m),
             'sphere_surface_inset_m': 0.004,
             'minimum_sphere_center_separation_m': round(
                 float(cell_size_m) * 0.75, 9),
             'moving_link_surface_coverage': coverage,
             'moving_link_mesh_sources': moving_mesh_sources,
+            'curated_sphere_model': curated_provenance,
+            'curated_collision_links': curated_links,
+            'generated_fallback_collision_links': generated_links,
+            'sphere_count_by_link': {
+                name: len(spheres[name]) for name in sorted(spheres)},
             'conservative_geometry': False,
             'hardware_qualified': False,
             # The two meshes are already transformed into base_link by the
@@ -384,12 +496,13 @@ def main():
     parser.add_argument('--description-root', required=True)
     parser.add_argument('--output', required=True)
     parser.add_argument('--cell-size-m', type=float, default=0.04)
+    parser.add_argument('--sphere-model')
     args = parser.parse_args()
     if not 0.01 <= args.cell_size_m <= 0.10:
         raise SystemExit('cell-size-m must be within 0.01..0.10')
     payload = build(
         args.urdf, args.srdf, args.collision_manifest,
-        args.description_root, args.cell_size_m)
+        args.description_root, args.cell_size_m, args.sphere_model)
     output = Path(args.output).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(

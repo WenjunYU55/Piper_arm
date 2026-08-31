@@ -1031,10 +1031,15 @@ curobo_integration_diagnostics_2026_08_27:
     correction: Installed toolkit-only CUDA 12.8.93 under /home/prl/.local, cuRobo 0.7.8 and Warp 1.11.1 under the explicit Python 3.10 environment; native extensions, GPU initialization, model warm-up, heartbeat and cleanup pass without changing ROS, system Python or driver.
   - id: curobo_collision_model_unqualified
     status: fail_closed
-    symptom: Canonical PiPER moving assets require articulated collision spheres in cuRobo 0.7.8; the current 167-sphere model has sampled-surface gaps from 4.2 to 31.0 mm, so physical equivalence to the exact Tesseract model is not proved.
-    correction: Schema-2 generation records per-link surface coverage and hash-binds every moving source mesh. Worker readiness and collision_qualified remain false unless reviewed model provenance says hardware_qualified and the operator explicitly enables qualification. Environment opt-in alone cannot bypass provenance.
+    symptom: Canonical PiPER moving assets require articulated collision spheres in cuRobo 0.7.8; the saved Isaac model initially created false non-adjacent self collisions and fixed-Bunker base collisions, while sparse regions could miss exact contact.
+    correction: Convert the saved USD to a portable 67-sphere collision-owner YAML, transform holder/L515 spheres into the canonical attached assembly, refine only false-positive spheres against exact Tesseract evidence, preserve a known link2-link5 collision, add pure FK overlap qualification, and hash-bind the reviewed source plus sphere counts/ownership. Three exact-clear poses, one exact-colliding pose, the command-free GPU path and blocking-volume rejection pass without adding ignore pairs. Sampled gaps still reach 43.8 mm, so worker collision_qualified and provenance hardware_qualified remain false.
   - id: curobo_coarse_bunker_cuboids_reject_interpolated_path
     status: resolved_2026_08_28_exact_fixed_world_meshes
     symptom: Start and goal states and free-space joint planning pass, but enabling the fixed Bunker chassis AABB set yields MotionGen DT_EXCEPTION for the tested command-free trajectory.
     root_cause: The canonical decomposed chassis meshes are converted to many large overlapping AABBs; this is not collision-equivalent to Tesseract mesh geometry.
     correction: Skip the 62 decomposed platform cells at cuRobo conversion, hash-bind the canonical base-frame chassis and sensor-station STLs, and load them as exact fixed Mesh obstacles. Neutral-to-qualified-scan and reverse plans pass and a blocking dynamic box rejects. Moving-link qualification remains independently blocked; no collision check or shared limit was weakened.
+  - id: curobo_v078_world_rejection_leaves_self_collision_disabled
+    status: resolved_2026_08_31_backend_boundary_restore
+    symptom: In one persistent MotionGen instance, a deliberately world-colliding request followed by the known link2-link5 collision incorrectly classified the second start as valid.
+    root_cause: cuRobo v0.7.8 MotionGen.check_start_state disables world and self constraints while classifying an invalid start; its world-collision return exits before re-enabling the self-collision constraint.
+    correction: The isolated cuRobo adapter now re-enables both pinned rollout constraints after every world update and in a finally block around every pose or joint-goal attempt. The GPU regression executes world rejection followed by the known self collision and requires the latter to remain rejected.
