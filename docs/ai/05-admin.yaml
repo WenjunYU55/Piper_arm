@@ -218,6 +218,9 @@ target_tracking_jump_or_background_lock_2026_08_20:
 tesseract_timeout_before_candidate_one_2026_08_20:
   inspect: [worker startup duration and worker_health generation, worker.py TesseractBackend initialization and reset_scene, response planning_diagnostics candidate_attempts]
   rule: worker_ready means Robot.from_files has succeeded and one clean unused planning scene exists. Reuse is permitted only while no request-local obstacles were added; any successful obstacle addition makes the scene dirty and requires reconstruction before reuse. candidate_attempts zero with budget expiry indicates setup/budget-boundary regression; do not increase planning budgets to hide model construction.
+cuRobo_startup_reports_missing_or_invalid_heartbeat:
+  inspect: [PIPER_CUROBO_SPOOL/worker_health.json file size freshness generation backend and readiness, PIPER_CUROBO_SPOOL/worker_diagnostics.json backend_error environment and model_provenance, motion_planning/curobo/worker.py, target_scan_mission_node.py read_worker_health]
+  rule: Keep the liveness heartbeat below the coordinator's 16 KiB bound and diagnose full model provenance from worker_diagnostics.json. Do not raise the bounded-input limit or remove model qualification to hide a provenance-size regression.
 post_view_tracking_lost_2026_08_20:
   inspect: [mission_engine.py VIEW_COMPLETE VIEW_REJECTED and target-drift branches, target_scan_mission_node.py request_multiview_plan and approve_plan, /piper/tracking_health, /piper/tesseract_view_generation]
   rule: Initial scan admission still requires stable multiview readiness. Between views, do not add a second generic readiness owner; re-enter the command-free request path, which owns bounded visual reacquisition, then require the unchanged full plan approval before motion.

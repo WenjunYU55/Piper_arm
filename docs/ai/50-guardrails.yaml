@@ -974,6 +974,7 @@ generic_motion_planner_guardrail_2026_08_27:
     - Both backends must emit the same MotionPlan contract and traverse unchanged common normalization, validation, PlanAuthorizer, runtime monitoring, cancellation, recovery and TrajectoryRunner paths.
     - Unknown, stale, uncorrelated, malformed, unsupported or collision-unqualified planner results fail closed.
     - cuRobo readiness requires reviewed model provenance plus explicit collision-model qualification; environment flags alone cannot qualify a model.
+    - Keep cuRobo worker_health.json compact and within the unchanged 16 KiB coordinator bound. Complete collision-sphere/model provenance belongs in worker_diagnostics.json and must not be copied into the 0.5-second liveness heartbeat.
     - Real-arm motion remains disabled by default and planner selection grants no motion authority.
     - cuRobo v0.7.8 requires Warp 1.11.1 in the isolated environment; do not let login-shell Foxy Python 3.8 paths enter its Python 3.10 worker.
     - Exact rigid-PiPER-base and fixed-Bunker Mesh records must retain canonical names, identity base-frame poses and matching source hashes; do not turn the bolted base back into robot spheres because its intentional platform overlap becomes a permanent world collision.

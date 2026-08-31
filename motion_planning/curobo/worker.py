@@ -582,11 +582,37 @@ class Worker:
         self.heartbeat_stop.set()
 
     def health(self):
+        """Return the compact, frequently refreshed readiness record.
+
+        Full model provenance is intentionally published separately because
+        worker_health.json is a bounded liveness contract, not a diagnostic
+        transport.
+        """
         return {
             'schema_version': 5,
             'generation_id': self.generation_id,
             'written_at_ns': time.time_ns(),
             'worker_ready': self.backend is not None,
+            'backend': 'curobo',
+            'backend_version': (
+                self.backend.version if self.backend is not None else 'unavailable'),
+            'backend_error': self.backend_error,
+            'collision_model_qualified': self.collision_model_qualified(),
+            'robot_config_sha256': (
+                self.backend.robot_config_sha256
+                if self.backend is not None else ''),
+            'environment': (
+                dict(self.backend.environment)
+                if self.backend is not None else {}),
+            **self.model_hashes,
+        }
+
+    def diagnostics(self):
+        """Return full startup and collision-model provenance for inspection."""
+        return {
+            'schema_version': 1,
+            'generation_id': self.generation_id,
+            'written_at_ns': time.time_ns(),
             'backend': 'curobo',
             'backend_version': (
                 self.backend.version if self.backend is not None else 'unavailable'),
@@ -606,6 +632,9 @@ class Worker:
 
     def publish_health(self):
         self.spool.write_health(self.health())
+
+    def publish_diagnostics(self):
+        self.spool.write_diagnostics(self.diagnostics())
 
     def heartbeat_loop(self):
         while not self.heartbeat_stop.wait(0.5):
@@ -710,6 +739,7 @@ class Worker:
         return True
 
     def run(self, once=False):
+        self.publish_diagnostics()
         self.publish_health()
         heartbeat = threading.Thread(
             target=self.heartbeat_loop, name='curobo-worker-heartbeat',

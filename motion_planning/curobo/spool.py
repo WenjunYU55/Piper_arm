@@ -59,3 +59,6 @@ class Spool:
 
     def write_health(self, value):
         self._atomic_json(self.root / 'worker_health.json', value)
+
+    def write_diagnostics(self, value):
+        self._atomic_json(self.root / 'worker_diagnostics.json', value)

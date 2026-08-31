@@ -626,6 +626,12 @@ filesystem_contracts:
     worker_exclusivity: run_worker.sh holds a nonblocking flock at XDG_RUNTIME_DIR/piper_tesseract_worker.lock, or the /tmp fallback, and exits with code 3 if another worker owns it.
     worker_supervision: In the Bubblewrap route, run_worker.sh remains as the direct parent and waits for the isolated worker. This preserves --die-with-parent across the GUI's short-lived Python startup thread and lets GUI process-group cleanup stop both wrapper and sandbox.
     current_qualification: On 2026-07-27 the exact production 30 mm decomposition manifest hash 237c06f03ef248c535b28fbf588e65160325a5f8f48632a9f0237e59c7a10956 passed core and compact suites with collision_model_qualified_for_hardware=true. The exact compact start for target [0.33,-0.14,0.0] produced J3 delta -0.05 rad, recovery endpoint 55, 352 points, and 5608 validation samples. The normal post-recovery clearance was 0.001006 m under its named policy. No collision pair is disabled. The nanobind continuous manager remains disabled; no response claims BulletCast or FCL.
+  curobo_spool:
+    implementation_owners: [motion_planning/curobo/spool.py, motion_planning/curobo/worker.py]
+    root: PIPER_CUROBO_SPOOL, with /tmp/piper_curobo_plans fallback
+    queues: [requests, processing, responses, failed]
+    worker_health: worker_health.json is a compact canonical liveness record atomically replaced at 0.5-second intervals and must remain at or below the coordinator's 16 KiB input bound. It carries generation, timestamp, readiness, backend/version/error, environment summary, qualification flag and authoritative model hashes; it deliberately excludes the expanded sphere/model provenance.
+    worker_diagnostics: worker_diagnostics.json is an atomically replaced startup diagnostic record containing the complete environment and hash-bound collision-model provenance. It is operator evidence, not readiness authority, and is written once before the heartbeat loop rather than retransmitted every 0.5 seconds.
   vision_recovery:
     root: /tmp/piper_vision_recovery
     request: request.yaml written atomically only after a sustained timestamp fault and latest-sample fresh joint positions remain within stationary_position_tolerance_rad, default 0.001, for stationary_duration_sec, default 0.75; consumed by run_gpu_vision_pipeline.sh. Velocity-only feedback is a fail-closed compatibility fallback; health reason distinguishes missing/stale feedback from position settling.

@@ -1,5 +1,6 @@
 """Pure cuRobo adapter tests; no CUDA or cuRobo import is permitted here."""
 
+import json
 import math
 from types import SimpleNamespace
 
@@ -132,3 +133,37 @@ def test_collision_qualification_requires_model_evidence_and_operator_opt_in(
 
     monkeypatch.setenv('PIPER_CUROBO_COLLISION_MODEL_QUALIFIED', '1')
     assert Worker.collision_model_qualified(worker) is True
+
+
+def test_worker_health_stays_bounded_when_model_provenance_is_large():
+    provenance = {
+        'hardware_qualified': False,
+        'collision_spheres': ['sphere'] * 4000,
+    }
+    worker = SimpleNamespace(
+        generation_id='a' * 32,
+        backend_error='',
+        backend=SimpleNamespace(
+            version='0.7.8',
+            robot_config_sha256='b' * 64,
+            model_provenance=provenance,
+            environment={'cuda_available': True},
+        ),
+        model_hashes={
+            'srdf_sha256': 'c' * 64,
+            'collision_manifest_sha256': 'd' * 64,
+        },
+        collision_model_qualified=lambda: False,
+    )
+
+    health = Worker.health(worker)
+    diagnostics = Worker.diagnostics(worker)
+    encoded_health = json.dumps(
+        health, sort_keys=True, separators=(',', ':')).encode('utf-8')
+
+    assert len(encoded_health) <= 16 * 1024
+    assert 'model_provenance' not in health
+    assert diagnostics['model_provenance'] == provenance
+    assert health['robot_config_sha256'] == diagnostics['robot_config_sha256']
+    assert health['collision_manifest_sha256'] == (
+        diagnostics['collision_manifest_sha256'])

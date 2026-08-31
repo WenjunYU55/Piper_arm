@@ -55,6 +55,10 @@ The selected worker is the only planner worker started for a mission.
 `ProcessSupervisor` owns its process group, generation, heartbeat, bounded
 termination, and cleanup. The cuRobo script uses `exec` with the exact
 `PIPER_CUROBO_PYTHON` path, so process-group termination also owns CUDA work.
+The cuRobo worker refreshes a compact `worker_health.json` within the
+coordinator's 16 KiB bounded-input contract. Full environment and
+collision-model provenance is retained separately in atomic
+`worker_diagnostics.json`; that diagnostic record is not readiness authority.
 
 ## Generic ROS boundary
 
