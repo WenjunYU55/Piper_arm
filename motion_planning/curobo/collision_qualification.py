@@ -145,9 +145,18 @@ def sphere_overlaps(urdf_path, kinematics, joint_positions):
         for link, partners in (
             kinematics.get('self_collision_ignore') or {}).items()
     }
-    buffer_m = float(kinematics.get('collision_sphere_buffer', 0.0))
-    if not math.isfinite(buffer_m):
-        raise ValueError('collision sphere buffer is not finite')
+    # cuRobo applies collision_sphere_buffer to world checks, then subtracts
+    # that same value while constructing self-collision distances.  Therefore
+    # only the per-link self_collision_buffer belongs in this pure self check.
+    # Mirroring that detail prevents CPU qualification from reporting a model
+    # different from the GPU runtime model.
+    self_buffers = {
+        str(link): float(value)
+        for link, value in (
+            kinematics.get('self_collision_buffer') or {}).items()
+    }
+    if not all(math.isfinite(value) for value in self_buffers.values()):
+        raise ValueError('self-collision sphere buffer is not finite')
     world_spheres = {}
     for link, spheres in sphere_sets.items():
         if link not in transforms:
@@ -156,7 +165,10 @@ def sphere_overlaps(urdf_path, kinematics, joint_positions):
         converted = []
         for index, sphere in enumerate(spheres):
             center = np.asarray(sphere.get('center'), dtype=float)
-            radius = float(sphere.get('radius', math.nan)) + buffer_m
+            radius = (
+                float(sphere.get('radius', math.nan))
+                + self_buffers.get(str(link), 0.0)
+            )
             if (
                     center.shape != (3,) or not np.all(np.isfinite(center))
                     or not math.isfinite(radius) or radius <= 0.0):

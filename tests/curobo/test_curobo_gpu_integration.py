@@ -93,6 +93,7 @@ def test_exact_bunker_world_preserves_known_joint_path(backend):
     } == {
         'bunker_chassis_collision',
         'bunker_sensor_station_collision',
+        'piper_base_collision',
     }
     assert set(provenance['moving_link_surface_coverage']) == set(
         backend.collision_link_names)
@@ -132,7 +133,7 @@ def test_exact_world_still_rejects_blocking_dynamic_geometry(backend):
             {'planning': {'effective_speed_percent': 5.0}})
 
 
-def test_curated_model_rejects_known_link2_link5_collision(backend):
+def test_curated_model_rejects_known_folded_self_collision(backend):
     backend._update_world({'scene': {'obstacles': []}})
     valid, status = backend.motion_gen.check_start_state(backend._joint_state([
         0.0, 0.0, 0.0, 0.0, 0.43869236, 0.0,

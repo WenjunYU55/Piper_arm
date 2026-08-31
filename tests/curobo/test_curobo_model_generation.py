@@ -15,6 +15,7 @@ from motion_planning.curobo.generate_robot_config import (
     build,
     FIXED_WORLD_MESH_FILES,
     FIXED_WORLD_LINKS,
+    FIXED_ROBOT_COLLISION_LINKS,
     JOINT_NAMES,
     LOCKED_JOINTS,
     covering_spheres,
@@ -135,8 +136,9 @@ def test_arm_planning_contract_locks_canonical_gripper_joints():
         assert 'name="%s"' % joint_name in text
 
 
-def test_robot_base_is_not_misclassified_as_world_geometry():
+def test_rigid_robot_base_is_exact_fixed_world_geometry():
     assert 'base_link' not in FIXED_WORLD_LINKS
+    assert FIXED_ROBOT_COLLISION_LINKS == {'base_link'}
     assert FIXED_WORLD_LINKS == {
         'bunker_chassis_collision', 'bunker_sensor_station_collision'}
 
@@ -144,8 +146,9 @@ def test_robot_base_is_not_misclassified_as_world_geometry():
 def test_fixed_bunker_uses_full_hash_bound_base_frame_meshes():
     description = ROOT / 'piper_ros_foxy/src/piper_description'
     records = fixed_world_meshes(description)
-    assert [item['name'] for item in records] == sorted(FIXED_WORLD_LINKS)
+    assert [item['name'] for item in records] == sorted(FIXED_WORLD_MESH_FILES)
     assert FIXED_WORLD_MESH_FILES == {
+        'piper_base_collision': 'base_link.STL',
         'bunker_chassis_collision': 'bunker_chassis_collision.STL',
         'bunker_sensor_station_collision':
             'bunker_sensor_station_collision.STL',
@@ -202,10 +205,14 @@ def test_curated_spheres_are_bounded_and_preserve_collision_evidence(
         kinematics,
         dict(zip(joint_names, [0.0, 0.0, 0.0, 0.0, 0.43869236, 0.0])),
     )
+    # Tesseract reports both link1/link5 and link2/link5 at this folded state.
+    # A sphere approximation need not reproduce every mesh contact pair, but it
+    # must reject the same state through at least one real contact pair.
     assert any(
-        {item.first_link, item.second_link} == {'link2', 'link5'}
+        {item.first_link, item.second_link} == {'link1', 'link5'}
         for item in colliding)
-    assert sum(provenance['sphere_count_by_link'].values()) == 67
+    assert sum(provenance['sphere_count_by_link'].values()) == 69
+    assert 'base_link' not in provenance['sphere_count_by_link']
     assert provenance['hardware_qualified'] is False
     assert provenance['conservative_geometry'] is False
 
@@ -283,7 +290,7 @@ def test_schema_two_collision_provenance_fails_closed_when_incomplete(
             'fixed_world_meshes': [],
         },
     }
-    with pytest.raises(ValueError, match='both canonical Bunker meshes'):
+    with pytest.raises(ValueError, match='canonical PiPER base and Bunker meshes'):
         validate_model_provenance(document)
 
 

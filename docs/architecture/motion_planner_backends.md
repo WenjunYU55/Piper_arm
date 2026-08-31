@@ -10,9 +10,10 @@ is no automatic fallback and no mid-mission switch.
 Tesseract is the regression baseline. The cuRobo adapter is real MotionGen
 integration against cuRobo v0.7.8. On 28 August 2026 the reference host passed
 native-extension import, CUDA tensor execution, model warm-up, command-free
-free-space planning, worker readiness, and bounded cleanup. The fixed Bunker
-world now uses its exact hash-bound triangle meshes; moving links use a
-reviewed, hash-bound 67-sphere Isaac/Lula approximation because cuRobo 0.7.8
+free-space planning, worker readiness, and bounded cleanup. The rigid PiPER
+base and fixed Bunker world now use exact hash-bound triangle meshes; moving
+links and attachments use a reviewed, hash-bound 69-sphere Isaac/Lula
+approximation because cuRobo 0.7.8
 does not support articulated triangle-mesh collision. That approximation
 remains deliberately marked
 `conservative_geometry: false` and `hardware_qualified: false`. Physical cuRobo
@@ -156,11 +157,13 @@ authorization, or execution code.
 backends start from the same current Xacro, calibrated L515 frame, SRDF,
 collision manifest, joint order and limits. The cuRobo conversion represents:
 
-- moving PiPER, gripper, holder and L515 geometry as a reviewed 67-sphere
-  model exported from the Isaac/Lula editor and refined against exact
-  Tesseract contacts; cable and mount envelopes retain the deterministic
-  bounded fallback generator;
-- moving `base_link` as spheres, like the other articulated robot links;
+- moving PiPER, gripper, holder and L515 geometry as a reviewed 49-sphere
+  model extracted from the final operator-saved Isaac/Lula USD;
+- cable and mount envelopes as 20 circumscribed regular-cell spheres that
+  cover their complete canonical boxes;
+- the rigidly bolted PiPER base as its exact fixed `base_link.STL` world mesh,
+  so the intentional base/Bunker mounting overlap is not treated as a
+  robot-versus-world collision;
 - the fixed Bunker chassis and sensor station as their exact base-frame STL
   meshes, not the previous 62 overlapping AABB cuboids;
 - the selected support floor as a world cuboid;
@@ -168,16 +171,19 @@ collision manifest, joint order and limits. The cuRobo conversion represents:
 
 Differences from Tesseract are material: Tesseract uses the exact configured
 mesh/convex model for both moving and fixed geometry and reports comparable
-clearances. cuRobo now uses exact fixed Bunker meshes, but articulated links
+clearances. cuRobo now uses exact fixed base/Bunker meshes, but articulated links
 remain non-conservative spheres and clearance remains unavailable (`-1`). The
-current audit reports 67 spheres and a worst sampled-surface gap of 43.8 mm.
+current audit reports 69 spheres and a worst per-owner sampled-surface gap of
+48.3 mm. A measured 7 mm Link-1 self-collision buffer closes every observed
+state-level miss while retaining the zero, neutral and qualified-scan poses.
 The low count avoids cuRobo's large self-collision kernel, but the sparse
 coverage—especially around link 5—means collision equivalence is not claimed.
 cuRobo also lacks Tesseract's qualified out-of-limit bootstrap recovery.
 
 The generated config binds the pinned cuRobo version/commit and SHA-256 hashes
 of its generated URDF, SRDF, collision manifest, reviewed sphere YAML and
-source Isaac USD, every source moving-link mesh, and both fixed Bunker meshes.
+source Isaac USD, every source moving-link mesh, the rigid base mesh, and both
+fixed Bunker meshes.
 Schema-2 loading fails before CUDA initialization if the audit is incomplete,
 the sphere counts/owners disagree, or a runtime source asset changed. Hardware collision
 qualification additionally requires both `hardware_qualified: true` in
@@ -250,14 +256,14 @@ CUROBO_PYTHON=/home/prl/.venvs/piper-curobo-v0.7.8/bin/python
 env -u PYTHONPATH "$CUROBO_PYTHON" -c 'import curobo, torch, warp; print(curobo.__version__, warp.__version__, torch.__version__, torch.version.cuda, torch.cuda.is_available(), torch.cuda.get_device_name(0))'
 ```
 
-Qualification on 2026-08-31 additionally converted the saved 57-sphere
-Isaac/Lula edit into the canonical 67-sphere collision-owner model. Camera
-holder/L515 spheres are transformed into `l515_attached_assembly`; two envelope
-links remain generated fallbacks. Exact Tesseract checks proved zero, neutral
-and a qualified scan pose clear and the folded retract pose colliding. The
-corresponding pure sphere checks now agree for those classifications, without
-adding any ignored pair. Real CUDA planning passes neutral-to-scan and reverse,
-and a deliberately blocking world is rejected.
+Qualification on 2026-08-31 converted the final saved 54-sphere Isaac/Lula edit
+into 49 moving-link spheres plus 20 exact-cover cable/mount envelope spheres.
+Camera holder/L515 spheres are transformed into `l515_attached_assembly`; the
+rigid base is an exact fixed-world mesh. A deterministic 2,004-pose articulated
+self-collision comparison against exact Tesseract produced zero state-level false negatives and 501
+conservative false positives without adding any ignored pair. Real CUDA
+planning passes neutral-to-scan and reverse, a deliberately blocking world is
+rejected, and the known folded self collision remains rejected afterward.
 
 The adapter also restores world- and self-collision constraints before and
 after every attempt. This contains a pinned cuRobo v0.7.8 invalid-start path
@@ -276,10 +282,16 @@ blocking dynamic box is rejected. The tested folded home is collision-invalid
 in the exact Tesseract model too and remains part of Tesseract's special
 bootstrap-recovery problem, not evidence for ignoring cuRobo collisions.
 
-The model remains `hardware_qualified: false`: moving-link spheres have sampled
-surface gaps up to 43.8 mm, the complete frozen mission-request GPU suite and
-cross-backend collision comparison remain pending, and no physical cuRobo test
-has been performed.
+The 2026-08-31 articulated self-collision comparison used 2,000 seeded joint
+samples plus four reference poses. It found zero state-level false negatives, 43 mutually
+colliding states, 1,456 mutually clear states, and 501 conservative cuRobo
+rejections. This is useful command-free evidence, not a proof over continuous
+configuration space.
+
+The model remains `hardware_qualified: false`: moving-link spheres have
+per-owner sampled-surface gaps up to 48.3 mm, conservative false positives
+remain, the complete frozen mission-request GPU suite is pending, and no
+physical cuRobo test has been performed.
 
 Version and installation references:
 

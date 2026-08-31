@@ -31,7 +31,10 @@ from motion_planning.curobo.spool import Spool
 
 
 REQUIRED_FIXED_WORLD_MESHES = {
-    'bunker_chassis_collision', 'bunker_sensor_station_collision'}
+    'bunker_chassis_collision',
+    'bunker_sensor_station_collision',
+    'piper_base_collision',
+}
 
 
 class BackendUnavailable(RuntimeError):
@@ -75,7 +78,7 @@ def validate_model_provenance(config_document):
     """Validate generated collision evidence before initializing CUDA.
 
     Schema 1 remains readable for already generated development models.  A
-    schema-2 model fails closed unless its moving-link audit and both canonical
+    schema-2 model fails closed unless its moving-link audit and all canonical
     fixed-world meshes are complete and still match their recorded hashes.
     """
     if not isinstance(config_document, dict):
@@ -119,7 +122,8 @@ def validate_model_provenance(config_document):
     if schema_version >= 2:
         if mesh_names != REQUIRED_FIXED_WORLD_MESHES:
             raise ValueError(
-                'schema-2 model must contain both canonical Bunker meshes')
+                'schema-2 model must contain the canonical PiPER base and '
+                'Bunker meshes')
         if provenance.get('conservative_geometry') is not False:
             raise ValueError(
                 'schema-2 moving-link sphere approximation must declare '

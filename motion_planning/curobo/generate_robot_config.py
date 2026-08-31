@@ -32,10 +32,17 @@ LOCKED_JOINTS = {'joint7': 0.0, 'joint8': 0.0}
 FIXED_WORLD_LINKS = {
     'bunker_chassis_collision', 'bunker_sensor_station_collision'}
 FIXED_WORLD_MESH_FILES = {
+    # PiPER's base is rigidly bolted to the Bunker.  Keeping it as a robot
+    # sphere makes cuRobo test it against the overlapping platform mesh, while
+    # Tesseract correctly disables that rigid-mount pair.  Model the exact base
+    # mesh as fixed world geometry instead: moving links still collide with it,
+    # but fixed world objects are not incorrectly tested against each other.
+    'piper_base_collision': 'base_link.STL',
     'bunker_chassis_collision': 'bunker_chassis_collision.STL',
     'bunker_sensor_station_collision':
         'bunker_sensor_station_collision.STL',
 }
+FIXED_ROBOT_COLLISION_LINKS = {'base_link'}
 CURATED_SPHERE_SCHEMA_VERSION = 1
 
 
@@ -377,7 +384,7 @@ def build(
         link_vertices = []
         link_sources = []
         for collision in collisions:
-            if name in FIXED_WORLD_LINKS:
+            if name in FIXED_WORLD_LINKS or name in FIXED_ROBOT_COLLISION_LINKS:
                 continue
             vertices, sources = collision_vertices(
                 collision, description_root)
@@ -438,7 +445,12 @@ def build(
                 'collision_sphere_buffer': 0.0,
                 'extra_collision_spheres': {},
                 'self_collision_ignore': self_collision_ignore,
-                'self_collision_buffer': {},
+                # Link 1's four operator-fitted spheres leave a measured gap in
+                # exact-mesh collision samples.  A 7 mm buffer closes every
+                # observed false-negative gap while preserving the exact-clear
+                # zero, neutral, and qualified-scan reference poses;
+                # adjacent pairs remain governed by the unchanged SRDF ignores.
+                'self_collision_buffer': {'link1': 0.007},
                 'use_global_cumul': True,
                 'mesh_link_names': None,
                 'external_asset_path': str(Path(description_root).resolve()),
@@ -480,8 +492,8 @@ def build(
                 name: len(spheres[name]) for name in sorted(spheres)},
             'conservative_geometry': False,
             'hardware_qualified': False,
-            # The two meshes are already transformed into base_link by the
-            # canonical Tesseract model builder and its hash-locked manifest.
+            # The rigid PiPER base and both Bunker meshes are already expressed
+            # in base_link by the canonical model and hash-locked manifest.
             'fixed_world_meshes': fixed_world_meshes(description_root),
         },
     }
