@@ -2,10 +2,14 @@
 """
 Secure offline object-masked RGB-D reconstruction for completed PiPER scans.
 
-TSDF is the surface-fusion method.  Sequential target GICP, target-only
-multi-view GICP and static-scene RGB-D pose-graph refinement are optional
-residual corrections around the capture-time robot poses; none replaces
-calibration or robot kinematics.
+TSDF is the surface-fusion method. Sequential target GICP, target-only
+multi-view GICP and static-scene RGB-D pose-graph refinement are bounded
+residual corrections around capture-time robot poses. The separately
+selectable constrained superposition fixes capture zero, permits unbounded
+translation and caps minimum-prior rotation at 3 degrees; it remains an
+offline visual/model fit and does not replace calibration or kinematics.
+Constrained output also derives a separate consensus-supported dense OBJ with
+depth-visible source-image texture; this never changes TSDF quality evidence.
 """
 
 import argparse
@@ -21,10 +25,23 @@ DEFAULT_VOXEL_LENGTH_M = 0.003
 DEFAULT_SDF_TRUNC_M = 0.015
 DEFAULT_DEPTH_TRUNC_M = 1.5
 REGISTRATION_MODES = (
-    'robot_pose', 'bounded_gicp', 'multiway_gicp', 'scene_pose_graph', 'auto')
+    'robot_pose', 'bounded_gicp', 'multiway_gicp',
+    'constrained_superposition', 'scene_pose_graph', 'auto')
 MULTIWAY_MAX_PRIOR_NEIGHBORS = 3
 MULTIWAY_MAX_VIEW_ANGLE_DEG = 75.0
 MULTIWAY_MAX_CORRESPONDENCE_M = 0.015
+SUPERPOSITION_MAX_CORRESPONDENCE_M = 0.015
+SUPERPOSITION_NORMAL_ANGLE_DEG = 35.0
+SUPERPOSITION_MAX_POINTS_PER_EDGE = 500
+SUPERPOSITION_PRIOR_SIGMA_M = 0.008
+SUPERPOSITION_ROTATION_PRIOR_SIGMA_DEG = 1.0
+SUPERPOSITION_DATA_SIGMA_M = 0.002
+SUPERPOSITION_HUBER_DELTA_M = 0.003
+SUPERPOSITION_MAX_ITERATIONS = 6
+SUPERPOSITION_MAX_ROTATION_DEG = 3.0
+CONSENSUS_MIN_VOXEL_M = 0.0015
+CONSENSUS_NORMAL_ANGLE_DEG = 35.0
+CONSENSUS_MINIMUM_VIEWS = 2
 SCENE_REGISTRATION_VOXEL_M = 0.005
 MEASURED_VIEW_COLORS_RGB = (
     (0.90, 0.20, 0.20), (0.20, 0.55, 0.95), (0.20, 0.75, 0.35),
@@ -33,18 +50,30 @@ MEASURED_VIEW_COLORS_RGB = (
 SCENE_TARGET_EXCLUSION_RADIUS_PX = 6
 SCENE_MINIMUM_POINTS = 500
 MINIMUM_SIGNIFICANT_COMPONENT_AREA_FRACTION = 0.05
+MEASURED_COMPONENT_SUPPORT_DISTANCE_M = 0.003
+MEASURED_COMPONENT_MINIMUM_TOTAL_POINTS = 4
+MEASURED_COMPONENT_MINIMUM_POINTS_PER_VIEW = 2
+MEASURED_COMPONENT_MINIMUM_VIEWS = 2
 
 
 try:
     from reconstruction import input_provenance as _inputs
+    from reconstruction import mesh_repair as _mesh_repair
+    from reconstruction import native_depth as _native_depth
+    from reconstruction import texture_baking as _texture
 except ModuleNotFoundError as error:
     if error.name != 'reconstruction':
         raise
     import input_provenance as _inputs
+    import mesh_repair as _mesh_repair
+    import native_depth as _native_depth
+    import texture_baking as _texture
 
 MINIMUM_CAPTURE_VIEWS = _inputs.MINIMUM_CAPTURE_VIEWS
 MAXIMUM_CAPTURE_VIEWS = _inputs.MAXIMUM_CAPTURE_VIEWS
 MASK_SOURCES = _inputs.MASK_SOURCES
+GEOMETRY_SOURCES = _native_depth.GEOMETRY_SOURCES
+HOLE_REPAIR_MODES = _mesh_repair.HOLE_REPAIR_MODES
 canonical_sha256 = _inputs.canonical_sha256
 camera_extrinsic_from_metadata = _inputs.camera_extrinsic_from_metadata
 sha256_file = _inputs.sha256_file
@@ -172,13 +201,14 @@ def registration_spanning_tree(node_count, accepted_edges):
 
 def _bounded_pose_graph_camera_poses(
         frames, o3d, cloud_key, registration_source,
-        use_rgbd_odometry=False):
+        use_rgbd_odometry=False, pose_key='nominal_base_camera',
+        intrinsic_key='intrinsic'):
     """Refine camera poses from one explicit registration data source."""
     if len(frames) < 3:
         raise ValueError(
             'bounded multi-view registration requires at least three views')
     nominal = [
-        np.asarray(frame['nominal_base_camera'], dtype=float)
+        np.asarray(frame[pose_key], dtype=float)
         for frame in frames]
     graph = o3d.pipelines.registration.PoseGraph()
     for pose in nominal:
@@ -199,7 +229,7 @@ def _bounded_pose_graph_camera_poses(
                     o3d.pipelines.odometry.compute_rgbd_odometry(
                         frames[source]['registration_rgbd'],
                         frames[target]['registration_rgbd'],
-                        frames[source]['intrinsic'], initial,
+                        frames[source][intrinsic_key], initial,
                         o3d.pipelines.odometry.
                         RGBDOdometryJacobianFromHybridTerm(),
                         o3d.pipelines.odometry.OdometryOption())
@@ -328,7 +358,746 @@ def scene_pose_graph_camera_poses(frames, o3d):
             raise ValueError('static-scene registration cloud is too small')
     return _bounded_pose_graph_camera_poses(
         frames, o3d, 'registration_cloud_camera',
-        'static_scene_rgbd_excluding_target', use_rgbd_odometry=True)
+        'static_scene_rgbd_excluding_target', use_rgbd_odometry=True,
+        pose_key='registration_nominal_base_camera',
+        intrinsic_key='registration_intrinsic')
+
+
+def solve_constrained_translations(
+        node_count, constraints, prior_sigma_m=SUPERPOSITION_PRIOR_SIGMA_M,
+        data_sigma_m=SUPERPOSITION_DATA_SIGMA_M,
+        huber_delta_m=SUPERPOSITION_HUBER_DELTA_M,
+        maximum_translation_m=0.020, iterations=6):
+    """Solve robust global per-view translations around fixed robot rotations.
+
+    Each constraint is a point-to-plane equation between two capture views.
+    A finite zero-mean robot-pose prior regularizes unobservable tangential
+    motion, while the first pose is the fixed gauge anchor. This deliberately
+    cannot invent target rotations from a symmetric silhouette.
+    """
+    count = int(node_count)
+    if count < 2:
+        raise ValueError('constrained superposition needs at least two views')
+    if not constraints:
+        raise ValueError('constrained superposition has no overlap constraints')
+    prior_sigma = float(prior_sigma_m)
+    data_sigma = float(data_sigma_m)
+    huber_delta = float(huber_delta_m)
+    if min(prior_sigma, data_sigma, huber_delta) <= 0.0:
+        raise ValueError('superposition solver scales must be positive')
+    rows = []
+    values = []
+    base_weights = []
+    for item in constraints:
+        source = int(item['source'])
+        target = int(item['target'])
+        normal = np.asarray(item['normal_base'], dtype=float)
+        offset = float(item['offset_m'])
+        edge_count = int(item.get('edge_constraint_count', 1))
+        if source < 0 or target < 0 or source >= count or target >= count \
+                or source == target or normal.shape != (3,) \
+                or not np.all(np.isfinite(normal)) \
+                or not np.isfinite(offset) or edge_count < 1:
+            raise ValueError('superposition constraint is malformed')
+        norm = float(np.linalg.norm(normal))
+        if norm <= 1e-12:
+            raise ValueError('superposition constraint normal is zero')
+        normal = normal / norm
+        row = np.zeros(3 * count, dtype=float)
+        row[3 * source:3 * source + 3] = normal
+        row[3 * target:3 * target + 3] = -normal
+        rows.append(row)
+        values.append(offset / norm)
+        base_weights.append(
+            1.0 / (data_sigma * np.sqrt(float(edge_count))))
+    data_row_count = len(rows)
+    for node in range(count):
+        sigma = 1e-5 if node == 0 else prior_sigma
+        for axis in range(3):
+            row = np.zeros(3 * count, dtype=float)
+            row[3 * node + axis] = 1.0
+            rows.append(row)
+            values.append(0.0)
+            base_weights.append(1.0 / sigma)
+    matrix = np.asarray(rows, dtype=float)
+    target_values = np.asarray(values, dtype=float)
+    base = np.asarray(base_weights, dtype=float)
+    solution = np.zeros(3 * count, dtype=float)
+    for _unused in range(max(1, int(iterations))):
+        raw_residual = matrix @ solution - target_values
+        robust = np.ones_like(raw_residual)
+        data_residual = np.abs(raw_residual[:data_row_count])
+        outside = data_residual > huber_delta
+        robust[:data_row_count][outside] = np.sqrt(
+            huber_delta / data_residual[outside])
+        weights = base * robust
+        weighted_matrix = matrix * weights[:, None]
+        weighted_target = target_values * weights
+        solution, _residuals, rank, _singular = np.linalg.lstsq(
+            weighted_matrix, weighted_target, rcond=None)
+        if rank < 3 * count:
+            raise ValueError('constrained superposition system is singular')
+    translations = solution.reshape(count, 3)
+    magnitudes = np.linalg.norm(translations, axis=1)
+    if np.any(~np.isfinite(translations)):
+        raise ValueError('constrained superposition produced non-finite poses')
+    if maximum_translation_m is not None and float(np.max(magnitudes)) \
+            > float(maximum_translation_m) + 1e-12:
+        raise ValueError(
+            'constrained superposition correction exceeds %.0fmm'
+            % (1000.0 * float(maximum_translation_m)))
+    return translations
+
+
+def solve_constrained_rigid_corrections(
+        node_count, constraints, camera_origins,
+        prior_sigma_m=SUPERPOSITION_PRIOR_SIGMA_M,
+        rotation_prior_sigma_rad=np.radians(
+            SUPERPOSITION_ROTATION_PRIOR_SIGMA_DEG),
+        data_sigma_m=SUPERPOSITION_DATA_SIGMA_M,
+        huber_delta_m=SUPERPOSITION_HUBER_DELTA_M,
+        maximum_translation_m=0.020, maximum_rotation_deg=5.0,
+        fixed_reference_index=None,
+        iterations=SUPERPOSITION_MAX_ITERATIONS):
+    """Solve prior-regularized camera corrections around each origin.
+
+    The compatibility default keeps equal finite priors and bounded residual
+    corrections. ``fixed_reference_index`` instead pins that capture exactly;
+    callers may pass no translation ceiling while retaining a rotation bound.
+    """
+    count = int(node_count)
+    origins = np.asarray(camera_origins, dtype=float)
+    if count < 2 or origins.shape != (count, 3) \
+            or not np.all(np.isfinite(origins)):
+        raise ValueError('constrained rigid superposition origins are invalid')
+    if not constraints:
+        raise ValueError(
+            'constrained rigid superposition has no overlap constraints')
+    translation_sigma = float(prior_sigma_m)
+    rotation_sigma = float(rotation_prior_sigma_rad)
+    data_sigma = float(data_sigma_m)
+    huber_delta = float(huber_delta_m)
+    if min(translation_sigma, rotation_sigma, data_sigma, huber_delta) <= 0.0:
+        raise ValueError('rigid superposition solver scales must be positive')
+    rows = []
+    values = []
+    base_weights = []
+    for item in constraints:
+        source = int(item['source'])
+        target = int(item['target'])
+        source_point = np.asarray(item['source_point_base'], dtype=float)
+        target_point = np.asarray(item['target_point_base'], dtype=float)
+        normal = np.asarray(item['normal_base'], dtype=float)
+        edge_count = int(item.get('edge_constraint_count', 1))
+        if source < 0 or target < 0 or source >= count or target >= count \
+                or source == target or source_point.shape != (3,) \
+                or target_point.shape != (3,) or normal.shape != (3,) \
+                or not np.all(np.isfinite(source_point)) \
+                or not np.all(np.isfinite(target_point)) \
+                or not np.all(np.isfinite(normal)) or edge_count < 1:
+            raise ValueError('rigid superposition constraint is malformed')
+        normal_length = float(np.linalg.norm(normal))
+        if normal_length <= 1e-12:
+            raise ValueError('rigid superposition constraint normal is zero')
+        normal = normal / normal_length
+        correspondence_point = 0.5 * (source_point + target_point)
+        row = np.zeros(6 * count, dtype=float)
+        row[6 * source:6 * source + 3] = normal
+        row[6 * source + 3:6 * source + 6] = np.cross(
+            correspondence_point - origins[source], normal)
+        row[6 * target:6 * target + 3] = -normal
+        row[6 * target + 3:6 * target + 6] = -np.cross(
+            correspondence_point - origins[target], normal)
+        rows.append(row)
+        values.append(float(np.dot(
+            normal, target_point - source_point)))
+        base_weights.append(
+            1.0 / (data_sigma * np.sqrt(float(edge_count))))
+    data_row_count = len(rows)
+    reference = (
+        None if fixed_reference_index is None else int(fixed_reference_index))
+    if reference is not None and (reference < 0 or reference >= count):
+        raise ValueError('fixed superposition reference is invalid')
+    for node in range(count):
+        node_translation_sigma = (
+            1e-8 if node == reference else translation_sigma)
+        node_rotation_sigma = 1e-8 if node == reference else rotation_sigma
+        for axis in range(3):
+            translation_row = np.zeros(6 * count, dtype=float)
+            translation_row[6 * node + axis] = 1.0
+            rows.append(translation_row)
+            values.append(0.0)
+            base_weights.append(1.0 / node_translation_sigma)
+            rotation_row = np.zeros(6 * count, dtype=float)
+            rotation_row[6 * node + 3 + axis] = 1.0
+            rows.append(rotation_row)
+            values.append(0.0)
+            base_weights.append(1.0 / node_rotation_sigma)
+    matrix = np.asarray(rows, dtype=float)
+    target_values = np.asarray(values, dtype=float)
+    base = np.asarray(base_weights, dtype=float)
+    solution = np.zeros(6 * count, dtype=float)
+    for _unused in range(max(1, int(iterations))):
+        residual = matrix @ solution - target_values
+        robust = np.ones_like(residual)
+        data_residual = np.abs(residual[:data_row_count])
+        outside = data_residual > huber_delta
+        robust[:data_row_count][outside] = np.sqrt(
+            huber_delta / data_residual[outside])
+        weights = base * robust
+        solution, _residuals, rank, _singular = np.linalg.lstsq(
+            matrix * weights[:, None], target_values * weights, rcond=None)
+        if rank < 6 * count:
+            raise ValueError('constrained rigid superposition system is singular')
+    corrections = solution.reshape(count, 6)
+    translations = corrections[:, :3]
+    rotations = corrections[:, 3:]
+    if reference is not None:
+        translations[reference] = 0.0
+        rotations[reference] = 0.0
+    translation_magnitudes = np.linalg.norm(translations, axis=1)
+    rotation_degrees = np.degrees(np.linalg.norm(rotations, axis=1))
+    if not np.all(np.isfinite(corrections)):
+        raise ValueError(
+            'constrained rigid superposition produced non-finite poses')
+    if maximum_translation_m is not None and float(np.max(
+            translation_magnitudes)) \
+            > float(maximum_translation_m) + 1e-12:
+        raise ValueError(
+            'constrained rigid superposition translation exceeds %.0fmm'
+            % (1000.0 * float(maximum_translation_m)))
+    if float(np.max(rotation_degrees)) \
+            > float(maximum_rotation_deg) + 1e-12:
+        raise ValueError(
+            'constrained rigid superposition rotation exceeds %.1fdeg'
+            % float(maximum_rotation_deg))
+    constrained_pairs = {
+        (int(item['source']), int(item['target'])) for item in constraints}
+    for source, target in constrained_pairs:
+        relative_translation = float(np.linalg.norm(
+            translations[target] - translations[source]))
+        relative_rotation_deg = float(np.degrees(np.linalg.norm(
+            rotations[target] - rotations[source])))
+        if maximum_translation_m is not None and relative_translation \
+                > float(maximum_translation_m) + 1e-12:
+            raise ValueError(
+                'constrained rigid superposition relative translation '
+                'exceeds %.0fmm' % (1000.0 * float(maximum_translation_m)))
+        if reference is None and relative_rotation_deg \
+                > float(maximum_rotation_deg) + 1e-12:
+            raise ValueError(
+                'constrained rigid superposition rotation exceeds %.1fdeg'
+                % float(maximum_rotation_deg))
+    return translations, rotations
+
+
+def rotation_matrix_from_vector(rotation_vector):
+    """Convert one finite axis-angle vector into a 3x3 rotation matrix."""
+    vector = np.asarray(rotation_vector, dtype=float)
+    if vector.shape != (3,) or not np.all(np.isfinite(vector)):
+        raise ValueError('rotation vector is invalid')
+    angle = float(np.linalg.norm(vector))
+    if angle <= 1e-12:
+        return np.eye(3)
+    axis = vector / angle
+    skew = np.asarray([
+        [0.0, -axis[2], axis[1]],
+        [axis[2], 0.0, -axis[0]],
+        [-axis[1], axis[0], 0.0],
+    ])
+    return (
+        np.eye(3) + np.sin(angle) * skew
+        + (1.0 - np.cos(angle)) * (skew @ skew))
+
+
+def rigid_camera_correction_matrix(origin, translation, rotation_vector):
+    """Return a base-frame correction rotating around the camera origin."""
+    centre = np.asarray(origin, dtype=float)
+    shift = np.asarray(translation, dtype=float)
+    if centre.shape != (3,) or shift.shape != (3,) \
+            or not np.all(np.isfinite(centre)) \
+            or not np.all(np.isfinite(shift)):
+        raise ValueError('rigid camera correction is malformed')
+    rotation = rotation_matrix_from_vector(rotation_vector)
+    correction = np.eye(4)
+    correction[:3, :3] = rotation
+    correction[:3, 3] = centre + shift - rotation @ centre
+    return correction
+
+
+def _superposition_edge_constraints(
+        o3d, base_clouds, translations, source, target):
+    """Build deterministic, normal-consistent target overlap constraints."""
+    source_points = np.asarray(base_clouds[source].points, dtype=float)
+    source_normals = np.asarray(base_clouds[source].normals, dtype=float)
+    target_points = np.asarray(base_clouds[target].points, dtype=float)
+    target_normals = np.asarray(base_clouds[target].normals, dtype=float)
+    if min(len(source_points), len(target_points)) < 20 \
+            or source_normals.shape != source_points.shape \
+            or target_normals.shape != target_points.shape:
+        return [], {
+            'source': int(source), 'target': int(target), 'accepted': False,
+            'rejection': 'target overlap cloud has insufficient normals'}
+    tree = o3d.geometry.KDTreeFlann(base_clouds[target])
+    step = max(1, int(np.ceil(
+        len(source_points) / float(SUPERPOSITION_MAX_POINTS_PER_EDGE))))
+    cosine_limit = float(np.cos(np.radians(
+        SUPERPOSITION_NORMAL_ANGLE_DEG)))
+    records = []
+    distances = []
+    for source_index in range(0, len(source_points), step):
+        query = source_points[source_index] + translations[source]
+        found, indices, squared = tree.search_knn_vector_3d(
+            query - translations[target], 1)
+        if found != 1:
+            continue
+        target_index = int(indices[0])
+        distance = float(np.sqrt(squared[0]))
+        if distance > SUPERPOSITION_MAX_CORRESPONDENCE_M:
+            continue
+        source_normal = source_normals[source_index]
+        target_normal = target_normals[target_index]
+        if abs(float(np.dot(source_normal, target_normal))) < cosine_limit:
+            continue
+        if float(np.dot(source_normal, target_normal)) < 0.0:
+            target_normal = -target_normal
+        records.append({
+            'source': int(source),
+            'target': int(target),
+            'normal_base': target_normal,
+            'source_point_base': source_points[source_index],
+            'target_point_base': target_points[target_index],
+            'offset_m': float(np.dot(
+                target_normal,
+                target_points[target_index] - source_points[source_index])),
+        })
+        distances.append(distance)
+    minimum = max(20, int(0.08 * min(
+        len(source_points), SUPERPOSITION_MAX_POINTS_PER_EDGE)))
+    accepted = len(records) >= minimum
+    if accepted:
+        for record in records:
+            record['edge_constraint_count'] = len(records)
+    return (records if accepted else []), {
+        'source': int(source),
+        'target': int(target),
+        'fitness': float(len(records)) / float(max(
+            1, min(len(source_points), SUPERPOSITION_MAX_POINTS_PER_EDGE))),
+        'inlier_rmse_m': (
+            float(np.sqrt(np.mean(np.square(distances))))
+            if distances else float('inf')),
+        'correspondence_count': int(len(records)),
+        'accepted': bool(accepted),
+        'rejection': (
+            '' if accepted else 'target overlap is too weak for superposition'),
+        'registration_source':
+            'target_masked_depth_capture_zero_anchored_global_alignment',
+    }
+
+
+def _rigid_superposition_edge_constraints(
+        o3d, base_clouds, corrections, source, target):
+    """Build correspondences under current bounded rigid corrections."""
+    source_original = np.asarray(base_clouds[source].points, dtype=float)
+    target_original = np.asarray(base_clouds[target].points, dtype=float)
+    source_cloud = copy.deepcopy(base_clouds[source])
+    target_cloud = copy.deepcopy(base_clouds[target])
+    source_cloud.transform(np.asarray(corrections[source], dtype=float))
+    target_cloud.transform(np.asarray(corrections[target], dtype=float))
+    source_points = np.asarray(source_cloud.points, dtype=float)
+    target_points = np.asarray(target_cloud.points, dtype=float)
+    source_normals = np.asarray(source_cloud.normals, dtype=float)
+    target_normals = np.asarray(target_cloud.normals, dtype=float)
+    if min(len(source_points), len(target_points)) < 20 \
+            or source_normals.shape != source_points.shape \
+            or target_normals.shape != target_points.shape:
+        return [], {
+            'source': int(source), 'target': int(target), 'accepted': False,
+            'rejection': 'target overlap cloud has insufficient normals'}
+    target_tree = o3d.geometry.KDTreeFlann(target_cloud)
+    source_tree = o3d.geometry.KDTreeFlann(source_cloud)
+    step = max(1, int(np.ceil(
+        len(source_points) / float(SUPERPOSITION_MAX_POINTS_PER_EDGE))))
+    cosine_limit = float(np.cos(np.radians(
+        SUPERPOSITION_NORMAL_ANGLE_DEG)))
+    records = []
+    distances = []
+    for source_index in range(0, len(source_points), step):
+        found, indices, squared = target_tree.search_knn_vector_3d(
+            source_points[source_index], 1)
+        if found != 1:
+            continue
+        target_index = int(indices[0])
+        distance = float(np.sqrt(squared[0]))
+        if distance > SUPERPOSITION_MAX_CORRESPONDENCE_M:
+            continue
+        reverse_found, reverse_indices, _reverse_squared = \
+            source_tree.search_knn_vector_3d(target_points[target_index], 1)
+        if reverse_found != 1 or int(reverse_indices[0]) != source_index:
+            continue
+        source_normal = source_normals[source_index]
+        target_normal = target_normals[target_index]
+        if abs(float(np.dot(source_normal, target_normal))) < cosine_limit:
+            continue
+        if float(np.dot(source_normal, target_normal)) < 0.0:
+            target_normal = -target_normal
+        records.append({
+            'source': int(source),
+            'target': int(target),
+            'normal_base': target_normal,
+            'source_point_base': source_original[source_index],
+            'target_point_base': target_original[target_index],
+        })
+        distances.append(distance)
+    minimum = max(20, int(0.08 * min(
+        len(source_points), SUPERPOSITION_MAX_POINTS_PER_EDGE)))
+    accepted = len(records) >= minimum
+    if accepted:
+        for record in records:
+            record['edge_constraint_count'] = len(records)
+    return (records if accepted else []), {
+        'source': int(source),
+        'target': int(target),
+        'fitness': float(len(records)) / float(max(
+            1, min(len(source_points), SUPERPOSITION_MAX_POINTS_PER_EDGE))),
+        'inlier_rmse_m': (
+            float(np.sqrt(np.mean(np.square(distances))))
+            if distances else float('inf')),
+        'correspondence_count': int(len(records)),
+        'accepted': bool(accepted),
+        'rejection': (
+            '' if accepted else
+            'target overlap is too weak for rigid superposition'),
+        'registration_source':
+            'target_masked_depth_capture_zero_anchored_global_alignment',
+        'correspondence_policy': 'mutual_nearest_normal_consistent',
+    }
+
+
+def constrained_superposition_camera_poses(frames, o3d):
+    """Align all measured surfaces in an exactly fixed capture-zero frame."""
+    if not frames:
+        raise ValueError(
+            'constrained superposition requires at least one view')
+    nominal = [
+        np.asarray(frame['nominal_base_camera'], dtype=float)
+        for frame in frames]
+    if len(frames) == 1:
+        return [nominal[0].copy()], {
+            'candidate_pair_count': 0,
+            'accepted_pair_count': 0,
+            'spanning_tree_pair_count': 0,
+            'constraint_count': 0,
+            'pairwise_edges': [],
+            'pose_corrections': [{
+                'frame_index': 0,
+                'translation_correction_m': 0.0,
+                'translation_vector_m': [0.0, 0.0, 0.0],
+                'rotation_correction_deg': 0.0,
+                'rotation_vector_rad': [0.0, 0.0, 0.0],
+                'fixed_reference': True,
+            }],
+            'correction_objective': {
+                'policy':
+                    'single_capture_fixed_reference_no_alignment',
+                'total_translation_correction_m': 0.0,
+                'rms_translation_correction_m': 0.0,
+                'total_rotation_correction_deg': 0.0,
+                'rms_rotation_correction_deg': 0.0,
+            },
+            'registration_source':
+                'single_capture_nominal_pose_no_alignment',
+            'target_geometry_used_for_registration': False,
+            'single_capture_noop': True,
+            'alignment_bounds': {
+                'fixed_reference_frame_index': 0,
+                'maximum_translation_m': None,
+                'maximum_rotation_deg': SUPERPOSITION_MAX_ROTATION_DEG,
+            },
+            'solver': {
+                'model': 'single_capture_no_alignment_required',
+                'gauge_policy': 'capture_zero_fixed_exactly',
+                'correspondence_policy': 'not_applicable_single_capture',
+                'translation_limit_m': None,
+                'rotation_prior_sigma_deg':
+                    SUPERPOSITION_ROTATION_PRIOR_SIGMA_DEG,
+                'maximum_rotation_deg': SUPERPOSITION_MAX_ROTATION_DEG,
+                'data_sigma_m': SUPERPOSITION_DATA_SIGMA_M,
+                'huber_delta_m': SUPERPOSITION_HUBER_DELTA_M,
+                'maximum_iterations': 0,
+                'full_resolution_depth_fused_once': True,
+            },
+        }
+    clouds = []
+    for frame, pose in zip(frames, nominal):
+        cloud = copy.deepcopy(frame['cloud_camera'])
+        cloud.transform(pose.copy())
+        clouds.append(cloud)
+    translations = np.zeros((len(frames), 3), dtype=float)
+    attempted = []
+    accepted_pairs = []
+    constraints = []
+    for _iteration in range(SUPERPOSITION_MAX_ITERATIONS):
+        attempted = []
+        accepted_pairs = []
+        constraints = []
+        for source, target in multiway_registration_pairs(nominal):
+            edge_constraints, report = _superposition_edge_constraints(
+                o3d, clouds, translations, source, target)
+            attempted.append(report)
+            if report['accepted']:
+                accepted_pairs.append(report)
+                constraints.extend(edge_constraints)
+        registration_spanning_tree(len(frames), accepted_pairs)
+        updated = solve_constrained_translations(
+            len(frames), constraints,
+            prior_sigma_m=1.0e6, iterations=6,
+            maximum_translation_m=None)
+        updated[0] = 0.0
+        if float(np.max(np.linalg.norm(updated - translations, axis=1))) \
+                < 1e-5:
+            translations = updated
+            break
+        translations = updated
+    camera_origins = np.asarray(
+        [pose[:3, 3] for pose in nominal], dtype=float)
+    rotations = np.zeros((len(frames), 3), dtype=float)
+    constraints = []
+    attempted = []
+    accepted_pairs = []
+    for _iteration in range(SUPERPOSITION_MAX_ITERATIONS):
+        current_corrections = [
+            rigid_camera_correction_matrix(origin, translation, rotation)
+            for origin, translation, rotation in zip(
+                camera_origins, translations, rotations)]
+        attempted = []
+        accepted_pairs = []
+        constraints = []
+        for source, target in multiway_registration_pairs(nominal):
+            edge_constraints, report = \
+                _rigid_superposition_edge_constraints(
+                    o3d, clouds, current_corrections, source, target)
+            attempted.append(report)
+            if report['accepted']:
+                accepted_pairs.append(report)
+                constraints.extend(edge_constraints)
+        registration_spanning_tree(len(frames), accepted_pairs)
+        updated_translations, updated_rotations = \
+            solve_constrained_rigid_corrections(
+                len(frames), constraints, camera_origins,
+                prior_sigma_m=1.0e6,
+                maximum_translation_m=None,
+                maximum_rotation_deg=SUPERPOSITION_MAX_ROTATION_DEG,
+                fixed_reference_index=0)
+        translation_delta = float(np.max(np.linalg.norm(
+            updated_translations - translations, axis=1)))
+        rotation_delta_deg = float(np.degrees(np.max(np.linalg.norm(
+            updated_rotations - rotations, axis=1))))
+        translations = updated_translations
+        rotations = updated_rotations
+        if translation_delta < 1e-5 and rotation_delta_deg < 0.01:
+            break
+    refined = []
+    correction_reports = []
+    for index, (pose, origin, translation, rotation_vector) in enumerate(zip(
+            nominal, camera_origins, translations, rotations)):
+        correction = rigid_camera_correction_matrix(
+            origin, translation, rotation_vector)
+        refined_pose = correction @ pose
+        camera_shift = float(np.linalg.norm(
+            refined_pose[:3, 3] - pose[:3, 3]))
+        rotation_degrees = float(np.degrees(
+            rotation_angle_rad(correction)))
+        if rotation_degrees > SUPERPOSITION_MAX_ROTATION_DEG + 1e-9:
+            raise ValueError(
+                'capture %d rotation exceeds %.1fdeg' % (
+                    index, SUPERPOSITION_MAX_ROTATION_DEG))
+        refined.append(refined_pose)
+        correction_reports.append({
+            'frame_index': int(index),
+            'translation_correction_m': camera_shift,
+            'translation_vector_m': translation.tolist(),
+            'rotation_correction_deg': rotation_degrees,
+            'rotation_vector_rad': rotation_vector.tolist(),
+            'fixed_reference': bool(index == 0),
+        })
+    translation_costs = np.asarray([
+        item['translation_correction_m'] for item in correction_reports],
+        dtype=float)
+    rotation_costs = np.asarray([
+        item['rotation_correction_deg'] for item in correction_reports],
+        dtype=float)
+    return refined, {
+        'candidate_pair_count': len(attempted),
+        'accepted_pair_count': len(accepted_pairs),
+        'spanning_tree_pair_count': len(frames) - 1,
+        'constraint_count': len(constraints),
+        'pairwise_edges': attempted,
+        'pose_corrections': correction_reports,
+        'correction_objective': {
+            'policy':
+                'fixed_capture_zero_maximum_overlap_minimum_rotation',
+            'total_translation_correction_m': float(np.sum(
+                translation_costs)),
+            'rms_translation_correction_m': float(np.sqrt(np.mean(
+                np.square(translation_costs)))),
+            'total_rotation_correction_deg': float(np.sum(rotation_costs)),
+            'rms_rotation_correction_deg': float(np.sqrt(np.mean(
+                np.square(rotation_costs)))),
+        },
+        'registration_source':
+            'target_masked_depth_capture_zero_anchored_global_alignment',
+        'target_geometry_used_for_registration': True,
+        'alignment_bounds': {
+            'fixed_reference_frame_index': 0,
+            'maximum_translation_m': None,
+            'maximum_rotation_deg': SUPERPOSITION_MAX_ROTATION_DEG,
+        },
+        'solver': {
+            'model': 'capture_zero_anchored_global_point_to_plane_alignment',
+            'gauge_policy': 'capture_zero_fixed_exactly',
+            'correspondence_policy':
+                'mutual_nearest_normal_consistent',
+            'translation_limit_m': None,
+            'rotation_prior_sigma_deg':
+                SUPERPOSITION_ROTATION_PRIOR_SIGMA_DEG,
+            'maximum_rotation_deg': SUPERPOSITION_MAX_ROTATION_DEG,
+            'data_sigma_m': SUPERPOSITION_DATA_SIGMA_M,
+            'huber_delta_m': SUPERPOSITION_HUBER_DELTA_M,
+            'maximum_iterations': SUPERPOSITION_MAX_ITERATIONS,
+            'full_resolution_depth_fused_once': True,
+        },
+    }
+
+
+def robust_cross_capture_consensus(
+        view_surfaces, voxel_length_m,
+        minimum_views=CONSENSUS_MINIMUM_VIEWS,
+        maximum_normal_angle_deg=CONSENSUS_NORMAL_ANGLE_DEG):
+    """Fuse corresponding surface samples with one vote per capture.
+
+    Points inside one spatial cell are never averaged within a capture. The
+    sample closest to the cell centre represents that capture. Across captures
+    a component-wise median and MAD reject positional outliers, after which an
+    equal-weight mean retains useful sub-pixel information without allowing a
+    dense or noisy view to dominate.
+    """
+    cell = max(CONSENSUS_MIN_VOXEL_M, float(voxel_length_m))
+    required = int(minimum_views)
+    if not np.isfinite(cell) or cell <= 0.0:
+        raise ValueError('consensus voxel length must be positive')
+    if required < 2:
+        raise ValueError('consensus requires at least two different captures')
+    cosine_limit = float(np.cos(np.radians(
+        float(maximum_normal_angle_deg))))
+    cells = {}
+    input_points = 0
+    for view_index, surface in enumerate(view_surfaces):
+        points = np.asarray(surface['points'], dtype=float)
+        normals = np.asarray(surface['normals'], dtype=float)
+        if points.ndim != 2 or points.shape[1:] != (3,) \
+                or normals.shape != points.shape \
+                or not np.all(np.isfinite(points)) \
+                or not np.all(np.isfinite(normals)):
+            raise ValueError('consensus view surface is malformed')
+        input_points += len(points)
+        representatives = {}
+        for point, normal in zip(points, normals):
+            key = tuple(np.floor(point / cell).astype(np.int64).tolist())
+            centre = (np.asarray(key, dtype=float) + 0.5) * cell
+            distance = float(np.linalg.norm(point - centre))
+            current = representatives.get(key)
+            if current is None or distance < current[0]:
+                representatives[key] = (distance, point.copy(), normal.copy())
+        for key, (_distance, point, normal) in representatives.items():
+            cells.setdefault(key, {})[int(view_index)] = (point, normal)
+
+    consensus_points = []
+    consensus_normals = []
+    support_counts = []
+    rejected_normal = 0
+    rejected_position = 0
+    single_view_cells = 0
+    per_cell_spread = []
+    for key in sorted(cells):
+        by_view = cells[key]
+        if len(by_view) < required:
+            single_view_cells += 1
+            continue
+        entries = list(by_view.values())
+        points = np.asarray([item[0] for item in entries], dtype=float)
+        normals = np.asarray([item[1] for item in entries], dtype=float)
+        normal_lengths = np.linalg.norm(normals, axis=1)
+        valid_normals = normal_lengths > 1e-9
+        if int(np.count_nonzero(valid_normals)) < required:
+            rejected_normal += 1
+            continue
+        normals = normals / normal_lengths[:, None]
+        compatibility = np.abs(normals @ normals.T) >= cosine_limit
+        seed_index = int(np.argmax(np.sum(compatibility, axis=1)))
+        compatible = compatibility[seed_index]
+        if int(np.count_nonzero(compatible)) < required:
+            rejected_normal += 1
+            continue
+        points = points[compatible]
+        normals = normals[compatible]
+        reference_normal = normals[0]
+        normals[np.dot(normals, reference_normal) < 0.0] *= -1.0
+
+        median = np.median(points, axis=0)
+        distances = np.linalg.norm(points - median, axis=1)
+        distance_median = float(np.median(distances))
+        mad = float(np.median(np.abs(distances - distance_median)))
+        threshold = max(
+            0.75 * cell,
+            distance_median + 3.0 * 1.4826 * mad)
+        threshold = min(threshold, np.sqrt(3.0) * cell)
+        positional = distances <= threshold + 1e-12
+        if int(np.count_nonzero(positional)) < required:
+            rejected_position += 1
+            continue
+        points = points[positional]
+        normals = normals[positional]
+        fused_point = np.mean(points, axis=0)
+        fused_normal = np.mean(normals, axis=0)
+        fused_normal_length = float(np.linalg.norm(fused_normal))
+        if fused_normal_length <= 1e-9:
+            rejected_normal += 1
+            continue
+        consensus_points.append(fused_point)
+        consensus_normals.append(fused_normal / fused_normal_length)
+        support_counts.append(len(points))
+        per_cell_spread.append(float(np.max(
+            np.linalg.norm(points - fused_point, axis=1))))
+    if not consensus_points:
+        raise ValueError(
+            'cross-capture consensus found no multi-view correspondences')
+    return (
+        np.asarray(consensus_points, dtype=float),
+        np.asarray(consensus_normals, dtype=float),
+        np.asarray(support_counts, dtype=int),
+        {
+            'method':
+                'one_representative_per_capture_then_MAD_filtered_mean',
+            'voxel_length_m': cell,
+            'minimum_distinct_captures': required,
+            'maximum_normal_angle_deg': float(maximum_normal_angle_deg),
+            'input_measured_points': int(input_points),
+            'spatial_cell_count': int(len(cells)),
+            'confirmed_consensus_points': int(len(consensus_points)),
+            'single_view_cells_excluded': int(single_view_cells),
+            'normal_incompatible_cells_excluded': int(rejected_normal),
+            'position_outlier_cells_excluded': int(rejected_position),
+            'minimum_capture_support': int(np.min(support_counts)),
+            'median_capture_support': float(np.median(support_counts)),
+            'maximum_capture_support': int(np.max(support_counts)),
+            'median_maximum_cross_capture_spread_m': float(
+                np.median(per_cell_spread)),
+            'p90_maximum_cross_capture_spread_m': float(
+                np.percentile(per_cell_spread, 90)),
+            'same_capture_points_averaged_together': False,
+            'immutable_source_points_modified': False,
+        })
 
 
 def camera_matrix(camera_info):
@@ -481,7 +1250,8 @@ def dimension_classification(maximum_absolute_error_m):
 
 def target_component_policy(component_triangle_counts, component_areas,
                             minimum_area_fraction=(
-                                MINIMUM_SIGNIFICANT_COMPONENT_AREA_FRACTION)):
+                                MINIMUM_SIGNIFICANT_COMPONENT_AREA_FRACTION),
+                            measured_supported_indices=()):
     """Classify disconnected mesh surfaces without hiding substantial ones."""
     counts = np.asarray(component_triangle_counts, dtype=int)
     areas = np.asarray(component_areas, dtype=float)
@@ -502,8 +1272,14 @@ def target_component_policy(component_triangle_counts, component_areas,
     if dominant_area <= 0.0:
         raise ValueError('mesh components have no positive surface area')
     threshold = dominant_area * fraction
-    retained = np.flatnonzero(areas >= threshold).astype(int)
-    removed = np.flatnonzero(areas < threshold).astype(int)
+    substantial = np.flatnonzero(areas >= threshold).astype(int)
+    measured = np.asarray(measured_supported_indices, dtype=int)
+    if measured.ndim != 1 or np.any(measured < 0) \
+            or np.any(measured >= counts.size):
+        raise ValueError('measured-supported component indices are invalid')
+    retained = np.unique(np.concatenate((substantial, measured))).astype(int)
+    removed = np.setdiff1d(
+        np.arange(counts.size, dtype=int), retained, assume_unique=True)
     total_triangles = int(np.sum(counts))
     total_area = float(np.sum(areas))
     return {
@@ -518,6 +1294,10 @@ def target_component_policy(component_triangle_counts, component_areas,
         'original_dominant_component_surface_area_ratio': (
             dominant_area / total_area),
         'retained_component_indices': retained.tolist(),
+        'substantial_component_indices': substantial.tolist(),
+        'measured_supported_component_indices': measured.tolist(),
+        'retained_only_by_measured_support_indices': np.setdiff1d(
+            measured, substantial).astype(int).tolist(),
         'retained_component_count': int(retained.size),
         'retained_triangle_count': int(np.sum(counts[retained])),
         'retained_surface_area_m2': float(np.sum(areas[retained])),
@@ -527,19 +1307,111 @@ def target_component_policy(component_triangle_counts, component_areas,
         'connectivity_valid': bool(retained.size == 1),
         'decision': (
             'SINGLE_CONNECTED_TARGET'
-            if retained.size == 1 else 'MULTIPLE_SUBSTANTIAL_COMPONENTS'),
+            if retained.size == 1 else (
+                'MULTIPLE_MEASURED_TARGET_COMPONENTS'
+                if np.setdiff1d(measured, substantial).size else
+                'MULTIPLE_SUBSTANTIAL_COMPONENTS')),
     }
 
 
-def filter_target_mesh_components(mesh):
-    """Remove only tiny components and retain substantial split surfaces."""
+def measured_component_support(o3d, mesh, labels, measured_support_views):
+    """Find small components corroborated by two accepted capture views."""
+    component_labels = np.asarray(labels, dtype=int)
+    component_count = (
+        int(np.max(component_labels)) + 1 if component_labels.size else 0)
+    per_view_counts = np.zeros(
+        (len(measured_support_views), component_count), dtype=int)
+    if not component_count or not measured_support_views:
+        return [], {
+            'available': False,
+            'reason': 'no measured component-support views are available',
+            'components': [],
+        }
+    scene = o3d.t.geometry.RaycastingScene()
+    geometry_to_component = {}
+    for component_index in range(component_count):
+        component = copy.deepcopy(mesh)
+        component.remove_triangles_by_mask(
+            component_labels != component_index)
+        component.remove_unreferenced_vertices()
+        geometry_id = int(scene.add_triangles(
+            o3d.t.geometry.TriangleMesh.from_legacy(component)))
+        geometry_to_component[geometry_id] = component_index
+    for view_index, points in enumerate(measured_support_views):
+        samples = np.asarray(points, dtype=np.float32)
+        if samples.ndim != 2 or samples.shape[1:] != (3,) \
+                or not np.all(np.isfinite(samples)):
+            raise ValueError('measured component-support view is malformed')
+        if not len(samples):
+            continue
+        closest = scene.compute_closest_points(o3d.core.Tensor(samples))
+        nearest = closest['points'].numpy()
+        geometry_ids = closest['geometry_ids'].numpy().astype(np.int64)
+        distances = np.linalg.norm(samples - nearest, axis=1)
+        supported = distances <= MEASURED_COMPONENT_SUPPORT_DISTANCE_M
+        for geometry_id in np.unique(geometry_ids[supported]):
+            component_index = geometry_to_component.get(int(geometry_id))
+            if component_index is None:
+                continue
+            per_view_counts[view_index, component_index] = int(
+                np.count_nonzero(
+                    supported & (geometry_ids == geometry_id)))
+    total = np.sum(per_view_counts, axis=0)
+    view_count = np.count_nonzero(
+        per_view_counts >= MEASURED_COMPONENT_MINIMUM_POINTS_PER_VIEW,
+        axis=0)
+    qualified = np.flatnonzero(
+        (total >= MEASURED_COMPONENT_MINIMUM_TOTAL_POINTS)
+        & (view_count >= MEASURED_COMPONENT_MINIMUM_VIEWS)).astype(int)
+    components = [{
+        'component_index': int(index),
+        'total_support_points': int(total[index]),
+        'supporting_view_count': int(view_count[index]),
+        'per_view_support_points': per_view_counts[:, index].tolist(),
+        'qualified': bool(index in set(qualified.tolist())),
+    } for index in range(component_count)]
+    return qualified.tolist(), {
+        'available': True,
+        'maximum_surface_distance_m':
+            MEASURED_COMPONENT_SUPPORT_DISTANCE_M,
+        'minimum_total_support_points':
+            MEASURED_COMPONENT_MINIMUM_TOTAL_POINTS,
+        'minimum_points_per_view':
+            MEASURED_COMPONENT_MINIMUM_POINTS_PER_VIEW,
+        'minimum_distinct_views': MEASURED_COMPONENT_MINIMUM_VIEWS,
+        'qualified_component_indices': qualified.tolist(),
+        'components': components,
+        'semantics': (
+            'a small TSDF component survives cleanup only when accepted '
+            'measured surface points from at least two distinct captures '
+            'independently lie within the bounded surface distance'),
+    }
+
+
+def filter_target_mesh_components(
+        mesh, o3d=None, measured_support_views=()):
+    """Retain substantial or independently measured target components."""
     filtered = copy.deepcopy(mesh)
     filtered.remove_duplicated_triangles()
     filtered.remove_degenerate_triangles()
     filtered.remove_duplicated_vertices()
     filtered.remove_unreferenced_vertices()
     labels, counts, areas = filtered.cluster_connected_triangles()
-    report = target_component_policy(counts, areas)
+    measured_indices = []
+    measured_report = {
+        'available': False,
+        'reason': 'measured component support was not requested',
+        'components': [],
+    }
+    if measured_support_views:
+        if o3d is None:
+            raise ValueError(
+                'Open3D is required for measured component support')
+        measured_indices, measured_report = measured_component_support(
+            o3d, filtered, labels, measured_support_views)
+    report = target_component_policy(
+        counts, areas, measured_supported_indices=measured_indices)
+    report['measured_component_support'] = measured_report
     retained = set(report['retained_component_indices'])
     remove_mask = [int(label) not in retained for label in labels]
     filtered.remove_triangles_by_mask(remove_mask)
@@ -614,7 +1486,8 @@ def mesh_metrics(o3d, mesh, input_cloud, expected_dimensions):
 def _load_capture(scan, metadata_path, metadata, manifest, cv2, o3d,
                   depth_trunc, expected_dimensions=None,
                   include_scene_registration=False,
-                  offline_mask_context=None):
+                  offline_mask_context=None,
+                  geometry_source='projected_color_depth'):
     artifacts = resolve_frame_artifacts(scan, metadata_path, metadata, manifest)
     raw_rgb_bgr = cv2.imread(str(artifacts['rgb']), cv2.IMREAD_COLOR)
     scene_depth = cv2.imread(str(artifacts['depth']), cv2.IMREAD_UNCHANGED)
@@ -670,12 +1543,47 @@ def _load_capture(scan, metadata_path, metadata, manifest, cv2, o3d,
         input_provenance = dict(input_provenance)
         input_provenance['semantic_mask_source'] = 'captured_live_sam2'
 
-    # Target fusion and scene registration share one rectified color plane but
-    # retain separate depth support.  The scene depth is never integrated into
-    # the target TSDF.
-    rgb_bgr, target_depth, target_mask, k, rectified = rectify_rgbd_mask(
-        cv2, raw_rgb_bgr, target_depth, target_mask,
-        metadata.get('camera_info', {}))
+    geometry = str(geometry_source)
+    if geometry not in GEOMETRY_SOURCES:
+        raise ValueError('geometry source must be one of: %s' % ', '.join(
+            GEOMETRY_SOURCES))
+    geometry_report = None
+    if geometry == 'native_depth':
+        if not input_provenance['confidence_qualified']:
+            raise ValueError(
+                'native-depth geometry requires a confidence-qualified '
+                'capture schema')
+        try:
+            native_depth = np.load(
+                artifacts['native_depth_npy'], allow_pickle=False)
+        except (OSError, TypeError, ValueError) as exc:
+            raise ValueError('native depth artifact is invalid') from exc
+        confidence = cv2.imread(
+            str(artifacts['confidence']), cv2.IMREAD_UNCHANGED)
+        replay = _native_depth.replay_native_target_geometry(
+            metadata, native_depth, confidence, target_depth, target_mask,
+            raw_rgb_bgr)
+        rgb_bgr = replay['color_bgr']
+        target_depth = replay['depth_mm']
+        target_mask = replay['mask']
+        k = replay['camera_matrix']
+        nominal_base_camera = replay['base_from_camera']
+        registration_nominal_base_camera = replay[
+            'registration_base_from_camera']
+        geometry_from_registration_camera = replay[
+            'geometry_from_registration_camera']
+        geometry_report = replay['report']
+        rectified = False
+    else:
+        # The compatibility path integrates the immutable sparse z-buffered
+        # projection in the rectified colour plane exactly as before.
+        rgb_bgr, target_depth, target_mask, k, rectified = rectify_rgbd_mask(
+            cv2, raw_rgb_bgr, target_depth, target_mask,
+            metadata.get('camera_info', {}))
+        nominal_base_camera = np.linalg.inv(
+            camera_extrinsic_from_metadata(metadata))
+        registration_nominal_base_camera = nominal_base_camera.copy()
+        geometry_from_registration_camera = np.eye(4)
     height, width = target_depth.shape[:2]
     valid, depth_gate = target_depth_support_mask(
         target_depth, target_mask, target.get('depth'), expected_dimensions)
@@ -684,12 +1592,11 @@ def _load_capture(scan, metadata_path, metadata, manifest, cv2, o3d,
         raise ValueError('%s has too few masked depth points' % metadata_path.name)
     rgb = cv2.cvtColor(rgb_bgr, cv2.COLOR_BGR2RGB)
     rgb[~valid] = 0
-    depth = np.asarray(target_depth, dtype=np.uint16)
+    depth = np.asarray(target_depth, dtype=np.uint16).copy()
     depth[~valid] = 0
     intrinsic = o3d.camera.PinholeCameraIntrinsic(
         int(width), int(height), float(k[0, 0]), float(k[1, 1]),
         float(k[0, 2]), float(k[1, 2]))
-    nominal_base_camera = np.linalg.inv(camera_extrinsic_from_metadata(metadata))
     cloud_camera = masked_camera_cloud(
         o3d, depth, target_mask, intrinsic, depth_trunc=depth_trunc)
     measured_cloud_camera = masked_camera_cloud(
@@ -698,14 +1605,16 @@ def _load_capture(scan, metadata_path, metadata, manifest, cv2, o3d,
 
     registration_cloud_camera = None
     registration_rgbd = None
+    registration_intrinsic = intrinsic
     scene_valid_count = 0
     if include_scene_registration:
         scene_rgb_bgr, scene_depth, scene_target_mask, scene_k, \
             scene_rectified = rectify_rgbd_mask(
                 cv2, raw_rgb_bgr, scene_depth, scene_target_mask,
                 metadata.get('camera_info', {}))
-        if rectified != scene_rectified \
-                or not np.allclose(k, scene_k, atol=1e-9):
+        if geometry == 'projected_color_depth' \
+                and (rectified != scene_rectified
+                     or not np.allclose(k, scene_k, atol=1e-9)):
             raise ValueError('target and scene rectification disagree')
         scene_support = scene_registration_support_mask(
             cv2, scene_depth, scene_target_mask, depth_trunc)
@@ -718,8 +1627,13 @@ def _load_capture(scan, metadata_path, metadata, manifest, cv2, o3d,
         scene_rgb[~scene_support] = 0
         scene_depth = np.asarray(scene_depth, dtype=np.uint16).copy()
         scene_depth[~scene_support] = 0
+        scene_height, scene_width = scene_depth.shape[:2]
+        registration_intrinsic = o3d.camera.PinholeCameraIntrinsic(
+            int(scene_width), int(scene_height),
+            float(scene_k[0, 0]), float(scene_k[1, 1]),
+            float(scene_k[0, 2]), float(scene_k[1, 2]))
         registration_cloud_camera = masked_camera_cloud(
-            o3d, scene_depth, scene_support, intrinsic,
+            o3d, scene_depth, scene_support, registration_intrinsic,
             depth_trunc=depth_trunc,
             voxel_length=SCENE_REGISTRATION_VOXEL_M)
         registration_rgbd = \
@@ -728,18 +1642,27 @@ def _load_capture(scan, metadata_path, metadata, manifest, cv2, o3d,
                 o3d.geometry.Image(np.ascontiguousarray(scene_depth)),
                 depth_scale=1000.0, depth_trunc=float(depth_trunc),
                 convert_rgb_to_intensity=True)
+    input_provenance['geometry_source'] = geometry
+    if geometry_report is not None:
+        input_provenance['native_depth_replay'] = geometry_report
     return {
         'metadata_path': metadata_path,
         'metadata': metadata,
         'rgb': np.ascontiguousarray(rgb),
         'depth': np.ascontiguousarray(depth),
         'mask': np.ascontiguousarray(target_mask),
+        'camera_matrix': np.asarray(k, dtype=float).copy(),
         'intrinsic': intrinsic,
         'nominal_base_camera': nominal_base_camera,
+        'registration_nominal_base_camera':
+            registration_nominal_base_camera,
+        'geometry_from_registration_camera':
+            geometry_from_registration_camera,
         'cloud_camera': cloud_camera,
         'measured_cloud_camera': measured_cloud_camera,
         'registration_cloud_camera': registration_cloud_camera,
         'registration_rgbd': registration_rgbd,
+        'registration_intrinsic': registration_intrinsic,
         'valid_scene_depth_points': scene_valid_count,
         'valid_masked_depth_points': valid_count,
         'rectified': rectified,
@@ -785,7 +1708,9 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
                         sdf_trunc, depth_trunc, expected_dimensions,
                         provenance, manifest_sha256,
                         allow_partial_view_set=False,
-                        offline_mask_context=None):
+                        offline_mask_context=None,
+                        geometry_source='projected_color_depth',
+                        hole_repair='none'):
     try:
         import cv2
         import open3d as o3d
@@ -801,27 +1726,37 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
             expected_dimensions,
             include_scene_registration=(
                 registration_mode == 'scene_pose_graph'),
-            offline_mask_context=offline_mask_context)
+            offline_mask_context=offline_mask_context,
+            geometry_source=geometry_source)
         for metadata_path, metadata in zip(metadata_paths, metadata_values)]
     multiway_diagnostics = None
     refined_multiway_poses = None
     if registration_mode == 'multiway_gicp':
         refined_multiway_poses, multiway_diagnostics = \
             bounded_multiway_camera_poses(frames, o3d)
-    elif registration_mode == 'scene_pose_graph':
+    elif registration_mode == 'constrained_superposition':
         refined_multiway_poses, multiway_diagnostics = \
+            constrained_superposition_camera_poses(frames, o3d)
+    elif registration_mode == 'scene_pose_graph':
+        refined_registration_poses, multiway_diagnostics = \
             scene_pose_graph_camera_poses(frames, o3d)
+        refined_multiway_poses = [
+            pose @ frame['geometry_from_registration_camera']
+            for pose, frame in zip(refined_registration_poses, frames)]
     registration = []
     frame_inputs = []
     accumulated = None
     measured_cloud = None
     measured_cloud_views = []
+    measured_support_views = []
+    consensus_view_surfaces = []
+    texture_frames = []
     for frame_index, (metadata_path, frame) in enumerate(
             zip(metadata_paths, frames)):
         cloud_base = None
         correction = np.eye(4)
         accepted = False
-        rejection = 'first frame anchors the target model'
+        rejection = 'robot-pose input retained'
         fitness = 1.0
         inlier_rmse = 0.0
         proposed_translation = 0.0
@@ -831,14 +1766,14 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
             correction = (
                 refined_base_camera
                 @ np.linalg.inv(frame['nominal_base_camera']))
-            proposed_translation = float(np.linalg.norm(correction[:3, 3]))
+            proposed_translation = float(np.linalg.norm(
+                refined_base_camera[:3, 3]
+                - frame['nominal_base_camera'][:3, 3]))
             proposed_rotation = float(
                 np.degrees(rotation_angle_rad(correction)))
-            accepted = frame_index != 0 and (
+            accepted = (
                 proposed_translation > 1e-9 or proposed_rotation > 1e-9)
-            rejection = (
-                'first frame anchors bounded multi-view registration'
-                if frame_index == 0 else '')
+            rejection = ''
             incident = [
                 edge for edge in multiway_diagnostics['pairwise_edges']
                 if edge['accepted'] and frame_index in (
@@ -859,7 +1794,11 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
             fitness = float(result.fitness)
             inlier_rmse = float(result.inlier_rmse)
             proposed = np.asarray(result.transformation, dtype=float)
-            proposed_translation = float(np.linalg.norm(proposed[:3, 3]))
+            proposed_base_camera = (
+                proposed @ frame['nominal_base_camera'])
+            proposed_translation = float(np.linalg.norm(
+                proposed_base_camera[:3, 3]
+                - frame['nominal_base_camera'][:3, 3]))
             proposed_rotation = float(np.degrees(rotation_angle_rad(proposed)))
             rejection = correction_rejection(proposed, fitness, inlier_rmse)
             if registration_mode == 'robot_pose':
@@ -878,6 +1817,23 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
             cloud_base.transform(refined_base_camera.copy())
         measured_view = copy.deepcopy(frame['measured_cloud_camera'])
         measured_view.transform(refined_base_camera.copy())
+        measured_support_views.append(
+            np.asarray(measured_view.points, dtype=float).copy())
+        if registration_mode == 'constrained_superposition':
+            consensus_view_surfaces.append({
+                'points': np.asarray(
+                    measured_view.points, dtype=float).copy(),
+                'normals': np.asarray(
+                    measured_view.normals, dtype=float).copy(),
+            })
+            texture_frames.append({
+                'rgb': frame['rgb'],
+                'depth': frame['depth'],
+                'mask': frame['mask'],
+                'camera_matrix': frame['camera_matrix'],
+                'T_base_camera': refined_base_camera.copy(),
+                'frame': metadata_path.name,
+            })
         measured_color = MEASURED_VIEW_COLORS_RGB[
             frame_index % len(MEASURED_VIEW_COLORS_RGB)]
         measured_view.paint_uniform_color(measured_color)
@@ -898,7 +1854,9 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
             'proposed_translation_correction_m': proposed_translation,
             'proposed_rotation_correction_deg': proposed_rotation,
             'applied_translation_correction_m': float(
-                np.linalg.norm(correction[:3, 3])),
+                np.linalg.norm(
+                    refined_base_camera[:3, 3]
+                    - frame['nominal_base_camera'][:3, 3])),
             'applied_rotation_correction_deg': float(
                 np.degrees(rotation_angle_rad(correction))),
             'rectified': bool(frame['rectified']),
@@ -925,20 +1883,29 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
             rgbd, frame['intrinsic'], np.linalg.inv(refined_base_camera))
     extracted_mesh = volume.extract_triangle_mesh()
     extracted_mesh.compute_vertex_normals()
-    if len(extracted_mesh.vertices) < 100 \
-            or len(extracted_mesh.triangles) < 100:
+    raw_mesh_size_qualified = (
+        len(extracted_mesh.vertices) >= 100
+        and len(extracted_mesh.triangles) >= 100)
+    if not len(extracted_mesh.vertices) \
+            or not len(extracted_mesh.triangles):
         raise ValueError(
-            'reconstruction produced an unusably small mesh '
+            'reconstruction produced an empty mesh '
             '(%d vertices, %d triangles)'
             % (len(extracted_mesh.vertices), len(extracted_mesh.triangles)))
     raw_metrics = mesh_metrics(
         o3d, extracted_mesh, accumulated, expected_dimensions)
-    mesh, component_filter = filter_target_mesh_components(extracted_mesh)
-    if len(mesh.vertices) < 100 or len(mesh.triangles) < 100:
+    mesh, component_filter = filter_target_mesh_components(
+        extracted_mesh, o3d=o3d,
+        measured_support_views=measured_support_views)
+    cleaned_mesh_size_qualified = (
+        len(mesh.vertices) >= 100 and len(mesh.triangles) >= 100)
+    if not len(mesh.vertices) or not len(mesh.triangles):
         raise ValueError(
-            'connected-target filtering produced an unusably small mesh '
+            'connected-target filtering produced an empty mesh '
             '(%d vertices, %d triangles)'
             % (len(mesh.vertices), len(mesh.triangles)))
+    mesh, hole_repair_report = _mesh_repair.repair_mesh(
+        o3d, mesh, hole_repair)
     raw_output = _atomic_write_mesh(
         o3d, extracted_mesh, raw_mesh_output_path(output_path))
     output = _atomic_write_mesh(o3d, mesh, output_path)
@@ -948,6 +1915,54 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
     measured_cloud_path = _atomic_write_cloud(
         o3d, measured_cloud,
         output.with_name(output.stem + '.measured_points.ply'))
+    consensus_cloud_path = None
+    consensus_cloud = None
+    consensus_diagnostics = None
+    consensus_points = None
+    if registration_mode == 'constrained_superposition':
+        if len(consensus_view_surfaces) == 1:
+            consensus_diagnostics = {
+                'available': False,
+                'reason':
+                    'cross-capture consensus requires at least two '
+                    'distinct captures',
+                'minimum_distinct_captures': CONSENSUS_MINIMUM_VIEWS,
+                'available_distinct_captures': 1,
+                'input_measured_points': int(len(
+                    consensus_view_surfaces[0]['points'])),
+                'same_capture_points_averaged_together': False,
+                'immutable_source_points_modified': False,
+            }
+        else:
+            consensus_points, consensus_normals, consensus_support, \
+                consensus_diagnostics = robust_cross_capture_consensus(
+                    consensus_view_surfaces, voxel_length_m=voxel_length)
+            consensus_diagnostics['available'] = True
+            consensus_cloud = o3d.geometry.PointCloud()
+            consensus_cloud.points = o3d.utility.Vector3dVector(
+                consensus_points)
+            consensus_cloud.normals = o3d.utility.Vector3dVector(
+                consensus_normals)
+            maximum_support = max(
+                CONSENSUS_MINIMUM_VIEWS, int(np.max(consensus_support)))
+            support_fraction = (
+                (consensus_support.astype(float) - CONSENSUS_MINIMUM_VIEWS)
+                / max(1, maximum_support - CONSENSUS_MINIMUM_VIEWS))
+            consensus_colors = np.column_stack((
+                0.10 + 0.15 * support_fraction,
+                0.45 + 0.45 * support_fraction,
+                0.95 - 0.65 * support_fraction,
+            ))
+            consensus_cloud.colors = o3d.utility.Vector3dVector(
+                consensus_colors)
+            consensus_cloud_path = _atomic_write_cloud(
+                o3d, consensus_cloud,
+                output.with_name(output.stem + '.consensus_points.ply'))
+    textured_mesh = None
+    if registration_mode == 'constrained_superposition':
+        textured_mesh = _texture.build_textured_mesh(
+            output.with_name(output.stem + '.textured.obj'),
+            texture_frames, consensus_points, voxel_length)
     metrics = mesh_metrics(
         o3d, mesh, accumulated, expected_dimensions)
     if multiway_diagnostics is not None:
@@ -975,7 +1990,10 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
     structural = quality_classification(
         median_rmse,
         raw_metrics['dominant_component_triangle_ratio'],
-        usable_mesh=component_filter['connectivity_valid'])
+        usable_mesh=(
+            component_filter['connectivity_valid']
+            and raw_mesh_size_qualified
+            and cleaned_mesh_size_qualified))
     dimension_quality = None
     overall_quality = structural
     if raw_metrics['dimension_check'] is not None:
@@ -989,6 +2007,8 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
         manifest, allow_partial_view_set=allow_partial_view_set)
     config = {
         'registration_mode': registration_mode,
+        'geometry_source': str(geometry_source),
+        'hole_repair': str(hole_repair),
         'voxel_length_m': float(voxel_length),
         'sdf_trunc_m': float(sdf_trunc),
         'depth_trunc_m': float(depth_trunc),
@@ -1004,6 +2024,15 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
             'minimum_relative_surface_area':
                 MINIMUM_SIGNIFICANT_COMPONENT_AREA_FRACTION,
             'substantial_components_are_never_discarded': True,
+            'measured_support_maximum_distance_m':
+                MEASURED_COMPONENT_SUPPORT_DISTANCE_M,
+            'measured_support_minimum_total_points':
+                MEASURED_COMPONENT_MINIMUM_TOTAL_POINTS,
+            'measured_support_minimum_points_per_view':
+                MEASURED_COMPONENT_MINIMUM_POINTS_PER_VIEW,
+            'measured_support_minimum_distinct_views':
+                MEASURED_COMPONENT_MINIMUM_VIEWS,
+            'corroborated_small_components_are_never_discarded': True,
         },
     }
     if offline_mask_context is not None:
@@ -1035,6 +2064,37 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
                 'target_tsdf_fusion_source':
                     'confidence_qualified_target_only_depth',
             })
+        elif registration_mode == 'constrained_superposition':
+            config['multiway_registration'].update({
+                'registration_source':
+                    'target_masked_depth_capture_zero_anchored_global_alignment',
+                'fixed_reference_frame_index': 0,
+                'maximum_pose_translation_correction_m': None,
+                'translation_corrections_unbounded': True,
+                'rotation_prior_sigma_deg':
+                    SUPERPOSITION_ROTATION_PRIOR_SIGMA_DEG,
+                'data_sigma_m': SUPERPOSITION_DATA_SIGMA_M,
+                'huber_delta_m': SUPERPOSITION_HUBER_DELTA_M,
+                'rotation_corrections_allowed': True,
+                'gauge_policy': 'capture_zero_fixed_exactly',
+                'correspondence_policy':
+                    'mutual_nearest_normal_consistent',
+                'maximum_pose_rotation_correction_deg':
+                    SUPERPOSITION_MAX_ROTATION_DEG,
+                'target_tsdf_fusion_source':
+                    'confidence_qualified_target_only_depth',
+                'cross_capture_consensus': {
+                    'voxel_length_m': max(
+                        CONSENSUS_MIN_VOXEL_M, float(voxel_length)),
+                    'minimum_distinct_captures':
+                        CONSENSUS_MINIMUM_VIEWS,
+                    'maximum_normal_angle_deg':
+                        CONSENSUS_NORMAL_ANGLE_DEG,
+                    'estimator':
+                        'median_MAD_outlier_rejection_then_equal_weight_mean',
+                    'maximum_one_vote_per_capture_per_cell': True,
+                },
+            })
     report = {
         'schema_version': 3,
         'scan_dir': str(scan),
@@ -1043,6 +2103,7 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
         'capture_set': capture_set,
         'integrated_views': len(frame_inputs),
         'registration_mode': registration_mode,
+        'geometry_source': str(geometry_source),
         'vertex_count': len(mesh.vertices),
         'triangle_count': len(mesh.triangles),
         'mesh_path': str(output),
@@ -1051,6 +2112,16 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
         'raw_mesh_sha256': sha256_file(raw_output),
         'raw_vertex_count': len(extracted_mesh.vertices),
         'raw_triangle_count': len(extracted_mesh.triangles),
+        'minimum_diagnostic_mesh_size': {
+            'minimum_vertices': 100,
+            'minimum_triangles': 100,
+            'raw_mesh_qualified': bool(raw_mesh_size_qualified),
+            'cleaned_mesh_qualified': bool(cleaned_mesh_size_qualified),
+            'policy': (
+                'nonempty undersized meshes are retained for diagnostic '
+                'inspection but force structural quality FAIL; cleaned size '
+                'qualification is evaluated before optional hole repair'),
+        },
         'input_cloud_path': str(input_cloud_path),
         'input_cloud_sha256': sha256_file(input_cloud_path),
         'measured_cloud_path': str(measured_cloud_path),
@@ -1061,6 +2132,43 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
             'all accepted per-view temporally averaged target depth points '
             'after the selected camera-pose refinement; no display '
             'downsampling; colors identify capture index'),
+        'consensus_cloud_path': (
+            str(consensus_cloud_path) if consensus_cloud_path else ''),
+        'consensus_cloud_sha256': (
+            sha256_file(consensus_cloud_path)
+            if consensus_cloud_path else ''),
+        'consensus_point_count': (
+            len(consensus_cloud.points) if consensus_cloud is not None else 0),
+        'cross_capture_consensus': consensus_diagnostics,
+        'consensus_cloud_semantics': (
+            'constrained-superposition output only: one representative per '
+            'logical viewpoint and spatial correspondence cell; '
+            'normal-incompatible and median/MAD positional outliers are '
+            'rejected before an equal-weight cross-view mean; colors encode '
+            'distinct-view support. The TSDF mesh remains a separate surface '
+            'fusion output.' if consensus_cloud is not None else ''),
+        'textured_mesh_path': (
+            textured_mesh['mesh_path'] if textured_mesh else ''),
+        'textured_mesh_sha256': (
+            sha256_file(textured_mesh['mesh_path']) if textured_mesh else ''),
+        'texture_material_path': (
+            textured_mesh['material_path'] if textured_mesh else ''),
+        'texture_material_sha256': (
+            sha256_file(textured_mesh['material_path'])
+            if textured_mesh else ''),
+        'texture_atlas_path': (
+            textured_mesh['texture_path'] if textured_mesh else ''),
+        'texture_atlas_sha256': (
+            sha256_file(textured_mesh['texture_path'])
+            if textured_mesh else ''),
+        'texture_baking': textured_mesh,
+        'textured_mesh_semantics': (
+            'all corrected confidence-qualified measured depth pixels '
+            'retained near cross-capture consensus where available, '
+            'triangulated in their source depth grids and fine-voxel fused, '
+            'with one depth-consistent front-facing rectified source RGB '
+            'selected per triangle and baked into an OBJ/MTL/PNG atlas'
+            if textured_mesh else ''),
         'configuration': config,
         'configuration_sha256': canonical_sha256(config),
         'registration': registration,
@@ -1078,6 +2186,7 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
                 if registration_fitness else 0.0),
         },
         'component_filter': component_filter,
+        'hole_repair': hole_repair_report,
         'raw_mesh_metrics': raw_metrics,
         'mesh_metrics': metrics,
         'structural_quality': structural,
@@ -1234,7 +2343,9 @@ def reconstruct(scan_dir, output_path, voxel_length=DEFAULT_VOXEL_LENGTH_M,
                 depth_trunc=DEFAULT_DEPTH_TRUNC_M,
                 registration_mode='auto', expected_dimensions=None,
                 allow_missing_calibration_id=False,
-                allow_partial_view_set=False, mask_source='captured'):
+                allow_partial_view_set=False, mask_source='captured',
+                geometry_source='projected_color_depth',
+                hole_repair='none'):
     scan = Path(scan_dir).resolve()
     with open(scan / 'manifest.json', 'r', encoding='utf-8') as stream:
         manifest = json.load(stream)
@@ -1243,6 +2354,14 @@ def reconstruct(scan_dir, output_path, voxel_length=DEFAULT_VOXEL_LENGTH_M,
     if source not in MASK_SOURCES:
         raise ValueError('mask source must be one of: %s' % ', '.join(
             MASK_SOURCES))
+    geometry = str(geometry_source)
+    if geometry not in GEOMETRY_SOURCES:
+        raise ValueError('geometry source must be one of: %s' % ', '.join(
+            GEOMETRY_SOURCES))
+    repair = str(hole_repair)
+    if repair not in HOLE_REPAIR_MODES:
+        raise ValueError('hole repair mode must be one of: %s' % ', '.join(
+            HOLE_REPAIR_MODES))
     offline_mask_context = (
         prepare_offline_mask_context(scan, manifest_sha256)
         if source == 'offline_resegment' else None)
@@ -1265,11 +2384,12 @@ def reconstruct(scan_dir, output_path, voxel_length=DEFAULT_VOXEL_LENGTH_M,
             scan, manifest, metadata_paths, metadata_values, output, mode,
             voxel_length, sdf_trunc, depth_trunc, dimensions, provenance,
             manifest_sha256, allow_partial_view_set,
-            offline_mask_context)
+            offline_mask_context, geometry, repair)
     reports = {}
     errors = {}
     for candidate_mode in (
             'robot_pose', 'bounded_gicp', 'multiway_gicp',
+            'constrained_superposition',
             'scene_pose_graph'):
         candidate_output = output.with_name(
             output.stem + '.' + candidate_mode + output.suffix)
@@ -1278,7 +2398,8 @@ def reconstruct(scan_dir, output_path, voxel_length=DEFAULT_VOXEL_LENGTH_M,
                 scan, manifest, metadata_paths, metadata_values,
                 candidate_output, candidate_mode, voxel_length, sdf_trunc,
                 depth_trunc, dimensions, provenance, manifest_sha256,
-                allow_partial_view_set, offline_mask_context)
+                allow_partial_view_set, offline_mask_context, geometry,
+                repair)
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
             errors[candidate_mode] = str(exc)
     if not reports:
@@ -1331,6 +2452,18 @@ def main():
             'Use the captured live mask, or run/reuse a fresh offline '
             'GroundingDINO/SAM2 mask that may only narrow captured support.'))
     parser.add_argument(
+        '--geometry-source', choices=GEOMETRY_SOURCES,
+        default='projected_color_depth',
+        help=(
+            'Integrate the legacy projected colour-plane depth, or reverse-'
+            'correlate the same accepted samples onto the contiguous native '
+            'L515 depth grid.'))
+    parser.add_argument(
+        '--hole-repair', choices=HOLE_REPAIR_MODES, default='none',
+        help=(
+            'Keep the measured TSDF surface unchanged, or triangulate only '
+            'bounded measured-wall holes up to the qualified 6 mm radius.'))
+    parser.add_argument(
         '--allow-partial-view-set', action='store_true',
         help=(
             'Backward-compatible no-op; 1-24 immutable captures are admitted '
@@ -1343,7 +2476,8 @@ def main():
         args.scan_dir, args.output, args.voxel_length, args.sdf_trunc,
         args.depth_trunc, args.registration_mode, dimensions,
         args.allow_missing_calibration_id,
-        args.allow_partial_view_set, args.mask_source),
+        args.allow_partial_view_set, args.mask_source,
+        args.geometry_source, args.hole_repair),
         indent=2, sort_keys=True))
 
 

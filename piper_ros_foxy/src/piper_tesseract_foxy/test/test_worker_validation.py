@@ -19,6 +19,7 @@ from piper_tesseract_foxy.worker import (
     worker_rejection_code,
 )
 
+
 def optical_transform(angle_deg=0.0, z_m=0.0):
     angle = np.deg2rad(float(angle_deg))
     transform = np.eye(4)
@@ -39,6 +40,12 @@ def test_worker_camera_path_accepts_compact_visible_route():
     assert camera_transform_path_rejection(
         [optical_transform(0.0), optical_transform(19.5)],
         [0.0, 0.0, 1.0]) == ''
+
+
+def test_worker_later_path_visibility_uses_selected_wide_gate():
+    assert camera_transform_path_rejection(
+        [optical_transform(0.0), optical_transform(75.0)],
+        [0.0, 0.0, 1.0], final_aim_deg=90.0) == ''
 
 
 def test_worker_first_alignment_enters_cone_and_finishes_within_five_degrees():

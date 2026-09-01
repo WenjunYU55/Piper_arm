@@ -145,9 +145,13 @@ remain visible even while the arm driver is stopped.
 1. Clear the entire direct current-to-home sweep, check the camera cable, and keep the emergency stop ready. Dedicated home stages skip only intentional folded robot self-collision; the full installed holder/L515 must retain at least 5 mm table/floor and external-obstacle clearance throughout the sweep.
 2. In the GUI, open **Automatic Scan**.
 3. Confirm the saved home shown by the GUI.
-4. Enter rough target X/Y/Z in metres in `base_link`.
-5. Press **Start Complete Automated Scan** once.
-6. Do not start other driver, camera, perception, TF, planning, or joint-command
+4. Optionally set **Camera-on-ray tolerance for next mission** from 1.0° to
+   90.0° and press its **Apply for Next Mission** button. Rough acquisition
+   and the first target lock remain capped at 5°; later scan viewpoints use
+   the selected planned/path/achieved aim gate. It is frozen at mission startup.
+5. Enter rough target X/Y/Z in metres in `base_link`.
+6. Press **Start Complete Automated Scan** once.
+7. Do not start other driver, camera, perception, TF, planning, or joint-command
    processes while the mission is active.
 
 Pressing `Ctrl+C` in the coordinator terminal requests the same bounded cancel
@@ -167,6 +171,48 @@ the saved home through direct ROUGH_HOME and STORAGE_WRIST requests with
 robot self-collision validation explicitly exempted but CAD-derived
 holder/L515 external clearance still mandatory, holds, disables,
 and stops its child stack.
+
+## Inspect an offline cross-view reconstruction
+
+In the GUI's **Reconstruction Validation** tab, select a completed dataset and
+choose **Constrained superposition**. Choose **Projected colour depth
+(legacy)** to reproduce the existing sparse colour-plane input, or **Native
+L515 depth (dense)** to reverse-correlate the same accepted confidence-qualified
+samples onto their contiguous native grid. The two choices write separate
+`target_mesh.ply` and `target_mesh.native_depth.ply` outputs. For the recorded
+fine-grid comparison use a 1.5 mm mesh voxel and 6 mm TSDF band; the unchanged
+compatibility defaults are 3 mm and 15 mm. **Mesh repair** defaults to **None
+(measured TSDF only)**. Select **Conservative measured-wall repair (6 mm)** to
+write another independent `*.wall_repaired.ply` comparison. It fills only
+bounded side-wall TSDF openings, records the added triangles as interpolated,
+keeps the raw TSDF untouched and refuses to erase object-sized open boundaries.
+It is not measured evidence and cannot promote a failed dimensional quality
+result. **Build Raw + Cleaned** remains
+command-free and does not move the arm. After it finishes, use **Open All
+Capture Overlays** to inspect every accepted viewpoint together, with a
+different colour per viewpoint. Use **Open Superposition Overlay** to inspect
+all of those full capture clouds after the constrained whole-view transforms
+have placed them into capture 0's fixed frame. Capture 0 never moves. Later
+captures may translate by whatever distance the overlap solve requires; their
+camera-origin-centred rotation is regularized toward the minimum necessary
+value and hard-capped at 3°. Overlap may connect through an intermediate
+capture, so a view of another side does not need to match capture 0 directly.
+**Open Consensus Points** shows only
+surface locations supported by at least two distinct viewpoints; it uses one
+representative per viewpoint, median/MAD outlier rejection, then an
+equal-weight mean. The consensus is not the TSDF mesh and does not turn a
+FAIL-quality reconstruction into a pass. The constrained inspection buttons become
+available only after rebuilding in `constrained_superposition` or `auto` with
+the current reconstruction code.
+
+**Open Textured Model** opens the derived constrained OBJ/MTL/PNG model. It
+starts from every confidence-qualified measured point in the superposition
+overlay. Multi-view scans retain points near cross-capture consensus, connect
+only adjacent source-depth pixels, and fine-voxel average the aligned surfaces.
+Each resulting triangle takes RGB from one best depth-consistent source capture,
+so independent views are not blurred together. Grey triangles had no qualified
+source image. This output remains diagnostic and does not turn reconstruction
+quality `FAIL` into a pass.
 
 ## Queue multiple targets
 

@@ -185,11 +185,12 @@ def camera_target_path_reasons(
         return ['scan target visibility inputs are not numeric']
     if (
             target.shape != (3,) or not np.all(np.isfinite(target))
-            or not math.isfinite(maximum) or maximum <= 0.0 or maximum >= 90.0
+            or not math.isfinite(maximum) or maximum <= 0.0 or maximum > 90.0
             or not math.isfinite(minimum) or minimum <= 0.0
             or not math.isfinite(final_aim) or final_aim <= 0.0
-            or final_aim > maximum):
+            or final_aim > 90.0):
         return ['scan target visibility inputs are invalid']
+    maximum = max(maximum, final_aim)
     if not path:
         return ['scan target visibility path is empty']
     initial_angle = None

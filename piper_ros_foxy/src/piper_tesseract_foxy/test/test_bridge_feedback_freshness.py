@@ -13,6 +13,7 @@ from piper_tesseract_foxy.candidate_selection import (
     bounded_nbv_candidates,
     bounded_current_look_direction,
     exact_target_aim_candidates,
+    effective_final_aim_tolerance,
     information_ranked_ray_candidates,
     local_view_frontier_candidates,
     maximize_successive_view_distance,
@@ -660,6 +661,31 @@ def test_exact_target_aim_is_primary_and_fallback_is_bounded_to_five_degrees():
         exact, bound['fallback_look_directions'][0]), -1.0, 1.0))))
     assert offset == pytest.approx(4.0)
     assert bound['maximum_final_aim_offset_deg'] == 5.0
+
+
+def test_first_lock_stays_capped_at_five_then_later_views_use_selected_gate():
+    assert effective_final_aim_tolerance(90.0, 0) == 5.0
+    assert effective_final_aim_tolerance(90.0, 1) == 90.0
+    assert effective_final_aim_tolerance(3.0, 0) == 3.0
+    with pytest.raises(ValueError, match='within 1-90'):
+        effective_final_aim_tolerance(90.1, 1)
+
+
+def test_later_target_aim_fallback_can_use_selected_ninety_degree_gate():
+    target = [0.4, 0.0, 0.0]
+    candidate = {
+        'id': 7,
+        'camera_position_m': [0.1, 0.0, 0.2],
+        'look_direction': [0.0, 1.0, 0.0],
+    }
+    exact = np.asarray(target) - np.asarray(candidate['camera_position_m'])
+    exact /= np.linalg.norm(exact)
+    bound = exact_target_aim_candidates(
+        [candidate], target, [0.0, 1.0, 0.0], 90.0)[0]
+    offset = math.degrees(math.acos(float(np.clip(np.dot(
+        exact, bound['fallback_look_directions'][0]), -1.0, 1.0))))
+    assert offset == pytest.approx(89.0)
+    assert bound['maximum_final_aim_offset_deg'] == 90.0
 
 
 def test_closed_loop_shortlist_interleaves_coverage_and_nearby_fallbacks():

@@ -52,12 +52,23 @@ from piper_gui.scan_policy import (
     read_scan_settings,
     write_scan_settings,
 )
+from piper_gui.scan_aim import (
+    DEFAULT_AIM_TOLERANCE_DEG,
+    default_scan_aim_path,
+    read_scan_aim,
+    write_scan_aim,
+)
 from piper_gui.view_model import MissionViewModel
 from reconstruction.gui_support import (
+    constrained_output_paths,
     existing_reconstruction_outputs,
+    geometry_source_from_label,
+    hole_repair_from_label,
     list_scan_datasets,
     load_quality_report,
     quality_summary,
+    RECONSTRUCTION_GEOMETRY_SOURCE_LABELS,
+    RECONSTRUCTION_HOLE_REPAIR_LABELS,
     reconstruction_command,
     start_reconstruction_process,
     start_viewer_process,
@@ -296,6 +307,19 @@ class PiperGuiApp:
         self.scan_ray_count_var = tk.StringVar(
             value=str(saved_ray_count))
         self.scan_policy_status_var = tk.StringVar(value=policy_status)
+        self.scan_aim_path = default_scan_aim_path(PROJECT_ROOT)
+        try:
+            saved_aim = read_scan_aim(self.scan_aim_path)
+            saved_aim_tolerance = saved_aim.final_capture_aim_tolerance_deg
+            aim_status = (
+                'Saved for next mission: final camera aim within %.1f°'
+                % saved_aim_tolerance)
+        except (OSError, ValueError) as exc:
+            saved_aim_tolerance = DEFAULT_AIM_TOLERANCE_DEG
+            aim_status = 'Camera aim configuration unavailable: %s' % exc
+        self.scan_aim_tolerance_var = tk.DoubleVar(
+            value=saved_aim_tolerance)
+        self.scan_aim_status_var = tk.StringVar(value=aim_status)
         self.collision_environment_path = default_collision_environment_path(
             PROJECT_ROOT)
         try:
@@ -349,9 +373,14 @@ class PiperGuiApp:
         self.reconstruction_mode_var = tk.StringVar(value='auto')
         self.reconstruction_mask_source_var = tk.StringVar(
             value='captured')
+        self.reconstruction_geometry_source_var = tk.StringVar(
+            value='Projected colour depth (legacy)')
+        self.reconstruction_hole_repair_var = tk.StringVar(
+            value='None (measured TSDF only)')
         self.reconstruction_dimension_vars = [
             tk.StringVar(value='35') for _axis in range(3)]
         self.reconstruction_voxel_mm_var = tk.DoubleVar(value=3.0)
+        self.reconstruction_sdf_trunc_mm_var = tk.StringVar(value='15')
         self.reconstruction_voxel_status_var = tk.StringVar(
             value='3.0 mm voxel — baseline mesh detail')
         self.reconstruction_show_input_var = tk.BooleanVar(value=False)
@@ -587,6 +616,33 @@ class PiperGuiApp:
             justify="left",
         ).grid(row=2, column=0, columnspan=5, sticky="w", pady=(4, 0))
 
+        aim = ttk.LabelFrame(
+            parent, text='Camera-on-ray tolerance for next mission', padding=12)
+        aim.grid(row=4, column=0, sticky='ew', pady=(12, 0))
+        ttk.Label(aim, text='Strict').grid(row=0, column=0, sticky='w')
+        self.scan_aim_scale = tk.Scale(
+            aim, from_=1.0, to=90.0, resolution=0.5,
+            orient='horizontal', length=300,
+            variable=self.scan_aim_tolerance_var)
+        self.scan_aim_scale.grid(row=0, column=1, sticky='w', padx=(8, 8))
+        ttk.Label(aim, text='90° maximum').grid(row=0, column=2, sticky='w')
+        self.scan_aim_apply_button = ttk.Button(
+            aim, text='Apply for Next Mission', command=self.apply_scan_aim)
+        self.scan_aim_apply_button.grid(row=0, column=3, padx=(8, 0))
+        ttk.Label(
+            aim, textvariable=self.scan_aim_status_var,
+            foreground='#52606d', wraplength=760, justify='left').grid(
+                row=1, column=0, columnspan=4, sticky='w', pady=(8, 0))
+        ttk.Label(
+            aim,
+            text=(
+                'The setting is frozen when the next mission stack starts. '
+                'Rough acquisition and the first target lock remain capped '
+                'at 5°. Later planned and achieved scan views use this '
+                '1°-90° tolerance.'),
+            foreground='#52606d', wraplength=760, justify='left').grid(
+                row=2, column=0, columnspan=4, sticky='w', pady=(4, 0))
+
         environment = ttk.LabelFrame(
             parent, text='Collision environment for next mission', padding=12)
         environment.grid(row=5, column=0, sticky='ew', pady=(12, 0))
@@ -820,9 +876,19 @@ class PiperGuiApp:
             inputs, textvariable=self.reconstruction_mode_var,
             values=(
                 'auto', 'robot_pose', 'scene_pose_graph',
-                'bounded_gicp', 'multiway_gicp'),
+                'bounded_gicp', 'multiway_gicp',
+                'constrained_superposition'),
             state='readonly', width=23).grid(
                 row=2, column=1, sticky='w', padx=(8, 0), pady=(10, 0))
+        ttk.Label(
+            inputs,
+            text=(
+                'constrained_superposition fixes capture 0, minimizes later '
+                'capture rotation (3° hard limit), and permits whatever '
+                'translation the overlap evidence requires.'),
+            foreground='#52606d', wraplength=540, justify='left').grid(
+                row=2, column=2, columnspan=3, sticky='w', padx=(8, 0),
+                pady=(10, 0))
         ttk.Label(inputs, text='Target mask').grid(
             row=3, column=0, sticky='w', pady=(10, 0))
         ttk.Combobox(
@@ -838,23 +904,75 @@ class PiperGuiApp:
             foreground='#52606d', wraplength=540, justify='left').grid(
                 row=3, column=2, columnspan=3, sticky='w', padx=(8, 0),
                 pady=(10, 0))
+        ttk.Label(inputs, text='Depth geometry').grid(
+            row=4, column=0, sticky='w', pady=(10, 0))
+        geometry_combo = ttk.Combobox(
+            inputs, textvariable=self.reconstruction_geometry_source_var,
+            values=tuple(RECONSTRUCTION_GEOMETRY_SOURCE_LABELS),
+            state='readonly', width=29)
+        geometry_combo.grid(
+            row=4, column=1, sticky='w', padx=(8, 0), pady=(10, 0))
+        geometry_combo.bind(
+            '<<ComboboxSelected>>', self.load_existing_reconstruction_outputs)
+        ttk.Label(
+            inputs,
+            text=(
+                'Native mode reverse-correlates the same accepted target '
+                'samples onto the contiguous L515 depth grid; legacy mode '
+                'keeps the sparse colour-plane projection for comparison.'),
+            foreground='#52606d', wraplength=500, justify='left').grid(
+                row=4, column=2, columnspan=3, sticky='w', padx=(8, 0),
+                pady=(10, 0))
+        ttk.Label(inputs, text='TSDF band mm').grid(
+            row=5, column=0, sticky='w', pady=(10, 0))
+        ttk.Entry(
+            inputs, textvariable=self.reconstruction_sdf_trunc_mm_var,
+            width=9).grid(
+                row=5, column=1, sticky='w', padx=(8, 0), pady=(10, 0))
+        ttk.Label(
+            inputs,
+            text=(
+                'Surface-update distance: 15 mm preserves the legacy '
+                'default; 6 mm is the current fine-grid comparison value.'),
+            foreground='#52606d', wraplength=500, justify='left').grid(
+                row=5, column=2, columnspan=3, sticky='w', padx=(8, 0),
+                pady=(10, 0))
+        ttk.Label(inputs, text='Mesh repair').grid(
+            row=6, column=0, sticky='w', pady=(10, 0))
+        repair_combo = ttk.Combobox(
+            inputs, textvariable=self.reconstruction_hole_repair_var,
+            values=tuple(RECONSTRUCTION_HOLE_REPAIR_LABELS),
+            state='readonly', width=39)
+        repair_combo.grid(
+            row=6, column=1, sticky='w', padx=(8, 0), pady=(10, 0))
+        repair_combo.bind(
+            '<<ComboboxSelected>>', self.load_existing_reconstruction_outputs)
+        ttk.Label(
+            inputs,
+            text=(
+                'Conservative repair triangulates only bounded TSDF wall '
+                'holes up to a 6 mm radius. Added triangles are explicitly '
+                'reported as interpolated; object-sized openings remain.'),
+            foreground='#52606d', wraplength=500, justify='left').grid(
+                row=6, column=2, columnspan=3, sticky='w', padx=(8, 0),
+                pady=(10, 0))
         ttk.Label(inputs, text='Mesh detail').grid(
-            row=4, column=0, sticky='w', pady=(12, 0))
+            row=7, column=0, sticky='w', pady=(12, 0))
         ttk.Label(inputs, text='Coarse').grid(
-            row=4, column=1, sticky='w', pady=(12, 0))
+            row=7, column=1, sticky='w', pady=(12, 0))
         tk.Scale(
             inputs, from_=3.0, to=0.5, resolution=0.1,
             orient='horizontal', showvalue=False, length=330,
             variable=self.reconstruction_voxel_mm_var,
             command=self.update_reconstruction_voxel_status).grid(
-                row=4, column=2, columnspan=2, sticky='ew',
+            row=7, column=2, columnspan=2, sticky='ew',
                 padx=(8, 8), pady=(12, 0))
         ttk.Label(inputs, text='Fine').grid(
-            row=4, column=4, sticky='e', pady=(12, 0))
+            row=7, column=4, sticky='e', pady=(12, 0))
         ttk.Label(
             inputs, textvariable=self.reconstruction_voxel_status_var,
             foreground='#52606d').grid(
-            row=5, column=1, columnspan=4, sticky='w', pady=(3, 0))
+            row=8, column=1, columnspan=4, sticky='w', pady=(3, 0))
         controls = ttk.Frame(parent)
         controls.grid(row=3, column=0, sticky='w', pady=(14, 8))
         self.reconstruction_build_button = ttk.Button(
@@ -872,11 +990,31 @@ class PiperGuiApp:
         self.reconstruction_raw_view_button.grid(
             row=0, column=2, padx=(8, 0))
         self.reconstruction_measured_view_button = ttk.Button(
-            controls, text='Open Measured Points',
+            controls, text='Open All Capture Overlays',
             command=lambda: self.open_reconstruction_viewer('measured'),
             state='disabled')
         self.reconstruction_measured_view_button.grid(
             row=0, column=3, padx=(8, 0))
+        self.reconstruction_consensus_view_button = ttk.Button(
+            controls, text='Open Consensus Points',
+            command=lambda: self.open_reconstruction_viewer('consensus'),
+            state='disabled')
+        self.reconstruction_consensus_view_button.grid(
+            row=1, column=3, sticky='w', padx=(8, 0),
+            pady=(8, 0))
+        self.reconstruction_superposition_view_button = ttk.Button(
+            controls, text='Open Superposition Overlay',
+            command=lambda: self.open_reconstruction_viewer('superposition'),
+            state='disabled')
+        self.reconstruction_superposition_view_button.grid(
+            row=1, column=1, columnspan=2, sticky='w', padx=(8, 0),
+            pady=(8, 0))
+        self.reconstruction_textured_view_button = ttk.Button(
+            controls, text='Open Textured Model',
+            command=lambda: self.open_reconstruction_viewer('textured'),
+            state='disabled')
+        self.reconstruction_textured_view_button.grid(
+            row=1, column=0, sticky='w', pady=(8, 0))
         ttk.Checkbutton(
             controls, text='Overlay measured points',
             variable=self.reconstruction_show_input_var).grid(
@@ -920,9 +1058,18 @@ class PiperGuiApp:
         self.reconstruction_view_button.configure(state='disabled')
         self.reconstruction_raw_view_button.configure(state='disabled')
         self.reconstruction_measured_view_button.configure(state='disabled')
+        self.reconstruction_consensus_view_button.configure(state='disabled')
+        self.reconstruction_superposition_view_button.configure(
+            state='disabled')
+        self.reconstruction_textured_view_button.configure(state='disabled')
         try:
+            geometry_source = geometry_source_from_label(
+                self.reconstruction_geometry_source_var.get())
+            hole_repair = hole_repair_from_label(
+                self.reconstruction_hole_repair_var.get())
             saved = existing_reconstruction_outputs(
-                PROJECT_ROOT, self.reconstruction_dataset_var.get())
+                PROJECT_ROOT, self.reconstruction_dataset_var.get(),
+                geometry_source, hole_repair)
         except (OSError, TypeError, ValueError) as exc:
             if update_status:
                 self.reconstruction_status_var.set(str(exc))
@@ -939,6 +1086,13 @@ class PiperGuiApp:
             self.reconstruction_raw_view_button.configure(state='normal')
         if saved['measured_cloud_path'] is not None:
             self.reconstruction_measured_view_button.configure(state='normal')
+        if saved['consensus_cloud_path'] is not None:
+            self.reconstruction_consensus_view_button.configure(state='normal')
+        if saved['superposition_cloud_path'] is not None:
+            self.reconstruction_superposition_view_button.configure(
+                state='normal')
+        if saved['textured_mesh_path'] is not None:
+            self.reconstruction_textured_view_button.configure(state='normal')
         self.reconstruction_summary_var.set(
             quality_summary(saved['report']))
         if update_status:
@@ -959,7 +1113,13 @@ class PiperGuiApp:
                 PROJECT_ROOT, self.reconstruction_dataset_var.get(),
                 dimensions, self.reconstruction_mode_var.get(),
                 round(float(self.reconstruction_voxel_mm_var.get()), 1),
-                self.reconstruction_mask_source_var.get())
+                self.reconstruction_mask_source_var.get(),
+                geometry_source=geometry_source_from_label(
+                    self.reconstruction_geometry_source_var.get()),
+                sdf_trunc_mm=float(
+                    self.reconstruction_sdf_trunc_mm_var.get()),
+                hole_repair=hole_repair_from_label(
+                    self.reconstruction_hole_repair_var.get()))
         except (OSError, TypeError, ValueError) as exc:
             self.reconstruction_status_var.set(str(exc))
             return
@@ -967,11 +1127,19 @@ class PiperGuiApp:
         self.reconstruction_view_button.configure(state='disabled')
         self.reconstruction_raw_view_button.configure(state='disabled')
         self.reconstruction_measured_view_button.configure(state='disabled')
+        self.reconstruction_consensus_view_button.configure(state='disabled')
+        self.reconstruction_superposition_view_button.configure(
+            state='disabled')
+        self.reconstruction_textured_view_button.configure(state='disabled')
         self.reconstruction_status_var.set(
-            'Reconstruction is running offline at %.1f mm mesh voxels using %s'
+            'Reconstruction is running offline at %.1f mm mesh voxels with '
+            '%s mm TSDF band using %s masks, %s, and %s'
             % (
                 round(float(self.reconstruction_voxel_mm_var.get()), 1),
-                self.reconstruction_mask_source_var.get()))
+                self.reconstruction_sdf_trunc_mm_var.get(),
+                self.reconstruction_mask_source_var.get(),
+                self.reconstruction_geometry_source_var.get(),
+                self.reconstruction_hole_repair_var.get()))
         self.reconstruction_output_path = output
 
         def worker():
@@ -984,6 +1152,7 @@ class PiperGuiApp:
                     raise RuntimeError(
                         (output_text or 'reconstruction failed').strip()[-2000:])
                 report = load_quality_report(report_path)
+                constrained_paths = constrained_output_paths(report)
                 self.events.put(('reconstruction_complete', {
                     'success': True,
                     'status': 'Reconstruction completed',
@@ -993,6 +1162,12 @@ class PiperGuiApp:
                     'raw_output_path': report.get('raw_mesh_path', ''),
                     'measured_cloud_path': report.get(
                         'measured_cloud_path', ''),
+                    'consensus_cloud_path': constrained_paths[
+                        'consensus_cloud_path'],
+                    'superposition_cloud_path': constrained_paths[
+                        'superposition_cloud_path'],
+                    'textured_mesh_path': constrained_paths[
+                        'textured_mesh_path'],
                 }))
             except (OSError, RuntimeError, ValueError) as exc:
                 self.events.put(('reconstruction_complete', {
@@ -1424,6 +1599,23 @@ class PiperGuiApp:
             'Selected planner for next mission: %s'
             % BACKEND_LABELS[backend])
 
+    def apply_scan_aim(self):
+        if not self.mission_view_model.state.can_start:
+            self.scan_aim_status_var.set(
+                'Aim tolerance was not changed: wait for the active mission '
+                'to finish.')
+            return
+        try:
+            settings = write_scan_aim(
+                self.scan_aim_path, self.scan_aim_tolerance_var.get())
+        except (OSError, ValueError) as exc:
+            self.scan_aim_status_var.set(
+                'Aim tolerance was not changed: %s' % exc)
+            return
+        self.scan_aim_status_var.set(
+            'Saved for next mission: final camera aim within %.1f°'
+            % settings.final_capture_aim_tolerance_deg)
+
     def apply_floor_profile(self):
         if not self.mission_view_model.state.can_start:
             self.floor_profile_status_var.set(
@@ -1475,6 +1667,10 @@ class PiperGuiApp:
         self.planner_backend_combo.configure(
             state='readonly' if state.can_start else 'disabled')
         self.planner_backend_apply_button.configure(
+            state='normal' if state.can_start else 'disabled')
+        self.scan_aim_scale.configure(
+            state='normal' if state.can_start else 'disabled')
+        self.scan_aim_apply_button.configure(
             state='normal' if state.can_start else 'disabled')
         self.floor_profile_combo.configure(
             state='readonly' if state.can_start else 'disabled')
@@ -2032,6 +2228,22 @@ class PiperGuiApp:
                             'measured_cloud_path', ''))
                         if measured_path and Path(measured_path).is_file():
                             self.reconstruction_measured_view_button.configure(
+                                state='normal')
+                        consensus_path = str(payload.get(
+                            'consensus_cloud_path', ''))
+                        if consensus_path and Path(consensus_path).is_file():
+                            self.reconstruction_consensus_view_button.configure(
+                                state='normal')
+                        superposition_path = str(payload.get(
+                            'superposition_cloud_path', ''))
+                        if (superposition_path
+                                and Path(superposition_path).is_file()):
+                            self.reconstruction_superposition_view_button.configure(
+                                state='normal')
+                        textured_path = str(payload.get(
+                            'textured_mesh_path', ''))
+                        if textured_path and Path(textured_path).is_file():
+                            self.reconstruction_textured_view_button.configure(
                                 state='normal')
                     elif self.load_existing_reconstruction_outputs(
                             update_status=False):

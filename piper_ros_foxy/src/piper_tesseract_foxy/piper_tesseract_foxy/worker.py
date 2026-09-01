@@ -346,11 +346,12 @@ def camera_transform_path_rejection(
     final_aim = float(final_aim_deg)
     if (
             target.shape != (3,) or not np.all(np.isfinite(target))
-            or not math.isfinite(maximum) or maximum <= 0.0 or maximum >= 90.0
+            or not math.isfinite(maximum) or maximum <= 0.0 or maximum > 90.0
             or not math.isfinite(minimum) or minimum <= 0.0
             or not math.isfinite(final_aim) or final_aim <= 0.0
-            or final_aim > maximum):
+            or final_aim > 90.0):
         return 'scan target visibility inputs are invalid'
+    maximum = max(maximum, final_aim)
     if not transforms:
         return 'scan target visibility path is empty'
     initial_angle = None
@@ -1796,6 +1797,8 @@ class TesseractBackend:
                        initial_target_alignment=False):
         """Rank IK across every roll, then bound expensive planner attempts."""
         start_array = finite_six(start, 'candidate start')
+        final_aim_deg = float(candidate.get(
+            'maximum_final_aim_offset_deg', 5.0))
         ranked = []
         ik_reports = []
         for roll in rolls:
@@ -1843,7 +1846,8 @@ class TesseractBackend:
                 points, validation = self.plan_segment_to_joint_goal(
                     start_array, goal, maximum_step, bootstrap_recovery,
                     visibility_target=visibility_target,
-                    initial_target_alignment=initial_target_alignment)
+                    initial_target_alignment=initial_target_alignment,
+                    final_aim_deg=final_aim_deg)
                 if visibility_target is not None:
                     positions = []
                     for point_index, point in enumerate(points):
@@ -1863,7 +1867,7 @@ class TesseractBackend:
                     rejection = camera_transform_path_rejection(
                         transforms, visibility_target,
                         initial_alignment=initial_target_alignment,
-                        final_aim_deg=5.0)
+                        final_aim_deg=final_aim_deg)
                     if rejection:
                         raise CandidatePlanningError(
                             'VISIBILITY_FAILURE', rejection)
@@ -2008,7 +2012,8 @@ class TesseractBackend:
     def plan_segment_to_joint_goal(
             self, start, goal, maximum_step, bootstrap_recovery=None,
             bootstrap_policy_name='bootstrap_start_recovery',
-            visibility_target=None, initial_target_alignment=False):
+            visibility_target=None, initial_target_alignment=False,
+            final_aim_deg=5.0):
         planning_time = self.remaining_planning_time(
             'before an OMPL segment solve')
         program = self.api['MotionProgram'](
@@ -2234,7 +2239,7 @@ class TesseractBackend:
             return camera_transform_path_rejection(
                 transforms, visibility_target,
                 initial_alignment=initial_target_alignment,
-                final_aim_deg=5.0)
+                final_aim_deg=final_aim_deg)
 
         visibility_error = visibility_rejection(points)
         if visibility_error and bool(blend_metadata.get('applied', False)):

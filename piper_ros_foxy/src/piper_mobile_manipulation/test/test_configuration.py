@@ -123,6 +123,7 @@ LEGACY_EXECUTOR_DEFAULTS = {
     'acquisition_max_viewpoints': 5,
     'closed_loop_one_view': False,
     'scan_target_max_boresight_deg': 20.0,
+    'final_capture_aim_tolerance_deg': 5.0,
     'scan_target_min_distance_m': 0.22,
     'data_timeout_sec': 2.0,
     'max_tracking_measurement_age_sec': 0.75,
@@ -263,6 +264,7 @@ def test_executor_configuration_preserves_overrides_and_units():
     assert isinstance(config.safety, SafetyConfig)
     assert config.motion.speed_percent == 12.5
     assert config.tracking.data_timeout_sec == 4.25
+    assert config.tracking.final_capture_aim_tolerance_deg == 5.0
     assert config.motion.plan_start_tolerance_rad == 0.04
     assert config.interfaces.joint_states_topic == '/commissioning/joints'
     assert set(node.read_counts.values()) == {1}
@@ -275,6 +277,13 @@ def test_configuration_snapshots_are_immutable():
         config.motion.speed_percent = 30.0
     with pytest.raises(TypeError):
         config.parameter_values['speed_percent'] = 30.0
+
+
+def test_executor_configuration_accepts_ninety_degree_later_view_gate():
+    config = load_executor_configuration(FakeParameterNode({
+        'final_capture_aim_tolerance_deg': 90.0,
+    }))
+    assert config.tracking.final_capture_aim_tolerance_deg == 90.0
     assert isinstance(
         config.parameter_values['return_home_positions_rad'], tuple)
 
@@ -346,6 +355,10 @@ def test_invalid_mission_configuration_fails_at_startup(overrides, expected):
     ({'capture_timeout_sec': -1.0}, 'capture_timeout_sec'),
     ({'first_capture_acceptance_timeout_sec': 10.0},
      'first_capture_acceptance_timeout_sec'),
+    ({'final_capture_aim_tolerance_deg': 90.1},
+     'final_capture_aim_tolerance_deg'),
+    ({'final_capture_aim_tolerance_deg': 0.9},
+     'final_capture_aim_tolerance_deg'),
 ])
 def test_invalid_executor_configuration_fails_at_startup(overrides, expected):
     with pytest.raises(ConfigurationError, match=expected):

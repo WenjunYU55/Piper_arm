@@ -141,7 +141,7 @@ ACTIVE_STATES = {
     'WAITING_FOR_TRACKING_LOCK', 'WAITING_FOR_OBSTACLE_SCENE',
 }
 MAX_RGBD_CAPTURE_READINESS_RETRIES = 10
-MAX_FINAL_CAPTURE_AIM_ERROR_DEG = 5.0
+FIRST_LOCK_MAX_AIM_ERROR_DEG = 5.0
 STREAM_LATE_WARNING_INTERVAL_SEC = 5.0
 TARGET_SHAPE_QOS = QoSProfile(
     depth=5,
@@ -3658,7 +3658,7 @@ class ScanViewpointExecutorNode(Node):
                 viewpoint.get('index', self.current_view)))
 
     def final_capture_aim_rejection(self):
-        """Require the achieved optical axis to retain the five-degree aim."""
+        """Require achieved FK to retain the frozen next-mission aim."""
         if self.plan_kind != MULTIVIEW_SCAN:
             return ''
         achieved = self.latest_achieved_scan_view
@@ -3711,11 +3711,16 @@ class ScanViewpointExecutorNode(Node):
                 'TARGET_DRIFT_REPLAN: target estimate changed %.4fm after '
                 'planning; hold the achieved pose and request a fresh NBV'
                 % drift)
-        if error_deg > MAX_FINAL_CAPTURE_AIM_ERROR_DEG + 1e-6:
+        aim_tolerance_deg = float(configured_value(
+            self, 'final_capture_aim_tolerance_deg'))
+        if not getattr(self, 'scan_history', []):
+            aim_tolerance_deg = min(
+                aim_tolerance_deg, FIRST_LOCK_MAX_AIM_ERROR_DEG)
+        if error_deg > aim_tolerance_deg + 1e-6:
             return (
                 'FINAL_AIM_EXCEEDED: achieved camera aim %.3fdeg exceeds '
                 '%.3fdeg' % (
-                    error_deg, MAX_FINAL_CAPTURE_AIM_ERROR_DEG))
+                    error_deg, aim_tolerance_deg))
         return ''
 
     def advance_view(self):
@@ -4141,7 +4146,13 @@ class ScanViewpointExecutorNode(Node):
                 configured_value(self, 'scan_target_max_boresight_deg'),
                 configured_value(self, 'scan_target_min_distance_m'),
                 initial_alignment=not bool(self.scan_history),
-                final_aim_deg=MAX_FINAL_CAPTURE_AIM_ERROR_DEG,
+                final_aim_deg=(
+                    min(float(configured_value(
+                        self, 'final_capture_aim_tolerance_deg')),
+                        FIRST_LOCK_MAX_AIM_ERROR_DEG)
+                    if not getattr(self, 'scan_history', []) else
+                    configured_value(
+                        self, 'final_capture_aim_tolerance_deg')),
             )
             if visibility_reasons:
                 return visibility_reasons

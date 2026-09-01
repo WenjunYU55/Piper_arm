@@ -768,6 +768,24 @@ def test_first_target_alignment_may_enter_cone_but_must_finish_within_five_degre
         initial_alignment=True, final_aim_deg=5.0) == []
 
 
+def test_later_target_path_visibility_uses_selected_wide_gate():
+    class FakeKinematics:
+        @staticmethod
+        def camera_transform(joints):
+            angle = float(joints[0])
+            transform = np.eye(4)
+            transform[:3, 2] = [math.sin(angle), 0.0, math.cos(angle)]
+            return transform
+
+    path = [
+        np.asarray([math.radians(value), 0, 0, 0, 0, 0])
+        for value in (0.0, 45.0, 75.0)
+    ]
+    assert camera_target_path_reasons(
+        FakeKinematics(), path, [0.0, 0.0, 1.0], 20.0, 0.22,
+        initial_alignment=False, final_aim_deg=90.0) == []
+
+
 def test_first_target_alignment_rejects_worsening_before_entering_cone():
     class FakeKinematics:
         @staticmethod

@@ -112,6 +112,10 @@
     # A collision-free joint interpolation is still rejected if it would turn
     # the eye-in-hand camera off the measured target or pass through it.
     scan_target_max_boresight_deg: 20.0
+    # Final planned and achieved optical-axis error. Rough acquisition and the
+    # first target lock remain capped at 5 degrees; later scan views use this
+    # frozen GUI-selected value in the inclusive 1-90 degree range.
+    final_capture_aim_tolerance_deg: 5.0
     scan_target_min_distance_m: 0.22
     data_timeout_sec: 2.0
     max_tracking_measurement_age_sec: 0.75

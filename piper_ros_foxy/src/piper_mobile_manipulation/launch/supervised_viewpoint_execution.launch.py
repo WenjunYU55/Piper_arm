@@ -1,6 +1,7 @@
 import json
 import math
 import os
+import re
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -24,6 +25,25 @@ from launch_ros.parameter_descriptions import ParameterValue
 def cfg(name):
     return os.path.join(
         get_package_share_directory('piper_mobile_manipulation'), 'config', name)
+
+
+def final_aim_tolerance(path):
+    """Read the frozen later-view aim value; first lock stays capped at 5°."""
+    with open(path, encoding='utf-8') as stream:
+        text = stream.read()
+    matches = re.findall(
+        r'^\s*final_capture_aim_tolerance_deg\s*:\s*'
+        r'([-+]?(?:\d+(?:\.\d*)?|\.\d+))',
+        text, flags=re.MULTILINE)
+    if len(matches) != 1:
+        raise RuntimeError(
+            'scan_execution_params.yaml must contain exactly one '
+            'final_capture_aim_tolerance_deg')
+    value = float(matches[0])
+    if not 1.0 <= value <= 90.0:
+        raise RuntimeError(
+            'final_capture_aim_tolerance_deg must be within 1.0-90.0')
+    return value
 
 
 def home_override():
@@ -119,6 +139,7 @@ def generate_launch_description():
     capture_params = cfg('scan_capture_params.yaml')
     workflow_params = cfg('supervised_cube_workflow_params.yaml')
     execution_params = cfg('scan_execution_params.yaml')
+    frozen_final_aim_tolerance_deg = final_aim_tolerance(execution_params)
     selected_home = home_override()
     bridge = Node(
         package='piper_tesseract_foxy',
@@ -154,6 +175,8 @@ def generate_launch_description():
                 'closed_loop_one_view': ParameterValue(
                     LaunchConfiguration('closed_loop_one_view'),
                     value_type=bool),
+                'final_capture_aim_tolerance_deg':
+                    frozen_final_aim_tolerance_deg,
                 **selected_home,
             },
         ],

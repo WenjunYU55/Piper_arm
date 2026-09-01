@@ -245,13 +245,27 @@ def test_native_gui_exposes_all_staged_home_recording_controls():
 
 def test_native_gui_defaults_reconstruction_reference_to_35mm_cube():
     source = open('piper_gui/native_app.py', encoding='utf-8').read()
+    support = open('reconstruction/gui_support.py', encoding='utf-8').read()
 
     assert "tk.StringVar(value='35') for _axis in range(3)" in source
     assert 'expected cube is 35 mm' in source
     assert 'Build Raw + Cleaned' in source
     assert 'Open Cleaned' in source
     assert 'Open Raw' in source
-    assert 'Open Measured Points' in source
+    assert 'Open All Capture Overlays' in source
+    assert 'Open Superposition Overlay' in source
+    assert 'Open Consensus Points' in source
+    assert 'Open Textured Model' in source
+    assert 'capture rotation (3° hard limit)' in source
+    assert 'Depth geometry' in source
+    assert 'TSDF band mm' in source
+    assert 'Mesh repair' in source
+    assert "reconstruction_sdf_trunc_mm_var = tk.StringVar(value='15')" \
+        in source
+    assert 'Native L515 depth (dense)' in support
+    assert 'Projected colour depth (legacy)' in support
+    assert 'None (measured TSDF only)' in support
+    assert 'Conservative measured-wall repair (6 mm)' in support
     assert "value='captured'" in source
     assert 'load_existing_reconstruction_outputs' in source
 

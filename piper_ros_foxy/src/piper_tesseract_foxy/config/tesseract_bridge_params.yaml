@@ -57,7 +57,9 @@
     # Only the highest-ranked global NBVs reach expensive IK/path planning.
     closed_loop_candidate_limit: 12
     # Exact target-facing orientation is attempted first across roll/IK
-    # alternatives. One hash-bound fallback may deviate by at most five
-    # degrees. The independent dense 20-degree path-visibility cone remains.
+    # alternatives. The first target lock is capped at five degrees; later
+    # hash-bound fallback and path visibility use the frozen 1-90 degree value.
     closed_loop_max_aim_offset_deg: 5.0
+    # Production mission launch overrides this from scan_execution_params.yaml.
+    final_capture_aim_tolerance_deg: 5.0
     debug: true
