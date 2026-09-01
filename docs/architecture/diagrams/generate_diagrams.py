@@ -215,7 +215,7 @@ def legend(y, width=1400):
         ("control", "mission control"),
         ("feedback", "feedback / retry"),
         ("command", "motor command"),
-        ("optional", "branch-only / optional"),
+        ("optional", "optional / unqualified"),
     ]
     if width >= 1600:
         x, spacing = 270, 260
@@ -315,7 +315,7 @@ def render_system():
         dict(src="nbv", dst="reach", kind="data", label="ranked shortlist", src_at=(940, 2115), dst_at=(760, 2140), via=((940, 2127), (760, 2127)), label_at=(850, 2123)),
         dict(src="reach", dst="bridge", kind="data", label="candidate views only", src_at=(660, 2305), dst_at=(660, 2415), label_at=(660, 2316)),
         dict(src="bridge", dst="tesseract", kind="data", label="main / selected backend", src_at=(520, 2625), dst_at=(380, 2650), via=((520, 2637), (380, 2637)), label_at=(450, 2633)),
-        dict(src="bridge", dst="curobo", kind="optional", label="branch-only backend", src_at=(800, 2625), dst_at=(940, 2650), via=((800, 2637), (940, 2637)), label_at=(870, 2633)),
+        dict(src="bridge", dst="curobo", kind="optional", label="hardware-unqualified", src_at=(800, 2625), dst_at=(940, 2650), via=((800, 2637), (940, 2637)), label_at=(870, 2633)),
         dict(src="tesseract", dst="transport", kind="data", label="validated response", src_at=(380, 2855), dst_at=(520, 2880), via=((380, 2867), (520, 2867)), label_at=(450, 2863)),
         dict(src="curobo", dst="transport", kind="optional", label="MotionGen response", src_at=(940, 2855), dst_at=(800, 2880), via=((940, 2867), (800, 2867)), label_at=(870, 2863)),
         dict(src="transport", dst="normalize", kind="data", label="proposal only", src_at=(520, 3090), dst_at=(380, 3200), via=((520, 3180), (380, 3180)), label_at=(450, 3100)),
@@ -411,7 +411,7 @@ def render_system():
     body.extend(section(585, 1105, "2  Orchestrate one owned mission", "Admission, process generations and terminal lifecycle remain correlated."))
     body.extend(section(1110, 1805, "3  Produce measured target and scene evidence", "Timestamped RGB-D, calibration and isolated AI feed ROS safety evidence."))
     body.extend(section(1815, 2315, "4  Select the next useful and feasible view", "Accepted captures alone change measured coverage."))
-    body.extend(section(2325, 3100, "5  Propose motion through one frozen backend", "Tesseract is on main; cuRobo is branch-only and hardware-unqualified."))
+    body.extend(section(2325, 3100, "5  Propose motion through one frozen backend", "Both backends are integrated; cuRobo remains hardware-unqualified."))
     body.extend(section(3110, 3680, "6  Authorize and execute through one command owner", "All planner backends traverse the same fail-closed physical boundary."))
     body.extend(section(3690, 4415, "7  Admit or reject the settled observation", "Acceptance, retry and rejection deliberately have different feedback effects."))
     body.extend(section(4425, 4925, "8  Recover safely, correlate base home and reconstruct", "Offline reconstruction consumes immutable evidence after the required safe state."))
@@ -568,7 +568,7 @@ def render_planner():
         dict(src="select", dst="supervisor", kind="control", label="frozen backend", src_side="bottom", dst_side="top"),
         dict(src="supervisor", dst="bridge", kind="control", label="matching generation", src_side="bottom", dst_side="top"),
         dict(src="bridge", dst="tess", kind="data", label="private spool", src_side="bottom", dst_side="top"),
-        dict(src="bridge", dst="curobo", kind="optional", label="branch-only spool", src_side="bottom", dst_side="top"),
+        dict(src="bridge", dst="curobo", kind="optional", label="hardware-unqualified", src_side="bottom", dst_side="top"),
         dict(src="tess", dst="response", kind="data", label="success / rejection", src_side="bottom", dst_side="left", via=((255, 1090), (350, 1090), (350, 1212)), label_at=(300, 1083)),
         dict(src="curobo", dst="response", kind="optional", label="success / rejection", src_side="bottom", dst_side="right", via=((845, 1090), (750, 1090), (750, 1212)), label_at=(800, 1083)),
         dict(src="response", dst="transport", kind="data", src_side="bottom", dst_side="top"),
@@ -581,7 +581,7 @@ def render_planner():
     render_flow(
         "planner-backend-pipeline.svg",
         "Frozen Planner Backend and Generic Motion Contract",
-        "What is common, what is branch-only, and how readiness and rejection return to the mission",
+        "What is common, what remains unqualified, and how readiness and rejection return to the mission",
         nodes,
         edges,
         1850,

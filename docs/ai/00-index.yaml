@@ -1668,7 +1668,7 @@ architecture_cleanup_final_validation_2026_08_27:
 
 generic_motion_planner_and_curobo_2026_08_27:
   status: isolated_runtime_installed_updated_collision_candidate_command_free_qualified
-  branch: curobo-integration
+  branch: main
   default_backend: tesseract
   backends: [tesseract, curobo]
   primary_navigation: [docs/architecture/motion_planner_backends.md, docs/ai/20-modules.yaml, docs/ai/30-contracts.yaml, docs/ai/40-flows.yaml, docs/ai/50-guardrails.yaml]

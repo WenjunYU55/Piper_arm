@@ -44,7 +44,7 @@
 <line x1="680" y1="108" x2="718" y2="108" stroke="#B33A3A" stroke-width="3" marker-end="url(#command-arrow)"/>
 <text x="728" y="112" class="legend" text-anchor="start">motor command</text>
 <line x1="885" y1="108" x2="923" y2="108" stroke="#929AA5" stroke-width="3" stroke-dasharray="8 6" marker-end="url(#optional-arrow)"/>
-<text x="933" y="112" class="legend" text-anchor="start">branch-only / optional</text>
+<text x="933" y="112" class="legend" text-anchor="start">optional / unqualified</text>
 <polyline points="640.0000000000001,300 640.0000000000001,370" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
 <polyline points="640.0000000000001,525 640.0000000000001,595" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
 <polyline points="640.0000000000001,775 640.0000000000001,845" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>

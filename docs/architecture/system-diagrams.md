@@ -1,15 +1,14 @@
 # System and feedback diagrams
 
-These diagrams are based on a source-level audit rather than a conceptual feature list. The whole-system map combines the current `main` behavior with the explicitly labelled planner work on `curobo-integration`; it does not imply that the branch-only code is already merged or hardware-qualified.
+These diagrams are based on a source-level audit rather than a conceptual feature list. The whole-system map describes the integrated `main` working tree. Software integration and physical hardware qualification remain separate claims.
 
 ## Audited repository states
 
 | Ref | Audited commit | What the diagrams claim |
 |---|---|---|
-| [`main`](https://github.com/WenjunYU55/Piper_arm/tree/9ca95b76e3f94be0cedf8727cb35fa4097b85638) | `9ca95b7` | Production Tesseract path, perception/NBV, common execution, capture, terminal handling and reconstruction |
-| [`curobo-integration`](https://github.com/WenjunYU55/Piper_arm/tree/31c1a248670d2ef8ab8cf3f5ac406b508f31e3f0) | `31c1a24` | Frozen backend choice, generic `MotionPlan` transport and cuRobo 0.7.8 worker; current cuRobo collision model is fail-closed for hardware |
+| `main` working tree | integrated local main | Production perception/NBV, frozen Tesseract or cuRobo selection, generic `MotionPlan`, common execution, capture, terminal handling and reconstruction |
 
-The branches are diverged. These figures document their contracts and status; they do not merge the integration branch.
+The cuRobo software path is integrated, but its current collision model remains fail-closed for physical hardware.
 
 ## Visual vocabulary
 
@@ -19,7 +18,7 @@ The branches are diverged. These figures document their contracts and status; th
 | Blue solid arrow | Mission control or lifecycle ownership |
 | Green dashed arrow | Feedback, retry, reacquisition, replanning or readiness return |
 | Red solid arrow | Physical motor command; intentionally appears only at the executor-to-driver boundary |
-| Gray dashed arrow | Branch-only or optional path |
+| Gray dashed arrow | Optional or currently unqualified path |
 | Blue / violet / teal boxes | Physical inputs / perception / measured state and immutable data |
 | Amber / red / graphite boxes | Planning / safety and recovery / physical actuation and infrastructure |
 
@@ -69,9 +68,9 @@ The diagram separates the effects that were previously collapsed:
   <a href="../assets/readme/architecture/planner-backend-pipeline.svg"><img src="../assets/readme/architecture/planner-backend-pipeline.svg" alt="Frozen Tesseract or cuRobo backend, worker readiness, validated response, generic transport and unchanged common execution" width="1000"></a>
 </div>
 
-On `main`, the bridge uses the Tesseract worker and `TesseractPlan`. On `curobo-integration`, the generic bridge publishes backend-neutral `MotionPlan`, `MotionPlanStatus`, `PlannerReadiness` and provenance while retaining Tesseract aliases only in Tesseract mode. Worker heartbeat, generation, schema, backend and model hashes must match the frozen request.
+The generic bridge publishes backend-neutral `MotionPlan`, `MotionPlanStatus`, `PlannerReadiness` and provenance while retaining Tesseract aliases only in Tesseract mode. Worker heartbeat, generation, schema, backend and model hashes must match the frozen request.
 
-The branch-only cuRobo worker uses MotionGen 0.7.8 `plan_single` for camera poses and `plan_single_js` for home motions. Fixed Bunker geometry uses exact meshes, while moving links use 167 audited spheres. Because that approximation currently declares `hardware_qualified=false`, readiness remains fail-closed for physical cuRobo motion. There is no automatic Tesseract fallback.
+The cuRobo worker uses MotionGen 0.7.8 `plan_single` for camera poses and `plan_single_js` for home motions. Fixed Bunker geometry uses exact meshes, while moving links use the audited sphere model. Because that approximation currently declares `hardware_qualified=false`, readiness remains fail-closed for physical cuRobo motion. There is no automatic Tesseract fallback.
 
 ## Execution feedback and recovery
 
@@ -110,12 +109,12 @@ Primary system descriptions:
 - [`docs/ai/10-system-map.yaml`](../ai/10-system-map.yaml)
 - [`docs/ai/40-flows.yaml`](../ai/40-flows.yaml)
 
-Planner integration evidence on `curobo-integration`:
+Planner integration evidence:
 
-- [planner backend contract](https://github.com/WenjunYU55/Piper_arm/blob/curobo-integration/docs/architecture/motion_planner_backends.md)
-- [branch architecture](https://github.com/WenjunYU55/Piper_arm/blob/curobo-integration/ARCHITECTURE.md)
-- [generic planner ROS interfaces](https://github.com/WenjunYU55/Piper_arm/tree/curobo-integration/piper_ros_foxy/src/piper_msgs)
-- [cuRobo tests](https://github.com/WenjunYU55/Piper_arm/tree/curobo-integration/tests/curobo)
+- [planner backend contract](motion_planner_backends.md)
+- [integrated architecture](../../ARCHITECTURE.md)
+- [generic planner ROS interfaces](../../piper_ros_foxy/src/piper_mobile_manipulation/msg/)
+- [cuRobo tests](../../tests/curobo/)
 
 Subsystem evidence:
 

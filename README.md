@@ -17,7 +17,7 @@
 ![Integration planner](https://img.shields.io/badge/curobo--integration-cuRobo_0.7.8-8A94A3)
 ![RGB-D](https://img.shields.io/badge/Sensor-RealSense_L515-0071C5)
 
-[Architecture](ARCHITECTURE.md) · [Detailed system map](docs/architecture/system-diagrams.md) · [cuRobo integration](https://github.com/WenjunYU55/Piper_arm/tree/curobo-integration) · [Installation](CLEAN_INSTALL.md) · [Operator commands](OPERATOR_COMMANDS.md) · [CAD](CAD/)
+[Architecture](ARCHITECTURE.md) · [Detailed system map](docs/architecture/system-diagrams.md) · [Planner backends](docs/architecture/motion_planner_backends.md) · [Installation](CLEAN_INSTALL.md) · [Operator commands](OPERATOR_COMMANDS.md) · [CAD](CAD/)
 
 </div>
 
@@ -31,7 +31,7 @@ The tracked base carries the enclosure and arm but remains stationary and braked
 
 ## Detailed system architecture
 
-This is the complete feature map, from mission request to immutable reconstruction. Solid lines carry data or mission control; dashed green lines are runtime feedback, retry, reacquisition, and replanning. Gray dashed paths are explicitly branch-only or optional. Red is reserved for the sole motor-command path.
+This is the complete feature map, from mission request to immutable reconstruction. Solid lines carry data or mission control; dashed green lines are runtime feedback, retry, reacquisition, and replanning. Gray dashed paths are optional or currently unqualified. Red is reserved for the sole motor-command path.
 
 <div align="center">
   <a href="docs/assets/readme/architecture/system-overview.svg">
@@ -44,7 +44,7 @@ This is the complete feature map, from mission request to immutable reconstructi
 The diagram deliberately combines two audited repository states:
 
 - **`main`:** Tesseract 0.35 is the active exact motion-planning path and transports `TesseractPlan`.
-- **`curobo-integration`:** adds a frozen `tesseract | curobo` mission choice, a backend-neutral `MotionPlan` contract, and an isolated cuRobo 0.7.8 MotionGen worker. The current 167-sphere moving-link model is marked `hardware_qualified=false`, so cuRobo plans are blocked from physical execution. There is no automatic fallback or mid-mission backend switch.
+- **cuRobo integration:** `main` now contains a frozen `tesseract | curobo` mission choice, a backend-neutral `MotionPlan` contract, and an isolated cuRobo 0.7.8 MotionGen worker. The current moving-link sphere model remains marked `hardware_qualified=false`, so cuRobo plans are blocked from physical execution. There is no automatic fallback or mid-mission backend switch.
 
 See the [diagram audit and implementation evidence](docs/architecture/system-diagrams.md) for the exact commits and source paths used.
 
@@ -94,12 +94,12 @@ The mission is bounded to 8–24 views, but completion is based on measured surf
 ## Frozen planner backend and common motion contract
 
 <div align="center">
-  <a href="docs/assets/readme/architecture/planner-backend-pipeline.svg"><img src="docs/assets/readme/architecture/planner-backend-pipeline.svg" alt="Tesseract and branch-only cuRobo planning backends feeding a common execution contract" width="1000"></a>
+  <a href="docs/assets/readme/architecture/planner-backend-pipeline.svg"><img src="docs/assets/readme/architecture/planner-backend-pipeline.svg" alt="Tesseract and cuRobo planning backends feeding a common execution contract" width="1000"></a>
 </div>
 
-On `curobo-integration`, the next-mission planner selection is validated before goal admission and frozen into the `RunTargetScan` goal and canonical mission hash. `ProcessSupervisor` starts exactly one planner worker. The generic bridge snapshots fresh joints, controller limits, target provenance, camera health, obstacles, robot/world hashes, and hand-eye calibration before writing a schema-v5 command-free request.
+The next-mission planner selection is validated before goal admission and frozen into the `RunTargetScan` goal and canonical mission hash. `ProcessSupervisor` starts exactly one planner worker. The generic bridge snapshots fresh joints, controller limits, target provenance, camera health, obstacles, robot/world hashes, and hand-eye calibration before writing a schema-v5 command-free request.
 
-Both backends return a correlated, hashed, time-parameterized six-joint proposal to the unchanged common safety path. Tesseract uses exact configured robot meshes. The branch-only cuRobo worker uses MotionGen `plan_single` / `plan_single_js`, exact fixed Bunker meshes and an audited articulated-sphere approximation for moving links. Selecting cuRobo does not grant motor authority.
+Both backends return a correlated, hashed, time-parameterized six-joint proposal to the unchanged common safety path. Tesseract uses exact configured robot meshes. The cuRobo worker uses MotionGen `plan_single` / `plan_single_js`, exact fixed Bunker meshes and an audited articulated-sphere approximation for moving links. Selecting cuRobo does not grant motor authority.
 
 ## Guarded execution and physical feedback
 
@@ -142,7 +142,7 @@ surfaces remain missing rather than being filled by an unobserved shape prior.
 | Active sensor | Qualified eye-in-hand Intel RealSense L515 |
 | ROS runtime | Ubuntu 20.04, ROS 2 Foxy and Python 3.8 |
 | Isolated AI | Python 3.10+ CUDA GroundingDINO/SAM2 workers over permission-bounded spools; no motor interface |
-| Motion planning | Tesseract 0.35 on `main`; Tesseract or fail-closed cuRobo 0.7.8 on `curobo-integration` |
+| Motion planning | Tesseract 0.35 or fail-closed cuRobo 0.7.8, frozen per mission |
 | Optional CAD provision | Enclosure-mounted ZED and LiDAR parts; not current runtime perception inputs |
 | Reconstruction | Open3D 0.19, target-only TSDF, optional bounded GICP and provenance reporting |
 
@@ -195,7 +195,7 @@ Piper_arm/
 └── tools/                          diagnostics, replay and calibration
 ```
 
-The cuRobo adapter, worker and tests exist on [`curobo-integration`](https://github.com/WenjunYU55/Piper_arm/tree/curobo-integration), not on `main`.
+The cuRobo adapter, worker and tests are integrated into `main`; physical cuRobo execution remains blocked until its collision model is explicitly hardware-qualified.
 
 ## Mechanical design files
 
@@ -207,7 +207,7 @@ Manufacturing CAD is not a substitute for collision-qualified URDF/planner geome
 
 - [Architecture and responsibility boundaries](ARCHITECTURE.md)
 - [Detailed system and feedback diagrams](docs/architecture/system-diagrams.md)
-- [Planner backend design on `curobo-integration`](https://github.com/WenjunYU55/Piper_arm/blob/curobo-integration/docs/architecture/motion_planner_backends.md)
+- [Planner backend design](docs/architecture/motion_planner_backends.md)
 - [Clean installation](CLEAN_INSTALL.md)
 - [Operator commands and safety procedures](OPERATOR_COMMANDS.md)
 - [Tracked-platform integration contract](integration/track_robot_description/README.md)
