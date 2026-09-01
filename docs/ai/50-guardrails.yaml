@@ -1,5 +1,9 @@
 schema_version: 1
 document: guardrails
+bounded_wall_hole_repair_guardrail_2026_09_01:
+  invariants: [none is the default, measured_wall uses a fixed 0.006 m approximate maximum radius, repair begins only after connected-target cleanup, raw TSDF remains untouched, registration selection uses pre-repair metrics, object-sized openings remain explicit, every added triangle is labelled interpolated, repaired and un-repaired outputs never overwrite each other, dimensional structural and provenance gates are not weakened, operation remains offline and command-free]
+  blast_radius: [cleaned offline TSDF topology, source-and-repair-specific filenames, reconstruction quality report, GUI reconstruction selection]
+  must_retest_if_changed: [reconstruction/test_mesh_repair.py, reconstruction/test_gui_support.py, reconstruction/test_tsdf_reconstruct.py, complete reconstruction suite, GUI phase8 and complete GUI suites, immutable five-view native replay, raw output and quality equivalence, AI YAML parse]
 rough_acquisition_partial_target_guardrail_2026_08_27:
   invariants:
     - Box aspect is not reliable for a partly clipped cube and cannot veto an otherwise qualified rough_acquisition_viewpoint target.
@@ -79,9 +83,20 @@ gui_adapter_guardrails_2026_08_27:
   blast_radius: [operator GUI startup, diagnostics, manual commissioning, mission submission cancellation, reconstruction home handshake]
   must_retest_if_changed: [all test_piper_gui files, reconstruction GUI-support tests, isolated-domain GUI launch and close, changed-file lint and compile, no hardware command]
 reconstruction_input_guardrails_2026_08_27:
-  invariants: [input_provenance remains independent of Open3D and GUI, moved function bodies and constants remain unchanged, tsdf_reconstruct compatibility exports are identical owner objects, manifest containment hashes calibration capture schema offline-mask provenance CLI and outputs are unchanged]
+  invariants: [input_provenance remains independent of Open3D and GUI, moved function bodies and constants remain unchanged, tsdf_reconstruct compatibility exports are identical owner objects, manifest containment hashes calibration capture schema and offline-mask provenance remain unchanged, projected_color_depth remains the CLI and GUI default, native_depth is additive and writes separate outputs]
   blast_radius: [every reconstruction input, diagnostic certification, offline resegmentation cache, gateway reconstruction jobs, GUI reconstruction]
   must_retest_if_changed: [all reconstruction tests, compatibility identity and AST comparison, direct CLI smoke, root GUI reconstruction and calibration suite, immutable dataset replay, changed-file lint pep257 and compile]
+native_depth_reconstruction_guardrails_2026_09_01:
+  invariants:
+    - Native replay may select exactly one immutable native sample for every already-accepted projected target winner; it must never dilate semantic support, fill arbitrary holes, lower confidence, accept unmatched pixels or alter captures.
+    - Require schema-2 confidence provenance, exact manifest hashes, finite native and colour intrinsics, zero native distortion, finite T_base_color and T_color_depth, and at most 1 mm projected-depth correlation error.
+    - Integrate native geometry with native intrinsics and T_base_depth. RGB sampling is visualization/texture evidence only and cannot authorize geometry.
+    - projected_color_depth remains default and target_mesh.ply remains its canonical output. Native assets use target_mesh.native_depth.ply so comparison never overwrites legacy evidence.
+    - The GUI TSDF band is bounded to 2-30 mm and at least twice the selected 0.5-3.0 mm voxel. Its unchanged default is 15 mm.
+    - Registration, raw metrics, component filtering, expected dimensions, watertightness, visual review and overall quality remain unchanged and fail closed. Better appearance or structural PASS cannot promote dimensional FAIL.
+    - Keep this path command-free; it starts no ROS, camera, CAN, planner or arm process and changes no automatic reconstruction job default.
+  blast_radius: [offline reconstruction geometry and texture inputs, scene-pose camera composition, GUI output selection and reports, immutable dataset replay cost]
+  must_retest_if_changed: [reconstruction/test_native_depth.py, all reconstruction tests, tests/gui/test_piper_gui_phase8.py, direct projected and native CLI replay, every per-frame projected/recovered count, output path separation, raw cleaned measured consensus and textured path/hash checks, GUI import, Python compile and YAML parse]
 driver_joint_policy_guardrails_2026_08_27:
   invariants: [all nine moved bodies and numerical constants are unchanged, policy imports no ROS SDK CAN threading or clock, piper_ctrl_single_node retains CAN receive SDK operations timers callbacks enable disable motor watchdog and command emission, old imports remain compatible]
   blast_radius: [all joint feedback, J6 startup, driver command mapping, limit qualification, motion authorization and motor fault handling]
@@ -284,8 +299,9 @@ capture_refresh_retry_epoch_guardrail_2026_08_23:
 connected_target_mesh_filter_guardrail_2026_08_23:
   invariants:
     - Persist the untouched extracted TSDF before deriving the cleaned copy; one output must never overwrite or masquerade as the other.
-    - Remove only disconnected components whose surface area is below five percent of the dominant component.
-    - Retain every substantial component; more than one substantial component is an explicit connectivity failure, not permission to select the visually preferred surface.
+    - Never remove a disconnected component at or above five percent of dominant surface area.
+    - A smaller component may be removed only when it lacks accepted measured-point corroboration within 3 mm from at least two distinct captures, with at least two points per capture and four total.
+    - Retain every substantial or corroborated measured component; more than one retained component is an explicit connectivity failure, not permission to select the visually preferred surface.
     - Registration selection and terminal quality use complete raw_mesh_metrics. Cleanup never launders fragmented evidence into PASS.
     - Keep immutable captures, input cloud, registration poses, expected dimensions, residuals, watertightness and visual-review requirements unchanged.
     - The measured-points PLY contains all accepted temporally averaged target-depth points after the selected refined base_link transform, with no visualization voxel downsampling; its capture-index colors are diagnostic metadata only.
@@ -970,7 +986,7 @@ constrained_superposition_guardrail_2026_08_29:
   invariants:
     - A nonempty one-capture dataset must be attempted with capture zero fixed at its nominal pose and no registration; zero captures and an empty extracted mesh still fail.
     - Capture zero is the exact immutable registration gauge: its translation and rotation corrections must remain numerically zero.
-    - Later capture translation is intentionally unbounded. Rotation remains camera-origin-centred, uses the one-degree prior to select the minimum supported correction, and must never exceed 45 degrees per capture.
+    - Later capture translation is intentionally unbounded. Rotation remains camera-origin-centred, uses the one-degree prior to select the minimum supported correction, and must never exceed 3 degrees per capture.
     - Cross-capture alignment uses mutual nearest normal-consistent correspondences so a surface visible in only one capture cannot be pulled onto an unrelated surface.
     - Only original confidence-qualified measured depth enters TSDF once; predicted/revolved geometry never becomes measured reconstruction.
     - Cross-view consensus may take at most one representative from any logical viewpoint in one spatial correspondence; a dense capture cannot outvote another capture.
@@ -980,7 +996,7 @@ constrained_superposition_guardrail_2026_08_29:
     - The superposition overlay must resolve only the constrained explicit result or constrained auto candidate; it must never relabel robot_pose measured points as superpositioned.
     - Explicit or auto mode never converts a quality FAIL into success by suppressing disconnected components or widening selection rules.
   blast_radius: [offline mesh geometry, measured and consensus cloud display, auto registration selection, reconstruction reports]
-  must_retest_if_changed: [single-capture fixed no-op and two-capture replay, capture-zero exact-anchor tests, unlimited-translation and 45-degree rotation-bound tests, reconstruction tests including duplicate-within-view and outlier cases, immutable robot_pose and constrained replay, connected indirect-overlap replay, auto fallback, explicit and nested candidate path resolution, report hashes point counts support and spread, GUI superposition overlay and consensus viewers, no hardware command]
+  must_retest_if_changed: [single-capture fixed no-op and two-capture replay, capture-zero exact-anchor tests, unlimited-translation and 3-degree rotation-bound tests, reconstruction tests including duplicate-within-view and outlier cases, immutable robot_pose and constrained replay, connected indirect-overlap replay, auto fallback, explicit and nested candidate path resolution, report hashes point counts support and spread, GUI superposition overlay and consensus viewers, no hardware command]
 texture_baking_guardrail_2026_08_30:
   invariants: [derive a separate asset and never mutate raw or cleaned PLY, begin from every corrected confidence-qualified measured depth pixel rather than the coarse cleaned TSDF mesh, use only corrected captured RGB-D and masks, never use revolved or predicted geometry, retain consensus as multi-view confidence rather than densifying it, triangulate only adjacent valid source pixels and reject long edges, fine-voxel averaging must count every retained measured point, choose one RGB source per triangle and never average captures, require depth visibility before color admission, record every untextured triangle, load the actual RGB material rather than Open3D empty default material, texture coverage cannot promote reconstruction quality, keep operation offline with no ROS or robot command]
   blast_radius: [derived textured geometry, texture sharpness and seams, report assets and hashes, reconstruction GUI controls, offline runtime and memory]

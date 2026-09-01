@@ -55,9 +55,13 @@ from piper_gui.view_model import MissionViewModel
 from reconstruction.gui_support import (
     constrained_output_paths,
     existing_reconstruction_outputs,
+    geometry_source_from_label,
+    hole_repair_from_label,
     list_scan_datasets,
     load_quality_report,
     quality_summary,
+    RECONSTRUCTION_GEOMETRY_SOURCE_LABELS,
+    RECONSTRUCTION_HOLE_REPAIR_LABELS,
     reconstruction_command,
     start_reconstruction_process,
     start_viewer_process,
@@ -346,9 +350,14 @@ class PiperGuiApp:
         self.reconstruction_mode_var = tk.StringVar(value='auto')
         self.reconstruction_mask_source_var = tk.StringVar(
             value='captured')
+        self.reconstruction_geometry_source_var = tk.StringVar(
+            value='Projected colour depth (legacy)')
+        self.reconstruction_hole_repair_var = tk.StringVar(
+            value='None (measured TSDF only)')
         self.reconstruction_dimension_vars = [
             tk.StringVar(value='35') for _axis in range(3)]
         self.reconstruction_voxel_mm_var = tk.DoubleVar(value=3.0)
+        self.reconstruction_sdf_trunc_mm_var = tk.StringVar(value='15')
         self.reconstruction_voxel_status_var = tk.StringVar(
             value='3.0 mm voxel — baseline mesh detail')
         self.reconstruction_show_input_var = tk.BooleanVar(value=False)
@@ -822,7 +831,7 @@ class PiperGuiApp:
             inputs,
             text=(
                 'constrained_superposition fixes capture 0, minimizes later '
-                'capture rotation (45° hard limit), and permits whatever '
+                'capture rotation (3° hard limit), and permits whatever '
                 'translation the overlap evidence requires.'),
             foreground='#52606d', wraplength=540, justify='left').grid(
                 row=2, column=2, columnspan=3, sticky='w', padx=(8, 0),
@@ -842,23 +851,75 @@ class PiperGuiApp:
             foreground='#52606d', wraplength=540, justify='left').grid(
                 row=3, column=2, columnspan=3, sticky='w', padx=(8, 0),
                 pady=(10, 0))
+        ttk.Label(inputs, text='Depth geometry').grid(
+            row=4, column=0, sticky='w', pady=(10, 0))
+        geometry_combo = ttk.Combobox(
+            inputs, textvariable=self.reconstruction_geometry_source_var,
+            values=tuple(RECONSTRUCTION_GEOMETRY_SOURCE_LABELS),
+            state='readonly', width=29)
+        geometry_combo.grid(
+            row=4, column=1, sticky='w', padx=(8, 0), pady=(10, 0))
+        geometry_combo.bind(
+            '<<ComboboxSelected>>', self.load_existing_reconstruction_outputs)
+        ttk.Label(
+            inputs,
+            text=(
+                'Native mode reverse-correlates the same accepted target '
+                'samples onto the contiguous L515 depth grid; legacy mode '
+                'keeps the sparse colour-plane projection for comparison.'),
+            foreground='#52606d', wraplength=500, justify='left').grid(
+                row=4, column=2, columnspan=3, sticky='w', padx=(8, 0),
+                pady=(10, 0))
+        ttk.Label(inputs, text='TSDF band mm').grid(
+            row=5, column=0, sticky='w', pady=(10, 0))
+        ttk.Entry(
+            inputs, textvariable=self.reconstruction_sdf_trunc_mm_var,
+            width=9).grid(
+                row=5, column=1, sticky='w', padx=(8, 0), pady=(10, 0))
+        ttk.Label(
+            inputs,
+            text=(
+                'Surface-update distance: 15 mm preserves the legacy '
+                'default; 6 mm is the current fine-grid comparison value.'),
+            foreground='#52606d', wraplength=500, justify='left').grid(
+                row=5, column=2, columnspan=3, sticky='w', padx=(8, 0),
+                pady=(10, 0))
+        ttk.Label(inputs, text='Mesh repair').grid(
+            row=6, column=0, sticky='w', pady=(10, 0))
+        repair_combo = ttk.Combobox(
+            inputs, textvariable=self.reconstruction_hole_repair_var,
+            values=tuple(RECONSTRUCTION_HOLE_REPAIR_LABELS),
+            state='readonly', width=39)
+        repair_combo.grid(
+            row=6, column=1, sticky='w', padx=(8, 0), pady=(10, 0))
+        repair_combo.bind(
+            '<<ComboboxSelected>>', self.load_existing_reconstruction_outputs)
+        ttk.Label(
+            inputs,
+            text=(
+                'Conservative repair triangulates only bounded TSDF wall '
+                'holes up to a 6 mm radius. Added triangles are explicitly '
+                'reported as interpolated; object-sized openings remain.'),
+            foreground='#52606d', wraplength=500, justify='left').grid(
+                row=6, column=2, columnspan=3, sticky='w', padx=(8, 0),
+                pady=(10, 0))
         ttk.Label(inputs, text='Mesh detail').grid(
-            row=4, column=0, sticky='w', pady=(12, 0))
+            row=7, column=0, sticky='w', pady=(12, 0))
         ttk.Label(inputs, text='Coarse').grid(
-            row=4, column=1, sticky='w', pady=(12, 0))
+            row=7, column=1, sticky='w', pady=(12, 0))
         tk.Scale(
             inputs, from_=3.0, to=0.5, resolution=0.1,
             orient='horizontal', showvalue=False, length=330,
             variable=self.reconstruction_voxel_mm_var,
             command=self.update_reconstruction_voxel_status).grid(
-                row=4, column=2, columnspan=2, sticky='ew',
+            row=7, column=2, columnspan=2, sticky='ew',
                 padx=(8, 8), pady=(12, 0))
         ttk.Label(inputs, text='Fine').grid(
-            row=4, column=4, sticky='e', pady=(12, 0))
+            row=7, column=4, sticky='e', pady=(12, 0))
         ttk.Label(
             inputs, textvariable=self.reconstruction_voxel_status_var,
             foreground='#52606d').grid(
-            row=5, column=1, columnspan=4, sticky='w', pady=(3, 0))
+            row=8, column=1, columnspan=4, sticky='w', pady=(3, 0))
         controls = ttk.Frame(parent)
         controls.grid(row=3, column=0, sticky='w', pady=(14, 8))
         self.reconstruction_build_button = ttk.Button(
@@ -949,8 +1010,13 @@ class PiperGuiApp:
             state='disabled')
         self.reconstruction_textured_view_button.configure(state='disabled')
         try:
+            geometry_source = geometry_source_from_label(
+                self.reconstruction_geometry_source_var.get())
+            hole_repair = hole_repair_from_label(
+                self.reconstruction_hole_repair_var.get())
             saved = existing_reconstruction_outputs(
-                PROJECT_ROOT, self.reconstruction_dataset_var.get())
+                PROJECT_ROOT, self.reconstruction_dataset_var.get(),
+                geometry_source, hole_repair)
         except (OSError, TypeError, ValueError) as exc:
             if update_status:
                 self.reconstruction_status_var.set(str(exc))
@@ -994,7 +1060,13 @@ class PiperGuiApp:
                 PROJECT_ROOT, self.reconstruction_dataset_var.get(),
                 dimensions, self.reconstruction_mode_var.get(),
                 round(float(self.reconstruction_voxel_mm_var.get()), 1),
-                self.reconstruction_mask_source_var.get())
+                self.reconstruction_mask_source_var.get(),
+                geometry_source=geometry_source_from_label(
+                    self.reconstruction_geometry_source_var.get()),
+                sdf_trunc_mm=float(
+                    self.reconstruction_sdf_trunc_mm_var.get()),
+                hole_repair=hole_repair_from_label(
+                    self.reconstruction_hole_repair_var.get()))
         except (OSError, TypeError, ValueError) as exc:
             self.reconstruction_status_var.set(str(exc))
             return
@@ -1007,11 +1079,14 @@ class PiperGuiApp:
             state='disabled')
         self.reconstruction_textured_view_button.configure(state='disabled')
         self.reconstruction_status_var.set(
-            'Reconstruction is running offline at %.1f mm mesh voxels using '
-            '%s masks'
+            'Reconstruction is running offline at %.1f mm mesh voxels with '
+            '%s mm TSDF band using %s masks, %s, and %s'
             % (
                 round(float(self.reconstruction_voxel_mm_var.get()), 1),
-                self.reconstruction_mask_source_var.get()))
+                self.reconstruction_sdf_trunc_mm_var.get(),
+                self.reconstruction_mask_source_var.get(),
+                self.reconstruction_geometry_source_var.get(),
+                self.reconstruction_hole_repair_var.get()))
         self.reconstruction_output_path = output
 
         def worker():

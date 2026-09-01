@@ -38,7 +38,11 @@ def test_default_reconstruction_preserves_one_millimetre_detail():
     assert 'robot_pose' in MODULE.REGISTRATION_MODES
     assert 'scene_pose_graph' in MODULE.REGISTRATION_MODES
     assert 'constrained_superposition' in MODULE.REGISTRATION_MODES
+    assert MODULE.SUPERPOSITION_MAX_ROTATION_DEG == pytest.approx(3.0)
     assert MODULE.MASK_SOURCES == ('captured', 'offline_resegment')
+    assert MODULE.GEOMETRY_SOURCES == (
+        'projected_color_depth', 'native_depth')
+    assert MODULE.HOLE_REPAIR_MODES == ('none', 'measured_wall')
 
 
 def test_offline_mask_loader_is_hash_and_rgb_bound(tmp_path):
@@ -349,7 +353,8 @@ def test_capture_zero_rigid_anchor_is_fixed_and_rotation_is_bounded():
         2, constraints, origins, prior_sigma_m=1.0e6,
         rotation_prior_sigma_rad=100.0, data_sigma_m=0.0001,
         huber_delta_m=0.1, maximum_translation_m=None,
-        maximum_rotation_deg=45.0, fixed_reference_index=0)
+        maximum_rotation_deg=MODULE.SUPERPOSITION_MAX_ROTATION_DEG,
+        fixed_reference_index=0)
 
     assert translations[0] == pytest.approx(np.zeros(3), abs=1e-12)
     assert rotations[0] == pytest.approx(np.zeros(3), abs=1e-12)
@@ -357,7 +362,7 @@ def test_capture_zero_rigid_anchor_is_fixed_and_rotation_is_bounded():
     assert rotations[1] == pytest.approx(expected_rotation, abs=2e-5)
 
 
-def test_capture_zero_rigid_anchor_rejects_rotation_above_45_degrees():
+def test_capture_zero_rigid_anchor_rejects_rotation_above_3_degrees():
     expected_rotation = np.radians(np.asarray([60.0, 0.0, 0.0]))
     origins = np.zeros((2, 3), dtype=float)
     constraints = []
@@ -376,12 +381,13 @@ def test_capture_zero_rigid_anchor_rejects_rotation_above_45_degrees():
                 'edge_constraint_count': 24,
             })
 
-    with pytest.raises(ValueError, match='rotation exceeds 45.0deg'):
+    with pytest.raises(ValueError, match='rotation exceeds 3.0deg'):
         MODULE.solve_constrained_rigid_corrections(
             2, constraints, origins, prior_sigma_m=1.0e6,
             rotation_prior_sigma_rad=100.0, data_sigma_m=0.0001,
             huber_delta_m=0.1, maximum_translation_m=None,
-            maximum_rotation_deg=45.0, fixed_reference_index=0)
+            maximum_rotation_deg=MODULE.SUPERPOSITION_MAX_ROTATION_DEG,
+            fixed_reference_index=0)
 
 
 def test_constrained_superposition_single_capture_is_fixed_noop():
@@ -718,6 +724,62 @@ def test_connected_target_policy_keeps_component_at_five_percent_boundary():
         [1000, 50], [0.010, 0.0005])
     assert report['retained_component_indices'] == [0, 1]
     assert report['connectivity_valid'] is False
+
+
+def test_connected_target_policy_retains_small_measured_component():
+    report = MODULE.target_component_policy(
+        [1000, 2, 1], [0.010, 0.00001, 0.000001],
+        measured_supported_indices=[1])
+    assert report['retained_component_indices'] == [0, 1]
+    assert report['retained_only_by_measured_support_indices'] == [1]
+    assert report['removed_fragment_component_count'] == 1
+    assert report['connectivity_valid'] is False
+    assert report['decision'] == 'MULTIPLE_MEASURED_TARGET_COMPONENTS'
+
+
+def test_connected_target_policy_rejects_invalid_measured_component_index():
+    with pytest.raises(ValueError, match='indices'):
+        MODULE.target_component_policy(
+            [1000, 2], [0.010, 0.00001],
+            measured_supported_indices=[2])
+
+
+def test_component_cleanup_keeps_two_view_supported_surface_and_removes_noise():
+    o3d = pytest.importorskip('open3d')
+    vertices = np.asarray([
+        [0.000, 0.000, 0.000], [0.020, 0.000, 0.000],
+        [0.020, 0.020, 0.000], [0.000, 0.020, 0.000],
+        [0.030, 0.000, 0.000], [0.031, 0.000, 0.000],
+        [0.030, 0.001, 0.000],
+        [0.060, 0.000, 0.000], [0.061, 0.000, 0.000],
+        [0.060, 0.001, 0.000],
+    ], dtype=float)
+    triangles = np.asarray([
+        [0, 1, 2], [0, 2, 3], [4, 5, 6], [7, 8, 9]],
+        dtype=np.int32)
+    mesh = o3d.geometry.TriangleMesh()
+    mesh.vertices = o3d.utility.Vector3dVector(vertices)
+    mesh.triangles = o3d.utility.Vector3iVector(triangles)
+    views = [
+        np.asarray([[0.0302, 0.0002, 0.0],
+                    [0.0304, 0.0003, 0.0]], dtype=float),
+        np.asarray([[0.0303, 0.0002, 0.0],
+                    [0.0302, 0.0004, 0.0]], dtype=float),
+    ]
+
+    filtered, report = MODULE.filter_target_mesh_components(
+        mesh, o3d=o3d, measured_support_views=views)
+
+    assert len(filtered.triangles) == 3
+    assert len(report['retained_only_by_measured_support_indices']) == 1
+    assert report['removed_fragment_component_count'] == 1
+    support = report['measured_component_support']
+    assert support['available']
+    assert len(support['qualified_component_indices']) == 1
+    retained = support['components'][
+        support['qualified_component_indices'][0]]
+    assert retained['total_support_points'] == 4
+    assert retained['supporting_view_count'] == 2
 
 
 def test_registration_selection_uses_pre_cleanup_component_coherence():

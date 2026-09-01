@@ -8,7 +8,36 @@ import subprocess
 
 MINIMUM_GUI_VOXEL_LENGTH_MM = 0.5
 MAXIMUM_GUI_VOXEL_LENGTH_MM = 3.0
+MINIMUM_GUI_SDF_TRUNC_MM = 2.0
+MAXIMUM_GUI_SDF_TRUNC_MM = 30.0
 RECONSTRUCTION_MASK_SOURCES = ('captured', 'offline_resegment')
+RECONSTRUCTION_GEOMETRY_SOURCES = (
+    'projected_color_depth', 'native_depth')
+RECONSTRUCTION_GEOMETRY_SOURCE_LABELS = {
+    'Projected colour depth (legacy)': 'projected_color_depth',
+    'Native L515 depth (dense)': 'native_depth',
+}
+RECONSTRUCTION_HOLE_REPAIR_MODES = ('none', 'measured_wall')
+RECONSTRUCTION_HOLE_REPAIR_LABELS = {
+    'None (measured TSDF only)': 'none',
+    'Conservative measured-wall repair (6 mm)': 'measured_wall',
+}
+
+
+def geometry_source_from_label(value):
+    """Resolve one GUI label to the reconstruction CLI contract."""
+    try:
+        return RECONSTRUCTION_GEOMETRY_SOURCE_LABELS[str(value)]
+    except KeyError as exc:
+        raise ValueError('unknown reconstruction geometry source') from exc
+
+
+def hole_repair_from_label(value):
+    """Resolve one GUI label to the reconstruction CLI contract."""
+    try:
+        return RECONSTRUCTION_HOLE_REPAIR_LABELS[str(value)]
+    except KeyError as exc:
+        raise ValueError('unknown reconstruction hole repair mode') from exc
 
 
 def dataset_root(project_root):
@@ -44,13 +73,30 @@ def reconstruction_python(project_root):
     return Path(project_root).resolve() / 'reconstruction' / '.venv' / 'bin' / 'python'
 
 
-def existing_reconstruction_outputs(project_root, selection):
+def _output_path(dataset, geometry_source, hole_repair='none'):
+    source = str(geometry_source)
+    if source not in RECONSTRUCTION_GEOMETRY_SOURCES:
+        raise ValueError('unknown reconstruction geometry source')
+    repair = str(hole_repair)
+    if repair not in RECONSTRUCTION_HOLE_REPAIR_MODES:
+        raise ValueError('unknown reconstruction hole repair mode')
+    filename = (
+        'target_mesh.ply'
+        if source == 'projected_color_depth'
+        else 'target_mesh.native_depth.ply')
+    if repair == 'measured_wall':
+        filename = filename[:-4] + '.wall_repaired.ply'
+    return dataset / 'reconstruction' / 'validation' / filename
+
+
+def existing_reconstruction_outputs(
+        project_root, selection, geometry_source='projected_color_depth',
+        hole_repair='none'):
     """Return inspectable saved outputs for one selected dataset, if present."""
     dataset = validated_dataset_path(project_root, selection)
     expected_root = dataset.resolve()
-    report_path = (
-        dataset / 'reconstruction' / 'validation' /
-        'target_mesh.ply.quality.json')
+    output = _output_path(dataset, geometry_source, hole_repair)
+    report_path = output.with_suffix(output.suffix + '.quality.json')
     if not report_path.is_file():
         return None
     report = load_quality_report(report_path)
@@ -101,7 +147,9 @@ def constrained_output_paths(report):
 
 def reconstruction_command(project_root, selection, dimensions_mm,
                            registration_mode='auto', voxel_length_mm=3.0,
-                           mask_source='captured'):
+                           mask_source='captured',
+                           geometry_source='projected_color_depth',
+                           sdf_trunc_mm=15.0, hole_repair='none'):
     root = Path(project_root).resolve()
     dataset = validated_dataset_path(root, selection)
     python = reconstruction_python(root)
@@ -118,18 +166,35 @@ def reconstruction_command(project_root, selection, dimensions_mm,
             MINIMUM_GUI_VOXEL_LENGTH_MM
             <= voxel_mm <= MAXIMUM_GUI_VOXEL_LENGTH_MM):
         raise ValueError('mesh voxel size must be between 0.5 and 3.0 mm')
+    trunc_mm = float(sdf_trunc_mm)
+    if not math.isfinite(trunc_mm) or not (
+            MINIMUM_GUI_SDF_TRUNC_MM <= trunc_mm
+            <= MAXIMUM_GUI_SDF_TRUNC_MM):
+        raise ValueError('TSDF truncation must be between 2 and 30 mm')
+    if trunc_mm < 2.0 * voxel_mm:
+        raise ValueError(
+            'TSDF truncation must be at least twice the mesh voxel size')
     source = str(mask_source)
     if source not in RECONSTRUCTION_MASK_SOURCES:
         raise ValueError(
             'mask source must be captured or offline_resegment')
-    output = dataset / 'reconstruction' / 'validation' / 'target_mesh.ply'
+    geometry = str(geometry_source)
+    if geometry not in RECONSTRUCTION_GEOMETRY_SOURCES:
+        raise ValueError('unknown reconstruction geometry source')
+    repair = str(hole_repair)
+    if repair not in RECONSTRUCTION_HOLE_REPAIR_MODES:
+        raise ValueError('unknown reconstruction hole repair mode')
+    output = _output_path(dataset, geometry, repair)
     command = [
         str(python), str(root / 'reconstruction' / 'tsdf_reconstruct.py'),
         str(dataset), '--output', str(output), '--registration-mode',
         str(registration_mode), '--expected-dimensions-mm',
         *(format(value, '.12g') for value in dimensions),
         '--voxel-length', format(voxel_mm / 1000.0, '.12g'),
+        '--sdf-trunc', format(trunc_mm / 1000.0, '.12g'),
         '--mask-source', source,
+        '--geometry-source', geometry,
+        '--hole-repair', repair,
         '--allow-missing-calibration-id',
         '--allow-partial-view-set',
     ]
@@ -202,7 +267,22 @@ def quality_summary(report):
             report.get('registration_mode', 'unknown'),
             report.get('integrated_views', '?'), report.get('vertex_count', '?'),
             report.get('triangle_count', '?')),
+        'Depth geometry: %s' % report.get(
+            'geometry_source', configuration.get(
+                'geometry_source', 'projected_color_depth')),
     ]
+    repair = report.get('hole_repair') or {}
+    if repair.get('applied'):
+        lines.append(
+            'Wall-hole repair: %s interpolated triangles; boundaries %s -> '
+            '%s (6 mm maximum radius)' % (
+                repair.get('interpolated_triangle_count', '?'),
+                (repair.get('before') or {}).get(
+                    'boundary_component_count', '?'),
+                (repair.get('after') or {}).get(
+                    'boundary_component_count', '?')))
+    else:
+        lines.append('Wall-hole repair: disabled (measured TSDF only)')
     if report.get('raw_mesh_path'):
         lines.append(
             'Raw + cleaned outputs: %s raw components -> %s cleaned components'
@@ -247,6 +327,9 @@ def quality_summary(report):
         'TSDF mesh voxel: %.2f mm (smaller permits more polygons)' % (
             1000.0 * float(configuration.get(
                 'voxel_length_m', float('nan')))),
+        'TSDF truncation band: %.2f mm' % (
+            1000.0 * float(configuration.get(
+                'sdf_trunc_m', float('nan')))),
         'Target mask: %s' % configuration.get(
             'semantic_mask_source', 'captured'),
         'Registration median RMSE: %.2f mm; dominant component: %.1f%%' % (
@@ -255,11 +338,15 @@ def quality_summary(report):
                 'dominant_component_triangle_ratio', float('nan')))),
     ])
     if component_filter.get('decision'):
+        corroborated_count = len(component_filter.get(
+            'retained_only_by_measured_support_indices', []))
         lines.append(
-            'Connected-target cleanup: %s; removed %s tiny fragments' % (
+            'Connected-target cleanup: %s; removed %s unsupported '
+            'fragments; retained %s corroborated small surfaces' % (
                 component_filter['decision'],
                 component_filter.get(
-                    'removed_fragment_component_count', '?')))
+                    'removed_fragment_component_count', '?'),
+                corroborated_count))
     if dimensions:
         lines.append(
             'Provisional cube OBB: %s mm; maximum size error: %.2f mm (%s)' % (

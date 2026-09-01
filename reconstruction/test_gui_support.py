@@ -4,7 +4,9 @@ import pytest
 
 from reconstruction.gui_support import (
     constrained_output_paths, existing_reconstruction_outputs,
-    list_scan_datasets, quality_summary, reconstruction_command,
+    geometry_source_from_label, hole_repair_from_label, list_scan_datasets,
+    quality_summary,
+    reconstruction_command,
     validated_dataset_path, viewer_command)
 
 
@@ -35,8 +37,59 @@ def test_gui_command_is_argument_only_and_diagnostic(tmp_path):
     assert '--allow-partial-view-set' in command
     assert command[command.index('--registration-mode') + 1] == 'auto'
     assert command[command.index('--voxel-length') + 1] == '0.003'
+    assert command[command.index('--sdf-trunc') + 1] == '0.015'
+    assert command[command.index('--geometry-source') + 1] == \
+        'projected_color_depth'
+    assert command[command.index('--hole-repair') + 1] == 'none'
     assert output == scan / 'reconstruction' / 'validation' / 'target_mesh.ply'
     assert all('\n' not in argument for argument in command)
+
+
+def test_gui_command_selects_native_depth_without_overwriting_legacy_output(
+        tmp_path):
+    root, scan = project(tmp_path)
+    command, output = reconstruction_command(
+        root, scan.name, (35.0, 35.0, 35.0),
+        geometry_source='native_depth', voxel_length_mm=1.5,
+        sdf_trunc_mm=6.0)
+    assert command[command.index('--geometry-source') + 1] == 'native_depth'
+    assert output.name == 'target_mesh.native_depth.ply'
+    assert command[command.index('--sdf-trunc') + 1] == '0.006'
+    assert geometry_source_from_label(
+        'Native L515 depth (dense)') == 'native_depth'
+    with pytest.raises(ValueError, match='geometry source'):
+        reconstruction_command(
+            root, scan.name, (35.0, 35.0, 35.0),
+            geometry_source='invented')
+
+
+def test_gui_command_selects_independent_conservative_wall_repair_output(
+        tmp_path):
+    root, scan = project(tmp_path)
+    command, output = reconstruction_command(
+        root, scan.name, (35.0, 35.0, 35.0),
+        geometry_source='native_depth', hole_repair='measured_wall')
+    assert command[command.index('--hole-repair') + 1] == 'measured_wall'
+    assert output.name == 'target_mesh.native_depth.wall_repaired.ply'
+    assert hole_repair_from_label(
+        'Conservative measured-wall repair (6 mm)') == 'measured_wall'
+    with pytest.raises(ValueError, match='hole repair'):
+        reconstruction_command(
+            root, scan.name, (35.0, 35.0, 35.0),
+            hole_repair='invented')
+
+
+def test_gui_command_bounds_tsdf_truncation(tmp_path):
+    root, scan = project(tmp_path)
+    for invalid in (1.99, 30.01, float('nan'), float('inf')):
+        with pytest.raises(ValueError, match='truncation'):
+            reconstruction_command(
+                root, scan.name, (35.0, 35.0, 35.0),
+                sdf_trunc_mm=invalid)
+    with pytest.raises(ValueError, match='at least twice'):
+        reconstruction_command(
+            root, scan.name, (35.0, 35.0, 35.0),
+            voxel_length_mm=3.0, sdf_trunc_mm=5.0)
 
 
 def test_gui_command_accepts_bounded_mesh_detail(tmp_path):
@@ -138,6 +191,55 @@ def test_existing_failed_outputs_remain_inspectable(tmp_path):
     assert saved['consensus_cloud_path'] == consensus
     assert saved['superposition_cloud_path'] == measured
     assert saved['textured_mesh_path'] == textured
+
+
+def test_existing_native_output_is_selected_independently(tmp_path):
+    root, scan = project(tmp_path)
+    validation = scan / 'reconstruction' / 'validation'
+    validation.mkdir(parents=True)
+    legacy = validation / 'target_mesh.ply'
+    native = validation / 'target_mesh.native_depth.ply'
+    legacy.write_text('legacy', encoding='utf-8')
+    native.write_text('native', encoding='utf-8')
+    legacy.with_suffix('.ply.quality.json').write_text(json.dumps({
+        'mesh_path': str(legacy),
+        'geometry_source': 'projected_color_depth',
+    }), encoding='utf-8')
+    native.with_suffix('.ply.quality.json').write_text(json.dumps({
+        'mesh_path': str(native),
+        'geometry_source': 'native_depth',
+    }), encoding='utf-8')
+
+    assert existing_reconstruction_outputs(
+        root, scan.name)['output_path'] == legacy
+    assert existing_reconstruction_outputs(
+        root, scan.name, 'native_depth')['output_path'] == native
+
+
+def test_existing_wall_repair_output_is_selected_independently(tmp_path):
+    root, scan = project(tmp_path)
+    validation = scan / 'reconstruction' / 'validation'
+    validation.mkdir(parents=True)
+    measured = validation / 'target_mesh.native_depth.ply'
+    repaired = validation / 'target_mesh.native_depth.wall_repaired.ply'
+    measured.write_text('measured', encoding='utf-8')
+    repaired.write_text('repaired', encoding='utf-8')
+    measured.with_suffix('.ply.quality.json').write_text(json.dumps({
+        'mesh_path': str(measured),
+        'geometry_source': 'native_depth',
+        'hole_repair': {'mode': 'none'},
+    }), encoding='utf-8')
+    repaired.with_suffix('.ply.quality.json').write_text(json.dumps({
+        'mesh_path': str(repaired),
+        'geometry_source': 'native_depth',
+        'hole_repair': {'mode': 'measured_wall'},
+    }), encoding='utf-8')
+
+    assert existing_reconstruction_outputs(
+        root, scan.name, 'native_depth')['output_path'] == measured
+    assert existing_reconstruction_outputs(
+        root, scan.name, 'native_depth',
+        'measured_wall')['output_path'] == repaired
 
 
 def test_auto_report_exposes_constrained_candidate_outputs():
@@ -251,6 +353,7 @@ def test_quality_summary_calls_out_provisional_dimension_and_visual_review():
         'component_filter': {
             'decision': 'SINGLE_CONNECTED_TARGET',
             'removed_fragment_component_count': 11,
+            'retained_only_by_measured_support_indices': [2, 4],
         },
     })
     assert 'FAIL / DIAGNOSTIC_ONLY' in summary
@@ -260,7 +363,8 @@ def test_quality_summary_calls_out_provisional_dimension_and_visual_review():
     assert '12 raw components -> 1 cleaned components' in summary
     assert '11,947 accepted depth points' not in summary
     assert '11947 accepted depth points' in summary
-    assert 'removed 11 tiny fragments' in summary
+    assert 'removed 11 unsupported fragments' in summary
+    assert 'retained 2 corroborated small surfaces' in summary
     assert 'Cleaned mesh OBB' in summary
     assert 'Visual review is required' in summary
 

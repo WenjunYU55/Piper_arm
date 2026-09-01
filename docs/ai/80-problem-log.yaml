@@ -1,5 +1,26 @@
 schema_version: 1
 document: consolidated_problem_and_incident_log
+measured_fourth_face_removed_as_tiny_fragments_2026_09_01:
+  state: software_fixed_recorded_replay_passed_visual_review_pending
+  symptom: The superposition overlay visibly contained four cube faces, but the native cleaned and wall-repaired TSDF omitted much of one opposing face.
+  root_cause: Size-only connected-component cleanup discarded every surface below five percent of dominant area even when accepted points from multiple captures independently supported it. The fine raw TSDF covered 88.8 percent of the fourth-face evidence within 3 mm, while the former cleaned repair retained only 77.8 percent.
+  correction: Assign each accepted per-view measured point to the exact closest TSDF component and retain a small component only when it has at least four points within 3 mm, including at least two points from each of at least two distinct captures. Continue removing unsupported fragments and force MULTIPLE_MEASURED_TARGET_COMPONENTS plus structural FAIL for retained disconnected evidence.
+  evidence: The same five-view constrained native replay retains fifteen corroborated small surfaces, removes fourteen unsupported fragments, and raises fourth-face within-3-mm coverage to 87.2 percent with 3.68 mm p90 versus 11.68 mm before. Focused reconstruction and GUI tests pass; visual and dimensional qualification remain pending.
+  boundary: Offline component cleanup and additive diagnostics only. Raw TSDF, immutable captures, registration selection, quality thresholds, ROS, camera, CAN, mission and robot motion are unchanged.
+native_tsdf_measured_wall_perforations_2026_09_01:
+  state: selectable_bounded_offline_repair_implemented_visual_review_pending
+  symptom: The dense native-depth cleaned TSDF remained perforated across visible side walls despite solid accepted per-view native masks.
+  root_cause: The openings reproduce in single-view Open3D TSDF extraction and survive truncation increases and masked median filtering, ruling out cross-view registration and input-mask holes. They are bounded TSDF surface-extraction openings distinct from the object-sized unobserved boundary.
+  correction: Add a default-off measured_wall mesh-repair mode that fills only openings within an approximate 6 mm radius after component cleanup, preserves the raw mesh and object-sized boundaries, writes a distinct output and reports interpolated triangles.
+  evidence: After measured-support-aware cleanup, five-view constrained native replay reduced 70 boundary components to 2 and added 202 triangles with zero vertices; the maximum boundary diagonal remained 74.225 mm and structural plus overall quality remain FAIL.
+  remaining: [operator visual review, second-dataset replay, remaining 6.5 mm boundary diagnosis, dimensional qualification]
+projected_depth_checkerboard_sparse_tsdf_2026_09_01:
+  state: selectable_offline_fix_implemented_quality_qualification_pending
+  symptom: Five-view scan_20260827_225509 contained 20669 accepted measured points, yet the legacy constrained cleaned TSDF had only 270 vertices 363 triangles, three substantial components and no continuous cube sides.
+  root_cause: Native L515 focal geometry projects one accepted native sample across a larger colour-plane footprint. The immutable z-buffered target support therefore contains alternating empty pixels and only 50-54 percent of the SAM mask pixels. Open3D integrates that perforated image literally; smaller voxels increase disconnected fragments. Tiny superposition rotations were not the cause.
+  correction: Add an exact reverse-correlated native_depth geometry source that recovers one confidence-qualified native sample for every accepted projected winner, integrates with native intrinsics and T_base_depth, and writes separate outputs. Keep projected_color_depth unchanged and default.
+  evidence: 1.5 mm voxel and 6 mm band replay extracts 2386 native-grid vertices and 4143 triangles. Measured-support-aware cleanup retains 2323 vertices and 4108 triangles across sixteen measured components and reports 50.60 x 47.78 x 41.29 mm OBB. Legacy projected geometry remains a separate unchanged mode; structural and overall quality remain FAIL.
+  remaining: [operator visual comparison, another immutable dataset, isolate 12.10 mm maximum dimension oversize, qualify before changing any automatic default]
 executor_service_and_first_capture_contract_integration_2026_08_27:
   state: software_fixed_physical_retest_pending
   tasks: [gui-sim-eaa02e1f6f9d404ea5fe75a31fe0c8e4, gui-sim-dcba9651cd2c4538b2366e3785d11100]
@@ -250,10 +271,10 @@ e2e_startup_limits_and_capture_refresh_2026_08_23:
   terminal_result: The same run later failed for a separate perception defect. Heavy refinement retained a 4324-pixel U-shaped exterior L515 depth halo because 909 pixels entered empty support inside the target's rectangular bounding envelope. It then mislabeled depth-only evidence as unsafe and returned retryable NO_REACHABLE_PLAN. The archived replay now returns zero halo pixels using eroded filled-silhouette intrusion; explicit human semantics alone are UNSAFE and unknown remains BLOCKED.
   safety_evidence: The terminal mission completed PRE_HOME, ROUGH_HOME and STORAGE_WRIST, disabled all motors, removed all mission-owned processes and reported safe_shutdown true. Focused executor tests pass and protect the new evidence boundary.
 disconnected_mesh_fragments_2026_08_23:
-  state: visual_fragments_filtered_metric_failure_retained
+  state: measured_support_aware_filtering_supersedes_size_only_cleanup
   symptom: The seven-view cube meshes contained 176 to 197 connected components even though the physical cube is one object; full-mesh bounds were influenced by many tiny floating surfaces.
   root_cause: TSDF extraction retained every disconnected surface created by residual cross-view disagreement and boundary support. The fragments were an output symptom, not the root registration defect.
-  correction: Persist the untouched raw TSDF and derive a separate cleaned mesh that removes only components below five percent of dominant surface area. Retain and fail multiple substantial components, and continue evaluating complete raw metrics for registration selection and terminal quality.
+  correction: Persist the untouched raw TSDF and derive a separate cleaned mesh. Retain all components at or above five percent of dominant area and any smaller component independently corroborated by accepted points from multiple captures; remove only unsupported smaller fragments, fail multiple retained surfaces, and continue evaluating complete raw metrics for registration selection and terminal quality.
   evidence: Captured and offline-resegmented replays now each output one connected surface, but both remain FAIL and residual tails increase against the unchanged input cloud. Cleanup therefore improves presentation without concealing the unresolved evidence mismatch.
 hand_eye_candidate_not_reconstruction_qualified_2026_08_22:
   state: measurement_campaign_in_progress_no_runtime_tf_change

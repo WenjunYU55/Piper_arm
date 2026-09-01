@@ -6,7 +6,7 @@ TSDF is the surface-fusion method. Sequential target GICP, target-only
 multi-view GICP and static-scene RGB-D pose-graph refinement are bounded
 residual corrections around capture-time robot poses. The separately
 selectable constrained superposition fixes capture zero, permits unbounded
-translation and caps minimum-prior rotation at 45 degrees; it remains an
+translation and caps minimum-prior rotation at 3 degrees; it remains an
 offline visual/model fit and does not replace calibration or kinematics.
 Constrained output also derives a separate consensus-supported dense OBJ with
 depth-visible source-image texture; this never changes TSDF quality evidence.
@@ -38,7 +38,7 @@ SUPERPOSITION_ROTATION_PRIOR_SIGMA_DEG = 1.0
 SUPERPOSITION_DATA_SIGMA_M = 0.002
 SUPERPOSITION_HUBER_DELTA_M = 0.003
 SUPERPOSITION_MAX_ITERATIONS = 6
-SUPERPOSITION_MAX_ROTATION_DEG = 45.0
+SUPERPOSITION_MAX_ROTATION_DEG = 3.0
 CONSENSUS_MIN_VOXEL_M = 0.0015
 CONSENSUS_NORMAL_ANGLE_DEG = 35.0
 CONSENSUS_MINIMUM_VIEWS = 2
@@ -50,20 +50,30 @@ MEASURED_VIEW_COLORS_RGB = (
 SCENE_TARGET_EXCLUSION_RADIUS_PX = 6
 SCENE_MINIMUM_POINTS = 500
 MINIMUM_SIGNIFICANT_COMPONENT_AREA_FRACTION = 0.05
+MEASURED_COMPONENT_SUPPORT_DISTANCE_M = 0.003
+MEASURED_COMPONENT_MINIMUM_TOTAL_POINTS = 4
+MEASURED_COMPONENT_MINIMUM_POINTS_PER_VIEW = 2
+MEASURED_COMPONENT_MINIMUM_VIEWS = 2
 
 
 try:
     from reconstruction import input_provenance as _inputs
+    from reconstruction import mesh_repair as _mesh_repair
+    from reconstruction import native_depth as _native_depth
     from reconstruction import texture_baking as _texture
 except ModuleNotFoundError as error:
     if error.name != 'reconstruction':
         raise
     import input_provenance as _inputs
+    import mesh_repair as _mesh_repair
+    import native_depth as _native_depth
     import texture_baking as _texture
 
 MINIMUM_CAPTURE_VIEWS = _inputs.MINIMUM_CAPTURE_VIEWS
 MAXIMUM_CAPTURE_VIEWS = _inputs.MAXIMUM_CAPTURE_VIEWS
 MASK_SOURCES = _inputs.MASK_SOURCES
+GEOMETRY_SOURCES = _native_depth.GEOMETRY_SOURCES
+HOLE_REPAIR_MODES = _mesh_repair.HOLE_REPAIR_MODES
 canonical_sha256 = _inputs.canonical_sha256
 camera_extrinsic_from_metadata = _inputs.camera_extrinsic_from_metadata
 sha256_file = _inputs.sha256_file
@@ -191,13 +201,14 @@ def registration_spanning_tree(node_count, accepted_edges):
 
 def _bounded_pose_graph_camera_poses(
         frames, o3d, cloud_key, registration_source,
-        use_rgbd_odometry=False):
+        use_rgbd_odometry=False, pose_key='nominal_base_camera',
+        intrinsic_key='intrinsic'):
     """Refine camera poses from one explicit registration data source."""
     if len(frames) < 3:
         raise ValueError(
             'bounded multi-view registration requires at least three views')
     nominal = [
-        np.asarray(frame['nominal_base_camera'], dtype=float)
+        np.asarray(frame[pose_key], dtype=float)
         for frame in frames]
     graph = o3d.pipelines.registration.PoseGraph()
     for pose in nominal:
@@ -218,7 +229,7 @@ def _bounded_pose_graph_camera_poses(
                     o3d.pipelines.odometry.compute_rgbd_odometry(
                         frames[source]['registration_rgbd'],
                         frames[target]['registration_rgbd'],
-                        frames[source]['intrinsic'], initial,
+                        frames[source][intrinsic_key], initial,
                         o3d.pipelines.odometry.
                         RGBDOdometryJacobianFromHybridTerm(),
                         o3d.pipelines.odometry.OdometryOption())
@@ -347,7 +358,9 @@ def scene_pose_graph_camera_poses(frames, o3d):
             raise ValueError('static-scene registration cloud is too small')
     return _bounded_pose_graph_camera_poses(
         frames, o3d, 'registration_cloud_camera',
-        'static_scene_rgbd_excluding_target', use_rgbd_odometry=True)
+        'static_scene_rgbd_excluding_target', use_rgbd_odometry=True,
+        pose_key='registration_nominal_base_camera',
+        intrinsic_key='registration_intrinsic')
 
 
 def solve_constrained_translations(
@@ -1237,7 +1250,8 @@ def dimension_classification(maximum_absolute_error_m):
 
 def target_component_policy(component_triangle_counts, component_areas,
                             minimum_area_fraction=(
-                                MINIMUM_SIGNIFICANT_COMPONENT_AREA_FRACTION)):
+                                MINIMUM_SIGNIFICANT_COMPONENT_AREA_FRACTION),
+                            measured_supported_indices=()):
     """Classify disconnected mesh surfaces without hiding substantial ones."""
     counts = np.asarray(component_triangle_counts, dtype=int)
     areas = np.asarray(component_areas, dtype=float)
@@ -1258,8 +1272,14 @@ def target_component_policy(component_triangle_counts, component_areas,
     if dominant_area <= 0.0:
         raise ValueError('mesh components have no positive surface area')
     threshold = dominant_area * fraction
-    retained = np.flatnonzero(areas >= threshold).astype(int)
-    removed = np.flatnonzero(areas < threshold).astype(int)
+    substantial = np.flatnonzero(areas >= threshold).astype(int)
+    measured = np.asarray(measured_supported_indices, dtype=int)
+    if measured.ndim != 1 or np.any(measured < 0) \
+            or np.any(measured >= counts.size):
+        raise ValueError('measured-supported component indices are invalid')
+    retained = np.unique(np.concatenate((substantial, measured))).astype(int)
+    removed = np.setdiff1d(
+        np.arange(counts.size, dtype=int), retained, assume_unique=True)
     total_triangles = int(np.sum(counts))
     total_area = float(np.sum(areas))
     return {
@@ -1274,6 +1294,10 @@ def target_component_policy(component_triangle_counts, component_areas,
         'original_dominant_component_surface_area_ratio': (
             dominant_area / total_area),
         'retained_component_indices': retained.tolist(),
+        'substantial_component_indices': substantial.tolist(),
+        'measured_supported_component_indices': measured.tolist(),
+        'retained_only_by_measured_support_indices': np.setdiff1d(
+            measured, substantial).astype(int).tolist(),
         'retained_component_count': int(retained.size),
         'retained_triangle_count': int(np.sum(counts[retained])),
         'retained_surface_area_m2': float(np.sum(areas[retained])),
@@ -1283,19 +1307,111 @@ def target_component_policy(component_triangle_counts, component_areas,
         'connectivity_valid': bool(retained.size == 1),
         'decision': (
             'SINGLE_CONNECTED_TARGET'
-            if retained.size == 1 else 'MULTIPLE_SUBSTANTIAL_COMPONENTS'),
+            if retained.size == 1 else (
+                'MULTIPLE_MEASURED_TARGET_COMPONENTS'
+                if np.setdiff1d(measured, substantial).size else
+                'MULTIPLE_SUBSTANTIAL_COMPONENTS')),
     }
 
 
-def filter_target_mesh_components(mesh):
-    """Remove only tiny components and retain substantial split surfaces."""
+def measured_component_support(o3d, mesh, labels, measured_support_views):
+    """Find small components corroborated by two accepted capture views."""
+    component_labels = np.asarray(labels, dtype=int)
+    component_count = (
+        int(np.max(component_labels)) + 1 if component_labels.size else 0)
+    per_view_counts = np.zeros(
+        (len(measured_support_views), component_count), dtype=int)
+    if not component_count or not measured_support_views:
+        return [], {
+            'available': False,
+            'reason': 'no measured component-support views are available',
+            'components': [],
+        }
+    scene = o3d.t.geometry.RaycastingScene()
+    geometry_to_component = {}
+    for component_index in range(component_count):
+        component = copy.deepcopy(mesh)
+        component.remove_triangles_by_mask(
+            component_labels != component_index)
+        component.remove_unreferenced_vertices()
+        geometry_id = int(scene.add_triangles(
+            o3d.t.geometry.TriangleMesh.from_legacy(component)))
+        geometry_to_component[geometry_id] = component_index
+    for view_index, points in enumerate(measured_support_views):
+        samples = np.asarray(points, dtype=np.float32)
+        if samples.ndim != 2 or samples.shape[1:] != (3,) \
+                or not np.all(np.isfinite(samples)):
+            raise ValueError('measured component-support view is malformed')
+        if not len(samples):
+            continue
+        closest = scene.compute_closest_points(o3d.core.Tensor(samples))
+        nearest = closest['points'].numpy()
+        geometry_ids = closest['geometry_ids'].numpy().astype(np.int64)
+        distances = np.linalg.norm(samples - nearest, axis=1)
+        supported = distances <= MEASURED_COMPONENT_SUPPORT_DISTANCE_M
+        for geometry_id in np.unique(geometry_ids[supported]):
+            component_index = geometry_to_component.get(int(geometry_id))
+            if component_index is None:
+                continue
+            per_view_counts[view_index, component_index] = int(
+                np.count_nonzero(
+                    supported & (geometry_ids == geometry_id)))
+    total = np.sum(per_view_counts, axis=0)
+    view_count = np.count_nonzero(
+        per_view_counts >= MEASURED_COMPONENT_MINIMUM_POINTS_PER_VIEW,
+        axis=0)
+    qualified = np.flatnonzero(
+        (total >= MEASURED_COMPONENT_MINIMUM_TOTAL_POINTS)
+        & (view_count >= MEASURED_COMPONENT_MINIMUM_VIEWS)).astype(int)
+    components = [{
+        'component_index': int(index),
+        'total_support_points': int(total[index]),
+        'supporting_view_count': int(view_count[index]),
+        'per_view_support_points': per_view_counts[:, index].tolist(),
+        'qualified': bool(index in set(qualified.tolist())),
+    } for index in range(component_count)]
+    return qualified.tolist(), {
+        'available': True,
+        'maximum_surface_distance_m':
+            MEASURED_COMPONENT_SUPPORT_DISTANCE_M,
+        'minimum_total_support_points':
+            MEASURED_COMPONENT_MINIMUM_TOTAL_POINTS,
+        'minimum_points_per_view':
+            MEASURED_COMPONENT_MINIMUM_POINTS_PER_VIEW,
+        'minimum_distinct_views': MEASURED_COMPONENT_MINIMUM_VIEWS,
+        'qualified_component_indices': qualified.tolist(),
+        'components': components,
+        'semantics': (
+            'a small TSDF component survives cleanup only when accepted '
+            'measured surface points from at least two distinct captures '
+            'independently lie within the bounded surface distance'),
+    }
+
+
+def filter_target_mesh_components(
+        mesh, o3d=None, measured_support_views=()):
+    """Retain substantial or independently measured target components."""
     filtered = copy.deepcopy(mesh)
     filtered.remove_duplicated_triangles()
     filtered.remove_degenerate_triangles()
     filtered.remove_duplicated_vertices()
     filtered.remove_unreferenced_vertices()
     labels, counts, areas = filtered.cluster_connected_triangles()
-    report = target_component_policy(counts, areas)
+    measured_indices = []
+    measured_report = {
+        'available': False,
+        'reason': 'measured component support was not requested',
+        'components': [],
+    }
+    if measured_support_views:
+        if o3d is None:
+            raise ValueError(
+                'Open3D is required for measured component support')
+        measured_indices, measured_report = measured_component_support(
+            o3d, filtered, labels, measured_support_views)
+    report = target_component_policy(
+        counts, areas, measured_supported_indices=measured_indices)
+    report['measured_component_support'] = measured_report
     retained = set(report['retained_component_indices'])
     remove_mask = [int(label) not in retained for label in labels]
     filtered.remove_triangles_by_mask(remove_mask)
@@ -1370,7 +1486,8 @@ def mesh_metrics(o3d, mesh, input_cloud, expected_dimensions):
 def _load_capture(scan, metadata_path, metadata, manifest, cv2, o3d,
                   depth_trunc, expected_dimensions=None,
                   include_scene_registration=False,
-                  offline_mask_context=None):
+                  offline_mask_context=None,
+                  geometry_source='projected_color_depth'):
     artifacts = resolve_frame_artifacts(scan, metadata_path, metadata, manifest)
     raw_rgb_bgr = cv2.imread(str(artifacts['rgb']), cv2.IMREAD_COLOR)
     scene_depth = cv2.imread(str(artifacts['depth']), cv2.IMREAD_UNCHANGED)
@@ -1426,12 +1543,47 @@ def _load_capture(scan, metadata_path, metadata, manifest, cv2, o3d,
         input_provenance = dict(input_provenance)
         input_provenance['semantic_mask_source'] = 'captured_live_sam2'
 
-    # Target fusion and scene registration share one rectified color plane but
-    # retain separate depth support.  The scene depth is never integrated into
-    # the target TSDF.
-    rgb_bgr, target_depth, target_mask, k, rectified = rectify_rgbd_mask(
-        cv2, raw_rgb_bgr, target_depth, target_mask,
-        metadata.get('camera_info', {}))
+    geometry = str(geometry_source)
+    if geometry not in GEOMETRY_SOURCES:
+        raise ValueError('geometry source must be one of: %s' % ', '.join(
+            GEOMETRY_SOURCES))
+    geometry_report = None
+    if geometry == 'native_depth':
+        if not input_provenance['confidence_qualified']:
+            raise ValueError(
+                'native-depth geometry requires a confidence-qualified '
+                'capture schema')
+        try:
+            native_depth = np.load(
+                artifacts['native_depth_npy'], allow_pickle=False)
+        except (OSError, TypeError, ValueError) as exc:
+            raise ValueError('native depth artifact is invalid') from exc
+        confidence = cv2.imread(
+            str(artifacts['confidence']), cv2.IMREAD_UNCHANGED)
+        replay = _native_depth.replay_native_target_geometry(
+            metadata, native_depth, confidence, target_depth, target_mask,
+            raw_rgb_bgr)
+        rgb_bgr = replay['color_bgr']
+        target_depth = replay['depth_mm']
+        target_mask = replay['mask']
+        k = replay['camera_matrix']
+        nominal_base_camera = replay['base_from_camera']
+        registration_nominal_base_camera = replay[
+            'registration_base_from_camera']
+        geometry_from_registration_camera = replay[
+            'geometry_from_registration_camera']
+        geometry_report = replay['report']
+        rectified = False
+    else:
+        # The compatibility path integrates the immutable sparse z-buffered
+        # projection in the rectified colour plane exactly as before.
+        rgb_bgr, target_depth, target_mask, k, rectified = rectify_rgbd_mask(
+            cv2, raw_rgb_bgr, target_depth, target_mask,
+            metadata.get('camera_info', {}))
+        nominal_base_camera = np.linalg.inv(
+            camera_extrinsic_from_metadata(metadata))
+        registration_nominal_base_camera = nominal_base_camera.copy()
+        geometry_from_registration_camera = np.eye(4)
     height, width = target_depth.shape[:2]
     valid, depth_gate = target_depth_support_mask(
         target_depth, target_mask, target.get('depth'), expected_dimensions)
@@ -1440,12 +1592,11 @@ def _load_capture(scan, metadata_path, metadata, manifest, cv2, o3d,
         raise ValueError('%s has too few masked depth points' % metadata_path.name)
     rgb = cv2.cvtColor(rgb_bgr, cv2.COLOR_BGR2RGB)
     rgb[~valid] = 0
-    depth = np.asarray(target_depth, dtype=np.uint16)
+    depth = np.asarray(target_depth, dtype=np.uint16).copy()
     depth[~valid] = 0
     intrinsic = o3d.camera.PinholeCameraIntrinsic(
         int(width), int(height), float(k[0, 0]), float(k[1, 1]),
         float(k[0, 2]), float(k[1, 2]))
-    nominal_base_camera = np.linalg.inv(camera_extrinsic_from_metadata(metadata))
     cloud_camera = masked_camera_cloud(
         o3d, depth, target_mask, intrinsic, depth_trunc=depth_trunc)
     measured_cloud_camera = masked_camera_cloud(
@@ -1454,14 +1605,16 @@ def _load_capture(scan, metadata_path, metadata, manifest, cv2, o3d,
 
     registration_cloud_camera = None
     registration_rgbd = None
+    registration_intrinsic = intrinsic
     scene_valid_count = 0
     if include_scene_registration:
         scene_rgb_bgr, scene_depth, scene_target_mask, scene_k, \
             scene_rectified = rectify_rgbd_mask(
                 cv2, raw_rgb_bgr, scene_depth, scene_target_mask,
                 metadata.get('camera_info', {}))
-        if rectified != scene_rectified \
-                or not np.allclose(k, scene_k, atol=1e-9):
+        if geometry == 'projected_color_depth' \
+                and (rectified != scene_rectified
+                     or not np.allclose(k, scene_k, atol=1e-9)):
             raise ValueError('target and scene rectification disagree')
         scene_support = scene_registration_support_mask(
             cv2, scene_depth, scene_target_mask, depth_trunc)
@@ -1474,8 +1627,13 @@ def _load_capture(scan, metadata_path, metadata, manifest, cv2, o3d,
         scene_rgb[~scene_support] = 0
         scene_depth = np.asarray(scene_depth, dtype=np.uint16).copy()
         scene_depth[~scene_support] = 0
+        scene_height, scene_width = scene_depth.shape[:2]
+        registration_intrinsic = o3d.camera.PinholeCameraIntrinsic(
+            int(scene_width), int(scene_height),
+            float(scene_k[0, 0]), float(scene_k[1, 1]),
+            float(scene_k[0, 2]), float(scene_k[1, 2]))
         registration_cloud_camera = masked_camera_cloud(
-            o3d, scene_depth, scene_support, intrinsic,
+            o3d, scene_depth, scene_support, registration_intrinsic,
             depth_trunc=depth_trunc,
             voxel_length=SCENE_REGISTRATION_VOXEL_M)
         registration_rgbd = \
@@ -1484,6 +1642,9 @@ def _load_capture(scan, metadata_path, metadata, manifest, cv2, o3d,
                 o3d.geometry.Image(np.ascontiguousarray(scene_depth)),
                 depth_scale=1000.0, depth_trunc=float(depth_trunc),
                 convert_rgb_to_intensity=True)
+    input_provenance['geometry_source'] = geometry
+    if geometry_report is not None:
+        input_provenance['native_depth_replay'] = geometry_report
     return {
         'metadata_path': metadata_path,
         'metadata': metadata,
@@ -1493,10 +1654,15 @@ def _load_capture(scan, metadata_path, metadata, manifest, cv2, o3d,
         'camera_matrix': np.asarray(k, dtype=float).copy(),
         'intrinsic': intrinsic,
         'nominal_base_camera': nominal_base_camera,
+        'registration_nominal_base_camera':
+            registration_nominal_base_camera,
+        'geometry_from_registration_camera':
+            geometry_from_registration_camera,
         'cloud_camera': cloud_camera,
         'measured_cloud_camera': measured_cloud_camera,
         'registration_cloud_camera': registration_cloud_camera,
         'registration_rgbd': registration_rgbd,
+        'registration_intrinsic': registration_intrinsic,
         'valid_scene_depth_points': scene_valid_count,
         'valid_masked_depth_points': valid_count,
         'rectified': rectified,
@@ -1542,7 +1708,9 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
                         sdf_trunc, depth_trunc, expected_dimensions,
                         provenance, manifest_sha256,
                         allow_partial_view_set=False,
-                        offline_mask_context=None):
+                        offline_mask_context=None,
+                        geometry_source='projected_color_depth',
+                        hole_repair='none'):
     try:
         import cv2
         import open3d as o3d
@@ -1558,7 +1726,8 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
             expected_dimensions,
             include_scene_registration=(
                 registration_mode == 'scene_pose_graph'),
-            offline_mask_context=offline_mask_context)
+            offline_mask_context=offline_mask_context,
+            geometry_source=geometry_source)
         for metadata_path, metadata in zip(metadata_paths, metadata_values)]
     multiway_diagnostics = None
     refined_multiway_poses = None
@@ -1569,13 +1738,17 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
         refined_multiway_poses, multiway_diagnostics = \
             constrained_superposition_camera_poses(frames, o3d)
     elif registration_mode == 'scene_pose_graph':
-        refined_multiway_poses, multiway_diagnostics = \
+        refined_registration_poses, multiway_diagnostics = \
             scene_pose_graph_camera_poses(frames, o3d)
+        refined_multiway_poses = [
+            pose @ frame['geometry_from_registration_camera']
+            for pose, frame in zip(refined_registration_poses, frames)]
     registration = []
     frame_inputs = []
     accumulated = None
     measured_cloud = None
     measured_cloud_views = []
+    measured_support_views = []
     consensus_view_surfaces = []
     texture_frames = []
     for frame_index, (metadata_path, frame) in enumerate(
@@ -1644,6 +1817,8 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
             cloud_base.transform(refined_base_camera.copy())
         measured_view = copy.deepcopy(frame['measured_cloud_camera'])
         measured_view.transform(refined_base_camera.copy())
+        measured_support_views.append(
+            np.asarray(measured_view.points, dtype=float).copy())
         if registration_mode == 'constrained_superposition':
             consensus_view_surfaces.append({
                 'points': np.asarray(
@@ -1719,7 +1894,9 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
             % (len(extracted_mesh.vertices), len(extracted_mesh.triangles)))
     raw_metrics = mesh_metrics(
         o3d, extracted_mesh, accumulated, expected_dimensions)
-    mesh, component_filter = filter_target_mesh_components(extracted_mesh)
+    mesh, component_filter = filter_target_mesh_components(
+        extracted_mesh, o3d=o3d,
+        measured_support_views=measured_support_views)
     cleaned_mesh_size_qualified = (
         len(mesh.vertices) >= 100 and len(mesh.triangles) >= 100)
     if not len(mesh.vertices) or not len(mesh.triangles):
@@ -1727,6 +1904,8 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
             'connected-target filtering produced an empty mesh '
             '(%d vertices, %d triangles)'
             % (len(mesh.vertices), len(mesh.triangles)))
+    mesh, hole_repair_report = _mesh_repair.repair_mesh(
+        o3d, mesh, hole_repair)
     raw_output = _atomic_write_mesh(
         o3d, extracted_mesh, raw_mesh_output_path(output_path))
     output = _atomic_write_mesh(o3d, mesh, output_path)
@@ -1828,6 +2007,8 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
         manifest, allow_partial_view_set=allow_partial_view_set)
     config = {
         'registration_mode': registration_mode,
+        'geometry_source': str(geometry_source),
+        'hole_repair': str(hole_repair),
         'voxel_length_m': float(voxel_length),
         'sdf_trunc_m': float(sdf_trunc),
         'depth_trunc_m': float(depth_trunc),
@@ -1843,6 +2024,15 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
             'minimum_relative_surface_area':
                 MINIMUM_SIGNIFICANT_COMPONENT_AREA_FRACTION,
             'substantial_components_are_never_discarded': True,
+            'measured_support_maximum_distance_m':
+                MEASURED_COMPONENT_SUPPORT_DISTANCE_M,
+            'measured_support_minimum_total_points':
+                MEASURED_COMPONENT_MINIMUM_TOTAL_POINTS,
+            'measured_support_minimum_points_per_view':
+                MEASURED_COMPONENT_MINIMUM_POINTS_PER_VIEW,
+            'measured_support_minimum_distinct_views':
+                MEASURED_COMPONENT_MINIMUM_VIEWS,
+            'corroborated_small_components_are_never_discarded': True,
         },
     }
     if offline_mask_context is not None:
@@ -1913,6 +2103,7 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
         'capture_set': capture_set,
         'integrated_views': len(frame_inputs),
         'registration_mode': registration_mode,
+        'geometry_source': str(geometry_source),
         'vertex_count': len(mesh.vertices),
         'triangle_count': len(mesh.triangles),
         'mesh_path': str(output),
@@ -1928,7 +2119,8 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
             'cleaned_mesh_qualified': bool(cleaned_mesh_size_qualified),
             'policy': (
                 'nonempty undersized meshes are retained for diagnostic '
-                'inspection but force structural quality FAIL'),
+                'inspection but force structural quality FAIL; cleaned size '
+                'qualification is evaluated before optional hole repair'),
         },
         'input_cloud_path': str(input_cloud_path),
         'input_cloud_sha256': sha256_file(input_cloud_path),
@@ -1994,6 +2186,7 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
                 if registration_fitness else 0.0),
         },
         'component_filter': component_filter,
+        'hole_repair': hole_repair_report,
         'raw_mesh_metrics': raw_metrics,
         'mesh_metrics': metrics,
         'structural_quality': structural,
@@ -2150,7 +2343,9 @@ def reconstruct(scan_dir, output_path, voxel_length=DEFAULT_VOXEL_LENGTH_M,
                 depth_trunc=DEFAULT_DEPTH_TRUNC_M,
                 registration_mode='auto', expected_dimensions=None,
                 allow_missing_calibration_id=False,
-                allow_partial_view_set=False, mask_source='captured'):
+                allow_partial_view_set=False, mask_source='captured',
+                geometry_source='projected_color_depth',
+                hole_repair='none'):
     scan = Path(scan_dir).resolve()
     with open(scan / 'manifest.json', 'r', encoding='utf-8') as stream:
         manifest = json.load(stream)
@@ -2159,6 +2354,14 @@ def reconstruct(scan_dir, output_path, voxel_length=DEFAULT_VOXEL_LENGTH_M,
     if source not in MASK_SOURCES:
         raise ValueError('mask source must be one of: %s' % ', '.join(
             MASK_SOURCES))
+    geometry = str(geometry_source)
+    if geometry not in GEOMETRY_SOURCES:
+        raise ValueError('geometry source must be one of: %s' % ', '.join(
+            GEOMETRY_SOURCES))
+    repair = str(hole_repair)
+    if repair not in HOLE_REPAIR_MODES:
+        raise ValueError('hole repair mode must be one of: %s' % ', '.join(
+            HOLE_REPAIR_MODES))
     offline_mask_context = (
         prepare_offline_mask_context(scan, manifest_sha256)
         if source == 'offline_resegment' else None)
@@ -2181,7 +2384,7 @@ def reconstruct(scan_dir, output_path, voxel_length=DEFAULT_VOXEL_LENGTH_M,
             scan, manifest, metadata_paths, metadata_values, output, mode,
             voxel_length, sdf_trunc, depth_trunc, dimensions, provenance,
             manifest_sha256, allow_partial_view_set,
-            offline_mask_context)
+            offline_mask_context, geometry, repair)
     reports = {}
     errors = {}
     for candidate_mode in (
@@ -2195,7 +2398,8 @@ def reconstruct(scan_dir, output_path, voxel_length=DEFAULT_VOXEL_LENGTH_M,
                 scan, manifest, metadata_paths, metadata_values,
                 candidate_output, candidate_mode, voxel_length, sdf_trunc,
                 depth_trunc, dimensions, provenance, manifest_sha256,
-                allow_partial_view_set, offline_mask_context)
+                allow_partial_view_set, offline_mask_context, geometry,
+                repair)
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
             errors[candidate_mode] = str(exc)
     if not reports:
@@ -2248,6 +2452,18 @@ def main():
             'Use the captured live mask, or run/reuse a fresh offline '
             'GroundingDINO/SAM2 mask that may only narrow captured support.'))
     parser.add_argument(
+        '--geometry-source', choices=GEOMETRY_SOURCES,
+        default='projected_color_depth',
+        help=(
+            'Integrate the legacy projected colour-plane depth, or reverse-'
+            'correlate the same accepted samples onto the contiguous native '
+            'L515 depth grid.'))
+    parser.add_argument(
+        '--hole-repair', choices=HOLE_REPAIR_MODES, default='none',
+        help=(
+            'Keep the measured TSDF surface unchanged, or triangulate only '
+            'bounded measured-wall holes up to the qualified 6 mm radius.'))
+    parser.add_argument(
         '--allow-partial-view-set', action='store_true',
         help=(
             'Backward-compatible no-op; 1-24 immutable captures are admitted '
@@ -2260,7 +2476,8 @@ def main():
         args.scan_dir, args.output, args.voxel_length, args.sdf_trunc,
         args.depth_trunc, args.registration_mode, dimensions,
         args.allow_missing_calibration_id,
-        args.allow_partial_view_set, args.mask_source),
+        args.allow_partial_view_set, args.mask_source,
+        args.geometry_source, args.hole_repair),
         indent=2, sort_keys=True))
 
 

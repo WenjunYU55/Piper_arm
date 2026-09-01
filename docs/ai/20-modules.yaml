@@ -81,6 +81,20 @@ responsibility_packages_2026_08_27:
     owns: Immutable capture-set count, manifest artifact hashes and containment, exact metadata artifact resolution, calibration and confidence-schema provenance, offline mask generation admission and camera extrinsic conversion.
     allowed_edit_paths: [reconstruction/input_provenance.py, tsdf_reconstruct compatibility exports and call sites, offline_resegment owner imports, reconstruction tests, docs/ai]
     must_not_move_without: [manifest and file digests, dataset containment, capture schema 2, calibration identity, offline derived-mask identity, report provenance, GUI reconstruction command]
+  reconstruction_native_depth_replay:
+    owner_module: reconstruction/native_depth.py
+    runtime_orchestrator: reconstruction/tsdf_reconstruct.py
+    presentation_adapters: [reconstruction/gui_support.py, piper_gui/native_app.py]
+    owns: Exact reverse correlation from immutable sparse colour-plane target winners to the contiguous confidence-qualified native L515 grid, native pinhole validation, recorded base-from-depth transform composition, and additive replay diagnostics.
+    allowed_edit_paths: [reconstruction/native_depth.py, reconstruction/tsdf_reconstruct.py routing and report fields, reconstruction/gui_support.py source-specific paths and arguments, piper_gui/native_app.py offline controls, reconstruction and GUI tests, docs/ai]
+    must_not_move_without: [schema-2 manifest hashes, confidence threshold, z-buffer winner identity, camera and color-from-depth transforms, offline mask narrowing, TSDF registration and quality gates, separate legacy and native output names, command-free GUI behavior]
+  reconstruction_mesh_repair:
+    owner_module: reconstruction/mesh_repair.py
+    runtime_orchestrator: reconstruction/tsdf_reconstruct.py
+    presentation_adapters: [reconstruction/gui_support.py, piper_gui/native_app.py]
+    owns: [mesh boundary diagnostics, default-off measured_wall selection, 0.006 m approximate-radius bounded triangulation, object-sized-boundary preservation check, interpolated-triangle provenance]
+    allowed_edit_paths: [reconstruction/mesh_repair.py, reconstruction/tsdf_reconstruct.py repair ordering and report fields, reconstruction/gui_support.py repair-specific paths and arguments, piper_gui/native_app.py offline controls, reconstruction and GUI tests, docs/ai]
+    must_not_move_without: [untouched raw TSDF output, pre-repair registration evidence, connected-target filtering, independent repaired output name, explicit interpolation label, quality gates, command-free GUI behavior]
   driver_joint_state_policy:
     owner_module: piper_ros_foxy/src/piper/piper/joint_state_policy.py
     hardware_adapter: piper_ros_foxy/src/piper/piper/piper_ctrl_single_node.py
@@ -199,7 +213,7 @@ target_local_occluder_classification_2026_08_23:
 connected_target_mesh_filter_ownership_2026_08_23:
   owner_module: reconstruction/tsdf_reconstruct.py
   allowed_edit_paths: [reconstruction/tsdf_reconstruct.py, reconstruction/view_reconstruction.py, reconstruction/gui_support.py, reconstruction/test_tsdf_reconstruct.py, reconstruction/test_gui_support.py, piper_gui/native_app.py, tests/gui/test_piper_gui_phase8.py, docs/ai]
-  owns: Atomic raw extracted-mesh persistence, post-TSDF connected-component classification, removal of sub-five-percent surface fragments into a separate cleaned mesh, retention and explicit rejection of multiple substantial components, full-resolution selected-pose measured-point diagnostic export, and additive output provenance.
+  owns: Atomic raw extracted-mesh persistence, post-TSDF connected-component classification, exact closest-surface corroboration from accepted per-view measured points, removal of unsupported sub-five-percent fragments into a separate cleaned mesh, retention and explicit rejection of multiple substantial or corroborated measured components, full-resolution selected-pose measured-point diagnostic export, and additive output provenance.
   separate_owners: {capture_support: scan_capture_node.py, semantic_mask_selection: reconstruction/offline_resegment.py plus tsdf_reconstruct.py, registration: reconstruction/tsdf_reconstruct.py, GUI_presentation: reconstruction/gui_support.py plus piper_gui/native_app.py}
   must_not_move_without: [raw pre-filter registration selection and quality evidence, structural quality gates, dimensions and residuals, immutable input cloud, command-free reconstruction boundary]
 offline_resegmentation_ownership_2026_08_22:
@@ -402,7 +416,7 @@ modules:
     owner_module: reconstruction/tsdf_reconstruct.py
     input_owner: reconstruction/input_provenance.py
     allowed_edit_paths: [reconstruction/tsdf_reconstruct.py, reconstruction/view_reconstruction.py, reconstruction/gui_support.py, reconstruction/test_tsdf_reconstruct.py, reconstruction/test_gui_support.py, reconstruction/requirements.txt, piper_gui/native_app.py, tests/gui/test_piper_gui_phase8.py]
-    owns: Offline masked RGB-D TSDF integration for immutable successful automatic scan datasets, including the 1-to-24 view-count contract without a fixed eight-view quality cap, exact manifest-to-frame-metadata count agreement, timestamped camera-transform validation, robot-pose baseline, optional sequential or connected bounded target-only GICP and target-excluded static-scene RGB-D pose-graph residual refinement, conservative connected-target fragment filtering, full-resolution accepted measured-point diagnostic export, evidence-based auto selection, and mesh quality report.
+    owns: Offline masked RGB-D TSDF integration for immutable successful automatic scan datasets, including the 1-to-24 view-count contract without a fixed eight-view quality cap, exact manifest-to-frame-metadata count agreement, timestamped camera-transform validation, robot-pose baseline, optional sequential or connected bounded target-only GICP and target-excluded static-scene RGB-D pose-graph residual refinement, conservative measured-support-aware connected-target fragment filtering, full-resolution accepted measured-point diagnostic export, evidence-based auto selection, and mesh quality report.
     must_not_move_without: [autonomous_target_scan, supervised_scan_execution, scan_and_obstacles]
 startup_home_ownership_2026_08_04:
   mission_owner: target_scan_mission_node.py selects nonterminal hold versus terminal cancel and requests STARTUP_WRIST then ROUGH_HOME at startup, and PRE_HOME then ROUGH_HOME then STORAGE_WRIST at terminal shutdown.
@@ -505,9 +519,9 @@ constrained_superposition_ownership_2026_08_29:
   owner_module: reconstruction/tsdf_reconstruct.py
   gui_adapter: piper_gui/native_app.py
   allowed_edit_paths: [reconstruction, piper_gui/native_app.py, tests/gui, docs/ai]
-  owns: [single-capture fixed-pose no-alignment fallback, capture-zero fixed gauge, connected mutual normal-consistent overlap selection for two or more captures, global point-to-plane translation and camera-origin rotation correction, unbounded translation, one-degree minimum-rotation prior, 45 degree per-capture rotation ceiling, one-representative-per-view spatial correspondence, normal and median-MAD outlier filtering, equal-weight cross-view consensus mean, atomic diagnostic mesh full superposition and multi-view consensus PLY outputs]
+  owns: [single-capture fixed-pose no-alignment fallback, capture-zero fixed gauge, connected mutual normal-consistent overlap selection for two or more captures, global point-to-plane translation and camera-origin rotation correction, unbounded translation, one-degree minimum-rotation prior, 3 degree per-capture rotation ceiling, one-representative-per-view spatial correspondence, normal and median-MAD outlier filtering, equal-weight cross-view consensus mean, atomic diagnostic mesh full superposition and multi-view consensus PLY outputs]
   separate_owners: {within_view_20_frame_median: scan_capture_node.py, TSDF_surface_fusion: reconstruction/tsdf_reconstruct.py separate output, consensus_supported_texture_baking: reconstruction/texture_baking.py, constrained_candidate_path_resolution: reconstruction/gui_support.py, GUI_presentation: piper_gui/native_app.py plus reconstruction/view_reconstruction.py}
-  must_not_move_without: [immutable input provenance, capture-time camera transforms, exact capture-zero identity, camera-origin-centred correction semantics, mutual cross-view correspondence identity, connected overlap graph, minimum-rotation prior and 45 degree ceiling, auto-selection quality evidence, full-resolution measured-cloud output, distinct-view support identity, TSDF and consensus output separation]
+  must_not_move_without: [immutable input provenance, capture-time camera transforms, exact capture-zero identity, camera-origin-centred correction semantics, mutual cross-view correspondence identity, connected overlap graph, minimum-rotation prior and 3 degree ceiling, auto-selection quality evidence, full-resolution measured-cloud output, distinct-view support identity, TSDF and consensus output separation]
 textured_reconstruction_ownership_2026_08_30:
   owner_module: reconstruction/texture_baking.py
   allowed_edit_paths: [reconstruction/texture_baking.py, reconstruction/tsdf_reconstruct.py, reconstruction/gui_support.py, reconstruction/view_reconstruction.py, piper_gui/native_app.py, reconstruction/test_texture_baking.py, reconstruction/test_gui_support.py, tests/gui, docs/ai, OPERATOR_COMMANDS.md]

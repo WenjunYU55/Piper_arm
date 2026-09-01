@@ -146,7 +146,19 @@ and stops its child stack.
 ## Inspect an offline cross-view reconstruction
 
 In the GUI's **Reconstruction Validation** tab, select a completed dataset and
-choose **Constrained superposition**. **Build Raw + Cleaned** remains
+choose **Constrained superposition**. Choose **Projected colour depth
+(legacy)** to reproduce the existing sparse colour-plane input, or **Native
+L515 depth (dense)** to reverse-correlate the same accepted confidence-qualified
+samples onto their contiguous native grid. The two choices write separate
+`target_mesh.ply` and `target_mesh.native_depth.ply` outputs. For the recorded
+fine-grid comparison use a 1.5 mm mesh voxel and 6 mm TSDF band; the unchanged
+compatibility defaults are 3 mm and 15 mm. **Mesh repair** defaults to **None
+(measured TSDF only)**. Select **Conservative measured-wall repair (6 mm)** to
+write another independent `*.wall_repaired.ply` comparison. It fills only
+bounded side-wall TSDF openings, records the added triangles as interpolated,
+keeps the raw TSDF untouched and refuses to erase object-sized open boundaries.
+It is not measured evidence and cannot promote a failed dimensional quality
+result. **Build Raw + Cleaned** remains
 command-free and does not move the arm. After it finishes, use **Open All
 Capture Overlays** to inspect every accepted viewpoint together, with a
 different colour per viewpoint. Use **Open Superposition Overlay** to inspect
@@ -154,7 +166,7 @@ all of those full capture clouds after the constrained whole-view transforms
 have placed them into capture 0's fixed frame. Capture 0 never moves. Later
 captures may translate by whatever distance the overlap solve requires; their
 camera-origin-centred rotation is regularized toward the minimum necessary
-value and hard-capped at 45°. Overlap may connect through an intermediate
+value and hard-capped at 3°. Overlap may connect through an intermediate
 capture, so a view of another side does not need to match capture 0 directly.
 **Open Consensus Points** shows only
 surface locations supported by at least two distinct viewpoints; it uses one

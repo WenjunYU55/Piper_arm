@@ -119,12 +119,12 @@ Runtime joint error, timeout, settle state, holder/floor clearance, camera healt
 
 A settled capture uses the exact mask/RGB stamp plus 20 new native depth/confidence frames. Admission requires calibrated intrinsics and TF, confidence grade ≥ 8, at least 0.50 target support, fresh quality/occlusion evidence, achieved FK, and the matching plan provenance. Partial artifacts never count: the accepted schema-2 record and SHA-256 manifest are committed atomically.
 
-After safe terminal/home-and-disable evidence—and tracked-base-home correlation where required—offline reconstruction validates immutable inputs and runs target-only TSDF fusion (3 mm voxels, 15 mm truncation by default), with optional bounded GICP and scene pose-graph refinement. Reconstruction failure is reported separately and does not rewrite the mission result.
+After safe terminal/home-and-disable evidence—and tracked-base-home correlation where required—offline reconstruction validates immutable inputs and runs target-only TSDF fusion (3 mm voxels, 15 mm truncation by default), with optional bounded GICP and scene pose-graph refinement. The command-free GUI can retain that legacy projected-colour input or separately reconstruct the exact accepted samples on the contiguous native L515 depth grid; both paths keep the same confidence, semantic, registration and quality gates. A separate default-off wall-repair comparison can triangulate only bounded TSDF openings up to a 6 mm radius, labels every added triangle as interpolated, retains object-sized openings and never changes the untouched raw TSDF. Reconstruction failure is reported separately and does not rewrite the mission result.
 
 Constrained superposition provides a diagnostic alternative that fixes capture
 zero as the exact gauge, solves connected mutual normal-consistent overlap,
 allows the translation supported by that solve, and regularizes each
-camera-origin-centred rotation under a 45° per-capture ceiling. It writes the
+camera-origin-centred rotation under a 3° per-capture ceiling. It writes the
 full corrected capture overlay, distinct-view consensus points, and a textured
 measured-triangle OBJ. The GUI exposes each artifact independently. Missing
 surfaces remain missing rather than being filled by an unobserved shape prior.
