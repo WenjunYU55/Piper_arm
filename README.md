@@ -44,7 +44,7 @@ This is the complete feature map, from mission request to immutable reconstructi
 The diagram deliberately combines two audited repository states:
 
 - **`main`:** Tesseract 0.35 is the active exact motion-planning path and transports `TesseractPlan`.
-- **cuRobo integration:** `main` now contains a frozen `tesseract | curobo` mission choice, a backend-neutral `MotionPlan` contract, and an isolated cuRobo 0.7.8 MotionGen worker. The current moving-link sphere model remains marked `hardware_qualified=false`, so cuRobo plans are blocked from physical execution. There is no automatic fallback or mid-mission backend switch.
+- **cuRobo integration:** `main` contains a frozen `tesseract | curobo` mission choice, a backend-neutral `MotionPlan` contract, and an isolated cuRobo 0.7.8 MotionGen worker. The operator promoted the reviewed 69-sphere model to `hardware_qualified=true` on 2026-09-01 for supervised 5% testing. Its measured coverage limitations remain documented; it is not claimed geometrically equivalent to Tesseract. There is no automatic fallback or mid-mission backend switch.
 
 See the [diagram audit and implementation evidence](docs/architecture/system-diagrams.md) for the exact commits and source paths used.
 

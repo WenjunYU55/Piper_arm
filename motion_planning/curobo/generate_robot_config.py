@@ -491,7 +491,10 @@ def build(
             'sphere_count_by_link': {
                 name: len(spheres[name]) for name in sorted(spheres)},
             'conservative_geometry': False,
-            'hardware_qualified': False,
+            # Promoted by the operator on 2026-09-01 after review of the
+            # curated 69-sphere model and command-free comparison evidence.
+            # Conservative geometry remains false and is reported separately.
+            'hardware_qualified': True,
             # The rigid PiPER base and both Bunker meshes are already expressed
             # in base_link by the canonical model and hash-locked manifest.
             'fixed_world_meshes': fixed_world_meshes(description_root),

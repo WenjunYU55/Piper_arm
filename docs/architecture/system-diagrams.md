@@ -70,7 +70,7 @@ The diagram separates the effects that were previously collapsed:
 
 The generic bridge publishes backend-neutral `MotionPlan`, `MotionPlanStatus`, `PlannerReadiness` and provenance while retaining Tesseract aliases only in Tesseract mode. Worker heartbeat, generation, schema, backend and model hashes must match the frozen request.
 
-The cuRobo worker uses MotionGen 0.7.8 `plan_single` for camera poses and `plan_single_js` for home motions. Fixed Bunker geometry uses exact meshes, while moving links use the audited sphere model. Because that approximation currently declares `hardware_qualified=false`, readiness remains fail-closed for physical cuRobo motion. There is no automatic Tesseract fallback.
+The cuRobo worker uses MotionGen 0.7.8 `plan_single` for camera poses and `plan_single_js` for home motions. Fixed Bunker geometry uses exact meshes, while moving links use the audited 69-sphere model. The operator promoted that model to `hardware_qualified=true` on 2026-09-01 for supervised 5% testing; `conservative_geometry` remains false and the documented coverage gaps prevent any claim of Tesseract-equivalent geometry. There is no automatic Tesseract fallback.
 
 ## Execution feedback and recovery
 

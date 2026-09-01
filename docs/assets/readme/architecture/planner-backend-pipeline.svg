@@ -78,9 +78,9 @@
 <rect x="744.5000000000001" y="850" width="440.00000000000006" height="200" rx="14" fill="#F7F7F8" stroke="#929AA5" stroke-width="1.6"/>
 <rect x="744.5000000000001" y="850" width="7" height="200" rx="3.5" fill="#929AA5" opacity="0.9"/>
 <text x="768.5000000000001" y="907" class="node-title" text-anchor="start">cuRobo 0.7.8 worker</text>
-<text x="768.5000000000001" y="938" class="detail" text-anchor="start"><tspan x="768.5000000000001" dy="0">MotionGen plan_single / plan_single_js</tspan><tspan x="768.5000000000001" dy="23">exact fixed meshes + moving spheres</tspan><tspan x="768.5000000000001" dy="23">CUDA/Python 3.10 isolated</tspan><tspan x="768.5000000000001" dy="23">hardware_qualified=false</tspan><tspan x="768.5000000000001" dy="23">integration branch only</tspan></text>
+<text x="768.5000000000001" y="938" class="detail" text-anchor="start"><tspan x="768.5000000000001" dy="0">MotionGen plan_single / plan_single_js</tspan><tspan x="768.5000000000001" dy="23">exact fixed meshes + 69 moving spheres</tspan><tspan x="768.5000000000001" dy="23">CUDA/Python 3.10 isolated</tspan><tspan x="768.5000000000001" dy="23">hardware_qualified=true</tspan><tspan x="768.5000000000001" dy="23">coverage limits remain documented</tspan></text>
 <rect x="768.5000000000001" y="863" width="128.6" height="23" rx="11.5" fill="#929AA5"/>
-<text x="832.8000000000001" y="879" class="badge" text-anchor="middle">NO ARM MOTION</text>
+<text x="832.8000000000001" y="879" class="badge" text-anchor="middle">SUPERVISED 5%</text>
 <rect x="442.00000000000006" y="1125" width="396.00000000000006" height="175" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
 <rect x="442.00000000000006" y="1125" width="7" height="175" rx="3.5" fill="#147D70" opacity="0.9"/>
 <text x="466.00000000000006" y="1160" class="node-title" text-anchor="start">Validated planner response</text>

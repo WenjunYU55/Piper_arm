@@ -206,9 +206,9 @@
 <rect x="690" y="3365" width="500" height="205" rx="14" fill="#F7F7F8" stroke="#929AA5" stroke-width="1.6"/>
 <rect x="690" y="3365" width="7" height="205" rx="3.5" fill="#929AA5" opacity="0.9"/>
 <text x="714" y="3422" class="node-title" text-anchor="start">cuRobo 0.7.8 MotionGen worker</text>
-<text x="714" y="3453" class="detail" text-anchor="start"><tspan x="714" dy="0">Python 3.10 + CUDA; ROS-free</tspan><tspan x="714" dy="23">exact fixed Bunker meshes</tspan><tspan x="714" dy="23">167-sphere articulated approximation</tspan><tspan x="714" dy="23">hardware_qualified=false; motion blocked</tspan><tspan x="714" dy="23">no automatic Tesseract fallback</tspan></text>
-<rect x="714" y="3378" width="112.19999999999999" height="23" rx="11.5" fill="#929AA5"/>
-<text x="770.1" y="3394" class="badge" text-anchor="middle">BRANCH ONLY</text>
+<text x="714" y="3453" class="detail" text-anchor="start"><tspan x="714" dy="0">Python 3.10 + CUDA; ROS-free</tspan><tspan x="714" dy="23">exact fixed Bunker meshes</tspan><tspan x="714" dy="23">69-sphere articulated approximation</tspan><tspan x="714" dy="23">operator-qualified for supervised 5% test</tspan><tspan x="714" dy="23">no automatic Tesseract fallback</tspan></text>
+<rect x="714" y="3378" width="153.2" height="23" rx="11.5" fill="#929AA5"/>
+<text x="790.6" y="3394" class="badge" text-anchor="middle">LIMITED GEOMETRY</text>
 <rect x="220" y="3655" width="880" height="210" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
 <rect x="220" y="3655" width="7" height="210" rx="3.5" fill="#147D70" opacity="0.9"/>
 <text x="244" y="3692" class="node-title" text-anchor="start">Validated planner transport</text>

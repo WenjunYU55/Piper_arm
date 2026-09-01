@@ -107,7 +107,7 @@ def test_exact_bunker_world_preserves_known_joint_path(backend):
     """Exercise the generated model without requiring mission fixtures."""
     provenance = backend.model_provenance
     assert provenance['schema_version'] == 2
-    assert provenance['hardware_qualified'] is False
+    assert provenance['hardware_qualified'] is True
     assert provenance['conservative_geometry'] is False
     assert {
         item['name'] for item in provenance['fixed_world_meshes']

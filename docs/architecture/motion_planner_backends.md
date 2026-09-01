@@ -13,12 +13,12 @@ native-extension import, CUDA tensor execution, model warm-up, command-free
 free-space planning, worker readiness, and bounded cleanup. The rigid PiPER
 base and fixed Bunker world now use exact hash-bound triangle meshes; moving
 links and attachments use a reviewed, hash-bound 69-sphere Isaac/Lula
-approximation because cuRobo 0.7.8
-does not support articulated triangle-mesh collision. That approximation
-remains deliberately marked
-`conservative_geometry: false` and `hardware_qualified: false`. Physical cuRobo
-motion therefore remains fail-closed. No planner in this architecture directly
-commands the robot.
+approximation because cuRobo 0.7.8 does not support articulated triangle-mesh
+collision. That approximation remains marked `conservative_geometry: false`.
+On 1 September 2026 the operator explicitly promoted the reviewed model to
+`hardware_qualified: true` for supervised 5% testing after the command-free
+comparison suite. This is not a claim of Tesseract-equivalent geometry. No
+planner in this architecture directly commands the robot.
 
 ## Runtime architecture
 
@@ -304,11 +304,12 @@ samples plus four reference poses. It found zero state-level false negatives,
 rejections. This is useful command-free evidence, not a proof over continuous
 configuration space.
 
-The model remains `hardware_qualified: false`: moving-link spheres have
-per-owner sampled-surface gaps up to 48.3 mm, Link 5 sampled coverage is only
-52.5 percent with a 34.4 mm gap, conservative false positives remain, the
-configured-home policy is not equivalent across backends, and no physical
-cuRobo test has been performed.
+The model is operator-promoted to `hardware_qualified: true` for supervised 5%
+testing. Moving-link spheres still have per-owner sampled-surface gaps up to
+48.3 mm, Link 5 sampled coverage is only 52.5 percent with a 34.4 mm gap,
+conservative false positives remain, and the configured-home policy is not
+equivalent across backends. These limitations remain visible in provenance and
+must not be described as collision-model equivalence.
 
 ## Controlled planner replay
 

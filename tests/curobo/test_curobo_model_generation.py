@@ -213,7 +213,7 @@ def test_curated_spheres_are_bounded_and_preserve_collision_evidence(
         for item in colliding)
     assert sum(provenance['sphere_count_by_link'].values()) == 69
     assert 'base_link' not in provenance['sphere_count_by_link']
-    assert provenance['hardware_qualified'] is False
+    assert provenance['hardware_qualified'] is True
     assert provenance['conservative_geometry'] is False
 
 
