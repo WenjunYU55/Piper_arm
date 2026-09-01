@@ -197,8 +197,11 @@ def test_mission_engine_is_the_only_production_pipeline_authority(
     assert not hasattr(TargetScanMissionNode, '_legacy_safe_shutdown')
 
 
+@pytest.mark.parametrize(
+    'planner_backend, worker_name',
+    [('tesseract', 'tesseract_worker'), ('curobo', 'curobo_worker')])
 def test_process_startup_order_and_environment_are_characterized(
-        tmp_path, monkeypatch):
+        tmp_path, monkeypatch, planner_backend, worker_name):
     starts = []
     waits = []
 
@@ -258,6 +261,7 @@ def test_process_startup_order_and_environment_are_characterized(
             'target_label': 'green cube',
             'target_profile': 'green_cube',
             'target_prompt': 'green cube .',
+            'planner_backend': planner_backend,
         },
     )
     monkeypatch.setattr(mission_node.time, 'sleep', lambda _seconds: None)
@@ -265,7 +269,7 @@ def test_process_startup_order_and_environment_are_characterized(
     TargetScanMissionNode.start_processes(harness, object(), session)
 
     assert [item[0] for item in starts] == [
-        'driver', 'vision', 'hand_eye', 'tesseract_worker', 'scan_stack']
+        'driver', 'vision', 'hand_eye', worker_name, 'scan_stack']
     assert waits == ['joints', 'vision', 'hand_eye', 'worker']
     environment = starts[0][2]
     assert environment['PIPER_AUTO_ENABLE'] == 'false'
@@ -278,6 +282,9 @@ def test_process_startup_order_and_environment_are_characterized(
     assert environment['PIPER_FLOOR_PROFILE'] == 'ground'
     assert environment['PIPER_MISSION_TASK_ID'] == session.task_id
     assert environment['PIPER_MISSION_SHA256'] == session.mission_sha256
+    assert environment['PIPER_PLANNER_BACKEND'] == planner_backend
+    assert starts[3][1] == [str(
+        tmp_path / 'motion_planning' / planner_backend / 'run_worker.sh')]
     assert environment['PIPER_HAND_EYE_CALIBRATION'] == str(calibration)
     assert environment['PIPER_CALIBRATION_SHA256'] == hashlib.sha256(
         calibration.read_bytes()).hexdigest()

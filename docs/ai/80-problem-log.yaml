@@ -1022,3 +1022,24 @@ latest_hardware_diagnostics_2026_08_23:
     root_cause: Startup had no fresh powered stability boundary and could command about 0.05 seconds after enable using stability history begun while disabled. Exact attribution among J3/J4/J6 remains unproved.
     correction: Require new post-enable joint/status samples plus two continuous seconds stable, fault-free and all-six-enabled. Failure disables before motion unless motor authority is lost, when watchdog containment remains command-free.
     evidence: [/run/user/1000/piper_target_scan_logs/driver.log, /run/user/1000/piper_target_scan_logs/scan_stack.log, /tmp/piper_target_scan_missions/results/codex-e2e-20260825-2312-ray-integration.json, test_startup_gates.py, test_mission_engine.py]
+
+curobo_integration_diagnostics_2026_08_27:
+  - id: curobo_runtime_not_installed_and_nvcc_missing
+    status: resolved_2026_08_28_user_local_isolated_install
+    symptom: Host CUDA runtime and PyTorch can use the RTX 3090, but importing cuRobo and compiling its CUDA extension are unavailable.
+    root_cause: The pinned cuRobo 0.7.8 package is not installed and its setup uses CUDAExtension while the host has no nvcc toolkit compiler.
+    correction: Installed toolkit-only CUDA 12.8.93 under /home/prl/.local, cuRobo 0.7.8 and Warp 1.11.1 under the explicit Python 3.10 environment; native extensions, GPU initialization, model warm-up, heartbeat and cleanup pass without changing ROS, system Python or driver.
+  - id: curobo_collision_model_unqualified
+    status: fail_closed
+    symptom: Canonical PiPER moving assets require articulated collision spheres in cuRobo 0.7.8; the saved Isaac model initially created false non-adjacent self collisions and fixed-Bunker base collisions, while sparse regions could miss exact contact.
+    correction: Convert the final operator USD to a portable 69-sphere collision-owner YAML, transform holder/L515 spheres into the canonical attached assembly, replace under-filled generated cable/mount proxies with exact-cover sphere grids, model the bolted PiPER base as an exact fixed-world mesh, add the measured 0.007 m Link-1 self buffer, and add a reusable exact-Tesseract comparison tool. The 2026-09-01 operator refinement resolves the dominant link3/link5 false-positive cluster; a deterministic 2,004-pose articulated self-collision run has zero state-level false negatives, 18 conservative false positives, all reference poses classify correctly, and the exact-world bidirectional GPU path, blocking-volume and folded-collision regressions pass without adding ignore pairs. Per-owner gaps still reach 48.3 mm, Link 5 coverage is 52.5 percent with a 34.4 mm gap, and frozen-request plus physical checks are pending, so worker collision_qualified and provenance hardware_qualified remain false.
+  - id: curobo_coarse_bunker_cuboids_reject_interpolated_path
+    status: resolved_2026_08_28_exact_fixed_world_meshes
+    symptom: Start and goal states and free-space joint planning pass, but enabling the fixed Bunker chassis AABB set yields MotionGen DT_EXCEPTION for the tested command-free trajectory.
+    root_cause: The canonical decomposed chassis meshes are converted to many large overlapping AABBs; this is not collision-equivalent to Tesseract mesh geometry.
+    correction: Skip the 62 decomposed platform cells at cuRobo conversion, hash-bind the canonical base-frame chassis and sensor-station STLs, and load them as exact fixed Mesh obstacles. Neutral-to-qualified-scan and reverse plans pass and a blocking dynamic box rejects. Moving-link qualification remains independently blocked; no collision check or shared limit was weakened.
+  - id: curobo_v078_world_rejection_leaves_self_collision_disabled
+    status: resolved_2026_08_31_backend_boundary_restore
+    symptom: In one persistent MotionGen instance, a deliberately world-colliding request followed by the known link2-link5 collision incorrectly classified the second start as valid.
+    root_cause: cuRobo v0.7.8 MotionGen.check_start_state disables world and self constraints while classifying an invalid start; its world-collision return exits before re-enabling the self-collision constraint.
+    correction: The isolated cuRobo adapter now re-enables both pinned rollout constraints after every world update and in a finally block around every pose or joint-goal attempt. The GPU regression executes world rejection followed by the known self collision and requires the latter to remain rejected.

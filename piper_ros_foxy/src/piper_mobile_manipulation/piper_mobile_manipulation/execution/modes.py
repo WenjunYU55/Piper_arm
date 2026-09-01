@@ -22,13 +22,13 @@ def plan_count_rejection(
         plan_kind, count, minimum_scan_views, maximum_acquisition_views,
         session_accepted_views=0, session_maximum_views=None,
         closed_loop_one_view=False):
-    """Return a fail-closed reason for an invalid Tesseract plan shape."""
+    """Return a fail-closed reason for an invalid planner result shape."""
     if plan_kind not in VALID_PLAN_KINDS:
         return 'unsupported plan_kind=%s' % plan_kind
     if count < 1:
         if plan_kind == RETURN_HOME and count == 0:
             return ''
-        return 'Tesseract proposal has no viewpoints'
+        return 'motion-planner proposal has no viewpoints'
     if plan_kind == MULTIVIEW_SCAN:
         maximum = (
             int(minimum_scan_views)
@@ -39,10 +39,10 @@ def plan_count_rejection(
         expected = 1 if closed_loop_one_view else maximum - accepted
         if count != expected:
             return (
-                'Tesseract proposal must contain exactly one closed-loop '
+                'motion-planner proposal must contain exactly one closed-loop '
                 'session viewpoint'
                 if closed_loop_one_view else
-                'Tesseract proposal does not contain every remaining '
+                'motion-planner proposal does not contain every remaining '
                 'session viewpoint')
     if (
             plan_kind == ROUGH_ACQUISITION
@@ -71,14 +71,14 @@ def planned_speed_rejection(
     try:
         planned = float(planned_speed)
     except (TypeError, ValueError):
-        return 'Tesseract execution speed is invalid'
+        return 'planner execution speed is invalid'
     if not math.isfinite(planned) or planned < 1.0 or planned > configured + 1e-6:
-        return 'Tesseract execution speed is outside the configured limit'
+        return 'planner execution speed is outside the configured limit'
     del tracking_scale
     if plan_kind in (ROUGH_ACQUISITION, RETURN_HOME):
         if abs(planned - configured) > 1e-4:
             return (
-                'Tesseract %s speed does not match the selected speed'
+                'planner %s speed does not match the selected speed'
                 % ('acquisition' if plan_kind == ROUGH_ACQUISITION
                    else 'return-home'))
     elif plan_kind == MULTIVIEW_SCAN:

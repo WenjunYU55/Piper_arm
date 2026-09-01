@@ -7,7 +7,8 @@ import math
 
 
 PROTOCOL_VERSION = 1
-HARD_CULL_SOURCES = ('prequalification', 'tesseract_endpoint')
+HARD_CULL_SOURCES = (
+    'prequalification', 'planner_endpoint', 'tesseract_endpoint')
 
 
 def _vector(value):

@@ -209,6 +209,37 @@ def test_startup_home_approval_gate_allows_missing_obstacle_telemetry():
     assert not captured['policy'].require_motion_limits
 
 
+def test_mission_approval_rejects_a_plan_from_another_backend():
+    executor = SimpleNamespace(
+        mission_sha256='a' * 64,
+        mission_planner_backend='tesseract',
+        plan_backend='curobo',
+        mission_authorization_valid=lambda: True,
+        state='PROPOSAL_READY',
+        plan_targets=[np.zeros(6)],
+        plan_id='wrong-backend-plan',
+        plan_created=9.0,
+        plan_trajectory_sha256='b' * 64,
+        real_motion_enabled=lambda: True,
+        now=lambda: 10.0,
+        get_parameter=lambda name: SimpleNamespace(value={
+            'approval_confirmation': 'APPROVE',
+            'plan_max_age_sec': 30.0,
+        }[name]),
+    )
+    request = SimpleNamespace(
+        confirmation='MISSION_POLICY:' + executor.mission_sha256,
+        plan_id=executor.plan_id,
+        trajectory_sha256=executor.plan_trajectory_sha256,
+    )
+    response = SimpleNamespace(accepted=True, message='')
+
+    ScanViewpointExecutorNode.approve_cb(executor, request, response)
+
+    assert not response.accepted
+    assert 'live mission authorization' in response.message
+
+
 LINK6_FROM_CAMERA = np.asarray([
     [-0.0635035764, 0.9974167728, -0.0335719700, -0.0745866291],
     [-0.9979815660, -0.0634575393, 0.0024360971, -0.0027843239],
@@ -496,7 +527,7 @@ def test_valid_but_rejected_tesseract_proposal_keeps_full_request_id():
 
     assert captured['plan_id'] == proposal.plan_id
     assert captured['plan_kind'] == MULTIVIEW_SCAN
-    assert captured['reason'].startswith('invalid Tesseract proposal:')
+    assert captured['reason'].startswith('invalid motion-planner proposal:')
 
 
 def test_terminal_folded_home_recovery_validates_its_safe_reverse(monkeypatch):
@@ -1334,8 +1365,9 @@ def test_fixed_j6_planner_cannot_return_as_a_fallback():
     assert 'legacy_fixed_j6' not in combined
     assert 'solve_fixed_j6_viewpoint' not in combined
     assert "'planning_backend'" not in combined
-    assert "msg.backend != 'tesseract'" in executor_source
-    assert "msg.planner_backend = 'tesseract'" in executor_source
+    assert "self.plan_backend not in ('tesseract', 'curobo')" in executor_source
+    assert 'mission_planner_backend' in executor_source
+    assert 'MotionPlan' in executor_source
 
 
 def test_automatic_capture_maximum_is_shared_with_session_planner():
@@ -1795,6 +1827,29 @@ def test_folded_start_escape_must_monotonically_reach_normal_proxy_clearance():
         floor_z_m=0.0,
         link_radius_m=0.025,
         self_clearance_m=0.060,
+    ) == []
+
+
+def test_configured_rough_home_joint3_escape_passes_common_runtime_gate():
+    """Both planner backends may use the same bounded startup exception."""
+    kinematics = PiperScanKinematics(LINK6_FROM_CAMERA)
+    start = np.asarray([
+        -0.010187296, 0.0, -0.01692068,
+        0.068485144, 0.441280868, 0.012594568,
+    ])
+    path = [
+        start + np.asarray([0.0, 0.0, -0.01 * step, 0.0, 0.0, 0.0])
+        for step in range(7)
+    ]
+    assert validate_monotonic_self_clearance_escape(
+        kinematics,
+        path,
+        URDF_JOINT_LIMITS,
+        floor_z_m=0.005,
+        link_radius_m=0.025,
+        self_clearance_m=0.060,
+        recovery_joint_number=[3],
+        maximum_start_limit_violation_rad=0.04,
     ) == []
 
 

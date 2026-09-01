@@ -8,6 +8,8 @@ import math
 import re
 import time
 
+from piper_mobile_manipulation.planning.backend import parse_planner_backend
+
 
 DEFAULT_DEADLINE_SEC = 1200.0
 MAX_DEADLINE_SEC = 1200.0
@@ -158,11 +160,14 @@ def validate_goal_payload(payload, now_sec=None):
     deadline = requested_deadline if requested_deadline > 0.0 else DEFAULT_DEADLINE_SEC
     if not math.isfinite(deadline) or deadline < 60.0 or deadline > MAX_DEADLINE_SEC:
         raise ValueError('deadline_sec must be between 60 and 1200 seconds')
+    planner_backend = parse_planner_backend(
+        payload.get('planner_backend', 'tesseract') or 'tesseract').value
     normalized = {
         'task_id': task_id,
         'task_type': 'SCAN_3D',
         'target_label': label,
         'target_profile': profile_name,
+        'planner_backend': planner_backend,
         'target_prompt': (
             profile.prompt if profile.prompt else target_prompt(label)),
         'target_confidence': confidence,
@@ -267,6 +272,7 @@ class MissionSession:
     storage_positions_rad: tuple = ()
     mission_ready_joint6_rad: float = 0.0
     storage_joint6_rad: float = 0.0
+    phase_timing_intervals: list = field(default_factory=list)
 
     @property
     def task_id(self):
@@ -301,10 +307,58 @@ class MissionSession:
         next_phase = MissionPhase(phase)
         if self.phase in TERMINAL_PHASES:
             raise ValueError('terminal mission cannot transition')
+        current = time.monotonic() if now is None else float(now)
+        self._close_phase_timing(current)
         self.phase = next_phase
         self.reason = str(reason)
-        self.phase_started_monotonic = (
-            time.monotonic() if now is None else float(now))
+
+    def _close_phase_timing(self, current):
+        """Close only the diagnostic interval for the current phase."""
+        started_elapsed = max(
+            0.0, self.phase_started_monotonic - self.started_monotonic)
+        ended_elapsed = max(
+            started_elapsed, current - self.started_monotonic)
+        self.phase_timing_intervals.append({
+            'phase': self.phase.value,
+            'started_elapsed_sec': started_elapsed,
+            'ended_elapsed_sec': ended_elapsed,
+            'duration_sec': ended_elapsed - started_elapsed,
+            'reason': str(self.reason),
+        })
+        self.phase_started_monotonic = current
+
+    def close_phase_timing(self, now=None):
+        """Close the final nonterminal interval before legacy assignment."""
+        current = time.monotonic() if now is None else float(now)
+        self._close_phase_timing(current)
+
+    def phase_timing_summary(self, now=None):
+        """Return diagnostic timing without changing mission state."""
+        current = time.monotonic() if now is None else float(now)
+        intervals = [dict(item) for item in self.phase_timing_intervals]
+        started_elapsed = max(
+            0.0, self.phase_started_monotonic - self.started_monotonic)
+        ended_elapsed = max(
+            started_elapsed, current - self.started_monotonic)
+        intervals.append({
+            'phase': self.phase.value,
+            'started_elapsed_sec': started_elapsed,
+            'ended_elapsed_sec': ended_elapsed,
+            'duration_sec': ended_elapsed - started_elapsed,
+            'reason': str(self.reason),
+        })
+        totals = {}
+        for interval in intervals:
+            phase = interval['phase']
+            totals[phase] = totals.get(phase, 0.0) + float(
+                interval['duration_sec'])
+        return {
+            'schema_version': 1,
+            'clock': 'monotonic',
+            'total_elapsed_sec': max(0.0, current - self.started_monotonic),
+            'phase_totals_sec': totals,
+            'intervals': intervals,
+        }
 
     def shutdown_outcome(self):
         """Classify shutdown without ever equating process exit with safety."""

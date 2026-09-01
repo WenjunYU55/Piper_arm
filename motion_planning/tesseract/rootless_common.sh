@@ -40,7 +40,7 @@ ROOTLESS_BWRAP=(
   --unsetenv ROS_PYTHON_VERSION
   --setenv PYTHONPATH /workspace/piper_ros_foxy/src/piper_tesseract_foxy:/workspace/piper_ros_foxy/src/piper_mobile_manipulation
   --setenv TESSERACT_RESOURCE_PATH /workspace/piper_ros_foxy/src
-  --setenv PIPER_TESSERACT_URDF /workspace/motion_planning/tesseract/.runtime/piper_planning.urdf
+  --setenv PIPER_TESSERACT_URDF "${PIPER_TESSERACT_URDF_CONTAINER:-/workspace/motion_planning/tesseract/.runtime/piper_planning.urdf}"
   --setenv PIPER_FLOOR_PROFILE "$FLOOR_PROFILE"
   --setenv PIPER_TESSERACT_SRDF "$COLLISION_SRDF_CONTAINER"
   --setenv PIPER_TESSERACT_COLLISION_MANIFEST "$COLLISION_MANIFEST_CONTAINER"

@@ -14,6 +14,7 @@ from piper_mobile_manipulation.configuration import (
     MissionCaptureConfig,
     MissionConfig,
     MissionMotionConfig,
+    PlannerConfig,
     MissionWorkflowConfig,
     MotionConfig,
     ProcessConfig,
@@ -33,6 +34,9 @@ LEGACY_MISSION_DEFAULTS = {
     'manage_processes': True,
     'floor_profile': 'saved',
     'floor_profile_path': '',
+    'planner_backend': 'tesseract',
+    'curobo_worker_python': '',
+    'curobo_spool_root': '/phase9/piper_curobo_plans',
     'enable_real_arm_motion': False,
     'motion_speed_profile_qualified': False,
     'free_motion_speed_percent': 30.0,
@@ -72,6 +76,7 @@ LEGACY_EXECUTOR_DEFAULTS = {
     'heavy_refresh_request_topic': '/piper/heavy_refresh_request',
     'heavy_refresh_status_topic': '/piper/heavy_refresh_status',
     'tesseract_plan_topic': '/piper/tesseract_plan',
+    'motion_plan_topic': '/piper/motion_plan',
     'hand_eye_calibration_path': '',
     'joint_bounds_path': '',
     'enable_real_arm_motion': False,
@@ -208,6 +213,7 @@ def test_mission_configuration_is_grouped_typed_and_read_once():
 
     assert isinstance(config.mission, MissionConfig)
     assert isinstance(config.process, ProcessConfig)
+    assert isinstance(config.planner, PlannerConfig)
     assert isinstance(config.motion, MissionMotionConfig)
     assert isinstance(config.capture, MissionCaptureConfig)
     assert isinstance(config.workflow, MissionWorkflowConfig)
@@ -216,6 +222,7 @@ def test_mission_configuration_is_grouped_typed_and_read_once():
     assert config.motion.free_motion_speed_percent == 42.0
     assert config.process.floor_profile == 'saved'
     assert config.process.floor_profile_path == ''
+    assert config.planner.default_backend == 'tesseract'
     assert set(node.read_counts.values()) == {1}
 
 
@@ -225,6 +232,18 @@ def test_mission_configuration_rejects_unknown_floor_profile():
             FakeParameterNode({'floor_profile': 'unknown'}),
             {'XDG_RUNTIME_DIR': '/phase9'},
         )
+
+
+def test_mission_configuration_accepts_both_planners_and_rejects_unknown():
+    tesseract = load_mission_configuration(
+        FakeParameterNode({'planner_backend': 'tesseract'}))
+    curobo = load_mission_configuration(
+        FakeParameterNode({'planner_backend': 'curobo'}))
+    assert tesseract.planner.default_backend == 'tesseract'
+    assert curobo.planner.default_backend == 'curobo'
+    with pytest.raises(ConfigurationError, match='tesseract or curobo'):
+        load_mission_configuration(
+            FakeParameterNode({'planner_backend': 'automatic'}))
 
 
 def test_executor_configuration_preserves_overrides_and_units():

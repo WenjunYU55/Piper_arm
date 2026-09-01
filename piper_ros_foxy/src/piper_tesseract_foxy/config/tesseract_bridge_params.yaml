@@ -8,11 +8,16 @@
     camera_timestamp_health_topic: "/piper/camera_timestamp_health"
     obstacle_topic: "/piper/obstacle_instances_3d"
     plan_topic: "/piper/tesseract_plan"
-    view_generation_receipt_topic: "/piper/tesseract_view_generation"
+    motion_plan_topic: "/piper/motion_plan"
+    view_generation_receipt_topic: "/piper/view_generation"
+    legacy_view_generation_receipt_topic: "/piper/tesseract_view_generation"
     ray_hard_culls_topic: "/piper/ray_hard_culls"
-    plan_provenance_topic: "/piper/tesseract_plan_provenance"
+    plan_provenance_topic: "/piper/motion_plan_provenance"
+    legacy_plan_provenance_topic: "/piper/tesseract_plan_provenance"
     status_topic: "/piper/tesseract_plan_status"
+    motion_plan_status_topic: "/piper/motion_plan_status"
     readiness_topic: "/piper/tesseract_readiness"
+    planner_readiness_topic: "/piper/planner_readiness"
     data_timeout_sec: 1.0
     motion_limits_timeout_sec: 3.0
     motion_limits_change_confirmation_sec: 7.0

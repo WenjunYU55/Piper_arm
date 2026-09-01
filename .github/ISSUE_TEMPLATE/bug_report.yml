@@ -1,0 +1,71 @@
+name: Bug report
+description: Report a reproducible software, integration, or command-free planning problem.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include credentials, device serial numbers, or private datasets. For an active physical emergency, use the hardware emergency procedure; GitHub is not an emergency channel.
+  - type: dropdown
+    id: subsystem
+    attributes:
+      label: Subsystem
+      options:
+        - Mission / process supervision
+        - Perception / tracking
+        - NBV / candidate generation
+        - Tesseract planning
+        - cuRobo planning
+        - Authorization / execution safety
+        - PiPER driver / CAN
+        - L515 / calibration
+        - GUI
+        - Reconstruction
+        - Installation / documentation
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: Branch and commit
+      placeholder: "main @ 0123456"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include typed failure codes and sanitized logs where available.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: State whether the run was proposal-only, simulated, command-free GPU, or physical.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, ROS, Python, planner backend, GPU/driver, camera, and relevant configuration.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: I have removed credentials, serial numbers, and private data.
+          required: true
+        - label: If physical motion was involved, the robot is now in a known safe state or the report clearly says otherwise.
+          required: true

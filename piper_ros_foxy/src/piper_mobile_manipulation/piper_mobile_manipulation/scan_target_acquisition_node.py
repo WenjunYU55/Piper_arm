@@ -15,7 +15,7 @@ from tf2_ros import Buffer, TransformException, TransformListener
 
 from piper_mobile_manipulation.srv import (
     PrepareAcquisition,
-    RequestTesseractPlan,
+    RequestMotionPlan,
 )
 from piper_mobile_manipulation.perception.acquisition import (
     ROUGH_ACQUISITION,
@@ -38,7 +38,7 @@ class ScanTargetAcquisitionNode(Node):
             'reachable_acquisition_viewpoints_topic':
                 '/piper/reachable_acquisition_viewpoints',
             'request_acquisition_plan_service':
-                '/tesseract_plan_bridge/request_acquisition_plan',
+                '/motion_planner/request_acquisition_plan',
             'base_frame': 'base_link',
             'camera_optical_frame': 'camera_color_optical_frame',
             'hint_max_age_sec': 5.0,
@@ -81,7 +81,7 @@ class ScanTargetAcquisitionNode(Node):
             10,
         )
         self.acquisition_plan_client = self.create_client(
-            RequestTesseractPlan,
+            RequestMotionPlan,
             self.get_parameter('request_acquisition_plan_service').value,
         )
         self.prepare_service = self.create_service(
@@ -248,7 +248,7 @@ class ScanTargetAcquisitionNode(Node):
         response.accepted = True
         response.message = (
             'queued %d command-free rough-acquisition viewpoints for %s; '
-            'Tesseract proposal generation is asynchronous'
+            'motion-planner proposal generation is asynchronous'
             % (len(viewpoints), session_id))
         return response
 
@@ -276,7 +276,7 @@ class ScanTargetAcquisitionNode(Node):
                 and self.acquisition_plan_client.service_is_ready()):
             self.acquisition_request_sent = True
             self.last_acquisition_request_at = now
-            request = RequestTesseractPlan.Request()
+            request = RequestMotionPlan.Request()
             request.force_refresh = False
             future = self.acquisition_plan_client.call_async(request)
             future.add_done_callback(
@@ -302,7 +302,7 @@ class ScanTargetAcquisitionNode(Node):
                 self.pending_acquisition_payload_ready = False
                 self.acquisition_request_sent = False
                 self.get_logger().error(
-                    'ROUGH_ACQUISITION handoff timed out before Tesseract '
+                    'ROUGH_ACQUISITION handoff timed out before planner '
                     'accepted a command-free request')
         self.submit_ready_requests()
 

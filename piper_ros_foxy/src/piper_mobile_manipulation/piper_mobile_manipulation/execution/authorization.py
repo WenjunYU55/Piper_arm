@@ -73,7 +73,7 @@ def configured_home_endpoint_rejection(
             return 'configured return-home pose must contain six finite joints'
         if float(np.max(np.abs(endpoint - configured))) > 1e-6:
             return (
-                'Tesseract return-home endpoint does not match the executor '
+                'planner return-home endpoint does not match the executor '
                 'configuration')
     if stage == 'PRE_HOME':
         try:
@@ -103,7 +103,7 @@ def direct_home_stage_rejection(
     endpoint_reason = configured_home_endpoint_rejection(
         stage, goal, goal, rough_home, pre_home=pre_home)
     if endpoint_reason:
-        return endpoint_reason.replace('Tesseract ', '')
+        return endpoint_reason.replace('planner ', '')
     if current.shape != (6,) or not np.all(np.isfinite(current)):
         return 'direct home requires six finite current joints'
     if configured.shape != (6,) or not np.all(np.isfinite(configured)):
@@ -218,7 +218,7 @@ class PlanAuthorizer:
         if bool(valid):
             return PlanAuthorizationDecision(
                 True, PlanAuthorizationStatus.AUTHORIZED)
-        detail = 'Tesseract proposal rejected: ' + str(reason)
+        detail = 'motion-planner proposal rejected: ' + str(reason)
         return PlanAuthorizationDecision(
             False,
             PlanAuthorizationStatus.PLANNER_FAILURE,

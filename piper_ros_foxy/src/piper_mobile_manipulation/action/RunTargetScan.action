@@ -9,6 +9,7 @@ string task_id
 string task_type
 string target_label
 string target_profile
+string planner_backend
 geometry_msgs/PoseWithCovarianceStamped rough_target
 float32 target_confidence
 float32 deadline_sec

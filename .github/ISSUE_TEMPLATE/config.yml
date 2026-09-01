@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Operator and safety procedure
+    url: https://github.com/WenjunYU55/Piper_arm/blob/main/OPERATOR_COMMANDS.md
+    about: Read the supported startup, cancellation, recovery, and shutdown procedure first.

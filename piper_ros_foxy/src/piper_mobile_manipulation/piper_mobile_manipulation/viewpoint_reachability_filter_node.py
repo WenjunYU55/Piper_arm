@@ -41,7 +41,7 @@ def capability_bound_ray(viewpoint, capability):
     """Narrow one requested ray to its map-supported standoff envelope.
 
     The individual contiguous runs remain attached as evidence.  The active
-    min/max envelope is intentionally only a coarse search bound; Tesseract
+    min/max envelope is intentionally only a coarse search bound; the planner
     still owns exact IK and collision validation and the map is never
     presented as a joint solution.
     """
@@ -236,7 +236,7 @@ class ViewpointReachabilityFilterNode(Node):
         self.declare_parameter('max_height_change_m', 0.40)
         # Exact-point policies keep the legacy opt-in behavior. Target rays
         # always use these bounds as a cheap interval-intersection cull before
-        # Tesseract; this does not claim IK or collision feasibility.
+        # the exact planner; this does not claim IK or collision feasibility.
         self.declare_parameter('enforce_static_reach_bounds', False)
         project_root = os.environ.get('PIPER_ARM_ROOT', '/home/prl/Piper_arm')
         self.declare_parameter('capability_map_mode', 'enforce')
@@ -460,7 +460,7 @@ class ViewpointReachabilityFilterNode(Node):
             accepted = len(reasons) == 0
             result['prequalified'] = bool(accepted)
             # Compatibility aliases consumed by the unchanged bridge and
-            # capture diagnostics.  This stage has not run IK or Tesseract.
+            # capture diagnostics. This stage has not run IK or exact planning.
             result['reachable'] = bool(accepted)
             result['safe'] = bool(accepted)
             result['reject_reasons'] = reasons
@@ -482,15 +482,15 @@ class ViewpointReachabilityFilterNode(Node):
         output['filter'] = {
             'node': 'viewpoint_reachability_filter_node',
             'mode': (
-                'ray_workspace_and_capability_cull_then_tesseract'
+                'ray_workspace_and_capability_cull_then_exact_planner'
                 if (
                     ray_candidate_count
                     and self.capability_map_effective_mode == 'enforce')
-                else 'ray_workspace_cull_then_tesseract'
+                else 'ray_workspace_cull_then_exact_planner'
                 if ray_candidate_count else (
                     'legacy_static_reach_check'
                     if self.param_bool('enforce_static_reach_bounds')
-                    else 'dynamic_kinematics_deferred_to_tesseract')),
+                    else 'dynamic_kinematics_deferred_to_exact_planner')),
             'input_viewpoints': len(viewpoints),
             'output_viewpoints': len(filtered),
             'prequalified_viewpoints': reachable_count,
@@ -534,7 +534,7 @@ class ViewpointReachabilityFilterNode(Node):
 
         if self.param_bool('debug'):
             self.get_logger().info(
-                'prequalified %s viewpoints: %d/%d (Tesseract feasibility pending)'
+                'prequalified %s viewpoints: %d/%d (planner feasibility pending)'
                 % (plan_kind, reachable_count, len(filtered))
             )
 

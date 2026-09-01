@@ -1,5 +1,8 @@
 schema_version: 1
 document: system_map
+planner_benchmark_load_order_2026_09_01:
+  sequence: [frozen backend-neutral fixture, backend-specific volatile selector, isolated worker, common response validation, exact Tesseract path revalidation, portable evidence report, Chapter 5 analysis]
+  load_order_contracts: [no planner worker receives motion authority, cuRobo success remains a proposal until exact validation, private worker cleanup precedes report completion, mission phase diagnostics are written only at the existing result boundary]
 rough_acquisition_partial_target_load_order_2026_08_27:
   sequence: [executor publishes correlated rough_acquisition_viewpoint request, bridge snapshots a fresh post-settle RGB-D frame, ROS-free worker binds request_reason to that immutable job, GroundingDINO validates semantic confidence and green appearance without clean-view box proportions, SAM2 refines the visible support, aligned depth creates measured target evidence, tracker reaches LOCKED, executor cancels remaining rough looks]
   load_order_contracts: [request reason is job-local, relaxation applies only to rough acquisition, strict validation remains default, measured mask and depth still precede LOCKED]
@@ -634,3 +637,15 @@ repository_layout_non_runtime_change_2026_08_27:
   moved: [root development tests to tests by responsibility, dated handoff notes to docs/historical]
   runtime_load_order_change: none
   preserved_paths: [all shell entrypoints, launch files, configuration, ROS packages, URDF and mesh resources, calibration, capability map, datasets]
+
+generic_motion_planner_load_order_2026_08_27:
+  sequence: [resolve and validate next-mission planner_backend, freeze backend in mission identity and authorization, start only the selected ROS-free worker generation, obtain matching planner readiness, submit generic RequestMotionPlan, apply the acquisition-only bounded bootstrap_static start escape when required, selected adapter validates native response and publishes MotionPlan with recovery evidence, common executor normalizes and validates including its independent bootstrap gate, build ScanExecutionPlan, authorize, run existing runtime gates and TrajectoryRunner]
+  load_order_contracts:
+    - The GUI persists only the next-mission choice; the action goal and authorization freeze the active backend.
+    - The bridge must not accept a response whose backend, request identity, hashes, generation, world or collision evidence does not match the active request.
+    - cuRobo and torch load only inside the explicitly configured ROS-free worker interpreter.
+    - Before CUDA initialization, the cuRobo worker validates schema-2 hashes for the generated URDF, SRDF, collision manifest, operator-saved Isaac source, moving-link source meshes, exact rigid-base mesh and exact fixed Bunker meshes; incomplete or changed provenance fails readiness.
+    - cuRobo loads articulated PiPER, gripper and L515 geometry as 69 audited spheres, the rigid PiPER base plus Bunker chassis and sensor station as fixed Mesh obstacles, then adds the selected floor and request-correlated dynamic obstacle cuboids.
+    - A cuRobo start-state exception may run only before the first bootstrap_static ROUGH_ACQUISITION path; it is a maximum-0.15-rad single-joint J2/J3 escape to an ordinarily valid endpoint and does not alter later MotionGen or common runtime collision checks.
+    - The selected worker stops with its mission generation; no planner process survives mission cleanup.
+  compatibility: Legacy Tesseract messages, services, topics, executable name, validation functions and TESSERACT_STREAM parsing remain aliases for existing tooling; shared production code uses generic interfaces.

@@ -1,0 +1,1409 @@
+{
+  "comparison_strength": "CONTROLLED_REPLAY",
+  "corpus_sha256": "2a46063468248b957d6065dadaab69ee1dae2b6527cf165210168639ef858426",
+  "fixture_count": 7,
+  "fixtures": [
+    {
+      "expected_role": "recorded_achieved_geometry",
+      "name": "recorded_rough_acquisition",
+      "plan_kind": "ROUGH_ACQUISITION",
+      "request_template": {
+        "calibration": {
+          "T_link6_camera": [
+            [
+              -0.00011159751133569562,
+              0.9997491333477074,
+              -0.022397721234607863,
+              -0.07813122843950987
+            ],
+            [
+              -0.9999844882130107,
+              -0.00023629490218783235,
+              -0.005564844839005679,
+              -0.00020008129649795418
+            ],
+            [
+              -0.005568741272358752,
+              0.022396752783092028,
+              0.9997336518220313,
+              0.03999983982632446
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          ],
+          "hand_eye_sha256": "47a5ce30fce8d7c29636d3048b9f67a41bdf8a3d430dbb1c3514eac995d36339"
+        },
+        "created_at_ns": 1788227503255060279,
+        "expires_at_ns": 1788228103255060279,
+        "limits": {
+          "bootstrap_start_limit_tolerance_rad": 0.04,
+          "configured_home_start_limit_tolerance_rad": 0.0,
+          "joint_margin_rad": 0.03,
+          "max_acceleration_rad_s2": [
+            5.0,
+            5.0,
+            5.0,
+            5.0,
+            5.0,
+            5.0
+          ],
+          "max_velocity_rad_s": [
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0
+          ],
+          "motion_limits_sha256": "1dce7e0ead4b75d5c6db4be751494355d3a94938e2373f2f947c4be0c626b81e",
+          "position_rad": [
+            [
+              -2.618,
+              2.168
+            ],
+            [
+              -0.044796192,
+              3.14
+            ],
+            [
+              -2.967,
+              0.0
+            ],
+            [
+              -1.745,
+              1.745
+            ],
+            [
+              -1.22,
+              1.22
+            ],
+            [
+              -3.141592653589793,
+              3.141592653589793
+            ]
+          ],
+          "source": "piper_sdk_controller_feedback"
+        },
+        "model": {
+          "collision_manifest_sha256": "544b78e559abe60a97640d1f3175b3b22c4cc6a65b9a0a7bcfb6aae53f0d682e",
+          "mode": 0,
+          "srdf_sha256": "9796c2c863859e69988510bc11840d337154fe0d70360450dc9a100a36818bb5",
+          "xacro_sha256": "9a9617578d666caa64982838ce6a81645b2d7682563024187c017d76646d8b04"
+        },
+        "plan_kind": "ROUGH_ACQUISITION",
+        "planner_backend": "tesseract",
+        "planning": {
+          "command_rate_hz": 20.0,
+          "deterministic_seed": 42,
+          "effective_speed_percent": 5.0,
+          "include_return_home": false,
+          "joint_specific_costs": {},
+          "max_execution_joint_step_rad": 0.05,
+          "max_viewpoints": 1,
+          "min_viewpoints": 1,
+          "pipeline": "OMPL_ISP",
+          "planner": "RRTConnect",
+          "return_home_positions_rad": [],
+          "roll_samples_rad": [
+            -2.094395102,
+            -1.047197551,
+            0.0,
+            1.047197551,
+            2.094395102,
+            3.141592654
+          ],
+          "timing_policy": "timed_stream_v1"
+        },
+        "request_id": "00000000000000000000000000000000",
+        "request_sha256": "89a9b70eebe6751c7ec501b03fea0fd29a437f64cf25f83d03251d64f63f6465",
+        "scene": {
+          "candidate_views": [
+            {
+              "camera_position_m": [
+                0.08875580818397866,
+                -0.016604202597428265,
+                0.20245551229222283
+              ],
+              "id": 1000034,
+              "look_direction": [
+                0.7929655074347524,
+                -0.06569557139091255,
+                -0.6057142857142858
+              ],
+              "required_first": true
+            }
+          ],
+          "observation_mode": "bootstrap_static",
+          "obstacles": [],
+          "target_center_m": [
+            0.33963628167977455,
+            -0.037389137002012275,
+            0.010818063527565563
+          ],
+          "target_provenance": {
+            "frame_id": "base_link",
+            "source": "rough_coordinate",
+            "source_request_id": "benchmark-acquisition-reference",
+            "stamp": {
+              "nanosec": 0,
+              "sec": 1
+            }
+          }
+        },
+        "schema_version": 5,
+        "start_state": {
+          "joint_names": [
+            "joint1",
+            "joint2",
+            "joint3",
+            "joint4",
+            "joint5",
+            "joint6"
+          ],
+          "positions_rad": [
+            0.0,
+            0.8,
+            -0.7,
+            0.0,
+            0.7,
+            0.0
+          ]
+        },
+        "target_provenance": {
+          "frame_id": "base_link",
+          "source": "rough_coordinate",
+          "source_request_id": "benchmark-acquisition-reference",
+          "stamp": {
+            "nanosec": 0,
+            "sec": 1
+          }
+        }
+      },
+      "scenario_sha256": "3b303fa261ac26a1f4f8cf515596d12be1420dec8dd34208f8941fc521f5150e"
+    },
+    {
+      "expected_role": "recorded_achieved_geometry",
+      "name": "recorded_multiview_00_to_01",
+      "plan_kind": "MULTIVIEW_SCAN",
+      "request_template": {
+        "calibration": {
+          "T_link6_camera": [
+            [
+              -0.00011159751133569562,
+              0.9997491333477074,
+              -0.022397721234607863,
+              -0.07813122843950987
+            ],
+            [
+              -0.9999844882130107,
+              -0.00023629490218783235,
+              -0.005564844839005679,
+              -0.00020008129649795418
+            ],
+            [
+              -0.005568741272358752,
+              0.022396752783092028,
+              0.9997336518220313,
+              0.03999983982632446
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          ],
+          "hand_eye_sha256": "47a5ce30fce8d7c29636d3048b9f67a41bdf8a3d430dbb1c3514eac995d36339"
+        },
+        "created_at_ns": 1788227503272745673,
+        "expires_at_ns": 1788228103272745673,
+        "limits": {
+          "bootstrap_start_limit_tolerance_rad": 0.0,
+          "configured_home_start_limit_tolerance_rad": 0.0,
+          "joint_margin_rad": 0.03,
+          "max_acceleration_rad_s2": [
+            5.0,
+            5.0,
+            5.0,
+            5.0,
+            5.0,
+            5.0
+          ],
+          "max_velocity_rad_s": [
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0
+          ],
+          "motion_limits_sha256": "1dce7e0ead4b75d5c6db4be751494355d3a94938e2373f2f947c4be0c626b81e",
+          "position_rad": [
+            [
+              -2.618,
+              2.168
+            ],
+            [
+              -0.044796192,
+              3.14
+            ],
+            [
+              -2.967,
+              0.0
+            ],
+            [
+              -1.745,
+              1.745
+            ],
+            [
+              -1.22,
+              1.22
+            ],
+            [
+              -3.141592653589793,
+              3.141592653589793
+            ]
+          ],
+          "source": "piper_sdk_controller_feedback"
+        },
+        "model": {
+          "collision_manifest_sha256": "544b78e559abe60a97640d1f3175b3b22c4cc6a65b9a0a7bcfb6aae53f0d682e",
+          "mode": 0,
+          "srdf_sha256": "9796c2c863859e69988510bc11840d337154fe0d70360450dc9a100a36818bb5",
+          "xacro_sha256": "9a9617578d666caa64982838ce6a81645b2d7682563024187c017d76646d8b04"
+        },
+        "plan_kind": "MULTIVIEW_SCAN",
+        "planner_backend": "tesseract",
+        "planning": {
+          "command_rate_hz": 20.0,
+          "deterministic_seed": 42,
+          "effective_speed_percent": 5.0,
+          "expanded_ray_candidate_count": 1,
+          "include_return_home": false,
+          "joint_specific_costs": {},
+          "max_execution_joint_step_rad": 0.05,
+          "max_viewpoints": 1,
+          "min_viewpoints": 1,
+          "pipeline": "OMPL_ISP",
+          "planner": "RRTConnect",
+          "ray_direction_attempt_limit": 6,
+          "return_home_positions_rad": [
+            -0.010187296,
+            0.0,
+            -0.01692068,
+            0.068485144,
+            0.441280868,
+            0.012594568
+          ],
+          "roll_samples_rad": [
+            -2.094395102,
+            -1.047197551,
+            0.0,
+            1.047197551,
+            2.094395102,
+            3.141592654
+          ],
+          "shortlisted_ray_count": 1,
+          "timing_policy": "timed_stream_v1"
+        },
+        "request_id": "00000000000000000000000000000000",
+        "request_sha256": "b32c0fc5585ea2de0ed7df57a4cdf0eddd159a248a80391d55a3965f2c3e4b4e",
+        "scene": {
+          "candidate_views": [
+            {
+              "camera_position_m": [
+                0.14060416500722714,
+                -0.0641686267984424,
+                0.24154038062555114
+              ],
+              "candidate_geometry": "target_ray",
+              "id": 1000021,
+              "look_direction": [
+                0.6506829689405057,
+                0.08754847317491532,
+                -0.7542857142857143
+              ],
+              "maximum_final_aim_offset_deg": 5.0,
+              "nbv_rank": 1,
+              "ray_direction": [
+                -0.6506829689405056,
+                -0.0875484731749153,
+                0.7542857142857142
+              ],
+              "ray_id": 21,
+              "ray_max_standoff_m": 0.5,
+              "ray_min_standoff_m": 0.28,
+              "ray_preferred_max_standoff_m": 0.5,
+              "ray_probe_index": 0,
+              "ray_probe_phase": "interval_search",
+              "ray_scoring_standoff_m": 0.30588185978899607,
+              "ray_standoff_m": 0.30588185978899607
+            }
+          ],
+          "observation_mode": "perception_snapshot",
+          "obstacles": [],
+          "target_center_m": [
+            0.33963628167977455,
+            -0.037389137002012275,
+            0.010818063527565563
+          ],
+          "target_provenance": {
+            "frame_id": "base_link",
+            "source": "tracked_target",
+            "stamp": {
+              "nanosec": 0,
+              "sec": 1
+            }
+          }
+        },
+        "schema_version": 5,
+        "start_state": {
+          "joint_names": [
+            "joint1",
+            "joint2",
+            "joint3",
+            "joint4",
+            "joint5",
+            "joint6"
+          ],
+          "positions_rad": [
+            -0.36702176000000003,
+            0.59867808,
+            -0.567837088,
+            0.33736696,
+            0.7332410960000001,
+            2.715786584
+          ]
+        },
+        "target_provenance": {
+          "frame_id": "base_link",
+          "source": "tracked_target",
+          "stamp": {
+            "nanosec": 0,
+            "sec": 1
+          }
+        }
+      },
+      "scenario_sha256": "0883e20712ec256c7087e5a3328a2ba82bce594efdc23b638cb0b63ec87d50da"
+    },
+    {
+      "expected_role": "recorded_achieved_geometry",
+      "name": "recorded_multiview_01_to_02",
+      "plan_kind": "MULTIVIEW_SCAN",
+      "request_template": {
+        "calibration": {
+          "T_link6_camera": [
+            [
+              -0.00011159751133569562,
+              0.9997491333477074,
+              -0.022397721234607863,
+              -0.07813122843950987
+            ],
+            [
+              -0.9999844882130107,
+              -0.00023629490218783235,
+              -0.005564844839005679,
+              -0.00020008129649795418
+            ],
+            [
+              -0.005568741272358752,
+              0.022396752783092028,
+              0.9997336518220313,
+              0.03999983982632446
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          ],
+          "hand_eye_sha256": "47a5ce30fce8d7c29636d3048b9f67a41bdf8a3d430dbb1c3514eac995d36339"
+        },
+        "created_at_ns": 1788227503289900856,
+        "expires_at_ns": 1788228103289900856,
+        "limits": {
+          "bootstrap_start_limit_tolerance_rad": 0.0,
+          "configured_home_start_limit_tolerance_rad": 0.0,
+          "joint_margin_rad": 0.03,
+          "max_acceleration_rad_s2": [
+            5.0,
+            5.0,
+            5.0,
+            5.0,
+            5.0,
+            5.0
+          ],
+          "max_velocity_rad_s": [
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0
+          ],
+          "motion_limits_sha256": "1dce7e0ead4b75d5c6db4be751494355d3a94938e2373f2f947c4be0c626b81e",
+          "position_rad": [
+            [
+              -2.618,
+              2.168
+            ],
+            [
+              -0.044796192,
+              3.14
+            ],
+            [
+              -2.967,
+              0.0
+            ],
+            [
+              -1.745,
+              1.745
+            ],
+            [
+              -1.22,
+              1.22
+            ],
+            [
+              -3.141592653589793,
+              3.141592653589793
+            ]
+          ],
+          "source": "piper_sdk_controller_feedback"
+        },
+        "model": {
+          "collision_manifest_sha256": "544b78e559abe60a97640d1f3175b3b22c4cc6a65b9a0a7bcfb6aae53f0d682e",
+          "mode": 0,
+          "srdf_sha256": "9796c2c863859e69988510bc11840d337154fe0d70360450dc9a100a36818bb5",
+          "xacro_sha256": "9a9617578d666caa64982838ce6a81645b2d7682563024187c017d76646d8b04"
+        },
+        "plan_kind": "MULTIVIEW_SCAN",
+        "planner_backend": "tesseract",
+        "planning": {
+          "command_rate_hz": 20.0,
+          "deterministic_seed": 42,
+          "effective_speed_percent": 5.0,
+          "expanded_ray_candidate_count": 1,
+          "include_return_home": false,
+          "joint_specific_costs": {},
+          "max_execution_joint_step_rad": 0.05,
+          "max_viewpoints": 1,
+          "min_viewpoints": 1,
+          "pipeline": "OMPL_ISP",
+          "planner": "RRTConnect",
+          "ray_direction_attempt_limit": 6,
+          "return_home_positions_rad": [
+            -0.010187296,
+            0.0,
+            -0.01692068,
+            0.068485144,
+            0.441280868,
+            0.012594568
+          ],
+          "roll_samples_rad": [
+            -2.094395102,
+            -1.047197551,
+            0.0,
+            1.047197551,
+            2.094395102,
+            3.141592654
+          ],
+          "shortlisted_ray_count": 1,
+          "timing_policy": "timed_stream_v1"
+        },
+        "request_id": "00000000000000000000000000000000",
+        "request_sha256": "374bc7740fb0ae30a19c167d61ebcf4eb0b60d188e793e135e72bba41d0d71b0",
+        "scene": {
+          "candidate_views": [
+            {
+              "camera_position_m": [
+                0.1854696427556405,
+                -0.0034960339059560905,
+                0.2609784626537778
+              ],
+              "candidate_geometry": "target_ray",
+              "id": 1000013,
+              "look_direction": [
+                0.5211893224271512,
+                -0.11458201048464173,
+                -0.8457142857142859
+              ],
+              "maximum_final_aim_offset_deg": 5.0,
+              "nbv_rank": 1,
+              "ray_direction": [
+                -0.5211893224271511,
+                0.11458201048464174,
+                0.8457142857142859
+              ],
+              "ray_id": 13,
+              "ray_max_standoff_m": 0.5,
+              "ray_min_standoff_m": 0.28,
+              "ray_preferred_max_standoff_m": 0.5,
+              "ray_probe_index": 0,
+              "ray_probe_phase": "interval_search",
+              "ray_scoring_standoff_m": 0.29579776923707524,
+              "ray_standoff_m": 0.29579776923707524
+            }
+          ],
+          "observation_mode": "perception_snapshot",
+          "obstacles": [],
+          "target_center_m": [
+            0.33963628167977455,
+            -0.03738913700201228,
+            0.010818063527565536
+          ],
+          "target_provenance": {
+            "frame_id": "base_link",
+            "source": "tracked_target",
+            "stamp": {
+              "nanosec": 0,
+              "sec": 1
+            }
+          }
+        },
+        "schema_version": 5,
+        "start_state": {
+          "joint_names": [
+            "joint1",
+            "joint2",
+            "joint3",
+            "joint4",
+            "joint5",
+            "joint6"
+          ],
+          "positions_rad": [
+            -0.551038516,
+            1.028602904,
+            -0.895383076,
+            0.533280524,
+            0.977945528,
+            2.2832277160000007
+          ]
+        },
+        "target_provenance": {
+          "frame_id": "base_link",
+          "source": "tracked_target",
+          "stamp": {
+            "nanosec": 0,
+            "sec": 1
+          }
+        }
+      },
+      "scenario_sha256": "e66555d8b9fc466408b85935e2aa4e0e3298574988de09579fc6c6b79c2cb133"
+    },
+    {
+      "expected_role": "recorded_achieved_geometry",
+      "name": "recorded_multiview_02_to_03",
+      "plan_kind": "MULTIVIEW_SCAN",
+      "request_template": {
+        "calibration": {
+          "T_link6_camera": [
+            [
+              -0.00011159751133569562,
+              0.9997491333477074,
+              -0.022397721234607863,
+              -0.07813122843950987
+            ],
+            [
+              -0.9999844882130107,
+              -0.00023629490218783235,
+              -0.005564844839005679,
+              -0.00020008129649795418
+            ],
+            [
+              -0.005568741272358752,
+              0.022396752783092028,
+              0.9997336518220313,
+              0.03999983982632446
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          ],
+          "hand_eye_sha256": "47a5ce30fce8d7c29636d3048b9f67a41bdf8a3d430dbb1c3514eac995d36339"
+        },
+        "created_at_ns": 1788227503307419557,
+        "expires_at_ns": 1788228103307419557,
+        "limits": {
+          "bootstrap_start_limit_tolerance_rad": 0.0,
+          "configured_home_start_limit_tolerance_rad": 0.0,
+          "joint_margin_rad": 0.03,
+          "max_acceleration_rad_s2": [
+            5.0,
+            5.0,
+            5.0,
+            5.0,
+            5.0,
+            5.0
+          ],
+          "max_velocity_rad_s": [
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0
+          ],
+          "motion_limits_sha256": "1dce7e0ead4b75d5c6db4be751494355d3a94938e2373f2f947c4be0c626b81e",
+          "position_rad": [
+            [
+              -2.618,
+              2.168
+            ],
+            [
+              -0.044796192,
+              3.14
+            ],
+            [
+              -2.967,
+              0.0
+            ],
+            [
+              -1.745,
+              1.745
+            ],
+            [
+              -1.22,
+              1.22
+            ],
+            [
+              -3.141592653589793,
+              3.141592653589793
+            ]
+          ],
+          "source": "piper_sdk_controller_feedback"
+        },
+        "model": {
+          "collision_manifest_sha256": "544b78e559abe60a97640d1f3175b3b22c4cc6a65b9a0a7bcfb6aae53f0d682e",
+          "mode": 0,
+          "srdf_sha256": "9796c2c863859e69988510bc11840d337154fe0d70360450dc9a100a36818bb5",
+          "xacro_sha256": "9a9617578d666caa64982838ce6a81645b2d7682563024187c017d76646d8b04"
+        },
+        "plan_kind": "MULTIVIEW_SCAN",
+        "planner_backend": "tesseract",
+        "planning": {
+          "command_rate_hz": 20.0,
+          "deterministic_seed": 42,
+          "effective_speed_percent": 5.0,
+          "expanded_ray_candidate_count": 1,
+          "include_return_home": false,
+          "joint_specific_costs": {},
+          "max_execution_joint_step_rad": 0.05,
+          "max_viewpoints": 1,
+          "min_viewpoints": 1,
+          "pipeline": "OMPL_ISP",
+          "planner": "RRTConnect",
+          "ray_direction_attempt_limit": 6,
+          "return_home_positions_rad": [
+            -0.010187296,
+            0.0,
+            -0.01692068,
+            0.068485144,
+            0.441280868,
+            0.012594568
+          ],
+          "roll_samples_rad": [
+            -2.094395102,
+            -1.047197551,
+            0.0,
+            1.047197551,
+            2.094395102,
+            3.141592654
+          ],
+          "shortlisted_ray_count": 1,
+          "timing_policy": "timed_stream_v1"
+        },
+        "request_id": "00000000000000000000000000000000",
+        "request_sha256": "2e9ae85cc45f946b51883ca3f50657c458009e5f66b13b14b8cb139c0fd032ad",
+        "scene": {
+          "candidate_views": [
+            {
+              "camera_position_m": [
+                0.15315451990984166,
+                0.10414387161146282,
+                0.16441806352756558
+              ],
+              "candidate_geometry": "target_ray",
+              "id": 1000039,
+              "look_direction": [
+                0.6660062920354746,
+                -0.505475030762411,
+                -0.5485714285714286
+              ],
+              "maximum_final_aim_offset_deg": 5.0,
+              "nbv_rank": 1,
+              "ray_direction": [
+                -0.6660062920354746,
+                0.505475030762411,
+                0.5485714285714286
+              ],
+              "ray_id": 39,
+              "ray_max_standoff_m": 0.5,
+              "ray_min_standoff_m": 0.28,
+              "ray_preferred_max_standoff_m": 0.5,
+              "ray_probe_index": 0,
+              "ray_probe_phase": "interval_search",
+              "ray_scoring_standoff_m": 0.28,
+              "ray_standoff_m": 0.28
+            }
+          ],
+          "observation_mode": "perception_snapshot",
+          "obstacles": [],
+          "target_center_m": [
+            0.33963628167977455,
+            -0.03738913700201227,
+            0.010818063527565563
+          ],
+          "target_provenance": {
+            "frame_id": "base_link",
+            "source": "tracked_target",
+            "stamp": {
+              "nanosec": 0,
+              "sec": 1
+            }
+          }
+        },
+        "schema_version": 5,
+        "start_state": {
+          "joint_names": [
+            "joint1",
+            "joint2",
+            "joint3",
+            "joint4",
+            "joint5",
+            "joint6"
+          ],
+          "positions_rad": [
+            0.405014792,
+            1.199135448,
+            -1.005838484,
+            -0.36963836,
+            1.001355376,
+            2.8382609080000005
+          ]
+        },
+        "target_provenance": {
+          "frame_id": "base_link",
+          "source": "tracked_target",
+          "stamp": {
+            "nanosec": 0,
+            "sec": 1
+          }
+        }
+      },
+      "scenario_sha256": "e1271d64a17d92508f1ad4f675057ce62aac0bb62253fdac751be8f246e1c9e2"
+    },
+    {
+      "expected_role": "recorded_achieved_geometry",
+      "name": "recorded_multiview_03_to_04",
+      "plan_kind": "MULTIVIEW_SCAN",
+      "request_template": {
+        "calibration": {
+          "T_link6_camera": [
+            [
+              -0.00011159751133569562,
+              0.9997491333477074,
+              -0.022397721234607863,
+              -0.07813122843950987
+            ],
+            [
+              -0.9999844882130107,
+              -0.00023629490218783235,
+              -0.005564844839005679,
+              -0.00020008129649795418
+            ],
+            [
+              -0.005568741272358752,
+              0.022396752783092028,
+              0.9997336518220313,
+              0.03999983982632446
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          ],
+          "hand_eye_sha256": "47a5ce30fce8d7c29636d3048b9f67a41bdf8a3d430dbb1c3514eac995d36339"
+        },
+        "created_at_ns": 1788227503324982852,
+        "expires_at_ns": 1788228103324982852,
+        "limits": {
+          "bootstrap_start_limit_tolerance_rad": 0.0,
+          "configured_home_start_limit_tolerance_rad": 0.0,
+          "joint_margin_rad": 0.03,
+          "max_acceleration_rad_s2": [
+            5.0,
+            5.0,
+            5.0,
+            5.0,
+            5.0,
+            5.0
+          ],
+          "max_velocity_rad_s": [
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0
+          ],
+          "motion_limits_sha256": "1dce7e0ead4b75d5c6db4be751494355d3a94938e2373f2f947c4be0c626b81e",
+          "position_rad": [
+            [
+              -2.618,
+              2.168
+            ],
+            [
+              -0.044796192,
+              3.14
+            ],
+            [
+              -2.967,
+              0.0
+            ],
+            [
+              -1.745,
+              1.745
+            ],
+            [
+              -1.22,
+              1.22
+            ],
+            [
+              -3.141592653589793,
+              3.141592653589793
+            ]
+          ],
+          "source": "piper_sdk_controller_feedback"
+        },
+        "model": {
+          "collision_manifest_sha256": "544b78e559abe60a97640d1f3175b3b22c4cc6a65b9a0a7bcfb6aae53f0d682e",
+          "mode": 0,
+          "srdf_sha256": "9796c2c863859e69988510bc11840d337154fe0d70360450dc9a100a36818bb5",
+          "xacro_sha256": "9a9617578d666caa64982838ce6a81645b2d7682563024187c017d76646d8b04"
+        },
+        "plan_kind": "MULTIVIEW_SCAN",
+        "planner_backend": "tesseract",
+        "planning": {
+          "command_rate_hz": 20.0,
+          "deterministic_seed": 42,
+          "effective_speed_percent": 5.0,
+          "expanded_ray_candidate_count": 1,
+          "include_return_home": false,
+          "joint_specific_costs": {},
+          "max_execution_joint_step_rad": 0.05,
+          "max_viewpoints": 1,
+          "min_viewpoints": 1,
+          "pipeline": "OMPL_ISP",
+          "planner": "RRTConnect",
+          "ray_direction_attempt_limit": 6,
+          "return_home_positions_rad": [
+            -0.010187296,
+            0.0,
+            -0.01692068,
+            0.068485144,
+            0.441280868,
+            0.012594568
+          ],
+          "roll_samples_rad": [
+            -2.094395102,
+            -1.047197551,
+            0.0,
+            1.047197551,
+            2.094395102,
+            3.141592654
+          ],
+          "shortlisted_ray_count": 1,
+          "timing_policy": "timed_stream_v1"
+        },
+        "request_id": "00000000000000000000000000000000",
+        "request_sha256": "ae3d8f78c9792f4f3a066fbb96b4172ef0418ffb73375a59e87c888d18b9076c",
+        "scene": {
+          "candidate_views": [
+            {
+              "camera_position_m": [
+                0.15739523223330715,
+                0.04681085020693112,
+                0.20602890890434508
+              ],
+              "candidate_geometry": "target_ray",
+              "id": 1000026,
+              "look_direction": [
+                0.6508247308422109,
+                -0.30069753317720715,
+                -0.6971428571428571
+              ],
+              "maximum_final_aim_offset_deg": 5.0,
+              "nbv_rank": 1,
+              "ray_direction": [
+                -0.6508247308422109,
+                0.30069753317720715,
+                0.6971428571428571
+              ],
+              "ray_id": 26,
+              "ray_max_standoff_m": 0.5,
+              "ray_min_standoff_m": 0.28,
+              "ray_preferred_max_standoff_m": 0.5,
+              "ray_probe_index": 0,
+              "ray_probe_phase": "interval_search",
+              "ray_scoring_standoff_m": 0.28001555689292146,
+              "ray_standoff_m": 0.28001555689292146
+            }
+          ],
+          "observation_mode": "perception_snapshot",
+          "obstacles": [],
+          "target_center_m": [
+            0.33963628167977455,
+            -0.037389137002012275,
+            0.010818063527565563
+          ],
+          "target_provenance": {
+            "frame_id": "base_link",
+            "source": "tracked_target",
+            "stamp": {
+              "nanosec": 0,
+              "sec": 1
+            }
+          }
+        },
+        "schema_version": 5,
+        "start_state": {
+          "joint_names": [
+            "joint1",
+            "joint2",
+            "joint3",
+            "joint4",
+            "joint5",
+            "joint6"
+          ],
+          "positions_rad": [
+            1.41069628,
+            1.755337388,
+            -0.49856696400000006,
+            -0.904698172,
+            1.187273528,
+            2.762658612
+          ]
+        },
+        "target_provenance": {
+          "frame_id": "base_link",
+          "source": "tracked_target",
+          "stamp": {
+            "nanosec": 0,
+            "sec": 1
+          }
+        }
+      },
+      "scenario_sha256": "8b33d7dec8d3d1767907580ba2126cf55cfab239fb24b39a00fc493300476d54"
+    },
+    {
+      "expected_role": "negative_control",
+      "name": "deliberately_blocked_multiview",
+      "plan_kind": "MULTIVIEW_SCAN",
+      "request_template": {
+        "calibration": {
+          "T_link6_camera": [
+            [
+              -0.00011159751133569562,
+              0.9997491333477074,
+              -0.022397721234607863,
+              -0.07813122843950987
+            ],
+            [
+              -0.9999844882130107,
+              -0.00023629490218783235,
+              -0.005564844839005679,
+              -0.00020008129649795418
+            ],
+            [
+              -0.005568741272358752,
+              0.022396752783092028,
+              0.9997336518220313,
+              0.03999983982632446
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          ],
+          "hand_eye_sha256": "47a5ce30fce8d7c29636d3048b9f67a41bdf8a3d430dbb1c3514eac995d36339"
+        },
+        "created_at_ns": 1788227503272745673,
+        "expires_at_ns": 1788228103272745673,
+        "limits": {
+          "bootstrap_start_limit_tolerance_rad": 0.0,
+          "configured_home_start_limit_tolerance_rad": 0.0,
+          "joint_margin_rad": 0.03,
+          "max_acceleration_rad_s2": [
+            5.0,
+            5.0,
+            5.0,
+            5.0,
+            5.0,
+            5.0
+          ],
+          "max_velocity_rad_s": [
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0
+          ],
+          "motion_limits_sha256": "1dce7e0ead4b75d5c6db4be751494355d3a94938e2373f2f947c4be0c626b81e",
+          "position_rad": [
+            [
+              -2.618,
+              2.168
+            ],
+            [
+              -0.044796192,
+              3.14
+            ],
+            [
+              -2.967,
+              0.0
+            ],
+            [
+              -1.745,
+              1.745
+            ],
+            [
+              -1.22,
+              1.22
+            ],
+            [
+              -3.141592653589793,
+              3.141592653589793
+            ]
+          ],
+          "source": "piper_sdk_controller_feedback"
+        },
+        "model": {
+          "collision_manifest_sha256": "544b78e559abe60a97640d1f3175b3b22c4cc6a65b9a0a7bcfb6aae53f0d682e",
+          "mode": 0,
+          "srdf_sha256": "9796c2c863859e69988510bc11840d337154fe0d70360450dc9a100a36818bb5",
+          "xacro_sha256": "9a9617578d666caa64982838ce6a81645b2d7682563024187c017d76646d8b04"
+        },
+        "plan_kind": "MULTIVIEW_SCAN",
+        "planner_backend": "tesseract",
+        "planning": {
+          "command_rate_hz": 20.0,
+          "deterministic_seed": 42,
+          "effective_speed_percent": 5.0,
+          "expanded_ray_candidate_count": 1,
+          "include_return_home": false,
+          "joint_specific_costs": {},
+          "max_execution_joint_step_rad": 0.05,
+          "max_viewpoints": 1,
+          "min_viewpoints": 1,
+          "pipeline": "OMPL_ISP",
+          "planner": "RRTConnect",
+          "ray_direction_attempt_limit": 6,
+          "return_home_positions_rad": [
+            -0.010187296,
+            0.0,
+            -0.01692068,
+            0.068485144,
+            0.441280868,
+            0.012594568
+          ],
+          "roll_samples_rad": [
+            -2.094395102,
+            -1.047197551,
+            0.0,
+            1.047197551,
+            2.094395102,
+            3.141592654
+          ],
+          "shortlisted_ray_count": 1,
+          "timing_policy": "timed_stream_v1"
+        },
+        "request_id": "00000000000000000000000000000000",
+        "request_sha256": "b81b0a94c0959ac0d1eca389a021188e9cfe3eef662a58f37c87895487b0ec94",
+        "scene": {
+          "candidate_views": [
+            {
+              "camera_position_m": [
+                0.14060416500722714,
+                -0.0641686267984424,
+                0.24154038062555114
+              ],
+              "candidate_geometry": "target_ray",
+              "id": 1000021,
+              "look_direction": [
+                0.6506829689405057,
+                0.08754847317491532,
+                -0.7542857142857143
+              ],
+              "maximum_final_aim_offset_deg": 5.0,
+              "nbv_rank": 1,
+              "ray_direction": [
+                -0.6506829689405056,
+                -0.0875484731749153,
+                0.7542857142857142
+              ],
+              "ray_id": 21,
+              "ray_max_standoff_m": 0.5,
+              "ray_min_standoff_m": 0.28,
+              "ray_preferred_max_standoff_m": 0.5,
+              "ray_probe_index": 0,
+              "ray_probe_phase": "interval_search",
+              "ray_scoring_standoff_m": 0.30588185978899607,
+              "ray_standoff_m": 0.30588185978899607
+            }
+          ],
+          "observation_mode": "perception_snapshot",
+          "obstacles": [
+            {
+              "id": "benchmark_deliberately_blocking_volume",
+              "maximum_m": [
+                2.0,
+                2.0,
+                2.0
+              ],
+              "minimum_m": [
+                -2.0,
+                -2.0,
+                -2.0
+              ],
+              "type": "box"
+            }
+          ],
+          "target_center_m": [
+            0.33963628167977455,
+            -0.037389137002012275,
+            0.010818063527565563
+          ],
+          "target_provenance": {
+            "frame_id": "base_link",
+            "source": "tracked_target",
+            "stamp": {
+              "nanosec": 0,
+              "sec": 1
+            }
+          }
+        },
+        "schema_version": 5,
+        "start_state": {
+          "joint_names": [
+            "joint1",
+            "joint2",
+            "joint3",
+            "joint4",
+            "joint5",
+            "joint6"
+          ],
+          "positions_rad": [
+            -0.36702176000000003,
+            0.59867808,
+            -0.567837088,
+            0.33736696,
+            0.7332410960000001,
+            2.715786584
+          ]
+        },
+        "target_provenance": {
+          "frame_id": "base_link",
+          "source": "tracked_target",
+          "stamp": {
+            "nanosec": 0,
+            "sec": 1
+          }
+        }
+      },
+      "scenario_sha256": "02b334ec64b8c5eed165243338df2de4c35ed4b8eb49570a4399e72e653bee7b"
+    },
+    {
+      "expected_role": "policy_control",
+      "name": "recorded_return_home",
+      "plan_kind": "RETURN_HOME",
+      "request_template": {
+        "calibration": {
+          "T_link6_camera": [
+            [
+              -0.00011159751133569562,
+              0.9997491333477074,
+              -0.022397721234607863,
+              -0.07813122843950987
+            ],
+            [
+              -0.9999844882130107,
+              -0.00023629490218783235,
+              -0.005564844839005679,
+              -0.00020008129649795418
+            ],
+            [
+              -0.005568741272358752,
+              0.022396752783092028,
+              0.9997336518220313,
+              0.03999983982632446
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          ],
+          "hand_eye_sha256": "47a5ce30fce8d7c29636d3048b9f67a41bdf8a3d430dbb1c3514eac995d36339"
+        },
+        "created_at_ns": 1788227503342883677,
+        "expires_at_ns": 1788228103342883677,
+        "limits": {
+          "bootstrap_start_limit_tolerance_rad": 0.0,
+          "configured_home_start_limit_tolerance_rad": 0.3,
+          "joint_margin_rad": 0.03,
+          "max_acceleration_rad_s2": [
+            5.0,
+            5.0,
+            5.0,
+            5.0,
+            5.0,
+            5.0
+          ],
+          "max_velocity_rad_s": [
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0
+          ],
+          "motion_limits_sha256": "1dce7e0ead4b75d5c6db4be751494355d3a94938e2373f2f947c4be0c626b81e",
+          "position_rad": [
+            [
+              -2.618,
+              2.168
+            ],
+            [
+              -0.044796192,
+              3.14
+            ],
+            [
+              -2.967,
+              0.0
+            ],
+            [
+              -1.745,
+              1.745
+            ],
+            [
+              -1.22,
+              1.22
+            ],
+            [
+              -3.141592653589793,
+              3.141592653589793
+            ]
+          ],
+          "source": "piper_sdk_controller_feedback"
+        },
+        "model": {
+          "collision_manifest_sha256": "544b78e559abe60a97640d1f3175b3b22c4cc6a65b9a0a7bcfb6aae53f0d682e",
+          "mode": 0,
+          "srdf_sha256": "9796c2c863859e69988510bc11840d337154fe0d70360450dc9a100a36818bb5",
+          "xacro_sha256": "9a9617578d666caa64982838ce6a81645b2d7682563024187c017d76646d8b04"
+        },
+        "plan_kind": "RETURN_HOME",
+        "planner_backend": "tesseract",
+        "planning": {
+          "command_rate_hz": 20.0,
+          "deterministic_seed": 42,
+          "effective_speed_percent": 5.0,
+          "include_return_home": true,
+          "joint_specific_costs": {},
+          "max_execution_joint_step_rad": 0.05,
+          "max_viewpoints": 0,
+          "min_viewpoints": 0,
+          "pipeline": "OMPL_ISP",
+          "planner": "RRTConnect",
+          "return_home_positions_rad": [
+            -0.010187296,
+            0.0,
+            -0.01692068,
+            0.068485144,
+            0.441280868,
+            0.012594568
+          ],
+          "roll_samples_rad": [
+            -2.094395102,
+            -1.047197551,
+            0.0,
+            1.047197551,
+            2.094395102,
+            3.141592654
+          ],
+          "timing_policy": "timed_stream_v1"
+        },
+        "request_id": "00000000000000000000000000000000",
+        "request_sha256": "ccec6ddb9b3cc5addb48b0b7f7154f93d211d5541e029b7aa4861641d1295618",
+        "scene": {
+          "candidate_views": [],
+          "observation_mode": "perception_snapshot",
+          "obstacles": [],
+          "target_center_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "target_provenance": {
+            "frame_id": "base_link",
+            "source": "configured_home",
+            "stamp": {
+              "nanosec": 0,
+              "sec": 1
+            }
+          }
+        },
+        "schema_version": 5,
+        "start_state": {
+          "joint_names": [
+            "joint1",
+            "joint2",
+            "joint3",
+            "joint4",
+            "joint5",
+            "joint6"
+          ],
+          "positions_rad": [
+            -1.8385976000000002,
+            1.724531284,
+            -0.281179836,
+            0.930619956,
+            1.12801626,
+            -2.932388732
+          ]
+        },
+        "target_provenance": {
+          "frame_id": "base_link",
+          "source": "configured_home",
+          "stamp": {
+            "nanosec": 0,
+            "sec": 1
+          }
+        }
+      },
+      "scenario_sha256": "555b3934d64ce068fc960dd90dd6f27dcd6a95838197fa5594ee7a46e4f16834"
+    }
+  ],
+  "real_arm_motion": false,
+  "schema_version": 1,
+  "source": {
+    "calibration_path": "/home/prl/.codex/worktrees/piper-curobo-integration.vjK1Md/L515_camera/calibration/hand_eye/session_20260808_straight_mount/calibration_result.yaml",
+    "calibration_sha256": "47a5ce30fce8d7c29636d3048b9f67a41bdf8a3d430dbb1c3514eac995d36339",
+    "ray_diagnostics_path": "/home/prl/Piper_arm/datasets/ray_diagnostics/replay_scan_20260821_184024/ray_mission_diagnostics.json",
+    "ray_diagnostics_sha256": "6eaac403f75a764f3bcdd1e5994fe86f908cf6f508b877ebbf0f3f26af70b689"
+  }
+}

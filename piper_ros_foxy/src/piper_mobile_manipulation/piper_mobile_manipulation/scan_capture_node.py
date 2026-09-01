@@ -132,7 +132,7 @@ class ScanCaptureNode(Node):
         self.declare_parameter(
             'scan_execution_status_topic', '/piper/scan_execution_status')
         self.declare_parameter(
-            'plan_provenance_topic', '/piper/tesseract_plan_provenance')
+            'plan_provenance_topic', '/piper/motion_plan_provenance')
         self.declare_parameter('joint_state_topic', '/joint_states_single')
         self.declare_parameter('base_frame', 'base_link')
         self.declare_parameter(

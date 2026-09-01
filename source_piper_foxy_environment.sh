@@ -76,8 +76,10 @@ if ! python3 - <<'PY'
 import piper_mobile_manipulation.scan_capture  # noqa: F401
 from piper_mobile_manipulation.action import RunTargetScan
 from piper_mobile_manipulation.msg import (
-    OccluderAction, TesseractPlan, TesseractReadiness)
-from piper_mobile_manipulation.srv import AuthorizeMission, PrepareAcquisition
+    MotionPlan, OccluderAction, PlannerReadiness,
+    TesseractPlan, TesseractReadiness)
+from piper_mobile_manipulation.srv import (
+    AuthorizeMission, PrepareAcquisition, RequestMotionPlan)
 from piper_msgs.msg import PiperMotionLimits
 
 required_fields = (
@@ -91,22 +93,33 @@ required_fields = (
     'timing_policy',
     'source_request_id',
 )
-message = TesseractPlan()
+message = MotionPlan()
 missing = [name for name in required_fields if not hasattr(message, name)]
 if missing:
     raise SystemExit(
-        'Stale TesseractPlan message schema; missing: ' + ', '.join(missing))
-readiness = TesseractReadiness()
+        'Stale MotionPlan message schema; missing: ' + ', '.join(missing))
+if not all(hasattr(message, name) for name in (
+        'backend', 'backend_version', 'collision_model_qualified',
+        'planning_duration_sec', 'trajectory_duration_sec')):
+    raise SystemExit('Stale generic MotionPlan message schema')
+readiness = PlannerReadiness()
 if not all(hasattr(readiness, name) for name in (
         'generation_id', 'worker_ready', 'acquisition_ready',
         'multiview_ready', 'manipulation_ready', 'acquisition_blockers',
         'multiview_blockers', 'manipulation_blockers')):
-    raise SystemExit('Stale TesseractReadiness message schema')
+    raise SystemExit('Stale PlannerReadiness message schema')
+# These legacy Tesseract transports remain deliberate compatibility aliases.
+if not hasattr(TesseractPlan(), 'source_request_id'):
+    raise SystemExit('Stale TesseractPlan compatibility schema')
+if not hasattr(TesseractReadiness(), 'manipulation_ready'):
+    raise SystemExit('Stale TesseractReadiness compatibility schema')
 mission_goal = RunTargetScan.Goal()
 if not all(hasattr(mission_goal, name) for name in (
         'task_id', 'task_type', 'target_label', 'target_profile',
-        'rough_target', 'target_confidence', 'deadline_sec')):
+        'planner_backend', 'rough_target', 'target_confidence', 'deadline_sec')):
     raise SystemExit('Stale RunTargetScan action schema')
+if not hasattr(RequestMotionPlan.Request(), 'plan_kind'):
+    raise SystemExit('Stale RequestMotionPlan service schema')
 if not hasattr(OccluderAction(), 'mission_sha256'):
     raise SystemExit('Stale OccluderAction message schema')
 if not hasattr(AuthorizeMission.Request(), 'mission_sha256'):

@@ -1,5 +1,18 @@
 schema_version: 1
 document: runtime_contracts
+planner_benchmark_and_phase_timing_contract_2026_09_01:
+  public_ros_interface_change: none
+  planner_benchmark:
+    execution_boundary: command-free offline worker processes using frozen schema-v5 requests
+    comparison_identity: backend-neutral scenario hashes plus identical robot model calibration collision environment starts goals and numerical tolerances
+    physical_claim: false
+    controls: [recorded achieved-geometry positives, deliberately blocked negative control, return-home policy control excluded from backend performance]
+  mission_phase_timing:
+    transport: additive fields inside the existing private action_summary JSON payload
+    fields: [planner_backend, phase_timing]
+    clock: monotonic
+    compatibility: Historical result payloads may omit both fields and consumers must continue to accept them.
+    authority: Timing is observational only and cannot change mission transitions deadlines motion home disable cleanup or terminal results.
 rough_acquisition_partial_target_contract_2026_08_27:
   private_request_reason: rough_acquisition_viewpoint
   admission: A GroundingDINO target may seed rough acquisition despite box proportions when the exact request is rough acquisition and semantic confidence plus profile appearance pass. SAM2 must still provide nonempty visible target support and aligned depth must remain qualified before measured LOCKED.
@@ -626,6 +639,12 @@ filesystem_contracts:
     worker_exclusivity: run_worker.sh holds a nonblocking flock at XDG_RUNTIME_DIR/piper_tesseract_worker.lock, or the /tmp fallback, and exits with code 3 if another worker owns it.
     worker_supervision: In the Bubblewrap route, run_worker.sh remains as the direct parent and waits for the isolated worker. This preserves --die-with-parent across the GUI's short-lived Python startup thread and lets GUI process-group cleanup stop both wrapper and sandbox.
     current_qualification: On 2026-07-27 the exact production 30 mm decomposition manifest hash 237c06f03ef248c535b28fbf588e65160325a5f8f48632a9f0237e59c7a10956 passed core and compact suites with collision_model_qualified_for_hardware=true. The exact compact start for target [0.33,-0.14,0.0] produced J3 delta -0.05 rad, recovery endpoint 55, 352 points, and 5608 validation samples. The normal post-recovery clearance was 0.001006 m under its named policy. No collision pair is disabled. The nanobind continuous manager remains disabled; no response claims BulletCast or FCL.
+  curobo_spool:
+    implementation_owners: [motion_planning/curobo/spool.py, motion_planning/curobo/worker.py]
+    root: PIPER_CUROBO_SPOOL, with /tmp/piper_curobo_plans fallback
+    queues: [requests, processing, responses, failed]
+    worker_health: worker_health.json is a compact canonical liveness record atomically replaced at 0.5-second intervals and must remain at or below the coordinator's 16 KiB input bound. It carries generation, timestamp, readiness, backend/version/error, environment summary, qualification flag and authoritative model hashes; it deliberately excludes the expanded sphere/model provenance.
+    worker_diagnostics: worker_diagnostics.json is an atomically replaced startup diagnostic record containing the complete environment and hash-bound collision-model provenance. It is operator evidence, not readiness authority, and is written once before the heartbeat loop rather than retransmitted every 0.5 seconds.
   vision_recovery:
     root: /tmp/piper_vision_recovery
     request: request.yaml written atomically only after a sustained timestamp fault and latest-sample fresh joint positions remain within stationary_position_tolerance_rad, default 0.001, for stationary_duration_sec, default 0.75; consumed by run_gpu_vision_pipeline.sh. Velocity-only feedback is a fail-closed compatibility fallback; health reason distinguishes missing/stale feedback from position settling.
@@ -858,3 +877,17 @@ post_enable_startup_proof_contract_2026_08_25:
   required_evidence: [joint and arm-status samples received after enable, six finite positions, maximum 0.005-rad drift across two seconds, err_code zero, no angle-limit or communication flags, valid all-six-enabled motor feedback, no motor faults or watchdog reason]
   failure: With intact authority disable before reporting retryable CONTROL_UNTRUSTWORTHY; with motor-authority loss issue no command and use watchdog six-disabled proof.
   non_effects: [direct-home relaxation allowance, command limits, J6 winding map, endpoint tolerances, STARTUP_WRIST-before-ROUGH_HOME order]
+
+generic_motion_planner_contract_2026_08_27:
+  configuration: planner_backend is a frozen typed value with exactly tesseract or curobo; default tesseract; invalid persisted or requested values fail closed.
+  generic_services: [/motion_planner/request_plan, /motion_planner/request_acquisition_plan, /motion_planner/request_return_home_plan, /motion_planner/request_startup_home_plan]
+  generic_topics: [/piper/motion_plan, /piper/planner_readiness, /piper/motion_plan_status, /piper/view_generation, /piper/motion_plan_provenance]
+  transport: MotionPlan carries identity, request and trajectory hashes, backend/version, plan kind, collision qualification and clearance, execution timing policy, target/view evidence, JointTrajectory data, bootstrap evidence, rejection information and comparable metrics.
+  execution_boundary: MotionPlan -> backend-neutral normalization and validation -> ScanExecutionPlan -> PlanAuthorizer -> existing executor and TrajectoryRunner.
+  timing: TIMED_STREAM with timed_stream_v1 is authoritative; TESSERACT_STREAM and tesseract_stream_v3 remain compatibility input aliases with unchanged numeric validation.
+  supported_plan_kinds: {tesseract: [MULTIVIEW_SCAN, ROUGH_ACQUISITION, RETURN_HOME, current legacy kinds], curobo: [MULTIVIEW_SCAN, ROUGH_ACQUISITION within canonical joint limits including bounded bootstrap_static folded-start escape, RETURN_HOME]}
+  unsupported_curobo: [OCCLUSION_PROBE, OCCLUDER_PICK_PLACE, OCCLUDER_PUSH, folded bootstrap outside canonical joint limits]
+  curobo_runtime_contract: {python: explicit Python 3.10 interpreter, curobo: 0.7.8 at d64c4b005459db10c5dd867d8b30a87d5bda9bdb, warp: 1.11.1, inherited_foxy_pythonpath: forbidden, driver_commands: forbidden}
+  curobo_bootstrap_contract: Only ROUGH_ACQUISITION with observation_mode bootstrap_static may admit an initial cuRobo self-collision classification. The worker searches joint 2 or 3 in 0.01-rad increments to a maximum absolute delta of 0.15 rad, rejects any intermediate joint-limit or world-collision classification, requires the endpoint to pass ordinary cuRobo constraints, prepends the single-joint prefix, and publishes generic recovery joint delta boundary and evidence. The common executor independently requires the acquisition segment-zero scope, monotonic declared motion, unchanged floor/world checks and normal 60 mm proxy clearance at the boundary. Out-of-limit bootstrap remains unsupported.
+  model_contract: Schema-2 provenance locks gripper joints 7 and 8 at zero outside the six-axis cspace; hash-binds the reviewed 69-sphere YAML and operator-saved Isaac USD plus URDF, SRDF, manifest and every moving mesh; validates exact sphere counts and ownership; records per-link sampled-surface coverage; loads the rigid PiPER base and both canonical Bunker STLs as exact base-frame world Mesh obstacles; applies only the measured 0.007 m Link-1 self buffer without adding ignore pairs; declares conservative_geometry false and hardware_qualified false until frozen-request and physical qualification pass.
+  compatibility: Legacy RequestTesseractPlan, TesseractPlan, TesseractReadiness and /tesseract_plan_bridge endpoints are published only for Tesseract and are not the production shared boundary.

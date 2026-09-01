@@ -31,6 +31,7 @@ setup(
     license='Apache-2.0',
     entry_points={
         'console_scripts': [
+            'motion_planner_bridge = piper_tesseract_foxy.bridge_node:main',
             'tesseract_plan_bridge = piper_tesseract_foxy.bridge_node:main',
             'tesseract_plan_worker = piper_tesseract_foxy.worker:main',
             'piper_capability_map_generator = '

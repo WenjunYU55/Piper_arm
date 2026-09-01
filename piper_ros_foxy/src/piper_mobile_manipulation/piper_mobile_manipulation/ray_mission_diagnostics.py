@@ -603,13 +603,14 @@ def add_bridge_request(
                 len(bridge_deltas) - len(newly_culled)),
             'shortlisted_ray_count': len(shortlisted),
         },
-        message='Queued one correlated Tesseract planning request',
+        message='Queued one correlated motion-planning request',
         extra={'request_id': str(request_id), 'request_status': 'queued'})
 
 
-def add_tesseract_response(snapshot, payload, request=None):
+def add_planner_response(snapshot, payload, request=None):
     """Add worker attempt, rejection, and selection evidence."""
     result = deepcopy(snapshot)
+    backend = str(payload.get('backend', 'tesseract')).strip().lower()
     diagnostics = payload.get('planning_diagnostics', {})
     attempted = {int(value) for value in diagnostics.get('attempted_ray_ids', [])}
     selected_items = {
@@ -650,8 +651,8 @@ def add_tesseract_response(snapshot, payload, request=None):
         ray_id = int(ray['ray_id'])
         if ray_id in selected:
             selected_item = selected_items[ray_id]
-            ray['tesseract_status'] = 'selected'
-            ray['tesseract_reasons'] = []
+            ray['planner_status'] = 'selected'
+            ray['planner_reasons'] = []
             ray['camera_position_m'] = _vector(
                 selected_item.get('camera_position_m'))
             ray['look_direction'] = _vector(
@@ -660,17 +661,24 @@ def add_tesseract_response(snapshot, payload, request=None):
             if endpoint is not None and len(endpoint) == 6:
                 ray['planned_joint_positions_rad'] = [
                     _finite_float(value) for value in endpoint]
-                ray['robot_pose_source'] = 'tesseract_planned_endpoint'
+                ray['planner_pose_source'] = 'motion_planner_endpoint'
+                ray['robot_pose_source'] = (
+                    'tesseract_planned_endpoint'
+                    if backend == 'tesseract'
+                    else 'motion_planner_endpoint')
         elif ray_id in failures:
-            ray['tesseract_status'] = 'culled'
-            ray['tesseract_reasons'] = failures[ray_id]
+            ray['planner_status'] = 'culled'
+            ray['planner_reasons'] = failures[ray_id]
         elif ray_id in attempted:
-            ray['tesseract_status'] = 'attempted_not_selected'
-            ray['tesseract_reasons'] = [{
+            ray['planner_status'] = 'attempted_not_selected'
+            ray['planner_reasons'] = [{
                 'stage': 'NOT_SELECTED',
                 'detail': 'attempted but no selected endpoint was returned',
                 'permanent_endpoint_failure': False,
             }]
+        if backend == 'tesseract' and 'planner_status' in ray:
+            ray['tesseract_status'] = ray['planner_status']
+            ray['tesseract_reasons'] = deepcopy(ray['planner_reasons'])
     request = {
         'request_id': str(payload.get('request_id', '')),
         'status': str(payload.get('status', 'unknown')),
@@ -686,7 +694,7 @@ def add_tesseract_response(snapshot, payload, request=None):
     reasons = {}
     affected_ray_ids = attempted | selected | set(failures)
     for ray in result.get('rays', []):
-        status = ray.get('tesseract_status')
+        status = ray.get('planner_status')
         ray_id = int(ray['ray_id'])
         if status is None or ray_id not in affected_ray_ids:
             continue
@@ -696,24 +704,25 @@ def add_tesseract_response(snapshot, payload, request=None):
             'status': 'selected' if status == 'selected' else (
                 'culled' if rejected else status),
             'culled': rejected,
-            'cull_stage': 'tesseract' if rejected else '',
-            'reasons': deepcopy(ray.get('tesseract_reasons', [])),
+            'cull_stage': 'planner' if rejected else '',
+            'reasons': deepcopy(ray.get('planner_reasons', [])),
         }
         if rejected:
             delta['cull_disposition'] = (
                 'permanent' if any(bool(item.get(
                     'permanent_endpoint_failure')) for item in ray.get(
-                        'tesseract_reasons', []) if isinstance(item, dict))
+                        'planner_reasons', []) if isinstance(item, dict))
                 else 'retry_eligible')
         for key in (
                 'camera_position_m', 'look_direction',
-                'planned_joint_positions_rad', 'robot_pose_source'):
+                'planned_joint_positions_rad', 'planner_pose_source',
+                'robot_pose_source'):
             if key in ray:
                 delta[key] = deepcopy(ray[key])
         deltas[str(ray_id)] = delta
         if rejected:
             newly_culled.append(ray_id)
-            reasons[str(ray_id)] = deepcopy(ray.get('tesseract_reasons', []))
+            reasons[str(ray_id)] = deepcopy(ray.get('planner_reasons', []))
     selected_evidence = []
     for item in payload.get('selected_viewpoints', []):
         selected_evidence.append({
@@ -742,6 +751,10 @@ def add_tesseract_response(snapshot, payload, request=None):
             'standoff_probe_evidence': deepcopy(diagnostics.get(
                 'standoff_probes', diagnostics.get('candidate_failures', []))),
         })
+
+
+# Historical import retained for archived Tesseract diagnostics/tests.
+add_tesseract_response = add_planner_response
 
 
 def add_request_rejection(snapshot, request_id, code, reason):
@@ -1458,9 +1471,10 @@ const colors={generated:'#7b8794',planner:'#59636f',
   prequalification:'#d16ba5',bridge:'#e3a72f',tesseract:'#e05252',
   remaining:'#3e9bd6',selected:'#39b86b'};
 function state(r){
-  if(r.tesseract_status==='selected')return ['selected','selected'];
-  if(r.tesseract_status==='culled'||
-      r.tesseract_status==='attempted_not_selected')return ['culled','tesseract'];
+  const plannerStatus=r.planner_status||r.tesseract_status;
+  if(plannerStatus==='selected')return ['selected','selected'];
+  if(plannerStatus==='culled'||
+      plannerStatus==='attempted_not_selected')return ['culled','planner'];
   if(r.bridge_status&&r.bridge_status!=='shortlisted')return ['culled','bridge'];
   if(r.prequalification_status==='culled')return ['culled','prequalification'];
   if(r.planner_status&&r.planner_status!=='remaining')return ['culled','planner'];
@@ -1468,11 +1482,10 @@ function state(r){
 }
 function reasons(r){
   let out=[];
-  (r.planner_reasons||[]).forEach(x=>out.push(x));
+  ((r.planner_reasons||r.tesseract_reasons)||[]).forEach(x=>
+    out.push((x.stage?x.stage+': ':'')+(x.detail||x)));
   (r.prequalification_reasons||[]).forEach(x=>out.push(x));
   (r.bridge_reasons||[]).forEach(x=>out.push(x));
-  (r.tesseract_reasons||[]).forEach(x=>
-    out.push((x.stage?x.stage+': ':'')+(x.detail||x)));
   return out.join(' | ');
 }
 function svg(tag,attrs,text){

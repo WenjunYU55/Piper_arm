@@ -1,0 +1,12 @@
+string session_id
+string plan_kind
+bool force_refresh
+# Optional only for RETURN_HOME services. Empty values preserve the configured
+# legacy home target. A staged request must provide one of STARTUP_WRIST,
+# ROUGH_HOME, STORAGE_WRIST and exactly six finite joint_goal_positions_rad.
+string home_stage
+float64[] joint_goal_positions_rad
+---
+bool accepted
+string request_id
+string message

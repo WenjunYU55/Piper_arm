@@ -1,5 +1,27 @@
 schema_version: 1
 document: ai_context_index
+planner_backend_controlled_replay_2026_09_01:
+  scope: Command-free same-request Tesseract 0.35.0.6 versus cuRobo 0.7.8 timing and feasibility replay plus additive future mission-phase efficiency diagnostics.
+  artifacts: [benchmarks/planner_backends/recorded_reference_corpus.json, benchmarks/planner_backends/results/20260901_tabletop_controlled_replay/planner_benchmark.json, docs/experiments/planner_backend_benchmark.md, tools/create_planner_benchmark_corpus.py, tools/benchmark_motion_planners.py, tools/summarize_mission_efficiency.py]
+  result: Both backends solved 15 of 15 recorded positive requests, rejected 3 of 3 blocked controls, and every successful path passed exact Tesseract revalidation. Median request wall time was 19.646 seconds Tesseract and 0.630 seconds cuRobo, but the median planning-plus-scheduled-trajectory proxy was effectively equal at 25.046 and 25.048 seconds.
+  safety_boundary: Offline proposal evidence only. No ROS CAN camera controller or motor process ran; cuRobo remains hardware_qualified false and Tesseract remains the physically qualified final backend.
+chapter5_method_comparison_evidence_2026_08_31:
+  scope: Command-free thesis evidence derived from implemented alternatives, immutable local RGB-D datasets, historical mission diagnostics, capability-map benchmarks, Git provenance and same-input offline reconstruction replay.
+  artifacts: [docs/chapter5_results_summary.md, docs/chapter5_method_comparison.xlsx, docs/chapter5_method_comparison.json, tools/analyse_chapter5_methods.py]
+  evidence_rule: Every numerical comparison carries CONTROLLED_REPLAY PAIRED_PHYSICAL MATCHED_RUNS HISTORICAL_OBSERVATIONAL or EXPLORATORY strength. Unsupported comparisons remain explicit; detector confidence is not accuracy, mask agreement is not ground-truth IoU, target stability is not position accuracy, capability recall is relative to the sampled reference, and exploratory cuRobo evidence is not physical qualification.
+  current_boundary: The archive supports several component-selection claims but not complete final-system success. No stored scan passed the current replayed measured-convergence rule and every same-input reconstruction mode failed the measured 35 mm cube quality gate.
+  safety: The analyser is offline and command-free; it never starts ROS CAN camera GPU or robot processes and never mutates source captures.
+consensus_supported_texture_baking_2026_08_30:
+  contract: constrained_superposition additionally emits a dense consensus-supported textured model as Wavefront OBJ plus MTL plus PNG. It starts from every corrected confidence-qualified measured depth pixel in the full superposition overlay, retains points within the bounded consensus neighborhood for multi-view scans, triangulates adjacent source-depth pixels without crossing gaps, and fine-voxel averages their superposition. One-view reconstruction retains its measured geometry as unverified because cross-capture evidence is unavailable.
+  source_selection: Each retained triangle selects one original rectified RGB capture using finite projection, target-mask support, positive camera depth, per-vertex and centroid depth consistency, projected area and front-facing incidence. Texture samples are bilinear and are never averaged across captures.
+  outputs: [textured_mesh_path, texture_material_path, texture_atlas_path, texture_baking geometry and coverage diagnostics, GUI Open Textured Model]
+  safety: [offline only, immutable source captures, no predicted geometry, no ROS or motion changes, no automatic promotion of reconstruction quality, neutral grey for triangles with no qualified source image]
+  validation: [pure geometry projection visibility atlas and asset tests, exact one two five and six-view immutable replays, Open3D OBJ texture and UV load, complete reconstruction and GUI suites, all AI YAML parse]
+single_capture_diagnostic_reconstruction_2026_08_30:
+  contract: constrained_superposition now admits every nonempty 1-through-24 capture set. One capture fixes capture zero at its immutable nominal pose and performs no registration; two or more attempt the existing connected overlap solve. A nonempty mesh below the established 100-vertex or 100-triangle quality floor is saved for inspection but remains structural FAIL.
+  consensus: Cross-capture consensus remains unavailable for one capture and still requires at least two distinct captures; the full measured cloud and TSDF diagnostic remain separate and available when extraction produces nonempty geometry.
+  failure: Zero captures, empty TSDF geometry, malformed inputs, disconnected multi-view evidence, invalid rotations and ordinary provenance failures remain fail-closed.
+  validation: [focused reconstruction and GUI support tests, exact two-capture replay, exact one-capture replay, no hardware command]
 qualified_occluded_capture_continuation_2026_08_27:
   correction: Every settled service capture still requires fresh finite GOOD target-valid evidence and confidence-qualified target depth. CLEAR views accept immediately. Fresh PARTIALLY_OCCLUDED or HEAVILY_OCCLUDED views persist pending, run the exact correlated semantic probe, and count only when the scene is qualified; labels are recorded and scanning continues without contact action.
   fail_closed: [UNKNOWN, LOST, missing or stale evidence, malformed capture result, unsafe or invalid obstacle, unqualified movable evidence, semantic timeout or correlation failure]
@@ -1350,11 +1372,16 @@ live_obstacle_tf_runtime_recovery_update_2026_08_06: >-
 repo_shape:
   CAD: Physical reference photos remain in CAD/. The originally supplied cameraHolder STL and Intel RealSense L515 STEP were converted/copied into owned piper_description runtime STLs; those original CAD source files are not present in the current CAD directory.
   piper_ros_foxy: ROS workspace containing piper, piper_description, piper_msgs, piper_mobile_manipulation, and the command-free piper_tesseract_foxy adapter.
-  motion_planning: Isolated Tesseract 0.35 worker container plus rootless Bubblewrap userspace and qualification scripts; CPU-only and ROS/CAN/GPU/network isolated at runtime.
+  motion_planning: Isolated command-free Tesseract 0.35 and cuRobo 0.7.8 workers, model adapters, spool contracts, and qualification scripts; neither planner owns ROS motor publication or CAN.
   L515_camera: Camera build/start scripts, hand-eye calibration, launch wrappers, viewers, and dataset capture tools.
   AI_perception_tests: Offline analysis plus isolated GroundingDINO/SAM2 workers and their unit tests.
   root_tools: Real-arm startup, enable/disable/reset/calibration, native GUI, installation, and operator documentation.
 entrypoints:
+  repository_overview: README.md
+  documentation_index: docs/README.md
+  operator_system_overview: docs/architecture/system-overview.md
+  clean_install: CLEAN_INSTALL.md
+  validated_environments: docs/reference/validated-environments.md
   canonical_foxy_environment: source_piper_foxy_environment.sh
   gui_scan_dds_profile: fastdds_gui_udp_only.xml
   historical_system_handoff: docs/historical/system_handoff_2026_08_11.md
@@ -1373,6 +1400,9 @@ entrypoints:
   tesseract_worker_run: motion_planning/tesseract/run_worker.sh
   operator_reference: OPERATOR_COMMANDS.md
 source_of_truth:
+  documentation_routing: docs/README.md
+  clean_workstation_install: CLEAN_INSTALL.md
+  verified_host_and_jetson_status: docs/reference/validated-environments.md
   supported_foxy_overlay: source_piper_foxy_environment.sh; generated /home/prl/Piper_arm/install must not exist or be sourced
   current_repository_architecture: ARCHITECTURE.md
   mission_goal_milestones_and_definition_of_done: docs/ai/70-roadmap.yaml
@@ -1623,3 +1653,16 @@ architecture_cleanup_final_validation_2026_08_27:
   colcon: All functional XML and CMake targets pass; the package-wide mobile style targets reproduce 76 historical Flake8 and PEP257 findings.
   rootless_planner: Compact qualification passes with backend 0.35.0.6 collision qualified and real_arm_motion false. Core passes all earlier stages then reproduces the baseline internal 150-second budget limit at dual_limit_start_acquisition.
   hardware: not started
+
+generic_motion_planner_and_curobo_2026_08_27:
+  status: isolated_runtime_installed_updated_collision_candidate_command_free_qualified
+  branch: curobo-integration
+  default_backend: tesseract
+  backends: [tesseract, curobo]
+  primary_navigation: [docs/architecture/motion_planner_backends.md, docs/ai/20-modules.yaml, docs/ai/30-contracts.yaml, docs/ai/40-flows.yaml, docs/ai/50-guardrails.yaml]
+  boundary: Both adapters emit MotionPlan and then share normalization, execution validation, ScanExecutionPlan, PlanAuthorizer, runtime gates, TrajectoryRunner and the PiPER command path.
+  safety: [backend frozen per mission, no automatic fallback, planners cannot command the robot, real motion remains disabled by default, malformed or unqualified output fails closed]
+  runtime: cuRobo 0.7.8 at d64c4b005459db10c5dd867d8b30a87d5bda9bdb, Warp 1.11.1, Python 3.10.20, PyTorch 2.11.0+cu128 and user-local CUDA toolkit 12.8.93 are installed in isolated paths; real CUDA extensions, MotionGen warm-up, worker heartbeat, free-space joint planning and bounded cleanup pass.
+  collision_model: Schema-2 provenance hash-binds the generated URDF, SRDF, collision manifest, every moving-link mesh, the operator-saved Isaac USD, and three exact base-frame world meshes. Moving links and attached geometry use 69 spheres; the rigid PiPER base is an exact fixed Mesh so its intentional Bunker mounting overlap is not treated as robot-versus-world collision.
+  evidence: A deterministic 2,004-pose articulated self-collision comparison against exact Tesseract has zero state-level false negatives and 18 conservative false positives; zero, neutral and qualified-scan poses remain clear and ordinary planning rejects the folded start. The acquisition-only bounded bootstrap replay from the configured rough-home joints selects J3 -0.06 rad, passes the common 60 mm proxy gate, and then returns a normally checked acquisition path. Command-free exact-world neutral-to-qualified-scan and reverse GPU plans, dynamic blocking-volume rejection and subsequent self-collision rejection pass on the RTX 3090.
+  blocker: Per-owner sampled-surface gaps remain up to 48.3 mm, Link 5 sampled coverage is 52.5 percent with a 34.4 mm gap, and the representation declares conservative_geometry false and hardware_qualified false. Complete frozen-request GPU fixtures and separately authorized low-speed physical validation remain required; do not claim collision equivalence or physical cuRobo readiness.

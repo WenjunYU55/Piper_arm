@@ -27,6 +27,13 @@ from piper_gui.camera_profile import (
 )
 from piper_gui.ros_client import MissionClientEvent
 from piper_gui.ros_node import PiperGuiRos
+from piper_gui.planner_backend import (
+    BACKEND_LABELS,
+    default_planner_backend_path,
+    read_planner_backend,
+    SUPPORTED_BACKENDS,
+    write_planner_backend,
+)
 from piper_gui.ray_reports import (
     list_ray_reports,
     ray_report_display_name,
@@ -249,6 +256,21 @@ class PiperGuiApp:
             tk.StringVar(value=""),
         ]
         self.mission_label_var = tk.StringVar(value="green cube")
+        self.planner_backend_path = default_planner_backend_path(PROJECT_ROOT)
+        try:
+            saved_planner_backend = read_planner_backend(
+                self.planner_backend_path)
+            planner_backend_status = (
+                'Selected planner for next mission: %s'
+                % BACKEND_LABELS[saved_planner_backend])
+        except (OSError, ValueError) as exc:
+            saved_planner_backend = 'tesseract'
+            planner_backend_status = (
+                'Planner configuration unavailable: %s' % exc)
+        self.planner_backend_var = tk.StringVar(
+            value=BACKEND_LABELS[saved_planner_backend])
+        self.planner_backend_status_var = tk.StringVar(
+            value=planner_backend_status)
         self.scan_policy_path = default_scan_policy_path(PROJECT_ROOT)
         try:
             saved_settings = read_scan_settings(self.scan_policy_path)
@@ -320,7 +342,8 @@ class PiperGuiApp:
         self.tracking_status_var = tk.StringVar(value="Tracking unavailable")
         self.workflow_status_var = tk.StringVar(value="Workflow unavailable")
         self.capture_status_var = tk.StringVar(value="RGB-D capture unavailable")
-        self.planning_status_var = tk.StringVar(value="Tesseract readiness unavailable")
+        self.planning_status_var = tk.StringVar(
+            value="Planner readiness unavailable")
         self.last_successful_mission = None
         self.reconstruction_dataset_var = tk.StringVar(value='')
         self.reconstruction_mode_var = tk.StringVar(value='auto')
@@ -436,7 +459,7 @@ class PiperGuiApp:
                 "This tab mirrors the final tracked-robot workflow. Enter the "
                 "rough target coordinate and label, then press one button. The mission "
                 "owns driver/camera/perception startup, arm enable, rough search, "
-                "target lock, adaptive 8-to-24-view Tesseract planning, synchronized capture, "
+                "target lock, adaptive 8-to-24-view motion planning, synchronized capture, "
                 "return home, current-position hold, disable, and shutdown."
             ),
             wraplength=820,
@@ -477,9 +500,39 @@ class PiperGuiApp:
         ).grid(row=2, column=2, columnspan=4, sticky="w", padx=(10, 0),
                pady=(10, 0))
 
+        planner = ttk.LabelFrame(
+            parent, text='Motion planner for next mission', padding=12)
+        planner.grid(row=3, column=0, sticky='ew', pady=(12, 0))
+        self.planner_backend_combo = ttk.Combobox(
+            planner,
+            textvariable=self.planner_backend_var,
+            values=tuple(BACKEND_LABELS[item] for item in SUPPORTED_BACKENDS),
+            state='readonly',
+            width=20,
+        )
+        self.planner_backend_combo.grid(row=0, column=0, sticky='w')
+        self.planner_backend_apply_button = ttk.Button(
+            planner,
+            text='Apply for Next Mission',
+            command=self.apply_planner_backend,
+        )
+        self.planner_backend_apply_button.grid(
+            row=0, column=1, padx=(8, 0))
+        ttk.Label(
+            planner, textvariable=self.planner_backend_status_var,
+            foreground='#52606d', wraplength=760, justify='left').grid(
+                row=1, column=0, columnspan=2, sticky='w', pady=(8, 0))
+        ttk.Label(
+            planner,
+            text=(
+                'The applied value is copied into the next mission goal and '
+                'is immutable for that mission. There is no automatic fallback.'),
+            foreground='#52606d', wraplength=760, justify='left').grid(
+                row=2, column=0, columnspan=2, sticky='w', pady=(4, 0))
+
         policy = ttk.LabelFrame(
             parent, text="Viewpoint policy for next mission", padding=12)
-        policy.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        policy.grid(row=4, column=0, sticky="ew", pady=(12, 0))
         self.scan_policy_combo = ttk.Combobox(
             policy,
             textvariable=self.scan_policy_var,
@@ -536,7 +589,7 @@ class PiperGuiApp:
 
         environment = ttk.LabelFrame(
             parent, text='Collision environment for next mission', padding=12)
-        environment.grid(row=4, column=0, sticky='ew', pady=(12, 0))
+        environment.grid(row=5, column=0, sticky='ew', pady=(12, 0))
         self.floor_profile_combo = ttk.Combobox(
             environment,
             textvariable=self.floor_profile_var,
@@ -573,7 +626,7 @@ class PiperGuiApp:
 
         camera = ttk.LabelFrame(
             parent, text="L515 RGB profile for next mission", padding=12)
-        camera.grid(row=5, column=0, sticky="ew", pady=(12, 0))
+        camera.grid(row=6, column=0, sticky="ew", pady=(12, 0))
         self.camera_resolution_combo = ttk.Combobox(
             camera,
             textvariable=self.camera_resolution_var,
@@ -619,7 +672,7 @@ class PiperGuiApp:
         self._camera_resolution_changed()
 
         controls = ttk.Frame(parent)
-        controls.grid(row=6, column=0, sticky="w", pady=(18, 10))
+        controls.grid(row=7, column=0, sticky="w", pady=(18, 10))
         self.mission_start_button = ttk.Button(
             controls,
             text="Start Complete Automated Scan",
@@ -642,7 +695,7 @@ class PiperGuiApp:
         self.report_base_home_button.grid(row=0, column=2, padx=(8, 0))
 
         status = ttk.LabelFrame(parent, text="Mission status", padding=12)
-        status.grid(row=7, column=0, sticky="ew", pady=(6, 0))
+        status.grid(row=8, column=0, sticky="ew", pady=(6, 0))
         status.columnconfigure(0, weight=1)
         ttk.Label(
             status,
@@ -670,7 +723,7 @@ class PiperGuiApp:
             foreground="#8a3b12",
             wraplength=820,
             justify="left",
-        ).grid(row=8, column=0, sticky="ew", pady=(18, 0))
+        ).grid(row=9, column=0, sticky="ew", pady=(18, 0))
 
         ttk.Label(
             parent,
@@ -684,7 +737,7 @@ class PiperGuiApp:
             foreground="#52606d",
             wraplength=820,
             justify="left",
-        ).grid(row=9, column=0, sticky="ew", pady=(12, 0))
+        ).grid(row=10, column=0, sticky="ew", pady=(12, 0))
 
     def _camera_resolution_changed(self, _event=None):
         try:
@@ -1292,9 +1345,11 @@ class PiperGuiApp:
 
     def start_automated_scan(self):
         try:
+            backend = read_planner_backend(self.planner_backend_path)
             request = self.mission_view_model.begin_submission(
                 [variable.get() for variable in self.rough_coordinate_vars],
                 self.mission_label_var.get(),
+                backend,
             )
         except (RuntimeError, ValueError) as exc:
             self.mission_status_var.set(str(exc))
@@ -1346,6 +1401,29 @@ class PiperGuiApp:
             "Saved for next scan stack: %s; %s; %d rays"
             % (selected_label, self.scan_ray_region_var.get(), ray_count))
 
+    def apply_planner_backend(self):
+        if not self.mission_view_model.state.can_start:
+            self.planner_backend_status_var.set(
+                'Planner was not changed: wait for the active mission to finish.')
+            return
+        label_to_backend = {
+            label: backend for backend, label in BACKEND_LABELS.items()}
+        selected = label_to_backend.get(self.planner_backend_var.get())
+        if selected is None:
+            self.planner_backend_status_var.set(
+                'Planner was not changed: invalid selection.')
+            return
+        try:
+            backend = write_planner_backend(
+                self.planner_backend_path, selected)
+        except (OSError, ValueError) as exc:
+            self.planner_backend_status_var.set(
+                'Planner was not changed: %s' % exc)
+            return
+        self.planner_backend_status_var.set(
+            'Selected planner for next mission: %s'
+            % BACKEND_LABELS[backend])
+
     def apply_floor_profile(self):
         if not self.mission_view_model.state.can_start:
             self.floor_profile_status_var.set(
@@ -1394,6 +1472,10 @@ class PiperGuiApp:
             state="normal" if state.can_start else "disabled")
         self.scan_policy_apply_button.configure(
             state="normal" if state.can_start else "disabled")
+        self.planner_backend_combo.configure(
+            state='readonly' if state.can_start else 'disabled')
+        self.planner_backend_apply_button.configure(
+            state='normal' if state.can_start else 'disabled')
         self.floor_profile_combo.configure(
             state='readonly' if state.can_start else 'disabled')
         self.floor_profile_apply_button.configure(
@@ -1899,10 +1981,12 @@ class PiperGuiApp:
                             float(payload.measurement_age_sec),
                             payload.reason,
                         ))
-                elif name == "tesseract_readiness":
+                elif name == "planner_readiness":
                     blockers = list(payload.multiview_blockers)
                     self.planning_status_var.set(
-                        "worker=%s | acquisition=%s | multiview=%s%s" % (
+                        "Planner: %s | worker=%s | acquisition=%s | multiview=%s%s" % (
+                            BACKEND_LABELS.get(
+                                str(payload.backend), str(payload.backend)),
                             bool(payload.worker_ready),
                             bool(payload.acquisition_ready),
                             bool(payload.multiview_ready),

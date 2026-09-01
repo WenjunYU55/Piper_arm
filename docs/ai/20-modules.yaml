@@ -1,5 +1,13 @@
 schema_version: 1
 document: module_ownership
+planner_backend_benchmark_ownership_2026_09_01:
+  owner_module: tools/benchmark_motion_planners.py
+  pure_metrics: motion_planning/benchmarking.py
+  corpus_owner: tools/create_planner_benchmark_corpus.py
+  exact_validation_owner: motion_planning/tesseract/validate_benchmark_responses.py
+  mission_efficiency_owner: motion_planning/mission_efficiency.py
+  allowed_edit_paths: [these owners, frozen benchmark fixtures and results, focused command-free tests, mission result diagnostic timing only, docs]
+  must_not_move_without: [schema-v5 common contract, exact Tesseract geometry and model hashes, private spool ownership, no-hardware boundary, MissionSession phase semantics, public RunTargetScan result compatibility]
 rough_acquisition_partial_target_ownership_2026_08_27:
   owner_module: AI_perception_tests/groundingdino_test/run_groundingdino_on_capture.py
   orchestration: AI_perception_tests/temporal_heavy_refresh.py
@@ -381,8 +389,8 @@ modules:
     must_not_move_without: [supervised_scan_execution, robot_description, hand_eye, scan_and_obstacles, camera_timestamp_safety, piper_joint_bounds.json]
   operator_tools:
     owner_module: OPERATOR_COMMANDS.md
-    allowed_edit_paths: [OPERATOR_COMMANDS.md, scripts/setup, scripts/robot, scripts/calibration, tools/calibration, tools/legacy_motion, L515_camera/*.sh, L515_camera/rgb_profile.conf, root public launchers and compatibility facades, '*.xml', source_piper_foxy_environment.sh, fastdds_gui_udp_only.xml, piper_gui/native_app.py, piper_gui/*.py, tests/fixtures/piper_gui_automation.py, tests/gui/test_piper_gui_automation.py, tests/gui/test_piper_gui_phase8.py, tests/gui/test_piper_gui_scan_policy.py, tests/gui/test_piper_gui_camera_profile.py, tests/gui/test_gui_transport_profile.py]
-    owns: Canonical Foxy/PiPER environment loading and preflight, loopback-only UDP Fast DDS isolation, operator startup, explicit commissioning enable/settled-disable procedures, GPU process-group shutdown, GUI presentation, action-client transport/view state, the bounded legacy/voxel_nbv/ray_nbv and ray-region/count saved-parameter selector for the next mission, read-only camera/perception diagnostics, preview-only RViz lifecycle, emergency-boundary documentation, and archived pre-Phase-8 GUI workflow characterization.
+    allowed_edit_paths: [README.md, CLEAN_INSTALL.md, OPERATOR_COMMANDS.md, CONTRIBUTING.md, docs/README.md, docs/architecture/system-overview.md, docs/reference/validated-environments.md, scripts/setup, scripts/robot, scripts/calibration, tools/calibration, tools/legacy_motion, L515_camera/*.sh, L515_camera/rgb_profile.conf, root public launchers and compatibility facades, '*.xml', source_piper_foxy_environment.sh, fastdds_gui_udp_only.xml, piper_gui/native_app.py, piper_gui/*.py, tests/fixtures/piper_gui_automation.py, tests/gui/test_piper_gui_automation.py, tests/gui/test_piper_gui_phase8.py, tests/gui/test_piper_gui_scan_policy.py, tests/gui/test_piper_gui_camera_profile.py, tests/gui/test_gui_transport_profile.py]
+    owns: Canonical Foxy/PiPER environment loading and preflight, documentation routing, verified workstation and explicit unverified-deployment records, loopback-only UDP Fast DDS isolation, operator startup, explicit commissioning enable/settled-disable procedures, GPU process-group shutdown, GUI presentation, action-client transport/view state, the bounded legacy/voxel_nbv/ray_nbv and ray-region/count saved-parameter selector for the next mission, read-only camera/perception diagnostics, preview-only RViz lifecycle, emergency-boundary documentation, and archived pre-Phase-8 GUI workflow characterization.
     owns_runtime: Supported startup order, rejection of stale generated root overlays, exact package/import/interface/schema preflight, reset procedures, viewers, explicitly labelled manual joint UI, Graphical preview mirroring, and human safety instructions. Production acquisition, approval, retry, replan, home, disable and child-process lifecycle are owned by autonomous_target_scan and are not GUI runtime responsibilities.
     must_not_move_without: [arm_driver, robot_description, supervised_scan_execution, piper_joint_bounds.json]
   autonomous_target_scan:
@@ -500,3 +508,14 @@ large_asset_ownership_2026_08_27:
   owner_module: source subsystem named in docs/architecture/asset_policy.md
   allowed_edit_paths: [docs/architecture/asset_policy.md, piper_ros_foxy/src/piper_description/meshes, piper_ros_foxy/src/piper_mobile_manipulation/config, L515_camera/calibration]
   must_not_move_without: [URDF resource lookup, collision mesh manifests, capability-map hashes and convergence, calibration provenance and consumers]
+
+motion_planner_backend_ownership_2026_08_27:
+  owner_module: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/planning/backend.py
+  generic_ros_boundary: [msg/MotionPlan.msg, msg/PlannerReadiness.msg, msg/MotionPlanStatus.msg, srv/RequestMotionPlan.srv]
+  backend_router: piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/bridge_node.py
+  tesseract_backend: [motion_planning/tesseract, piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/worker.py]
+  curobo_backend: motion_planning/curobo
+  curobo_collision_owners: {reviewed_moving_spheres: motion_planning/curobo/model/piper_collision_spheres.yaml, moving_link_generation_and_surface_audit: motion_planning/curobo/generate_robot_config.py, pure_fk_overlap_qualification: motion_planning/curobo/collision_qualification.py, fixed_and_dynamic_world_loading: motion_planning/curobo/worker.py, acquisition_only_bounded_start_recovery: motion_planning/curobo/worker.py with generic evidence assembly in adapter.py, canonical_sources: [generated Tesseract planning URDF, piper_bunker.srdf, collision_model.yaml, piper_description meshes, reviewed Isaac/Lula sphere export]}
+  gui_selection: [piper_gui/planner_backend.py, piper_gui/ros_node.py, piper_gui/view_model.py, piper_gui/native_app.py]
+  allowed_edit_paths: [piper_mobile_manipulation/planning/backend.py, piper_tesseract_foxy, motion_planning/tesseract, motion_planning/curobo, piper_gui, planner_backend.yaml, planner ROS messages and services, planner tests, docs/ai]
+  must_not_move_without: [mission backend freeze, ProcessSupervisor generation ownership, request and world freshness, collision qualification, acquisition-only bootstrap_static scope and 0.15-rad joint-2/joint-3 recovery bound, MotionPlan bootstrap evidence, MotionPlan to ScanExecutionPlan normalization, PlanAuthorizer, runtime safety gates, legacy Tesseract compatibility, canonical mesh hashes, fixed Bunker base-frame transforms, moving-link sphere coverage audit]

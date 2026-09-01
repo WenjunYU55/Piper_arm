@@ -53,19 +53,27 @@ done
 
 if python3 - <<'PY'
 from piper_mobile_manipulation.action import RunTargetScan
-from piper_mobile_manipulation.msg import OccluderAction, TesseractReadiness
-from piper_mobile_manipulation.srv import AuthorizeMission, GetTargetScanResult
+from piper_mobile_manipulation.msg import (
+    MotionPlan, OccluderAction, PlannerReadiness, TesseractReadiness)
+from piper_mobile_manipulation.srv import (
+    AuthorizeMission, GetTargetScanResult, RequestMotionPlan)
 
 assert hasattr(RunTargetScan.Goal(), 'rough_target')
+assert hasattr(RunTargetScan.Goal(), 'planner_backend')
+assert hasattr(MotionPlan(), 'backend')
+assert hasattr(MotionPlan(), 'collision_model_qualified')
+assert hasattr(PlannerReadiness(), 'worker_ready')
+assert hasattr(RequestMotionPlan.Request(), 'plan_kind')
+# The legacy readiness transport remains an intentional Tesseract-only alias.
 assert hasattr(TesseractReadiness(), 'manipulation_ready')
 assert hasattr(OccluderAction(), 'mission_sha256')
 assert hasattr(AuthorizeMission.Request(), 'expires_at')
 assert hasattr(GetTargetScanResult.Response(), 'result_json')
 PY
 then
-  pass "autonomous target-scan interfaces"
+  pass "generic planner and autonomous target-scan interfaces"
 else
-  fail "autonomous target-scan interfaces (rebuild piper_mobile_manipulation)"
+  fail "generic planner and autonomous interfaces (rebuild piper_mobile_manipulation)"
 fi
 
 for script in \

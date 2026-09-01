@@ -1,5 +1,10 @@
 schema_version: 1
 document: technical_debt
+planner_backend_physical_and_mission_timing_followup_2026_09_01:
+  status: offline_planner_comparison_complete_physical_comparison_blocked
+  evidence: Both backends solved every recorded positive request and exact revalidation accepted every successful path; cuRobo proposal generation was much faster but several scheduled trajectories were longer.
+  remaining: [paired complete mission phase traces, live controller-following duration, settle and capture time, supervised cuRobo collision qualification, matched physical outcome and safe-shutdown evidence]
+  rule: Do not use the offline benchmark to enable cuRobo hardware. Collect paired traces only after separate staged physical qualification; historical results without phase_timing remain untimed rather than estimated.
 capture_one_occlusion_probe_order_2026_08_27:
   status: software_validated_physical_retest_pending
   incident: Physical task gui-sim-9a5b86a861c44103aa8086b9f7092949 passed its 90-point acquisition stream, acquired the cube, then the immediately post-lock dedicated probe detected green cube at confidence 0.538 but rejected it against the 0.600 semantic floor. Acquisition had passed at 0.60034. The mission therefore ended as OCCLUSION_NOT_CLEARED before any target-facing scan capture.
@@ -1485,3 +1490,20 @@ post_cleanup_architecture_debt_2026_08_27:
   style: Package-wide mobile Flake8 and PEP257 retain 76 historical findings; added files pass the 99-column project convention.
   planner_performance: Rootless core qualification still exceeds its internal 150-second budget at dual_limit_start_acquisition exactly as the pre-refactor baseline did. Do not weaken the planning bound as an architecture cleanup.
   compatibility: Import facades remain until downstream callers migrate and identity tests permit a separate removal.
+
+curobo_runtime_and_collision_qualification_debt_2026_08_27:
+  status: runtime_installed_exact_fixed_world_qualified_moving_collision_model_blocked
+  pinned_release: {version: 0.7.8, commit: d64c4b005459db10c5dd867d8b30a87d5bda9bdb}
+  installed_runtime: {python: 3.10.20, torch: 2.11.0+cu128, cuda_toolkit: 12.8.93 user-local, warp: 1.11.1, gpu: NVIDIA GeForce RTX 3090, driver: 570.133.07}
+  completed: [five native CUDA extensions build and import, CUDA tensor execution, schema-2 canonical model generation, gripper joints locked outside six-axis cspace, reviewed and hash-bound 69-sphere operator Isaac moving model with exact-cover cable and mount envelopes, rigid PiPER base moved to exact fixed-world Mesh beside both Bunker meshes, pure FK overlap audit, deterministic 2,004-pose articulated self-collision comparison against exact Tesseract with zero state-level false negatives, exact reference clear and folded-collision checks, MotionGen warm-up, command-free neutral-to-qualified-scan and reverse plans, deliberately blocked dynamic-world rejection, pinned-v0.7.8 persistent constraint-state restoration with sequential world-then-self-collision GPU regression, compact bounded worker heartbeat with full provenance retained in separate diagnostics, Ctrl-C cleanup with no orphan GPU process]
+  blockers: [moving articulated geometry remains non-conservative with per-owner sampled-surface gaps up to 48.3 mm, Link 5 sampled coverage of 52.5 percent and 18 conservative false positives in the deterministic comparison, complete frozen-request GPU fixtures remain pending, no physical cuRobo test]
+  explicit_limitations: [folded bootstrap outside canonical joint limits unsupported, occlusion and manipulation plan kinds unsupported, no claim of Tesseract collision equivalence, no physical robot test]
+  next_cut: Add curated near-contact trajectories and frozen MULTIVIEW_SCAN ROUGH_ACQUISITION and RETURN_HOME requests, improve sparse Link 5 coverage without restoring the resolved link3/link5 false-positive cluster or introducing a comparison false negative, then perform explicitly authorized low-speed physical validation before any reviewed hardware_qualified change.
+  must_not_resolve_by: [weakening shared validators, faking planner success, bypassing collision qualification, importing CUDA into ROS, automatic fallback, enabling real motion]
+
+repository_presentation_and_install_docs_2026_08_28:
+  status: professional_entrypoint_and_routing_completed_followup_install_hardening_open
+  completed: [README reduced to an operator-oriented overview, proposal-only startup leads the public path, system and process diagrams added, documentation index added, exact reference workstation recorded, Jetson explicitly marked unverified, stale Docker guide archived, operator tabletop/ground/curobo qualification contradiction corrected, reconstruction setup and variable-view contract corrected, contribution and issue templates added]
+  verified_reference: [Ubuntu 20.04.6, ROS 2 Foxy, complete verify_installation pass, GroundingDINO and SAM2 import/CUDA check pass, RTX 3090, Tesseract isolated runtime, cuRobo 0.7.8 command-free runtime]
+  remaining_install_debt: [pin Micromamba download instead of latest URL, add SHA-256 verification for downloaded AI checkpoints, replace L515 diagnostic absolute path, provide one complete bare-host cuRobo toolkit/environment installer, execute and record a real Jetson clean install]
+  guardrail: Never present a package import, command-free plan, another host, or upstream support statement as physical hardware or Jetson qualification.

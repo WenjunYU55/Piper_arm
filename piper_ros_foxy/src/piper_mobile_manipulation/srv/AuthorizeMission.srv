@@ -1,5 +1,6 @@
 string task_id
 string mission_sha256
+string planner_backend
 builtin_interfaces/Time expires_at
 bool revoke
 ---

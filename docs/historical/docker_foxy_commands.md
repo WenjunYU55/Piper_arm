@@ -1,8 +1,11 @@
 # Legacy Docker Foxy Commands
 
-> Historical reference only. The current validated workstation uses native
-> Ubuntu 20.04 and ROS 2 Foxy. Use `CLEAN_INSTALL.md` and
-> `OPERATOR_COMMANDS.md` for current commands.
+> [!WARNING]
+> Historical reference only. This describes an earlier Ubuntu 22.04/Docker
+> development host and obsolete manual process composition. The validated
+> workstation is Ubuntu 20.04 with native ROS 2 Foxy and Docker is not installed.
+> Use [`CLEAN_INSTALL.md`](../../CLEAN_INSTALL.md) and
+> [`OPERATOR_COMMANDS.md`](../../OPERATOR_COMMANDS.md) for current instructions.
 
 This project is built for Ubuntu 20.04 and ROS 2 Foxy. The host machine is Ubuntu 22.04, so run ROS
 workflows inside the local Docker image instead of installing Foxy directly on the host.

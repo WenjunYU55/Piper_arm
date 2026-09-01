@@ -1,4 +1,8 @@
-"""Versioned, fail-closed filesystem contract for Tesseract planning."""
+"""Versioned, fail-closed private filesystem planner contract.
+
+The module path is retained for Tesseract worker compatibility.  Backend
+selection and planner-native configuration are explicit contract fields.
+"""
 
 import copy
 import hashlib
@@ -14,7 +18,8 @@ import time
 SCHEMA_VERSION = 5
 MAX_FINAL_AIM_OFFSET_DEG = 5.0
 JOINT_NAMES = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
-TIMING_POLICY = 'tesseract_stream_v3'
+TIMING_POLICY = 'timed_stream_v1'
+LEGACY_TESSERACT_TIMING_POLICY = 'tesseract_stream_v3'
 COMMAND_RATE_HZ = 20.0
 MOVEJ_NOMINAL_VELOCITY_RAD_S = (5.0, 5.0, 5.0, 5.0, 5.0, 3.0)
 MAX_PROTOCOL_VELOCITY_RAD_S = 3.0
@@ -22,6 +27,10 @@ MAX_PROTOCOL_ACCELERATION_RAD_S2 = 5.0
 MAX_BOOTSTRAP_START_LIMIT_TOLERANCE_RAD = 0.04
 MAX_CONFIGURED_HOME_START_LIMIT_TOLERANCE_RAD = 0.3
 PLAN_KINDS = ('MULTIVIEW_SCAN', 'ROUGH_ACQUISITION', 'RETURN_HOME')
+PLANNER_CONFIGS = {
+    'tesseract': ('RRTConnect', 'OMPL_ISP'),
+    'curobo': ('MotionGen', 'CUROBO_V1'),
+}
 PROVENANCE_SOURCES = ('tracked_target', 'rough_coordinate', 'configured_home')
 SCENE_OBSERVATION_MODES = ('perception_snapshot', 'bootstrap_static')
 SAFE_ID = re.compile(r'^[a-f0-9]{16,64}$')
@@ -238,6 +247,10 @@ def validate_request(payload, now_ns=None):
     if not isinstance(request_id, str) or SAFE_ID.fullmatch(request_id) is None:
         raise ContractError('request_id is not a safe canonical identifier')
     verify_digest(payload, 'request_sha256')
+    planner_backend = str(payload.get(
+        'planner_backend', 'tesseract')).strip().lower()
+    if planner_backend not in PLANNER_CONFIGS:
+        raise ContractError('request planner_backend is unsupported')
     current_ns = time.time_ns() if now_ns is None else int(now_ns)
     created = int(payload.get('created_at_ns', 0))
     expires = int(payload.get('expires_at_ns', 0))
@@ -430,11 +443,23 @@ def validate_request(payload, now_ns=None):
     for row in transform:
         finite_vector(row, 4, 'calibration.T_link6_camera row')
     planning = payload.get('planning', {})
-    if planning.get('planner') != 'RRTConnect':
-        raise ContractError('planning.planner must be RRTConnect')
-    if planning.get('pipeline') != 'OMPL_ISP':
-        raise ContractError('planning.pipeline is unsupported')
-    if planning.get('timing_policy') != TIMING_POLICY:
+    expected_planner, expected_pipeline = PLANNER_CONFIGS[planner_backend]
+    if planning.get('planner') != expected_planner:
+        raise ContractError(
+            'planning.planner must be RRTConnect'
+            if planner_backend == 'tesseract'
+            else 'planning.planner does not match planner_backend')
+    if planning.get('pipeline') != expected_pipeline:
+        raise ContractError(
+            'planning.pipeline is unsupported'
+            if planner_backend == 'tesseract'
+            else 'planning.pipeline does not match planner_backend')
+    timing_policy = planning.get('timing_policy')
+    if not (
+            timing_policy == TIMING_POLICY
+            or (
+                planner_backend == 'tesseract'
+                and timing_policy == LEGACY_TESSERACT_TIMING_POLICY)):
         raise ContractError('planning.timing_policy is unsupported')
     command_rate = float(planning.get('command_rate_hz', 0.0))
     if (
@@ -571,6 +596,12 @@ def validate_response(payload, request=None):
         raise ContractError('unsupported response schema_version')
     verify_digest(payload, 'response_sha256')
     plan_kind, provenance = validate_plan_identity(payload)
+    response_backend = str(payload.get('backend', '')).strip().lower()
+    if response_backend not in PLANNER_CONFIGS:
+        raise ContractError('response planner backend is unsupported')
+    backend_version = payload.get('backend_version')
+    if not isinstance(backend_version, str) or not backend_version.strip():
+        raise ContractError('response planner backend version is missing')
     if request is not None:
         if payload.get('request_id') != request.get('request_id'):
             raise ContractError('response request_id mismatch')
@@ -580,6 +611,10 @@ def validate_response(payload, request=None):
             raise ContractError('response plan_kind mismatch')
         if provenance != request.get('target_provenance'):
             raise ContractError('response target_provenance mismatch')
+        request_backend = str(request.get(
+            'planner_backend', 'tesseract')).strip().lower()
+        if response_backend != request_backend:
+            raise ContractError('response planner backend mismatch')
     if payload.get('status') != 'success':
         return payload
     response_seed = payload.get('deterministic_seed')

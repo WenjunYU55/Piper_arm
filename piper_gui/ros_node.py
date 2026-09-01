@@ -18,7 +18,7 @@ from piper_gui.ros_client import MissionActionClient
 from piper_mobile_manipulation.action import RunTargetScan
 from piper_mobile_manipulation.msg import (
     MeshJobStatus,
-    TesseractReadiness,
+    PlannerReadiness,
     TrackingHealth,
 )
 from piper_mobile_manipulation.srv import ReportTrackedRobotHomed
@@ -88,9 +88,9 @@ class PiperGuiRos(Node):
                 10,
             ),
             self.create_subscription(
-                TesseractReadiness,
-                "/piper/tesseract_readiness",
-                lambda msg: self.events.put(("tesseract_readiness", msg)),
+                PlannerReadiness,
+                "/piper/planner_readiness",
+                lambda msg: self.events.put(("planner_readiness", msg)),
                 10,
             ),
         ]
@@ -196,6 +196,7 @@ class PiperGuiRos(Node):
         goal.task_type = 'SCAN_3D'
         goal.target_label = request.target_label
         goal.target_profile = ''
+        goal.planner_backend = request.planner_backend
         goal.target_confidence = 1.0
         goal.deadline_sec = 1200.0
         goal.rough_target = PoseWithCovarianceStamped()

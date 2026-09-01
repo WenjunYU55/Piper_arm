@@ -1,0 +1,11 @@
+std_msgs/Header header
+string backend
+string backend_version
+string generation_id
+bool worker_ready
+bool acquisition_ready
+bool multiview_ready
+bool manipulation_ready
+string[] acquisition_blockers
+string[] multiview_blockers
+string[] manipulation_blockers
