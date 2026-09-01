@@ -1,5 +1,11 @@
 schema_version: 1
 document: maintenance_routing
+chapter5_method_comparison_maintenance_2026_08_31:
+  owner: tools/analyse_chapter5_methods.py
+  outputs: [docs/chapter5_method_comparison.json, docs/chapter5_method_comparison.xlsx, docs/chapter5_results_summary.md]
+  inputs: [datasets/active_scan, datasets/ray_diagnostics, docs/historical, docs/refactor, docs/ai, piper_ros_foxy/src/piper_mobile_manipulation/config/capability_map_convergence.json, reconstruction quality reports, Git history]
+  rule: Regenerate numerical JSON and workbook only with command-free offline replay. Keep manually written interpretation aligned with the generated evidence, comparison strength and limitations. Do not create missing competitors, treat confidence as accuracy, combine exploratory cuRobo evidence with physically validated Tesseract results, or convert failed convergence/reconstruction evidence into a success claim.
+  validation: [python3 -m py_compile tools/analyse_chapter5_methods.py, regenerate JSON and XLSX, validate JSON comparison strengths and source provenance, unzip-test XLSX, parse all AI YAML, git diff check]
 executor_capture_integration_maintenance_2026_08_27:
   inspect: [scan_viewpoint_executor_node.py callback groups and serialized_control_callback, configuration.py CaptureConfig, scan_execution_params.yaml, scan_capture.py capture_diagnostic_rejection, scan_capture_node.py capture_prerequisites_ready, scan_capture_params.yaml, supervised_cube_workflow_node.py]
   scheduler_rule: Keep timer services state subscriptions telemetry and service-client responses in their documented separate callback groups. Every timer or state-mutating control callback must enter the shared control_state_lock; telemetry crosses through TelemetryStore. Never put the 200 Hz timer back in the service group or let cancel approval and motion tick mutate state concurrently.

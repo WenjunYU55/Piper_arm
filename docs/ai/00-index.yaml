@@ -1,5 +1,11 @@
 schema_version: 1
 document: ai_context_index
+chapter5_method_comparison_evidence_2026_08_31:
+  scope: Command-free thesis evidence derived from implemented alternatives, immutable local RGB-D datasets, historical mission diagnostics, capability-map benchmarks, Git provenance and same-input offline reconstruction replay.
+  artifacts: [docs/chapter5_results_summary.md, docs/chapter5_method_comparison.xlsx, docs/chapter5_method_comparison.json, tools/analyse_chapter5_methods.py]
+  evidence_rule: Every numerical comparison carries CONTROLLED_REPLAY PAIRED_PHYSICAL MATCHED_RUNS HISTORICAL_OBSERVATIONAL or EXPLORATORY strength. Unsupported comparisons remain explicit; detector confidence is not accuracy, mask agreement is not ground-truth IoU, target stability is not position accuracy, capability recall is relative to the sampled reference, and exploratory cuRobo evidence is not physical qualification.
+  current_boundary: The archive supports several component-selection claims but not complete final-system success. No stored scan passed the current replayed measured-convergence rule and every same-input reconstruction mode failed the measured 35 mm cube quality gate.
+  safety: The analyser is offline and command-free; it never starts ROS CAN camera GPU or robot processes and never mutates source captures.
 consensus_supported_texture_baking_2026_08_30:
   contract: constrained_superposition additionally emits a dense consensus-supported textured model as Wavefront OBJ plus MTL plus PNG. It starts from every corrected confidence-qualified measured depth pixel in the full superposition overlay, retains points within the bounded consensus neighborhood for multi-view scans, triangulates adjacent source-depth pixels without crossing gaps, and fine-voxel averages their superposition. One-view reconstruction retains its measured geometry as unverified because cross-capture evidence is unavailable.
   source_selection: Each retained triangle selects one original rectified RGB capture using finite projection, target-mask support, positive camera depth, per-vertex and centroid depth consistency, projected area and front-facing incidence. Texture samples are bilinear and are never averaged across captures.
