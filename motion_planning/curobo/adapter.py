@@ -217,9 +217,27 @@ def normalize_trajectory(positions, native_dt_sec, speed_percent):
     } for point, when in zip(result, times)]
 
 
-def trajectory_segment(points, is_return_home=False):
+def prepend_bootstrap_recovery(points, recovery_positions, speed_percent):
+    """Prepend a bounded escape without rescheduling the native path."""
+    planned = [dict(point) for point in points]
+    recovery = normalize_trajectory(
+        recovery_positions, 1.0 / COMMAND_RATE_HZ, speed_percent)
+    if any(
+            abs(float(left) - float(right)) > 1e-6
+            for left, right in zip(
+                recovery[-1]['positions_rad'], planned[0]['positions_rad'])):
+        raise CuroboContractError(
+            'bootstrap recovery endpoint does not match planned path start')
+    offset = float(recovery[-1]['time_from_start_s'])
+    for point in planned[1:]:
+        point['time_from_start_s'] = round(
+            offset + float(point['time_from_start_s']), 9)
+    return recovery + planned[1:], len(recovery) - 1
+
+
+def trajectory_segment(points, is_return_home=False, bootstrap_recovery=None):
     """Build generic collision-qualified segment metadata."""
-    return {
+    segment = {
         'points': list(points),
         'minimum_clearance_m': -1.0,
         'limiting_link_pair': 'unreported_by_curobo_v0.7.8',
@@ -239,6 +257,28 @@ def trajectory_segment(points, is_return_home=False):
         'sdk_execution_mode': 'TIMED_STREAM',
         'sdk_command_anchor_count': len(points),
     }
+    if bootstrap_recovery is not None:
+        joints = [int(value) for value in bootstrap_recovery['joint_numbers']]
+        deltas = [float(value) for value in bootstrap_recovery['delta_rad']]
+        segment.update({
+            'bootstrap_recovery_used': True,
+            'bootstrap_recovery_end_point': int(
+                bootstrap_recovery['end_point']),
+            'bootstrap_recovery_joint': joints[0] if len(joints) == 1 else 0,
+            'bootstrap_recovery_delta_rad': (
+                deltas[0] if len(deltas) == 1 else 0.0),
+            'bootstrap_recovery_joints': joints,
+            'bootstrap_recovery_deltas_rad': deltas,
+            'bootstrap_recovery_minimum_clearance_m': -1.0,
+            'bootstrap_recovery_limiting_link_pair':
+                'curobo_start_state_self_collision_proxy',
+            'bootstrap_recovery_samples': int(
+                bootstrap_recovery['end_point']) + 1,
+            'bootstrap_start_contacts': [],
+            'validation':
+                'curobo_v0.7.8_bounded_bootstrap_then_motiongen',
+        })
+    return segment
 
 
 def worker_rejection_code(error):

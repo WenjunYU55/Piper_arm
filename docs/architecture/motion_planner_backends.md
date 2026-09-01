@@ -103,7 +103,7 @@ result and cannot restore information rejected at the `MotionPlan` boundary.
 | plan/request IDs and hashes, plan kind, backend/version, validity, collision qualification, rejection codes, target/view geometry, trajectories, clearance/link diagnostics | generic planner output | `MotionPlan` |
 | planning duration, candidate/feasible/success counts | generic comparable diagnostics | `MotionPlan` and provenance |
 | execution speed, command rate, timing policy | PiPER execution policy bound by the request and revalidated by the executor | `MotionPlan` then `ScanExecutionPlan` |
-| bootstrap recovery endpoints/joints/deltas/evidence | generic acquisition/start-state safety evidence | `MotionPlan`; cuRobo explicitly rejects out-of-limit bootstrap |
+| bootstrap recovery endpoints/joints/deltas/evidence | generic acquisition/start-state safety evidence | `MotionPlan`; both backends support the bounded in-limit folded-start escape, while cuRobo explicitly rejects out-of-limit bootstrap |
 | planner-native attempt traces | backend diagnostic metadata | private response/provenance, never the executor |
 | duplicated Tesseract transport | compatibility only | `TesseractPlan` alias publisher in Tesseract mode |
 
@@ -131,7 +131,7 @@ to the typed `tesseract` default.
 | Plan kind | Tesseract | cuRobo |
 |---|---|---|
 | `MULTIVIEW_SCAN` | supported | MotionGen pose plans plus optional joint-space home |
-| `ROUGH_ACQUISITION` | supported, including qualified folded-start recovery | supported only when the measured start is already inside all six limits |
+| `ROUGH_ACQUISITION` | supported, including qualified folded-start recovery | supported inside all six limits, including the acquisition-only bounded folded-start escape |
 | `RETURN_HOME` | supported | MotionGen joint-space plan |
 | `OCCLUSION_PROBE` | not in the active schema-v5 worker contract | explicitly unsupported |
 | `OCCLUDER_PICK_PLACE` | not production-qualified | explicitly unsupported |
@@ -183,7 +183,13 @@ A measured 7 mm Link-1 self-collision buffer closes every observed
 state-level miss while retaining the zero, neutral and qualified-scan poses.
 The low count avoids cuRobo's large self-collision kernel, but the sparse
 coverage—especially around link 5—means collision equivalence is not claimed.
-cuRobo also lacks Tesseract's qualified out-of-limit bootstrap recovery.
+cuRobo still lacks Tesseract's qualified out-of-limit bootstrap recovery. For
+the configured in-limit rough-home start, only `ROUGH_ACQUISITION` with
+`bootstrap_static` may search a single joint-2 or joint-3 escape of at most
+0.15 rad. Intermediate states may retain only cuRobo's start-self-collision
+classification; the endpoint and all later MotionGen planning must pass the
+ordinary constraints. The prefix and its joint/delta/boundary evidence then
+pass through the existing common executor bootstrap validation.
 
 The generated config binds the pinned cuRobo version/commit and SHA-256 hashes
 of its generated URDF, SRDF, collision manifest, reviewed sphere YAML and
@@ -285,9 +291,12 @@ sphere pruning retains legitimate 40 mm grid neighbours instead of collapsing
 them through rounded keys, while removing near-duplicate centres largest-first.
 The exact Bunker mesh world now passes command-free plans from the canonical
 neutral pose to a previously qualified scan pose and back, and a deliberately
-blocking dynamic box is rejected. The tested folded home is collision-invalid
-in the exact Tesseract model too and remains part of Tesseract's special
-bootstrap-recovery problem, not evidence for ignoring cuRobo collisions.
+blocking dynamic box is rejected. The folded start remains a narrowly scoped
+bootstrap-recovery problem, not evidence for ignoring cuRobo collisions
+elsewhere. A command-free 1 September 2026 replay from the configured
+rough-home joints found a 0.06 rad joint-3 escape, passed the common 60 mm
+proxy-clearance gate, and then produced a normally collision-checked MotionGen
+acquisition path.
 
 The 2026-09-01 articulated self-collision comparison used 2,000 seeded joint
 samples plus four reference poses. It found zero state-level false negatives,
@@ -298,8 +307,25 @@ configuration space.
 The model remains `hardware_qualified: false`: moving-link spheres have
 per-owner sampled-surface gaps up to 48.3 mm, Link 5 sampled coverage is only
 52.5 percent with a 34.4 mm gap, conservative false positives remain, the
-complete frozen mission-request GPU suite is pending, and no
-physical cuRobo test has been performed.
+configured-home policy is not equivalent across backends, and no physical
+cuRobo test has been performed.
+
+## Controlled planner replay
+
+On 1 September 2026, five recorded positive requests were replayed three times
+per backend after warm-up. Both backends solved 15/15, both rejected 3/3
+deliberately blocked controls, and all 30 successful paths passed Tesseract's
+exact geometry validator. Median request wall time was 19.646 seconds for
+Tesseract and 0.630 seconds for cuRobo. Median scheduled trajectory duration
+was 4.750 seconds and 18.209 seconds respectively, leaving the median
+planning-plus-scheduled-duration proxy effectively equal at 25.046 versus
+25.048 seconds.
+
+This is command-free `CONTROLLED_REPLAY`, not physical evidence. It establishes
+that cuRobo is a substantially faster proposal generator for these requests,
+but not that it executes a mission faster or more safely. Full methods,
+artifacts and limitations are in
+`docs/experiments/planner_backend_benchmark.md`.
 
 Version and installation references:
 

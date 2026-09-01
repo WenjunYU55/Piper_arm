@@ -348,6 +348,7 @@ class MissionEngine:
                     retryable=True)
 
         if failure is None:
+            session.close_phase_timing()
             session.phase = MissionPhase.SUCCEEDED
             session.reason = (
                 'distinctive-feature target scan completed with %d accepted '
@@ -355,6 +356,7 @@ class MissionEngine:
                 % session.accepted_captures)
             outcome = 'SUCCEEDED'
         else:
+            session.close_phase_timing()
             session.phase = (
                 MissionPhase.NEEDS_OPERATOR
                 if failure.needs_operator else MissionPhase.FAILED)

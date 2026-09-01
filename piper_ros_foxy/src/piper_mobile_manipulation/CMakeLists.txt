@@ -119,6 +119,8 @@ if(BUILD_TESTING)
   ament_add_pytest_test(
     test_camera_timestamp_health test/test_camera_timestamp_health.py)
   ament_add_pytest_test(test_mission_core test/test_mission_core.py)
+  ament_add_pytest_test(
+    test_mission_phase_timing test/test_mission_phase_timing.py)
   ament_add_pytest_test(test_home_pose test/test_home_pose.py)
   ament_add_pytest_test(test_startup_gates test/test_startup_gates.py)
   ament_add_pytest_test(test_occlusion_policy test/test_occlusion_policy.py)

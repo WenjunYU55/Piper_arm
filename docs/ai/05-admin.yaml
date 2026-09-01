@@ -1,5 +1,16 @@
 schema_version: 1
 document: maintenance_routing
+planner_backend_benchmark_maintenance_2026_09_01:
+  owner: tools/benchmark_motion_planners.py
+  supporting_owners: [motion_planning/benchmarking.py, motion_planning/tesseract/validate_benchmark_responses.py, tools/create_planner_benchmark_corpus.py, tools/summarize_mission_efficiency.py]
+  rule: Run only frozen schema-v5 requests through private ROS-free workers, retain identical backend-neutral scene state limits and timing, separate blocked and direct-home policy controls from positive success, and exact-revalidate every successful positive path before reporting it. Never convert offline cuRobo evidence into hardware qualification.
+  required_retests: [tests/curobo/test_planner_benchmarking.py, tests/curobo/test_mission_efficiency.py, test_mission_phase_timing.py, Tesseract protocol and worker tests, mobile mission characterization, package builds, AI YAML parse]
+chapter5_method_comparison_maintenance_2026_08_31:
+  owner: tools/analyse_chapter5_methods.py
+  outputs: [docs/chapter5_method_comparison.json, docs/chapter5_method_comparison.xlsx, docs/chapter5_results_summary.md]
+  inputs: [datasets/active_scan, datasets/ray_diagnostics, docs/historical, docs/refactor, docs/ai, piper_ros_foxy/src/piper_mobile_manipulation/config/capability_map_convergence.json, reconstruction quality reports, controlled planner benchmark reports, Git history]
+  rule: Regenerate numerical JSON and workbook only with command-free offline replay. Keep manually written interpretation aligned with the generated evidence, comparison strength and limitations. Do not create missing competitors, treat confidence as accuracy, combine exploratory cuRobo evidence with physically validated Tesseract results, or convert failed convergence/reconstruction evidence into a success claim.
+  validation: [python3 -m py_compile tools/analyse_chapter5_methods.py, regenerate JSON and XLSX, validate JSON comparison strengths and source provenance, unzip-test XLSX, parse all AI YAML, git diff check]
 executor_capture_integration_maintenance_2026_08_27:
   inspect: [scan_viewpoint_executor_node.py callback groups and serialized_control_callback, configuration.py CaptureConfig, scan_execution_params.yaml, scan_capture.py capture_diagnostic_rejection, scan_capture_node.py capture_prerequisites_ready, scan_capture_params.yaml, supervised_cube_workflow_node.py]
   scheduler_rule: Keep timer services state subscriptions telemetry and service-client responses in their documented separate callback groups. Every timer or state-mutating control callback must enter the shared control_state_lock; telemetry crosses through TelemetryStore. Never put the 200 Hz timer back in the service group or let cancel approval and motion tick mutate state concurrently.
@@ -701,8 +712,8 @@ repository_test_and_asset_routing_2026_08_27:
 motion_planner_backend_routing_2026_08_27:
   inspect: [configuration.py PlannerConfig, planning/backend.py, motion_planner_backends.md, bridge_node.py MotionPlannerBridge, motion_planning/curobo/generate_robot_config.py, motion_planning/curobo/worker.py, tests/curobo/test_curobo_model_generation.py, tests/curobo/test_curobo_gpu_integration.py, planner_backend.yaml, piper_gui/planner_backend.py]
   rule: Route backend choice only at the planner adapter/process boundary. MissionEngine, NBV, authorization, execution safety, capture and the PiPER command path remain backend-neutral.
-  incident_checks: [frozen mission backend and authorization correlation, selected worker generation, planner readiness backend, MotionPlan backend and hashes, collision qualification, bounded worker shutdown]
-  tests: [test_planner_backend.py, test_contract.py, tests/curobo, tests/gui/test_piper_gui_planner_backend.py, mobile and Tesseract regression suites]
+  incident_checks: [frozen mission backend and authorization correlation, selected worker generation, planner readiness backend, MotionPlan backend and hashes, collision qualification, acquisition-only bootstrap_static scope plus recovery joint delta boundary evidence, bounded worker shutdown]
+  tests: [test_planner_backend.py, test_contract.py, tests/curobo including configured folded-start GPU acquisition, test_scan_motion.py configured rough-home common bootstrap gate, tests/gui/test_piper_gui_planner_backend.py, mobile and Tesseract regression suites]
   curobo_runtime: Use only /home/prl/.venvs/piper-curobo-v0.7.8/bin/python with Warp 1.11.1 and the user-local CUDA 12.8 toolkit. The launcher replaces inherited Foxy PYTHONPATH. Healthy worker_ready does not imply collision_model_qualified.
   collision_routing: Moving articulated geometry is owned by the generated 69-sphere model; the rigid PiPER base and fixed Bunker geometry are exact hash-bound Mesh records loaded as one world; dynamic obstacles and floor remain request/world cuboids.
   current_blocker: The refined operator-saved Isaac model plus exact-cover cable/mount envelopes has zero state-level false negatives and 18 conservative false positives in a deterministic 2,004-pose articulated self-collision comparison against exact Tesseract and passes the canonical exact-world bidirectional GPU path, blocking-volume and folded-collision regressions. Moving geometry remains non-conservative, Link 5 sampled coverage is 52.5 percent with a 34.4 mm gap, the worst per-owner gap remains 48.3 mm, frozen-request fixtures are incomplete and no physical test is authorized, so keep provenance hardware_qualified false.

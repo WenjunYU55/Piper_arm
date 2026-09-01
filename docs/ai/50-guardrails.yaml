@@ -1,5 +1,9 @@
 schema_version: 1
 document: guardrails
+planner_benchmark_no_hardware_guardrail_2026_09_01:
+  invariant: Benchmark tools may own only explicitly started ROS-free planner worker process groups and private spools. They must not import rclpy, open CAN, launch the PiPER driver, publish commands, enable motors, or claim physical qualification.
+  comparison_rule: Compare positive recorded geometry separately from deliberately blocked negative controls and configured-home direct policy controls. Exact Tesseract path validation is mandatory for every reported successful positive proposal from either backend.
+  must_retest_if_changed: [tools/benchmark_motion_planners.py, tools/create_planner_benchmark_corpus.py, motion_planning/benchmarking.py, motion_planning/tesseract/validate_benchmark_responses.py, motion_planning/tesseract/rootless_common.sh, mission phase timing diagnostics]
 rough_acquisition_partial_target_guardrail_2026_08_27:
   invariants:
     - Box aspect is not reliable for a partly clipped cube and cannot veto an otherwise qualified rough_acquisition_viewpoint target.
@@ -981,6 +985,7 @@ generic_motion_planner_guardrail_2026_08_27:
     - cuRobo articulated geometry remains a non-conservative sphere approximation. Never call it exact, hide its per-link sampled-surface gaps, or set hardware_qualified until the complete command-free GPU and Tesseract comparison suites pass.
     - The reviewed Isaac/Lula sphere YAML is a hash-bound canonical input. Keep collision-owner remaps, curated/fallback link partition and per-link sphere counts consistent; any mismatch must fail before CUDA initialization.
     - Restore both cuRobo v0.7.8 rollout collision constraints around every persistent-worker planning attempt; a rejected world-collision request must never weaken self-collision checking for a later candidate or request.
+    - The cuRobo folded-start exception is permitted only for ROUGH_ACQUISITION plus bootstrap_static. Keep the search to one of joint 2 or 3, 0.01-rad increments and at most 0.15 rad; reject world/joint-limit failures before the normal-clearance endpoint, publish generic recovery evidence, and retain the common executor monotonic proxy gate.
     - Do not increase sphere count into cuRobo's large self-collision kernel, widen the measured 0.007 m Link-1 buffer, or add ignored self-collision pairs merely to make a pose pass; prove changes with compare_collision_models.py, known reference states and command-free GPU tests.
   blast_radius: [mission identity, planner process ownership, readiness, world and target freshness, collision evidence, plan hashing, execution authorization, GUI next-mission configuration]
   must_retest_if_changed: [test_planner_backend.py, test_contract.py, test_execution_validation.py, test_execution_authorization.py, test_phase1_external_contract_characterization.py, tests/curobo including opt-in exact-world and blocking-world GPU checks, Tesseract collision-profile and model-builder tests, GUI planner tests, full mobile and Tesseract suites, five-package build]

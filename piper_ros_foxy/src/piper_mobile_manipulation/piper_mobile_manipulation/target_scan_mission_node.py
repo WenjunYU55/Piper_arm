@@ -1069,8 +1069,10 @@ class TargetScanMissionNode(Node):
                 'target_label': session.goal['target_label'],
                 'target_profile': session.goal['target_profile'],
                 'target_prompt': session.goal['target_prompt'],
+                'planner_backend': session.goal['planner_backend'],
                 'scan_feature_coverage': dict(
                     self.last_scan_feature_coverage),
+                'phase_timing': session.phase_timing_summary(),
                 'zero_capture_dataset_discarded': bool(dataset_discarded),
                 'discarded_dataset_path': discarded_dataset_path,
                 'dataset_discard_reason': dataset_discard_reason,

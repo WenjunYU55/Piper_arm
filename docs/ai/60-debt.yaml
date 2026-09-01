@@ -1,5 +1,10 @@
 schema_version: 1
 document: technical_debt
+planner_backend_physical_and_mission_timing_followup_2026_09_01:
+  status: offline_planner_comparison_complete_physical_comparison_blocked
+  evidence: Both backends solved every recorded positive request and exact revalidation accepted every successful path; cuRobo proposal generation was much faster but several scheduled trajectories were longer.
+  remaining: [paired complete mission phase traces, live controller-following duration, settle and capture time, supervised cuRobo collision qualification, matched physical outcome and safe-shutdown evidence]
+  rule: Do not use the offline benchmark to enable cuRobo hardware. Collect paired traces only after separate staged physical qualification; historical results without phase_timing remain untimed rather than estimated.
 capture_one_occlusion_probe_order_2026_08_27:
   status: software_validated_physical_retest_pending
   incident: Physical task gui-sim-9a5b86a861c44103aa8086b9f7092949 passed its 90-point acquisition stream, acquired the cube, then the immediately post-lock dedicated probe detected green cube at confidence 0.538 but rejected it against the 0.600 semantic floor. Acquisition had passed at 0.60034. The mission therefore ended as OCCLUSION_NOT_CLEARED before any target-facing scan capture.

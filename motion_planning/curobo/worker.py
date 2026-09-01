@@ -23,6 +23,7 @@ from motion_planning.curobo.adapter import (
     JOINT_NAMES,
     normalize_trajectory,
     obstacle_cuboids,
+    prepend_bootstrap_recovery,
     trajectory_segment,
     validate_request,
     worker_rejection_code,
@@ -390,6 +391,83 @@ class CuroboBackend:
         rollout.primitive_collision_constraint.enable_cost()
         rollout.robot_self_collision_constraint.enable_cost()
 
+    def _start_state_status(self, positions):
+        """Classify one state and contain cuRobo's constraint-state leak."""
+        try:
+            valid, status = self.motion_gen.check_start_state(
+                self._joint_state(positions))
+        finally:
+            self._restore_collision_constraints()
+        return bool(valid), str(status)
+
+    def _bootstrap_recovery(self, start, request):
+        """Find the same bounded acquisition-only folded-start escape as Tesseract.
+
+        cuRobo rejects an invalid start before MotionGen runs.  The mission's
+        first rough-acquisition request is the one qualified exception: search
+        at most 0.15 rad on joint 2 or 3, accept only self-collision status
+        before the endpoint, and require the endpoint to satisfy all normal
+        cuRobo constraints.  Every later segment starts with normal checks.
+        """
+        valid, status = self._start_state_status(start)
+        if valid:
+            return None
+        bootstrap_scope = bool(
+            request.get('plan_kind') == 'ROUGH_ACQUISITION'
+            and request.get('scene', {}).get('observation_mode')
+            == 'bootstrap_static')
+        if not bootstrap_scope:
+            raise CuroboContractError(
+                'cuRobo start state is invalid outside bootstrap scope: %s'
+                % status)
+        if status != 'MotionGenStatus.INVALID_START_STATE_SELF_COLLISION':
+            raise CuroboContractError(
+                'cuRobo bootstrap start has a non-self-collision failure: %s'
+                % status)
+
+        bounds = np.asarray(request['limits']['position_rad'], dtype=float)
+        step = 0.01
+        maximum_steps = 15
+        for step_index in range(1, maximum_steps + 1):
+            magnitude = float(step_index) * step
+            for joint_index in (1, 2):
+                for sign in (-1.0, 1.0):
+                    endpoint = list(start)
+                    endpoint[joint_index] += sign * magnitude
+                    if not (
+                            bounds[joint_index, 0] <= endpoint[joint_index]
+                            <= bounds[joint_index, 1]):
+                        continue
+                    endpoint_valid, _endpoint_status = (
+                        self._start_state_status(endpoint))
+                    if not endpoint_valid:
+                        continue
+                    recovery_positions = []
+                    recovery_valid = True
+                    for sample_index in range(step_index + 1):
+                        sample = list(start)
+                        sample[joint_index] += (
+                            sign * step * float(sample_index))
+                        sample_valid, sample_status = self._start_state_status(
+                            sample)
+                        if (
+                                not sample_valid
+                                and sample_status !=
+                                'MotionGenStatus.'
+                                'INVALID_START_STATE_SELF_COLLISION'):
+                            recovery_valid = False
+                            break
+                        recovery_positions.append(sample)
+                    if recovery_valid:
+                        return {
+                            'positions': recovery_positions,
+                            'joint_numbers': [joint_index + 1],
+                            'delta_rad': [sign * magnitude],
+                            'start_status': status,
+                        }
+        raise CuroboContractError(
+            'no bounded cuRobo bootstrap recovery reaches a normally valid state')
+
     def _update_world(self, request):
         world_cuboids = list(self.fixed_platform_cuboids)
         world_cuboids.extend(obstacle_cuboids(request, self.floor_z_m))
@@ -494,6 +572,9 @@ class CuroboBackend:
         segments = []
         duration = 0.0
         kind = request['plan_kind']
+        bootstrap_recovery = self._bootstrap_recovery(start, request)
+        if bootstrap_recovery is not None:
+            start = list(bootstrap_recovery['positions'][-1])
         minimum = int(request['planning'].get('min_viewpoints', 1))
         maximum = int(request['planning'].get('max_viewpoints', minimum))
         if kind != 'RETURN_HOME':
@@ -505,8 +586,19 @@ class CuroboBackend:
                         start, candidate, request)
                 except CuroboContractError:
                     continue
+                segment_recovery = None
+                if bootstrap_recovery is not None:
+                    points, recovery_end = prepend_bootstrap_recovery(
+                        points,
+                        bootstrap_recovery['positions'],
+                        request['planning']['effective_speed_percent'],
+                    )
+                    segment_recovery = dict(bootstrap_recovery)
+                    segment_recovery['end_point'] = recovery_end
                 selected.append(view)
-                segments.append(trajectory_segment(points))
+                segments.append(trajectory_segment(
+                    points, bootstrap_recovery=segment_recovery))
+                bootstrap_recovery = None
                 start = list(points[-1]['positions_rad'])
                 duration += elapsed
             if len(selected) < minimum:

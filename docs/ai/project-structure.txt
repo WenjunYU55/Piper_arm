@@ -13,6 +13,10 @@ Piper_arm/
 ├── docs/refactor/                   Phase baselines, responsibility maps, architecture records, equivalence evidence, and staged physical requalification checklist
 ├── docs/historical/                 Time-specific scan and session handoff notes retained for provenance, not current operator routing
 ├── docs/architecture/               Concise architecture and large-asset policy for maintainers
+├── docs/experiments/                Command-free reproducible benchmark designs, results, interpretation limits, and later qualification boundaries
+├── docs/chapter5_results_summary.md  Thesis-ready implemented-method comparison, integration ablation, final method-selection table, limitations, and retained-method interpretation
+├── docs/chapter5_method_comparison.xlsx  Multi-sheet numerical Chapter 5 evidence workbook; deliberately omits unsupported comparison sheets
+├── docs/chapter5_method_comparison.json  Machine-readable metrics, comparison strengths, source provenance, unsupported comparisons, and final selections
 ├── piper_gui/                       Phase 8 Tk-independent mission ViewModel, action-client callback adapter, GUI lifecycle bootstrap, bounded next-mission viewpoint selector, command-free Ray Review with independent estimated-revolution/planning-box/source-outline layers and survivor-only post-cull camera glyphs, idle-only next-mission support-floor selector, and validated next-camera-start RGB profile persistence; owns no production mission policy
 ├── CAD/                             User-supplied physical reference photos; the holder/L515 runtime STL copies are owned by piper_description/meshes, while original CAD source provenance is currently absent
 ├── piper_ros_foxy/                  ROS 2 Foxy colcon workspace
@@ -31,7 +35,11 @@ Piper_arm/
 │       └── piper_tesseract_foxy/    Command-free Foxy/schema-v5 spool adapter, typed readiness, invariant combined PiPER/L515/Bunker geometry with startup-frozen tabletop/ground floor manifests and worker/bridge model-hash agreement, exact-target-aim-first planning, collision model builder, and ROS-free OMPL/ISP worker with dense validation; configured home is owned by ExecuteHomeStage
 ├── motion_planning/tesseract/       Pinned Ubuntu 24.04 Tesseract 0.35 OCI and rootless Bubblewrap setup/run/qualification plus deterministic capability-map generation assets
 ├── motion_planning/curobo/          ROS-free pinned cuRobo 0.7.8 adapter, reviewed operator Isaac sphere source, deterministic exact-Tesseract comparison, pure FK overlap qualification, schema-2 hash/coverage generator, exact rigid-base/Bunker mesh loader, worker spool and isolated-runtime launchers; physical collision qualification remains false
+├── motion_planning/{benchmarking,mission_efficiency}.py  Pure backend-neutral planner and saved-mission timing aggregation; no ROS or command authority
+├── benchmarks/planner_backends/     Frozen recorded schema-v5 planner corpus plus portable command-free Tesseract/curobo replay evidence
+├── tools/{create_planner_benchmark_corpus,benchmark_motion_planners,summarize_mission_efficiency}.py  Command-free corpus, isolated worker comparison, and saved-result phase-efficiency tooling
 ├── tools/replay_nbv_coverage.py      Command-free schema-2 accepted-capture replay for cumulative voxel NBV generations and capture-time final-aim diagnostics
+├── tools/analyse_chapter5_methods.py Command-free reproducible Chapter 5 dataset/history/capability/reconstruction analysis and JSON/XLSX generator; never starts ROS, CAN, camera, GPU or robot processes
 ├── tools/simulate_size_aware_ray_review.py  Command-free synthetic or source-report replay of the visible-surface bootstrap to qualified object-centred permanent-ray transition, object-sized coverage and population-bound monotonic culls; never runs IK ROS or motion
 ├── L515_camera/                     Pinned RealSense build, aligned/native depth plus 4-bit confidence camera/runtime wrappers, viewers, and shared measured-board (17 mm square/12 mm marker) strict position-stability-gated hand-eye capture/validation with source-stamp correlation, CameraInfo-aware ChArUco interpolation, stationary noise, pose-diversity and solver-sensitivity diagnostics
 │   ├── rgb_profile.conf              Validated GUI-owned RGB width,height,FPS loaded only when a new normal or low-bandwidth L515 process starts

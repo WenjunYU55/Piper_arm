@@ -82,6 +82,27 @@ def test_real_planner_rejects_a_deliberately_blocked_scene(backend):
         backend.plan(validate_request(request))
 
 
+def test_rough_acquisition_accepts_the_configured_folded_start(backend):
+    """The first acquisition mirrors Tesseract's bounded startup exception."""
+    request = copy.deepcopy(_request('ROUGH_ACQUISITION'))
+    request.pop('request_sha256', None)
+    request['start_state']['positions_rad'] = [
+        -0.010187296, 0.0, -0.01692068,
+        0.068485144, 0.441280868, 0.012594568,
+    ]
+    request = validate_request(attach_digest(request, 'request_sha256'))
+    selected, segments, _duration = backend.plan(request)
+    assert selected
+    first = segments[0]
+    assert first['bootstrap_recovery_used'] is True
+    assert first['bootstrap_recovery_joint'] == 3
+    assert abs(first['bootstrap_recovery_delta_rad']) <= 0.15
+    endpoint = first['bootstrap_recovery_end_point']
+    assert 1 <= endpoint < len(first['points']) - 1
+    assert first['points'][0]['positions_rad'] == pytest.approx(
+        request['start_state']['positions_rad'])
+
+
 def test_exact_bunker_world_preserves_known_joint_path(backend):
     """Exercise the generated model without requiring mission fixtures."""
     provenance = backend.model_provenance

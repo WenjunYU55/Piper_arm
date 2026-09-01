@@ -1,5 +1,18 @@
 schema_version: 1
 document: runtime_contracts
+planner_benchmark_and_phase_timing_contract_2026_09_01:
+  public_ros_interface_change: none
+  planner_benchmark:
+    execution_boundary: command-free offline worker processes using frozen schema-v5 requests
+    comparison_identity: backend-neutral scenario hashes plus identical robot model calibration collision environment starts goals and numerical tolerances
+    physical_claim: false
+    controls: [recorded achieved-geometry positives, deliberately blocked negative control, return-home policy control excluded from backend performance]
+  mission_phase_timing:
+    transport: additive fields inside the existing private action_summary JSON payload
+    fields: [planner_backend, phase_timing]
+    clock: monotonic
+    compatibility: Historical result payloads may omit both fields and consumers must continue to accept them.
+    authority: Timing is observational only and cannot change mission transitions deadlines motion home disable cleanup or terminal results.
 rough_acquisition_partial_target_contract_2026_08_27:
   private_request_reason: rough_acquisition_viewpoint
   admission: A GroundingDINO target may seed rough acquisition despite box proportions when the exact request is rough acquisition and semantic confidence plus profile appearance pass. SAM2 must still provide nonempty visible target support and aligned depth must remain qualified before measured LOCKED.
@@ -872,8 +885,9 @@ generic_motion_planner_contract_2026_08_27:
   transport: MotionPlan carries identity, request and trajectory hashes, backend/version, plan kind, collision qualification and clearance, execution timing policy, target/view evidence, JointTrajectory data, bootstrap evidence, rejection information and comparable metrics.
   execution_boundary: MotionPlan -> backend-neutral normalization and validation -> ScanExecutionPlan -> PlanAuthorizer -> existing executor and TrajectoryRunner.
   timing: TIMED_STREAM with timed_stream_v1 is authoritative; TESSERACT_STREAM and tesseract_stream_v3 remain compatibility input aliases with unchanged numeric validation.
-  supported_plan_kinds: {tesseract: [MULTIVIEW_SCAN, ROUGH_ACQUISITION, RETURN_HOME, current legacy kinds], curobo: [MULTIVIEW_SCAN, ROUGH_ACQUISITION within canonical joint limits, RETURN_HOME]}
+  supported_plan_kinds: {tesseract: [MULTIVIEW_SCAN, ROUGH_ACQUISITION, RETURN_HOME, current legacy kinds], curobo: [MULTIVIEW_SCAN, ROUGH_ACQUISITION within canonical joint limits including bounded bootstrap_static folded-start escape, RETURN_HOME]}
   unsupported_curobo: [OCCLUSION_PROBE, OCCLUDER_PICK_PLACE, OCCLUDER_PUSH, folded bootstrap outside canonical joint limits]
   curobo_runtime_contract: {python: explicit Python 3.10 interpreter, curobo: 0.7.8 at d64c4b005459db10c5dd867d8b30a87d5bda9bdb, warp: 1.11.1, inherited_foxy_pythonpath: forbidden, driver_commands: forbidden}
+  curobo_bootstrap_contract: Only ROUGH_ACQUISITION with observation_mode bootstrap_static may admit an initial cuRobo self-collision classification. The worker searches joint 2 or 3 in 0.01-rad increments to a maximum absolute delta of 0.15 rad, rejects any intermediate joint-limit or world-collision classification, requires the endpoint to pass ordinary cuRobo constraints, prepends the single-joint prefix, and publishes generic recovery joint delta boundary and evidence. The common executor independently requires the acquisition segment-zero scope, monotonic declared motion, unchanged floor/world checks and normal 60 mm proxy clearance at the boundary. Out-of-limit bootstrap remains unsupported.
   model_contract: Schema-2 provenance locks gripper joints 7 and 8 at zero outside the six-axis cspace; hash-binds the reviewed 69-sphere YAML and operator-saved Isaac USD plus URDF, SRDF, manifest and every moving mesh; validates exact sphere counts and ownership; records per-link sampled-surface coverage; loads the rigid PiPER base and both canonical Bunker STLs as exact base-frame world Mesh obstacles; applies only the measured 0.007 m Link-1 self buffer without adding ignore pairs; declares conservative_geometry false and hardware_qualified false until frozen-request and physical qualification pass.
   compatibility: Legacy RequestTesseractPlan, TesseractPlan, TesseractReadiness and /tesseract_plan_bridge endpoints are published only for Tesseract and are not the production shared boundary.

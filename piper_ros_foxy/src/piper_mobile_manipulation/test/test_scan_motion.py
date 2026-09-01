@@ -1830,6 +1830,29 @@ def test_folded_start_escape_must_monotonically_reach_normal_proxy_clearance():
     ) == []
 
 
+def test_configured_rough_home_joint3_escape_passes_common_runtime_gate():
+    """Both planner backends may use the same bounded startup exception."""
+    kinematics = PiperScanKinematics(LINK6_FROM_CAMERA)
+    start = np.asarray([
+        -0.010187296, 0.0, -0.01692068,
+        0.068485144, 0.441280868, 0.012594568,
+    ])
+    path = [
+        start + np.asarray([0.0, 0.0, -0.01 * step, 0.0, 0.0, 0.0])
+        for step in range(7)
+    ]
+    assert validate_monotonic_self_clearance_escape(
+        kinematics,
+        path,
+        URDF_JOINT_LIMITS,
+        floor_z_m=0.005,
+        link_radius_m=0.025,
+        self_clearance_m=0.060,
+        recovery_joint_number=[3],
+        maximum_start_limit_violation_rad=0.04,
+    ) == []
+
+
 def test_folded_start_escape_rejects_worsening_proxy_clearance():
     kinematics = PiperScanKinematics(LINK6_FROM_CAMERA)
     start = np.asarray([
