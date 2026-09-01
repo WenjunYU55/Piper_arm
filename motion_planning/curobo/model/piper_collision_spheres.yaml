@@ -1,7 +1,7 @@
 schema_version: 1
-model_name: piper_isaac_operator_tuned_qualified_candidate_20260831
+model_name: piper_isaac_operator_tuned_refined_candidate_20260901
 source:
-  usd_sha256: 78941a3f01fe8ea94af9ca3a33246e4732965ab289980e0d6a7af31205140e3f
+  usd_sha256: a6adc07ca5e6db077e2772f5f5c11b2b340b8a3077bcdc53bf8d2aca559db652
   planning_urdf_sha256: f8d268bde6c03be5c142b2bed6c500a75106486cc0d298fbedc358c43c0ec40b
   units: metres
   editor: Isaac Sim 4.5 Lula Robot Description Editor
@@ -18,8 +18,8 @@ qualification_notes:
   complete volumes are protected.
 - No self-collision ignore pair was added or widened.
 - A deterministic 2,004-pose articulated self-collision comparison against Tesseract
-  found zero state-level false negatives after the measured Link 1 buffer; conservative
-  false positives remain documented.
+  found zero state-level false negatives and 18 conservative false positives after
+  the measured Link 1 buffer; the sparse Link 5 surface coverage remains documented.
 - Command-free GPU checks passed the known neutral/scan path in both directions, deliberate
   world-obstacle rejection, and the known folded self-collision.
 - Hardware qualification remains false pending low-speed physical validation and frozen
@@ -125,9 +125,9 @@ collision_spheres:
     source_link: link2
   link3:
   - center:
-    - -0.022571086
-    - -0.206988835
-    - -9.0e-09
+    - -0.023505809
+    - -0.196304898
+    - -1.0e-08
     radius: 0.035
     source_link: link3
   - center:
@@ -149,9 +149,9 @@ collision_spheres:
     radius: 0.025
     source_link: link3
   - center:
-    - -0.021344365
-    - -0.173051052
-    - -1.9e-08
+    - -0.023097152
+    - -0.173204402
+    - -2.0e-08
     radius: 0.035
     source_link: link3
   - center:
@@ -187,10 +187,10 @@ collision_spheres:
     source_link: link4
   link5:
   - center:
-    - -0.001034952
-    - -0.033765708
-    - 5.0e-07
-    radius: 0.035
+    - 0.000547111
+    - -0.035251984
+    - -3.225e-06
+    radius: 0.032
     source_link: link5
   link6:
   - center:

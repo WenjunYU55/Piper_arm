@@ -178,7 +178,8 @@ mesh/convex model for both moving and fixed geometry and reports comparable
 clearances. cuRobo now uses exact fixed base/Bunker meshes, but articulated links
 remain non-conservative spheres and clearance remains unavailable (`-1`). The
 current audit reports 69 spheres and a worst per-owner sampled-surface gap of
-48.3 mm. A measured 7 mm Link-1 self-collision buffer closes every observed
+48.3 mm. Link 5 has 52.5 percent sampled coverage and a 34.4 mm maximum gap.
+A measured 7 mm Link-1 self-collision buffer closes every observed
 state-level miss while retaining the zero, neutral and qualified-scan poses.
 The low count avoids cuRobo's large self-collision kernel, but the sparse
 coverage—especially around link 5—means collision equivalence is not claimed.
@@ -260,12 +261,14 @@ CUROBO_PYTHON=/home/prl/.venvs/piper-curobo-v0.7.8/bin/python
 env -u PYTHONPATH "$CUROBO_PYTHON" -c 'import curobo, torch, warp; print(curobo.__version__, warp.__version__, torch.__version__, torch.version.cuda, torch.cuda.is_available(), torch.cuda.get_device_name(0))'
 ```
 
-Qualification on 2026-08-31 converted the final saved 54-sphere Isaac/Lula edit
+Qualification on 2026-08-31 converted the saved 54-sphere Isaac/Lula edit
 into 49 moving-link spheres plus 20 exact-cover cable/mount envelope spheres.
 Camera holder/L515 spheres are transformed into `l515_attached_assembly`; the
-rigid base is an exact fixed-world mesh. A deterministic 2,004-pose articulated
-self-collision comparison against exact Tesseract produced zero state-level false negatives and 501
-conservative false positives without adding any ignored pair. Real CUDA
+rigid base is an exact fixed-world mesh. The 2026-09-01 operator refinement
+removed the dominant link3/link5 false-positive cluster. A deterministic
+2,004-pose articulated self-collision comparison against exact Tesseract then
+produced zero state-level false negatives and 18 conservative false positives
+without adding any ignored pair. Real CUDA
 planning passes neutral-to-scan and reverse, a deliberately blocking world is
 rejected, and the known folded self collision remains rejected afterward.
 
@@ -286,15 +289,16 @@ blocking dynamic box is rejected. The tested folded home is collision-invalid
 in the exact Tesseract model too and remains part of Tesseract's special
 bootstrap-recovery problem, not evidence for ignoring cuRobo collisions.
 
-The 2026-08-31 articulated self-collision comparison used 2,000 seeded joint
-samples plus four reference poses. It found zero state-level false negatives, 43 mutually
-colliding states, 1,456 mutually clear states, and 501 conservative cuRobo
+The 2026-09-01 articulated self-collision comparison used 2,000 seeded joint
+samples plus four reference poses. It found zero state-level false negatives,
+43 mutually colliding states, 1,943 mutually clear states, and 18 conservative cuRobo
 rejections. This is useful command-free evidence, not a proof over continuous
 configuration space.
 
 The model remains `hardware_qualified: false`: moving-link spheres have
-per-owner sampled-surface gaps up to 48.3 mm, conservative false positives
-remain, the complete frozen mission-request GPU suite is pending, and no
+per-owner sampled-surface gaps up to 48.3 mm, Link 5 sampled coverage is only
+52.5 percent with a 34.4 mm gap, conservative false positives remain, the
+complete frozen mission-request GPU suite is pending, and no
 physical cuRobo test has been performed.
 
 Version and installation references:
