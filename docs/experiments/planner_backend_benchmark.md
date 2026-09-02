@@ -32,6 +32,16 @@ MoveJ target without ordinary collision planning.
 
 ## Result
 
+> Historical transport note (2 September 2026): these recorded cuRobo
+> scheduled-duration figures were produced before the fixed-rate adapter
+> repair. The old adapter stretched sparse points to satisfy speed bounds and
+> delivered roughly 4.2–4.4 Hz at 5 percent despite declaring 20 Hz. Keep the
+> planning-success and wall-time results as planner evidence, but do not use
+> the cuRobo scheduled-duration or combined proxy as current transport
+> evidence. A current recorded acquisition now emits 384 points over 19.15 s
+> at fixed 20 Hz with a 0.007482 rad maximum adjacent change; a complete paired
+> benchmark must be regenerated before comparing end-to-end duration.
+
 The final run used one warm-up followed by three repetitions of all seven
 fixtures on the reference RTX 3090 host.
 

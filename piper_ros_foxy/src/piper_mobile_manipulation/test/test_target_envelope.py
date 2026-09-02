@@ -168,13 +168,15 @@ def test_clipped_rejection_is_exact_stamp_depth_and_digest_bound():
         validate_shape_rejection(changed)
 
 
-def test_centered_crop_classification_uses_25_and_80_cm_center_distance():
+def test_centered_crop_classification_uses_25_cm_and_3_m_center_distance():
     assert classify_centered_silhouette(
         clipped_shape_rejection(header(), 0.40), 0.25)[0] == 'TOO_CLOSE'
     assert classify_centered_silhouette(
         clipped_shape_rejection(header(), 0.20), 0.40)[0] == 'RETRY_FARTHER'
     assert classify_centered_silhouette(
-        clipped_shape_rejection(header(), 0.20), 0.80)[0] == 'TOO_LARGE'
+        clipped_shape_rejection(header(), 0.20), 0.80)[0] == 'RETRY_FARTHER'
+    assert classify_centered_silhouette(
+        clipped_shape_rejection(header(), 0.20), 3.00)[0] == 'TOO_LARGE'
 
 
 def test_shape_digest_rejects_mutated_or_nonfinite_geometry():

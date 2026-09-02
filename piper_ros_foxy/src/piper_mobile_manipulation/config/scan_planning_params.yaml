@@ -20,8 +20,13 @@
     # sampling are equal-area; target_sector retains the configured 180-degree
     # azimuth and pitch region for reproducible comparison with earlier runs.
     min_scan_radius_m: 0.30
-    max_scan_radius_m: 0.80
+    # Hard camera-to-target observation ceiling. Capability support and exact
+    # planning normally reduce this to the arm's actually usable interval.
+    max_scan_radius_m: 3.00
     ray_min_standoff_m: 0.28
+    # Deprecated compatibility override. The planner no longer caps endpoint
+    # selection at a preferred radius; the entire finite camera/perception
+    # interval is offered to capability prequalification and exact planning.
     preferred_scan_radius_m: 0.50
     ray_sampling_region: "full_sphere"
     ray_count: 360
@@ -57,15 +62,16 @@
     min_reach_m: 0.20
     max_reach_m: 0.75
     min_camera_object_distance_m: 0.25
-    max_camera_object_distance_m: 0.80
+    max_camera_object_distance_m: 3.00
     max_height_change_m: 0.40
     # Exact-point policies use these bounds only with the legacy opt-in below.
-    # Target rays always require some bounded standoff to intersect this coarse
-    # camera workspace before Tesseract performs authoritative feasibility.
+    # For target rays the reach/height values are fallback-only when the
+    # capability artifact is unavailable. A qualified enforcing map replaces
+    # these fixed workspace gates; exact planning remains mandatory.
     enforce_static_reach_bounds: false
     # Collision-qualified sparse 5D camera atlas. Only target rays use it.
-    # Missing, stale-hash or unqualified artifacts retain the proven coarse
-    # workspace cull and leave exact feasibility to Tesseract.
+    # Missing, stale-hash or unqualified artifacts retain the conservative
+    # coarse fallback and leave exact feasibility to the selected planner.
     capability_map_mode: "enforce"
     floor_z_m: 0.005
     arm_status_timeout_sec: 1.0
@@ -124,13 +130,16 @@
     acquisition_viewpoints_topic: "/piper/acquisition_viewpoints"
     reachable_acquisition_viewpoints_topic: "/piper/reachable_acquisition_viewpoints"
     hint_max_age_sec: 5.0
-    # Maximum search radius. If the live camera is already closer to the hint,
-    # acquisition preserves that current radius and aims at the hint instead
-    # of overshooting through/behind the robot base.
-    standoff_m: 0.45
-    # Extra compact candidates cover centreline hints whose five
-    # minimum-translation look-at orientations have no bounded IK.
-    fallback_standoff_m: 0.28
+    # The minimum combines the L515's qualified 0.25 m observation floor with
+    # the GUI rough hint's declared 0.10 m positional uncertainty. A camera
+    # inside that protected radius moves radially away from the hint; a camera
+    # already farther away stays at its measured distance. There is no separate
+    # rough-acquisition maximum: perception, capability, exact planning,
+    # collision checks and mission deadlines retain their normal authority.
+    minimum_standoff_m: 0.35
+    # Extra same-radius candidates cover centreline hints whose initial
+    # minimum-translation look-at orientation has no bounded IK.
+    include_compact_candidates: true
     # Retained for configuration compatibility; live camera-to-hint pitch owns
     # the centered minimum-translation acquisition look.
     acquisition_camera_pitch_deg: -10.0

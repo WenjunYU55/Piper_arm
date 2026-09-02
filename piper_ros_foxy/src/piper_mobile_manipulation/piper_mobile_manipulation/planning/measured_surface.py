@@ -51,7 +51,7 @@ def _frame_voxels(dataset, metadata, voxel_size_m, pixel_stride):
         (mask[::step, ::step] > 0)
         & np.isfinite(depth[::step, ::step])
         & (depth[::step, ::step] > 0.10)
-        & (depth[::step, ::step] < 1.50))
+        & (depth[::step, ::step] <= 3.00))
     if not len(rows):
         return set()
     rows = rows * step

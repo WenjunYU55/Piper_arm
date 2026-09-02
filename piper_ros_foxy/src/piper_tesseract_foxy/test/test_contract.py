@@ -774,6 +774,19 @@ def test_response_backend_must_match_the_frozen_request():
         validate_response(response, request)
 
 
+def test_response_position_limit_error_identifies_exact_joint_and_excess():
+    request = request_fixture()
+    response = response_fixture(request)
+    response['segments'][0]['points'][1]['positions_rad'][4] = 1.000000028
+    response = rehash_response(response)
+    with pytest.raises(
+            ContractError,
+            match=(
+                r'segment 0 point 1 joint5=1\.000000028 is outside '
+                r'\[-1, 1\] by 2\.8.*e-08 rad')):
+        validate_response(response, request)
+
+
 @pytest.mark.parametrize('backend,version', [
     ('automatic', 'unknown'),
     ('tesseract', ''),

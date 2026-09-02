@@ -130,9 +130,9 @@ to the typed `tesseract` default.
 
 | Plan kind | Tesseract | cuRobo |
 |---|---|---|
-| `MULTIVIEW_SCAN` | supported | MotionGen pose plans plus optional joint-space home |
+| `MULTIVIEW_SCAN` | supported | MotionGen fixed-shape target-ray goal-set plans |
 | `ROUGH_ACQUISITION` | supported, including qualified folded-start recovery | supported inside all six limits, including the acquisition-only bounded folded-start escape |
-| `RETURN_HOME` | supported | MotionGen joint-space plan |
+| `RETURN_HOME` | supported | manifest-authorized exact two-point direct-home plan with dense installed-camera floor proof |
 | `OCCLUSION_PROBE` | not in the active schema-v5 worker contract | explicitly unsupported |
 | `OCCLUDER_PICK_PLACE` | not production-qualified | explicitly unsupported |
 | `OCCLUDER_PUSH` | not production-qualified | explicitly unsupported |
@@ -146,16 +146,23 @@ The worker uses the verified v0.7.8 APIs:
 
 - `MotionGenConfig.load_from_robot_config`
 - `MotionGen` and `MotionGenPlanConfig`
-- `plan_single` for target-facing camera poses
-- `plan_single_js` for home poses
+- `plan_goalset` for every target-facing camera request, padded to a fixed 54-pose tensor for persistent-worker stability
+- direct two-point policy generation for legacy planner `RETURN_HOME`, with real cuRobo `link6` FK used for dense holder/L515 floor validation
 - `Pose`, `JointState`, `WorldConfig`, `Cuboid`, and fixed-world `Mesh`
 - `MotionGenResult.get_interpolated_plan()` and `interpolation_dt`
 
 cuRobo tensors are reordered to the canonical `joint1..joint6` order and
-converted to ordinary finite lists before the response is written. Native
-paths are slowed/subdivided to the unchanged 20 Hz PiPER schedule and then pass
-the common validator. Tensor/CUDA types never enter ROS, mission, NBV,
-authorization, or execution code.
+converted to ordinary finite lists before the response is written. Each native
+collision-checked segment is assigned a whole number of 20 Hz ticks from its
+native duration, the selected speed applied once to PiPER's existing
+`[5, 5, 5, 5, 5, 3] rad/s` MoveJ model, and the 0.05 rad adjacent-command
+ceiling. Exact linear samples retain every native endpoint and never cut across
+a corner. This fixes an earlier adapter defect which stretched sparse cuRobo
+points to roughly 4.2–4.4 Hz at 5 percent despite declaring a 20 Hz contract.
+The resulting generic schedule then passes the same common validator,
+authorization, runtime gates, `TrajectoryRunner`, and PiPER adapter as
+Tesseract. Tensor/CUDA types never enter ROS, mission, NBV, authorization, or
+execution code.
 
 `prepare_model.sh` first invokes the existing Tesseract model builder, so both
 backends start from the same current Xacro, calibrated L515 frame, SRDF,
@@ -307,9 +314,10 @@ configuration space.
 The model is operator-promoted to `hardware_qualified: true` for supervised 5%
 testing. Moving-link spheres still have per-owner sampled-surface gaps up to
 48.3 mm, Link 5 sampled coverage is only 52.5 percent with a 34.4 mm gap,
-conservative false positives remain, and the configured-home policy is not
-equivalent across backends. These limitations remain visible in provenance and
-must not be described as collision-model equivalence.
+conservative false positives remain. The configured-home policy is now aligned
+at the generic planner compatibility boundary, but that does not make the two
+articulated collision models equivalent. These limitations remain visible in
+provenance and must not be described as collision-model equivalence.
 
 ## Controlled planner replay
 
@@ -320,13 +328,41 @@ exact geometry validator. Median request wall time was 19.646 seconds for
 Tesseract and 0.630 seconds for cuRobo. Median scheduled trajectory duration
 was 4.750 seconds and 18.209 seconds respectively, leaving the median
 planning-plus-scheduled-duration proxy effectively equal at 25.046 versus
-25.048 seconds.
+25.048 seconds. The cuRobo scheduled-duration and combined proxy are historical
+pre-fix values: that response used sparse variable-period setpoints despite a
+20 Hz label. They must be regenerated after the 2 September fixed-rate repair;
+planner success, rejection, exact-validation, and request-wall-time evidence
+remain valid.
 
 This is command-free `CONTROLLED_REPLAY`, not physical evidence. It establishes
 that cuRobo is a substantially faster proposal generator for these requests,
 but not that it executes a mission faster or more safely. Full methods,
 artifacts and limitations are in
 `docs/experiments/planner_backend_benchmark.md`.
+
+### Persistent runtime qualification — 2 September 2026
+
+The later command-free qualification at
+`/tmp/piper_curobo_runtime_qualification_20260902_v3` kept each backend worker
+alive across rough acquisition, four consecutive multiview transitions, a
+deliberately blocked control, and return home. Both backends completed all five
+normal requests and rejected the blocked request; all ten normal trajectories
+passed the same exact Tesseract geometry revalidation. The cuRobo worker used a
+fixed 54-pose `plan_goalset` tensor for every camera request because cuRobo
+v0.7.8 can leave `Goal.current_state` unset when persistent solver buffers are
+reused across changing goal-set cardinalities.
+
+For target rays, cuRobo now samples up to nine standoffs only from the validated
+capability intervals and combines them with up to six rolls. Exact target aim
+is tried before the bounded fallback look. Padding duplicates the final valid
+pose and cannot create a new semantic endpoint. Exhaustion returns generic
+`PLANNER_EXHAUSTED` plus attempted ray IDs, so the shared bridge can request the
+next shortlist without backend-specific mission logic.
+
+This replay also proves clean ROS-free worker/CUDA teardown, not physical robot
+behavior. A separately authorized low-speed physical cuRobo E2E remains
+required, and the cuRobo sphere model is still not claimed collision-equivalent
+to Tesseract.
 
 Version and installation references:
 

@@ -88,6 +88,10 @@ def test_scene_registration_excludes_target_and_invalid_depth():
     assert support[6, 6]
 
 
+def test_default_reconstruction_depth_matches_target_observation_ceiling():
+    assert MODULE.DEFAULT_DEPTH_TRUNC_M == 3.0
+
+
 def test_stored_base_camera_pose_is_inverted_for_open3d():
     base_camera = np.eye(4)
     base_camera[0, 3] = 0.25

@@ -74,7 +74,7 @@ def test_acquisition_builds_distinct_bounded_orientation_cone():
     current_camera = np.asarray([0.65, 0.05, 0.35])
     viewpoints = build_acquisition_viewpoints(
         target, current_camera,
-        standoff_m=0.45, camera_pitch_deg=-10.0, sweep_angle_deg=15.0)
+        camera_pitch_deg=-10.0, sweep_angle_deg=15.0)
 
     assert len(viewpoints) == 5
     assert viewpoints[0]['acquisition_look'] == 'center'
@@ -82,7 +82,6 @@ def test_acquisition_builds_distinct_bounded_orientation_cone():
         item['acquisition_transaction_index'] == 0 for item in viewpoints)
     positions = [vector(item['desired_camera_position']) for item in viewpoints]
     effective_standoff = np.linalg.norm(current_camera - target)
-    assert effective_standoff < 0.45
     assert np.allclose(positions[0], current_camera)
     assert all(np.isclose(
         np.linalg.norm(position - target), effective_standoff)
@@ -90,7 +89,8 @@ def test_acquisition_builds_distinct_bounded_orientation_cone():
     assert all(np.isclose(
         item['camera_object_distance_m'], effective_standoff)
         for item in viewpoints)
-    assert all(np.isclose(item['maximum_standoff_m'], 0.45)
+    assert all(item['minimum_standoff_m'] == 0.0 for item in viewpoints)
+    assert all(item['distance_policy'] == 'minimum_only_preserve_current'
                for item in viewpoints)
     assert len({tuple(np.round(position, 6)) for position in positions}) == 1
 
@@ -129,7 +129,7 @@ def test_near_base_hint_does_not_push_center_view_behind_robot():
     current_camera = np.asarray([0.095, 0.001, 0.232])
     viewpoints = build_acquisition_viewpoints(
         target, current_camera,
-        standoff_m=0.45, camera_pitch_deg=-10.0, sweep_angle_deg=15.0)
+        camera_pitch_deg=-10.0, sweep_angle_deg=15.0)
 
     positions = [vector(item['desired_camera_position']) for item in viewpoints]
     base_reaches = [np.linalg.norm(position) for position in positions]
@@ -150,8 +150,8 @@ def test_acquisition_faces_hint_before_cone_even_if_current_view_differs():
     current_look = np.asarray([0.0, -0.8, -0.6])
     viewpoints = build_acquisition_viewpoints(
         target, current_camera,
-        standoff_m=0.45, camera_pitch_deg=-10.0, sweep_angle_deg=15.0,
-        fallback_standoff_m=0.30,
+        camera_pitch_deg=-10.0, sweep_angle_deg=15.0,
+        include_compact_candidates=True,
         current_camera_look_direction=current_look)
 
     assert len(viewpoints) <= 20
@@ -172,8 +172,8 @@ def test_centerline_hint_adds_distinct_compact_fallback_candidates():
     current_camera = np.asarray([0.074991, -0.002784, 0.280012])
     viewpoints = build_acquisition_viewpoints(
         target, current_camera,
-        standoff_m=0.45, camera_pitch_deg=-10.0, sweep_angle_deg=15.0,
-        fallback_standoff_m=0.30)
+        camera_pitch_deg=-10.0, sweep_angle_deg=15.0,
+        include_compact_candidates=True)
 
     assert len(viewpoints) == 5
     assert viewpoints[0]['acquisition_look'] == 'center'
@@ -192,8 +192,8 @@ def test_compact_fallback_deduplicates_primary_poses_at_same_radius():
         0.10, 0.0, math.sqrt(0.30 ** 2 - 0.15 ** 2)])
     viewpoints = build_acquisition_viewpoints(
         target, current_camera,
-        standoff_m=0.45, camera_pitch_deg=-10.0, sweep_angle_deg=15.0,
-        fallback_standoff_m=0.30)
+        camera_pitch_deg=-10.0, sweep_angle_deg=15.0,
+        include_compact_candidates=True)
 
     pose_keys = {
         tuple(np.round(np.concatenate((
@@ -205,12 +205,61 @@ def test_compact_fallback_deduplicates_primary_poses_at_same_radius():
     assert len(viewpoints) == 5
 
 
-def test_compact_fallback_standoff_is_bounded_by_primary_maximum():
-    with np.testing.assert_raises_regex(
-            ValueError, 'fallback standoff.*no greater'):
+def test_acquisition_has_no_fixed_maximum_or_inward_compact_fallback():
+    target = np.asarray([0.25, 0.0, 0.0])
+    current_camera = np.asarray([0.90, 0.0, 0.20])
+    current_distance = np.linalg.norm(current_camera - target)
+
+    viewpoints = build_acquisition_viewpoints(
+        target, current_camera, minimum_standoff_m=0.35,
+        include_compact_candidates=True)
+
+    assert current_distance > 0.45
+    assert np.allclose(vector(viewpoints[0]['desired_camera_position']),
+                       current_camera)
+    assert all(np.isclose(
+        np.linalg.norm(vector(item['desired_camera_position']) - target),
+        current_distance) for item in viewpoints)
+    assert all('maximum_standoff_m' not in item for item in viewpoints)
+
+
+def test_minimum_standoff_protects_close_rough_lock_from_hint_error():
+    """Reproduce the 2026-09-01 near-range E2E acquisition geometry."""
+    rough_target = np.asarray([0.4, 0.0, 0.12])
+    rough_home_camera = np.asarray([
+        0.112960692, -0.000200081, 0.229591113])
+    measured_target = np.asarray([0.334, 0.002, 0.123])
+
+    unprotected_distance = np.linalg.norm(
+        measured_target - rough_home_camera)
+    assert unprotected_distance < 0.25
+
+    viewpoints = build_acquisition_viewpoints(
+        rough_target,
+        rough_home_camera,
+        include_compact_candidates=True,
+        minimum_standoff_m=0.35,
+    )
+
+    positions = [
+        vector(item['desired_camera_position']) for item in viewpoints]
+    assert all(np.isclose(
+        np.linalg.norm(position - rough_target), 0.35)
+        for position in positions)
+    assert np.linalg.norm(positions[0] - measured_target) > 0.28
+    assert all(np.isclose(item['camera_object_distance_m'], 0.35)
+               for item in viewpoints)
+
+
+def test_acquisition_rejects_invalid_distance_policy_inputs():
+    with np.testing.assert_raises_regex(ValueError, 'finite and nonnegative'):
         build_acquisition_viewpoints(
-            [0.25, 0.0, 0.0], [0.075, 0.0, 0.28],
-            standoff_m=0.45, fallback_standoff_m=0.46)
+            [0.4, 0.0, 0.12], [0.11, 0.0, 0.23],
+            minimum_standoff_m=-0.01)
+    with np.testing.assert_raises_regex(ValueError, 'must be boolean'):
+        build_acquisition_viewpoints(
+            [0.4, 0.0, 0.12], [0.11, 0.0, 0.23],
+            include_compact_candidates=1)
 
 
 def test_only_rough_acquisition_relaxes_lost_target_gate():

@@ -1,5 +1,10 @@
 schema_version: 1
 document: mission_goal_and_delivery_roadmap
+target_observation_ceiling_qualification_2026_09_01:
+  milestone: M5 reliable size-aware closed-loop ray NBV
+  status: software_regression_complete_physical_range_characterization_pending
+  completed: [3.00 m target-only hard ceiling through perception tracking framing measured coverage NBV and reconstruction, unchanged minimums, capability-narrowed 0.28 through 3.00 m rays, separate 1.20 m local obstacle scene, 239 focused tests, 908 complete mobile tests, 172 complete Tesseract tests, mobile build, strict AI YAML validation and real-map timing benchmark]
+  next_gate: Use the read-only range recorder to measure target pixel area semantic mask coherent depth and quality versus distance before any separately authorized physical E2E.
 bounded_wall_hole_repair_qualification_2026_09_01:
   milestone: M6 target mesh reconstruction
   status: selectable_software_replay_passed_operator_visual_review_pending
@@ -65,9 +70,9 @@ direction_dependent_object_framing_2026_08_26:
   research_context: docs/ai/65-research-context.yaml
 target_relative_capability_bounds_2026_08_25:
   milestone: M5 efficient and explainable closed-loop ray NBV
-  software_status: Configured rays now remain target-relative through 0.80 m instead of being clipped by target base-link range. Enforcing capability lookup records supported standoff runs, preserves the original request and narrows the active worker envelope. Current focused and complete functional suites plus both package builds pass.
-  current_blocker: Seven changed-file flake8 and eight changed-file pep257 findings remain; mobile registered testing is red only on package-wide lint. Command-free live-shaped and physical mission evidence remain pending.
-  next_gate: Clean changed-file lint, rerun registered tests, inspect one no-hardware live-shaped request/report trace, then require separate explicit authorization before physical qualification.
+  software_status: Configured rays now remain target-relative through 3.00 m instead of being clipped by target base-link range. Enforcing capability lookup records supported standoff runs, preserves the original request and narrows the active worker envelope. The earlier 0.80 m software bound was superseded on 2026-09-01; focused complete mobile complete Tesseract build and strict YAML regressions pass.
+  current_blocker: Existing package-wide style debt keeps the registered mobile aggregate red; the only registered functional import failure passes with the built install overlay sourced. Command-free live-shaped and physical mission evidence remain pending.
+  next_gate: Inspect one no-hardware live-shaped request/report trace, then require separate explicit authorization before physical qualification.
   problem_record: target_range_clipped_ray_and_unbounded_capability_search_2026_08_25
 mission_ray_evidence_and_static_hard_culls_2026_08_25:
   milestone: M5 explainable and efficient closed-loop ray NBV
@@ -124,7 +129,7 @@ successful_ray_e2e_2026_08_21:
   still_required: [repeatability qualification, authentic tracked-base-home reconstruction trigger, a PASS or WARN mesh from improved view coverage]
 ray_workspace_cull_2026_08_21:
   milestone: M5 reduce clearly impossible ray planning attempts
-  software_status: Every target ray now requires at least one allowed standoff inside the configured coarse camera workspace before bridge shortlisting. Exact-point policies and Tesseract authority are unchanged.
+  software_status: Historical fixed-workspace prequalification is now fallback-only. A qualified enforcing capability map replaces fixed base_link radius and height gates for target rays; exact-point policies and exact planner authority are unchanged.
   software_evidence: [108 focused tests pass, 716 complete mobile tests pass, 125 complete Tesseract tests pass, five-package build passes, changed-file ament lint passes]
   qualification_status: Software tests first; then motors-disabled provenance inspection before any supervised viewpoint.
 exchangeable_nbv_policy_boundary_2026_08_21:
@@ -149,7 +154,7 @@ frozen_viewpoint_ray_phase_2026_08_21:
   operator_controls: [policy legacy voxel_nbv or ray_nbv, ray region target_sector upper_hemisphere or full_sphere, exact ray count 1 through 1000, next-mission-only apply]
   software_evidence: [96 focused policy geometry generation coverage and bridge tests pass, 818 complete mobile plus Tesseract tests pass, 100 repository tests pass with one hardware skip, five-package build passes, changed-file flake8 and pep257 pass, rootless core and compact Tesseract qualification PASS, all registered functional tests pass]
   known_test_debt: colcon test retains 68 historical package-wide flake8 and 14 historical pep257 findings outside this change.
-  range_status: Fresh semantic masked depth wholly beyond 1.20 m returns retryable TARGET_TOO_FAR / REPOSITION_REQUIRED with rough base_link XYZ; five-look absence reports TARGET_NOT_FOUND with the same coordinate context.
+  range_status: Fresh semantic masked depth wholly beyond 3.00 m returns retryable TARGET_TOO_FAR / REPOSITION_REQUIRED with rough base_link XYZ; five-look absence reports TARGET_NOT_FOUND with the same coordinate context. Local obstacle depth remains separately bounded at 1.20 m.
   qualification_status: One supervised ray-policy E2E passed on 2026-08-21 with three accepted views, true safe-frontier exhaustion, staged home, disable and cleanup. Repeatability and cross-policy timing remain unqualified.
 global_nbv_target_aim_repair_2026_08_20:
   milestone: M5 feature-diverse measured NBV capture

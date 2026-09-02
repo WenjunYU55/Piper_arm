@@ -51,6 +51,8 @@ Piper_arm/
 │   ├── calibration/hand_eye/        Deployed datasheet/factory-registered optical transform plus preserved raw hand-eye samples and pre-registration validation records
 │   ├── patches/                     Pinned realsense-ros compatibility patches
 │   ├── stop_gpu_vision_pipeline.sh  Validated orphan-safe GPU process-group shutdown
+│   ├── view_range_debug_dashboard.{sh,py}  Read-only RGB/SAM/aligned-depth/native-confidence range dashboard with fixed physical scaling and Target3D quality diagnostics
+│   ├── record_perception_range_test.{sh,py} and perception_range_report.py  Command-free exact-heavy-request camera-to-surface range characterization with canonical CSV, Excel table and plotted HTML evidence
 │   ├── run_supervised_viewpoint_execution.sh  Proposal-first automatic scan launcher
 │   ├── run_camera_timestamp_watchdog.sh  Typed clock-safety and stationary recovery requester
 │   └── realsense_ws/                Generated/source RealSense workspace; do not edit install output
@@ -119,7 +121,7 @@ piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/execution
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/execution/trajectory.py - pure authorized trajectory schedule and monitoring decisions
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/execution/capture.py - pure settled RGB-D handoff and bounded retry policy
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/planning/coverage.py - immutable object-centric voxel evidence with explicit qualified model centre/radius metadata and information-first candidate scoring
-piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/perception/target_envelope.py - exact-stamp trusted silhouette and border-clipped rejection geometry, hash-bound capture-one shape plus synchronized base-from-camera model seed, centered camera-target-distance 0.250/0.800 m crop classification, conservative revolved envelope, object-sized grey coverage sphere, complete-FOV bound and 0.250 m camera-to-surface clearance
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/perception/target_envelope.py - exact-stamp trusted silhouette and border-clipped rejection geometry, hash-bound capture-one shape plus synchronized base-from-camera model seed, centered camera-target-distance 0.250/3.000 m crop classification, conservative revolved envelope, object-sized grey coverage sphere, complete-FOV bound and 0.250 m camera-to-surface clearance
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/depth_to_3d_node.py - qualified target depth owner that publishes valid silhouettes or exact-stamp clipped-shape rejection before same-frame Target3D
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture_node.py - transactional exact RGB-D persistence and capture-one model-seed owner; binds the persisted semantic mask/confidence-qualified depth to the synchronized recorded base-from-camera matrix before private Trigger success
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_planner_node.py - tracked-centre provisional generation-zero ray owner, capture-bound recorded-matrix revolution/frozen envelope and object-sized NBV owner, stable survivor reranking and same-ray farther-standoff retry owner

@@ -78,6 +78,22 @@ def test_repeated_measured_surface_converges(tmp_path):
     assert result['per_view_novel_fraction'][-2:] == [0.0, 0.0]
 
 
+def test_measured_surface_retains_qualified_target_at_two_and_half_metres(
+        tmp_path):
+    depth = np.full((60, 60), 2.5, dtype=np.float32)
+    mask = np.full((60, 60), 255, dtype=np.uint8)
+    files = [write_frame(tmp_path, index, depth, mask) for index in range(2)]
+    (tmp_path / 'manifest.json').write_text(
+        json.dumps({'files': files}), encoding='utf-8')
+
+    result = measured_surface_coverage(
+        tmp_path, minimum_views=2, pixel_stride=1,
+        convergence_views=1)
+
+    assert result['available']
+    assert result['per_view_novel_fraction'] == [1.0, 0.0]
+
+
 def test_schema_two_coverage_uses_qualified_target_depth_not_occluder(tmp_path):
     target_depth = np.full((60, 60), 400, dtype=np.uint16)
     raw_depth = np.full((60, 60), 0.20, dtype=np.float32)

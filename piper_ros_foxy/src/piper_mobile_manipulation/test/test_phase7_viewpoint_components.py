@@ -79,12 +79,13 @@ def test_first_capture_crop_requests_farther_aimed_standoff():
     assert action == 'RETRY_FARTHER'
     assert farther == pytest.approx(0.60)
     action, _reason, farther = first_capture_framing_decision(
-        clipped_shape_rejection(header, 0.40), 0.79,
-        previous_minimum_m=0.80)
+        clipped_shape_rejection(header, 0.40), 2.99,
+        previous_minimum_m=3.00)
     assert action == 'NO_AIMED_ENDPOINT'
     assert farther is None
-    assert next_target_framing_standoff(0.79) == pytest.approx(0.80)
-    assert next_target_framing_standoff(0.80) is None
+    assert next_target_framing_standoff(0.79) == pytest.approx(0.84)
+    assert next_target_framing_standoff(2.99) == pytest.approx(3.00)
+    assert next_target_framing_standoff(3.00) is None
 
 
 def test_border_clipped_shape_cannot_become_revolution_seed():

@@ -40,6 +40,15 @@ def _request(kind):
     return validate_request(request)
 
 
+def _assert_fixed_rate_schedule(segment):
+    points = segment['points']
+    assert len(points) >= 2
+    assert all(
+        right['time_from_start_s'] - left['time_from_start_s']
+        == pytest.approx(0.05, abs=1e-9)
+        for left, right in zip(points, points[1:]))
+
+
 @pytest.fixture(scope='module')
 def backend():
     config = Path(os.environ.get(
@@ -66,6 +75,13 @@ def test_real_planner_supports_each_declared_plan_kind(backend, kind):
         assert segments[-1]['is_return_home'] is True
     else:
         assert selected
+        for segment in segments:
+            _assert_fixed_rate_schedule(segment)
+    if kind == 'MULTIVIEW_SCAN':
+        assert any(
+            attempt.get('path_qualification') == 'accepted'
+            for viewpoint in selected
+            for attempt in viewpoint['curobo_attempt_diagnostics'])
 
 
 def test_real_planner_rejects_a_deliberately_blocked_scene(backend):
@@ -80,6 +96,20 @@ def test_real_planner_rejects_a_deliberately_blocked_scene(backend):
     request = attach_digest(request, 'request_sha256')
     with pytest.raises(CuroboContractError):
         backend.plan(validate_request(request))
+
+
+def test_persistent_worker_transitions_from_acquisition_to_target_ray(backend):
+    """Protect the fixed-shape goal set across the real mission request order."""
+    acquisition_selected, _segments, _duration = backend.plan(
+        _request('ROUGH_ACQUISITION'))
+    scan_selected, _segments, _duration = backend.plan(
+        _request('MULTIVIEW_SCAN'))
+    assert acquisition_selected
+    assert scan_selected
+    assert acquisition_selected[0]['curobo_attempt_diagnostics'][0][
+        'native_padded_goalset_size'] == 54
+    assert scan_selected[0]['curobo_attempt_diagnostics'][0][
+        'native_padded_goalset_size'] == 54
 
 
 def test_rough_acquisition_accepts_the_configured_folded_start(backend):
@@ -106,7 +136,9 @@ def test_rough_acquisition_accepts_the_configured_folded_start(backend):
 def test_exact_bunker_world_preserves_known_joint_path(backend):
     """Exercise the generated model without requiring mission fixtures."""
     provenance = backend.model_provenance
-    assert provenance['schema_version'] == 2
+    assert provenance['schema_version'] == 3
+    assert provenance['position_limit_clip_rad'] == pytest.approx(
+        [0.005, 0.0, 0.0, 0.005, 0.005, 0.005])
     assert provenance['hardware_qualified'] is True
     assert provenance['conservative_geometry'] is False
     assert {
@@ -125,7 +157,10 @@ def test_exact_bunker_world_preserves_known_joint_path(backend):
         0.3189509166, 0.7800870124, -1.6258884709,
         -0.6660237320, -0.2154052887, 0.0403545644,
     ]
-    request = {'planning': {'effective_speed_percent': 5.0}}
+    request = {
+        'planning': {'effective_speed_percent': 5.0},
+        'limits': {'position_rad': [[-3.2, 3.2] for _ in range(6)]},
+    }
     outbound, _outbound_duration = backend._plan_joint_goal(
         neutral, qualified_scan, request)
     inbound, _inbound_duration = backend._plan_joint_goal(
@@ -151,7 +186,11 @@ def test_exact_world_still_rejects_blocking_dynamic_geometry(backend):
     with pytest.raises(CuroboContractError):
         backend._plan_joint_goal(
             neutral, qualified_scan,
-            {'planning': {'effective_speed_percent': 5.0}})
+            {
+                'planning': {'effective_speed_percent': 5.0},
+                'limits': {
+                    'position_rad': [[-3.2, 3.2] for _ in range(6)]},
+            })
 
 
 def test_curated_model_rejects_known_folded_self_collision(backend):
@@ -161,3 +200,15 @@ def test_curated_model_rejects_known_folded_self_collision(backend):
     ]))
     assert valid is False
     assert str(status).endswith('INVALID_START_STATE_SELF_COLLISION')
+
+
+def test_real_model_enforces_joint5_internal_limit_clip(backend):
+    backend._update_world({'scene': {'obstacles': []}})
+    inside = [0.0, 0.8, -0.7, 0.0, 1.214, 0.0]
+    beyond_clip = [0.0, 0.8, -0.7, 0.0, 1.217, 0.0]
+    inside_valid, inside_status = backend._start_state_status(inside)
+    outside_valid, outside_status = backend._start_state_status(beyond_clip)
+    assert inside_valid is True
+    assert inside_status == 'None'
+    assert outside_valid is False
+    assert outside_status.endswith('INVALID_START_STATE_JOINT_LIMITS')

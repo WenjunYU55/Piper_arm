@@ -27,6 +27,9 @@ from piper_mobile_manipulation.configuration import (
     mission_parameter_defaults,
 )
 from piper_mobile_manipulation.mission_engine import MissionEngine
+from piper_mobile_manipulation.target_envelope import (
+    CROPPED_TOO_LARGE_DISTANCE_M,
+)
 
 
 LEGACY_MISSION_DEFAULTS = {
@@ -178,6 +181,31 @@ def test_executor_and_tesseract_share_raised_virtual_floor():
     assert worker['floor_z_m'] == executor['floor_z_m']
     assert worker['clearance_m'] == executor[
         'camera_holder_external_clearance_m'] == 0.005
+
+
+def test_target_observation_ceiling_is_three_metres_without_expanding_scene():
+    """Keep one target policy while preserving local obstacle-cloud scope."""
+    config_root = Path(__file__).parents[1] / 'config'
+
+    def parameters(filename):
+        with (config_root / filename).open(encoding='utf-8') as stream:
+            return yaml.safe_load(stream)['/**']['ros__parameters']
+
+    camera = parameters('camera_params.yaml')
+    tracking = parameters('tracking_params.yaml')
+    planning = parameters('scan_planning_params.yaml')
+    quality = parameters('scan_quality_params.yaml')
+    occlusion = parameters('occlusion_checker_params.yaml')
+    obstacles = parameters('obstacle_instance_3d_params.yaml')
+
+    assert camera['depth_max_m'] == camera['max_depth_m'] == 3.0
+    assert tracking['max_depth_m'] == 3.0
+    assert planning['max_scan_radius_m'] == 3.0
+    assert planning['max_camera_object_distance_m'] == 3.0
+    assert quality['max_valid_depth_m'] == 3.0
+    assert occlusion['max_valid_depth_m'] == 3.0
+    assert CROPPED_TOO_LARGE_DISTANCE_M == 3.0
+    assert obstacles['depth_max_m'] == 1.20
 
 
 class FakeParameterNode:

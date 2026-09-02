@@ -140,6 +140,84 @@ show missing transforms or a collapsed arm. This is expected; it should become
 live during the driver-start phase. The fixed Bunker chassis and sensor station
 remain visible even while the arm driver is stopped.
 
+## Measure the camera/perception distance range
+
+Use this command-free diagnostic when establishing the nearest and farthest
+reliable range for GroundingDINO, SAM2 and L515 depth. It starts the camera and
+GPU perception only; it does not start the PiPER driver, enable motors, publish
+joint commands or start a mission.
+
+Terminal 1:
+
+```bash
+cd ~/Piper_arm
+ROS_DOMAIN_ID=42 ROS_LOCALHOST_ONLY=0 \
+./L515_camera/run_gpu_vision_pipeline.sh
+```
+
+After requesting/detecting the target, open the correctly scaled four-panel
+viewer in Terminal 2:
+
+```bash
+cd ~/Piper_arm
+./L515_camera/view_range_debug_dashboard.sh
+```
+
+The dashboard shows raw RGB, RGB with the live SAM target mask, aligned depth
+on a fixed diagnostic 0.15-4.00 m colour scale, an uncapped raw-mask median,
+the production `Target3D` depth/quality values, and native L515 confidence
+scaled over its real 0-15 range. Set
+`PIPER_RANGE_DASHBOARD_MAX_DEPTH_M` before launching to use another display
+maximum. The production `Target3D` value is admitted only through the current
+3.00 m hard target-observation ceiling; the separately labelled raw-mask value
+does not apply that gate. Press `q`
+or Escape in the window to close only the viewer. Stop the perception stack
+cleanly with:
+
+```bash
+cd ~/Piper_arm
+./L515_camera/stop_gpu_vision_pipeline.sh
+```
+
+The aligned-depth panel deliberately shows one raw frame at a time and may
+flicker on invalid, moving, reflective or mixed-depth pixels. Mission captures
+do not use a single raw frame: they confidence-filter and temporally median 20
+new native depth frames at the settled viewpoint.
+
+To measure reliability within and around the current 3.00 m software ceiling,
+keep the perception pipeline and dashboard running and start:
+
+```bash
+cd ~/Piper_arm
+./L515_camera/record_perception_range_test.sh
+```
+
+Use a tape measure from the L515 optical face to the visible target surface.
+At each requested distance, hold the target stationary, enter the distance in
+metres, and capture three repetitions. Start with 0.25, 0.35, 0.50, 0.75,
+1.00, 1.50, 2.00, 2.50, 2.75 and 3.00 m. Optional samples beyond 3.00 m are
+raw diagnostic evidence only and are not production-admissible. Bracket the
+first reliability failure in 0.10 m steps. This characterizes the selected
+target and lighting, not every possible object or environment.
+
+Every sample requests a new request-correlated GroundingDINO/SAM2 result and
+analyses its exact aligned-depth artifact over 0.15-9.00 m without changing the
+production gates. Results are updated after each sample under
+`datasets/perception_range_tests/PerceptionRange - HH-MM - DD-MM-YYYY/` as:
+
+- `perception_range_results.csv` — canonical raw table;
+- `perception_range_results.xlsx` — Excel-readable table;
+- `perception_range_plot.html` — plotted measured-versus-reference depth and
+  pass/fail points.
+
+The diagnostic `usable` result requires a detected/accepted target mask, no
+frame-border contact, at least 50 coherent target points, at least 0.50 raw
+depth and selected-layer support, selected depth standard deviation no greater
+than 0.03 m, and absolute error no greater than 0.03 m or 5% of the reference
+distance, whichever is larger. Choose an operational maximum only after three
+repetitions pass at that distance and the next outward bracket fails; do not
+raise production limits from one successful frame.
+
 ## Run one scan
 
 1. Clear the entire direct current-to-home sweep, check the camera cable, and keep the emergency stop ready. Dedicated home stages skip only intentional folded robot self-collision; the full installed holder/L515 must retain at least 5 mm table/floor and external-obstacle clearance throughout the sweep.

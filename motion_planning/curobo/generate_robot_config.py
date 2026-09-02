@@ -20,7 +20,11 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import yaml
 
-from motion_planning.curobo import PINNED_COMMIT, PINNED_VERSION
+from motion_planning.curobo import (
+    PINNED_COMMIT,
+    PINNED_VERSION,
+    POSITION_LIMIT_CLIP_RAD,
+)
 
 
 JOINT_NAMES = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
@@ -437,7 +441,9 @@ def build(
                 'base_link': 'base_link',
                 # model_builder.py creates this calibrated eye-in-hand frame.
                 'ee_link': 'camera_optical_frame',
-                'link_names': None,
+                # Retain link6 FK for the common direct-home CAD-holder
+                # support-plane check as well as the camera end-effector FK.
+                'link_names': ['link6'],
                 'lock_joints': LOCKED_JOINTS,
                 'extra_links': None,
                 'collision_link_names': collision_links,
@@ -459,13 +465,17 @@ def build(
                     'retract_config': [0.0, 0.0, 0.0, 0.0, 0.43869236, 0.0],
                     'null_space_weight': [1.0] * 6,
                     'cspace_distance_weight': [1.0] * 6,
+                    # cuRobo uses float32 internally.  Keep generated paths a
+                    # meaningful distance inside the raw PiPER limits rather
+                    # than allowing a nominal boundary value to round outside.
+                    'position_limit_clip': list(POSITION_LIMIT_CLIP_RAD),
                     'max_jerk': 50.0,
                     'max_acceleration': 5.0,
                 },
             },
         },
         'piper_curobo_provenance': {
-            'schema_version': 2,
+            'schema_version': 3,
             'source_srdf_path': str(Path(srdf_path).resolve()),
             'source_urdf_sha256': sha256_file(urdf_path),
             'source_srdf_sha256': sha256_file(srdf_path),
@@ -475,6 +485,7 @@ def build(
                 collision_manifest_path),
             'curobo_version': PINNED_VERSION,
             'curobo_commit': PINNED_COMMIT,
+            'position_limit_clip_rad': list(POSITION_LIMIT_CLIP_RAD),
             'covering_shape': (
                 'isaac_lula_hand_tuned_with_generated_fallback'
                 if curated_provenance is not None

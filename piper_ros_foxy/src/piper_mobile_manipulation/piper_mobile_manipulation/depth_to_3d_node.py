@@ -125,9 +125,9 @@ class DepthTo3DNode(Node):
         self.declare_parameter(
             'target_shape_topic', '/piper/target_shape_measurement')
         self.declare_parameter('depth_min_m', 0.25)
-        self.declare_parameter('depth_max_m', 1.0)
+        self.declare_parameter('depth_max_m', 3.0)
         self.declare_parameter('min_depth_m', 0.25)
-        self.declare_parameter('max_depth_m', 1.20)
+        self.declare_parameter('max_depth_m', 3.0)
         self.declare_parameter('use_median_depth', True)
         self.declare_parameter('min_valid_depth_ratio', 0.4)
         self.declare_parameter('min_valid_depth_pixels', 20)

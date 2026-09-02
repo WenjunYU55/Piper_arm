@@ -108,12 +108,13 @@ direction neighbourhood.
 
 The frozen ray request is target-relative and no longer uses the target
 center's distance from `base_link` as a standoff cap: generation retains the
-configured 0.28 m minimum, preferred band through 0.50 m, and 0.80 m maximum.
-The coarse workspace filter still owns analytic interval eligibility. In
-capability-map enforce mode, the sparse atlas preserves support for each
+configured 0.28 m minimum and finite 3.00 m target-observation maximum, with
+no preferred-distance ceiling. In capability-map enforce mode, the sparse
+atlas owns arm-workspace prequalification and preserves support for each
 sampled standoff and derives ordered contiguous runs; the filter retains the
 original requested bounds while narrowing active min/max to the first through
-last supported run. The bridge carries those run records and chooses its
+last supported run. Analytic workspace bounds are fallback-only when the map
+is unavailable. The bridge carries those run records and chooses its
 representative seed from a supported run. Because the outer active envelope
 can span a gap between runs, it remains prequalification only: the worker and
 executor still prove exact IK, joint limits, collision, path, aim, visibility,

@@ -23,7 +23,7 @@ import numpy as np
 
 DEFAULT_VOXEL_LENGTH_M = 0.003
 DEFAULT_SDF_TRUNC_M = 0.015
-DEFAULT_DEPTH_TRUNC_M = 1.5
+DEFAULT_DEPTH_TRUNC_M = 3.0
 REGISTRATION_MODES = (
     'robot_pose', 'bounded_gicp', 'multiway_gicp',
     'constrained_superposition', 'scene_pose_graph', 'auto')
@@ -1148,7 +1148,7 @@ def rectify_rgbd_mask(cv2, rgb_bgr, depth_mm, mask, camera_info):
 
 
 def masked_camera_cloud(
-        o3d, depth_mm, mask, intrinsic, depth_trunc=1.5,
+        o3d, depth_mm, mask, intrinsic, depth_trunc=DEFAULT_DEPTH_TRUNC_M,
         voxel_length=DEFAULT_VOXEL_LENGTH_M):
     values = np.asarray(depth_mm, dtype=np.uint16).copy()
     values[np.asarray(mask) <= 0] = 0

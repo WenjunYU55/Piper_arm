@@ -44,8 +44,8 @@ class ScanTargetAcquisitionNode(Node):
             'hint_max_age_sec': 5.0,
             'future_tolerance_sec': 0.1,
             'transform_timeout_sec': 0.25,
-            'standoff_m': 0.45,
-            'fallback_standoff_m': 0.28,
+            'minimum_standoff_m': 0.35,
+            'include_compact_candidates': True,
             'acquisition_camera_pitch_deg': -10.0,
             'sweep_angle_deg': 45.0,
             'handoff_retry_sec': 0.50,
@@ -177,12 +177,15 @@ class ScanTargetAcquisitionNode(Node):
             viewpoints = build_acquisition_viewpoints(
                 target,
                 camera,
-                self.get_parameter('standoff_m').value,
-                self.get_parameter('acquisition_camera_pitch_deg').value,
-                self.get_parameter('sweep_angle_deg').value,
-                self.get_parameter('fallback_standoff_m').value,
-                camera_look,
-                look_index,
+                camera_pitch_deg=self.get_parameter(
+                    'acquisition_camera_pitch_deg').value,
+                sweep_angle_deg=self.get_parameter('sweep_angle_deg').value,
+                include_compact_candidates=self.param_bool(
+                    'include_compact_candidates'),
+                current_camera_look_direction=camera_look,
+                look_index=look_index,
+                minimum_standoff_m=self.get_parameter(
+                    'minimum_standoff_m').value,
             )
         except (TransformException, ValueError) as exc:
             response.accepted = False
@@ -222,10 +225,11 @@ class ScanTargetAcquisitionNode(Node):
                     item['acquisition_look'] for item in viewpoints],
                 'sweep_angle_deg': abs(float(
                     self.get_parameter('sweep_angle_deg').value)),
-                'maximum_standoff_m': float(
-                    self.get_parameter('standoff_m').value),
-                'fallback_standoff_m': float(
-                    self.get_parameter('fallback_standoff_m').value),
+                'minimum_standoff_m': float(
+                    self.get_parameter('minimum_standoff_m').value),
+                'preserve_current_distance_above_minimum': True,
+                'compact_candidates_enabled': self.param_bool(
+                    'include_compact_candidates'),
                 'effective_standoff_m': float(
                     viewpoints[0]['camera_object_distance_m']),
             },

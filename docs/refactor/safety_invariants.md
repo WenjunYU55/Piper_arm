@@ -164,7 +164,7 @@ constants to normalize or recompute.
 | Item | Effective value |
 |---|---:|
 | Rough hint age/future tolerance/TF timeout | `5.0 s / 0.1 s / 0.25 s` |
-| Acquisition maximum/fallback standoff | `0.45 m / 0.28 m`; capped by current hint distance |
+| Acquisition standoff policy | minimum `0.35 m`; no acquisition-specific maximum; preserve any farther measured camera-to-hint radius |
 | Acquisition cardinal sweep | `15 deg` |
 | Acquisition handoff retry/timeout | `0.50 s / 30 s` |
 | Acquisition fresh frame/Grounding/tracking/scene | `10 / 60 / 10 / 15 s` |
@@ -189,11 +189,11 @@ constants to normalize or recompute.
 | Measured surface convergence | `3` consecutive novel fractions `<= 0.02` |
 | Surface depth range | `(0.10, 1.50) m` |
 
-The static reach values (`0.20..0.75 m` arm reach, `0.25..0.80 m`
+The static reach values (`0.20..0.75 m` arm reach, `0.25..3.00 m`
 camera-target distance, `0.40 m` height change and the rectangular workspace)
-are currently diagnostic because `enforce_static_reach_bounds=false` and
-`enforce_static_workspace=false`. Removing them is still an interface change;
-turning them on is a behavior change.
+are fallback-only for target rays because the qualified enforcing capability
+map owns normal arm-workspace prequalification. Removing them remains an
+interface change; exact selected-planner feasibility is always mandatory.
 
 ## Perception, synchronization and quality
 
@@ -201,7 +201,8 @@ turning them on is a behavior change.
 
 | Item | Effective value |
 |---|---:|
-| Depth accepted range | `0.24..1.20 m` in camera config; obstacle geometry `0.25..1.20 m` |
+| Target depth accepted range | `0.24..3.00 m` in camera config, semantic/tracking/quality path and offline reconstruction |
+| Local obstacle/scene depth range | `0.25..1.20 m`; intentionally independent from target observability |
 | Valid pixels | at least `20` (landmark `50`) |
 | Camera config valid-depth ratio | `0.0`; quality/obstacle/landmark gate `0.40` |
 | Depth crop/ROI | `10 px / 10 px` |

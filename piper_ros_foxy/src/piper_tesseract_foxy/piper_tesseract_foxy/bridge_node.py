@@ -219,8 +219,8 @@ class MotionPlannerBridge(Node):
         self.latest_obstacles = None
         self.updated = {}
         self.pending = {}
-        self.tesseract_exhausted_ray_generation = None
-        self.tesseract_exhausted_ray_ids = set()
+        self.planner_exhausted_ray_generation = None
+        self.planner_exhausted_ray_ids = set()
         self.remaining_ray_pool_session = None
         self.remaining_ray_ids = set()
         self.retired_ray_ids = set()
@@ -886,7 +886,7 @@ class MotionPlannerBridge(Node):
                     # before choosing the next bounded shortlist.  Applying
                     # this after shortlisting mistakes one exhausted batch for
                     # exhaustion of the full ray frontier.
-                    candidates = self.exclude_tesseract_exhausted_rays(
+                    candidates = self.exclude_planner_exhausted_rays(
                         candidates, session_id, accepted_views)
                 if authoritative_nbv:
                     effective_limit = bounded_candidate_attempt_limit(
@@ -1144,7 +1144,8 @@ class MotionPlannerBridge(Node):
             payload.get('request_id', ''),
             shortlisted,
             getattr(self, 'retired_ray_ids', set()),
-            getattr(self, 'tesseract_exhausted_ray_ids', set()),
+            getattr(self, 'planner_exhausted_ray_ids', getattr(
+                self, 'tesseract_exhausted_ray_ids', set())),
         )
         if bool(self.get_parameter('ray_diagnostics_enabled').value):
             self.ray_diagnostics_store.record(diagnostics)
@@ -1251,7 +1252,7 @@ class MotionPlannerBridge(Node):
             raise ContractError('%s is non-finite' % label)
         return result
 
-    def exclude_tesseract_exhausted_rays(
+    def exclude_planner_exhausted_rays(
             self, candidates, session_id, accepted_views):
         """Exclude static mission failures and current-generation failures."""
         session = str(session_id)
@@ -1272,12 +1273,14 @@ class MotionPlannerBridge(Node):
             self.remaining_ray_ids.update(
                 candidate_ids.difference(self.retired_ray_ids))
         if getattr(
-                self, 'tesseract_exhausted_ray_generation', None
+                self, 'planner_exhausted_ray_generation', getattr(
+                    self, 'tesseract_exhausted_ray_generation', None)
         ) != generation:
-            self.tesseract_exhausted_ray_generation = generation
-            self.tesseract_exhausted_ray_ids = set()
+            self.planner_exhausted_ray_generation = generation
+            self.planner_exhausted_ray_ids = set()
         transient = set(getattr(
-            self, 'tesseract_exhausted_ray_ids', set()))
+            self, 'planner_exhausted_ray_ids', getattr(
+                self, 'tesseract_exhausted_ray_ids', set())))
         available = [
             item for item in candidates
             if (
@@ -1299,6 +1302,21 @@ class MotionPlannerBridge(Node):
                 len(self.remaining_ray_ids), len(transient),
                 len(available)))
         return available
+
+    def exclude_tesseract_exhausted_rays(
+            self, candidates, session_id, accepted_views):
+        """Compatibility alias for archived tests and external tooling."""
+        if hasattr(self, 'tesseract_exhausted_ray_generation'):
+            self.planner_exhausted_ray_generation = (
+                self.tesseract_exhausted_ray_generation)
+        if hasattr(self, 'tesseract_exhausted_ray_ids'):
+            self.planner_exhausted_ray_ids = self.tesseract_exhausted_ray_ids
+        result = self.exclude_planner_exhausted_rays(
+            candidates, session_id, accepted_views)
+        self.tesseract_exhausted_ray_generation = (
+            self.planner_exhausted_ray_generation)
+        self.tesseract_exhausted_ray_ids = self.planner_exhausted_ray_ids
+        return result
 
     def remember_permanently_infeasible_rays(self, payload):
         """Retire endpoint failures for the frozen target-ray session."""
@@ -1365,10 +1383,10 @@ class MotionPlannerBridge(Node):
             self.warn_ray_diagnostics(
                 'Could not publish permanent hard-ray culls: %s' % error)
 
-    def remember_tesseract_exhausted_rays(self, payload):
+    def remember_planner_exhausted_rays(self, payload):
         """Retire only rays actually attempted by one failed worker request."""
         codes = [str(value) for value in payload.get('rejection_codes', [])]
-        if 'TESSERACT_EXHAUSTED' not in codes:
+        if not {'PLANNER_EXHAUSTED', 'TESSERACT_EXHAUSTED'}.intersection(codes):
             return []
         request_id = str(payload.get('request_id', ''))
         pending = getattr(self, 'pending', {}).get(request_id, {})
@@ -1384,7 +1402,8 @@ class MotionPlannerBridge(Node):
         if (
                 not generation[0]
                 or generation != getattr(
-                    self, 'tesseract_exhausted_ray_generation', None)):
+                    self, 'planner_exhausted_ray_generation', getattr(
+                        self, 'tesseract_exhausted_ray_generation', None))):
             return []
         request_ray_ids = {
             int(item['ray_id'])
@@ -1395,7 +1414,10 @@ class MotionPlannerBridge(Node):
             int(value) for value in payload.get(
                 'planning_diagnostics', {}).get('attempted_ray_ids', [])
         }.intersection(request_ray_ids)
-        exhausted = self.tesseract_exhausted_ray_ids
+        exhausted = getattr(
+            self, 'planner_exhausted_ray_ids', getattr(
+                self, 'tesseract_exhausted_ray_ids', set()))
+        self.planner_exhausted_ray_ids = exhausted
         newly_exhausted = sorted(attempted.difference(exhausted))
         exhausted.update(newly_exhausted)
         if newly_exhausted:
@@ -1404,6 +1426,19 @@ class MotionPlannerBridge(Node):
                 'accepted=%d: %s'
                 % (generation[0], generation[1], newly_exhausted))
         return newly_exhausted
+
+    def remember_tesseract_exhausted_rays(self, payload):
+        """Compatibility alias for legacy Tesseract-specific callers."""
+        if hasattr(self, 'tesseract_exhausted_ray_generation'):
+            self.planner_exhausted_ray_generation = (
+                self.tesseract_exhausted_ray_generation)
+        if hasattr(self, 'tesseract_exhausted_ray_ids'):
+            self.planner_exhausted_ray_ids = self.tesseract_exhausted_ray_ids
+        result = self.remember_planner_exhausted_rays(payload)
+        self.tesseract_exhausted_ray_generation = (
+            self.planner_exhausted_ray_generation)
+        self.tesseract_exhausted_ray_ids = self.planner_exhausted_ray_ids
+        return result
 
     def poll(self):
         timeout = float(self.get_parameter('response_timeout_sec').value)
@@ -1452,7 +1487,7 @@ class MotionPlannerBridge(Node):
         self.remember_permanently_infeasible_rays(payload)
         if payload.get('status') != 'success':
             codes = payload.get('rejection_codes') or ['PLANNING_FAILED']
-            exhausted_rays = self.remember_tesseract_exhausted_rays(payload)
+            exhausted_rays = self.remember_planner_exhausted_rays(payload)
             if exhausted_rays:
                 exhausted_marker = (
                     'TESSERACT_EXHAUSTED'

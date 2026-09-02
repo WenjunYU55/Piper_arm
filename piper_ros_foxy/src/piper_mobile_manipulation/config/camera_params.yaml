@@ -10,9 +10,11 @@
     # The L515 physical minimum is 0.25 m. A small software tolerance avoids
     # rejecting valid boundary pixels because the node uses a strict comparison.
     depth_min_m: 0.24
-    depth_max_m: 1.20
+    # The active 640x480 L515 profile is admitted out to 3.0 m. Semantic,
+    # coherent-component and capture-quality gates still decide usability.
+    depth_max_m: 3.00
     min_depth_m: 0.24
-    max_depth_m: 1.20
+    max_depth_m: 3.00
     use_median_depth: true
     min_valid_depth_ratio: 0.0
     min_valid_depth_pixels: 20

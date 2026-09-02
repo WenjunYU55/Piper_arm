@@ -10,7 +10,10 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from motion_planning.curobo import PINNED_WARP_VERSION
+from motion_planning.curobo import (
+    PINNED_WARP_VERSION,
+    POSITION_LIMIT_CLIP_RAD,
+)
 from motion_planning.curobo.generate_robot_config import (
     build,
     FIXED_WORLD_MESH_FILES,
@@ -134,6 +137,27 @@ def test_arm_planning_contract_locks_canonical_gripper_joints():
     text = urdf.read_text(encoding='utf-8')
     for joint_name in LOCKED_JOINTS:
         assert 'name="%s"' % joint_name in text
+
+
+def test_generated_model_keeps_motiongen_inside_raw_joint_limits(
+        curated_model):
+    kinematics = curated_model['robot_cfg']['kinematics']
+    provenance = curated_model['piper_curobo_provenance']
+    assert POSITION_LIMIT_CLIP_RAD == pytest.approx(
+        (0.005, 0.0, 0.0, 0.005, 0.005, 0.005))
+    assert kinematics['cspace']['position_limit_clip'] == pytest.approx(
+        POSITION_LIMIT_CLIP_RAD)
+    assert kinematics['link_names'] == ['link6']
+    assert provenance['schema_version'] == 3
+    assert provenance['position_limit_clip_rad'] == pytest.approx(
+        POSITION_LIMIT_CLIP_RAD)
+    validate_model_provenance(curated_model)
+
+    tampered = copy.deepcopy(curated_model)
+    tampered['robot_cfg']['kinematics']['cspace'][
+        'position_limit_clip'] = [0.0] * 6
+    with pytest.raises(ValueError, match='position-limit clip'):
+        validate_model_provenance(tampered)
 
 
 def test_rigid_robot_base_is_exact_fixed_world_geometry():

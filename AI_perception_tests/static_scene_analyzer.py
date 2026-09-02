@@ -37,7 +37,7 @@ DEFAULT_PARAMS = {
     "min_valid_depth_ratio": 0.40,
     "min_mask_area_px": 100,
     "min_valid_depth_m": 0.15,
-    "max_valid_depth_m": 1.20,
+    "max_valid_depth_m": 3.00,
 }
 
 

@@ -72,7 +72,10 @@ class TargetCloudNode(Node):
         self.declare_parameter('target_frame', 'camera_color_optical_frame')
         self.declare_parameter('require_transform', False)
         self.declare_parameter('depth_min_m', 0.20)
-        self.declare_parameter('depth_max_m', 1.20)
+        self.declare_parameter('depth_max_m', 3.0)
+        # Keep the coarse collision/support scene local. Target reconstruction
+        # depth and scene-obstacle depth intentionally have different owners.
+        self.declare_parameter('scene_depth_max_m', 1.20)
         self.declare_parameter('mask_max_age_sec', 0.30)
         # Refined captures are requested only after the executor has accepted
         # a settled hold. Keep a bounded fallback for worker/service latency;
@@ -335,7 +338,8 @@ class TargetCloudNode(Node):
         selected = (
             np.isfinite(depth_m)
             & (depth_m >= float(self.get_parameter('depth_min_m').value))
-            & (depth_m <= float(self.get_parameter('depth_max_m').value))
+            & (depth_m <= float(
+                self.get_parameter('scene_depth_max_m').value))
             & ((rows % stride) == 0)
             & ((cols % stride) == 0))
         v, u = np.nonzero(selected)

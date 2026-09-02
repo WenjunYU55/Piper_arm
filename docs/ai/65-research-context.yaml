@@ -79,7 +79,7 @@ recommended_design:
       - For each frozen ray, place a virtual camera at anchor plus standoff times ray direction and aim its optical axis at the anchor.
       - Project a conservative representation of the frozen envelope, initially every corner of every conservative collision box, through calibrated camera intrinsics.
       - Use a circular aperture based on the narrower calibrated horizontal or vertical field of view so the bound is valid for any camera roll.
-      - Binary-search the nearest standoff within the configured 0.28 through 0.80 m request for which the complete conservative envelope fits with a documented pixel or angular margin.
+      - Binary-search the nearest standoff within the configured 0.28 through 3.00 m request for which the complete conservative envelope fits with a documented pixel or angular margin.
       - Combine that framing minimum with the existing direction-specific 0.250 m camera-to-envelope surface-clearance minimum.
       - Preserve the current enclosing-sphere value as diagnostic fallback; invalid projection evidence fails closed and never relaxes the current bound.
     expected_effect: Long bottle-like targets permit closer axial top or bottom rays while broad side views remain farther away.
@@ -90,7 +90,7 @@ recommended_design:
     requirement: Carry a feasible roll interval or selected roll through the private planner-worker contract, then have the worker reproject the complete conservative envelope using exact intrinsics after IK and before accepting the endpoint.
 
 validation_plan:
-  command_free_cases: [long bottle axial versus side rays, symmetric cube, long rod, near and far request boundaries, envelope near or behind the virtual camera, invalid intrinsics, no feasible standoff below 0.80 m]
+  command_free_cases: [long bottle axial versus side rays, symmetric cube, long rod, near and far request boundaries, envelope near or behind the virtual camera, invalid intrinsics, no feasible standoff below 3.00 m]
   invariants: [every accepted projected corner is inside the conservative aperture, returned minimum never falls below surface clearance, no result escapes configured ray bounds, invalid evidence cannot loosen the current enclosing-sphere bound]
   baselines: [fixed standoff, current enclosing-sphere FOV bound, proposed per-ray conservative projection]
   metrics: [surviving ray count, standoff distribution, projected pixel occupancy, capability-map survival, Tesseract feasibility, planning latency, accepted-view coverage and reconstruction quality]

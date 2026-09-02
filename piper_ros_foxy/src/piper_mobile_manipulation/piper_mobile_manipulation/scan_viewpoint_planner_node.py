@@ -261,8 +261,12 @@ class ScanViewpointPlannerNode(Node):
         self.declare_parameter('scan_radius_m', 0.45)
         self.declare_parameter('scan_radius_offsets_m', [0.0, -0.06, 0.06])
         self.declare_parameter('min_scan_radius_m', 0.30)
-        self.declare_parameter('max_scan_radius_m', 0.80)
+        self.declare_parameter('max_scan_radius_m', 3.0)
         self.declare_parameter('ray_min_standoff_m', 0.28)
+        # Compatibility-only parameter.  The former 0.50 m preference acted
+        # as a hidden endpoint ceiling.  The current-pose projection may now
+        # compete across the complete perception-bounded/capability-supported
+        # interval, while exact feasibility remains planner-owned.
         self.declare_parameter('preferred_scan_radius_m', 0.50)
         self.declare_parameter('ray_sampling_region', 'full_sphere')
         self.declare_parameter('ray_count', 175)
@@ -1292,11 +1296,10 @@ class ScanViewpointPlannerNode(Node):
             self.get_parameter('max_scan_radius_m').value,
         )
         minimum, maximum = requested_minimum, requested_maximum
-        preferred_maximum = min(
-            maximum,
-            max(minimum, float(
-                self.get_parameter('preferred_scan_radius_m').value)),
-        )
+        # Retain the private compatibility field without imposing a preferred
+        # distance ceiling.  The nearest supported point over the full active
+        # interval becomes the numerical seed downstream.
+        preferred_maximum = maximum
         scoring_standoff = 0.5 * (minimum + preferred_maximum)
         viewpoint = self.make_viewpoint(
             ray_id, angle_deg, scoring_standoff, center, frame_id,
@@ -1331,11 +1334,7 @@ class ScanViewpointPlannerNode(Node):
                     'FOV and 0.250m surface clearance')
             else:
                 minimum, maximum = interval
-                preferred_maximum = min(
-                    maximum,
-                    max(minimum, float(self.get_parameter(
-                        'preferred_scan_radius_m').value)),
-                )
+                preferred_maximum = maximum
                 scoring_standoff = 0.5 * (minimum + preferred_maximum)
                 viewpoint = self.make_viewpoint(
                     ray_id, angle_deg, scoring_standoff, center, frame_id,

@@ -17,6 +17,7 @@ from piper_mobile_manipulation.capability_map import (
 from piper_mobile_manipulation.viewpoint_reachability_filter_node import (
     CAPABILITY_MAP_REJECTION,
     capability_bound_ray,
+    RAY_WORKSPACE_REJECTION,
     ViewpointReachabilityFilterNode,
 )
 
@@ -219,6 +220,25 @@ def test_shadow_mode_reports_missing_capability_without_rejecting_ray():
     assert evidence['supported'] is False
 
 
+def test_shadow_mode_retains_coarse_workspace_authority():
+    candidate = target_ray()
+    candidate.update({
+        'desired_camera_position': {'x': 1.04, 'y': 0.0, 'z': 0.20},
+        'target_object_center': {'x': 0.70, 'y': 0.0, 'z': 0.20},
+        'ray_direction': {'x': 1.0, 'y': 0.0, 'z': 0.0},
+        'ray_scoring_standoff_m': 0.34,
+    })
+    key = capability_key(
+        [1.04, 0.0, 0.20], [-1.0, 0.0, 0.0], 0.020, 10.0)
+    filter_node = filter_fixture(synthetic_map([key]), 'shadow')
+
+    reasons, evidence = ViewpointReachabilityFilterNode.evaluate_viewpoint(
+        filter_node, candidate)
+
+    assert RAY_WORKSPACE_REJECTION in reasons
+    assert evidence['supported'] is True
+
+
 def test_enforce_mode_culls_only_map_unsupported_target_ray():
     unrelated = capability_key(
         [0.0, -0.4, 0.5], [1.0, 0.0, 0.0], 0.020, 10.0)
@@ -229,6 +249,25 @@ def test_enforce_mode_culls_only_map_unsupported_target_ray():
 
     assert evidence['supported'] is False
     assert CAPABILITY_MAP_REJECTION in reasons
+
+
+def test_enforcing_map_replaces_fixed_base_reach_and_height_gates():
+    candidate = target_ray()
+    candidate.update({
+        'desired_camera_position': {'x': 1.04, 'y': 0.0, 'z': 0.20},
+        'target_object_center': {'x': 0.70, 'y': 0.0, 'z': 0.20},
+        'ray_direction': {'x': 1.0, 'y': 0.0, 'z': 0.0},
+        'ray_scoring_standoff_m': 0.34,
+    })
+    key = capability_key(
+        [1.04, 0.0, 0.20], [-1.0, 0.0, 0.0], 0.020, 10.0)
+    filter_node = filter_fixture(synthetic_map([key]), 'enforce')
+
+    reasons, evidence = ViewpointReachabilityFilterNode.evaluate_viewpoint(
+        filter_node, candidate)
+
+    assert reasons == []
+    assert evidence['supported'] is True
 
 
 def test_fallback_without_map_preserves_existing_coarse_ray_decision():

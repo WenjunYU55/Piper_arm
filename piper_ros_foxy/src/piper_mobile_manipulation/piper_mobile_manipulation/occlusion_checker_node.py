@@ -46,7 +46,7 @@ class OcclusionCheckerNode(Node):
         self.declare_parameter('min_mask_area_px', 100)
         self.declare_parameter('edge_margin_px', 40)
         self.declare_parameter('min_valid_depth_m', 0.15)
-        self.declare_parameter('max_valid_depth_m', 1.20)
+        self.declare_parameter('max_valid_depth_m', 3.0)
         self.declare_parameter('partial_occlusion_ratio', 0.05)
         self.declare_parameter('heavy_occlusion_ratio', 0.20)
         self.declare_parameter('state_transition_confirmations', 2)

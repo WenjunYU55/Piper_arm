@@ -243,7 +243,7 @@ def _frame_arrays(dataset, metadata):
 
 def _target_points(depth, support, intrinsic, base_camera):
     rows, cols = np.nonzero(
-        support & np.isfinite(depth) & (depth > 0.10) & (depth < 1.50))
+        support & np.isfinite(depth) & (depth > 0.10) & (depth <= 3.00))
     if not len(rows):
         raise ValueError('NBV capture contains no supported target depth')
     z = depth[rows, cols]

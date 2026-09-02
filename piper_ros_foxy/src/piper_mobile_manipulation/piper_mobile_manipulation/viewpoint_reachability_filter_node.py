@@ -232,11 +232,12 @@ class ViewpointReachabilityFilterNode(Node):
         self.declare_parameter('min_reach_m', 0.20)
         self.declare_parameter('max_reach_m', 0.75)
         self.declare_parameter('min_camera_object_distance_m', 0.25)
-        self.declare_parameter('max_camera_object_distance_m', 0.80)
+        self.declare_parameter('max_camera_object_distance_m', 3.0)
         self.declare_parameter('max_height_change_m', 0.40)
-        # Exact-point policies keep the legacy opt-in behavior. Target rays
-        # always use these bounds as a cheap interval-intersection cull before
-        # the exact planner; this does not claim IK or collision feasibility.
+        # Exact-point policies keep the legacy opt-in behavior.  For target
+        # rays these analytic workspace bounds are fallback-only: a loaded,
+        # qualified capability map replaces them as endpoint prequalification.
+        # Neither path claims exact IK, collision, or path feasibility.
         self.declare_parameter('enforce_static_reach_bounds', False)
         project_root = os.environ.get('PIPER_ARM_ROOT', '/home/prl/Piper_arm')
         self.declare_parameter('capability_map_mode', 'enforce')
@@ -429,6 +430,19 @@ class ViewpointReachabilityFilterNode(Node):
             )
             return
 
+        # Treat the entire command-free candidate burst as one admitted
+        # transaction.  Capability-map lookup can take longer than the live
+        # status timeout for a dense population, especially on the first
+        # query after startup.  Re-evaluating age inside the loop lets this
+        # callback invalidate the same fresh sample that admitted it even
+        # though no command or new external state is consumed during the
+        # computation.  Later bridge, authorization and executor gates still
+        # require their own fresh evidence immediately before motion.
+        admitted_at = time.monotonic()
+        admission_reasons = self.batch_admission_reasons(
+            plan_kind, now=admitted_at)
+        admission_arm_status = self.arm_status_summary(now=admitted_at)
+
         filtered = []
         reachable_count = 0
         safe_count = 0
@@ -443,7 +457,9 @@ class ViewpointReachabilityFilterNode(Node):
             result = dict(viewpoint)
             if result.get('candidate_geometry') == 'target_ray':
                 ray_candidate_count += 1
-            reasons, capability = self.evaluate_viewpoint(result, plan_kind)
+            reasons, capability = self.evaluate_viewpoint(
+                result, plan_kind,
+                admission_reasons=admission_reasons)
             if capability is not None:
                 if (
                         capability.get('supported')
@@ -477,6 +493,7 @@ class ViewpointReachabilityFilterNode(Node):
                 reachable_count += 1
                 safe_count += 1
 
+        completed_at = time.monotonic()
         output = dict(payload)
         output['dry_run'] = True
         output['filter'] = {
@@ -501,9 +518,17 @@ class ViewpointReachabilityFilterNode(Node):
             'capability_supported_rays': capability_supported_rays,
             'capability_rejected_rays': capability_rejected_rays,
             'capability_query_total_ms': capability_query_ms,
+            'batch_processing_total_ms': max(
+                0.0, (completed_at - admitted_at) * 1000.0),
             'capability_map': self.capability_map_summary(),
             'reachable_field_semantics': 'prequalified_compatibility_alias',
-            'arm_status': self.arm_status_summary(),
+            # Keep the compatibility field bound to the evidence that made
+            # the decision. Completion age is diagnostic only.
+            'arm_status': admission_arm_status,
+            'arm_status_at_admission': admission_arm_status,
+            'arm_status_at_completion': self.arm_status_summary(
+                now=completed_at),
+            'admission_reject_reasons': list(admission_reasons),
             'target_status': self.target_status,
             'dry_run_config_loaded': self.param_bool('dry_run'),
         }
@@ -604,17 +629,28 @@ class ViewpointReachabilityFilterNode(Node):
                 self, viewpoint, plan_kind)
         return reasons
 
-    def evaluate_viewpoint(self, viewpoint, plan_kind='MULTIVIEW_SCAN'):
+    def batch_admission_reasons(self, plan_kind, now=None):
+        """Snapshot batch-wide command-free safety evidence exactly once."""
         reasons = []
         if not self.param_bool('dry_run'):
             reasons.append('dry_run safety config missing or false')
-
-        reasons.extend(self.arm_status_reasons())
-
+        reasons.extend(
+            self.arm_status_reasons()
+            if now is None else self.arm_status_reasons(now=now))
         target_reason = target_status_rejection_reason(
             self.target_status, plan_kind)
         if target_reason:
             reasons.append(target_reason)
+        return reasons
+
+    def evaluate_viewpoint(
+            self, viewpoint, plan_kind='MULTIVIEW_SCAN',
+            admission_reasons=None):
+        reasons = (
+            list(admission_reasons)
+            if admission_reasons is not None
+            else ViewpointReachabilityFilterNode.batch_admission_reasons(
+                self, plan_kind))
 
         camera_position = viewpoint.get('desired_camera_position')
         target_center = viewpoint.get('target_object_center')
@@ -627,7 +663,16 @@ class ViewpointReachabilityFilterNode(Node):
 
         ray_geometry = viewpoint.get('candidate_geometry') == 'target_ray'
         if ray_geometry:
-            coarse_supported = bounded_ray_intersects_workspace(
+            capability = ViewpointReachabilityFilterNode.capability_query(
+                self, viewpoint)
+            capability_mode = getattr(
+                self, 'capability_map_effective_mode', 'off')
+            if capability is None or capability_mode != 'enforce':
+                # Preserve a bounded, fail-closed fallback when the immutable
+                # atlas is disabled, shadow-only, missing, stale, or
+                # unqualified. In the normal enforcing configuration the map
+                # is the sole cheap arm-workspace prequalification authority.
+                coarse_supported = bounded_ray_intersects_workspace(
                     viewpoint,
                     self.get_parameter('min_reach_m').value,
                     self.get_parameter('max_reach_m').value,
@@ -636,17 +681,10 @@ class ViewpointReachabilityFilterNode(Node):
                     self.get_parameter(
                         'max_camera_object_distance_m').value,
                     self.get_parameter('max_height_change_m').value)
-            if not coarse_supported:
-                reasons.append(RAY_WORKSPACE_REJECTION)
-                return reasons, None
-            capability = ViewpointReachabilityFilterNode.capability_query(
-                self, viewpoint)
-            if (
-                    capability is not None
-                    and not capability['supported']
-                    and getattr(
-                        self, 'capability_map_effective_mode', 'off')
-                    == 'enforce'):
+                if not coarse_supported:
+                    reasons.append(RAY_WORKSPACE_REJECTION)
+                return reasons, capability
+            if not capability['supported']:
                 reasons.append(CAPABILITY_MAP_REJECTION)
             return reasons, capability
 
@@ -692,7 +730,7 @@ class ViewpointReachabilityFilterNode(Node):
         return reasons, None
 
     def capability_query(self, viewpoint):
-        """Return additive atlas evidence for one already-coarse-valid ray."""
+        """Return atlas evidence for one finite perception-bounded ray."""
         capability_map = getattr(self, 'capability_map', None)
         if capability_map is None:
             return None
@@ -796,10 +834,11 @@ class ViewpointReachabilityFilterNode(Node):
         publisher.publish(out)
         self.get_logger().warn(reason)
 
-    def arm_status_reasons(self):
+    def arm_status_reasons(self, now=None):
         if self.arm_status is None or self.arm_status_at is None:
             return ['arm status is missing']
-        age = time.monotonic() - self.arm_status_at
+        captured_at = time.monotonic() if now is None else float(now)
+        age = captured_at - self.arm_status_at
         timeout = float(self.get_parameter('arm_status_timeout_sec').value)
         if age > timeout:
             return ['arm status is stale %.3fs > %.3fs' % (age, timeout)]
@@ -829,10 +868,11 @@ class ViewpointReachabilityFilterNode(Node):
             self.arm_status, require_all_enabled=False))
         return reasons
 
-    def arm_status_summary(self):
+    def arm_status_summary(self, now=None):
         if self.arm_status is None or self.arm_status_at is None:
             return {'available': False}
-        age = max(0.0, time.monotonic() - self.arm_status_at)
+        captured_at = time.monotonic() if now is None else float(now)
+        age = max(0.0, captured_at - self.arm_status_at)
         return {
             'available': True,
             'age_sec': age,

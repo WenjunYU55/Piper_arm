@@ -101,6 +101,56 @@ def test_partial_motor_enable_is_never_planning_authority(monkeypatch):
     ]
 
 
+def test_dense_batch_reuses_the_admission_snapshot_for_every_viewpoint():
+    """Slow command-free lookup must not expire its own admitted evidence."""
+    node = reachability_fixture(False)
+    calls = []
+
+    def arm_reasons(now=None):
+        calls.append(now)
+        return [] if now == 10.0 else ['arm status expired during lookup']
+
+    node.arm_status_reasons = arm_reasons
+    admission = ViewpointReachabilityFilterNode.batch_admission_reasons(
+        node, 'MULTIVIEW_SCAN', now=10.0)
+    viewpoint = {
+        'desired_camera_position': {'x': 0.4, 'y': 0.0, 'z': 0.2},
+        'target_object_center': {'x': 0.1, 'y': 0.0, 'z': 0.2},
+        'camera_object_distance_m': 0.30,
+    }
+
+    for _index in range(360):
+        reasons, _capability = (
+            ViewpointReachabilityFilterNode.evaluate_viewpoint(
+                node, viewpoint, 'MULTIVIEW_SCAN',
+                admission_reasons=admission))
+        assert reasons == []
+    assert calls == [10.0]
+
+
+def test_stale_batch_is_rejected_at_admission_and_never_refreshed_mid_loop():
+    node = reachability_fixture(False)
+    calls = []
+
+    def arm_reasons(now=None):
+        calls.append(now)
+        return ['arm status is stale 1.500s > 1.000s']
+
+    node.arm_status_reasons = arm_reasons
+    admission = ViewpointReachabilityFilterNode.batch_admission_reasons(
+        node, 'MULTIVIEW_SCAN', now=10.0)
+    viewpoint = {
+        'desired_camera_position': {'x': 0.4, 'y': 0.0, 'z': 0.2},
+        'target_object_center': {'x': 0.1, 'y': 0.0, 'z': 0.2},
+        'camera_object_distance_m': 0.30,
+    }
+
+    reasons, _capability = ViewpointReachabilityFilterNode.evaluate_viewpoint(
+        node, viewpoint, 'MULTIVIEW_SCAN', admission_reasons=admission)
+    assert reasons == ['arm status is stale 1.500s > 1.000s']
+    assert calls == [10.0]
+
+
 def reachability_fixture(enforce_static_reach_bounds):
     parameters = {
         'dry_run': True,

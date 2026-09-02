@@ -379,6 +379,32 @@ def test_worker_exhaustion_retires_only_attempted_request_rays():
         bridge, payload) == []
 
 
+def test_generic_curobo_exhaustion_retires_only_attempted_request_rays():
+    bridge = object.__new__(TesseractPlanBridge)
+    bridge.planner_exhausted_ray_generation = ('session-a', 2)
+    bridge.planner_exhausted_ray_ids = set()
+    bridge.get_logger = lambda: _Logger()
+    bridge.pending = {'request-a': {'request': {
+        'planning': {'shortlisted_ray_count': 2},
+        'scan_session': {'session_id': 'session-a', 'accepted_views': 2},
+        'scene': {'candidate_views': [
+            {'id': 100, 'ray_id': 10},
+            {'id': 110, 'ray_id': 11},
+        ]},
+    }}}
+    payload = {
+        'request_id': 'request-a',
+        'rejection_codes': ['PLANNER_EXHAUSTED'],
+        'planning_diagnostics': {'attempted_ray_ids': [10, 999]},
+    }
+
+    retired = TesseractPlanBridge.remember_planner_exhausted_rays(
+        bridge, payload)
+
+    assert retired == [10]
+    assert bridge.planner_exhausted_ray_ids == {10}
+
+
 def test_ray_worker_exhaustion_publishes_retryable_batch_diagnostic():
     bridge = object.__new__(TesseractPlanBridge)
     bridge.tesseract_exhausted_ray_generation = ('session-a', 2)

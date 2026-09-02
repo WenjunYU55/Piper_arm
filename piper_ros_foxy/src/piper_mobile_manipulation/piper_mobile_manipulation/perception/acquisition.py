@@ -47,20 +47,23 @@ def rough_hint_rejection_reason(
 
 
 def build_acquisition_viewpoints(
-        rough_target, current_camera_position, standoff_m=0.45,
+        rough_target, current_camera_position,
         camera_pitch_deg=-10.0, sweep_angle_deg=45.0,
-        fallback_standoff_m=None, current_camera_look_direction=None,
-        look_index=0):
+        include_compact_candidates=False, current_camera_look_direction=None,
+        look_index=0, minimum_standoff_m=0.0):
     """
     Build a bounded look-direction cone without overshooting the camera.
 
-    ``standoff_m`` is the maximum acquisition radius.  When the camera is
-    already closer to the rough target, the center look stays at the current
-    camera position.  The first view always rotates the optical axis toward
-    the supplied landmark; later views sweep through the configured yaw/pitch
-    cone.  This searches around an imperfect coordinate without first running
-    perception from an unrelated camera direction, and keeps a hint near the
-    arm from pushing the camera through or behind the robot base.
+    ``minimum_standoff_m`` is an observation-protection floor around the
+    uncertain rough hint. A camera already inside that floor is moved only
+    radially away from the hint; otherwise its current radius is preserved.
+    Rough acquisition deliberately has no maximum-radius policy: capability,
+    exact planning, collision checking and the finite perception profile own
+    the actual reachable/observable boundary. The first view always rotates
+    the optical axis toward the supplied landmark; later views sweep through
+    the configured yaw/pitch cone. This searches around an imperfect
+    coordinate without first running perception from an unrelated camera
+    direction, and never moves through the hint.
 
     ``camera_pitch_deg`` remains in the signature for configuration/API
     compatibility.  The center pitch is derived from the live camera-to-target
@@ -83,9 +86,12 @@ def build_acquisition_viewpoints(
             raise ValueError(
                 'current camera look direction must be finite and non-zero')
         current_look /= np.linalg.norm(current_look)
-    maximum_standoff = float(standoff_m)
-    if not math.isfinite(maximum_standoff) or maximum_standoff <= 0.0:
-        raise ValueError('acquisition standoff must be positive and finite')
+    minimum_standoff = float(minimum_standoff_m)
+    if not math.isfinite(minimum_standoff) or minimum_standoff < 0.0:
+        raise ValueError(
+            'minimum acquisition standoff must be finite and nonnegative')
+    if not isinstance(include_compact_candidates, bool):
+        raise ValueError('include_compact_candidates must be boolean')
     if not math.isfinite(float(camera_pitch_deg)):
         raise ValueError('acquisition camera pitch must be finite')
     sweep = abs(float(sweep_angle_deg))
@@ -105,7 +111,7 @@ def build_acquisition_viewpoints(
     azimuth_deg = math.degrees(math.atan2(horizontal[1], horizontal[0]))
     pitch_ratio = float(np.clip(offset[2] / current_distance, -1.0, 1.0))
     center_pitch_deg = -math.degrees(math.asin(pitch_ratio))
-    effective_standoff = min(current_distance, maximum_standoff)
+    effective_standoff = max(current_distance, minimum_standoff)
     diagonal_pitch = min(sweep, 30.0)
     cone_offsets = [
         ('center', 0.0, 0.0),
@@ -118,23 +124,15 @@ def build_acquisition_viewpoints(
         ('left_down', sweep, -diagonal_pitch),
         ('right_down', -sweep, -diagonal_pitch),
     ]
-    fallback_radius = None
-    fallback_offsets = []
-    if fallback_standoff_m is not None:
-        fallback_radius = float(fallback_standoff_m)
-        if (
-                not math.isfinite(fallback_radius)
-                or fallback_radius <= 0.0
-                or fallback_radius > maximum_standoff):
-            raise ValueError(
-                'acquisition fallback standoff must be positive, finite, '
-                'and no greater than the maximum standoff')
+    compact_radius = None
+    compact_offsets = []
+    if include_compact_candidates:
+        compact_radius = effective_standoff
         # A centreline target can make all five minimum-translation look-at
-        # orientations unreachable. Offer Tesseract an interleaved compact
-        # yaw/pitch search as additional candidates. Tesseract still owns
-        # bounded IK, collision checking and final selection.
-        fallback_radius = min(effective_standoff, fallback_radius)
-        fallback_offsets = [
+        # orientations unreachable. Offer the selected planner an interleaved
+        # yaw/pitch search at the same protected radius. Compact candidates
+        # must never pull a farther camera inward.
+        compact_offsets = [
             ('compact_left', sweep, 0.0),
             ('compact_right_wide', -sweep - 5.0, 0.0),
             ('compact_left_high', sweep, -5.0),
@@ -200,7 +198,8 @@ def build_acquisition_viewpoints(
             'desired_look_at_direction': dict(
                 zip(('x', 'y', 'z'), (float(value) for value in look))),
             'camera_object_distance_m': float(effective_standoff),
-            'maximum_standoff_m': maximum_standoff,
+            'minimum_standoff_m': minimum_standoff,
+            'distance_policy': 'minimum_only_preserve_current',
             'keep_object_centered': name == 'center',
             'reachable': False,
             'safe': False,
@@ -233,26 +232,28 @@ def build_acquisition_viewpoints(
             'desired_look_at_direction': dict(
                 zip(('x', 'y', 'z'), (float(value) for value in look))),
             'camera_object_distance_m': float(radius),
-            'maximum_standoff_m': maximum_standoff,
+            'minimum_standoff_m': minimum_standoff,
+            'distance_policy': 'minimum_only_preserve_current',
             'keep_object_centered': True,
             'reachable': False,
             'safe': False,
         })
 
     # The centered landmark view is a mandatory semantic first step. Offer a
-    # compact centered alternative immediately after it so Tesseract can solve
-    # a different camera radius without starting from a cone-offset view.
+    # same-radius compact alternative immediately after it so the selected
+    # planner can solve a different target-relative direction without pulling
+    # the camera inward.
     name, yaw_deg, pitch_deg = cone_offsets[0]
     append_cone_view(name, yaw_deg, pitch_deg)
-    if fallback_radius is not None:
+    if compact_radius is not None:
         append_view(
-            'compact_center', 0.0, 0.0, fallback_radius,
+            'compact_center', 0.0, 0.0, compact_radius,
             'compact_fallback')
     for name, yaw_deg, pitch_deg in cone_offsets[1:]:
         append_cone_view(name, yaw_deg, pitch_deg)
-    for name, yaw_deg, pitch_deg in fallback_offsets:
+    for name, yaw_deg, pitch_deg in compact_offsets:
         append_view(
-            name, yaw_deg, pitch_deg, fallback_radius, 'compact_fallback')
+            name, yaw_deg, pitch_deg, compact_radius, 'compact_fallback')
     look_groups = (
         ('center', 'compact_center', 'compact_left', 'compact_right'),
         ('left', 'left_up', 'left_down', 'compact_left'),
@@ -278,7 +279,7 @@ def build_acquisition_viewpoints(
     ], dtype=float)
     local_candidates = (
         selected[:5]
-        if look_index == 0 and fallback_standoff_m is not None
+        if look_index == 0 and include_compact_candidates
         else [primary])
     primary_image_up = world_up - primary_look * np.dot(world_up, primary_look)
     if float(np.linalg.norm(primary_image_up)) < 1e-9:
@@ -327,7 +328,9 @@ def build_acquisition_viewpoints(
         ], dtype=float) - target
         if (
                 float(np.dot(radial, offset)) <= 0.0
-                or float(np.linalg.norm(radial)) > current_distance + 1e-6):
+                or float(np.linalg.norm(radial))
+                > effective_standoff + 1e-6):
             raise ValueError(
-                'acquisition candidate crosses behind or beyond the close target')
+                'acquisition candidate crosses behind or beyond the protected '
+                'rough-target radius')
     return selected[:5]

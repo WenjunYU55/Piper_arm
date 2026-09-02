@@ -13,11 +13,46 @@ UNSUPPORTED_PLAN_KINDS = (
 COMMAND_RATE_HZ = 20.0
 MAXIMUM_JOINT_STEP_RAD = 0.05
 MOVEJ_NOMINAL_VELOCITY_RAD_S = (5.0, 5.0, 5.0, 5.0, 5.0, 3.0)
+MAXIMUM_SCHEDULED_POINTS = 60000
 FIXED_MOUNT_SEAM_M = 0.010
 
 
 class CuroboContractError(ValueError):
     """Reject malformed or unsupported worker data before GPU use."""
+
+
+class CuroboPlanningError(CuroboContractError):
+    """Base class for typed, fail-closed planner-runtime failures."""
+
+    rejection_code = 'PLANNING_FAILED'
+
+    def __init__(self, message, planning_diagnostics=None):
+        super().__init__(message)
+        self.planning_diagnostics = dict(planning_diagnostics or {})
+
+
+class CuroboCandidateExhausted(CuroboPlanningError):
+    """All candidates in one bounded shortlist were attempted and failed."""
+
+    rejection_code = 'PLANNER_EXHAUSTED'
+
+
+class CuroboPlanningBudgetExceeded(CuroboPlanningError):
+    """One request consumed its immutable worker planning budget."""
+
+    rejection_code = 'PLANNER_TIMEOUT'
+
+
+class CuroboCollisionRejected(CuroboPlanningError):
+    """cuRobo rejected a start, goal, or path on collision evidence."""
+
+    rejection_code = 'PLANNING_COLLISION_REJECTED'
+
+
+class CuroboOutputInvalid(CuroboPlanningError):
+    """A native result could not satisfy the common execution contract."""
+
+    rejection_code = 'PLANNING_FAILED'
 
 
 def canonical_bytes(value):
@@ -60,6 +95,89 @@ def finite_vector(value, length, label):
     if not all(math.isfinite(item) for item in result):
         raise CuroboContractError('%s contains non-finite values' % label)
     return result
+
+
+def target_ray_standoff_samples(candidate, maximum_samples=9):
+    """Return deterministic, capability-bounded standoffs for one target ray.
+
+    The representative point remains first for continuity with the existing
+    bridge contract.  Remaining samples fill the largest uncovered supported
+    interval, so cuRobo searches the ray without probing unsupported gaps.
+    """
+    if candidate.get('candidate_geometry') != 'target_ray':
+        raise CuroboContractError('candidate is not target-ray geometry')
+    limit = int(maximum_samples)
+    if limit < 1:
+        raise CuroboContractError('target-ray sample limit must be positive')
+    minimum = float(candidate.get('ray_min_standoff_m'))
+    maximum = float(candidate.get('ray_max_standoff_m'))
+    if (
+            not math.isfinite(minimum) or not math.isfinite(maximum)
+            or minimum <= 0.0 or maximum < minimum):
+        raise CuroboContractError('target-ray standoff bounds are invalid')
+    raw_intervals = candidate.get('ray_capability_intervals_m')
+    intervals = []
+    if raw_intervals is not None:
+        if not isinstance(raw_intervals, (list, tuple)) or not raw_intervals:
+            raise CuroboContractError(
+                'target-ray capability intervals are invalid')
+        for raw in raw_intervals:
+            if not isinstance(raw, (list, tuple)) or len(raw) != 2:
+                raise CuroboContractError(
+                    'target-ray capability interval is invalid')
+            lower, upper = float(raw[0]), float(raw[1])
+            if (
+                    not math.isfinite(lower) or not math.isfinite(upper)
+                    or lower < minimum - 1e-9
+                    or upper > maximum + 1e-9 or upper < lower):
+                raise CuroboContractError(
+                    'target-ray capability interval is invalid')
+            intervals.append((max(minimum, lower), min(maximum, upper)))
+    if not intervals:
+        intervals = [(minimum, maximum)]
+
+    def supported(value):
+        return any(
+            lower - 1e-9 <= value <= upper + 1e-9
+            for lower, upper in intervals)
+
+    samples = []
+
+    def add(value):
+        value = float(value)
+        if (
+                math.isfinite(value) and supported(value)
+                and all(abs(value - existing) > 1e-9 for existing in samples)):
+            samples.append(value)
+
+    for key in (
+            'ray_standoff_m', 'ray_scoring_standoff_m',
+            'ray_preferred_max_standoff_m'):
+        if candidate.get(key) is not None:
+            add(candidate[key])
+    for lower, upper in intervals:
+        add(lower)
+        add(upper)
+        add((lower + upper) * 0.5)
+
+    samples = samples[:limit]
+    while len(samples) < limit:
+        best = None
+        for interval_index, (lower, upper) in enumerate(intervals):
+            inside = sorted(
+                value for value in samples
+                if lower - 1e-9 <= value <= upper + 1e-9)
+            boundaries = [lower] + inside + [upper]
+            for left, right in zip(boundaries, boundaries[1:]):
+                gap = right - left
+                candidate_value = (left + right) * 0.5
+                key = (gap, -interval_index, -candidate_value)
+                if gap > 1e-9 and (best is None or key > best[0]):
+                    best = (key, candidate_value)
+        if best is None:
+            break
+        add(best[1])
+    return tuple(samples)
 
 
 def validate_request(request):
@@ -121,6 +239,41 @@ def validate_request(request):
         if sum(value * value for value in direction) <= 1e-12:
             raise CuroboContractError(
                 'candidate %d look direction is zero' % index)
+        if candidate.get('candidate_geometry') == 'target_ray':
+            if plan_kind != 'MULTIVIEW_SCAN':
+                raise CuroboContractError(
+                    'target-ray candidate is scan-only')
+            ray = finite_vector(
+                candidate.get('ray_direction'), 3,
+                'candidate %d ray direction' % index)
+            ray_norm = math.sqrt(sum(value * value for value in ray))
+            try:
+                ray_id = int(candidate.get('ray_id', -1))
+                standoff = float(candidate.get('ray_standoff_m'))
+            except (TypeError, ValueError):
+                raise CuroboContractError(
+                    'candidate %d target-ray fields are malformed' % index)
+            if ray_id < 0 or abs(ray_norm - 1.0) > 1e-6:
+                raise CuroboContractError(
+                    'candidate %d target-ray fields are invalid' % index)
+            samples = target_ray_standoff_samples(candidate)
+            if not any(abs(standoff - value) <= 1e-9 for value in samples):
+                raise CuroboContractError(
+                    'candidate %d representative standoff is unsupported'
+                    % index)
+            target = finite_vector(
+                scene.get('target_center_m'), 3, 'target center')
+            expected = [
+                origin + axis * standoff
+                for origin, axis in zip(target, ray)]
+            actual = finite_vector(
+                candidate.get('camera_position_m'), 3,
+                'candidate %d camera position' % index)
+            if any(abs(left - right) > 1e-6 for left, right in zip(
+                    actual, expected)):
+                raise CuroboContractError(
+                    'candidate %d target-ray representative is inconsistent'
+                    % index)
     obstacles = scene.get('obstacles', [])
     if not isinstance(obstacles, list):
         raise CuroboContractError('scene obstacles must be a list')
@@ -170,8 +323,46 @@ def obstacle_cuboids(request, floor_z_m=None):
     return tuple(result)
 
 
-def normalize_trajectory(positions, native_dt_sec, speed_percent):
-    """Preserve path geometry while producing the common 20 Hz schedule."""
+def validate_trajectory_position_limits(positions, position_limits):
+    """Reject planner-native points outside the authoritative raw limits."""
+    limits = [
+        finite_vector(bounds, 2, 'trajectory joint position limit')
+        for bounds in position_limits
+    ]
+    if len(limits) != len(JOINT_NAMES):
+        raise CuroboContractError(
+            'trajectory position limits must contain six ranges')
+    for joint_index, (low, high) in enumerate(limits):
+        if low >= high:
+            raise CuroboContractError(
+                'trajectory joint%d position limit is empty'
+                % (joint_index + 1))
+    for point_index, row in enumerate(positions):
+        point = finite_vector(row, 6, 'trajectory position')
+        for joint_index, (value, bounds) in enumerate(zip(point, limits)):
+            low, high = bounds
+            if value < low or value > high:
+                excess = max(low - value, value - high)
+                raise CuroboContractError(
+                    'cuRobo trajectory point %d joint%d=%.12g is outside '
+                    '[%.12g, %.12g] by %.12g rad'
+                    % (
+                        point_index, joint_index + 1, value,
+                        low, high, excess))
+
+
+def normalize_trajectory(
+        positions, native_dt_sec, speed_percent, position_limits=None):
+    """Preserve native vertices in a fixed-rate PiPER MoveJ schedule.
+
+    cuRobo supplies collision-checked path geometry at ``native_dt_sec``.
+    PiPER's JointCtrl boundary accepts positions rather than trajectory time,
+    velocity, or acceleration fields, so each native segment is sampled at the
+    common 20 Hz transport rate.  Whole ticks are allocated independently per
+    segment from the native duration, the speed-scaled MoveJ velocity model,
+    and the hard adjacent-command step ceiling.  This retains every native
+    vertex and never shortcuts a collision-checked corner.
+    """
     rows = [finite_vector(row, 6, 'trajectory position') for row in positions]
     if len(rows) < 2:
         raise CuroboContractError(
@@ -182,39 +373,46 @@ def normalize_trajectory(positions, native_dt_sec, speed_percent):
         raise CuroboContractError('native trajectory dt is invalid')
     if not math.isfinite(speed) or speed < 1.0 or speed > 100.0:
         raise CuroboContractError('execution speed must be within 1..100')
-    result = [rows[0]]
-    times = [0.0]
+    if position_limits is not None:
+        validate_trajectory_position_limits(rows, position_limits)
     period = 1.0 / COMMAND_RATE_HZ
     scaled_velocity = tuple(
         value * speed / 100.0 for value in MOVEJ_NOMINAL_VELOCITY_RAD_S)
+    result = [rows[0]]
     for left, right in zip(rows, rows[1:]):
         deltas = tuple(abs(b - a) for a, b in zip(left, right))
-        subdivisions = max(
+        ticks_for_native_time = int(math.ceil(
+            native_dt / period - 1e-12))
+        ticks_for_velocity = int(math.ceil(max(
+            delta / (limit * period)
+            for delta, limit in zip(deltas, scaled_velocity)) - 1e-12))
+        ticks_for_step = int(math.ceil(
+            max(deltas) / MAXIMUM_JOINT_STEP_RAD - 1e-12))
+        ticks = max(
             1,
-            int(math.ceil(max(deltas) / MAXIMUM_JOINT_STEP_RAD)),
+            ticks_for_native_time,
+            ticks_for_velocity,
+            ticks_for_step,
         )
-        for step in range(1, subdivisions + 1):
-            fraction = float(step) / float(subdivisions)
+        if len(result) + ticks > MAXIMUM_SCHEDULED_POINTS:
+            raise CuroboContractError(
+                'scheduled cuRobo path exceeds point limit')
+        for tick in range(1, ticks + 1):
+            fraction = float(tick) / float(ticks)
             point = tuple(
                 a + (b - a) * fraction for a, b in zip(left, right))
-            increment = tuple(
-                abs(b - a) for a, b in zip(result[-1], point))
-            interval = max(
-                period,
-                native_dt / subdivisions,
-                max(
-                    delta / limit
-                    for delta, limit in zip(increment, scaled_velocity)),
-            )
             result.append(point)
-            times.append(times[-1] + interval)
     zero = [0.0] * 6
-    return [{
+    scheduled = [{
         'positions_rad': list(point),
         'velocities_rad_s': list(zero),
         'accelerations_rad_s2': list(zero),
-        'time_from_start_s': round(when, 9),
-    } for point, when in zip(result, times)]
+        'time_from_start_s': round(index * period, 9),
+    } for index, point in enumerate(result)]
+    if position_limits is not None:
+        validate_trajectory_position_limits(
+            [point['positions_rad'] for point in scheduled], position_limits)
+    return scheduled
 
 
 def prepend_bootstrap_recovery(points, recovery_positions, speed_percent):
@@ -283,11 +481,16 @@ def trajectory_segment(points, is_return_home=False, bootstrap_recovery=None):
 
 def worker_rejection_code(error):
     """Map predictable failures to stable fail-closed reason codes."""
+    explicit = str(getattr(error, 'rejection_code', ''))
+    if explicit:
+        return explicit
     text = str(error).lower()
     if 'unsupported' in text:
         return 'PLANNER_UNSUPPORTED'
-    if 'cuda' in text or 'curobo' in text or 'model' in text:
-        return 'PLANNER_UNAVAILABLE'
+    if 'normalized output failed' in text or 'trajectory point' in text:
+        return 'PLANNING_FAILED'
     if 'collision' in text or 'valid query' in text:
         return 'PLANNING_COLLISION_REJECTED'
+    if 'cuda' in text or 'backend unavailable' in text or 'model' in text:
+        return 'PLANNER_UNAVAILABLE'
     return 'PLANNING_FAILED'

@@ -860,8 +860,16 @@ def validate_response(payload, request=None):
                         if not (
                                 allowed_recovery_start
                                 or allowed_configured_home_start):
+                            excess = max(
+                                float(low) - positions[joint_index],
+                                positions[joint_index] - float(high))
                             raise ContractError(
-                                '%s exceeds a position limit' % prefix)
+                                '%s joint%d=%.12g is outside [%.12g, %.12g] '
+                                'by %.12g rad'
+                                % (
+                                    prefix, joint_index + 1,
+                                    positions[joint_index], float(low),
+                                    float(high), excess))
                     if abs(velocities[joint_index]) > (
                             float(velocity_limits[joint_index]) + 1e-9):
                         raise ContractError(

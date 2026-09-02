@@ -404,8 +404,8 @@ def zero_start_acquisition_regression(backend):
         'manipulator', start,
         tip_link='camera_optical_frame').matrix)[:3, 3]
     viewpoints = build_acquisition_viewpoints(
-        target, camera, standoff_m=0.45,
-        camera_pitch_deg=-10.0, sweep_angle_deg=15.0)
+        target, camera, camera_pitch_deg=-10.0, sweep_angle_deg=15.0,
+        minimum_standoff_m=0.35)
     candidates = acquisition_candidates(viewpoints[:4])
     selected, segments = backend.plan({
         'scene': {
@@ -459,16 +459,19 @@ def zero_start_acquisition_regression(backend):
 
 
 def centerline_zero_start_acquisition_regression(backend):
-    """Require one compact closed-loop look for a centreline target."""
+    """Require one centered closed-loop look at the protected standoff."""
     start = np.zeros(6)
-    target = np.asarray([0.25, 0.0, 0.0])
+    # The former 0.25 m centreline fixture was reachable only through the
+    # retired 0.28 m compact fallback.  Exercise the same centered/compact
+    # planning contract with representative observable geometry instead of
+    # violating the 0.35 m acquisition floor.
+    target = np.asarray([0.40, 0.0, 0.12])
     camera = np.asarray(backend.robot.fk(
         'manipulator', start,
         tip_link='camera_optical_frame').matrix)[:3, 3]
     viewpoints = build_acquisition_viewpoints(
-        target, camera, standoff_m=0.45,
-        camera_pitch_deg=-10.0, sweep_angle_deg=15.0,
-        fallback_standoff_m=0.28)
+        target, camera, camera_pitch_deg=-10.0, sweep_angle_deg=15.0,
+        include_compact_candidates=True, minimum_standoff_m=0.35)
     candidates = acquisition_candidates(viewpoints)
     selected, segments = backend.plan({
         'plan_kind': 'ROUGH_ACQUISITION',
@@ -508,9 +511,6 @@ def centerline_zero_start_acquisition_regression(backend):
     if len(selected) != 1 or len(segments) != 1:
         raise RuntimeError(
             'centreline rough acquisition did not return one search pose')
-    if int(selected[0]['id']) == 0:
-        raise RuntimeError(
-            'centreline rough acquisition did not use a compact fallback pose')
     return {
         'target_center_m': target.tolist(),
         'candidate_viewpoints': len(candidates),
@@ -535,14 +535,16 @@ def dual_limit_start_acquisition_regression(backend):
         0.317393580,
         -0.008373120,
     ])
-    target = np.asarray([0.25, 0.0, 0.0])
+    # Keep this recovery qualification on the same protected, observable
+    # rough-target geometry as the centreline cold-start regression.  The old
+    # 0.25 m fixture depended on the retired 0.28 m inward fallback.
+    target = np.asarray([0.40, 0.0, 0.12])
     camera = np.asarray(backend.robot.fk(
         'manipulator', start,
         tip_link='camera_optical_frame').matrix)[:3, 3]
     viewpoints = build_acquisition_viewpoints(
-        target, camera, standoff_m=0.45,
-        camera_pitch_deg=-10.0, sweep_angle_deg=15.0,
-        fallback_standoff_m=0.28)
+        target, camera, camera_pitch_deg=-10.0, sweep_angle_deg=15.0,
+        include_compact_candidates=True, minimum_standoff_m=0.35)
     candidates = acquisition_candidates(viewpoints)
     selected, segments = backend.plan({
         'plan_kind': 'ROUGH_ACQUISITION',
@@ -618,8 +620,8 @@ def compact_start_acquisition_regression(backend):
         'manipulator', start,
         tip_link='camera_optical_frame').matrix)[:3, 3]
     viewpoints = build_acquisition_viewpoints(
-        target, camera, standoff_m=0.45,
-        camera_pitch_deg=-10.0, sweep_angle_deg=15.0)
+        target, camera, camera_pitch_deg=-10.0, sweep_angle_deg=15.0,
+        minimum_standoff_m=0.35)
     candidates = acquisition_candidates(viewpoints[:4])
     selected, segments = backend.plan({
         'plan_kind': 'ROUGH_ACQUISITION',

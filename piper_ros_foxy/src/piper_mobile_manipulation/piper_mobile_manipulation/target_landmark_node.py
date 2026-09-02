@@ -47,7 +47,7 @@ class TargetLandmarkNode(Node):
             'heavy_request_topic': '/piper/heavy_refresh_request',
             'base_frame': 'base_link',
             'depth_min_m': 0.20,
-            'depth_max_m': 1.20,
+            'depth_max_m': 3.0,
             'mask_erode_px': 2,
             'min_valid_depth_pixels': 50,
             'min_valid_depth_ratio': 0.40,

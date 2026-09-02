@@ -68,6 +68,22 @@ def initialized_model():
     return model
 
 
+def test_live_nbv_retains_supported_target_depth_at_two_and_half_metres():
+    depth = np.full((4, 5), 2.5, dtype=float)
+    support = np.ones((4, 5), dtype=bool)
+    intrinsic = np.asarray([
+        100.0, 0.0, 2.0,
+        0.0, 100.0, 1.5,
+        0.0, 0.0, 1.0,
+    ])
+
+    points = nbv_coverage._target_points(
+        depth, support, intrinsic, np.eye(4))
+
+    assert points.shape == (20, 3)
+    assert np.all(points[:, 2] == pytest.approx(2.5))
+
+
 def test_explicit_revolved_size_controls_grey_coverage_sphere():
     model = ObjectCoverageModel(VoxelCoverageConfig(
         voxel_size_m=0.005,

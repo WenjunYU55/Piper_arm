@@ -1,5 +1,36 @@
 schema_version: 1
 document: implemented_features_bookmark
+curobo_fixed_rate_movej_transport_2026_09_02:
+  status: software_and_real_gpu_qualified_physical_retest_pending
+  capability: cuRobo collision-qualified native segments are converted into an exact fixed 20 Hz position stream using the same speed-scaled PiPER MoveJ model and source-vertex-preserving method as Tesseract. Slow selections now create more small commands instead of sparse commands with long target holds.
+  preserved: [native path vertices and endpoints, raw joint limits, 0.05 rad ceiling, zero derivative placeholders, generic MotionPlan and hashes, common authorization runtime safety TrajectoryRunner and PiPER adapter, Tesseract, real-motion default, no fallback]
+  evidence: [fixed-rate J1 and J6 speed tests, corner-retention and native-time tests, 1146 ordinary passes and 10 skips, 10 of 10 pinned real-GPU passes, recorded acquisition 384 points over 19.15 seconds at fixed 20 Hz with 0.007482 rad maximum step, recorded multiview 83 points over 4.10 seconds at fixed 20 Hz, two-package build passed]
+curobo_runtime_parity_2026_09_02:
+  status: software_command_free_and_real_gpu_regression_passed_physical_e2e_pending
+  capability: cuRobo now consumes the same bounded target-ray intent as Tesseract, searches capability-supported standoffs and rolls with exact aim first, keeps one fixed 54-pose goal-set tensor across a persistent worker, reports backend-neutral attempted-ray exhaustion, and supports the legacy planner RETURN_HOME policy through a manifest-authorized direct segment with dense installed-camera floor proof. Reachability admits one fresh status snapshot per complete batch without weakening stale-at-admission or downstream gates.
+  evidence: [complete ordinary suite, pinned cuRobo 0.7.8 real-GPU suite including persistent acquisition-to-target-ray and direct-home regressions, /tmp/piper_curobo_runtime_qualification_20260902_v3 with five of five normal successes plus blocked rejection per backend, exact Tesseract revalidation of all ten normal paths, clean worker and CUDA shutdown]
+  preserved: [one mission NBV capture authorization executor and PiPER path, Tesseract availability, generic contracts, collision joint freshness and runtime validation, real-motion default, no automatic fallback]
+  limitations: [physical cuRobo E2E pending, articulated cuRobo sphere model is not collision-equivalent to Tesseract]
+curobo_target_visible_path_retry_2026_09_01:
+  status: software_and_command_free_gpu_passed_physical_retest_pending
+  capability: The ROS-free cuRobo adapter now turns each collision-safe MotionGen multiview result into a camera-FK-qualified attempt. Visibility-invalid paths remain private diagnostics and advance through the existing roll fallback-look and candidate order; only a qualified path can become the generic MotionPlan consumed by the unchanged shared authorization and executor.
+  evidence: [codex-curobo-limit-fix-e2e-20260901-232843 root-cause trace, exact 11.1-to-20.1 regression, roll and candidate retry regressions, 49 pure cuRobo passes with 9 GPU skips, 193 executor passes, 909 mobile passes with one environment skip, 173 Tesseract passes, pinned real-GPU multiview and accepted-views-zero replay]
+  preserved: [Tesseract behavior, collision and joint validation, generic planner interfaces, executor visibility backstop, final achieved-FK gate, PlanAuthorizer, TrajectoryRunner, PiPER adapter, real-motion default, no planner fallback]
+curobo_joint_limit_boundary_containment_2026_09_01:
+  status: software_and_command_free_gpu_regression_passed_physical_retest_pending
+  capability: cuRobo MotionGen uses the provenance-enforced per-joint clip [0.005,0,0,0.005,0.005,0.005] rad, retaining the intentional joint2 and joint3 configured-home boundaries. The ROS-free adapter validates native rows scheduled rows and the complete generic response before it can publish success. Exact joint limit failures remain visible as structured planner diagnostics and the ROS bridge independently revalidates.
+  evidence: [gui-sim-7c8f061c9e37456190a9701aa1cafd36 root-cause replay, 75 focused regressions, 44 complete ROS-free cuRobo tests with 9 opt-in skips, 173 complete Tesseract tests, schema-3 model regeneration, real CUDA joint5 1.214-rad accept and 1.217-rad reject, real private CUDA worker MULTIVIEW_SCAN success with 31 validated points and 0.1203 rad joint5 headroom, 8 of 9 opt-in GPU tests pass]
+  preserved: [raw joint limits, Tesseract planning, generic planner interfaces, common execution validation, authorization, collision and freshness gates, TrajectoryRunner, PiPER adapter, real-motion default, no fallback]
+rough_acquisition_observation_floor_2026_09_01:
+  status: software_regression_passed_physical_retest_pending
+  capability: Rough-target acquisition applies a 0.35 m minimum to centered and compact camera poses without an acquisition-specific maximum. The minimum combines the qualified 0.25 m L515 near-depth boundary and the GUI's declared 0.10 m positional uncertainty, moving a closer camera radially away without crossing the hint while preserving any farther measured radius.
+  evidence: [gui-sim-f0df72b4a04642a59387ed3c1f52eb2a archived depth and logs, exact incident geometry regression, all 27 rough-acquisition tests, 909 complete mobile tests with one environment skip, 172 complete Tesseract tests, 40 ROS-free cuRobo adapter tests, mobile symlink build, real command-free cuRobo incident-geometry plan at 0.35 m with 98 points, no hardware command]
+  preserved: [selected planner choice, capability and collision validation, common authorization and execution, measured-lock and one-second readiness gates, later size-aware rays, real-motion default]
+target_observation_ceiling_2026_09_01:
+  status: implemented_software_regression_complete_physical_range_qualification_pending
+  capability: Target semantic depth tracking shape cloud scan quality occlusion first-capture framing ray generation measured-surface coverage NBV integration and offline reconstruction share a finite 3.00 m camera-to-target ceiling while every existing minimum and safety gate remains. The enforcing capability map reduces the broad 0.28-through-3.00 m request to arm-supported standoff runs before exact planner validation.
+  separation: Obstacle-instance projection and the coarse scene cloud retain their independent 1.20 m local collision-geometry maximum.
+  evidence: [239 focused tests with one environment skip, 908 complete mobile tests, 172 complete and registered Tesseract tests, 45 GUI tests, 34 ROS-free AI tests, mobile symlink build, strict parse of all 12 AI YAML files, real 360-ray map benchmark 1.295 seconds, no hardware command]
 measured_support_aware_component_cleanup_2026_09_01:
   status: software_replay_passed_visual_review_pending
   capability: Connected-target cleanup preserves a sub-five-percent TSDF surface only when accepted measured points from at least two distinct captures independently support it within 3 mm, while unsupported small fragments remain removable. Multiple retained surfaces explicitly fail connectivity.
@@ -95,8 +126,8 @@ settled_aimed_model_seed_order_2026_08_26:
   evidence: [task codex-e2e-first-ray-20260826-1824 exposed the race and completed safe shutdown, 189 focused border and order tests pass, 835 complete mobile tests pass, 161 complete Tesseract tests pass, affected lint and mobile package build pass, task codex-e2e-model-seed-20260827-0123 proved capture-bound promotion and accepted three views]
 first_scan_ray_target_framing_gate_2026_08_26:
   status: software_implemented_physical_retest_pending
-  capability: Production missions treat ACQUIRED as tracking-only, reach and settle on the first selected scan ray, prove <=5-degree endpoint aim, then inspect a fresh silhouette immediately before capture. A middle-band crop captures nothing and retries the same ray with a larger minimum standoff. Endpoint aim always targets the frozen cube centre while Tesseract may use any safe path. No farther aimed endpoint is too close and a crop at 0.800 m is too large.
-  preserved: [clipped masks never create envelopes, public ROS interfaces, stable measured target, 0.250 m surface clearance, 0.800 m maximum, Tesseract exact feasibility, executor runtime safety, terminal home disable cleanup]
+  capability: Production missions treat ACQUIRED as tracking-only, reach and settle on the first selected scan ray, prove <=5-degree endpoint aim, then inspect a fresh silhouette immediately before capture. A middle-band crop captures nothing and retries the same ray with a larger minimum standoff. Endpoint aim always targets the frozen cube centre while the selected planner may use any safe path. No farther aimed endpoint is too close and a crop at 3.000 m is too large.
+  preserved: [clipped masks never create envelopes, public ROS interfaces, stable measured target, 0.250 m surface clearance, finite 3.000 m maximum, exact selected-planner feasibility, executor runtime safety, terminal home disable cleanup]
   evidence: [163 focused tests pass, 835 complete mobile tests pass, 161 complete Tesseract tests pass, changed-file flake8 and pep257 pass, mobile package symlink build passes, all 35 registered functional targets pass, registered package red only on historical package-wide lint, task codex-e2e-achieved-lock-20260826-1746 physically established the phase error and safe shutdown]
 azimuth_completion_gate_removed_2026_08_26:
   status: software_implemented_functional_suites_pass_physical_retest_pending
@@ -111,8 +142,8 @@ ray_review_target_envelope_layers_2026_08_26:
   evidence: [107 focused envelope bridge diagnostic and viewer tests pass, 975 complete mobile and Tesseract tests pass, 92 complete GUI tests pass, offscreen independent-toggle smoke passes, command-free 360-ray report carries outline evidence, two-package build passes, no hardware command]
 clipped_target_shape_failure_2026_08_26:
   status: software_qos_repaired_physical_classification_pending
-  capability: A target component touching any image edge publishes an exact-stamp hash-bound rejection instead of an undersized envelope. The executor makes it authoritative only after the first scan ray is settled and aimed, then applies the centre-distance 0.250 m too-close, same-ray farther retry and 0.800 m too-large contract.
-  preserved: [valid complete-silhouette envelope geometry, 0.28 through 0.80 m ray bounds, 0.250 m surface clearance, NBV, Tesseract exact feasibility, motion, home, disable, cleanup, ROS action schema]
+  capability: A target component touching any image edge publishes an exact-stamp hash-bound rejection instead of an undersized envelope. The executor makes it authoritative only after the first scan ray is settled and aimed, then applies the centre-distance 0.250 m too-close, same-ray farther retry and 3.000 m too-large contract.
+  preserved: [valid complete-silhouette envelope geometry, 0.28 through 3.00 m ray bounds, 0.250 m surface clearance, NBV, exact selected-planner feasibility, motion, home, disable, cleanup, ROS action schema]
   evidence: [180 focused tests pass, 991 complete mobile and Tesseract tests pass, command-free target-shape DDS delivery and piper_mobile_manipulation symlink build pass, first five-percent framing attempt proved safe staged shutdown and exposed the corrected QoS handoff]
 trusted_size_aware_target_envelope_2026_08_25:
   status: software_implemented_physical_qualification_pending
@@ -120,9 +151,9 @@ trusted_size_aware_target_envelope_2026_08_25:
   evidence: [792 mobile tests, 160 Tesseract tests, 22 GUI and ray tests, successful two-package build, command-free 360-ray large-target simulation]
 target_relative_capability_bounded_rays_2026_08_25:
   status: software_implemented_functional_suites_pass_changed_file_lint_and_physical_trace_pending
-  capability: ray_nbv preserves the configured target-relative 0.28 through 0.80 m request regardless of target distance from base_link. Enforcing capability lookup records per-standoff support and contiguous runs, preserves requested bounds, narrows the active worker envelope to first through last support and seeds from a supported run.
+  capability: ray_nbv preserves the configured target-relative 0.28 through 3.00 m request regardless of target distance from base_link. Enforcing capability lookup records per-standoff support and contiguous runs, preserves requested bounds, narrows the active worker envelope to first through last support and seeds from a supported run.
   authority: [viewpoint_rays.py configured request and supported-run seed, capability_map.py sampled support, viewpoint_reachability_filter_node.py active-envelope narrowing, bridge_node.py private evidence handoff, worker.py exact endpoint feasibility]
-  preserved: [coarse workspace authority, sparse-map prequalification-only meaning, NBV score and survivor order, six-ray shortlist size, accepted-only coverage, worker exact IK collision path aim and visibility checks, executor safety, motion, capture, home, shutdown, public ROS interfaces]
+  preserved: [sparse-map prequalification-only meaning, coarse workspace fallback when the map is unavailable, NBV score and survivor order, six-ray shortlist size, accepted-only coverage, worker exact IK collision path aim and visibility checks, executor safety, motion, capture, home, shutdown, public ROS interfaces]
   evidence: [51 focused tests pass, 782 complete mobile tests pass, 158 complete Tesseract tests pass, 80 complete GUI tests pass, two-package symlink build passes, all 33 registered mobile functional targets pass, Tesseract registered 158-test suite passes]
   qualification: Seven changed-file flake8 and eight changed-file pep257 findings remain; one command-free live-shaped trace and later separately authorized physical evidence are pending.
 mission_ray_diagnostic_report_2026_08_25:
@@ -226,8 +257,8 @@ supervised_ray_nbv_e2e_2026_08_21:
   evidence: codex-e2e-20260821-185113-adaptive accepted three views, returned SUCCEEDED with safe_shutdown true, and left only persistent GUI RViz display and coordinator nodes.
   preserved: [accepted-only coverage, executor achieved FK, exact-first aim, Tesseract feasibility, GOOD/CLEAR capture gate, speeds, staged home, disable, owned-process cleanup, public ROS interfaces]
 ray_workspace_intersection_cull_2026_08_21:
-  status: software_implemented_physical_qualification_pending
-  capability: Target rays whose entire bounded standoff interval lies outside the configured coarse camera workspace are rejected before bridge/Tesseract shortlisting. A ray survives if any permitted point intersects.
+  status: historical_implementation_now_fallback_only_2026_09_01
+  capability: When a qualified capability map is unavailable, target rays whose entire bounded standoff interval lies outside the configured coarse camera workspace are rejected before bridge/planner shortlisting. With a qualified enforcing map, atlas support replaces fixed radius and height gates.
   authority: viewpoint_reachability_filter_node.py
   preserved: [exact-point policies, NBV scoring and ranking, accepted-only coverage, Tesseract IK collision path visibility, motion, safety, capture, home, shutdown, public ROS interfaces]
   evidence: [108 focused tests, 716 complete mobile tests, 125 complete Tesseract tests, five-package build, changed-file ament lint, AI YAML parse]
@@ -239,14 +270,14 @@ exchangeable_nbv_policy_boundary_2026_08_21:
   evidence: [117 focused tests, 711 complete mobile tests, 125 complete Tesseract tests, 112 root tests with one hardware skip, 32 isolated AI tests, five-package build, changed-file ament lint, AI YAML parse]
 frozen_viewpoint_ray_pool_2026_08_21:
   status: one_supervised_e2e_passed_repeatability_pending
-  capability: Selectable ray_nbv freezes a configurable target-sector, upper-hemisphere or full-sphere direction pool per mission, keeps each configured target-relative 0.28 through 0.80 m request independent of target base-link range, ranks from accepted-only coverage, rejects normalized predicted gain below 0.02, shortlists at most six directions, and binds each selected direction to its prequalified active Tesseract envelope plus supported-run evidence when available. voxel_nbv remains selectable as the exact-point lattice with its twelve-point handoff for performance comparison.
+  capability: Selectable ray_nbv freezes a configurable target-sector, upper-hemisphere or full-sphere direction pool per mission, keeps each configured target-relative 0.28 through 3.00 m request independent of target base-link range, ranks from accepted-only coverage, rejects normalized predicted gain below 0.02, shortlists at most six directions, and binds each selected direction to its prequalified active planner envelope plus supported-run evidence when available. voxel_nbv remains selectable as the exact-point lattice with its twelve-point handoff for performance comparison.
   defaults: {policy: ray_nbv, ray_region: full_sphere, ray_count: 175}
   authority: [scan_viewpoint_planner_node.py, viewpoint_rays.py, piper_tesseract_foxy/bridge_node.py]
   retained_boundaries: {target_estimate: target_tracker_node.py, coverage: nbv_coverage.py, feasibility: worker.py, achieved_pose: scan_viewpoint_executor_node.py, capture_acceptance: scan_capture_node.py}
   software_evidence: [96 focused tests, 818 complete mobile plus Tesseract tests, 100 repository tests with one hardware skip, five-package build, rootless core and compact Tesseract PASS, changed-file lint, AI YAML parse]
 target_too_far_terminal_result_2026_08_21:
   status: software_implemented
-  capability: Exact-job semantic masked depth entirely beyond 1.20 m produces TARGET_TOO_FAR / REPOSITION_REQUIRED with rough base_link XYZ and normal shutdown. Five-look absence also reports XYZ while retaining TARGET_NOT_FOUND.
+  capability: Exact-job semantic masked depth entirely beyond 3.00 m produces TARGET_TOO_FAR / REPOSITION_REQUIRED with rough base_link XYZ and normal shutdown. Five-look absence also reports XYZ while retaining TARGET_NOT_FOUND.
   authority: [heavy_refresh_bridge_node.py, scan_execution_modes.py, scan_viewpoint_executor_node.py, mission_engine.py, target_scan_mission_node.py]
 normalized_marginal_nbv_diversity_2026_08_20:
   status: software_implemented_supervised_physical_retest_pending

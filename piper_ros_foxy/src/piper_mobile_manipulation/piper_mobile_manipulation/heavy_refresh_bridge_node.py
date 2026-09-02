@@ -96,7 +96,7 @@ class HeavyRefreshBridgeNode(Node):
         self.declare_parameter('idle_status_interval_sec', 2.0)
         self.declare_parameter('min_target_depth_valid_ratio', 0.05)
         self.declare_parameter('min_target_depth_valid_px', 25)
-        self.declare_parameter('max_target_depth_m', 1.20)
+        self.declare_parameter('max_target_depth_m', 3.0)
         self.declare_parameter('dry_run', True)
         self.declare_parameter('enable_real_arm_motion', False)
 

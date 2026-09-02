@@ -40,6 +40,41 @@ def test_full_circle_does_not_duplicate_equivalent_endpoint():
     assert angles == [-180.0, -90.0, 0.0, 90.0]
 
 
+def test_ray_generation_does_not_apply_legacy_preferred_distance_ceiling():
+    parameters = {
+        'ray_min_standoff_m': 0.28,
+        'max_scan_radius_m': 0.80,
+        'preferred_scan_radius_m': 0.50,
+    }
+    harness = SimpleNamespace(
+        get_parameter=lambda name: SimpleNamespace(value=parameters[name]),
+    )
+
+    def make_viewpoint(index, angle, radius, center, frame_id, pitch):
+        del angle, pitch
+        return {
+            'index': index,
+            'frame_id': frame_id,
+            'desired_camera_position': {
+                'x': center['x'] + radius,
+                'y': center['y'],
+                'z': center['z'],
+            },
+            'target_object_center': dict(center),
+            'camera_object_distance_m': radius,
+        }
+
+    harness.make_viewpoint = make_viewpoint
+    viewpoint = ScanViewpointPlannerNode.make_ray_viewpoint(
+        harness, 7, 0.0, {'x': 0.4, 'y': 0.0, 'z': 0.12},
+        'base_link', 0.0)
+
+    assert viewpoint['ray_min_standoff_m'] == pytest.approx(0.28)
+    assert viewpoint['ray_max_standoff_m'] == pytest.approx(0.80)
+    assert viewpoint['ray_preferred_max_standoff_m'] == pytest.approx(0.80)
+    assert viewpoint['ray_scoring_standoff_m'] == pytest.approx(0.54)
+
+
 def test_downsampling_retains_sector_endpoints():
     assert build_viewpoint_angles(10, 60, 10, 3) == [-20.0, 10.0, 40.0]
 
