@@ -12,7 +12,7 @@ import yaml
 # measured disabled start for collision-checked bootstrap recovery; powered
 # command targets use the stricter controller limits below.
 URDF_JOINT_LIMITS = np.asarray([
-    [-2.6180, 2.1680],
+    [-2.6179, 2.6179],
     [-0.044796192, 3.1400],
     [-2.9670, 0.0000],
     [-1.7450, 1.7450],

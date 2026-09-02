@@ -90,6 +90,14 @@ def test_urdf_chain_matches_controller_mode_0_fk():
         assert np.allclose(_urdf_fk(pose), _sdk_mode_0_fk(pose), atol=1e-9)
 
 
+def test_joint1_uses_official_symmetric_sdk_safe_limit():
+    root = ET.parse(
+        DESCRIPTION_ROOT / "urdf" / "piper_description.xacro").getroot()
+    limit = root.find("./joint[@name='joint1']/limit")
+    assert float(limit.attrib['lower']) == -2.6179
+    assert float(limit.attrib['upper']) == 2.6179
+
+
 def test_live_launch_is_feedback_only():
     launch_text = (DESCRIPTION_ROOT / "launch" / "display_live_robot.launch.py").read_text()
     assert 'remappings=[("joint_states", "/joint_states_single")]' in launch_text

@@ -426,7 +426,7 @@ def zero_start_acquisition_regression(backend):
         },
         'limits': {
             'position_rad': [
-                [-2.618, 2.168],
+                [-2.6179, 2.6179],
                 [-0.044796192, 3.14],
                 [-2.967, 0.0],
                 [-1.745, 1.745],
@@ -494,7 +494,7 @@ def centerline_zero_start_acquisition_regression(backend):
         },
         'limits': {
             'position_rad': [
-                [-2.618, 2.168],
+                [-2.6179, 2.6179],
                 [-0.044796192, 3.14],
                 [-2.967, 0.0],
                 [-1.745, 1.745],
@@ -567,7 +567,7 @@ def dual_limit_start_acquisition_regression(backend):
         },
         'limits': {
             'position_rad': [
-                [-2.618, 2.168],
+                [-2.6179, 2.6179],
                 [-0.044796192, 3.14],
                 [-2.967, 0.0],
                 [-1.745, 1.745],
@@ -644,7 +644,7 @@ def compact_start_acquisition_regression(backend):
         },
         'limits': {
             'position_rad': [
-                [-2.618, 2.168],
+                [-2.6179, 2.6179],
                 [-0.044796192, 3.14],
                 [-2.967, 0.0],
                 [-1.745, 1.745],
@@ -714,7 +714,7 @@ def run(args, include_compact=True):
     backend.execution_speed_percent = 100.0
     backend.command_rate_hz = 20.0
     backend.execution_position_limits = [
-        [-2.618, 2.168],
+        [-2.6179, 2.6179],
         [-0.044796192, 3.14],
         [-2.967, 0.0],
         [-1.745, 1.745],
@@ -885,7 +885,7 @@ def run_folded_home(args):
     backend.execution_speed_percent = 5.0
     backend.command_rate_hz = 20.0
     backend.execution_position_limits = [
-        [-2.618, 2.168],
+        [-2.6179, 2.6179],
         [-0.044796192, 3.14],
         [-2.967, 0.0],
         [-1.745, 1.745],

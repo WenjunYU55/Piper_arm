@@ -1,5 +1,10 @@
 schema_version: 1
 document: guardrails
+joint1_symmetric_limit_guardrail_2026_09_02:
+  invariants: ["Joint 1 raw interval is exactly [-2.6179,2.6179] rad in every active authority", both planners receive the same interval, common validation independently enforces it, measured files may narrow only, capability occupancy and generated hashes correspond to the current interval, other joint limits remain unchanged]
+  prohibited: [restoring the erroneous +2.168 bound, using approximately 2.66 rad beyond the official 150-degree SDK-safe limit, changing only one backend, retaining an atlas sampled from stale limits, rewriting historical evidence, weakening margins validation collision authorization or runtime monitoring, enabling real motion]
+  blast_radius: [robot model workspace, capability-map support, Tesseract and cuRobo IK search, GUI and home validation, trajectory acceptance, tracked-robot visualization and planning]
+  must_retest_if_changed: [test_robot_description.py, test_tracked_robot_drop_in.py, test_scan_motion.py, test_capability_map.py, test_capability_map_generator.py, Tesseract contract and worker suites, complete cuRobo pure suite and regenerated-model load, two-million-sample capability qualification, affected builds, separately authorized physical requalification]
 curobo_fallback_aim_provenance_guardrail_2026_09_02:
   invariants: [request nominal aim remains immutable, selected fallback remains separately reported, generic response validation rejects provenance disagreement, fallback does not bypass collision visibility authorization or runtime gates]
   prohibited: [mutating the request candidate to construct response identity, calling a selected fallback nominal, weakening generic validation to accept inconsistent metadata, silently expanding fallback tolerance]
@@ -164,6 +169,7 @@ object_sized_coverage_and_monotonic_ray_guardrails_2026_08_26:
     - Typed RAY_IK_FAILURE may be endpoint-static only after the worker exhausts all configured standoff roll exact-aim and fallback-aim variants. Collision path visibility timeout transport and generic planning failures remain generation-scoped.
     - NBV scores are recalculated only for survivors after each accepted capture. Never regenerate a removed ray or allow predicted revolution geometry to rewrite stable direction identity.
     - The event journal must expose upgrade_population with population_reset true. Keep past culls visible by default, never label an unchanged carried cull newly culled, and never visually combine bootstrap culls with qualified rays as one population.
+    - Captured ray IDs are population-scoped presentation state. Clear them on population_reset so a reused numeric ID cannot attach a bootstrap capture to qualified geometry; retain the recorded capture event and achieved robot pose as the historical evidence.
     - Ray Review may render candidate L515 meshes only after the current population has cull evidence and only for active survivors. Pre-cull rays and past culled audit rays remain ray lines without camera glyphs.
   blast_radius: [grey Ray Review volume, coverage voxel count and gain, population SHA continuity, permanent-cull retention, retry eligibility, survivor ranking and frontier exhaustion]
   must_retest_if_changed: [test_target_envelope.py, test_nbv_coverage.py, test_scan_session_memory.py, test_scan_viewpoint_angles.py, tests/planning/test_ray_hard_culls.py, test_ray_mission_diagnostics.py, test_bridge_feedback_freshness.py, test_capability_map.py, complete mobile and Tesseract suites, affected package build, command-free lifecycle replay and viewer model load, supervised physical smoke only with separate authorization]

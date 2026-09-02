@@ -1,5 +1,9 @@
 schema_version: 1
 document: maintenance_routing
+joint1_limit_maintenance_2026_09_02:
+  inspect: [piper_description/urdf/piper_description.xacro, piper_description/urdf/piper_description.urdf, piper_description/urdf/piper_description.csv, execution/motion.py URDF_JOINT_LIMITS, piper_joint_bounds.json narrowing behavior, Tesseract request qualification, motion_planning/curobo/prepare_model.sh, piper_collision_spheres.yaml provenance, camera capability-map generator and artifact, tracked-robot bundle generator]
+  rule: Keep Joint 1 at the official symmetric SDK-safe [-2.6179,2.6179] rad interval in every active authority. Saved measured bounds may narrow but never widen it. Any future position-limit change requires regenerated planner models, tracked description hashes and capability occupancy; never rewrite immutable historical captures or benchmark responses to resemble the new configuration.
+  required_retests: [test_robot_description.py, test_tracked_robot_drop_in.py, test_scan_motion.py, test_curobo_model_generation.py, test_curobo_adapter.py, Tesseract contract and worker tests, capability generator and consumer tests, regenerated-model load, two-million-sample capability convergence, affected package builds, no hardware command]
 curobo_fixed_rate_transport_maintenance_2026_09_02:
   inspect: [motion_planning/curobo/adapter.py normalize_trajectory, tests/curobo/test_curobo_adapter.py fixed-rate and vertex-retention cases, tests/curobo/test_curobo_gpu_integration.py schedule assertion, piper_tesseract_foxy/worker.py sdk_movej_waypoint_trajectory as parity reference]
   rule: Allocate whole 20 Hz ticks independently per cuRobo native segment; retain every source endpoint and interpolate only on that segment. Use the existing speed percentage exactly once against J1-J5 5 rad/s and J6 3 rad/s, retain the 0.05 rad ceiling and 60000-point fail-closed bound, and never repair smoothness in the driver or by weakening common validation.

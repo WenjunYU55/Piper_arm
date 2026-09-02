@@ -1,5 +1,11 @@
 schema_version: 1
 document: consolidated_problem_and_incident_log
+joint1_positive_limit_transposition_2026_09_02:
+  state: software_sources_derived_artifacts_and_regressions_corrected_physical_retest_pending
+  symptom: The modeled Joint 1 range was -2.618 through +2.168 rad, creating an artificial one-sided loss of roughly 0.45 rad or 25.8 degrees and potentially biasing sampled reachability and planner search.
+  root_cause: The asymmetric value existed in the initial repository import and propagated from the robot description into common limits, planner fixtures, tracked descriptions, cuRobo provenance and capability sampling.
+  correction: Use the official PiPER SDK-safe symmetric [-2.6179,+2.6179] rad interval everywhere active, regenerate every derived current artifact, and preserve old recorded requests as historical evidence.
+  rollback_warning: Do not use +/-2.66 rad because it exceeds the official 150-degree SDK-safe bound; do not patch one planner or mutate historical evidence in place.
 curobo_fallback_nominal_provenance_mismatch_2026_09_02:
   state: software_fixed_focused_regression_passed_gpu_and_physical_retest_pending
   task: gui-sim-6793acc66c66452f95501bda64334b39

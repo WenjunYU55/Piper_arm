@@ -2,7 +2,7 @@ schema_version: 1
 model_name: piper_isaac_operator_tuned_refined_candidate_20260901
 source:
   usd_sha256: a6adc07ca5e6db077e2772f5f5c11b2b340b8a3077bcdc53bf8d2aca559db652
-  planning_urdf_sha256: f8d268bde6c03be5c142b2bed6c500a75106486cc0d298fbedc358c43c0ec40b
+  planning_urdf_sha256: 81112bb46c11505394b07f743c9883c9b9dea382a45380ccb7cce41ecb874e75
   units: metres
   editor: Isaac Sim 4.5 Lula Robot Description Editor
 link_remap:
@@ -10,6 +10,9 @@ link_remap:
   l515_visual: l515_attached_assembly
 generated_fallback_links: []
 qualification_notes:
+- Planning-URDF provenance was rebound after correcting only the Joint 1 limit
+  from the erroneous asymmetric range to the official symmetric SDK-safe
+  range; link transforms, meshes and sphere geometry are unchanged.
 - Exact operator-authored moving-link sphere geometry extracted from the saved Isaac
   USD.
 - The rigidly mounted base uses its exact hash-bound STL as fixed world geometry so

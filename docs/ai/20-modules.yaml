@@ -1,5 +1,11 @@
 schema_version: 1
 document: module_ownership
+joint1_limit_ownership_2026_09_02:
+  owner_module: piper_ros_foxy/src/piper_description/urdf/piper_description.xacro plus piper_mobile_manipulation/execution/motion.py
+  owns: [official symmetric Joint 1 planning and command interval, canonical robot-description limit, common ROS-independent runtime position validation]
+  supporting_owners: {measured_narrowing: piper_joint_bounds.json through load_conservative_joint_limits, tesseract_transport: piper_tesseract_foxy request construction and qualification, curobo_transport: generated planning URDF and adapter raw-limit validation, capability: capability_map_generator.py and committed atlas, tracked_robot: tools/build_track_robot_description_bundle.py}
+  allowed_edit_paths: [canonical URDF Xacro and CSV, execution/motion.py, linked planner qualification and benchmark generators, motion_planning/curobo/model provenance, integration/track_robot_description generated bundle, capability artifacts, related tests and docs/ai]
+  must_not_move_without: [official PiPER SDK evidence, all active limit consumers, capability-map regeneration, cuRobo model regeneration, tracked-description regeneration, common authorization and execution validation, separately authorized physical requalification]
 curobo_movej_transport_ownership_2026_09_02:
   owner_module: motion_planning/curobo/adapter.py normalize_trajectory
   owns: [ROS-free conversion of native cuRobo vertices into fixed 20 Hz generic timed-stream points, speed-scaled MoveJ tick allocation, native vertex retention, scheduled point-count bound]

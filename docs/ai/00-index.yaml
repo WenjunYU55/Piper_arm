@@ -1,4 +1,14 @@
 schema_version: 1
+joint1_symmetric_limit_correction_2026_09_02:
+  behavior: Joint 1 uses the official PiPER SDK-safe symmetric position interval [-2.6179, 2.6179] rad throughout the canonical description, common runtime validation, Tesseract requests, cuRobo generated model and tracked-robot drop-in.
+  incident: The initial repository import transposed the positive bound to 2.168 rad while retaining -2.618 rad, silently removing about 0.45 rad or 25.8 degrees from one side of the modeled workspace.
+  derived_artifacts: [tracked-robot description bundle and hashes regenerated, cuRobo planning-URDF provenance rebound without geometry changes, two-million-sample camera capability atlas regenerated and requalified]
+  preserved: [historical datasets and frozen benchmark requests, all other joint limits, collision geometry, motion speed, planner selection, authorization, runtime gates, real-motion default]
+ray_review_population_scoped_capture_fix_2026_09_02:
+  behavior: Ray Review clears captured ray IDs when upgrade_population resets bootstrap geometry, because numeric ray IDs are scoped to one population. Candidate and highlighted L515 glyphs are restricted to active non-culled rays, while the capture event continues to display its recorded camera evidence.
+  incident: In gui-sim-6793acc66c66452f95501bda64334b39 bootstrap ray 123 was captured near the target, then qualified ray 123 reused the number with a 1.64 m representative standoff. The viewer incorrectly carried captured ID 123 across the population reset and rendered the qualified representative as the old capture.
+  unchanged: [diagnostic JSON evidence, ray generation and identity, culling, NBV ranking, planning, execution, capture, robot state, real-motion behavior]
+  evidence: [population-reset capture-identity regression, culled-camera-glyph regression, command-free replay of the incident report]
 curobo_fallback_aim_provenance_fix_2026_09_02:
   behavior: A selected cuRobo fallback look remains an allowed backend result, while MotionPlan now preserves the request candidate's original look_direction as nominal_look_direction and reports the selected fallback separately as look_direction with aim_fallback_used and aim_offset_deg.
   incident: gui-sim-6793acc66c66452f95501bda64334b39 reached three captures, then the worker selected an allowed fallback but built response provenance from a visibility-qualified copy whose look_direction had already been replaced. The generic validator correctly rejected the false nominal claim before motion.

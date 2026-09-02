@@ -1,5 +1,12 @@
 schema_version: 1
 document: runtime_contracts
+joint1_position_limit_contract_2026_09_02:
+  canonical_interval_rad: [-2.6179, 2.6179]
+  semantics: Inclusive official PiPER SDK-safe Joint 1 position limits before backend-specific solver insets; the interval is symmetric and applies to planning targets and common execution validation.
+  narrowing: Valid measured piper_joint_bounds may intersect and narrow the canonical interval but may never widen it. Backend solver margins or clips remain internal subsets and cannot replace raw validation.
+  active_consumers: [piper_description, shared execution motion limits, Tesseract requests and worker, cuRobo generated model adapter and worker, GUI and mission home validation, tracked-robot description, capability-map sampling]
+  evidence_policy: Historical captures benchmark corpora and responses retain the limits recorded when produced; they are not current authorities and must not be rewritten.
+  interfaces_unchanged: [ROS topics services actions messages, planner backend selection, trajectory mode and speed, authorization, runtime safety, PiPER command path, real-motion default]
 curobo_fallback_aim_provenance_contract_2026_09_02:
   request: candidate look_direction is the immutable nominal aim; fallback_look_directions are separately enumerated allowed alternatives.
   response: nominal_look_direction must equal the request look_direction, look_direction must equal the actually selected nominal or allowed fallback, and aim_fallback_used plus aim_offset_deg must describe their exact angular relationship.

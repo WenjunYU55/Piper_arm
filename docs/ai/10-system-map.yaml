@@ -1,5 +1,10 @@
 schema_version: 1
 document: system_map
+joint1_limit_authority_path_2026_09_02:
+  source_of_truth: ["official PiPER SDK-safe Joint 1 interval [-2.6179,2.6179] rad", canonical piper_description Xacro, shared execution/motion.py position-limit array]
+  load_order: [canonical description and common raw limits, measured piper_joint_bounds narrowing only, Tesseract planning URDF and request limits, cuRobo generated URDF and CSpace clip, planner-native trajectory validation, generic MotionPlan validation, PlanAuthorizer, runtime execution gates, PiPER command adapter]
+  derived_consumers: [tracked-robot drop-in descriptions and manifest hashes, cuRobo sphere-model planning-URDF provenance, collision-qualified camera capability atlas and convergence report, offline current-configuration benchmark generator]
+  load_order_contracts: [all active consumers use the same symmetric interval, no saved or backend-specific value may widen the official range, capability occupancy is regenerated after a bound change, historical request and response evidence remains immutable and explicitly historical, no change enables real motion]
 curobo_fixed_rate_transport_path_2026_09_02:
   load_order: [cuRobo collision-qualified interpolated native path, canonical joint reorder and raw-limit validation, independent per-native-segment tick allocation, exact on-segment 20 Hz position targets, generic MotionPlan hash and validation, common PlanAuthorizer and runtime gates, unchanged TrajectoryRunner, unchanged PiPER MoveJ JointCtrl adapter]
   load_order_contracts: [every native vertex remains ordered, no segment corner is shortcut, native segment duration is not accelerated, speed-scaled MoveJ finite difference and 0.05 rad ceiling both hold, timestamps differ by exactly 0.05 seconds, output above 60000 points fails closed, planner never commands PiPER]

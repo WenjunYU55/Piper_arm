@@ -1,9 +1,9 @@
 {
   "local_arm_source": "piper_ros_foxy/src/piper_description/urdf/piper_description.xacro",
-  "local_arm_source_sha256": "9a9617578d666caa64982838ce6a81645b2d7682563024187c017d76646d8b04",
+  "local_arm_source_sha256": "e2806fe3b3cc6eb6048d82277f26272ed093ea2aa3d74d0fc39fc20bf21e32a7",
   "outputs": {
-    "src/bunker_pro2/urdf/bunker_pro2.urdf": "7901ff3b61cff53a4dcf02d1e23ce11eec4bb8da771e8178a299fc891b5bf12e",
-    "src/piper_description/urdf/piper_description.xacro": "a934e3f6bf66fa584cb80bab5f0678b9d8514833b7c84b66280d619dc80cf1f2"
+    "src/bunker_pro2/urdf/bunker_pro2.urdf": "1d676b30c401abe38b18cfea3199a536f0aad18c3bdf50bbcf4693ce23a6e2f0",
+    "src/piper_description/urdf/piper_description.xacro": "f410e12454521e668eb3a57b6aeb0fc5428e9a660af7acf6ce868b0f42338f3f"
   },
   "schema_version": 1,
   "tf_contract": {

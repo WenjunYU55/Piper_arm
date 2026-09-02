@@ -1,5 +1,10 @@
 schema_version: 1
 document: implemented_features_bookmark
+joint1_symmetric_limit_correction_2026_09_02:
+  status: active_software_and_derived_artifacts_corrected_physical_retest_pending
+  capability: Every active robot-description planner capability and execution boundary uses the official symmetric PiPER Joint 1 SDK-safe interval [-2.6179,2.6179] rad instead of the imported +2.168-rad transposition.
+  evidence: [canonical and tracked description contract tests, common raw-limit regression, regenerated cuRobo model provenance, regenerated and converged two-million-sample capability atlas, Tesseract and cuRobo regression suites]
+  preserved: [all other joint limits, historical evidence, collision geometry, mission NBV capture authorization and execution behavior, real-motion default]
 curobo_fixed_rate_movej_transport_2026_09_02:
   status: software_and_real_gpu_qualified_physical_retest_pending
   capability: cuRobo collision-qualified native segments are converted into an exact fixed 20 Hz position stream using the same speed-scaled PiPER MoveJ model and source-vertex-preserving method as Tesseract. Slow selections now create more small commands instead of sparse commands with long target holds.

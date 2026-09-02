@@ -1,5 +1,11 @@
 schema_version: 1
 document: technical_debt
+joint1_asymmetric_imported_limit_2026_09_02:
+  status: corrected_software_and_derived_artifact_requalification_complete_physical_retest_pending
+  root_cause: The initial robot-description import used Joint 1 lower -2.618 rad and upper +2.168 rad; the positive value was a transposition relative to the official symmetric PiPER SDK-safe approximately 150-degree range.
+  resolved: ["canonical descriptions use [-2.6179,2.6179]", common runtime validation and planner fixtures agree, tracked description regenerated, cuRobo planning-model provenance refreshed without geometry change, capability atlas resampled across the corrected workspace and requalified]
+  preserved_history: Frozen captures benchmark requests responses and prior diagnostics retain their original recorded limits and must be classified as pre-correction evidence.
+  remaining: [separately authorized low-speed physical workspace requalification, mirrored left-right planner feasibility comparison, do not attribute every historical cuRobo rejection solely to this corrected bound]
 curobo_long_path_selection_followup_2026_09_02:
   status: diagnosed_not_yet_changed
   evidence: Same-request replay contains cuRobo versus Tesseract schedules of 25.087 versus 5.400 seconds and 25.959 versus 2.350 seconds, with accumulated maximum-joint segment travel 3.744 versus 0.814 rad and 3.876 versus 0.425 rad; a control case is 4.148 versus 4.050 seconds.

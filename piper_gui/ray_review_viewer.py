@@ -272,6 +272,11 @@ def _is_culled(ray):
                 or 'culled' in str(ray.get('planner_status', '')))
 
 
+def _active_camera_glyph_rays(rays):
+    """Return only current active rays that may own a camera glyph."""
+    return [ray for ray in rays if not _is_culled(ray)]
+
+
 def _numeric_rank(ray):
     try:
         return int(ray['rank'])
@@ -722,9 +727,9 @@ class MissionScene:
         # glyph.
         population_has_culls = any(
             _is_culled(ray) for ray in state.get('rays', {}).values())
+        active_camera_rays = _active_camera_glyph_rays(rendered_rays)
         camera_rays = [
-            ray for ray in rendered_rays
-            if not _is_culled(ray) and not ray.get('captured')]
+            ray for ray in active_camera_rays if not ray.get('captured')]
         if (self.camera_source is not None
                 and population_has_culls and camera_rays):
             camera_positions = []
@@ -762,7 +767,7 @@ class MissionScene:
                              ray.get('representative_position_m')),
                      -np.asarray(ray.get('direction', [1.0, 0.0, 0.0]),
                                  dtype=float))
-                    for ray in rendered_rays
+                    for ray in active_camera_rays
                     if ray.get('selected_at_event') or ray.get('captured')]
                 highlighted = [
                     value for value in highlighted

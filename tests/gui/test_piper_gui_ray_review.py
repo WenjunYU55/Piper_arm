@@ -18,6 +18,7 @@ from piper_gui.ray_review_model import (
 from piper_gui.ray_reports import RayReviewProcess
 from piper_gui.ray_review_viewer import (
     STANDARD_CAMERA_VIEWS,
+    _active_camera_glyph_rays,
     _upright_view_up,
 )
 
@@ -79,6 +80,55 @@ def test_qualified_population_event_replaces_bootstrap_ray_state(tmp_path):
     assert state['target_center_m'] == [0.35, -0.01, 0.14]
     assert state['rays'][7]['direction'] == [0, 1, 0]
     assert state['rays'][7].get('culled') is not True
+
+
+def test_population_reset_does_not_reuse_bootstrap_capture_identity(tmp_path):
+    report = tmp_path / 'report.json'
+    report.write_text(json.dumps({
+        'schema_version': 2,
+        'events': [{
+            'event_id': 'bootstrap', 'timestamp_ns': 1,
+            'stage': 'capture', 'captured_ray_ids': [123],
+            'ray_deltas': {'123': {
+                'ray_id': 123, 'direction': [1, 0, 0],
+                'camera_position_m': [0.08, 0.01, 0.26],
+                'status': 'captured',
+            }},
+        }, {
+            'event_id': 'qualified', 'timestamp_ns': 2,
+            'stage': 'upgrade_population',
+            'population_reset': True,
+            'ray_population_sha256': 'b' * 64,
+            'ray_deltas': {'123': {
+                'ray_id': 123, 'direction': [1, 0, 0],
+                'representative_position_m': [-1.12, 0.14, 0.67],
+            }},
+        }],
+        'generations': [],
+    }), encoding='utf-8')
+
+    before = state_at_event(load_diagnostic_document(report), 0)
+    after = state_at_event(load_diagnostic_document(report), 1)
+
+    assert before['captured_ray_ids'] == [123]
+    assert before['rays'][123]['captured'] is True
+    assert after['captured_ray_ids'] == []
+    assert after['rays'][123]['captured'] is False
+
+
+def test_camera_glyphs_exclude_every_culled_ray():
+    active = {'ray_id': 1, 'status': 'remaining'}
+    selected = {'ray_id': 2, 'status': 'selected'}
+    captured = {'ray_id': 3, 'status': 'captured', 'captured': True}
+    culled_capture = {
+        'ray_id': 4, 'status': 'culled', 'captured': True,
+        'representative_position_m': [-1.12, 0.14, 0.67],
+    }
+
+    visible = _active_camera_glyph_rays([
+        active, selected, captured, culled_capture])
+
+    assert visible == [active, selected, captured]
 
 
 def test_prequalification_scrub_preserves_requested_and_supported_bounds(
@@ -346,8 +396,8 @@ def test_capability_map_load_is_read_only_and_decodes_committed_counts():
     view = load_capability_view(path)
     after = (path.stat().st_mtime_ns, path.read_bytes()[:64])
 
-    assert len(view.positions_m) == 118370
-    assert view.occupied_pose_direction_bins == 1479561
+    assert len(view.positions_m) == 120622
+    assert view.occupied_pose_direction_bins == 1470246
     assert before == after
     assert view.direction_histogram.shape == (18, 36)
 

@@ -1516,7 +1516,14 @@ def test_bootstrap_limit_recovery_accepts_only_monotonic_joint3_inward_path():
 
     wrong_joint = [
         path[0],
-        np.asarray([2.5, 0.0, -0.0073, 0.0, 0.0, 0.0]),
+        np.asarray([
+            URDF_JOINT_LIMITS[0, 1] + 0.01,
+            0.0,
+            -0.0073,
+            0.0,
+            0.0,
+            0.0,
+        ]),
     ]
     assert any(
         'joint1' in reason
@@ -1681,6 +1688,15 @@ def test_planning_model_accepts_existing_validated_joint2_zero_range():
     assert limits[1, 0] <= -0.033632032 <= limits[1, 1]
 
 
+def test_planning_model_uses_official_symmetric_joint1_limit():
+    np.testing.assert_allclose(
+        URDF_JOINT_LIMITS[0], [-2.6179, 2.6179], atol=0.0)
+    limits, ignored = load_conservative_joint_limits(
+        str(Path(__file__).resolve().parents[4] / 'piper_joint_bounds.json'))
+    assert 'joint1' not in ignored
+    np.testing.assert_allclose(limits[0], [-2.6179, 2.6179], atol=0.0)
+
+
 def test_expanded_obstacle_intersection():
     box = CollisionBox('test', np.asarray([0.4, -0.05, 0.1]), np.asarray([0.5, 0.05, 0.2]))
     assert segment_intersects_expanded_box(
@@ -1701,7 +1717,7 @@ def test_path_rejects_obstacle_around_camera_segment():
         kinematics,
         [joints],
         np.asarray([
-            [-2.618, 2.168], [0.0, 3.14], [-2.967, 0.0],
+            [-2.6179, 2.6179], [0.0, 3.14], [-2.967, 0.0],
             [-1.745, 1.745], [-1.22, 1.22], [-math.pi, math.pi],
         ]),
         obstacle_boxes=[box],

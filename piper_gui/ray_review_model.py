@@ -255,6 +255,9 @@ def state_at_event(document, event_index):
             'event_id', event.get('sequence', '')))
         if event.get('population_reset') is True:
             rays = {}
+            # Ray IDs are scoped to one population. A bootstrap capture must
+            # not mark a numerically identical qualified ray as captured.
+            captured = []
         legacy = event.get('snapshot_generation')
         if isinstance(legacy, dict):
             rays = _ray_map(legacy.get('rays', []))

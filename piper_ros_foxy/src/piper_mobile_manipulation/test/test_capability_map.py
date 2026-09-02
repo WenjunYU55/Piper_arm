@@ -295,5 +295,5 @@ def test_committed_map_is_hash_validated_and_enforcement_qualified():
 
     assert capability.metadata['qualified_for_enforcement'] is True
     assert capability.metadata['selected_checkpoint_samples'] == 2000000
-    assert len(capability.keys) == 1479561
+    assert len(capability.keys) == 1470246
     assert capability.metadata['stores_joint_positions'] is False
