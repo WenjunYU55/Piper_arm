@@ -295,12 +295,33 @@ def load_curated_spheres(path, urdf_path):
     if not isinstance(qualification_notes, list) or not all(
             isinstance(note, str) and note for note in qualification_notes):
         raise ValueError('curated qualification notes are malformed')
+    qualification = document.get('qualification')
+    if not isinstance(qualification, dict):
+        raise ValueError('curated hardware qualification is missing')
+    if qualification.get('hardware_qualified') is not True:
+        raise ValueError('curated collision model is not hardware-qualified')
+    if (
+            str(qualification.get('scope', '')) !=
+            'supervised_5_percent_target_scan'
+            or str(qualification.get('basis', '')) !=
+            'operator_reported_physical_e2e'
+            or str(qualification.get('floor_profile', '')) != 'tabletop'
+            or float(qualification.get(
+                'free_motion_speed_percent', float('nan'))) != 5.0
+            or float(qualification.get(
+                'contact_speed_percent', float('nan'))) != 5.0
+            or qualification.get('real_motion_requires_explicit_opt_in') is not True):
+        raise ValueError('curated hardware qualification scope is invalid')
+    qualification_date = str(qualification.get('qualification_date', ''))
+    if not re.fullmatch(r'20[0-9]{2}-[0-9]{2}-[0-9]{2}', qualification_date):
+        raise ValueError('curated hardware qualification date is invalid')
     return cleaned, {
         'path': str(source_path),
         'sha256': sha256_file(source_path),
         'model_name': str(document.get('model_name', '')),
         'source_usd_sha256': usd_hash,
         'qualification_notes': list(qualification_notes),
+        'hardware_qualification': dict(qualification),
         'source_links_by_collision_owner': source_links,
         'generated_fallback_links': sorted(set(fallbacks)),
     }
@@ -502,10 +523,22 @@ def build(
             'sphere_count_by_link': {
                 name: len(spheres[name]) for name in sorted(spheres)},
             'conservative_geometry': False,
-            # Promoted by the operator on 2026-09-01 after review of the
-            # curated 69-sphere model and command-free comparison evidence.
-            # Conservative geometry remains false and is reported separately.
-            'hardware_qualified': True,
+            # Qualification is owned by the reviewed, hash-bound sphere source
+            # rather than being granted by the generator itself.
+            'hardware_qualified': bool(
+                curated_provenance is not None
+                and curated_provenance['hardware_qualification'][
+                    'hardware_qualified'] is True),
+            'hardware_qualification': (
+                dict(curated_provenance['hardware_qualification'])
+                if curated_provenance is not None else {
+                    'hardware_qualified': False,
+                    'scope': 'generated_model_unqualified',
+                    'floor_profile': '',
+                    'free_motion_speed_percent': None,
+                    'contact_speed_percent': None,
+                    'real_motion_requires_explicit_opt_in': True,
+                }),
             # The rigid PiPER base and both Bunker meshes are already expressed
             # in base_link by the canonical model and hash-locked manifest.
             'fixed_world_meshes': fixed_world_meshes(description_root),

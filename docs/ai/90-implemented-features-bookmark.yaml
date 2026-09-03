@@ -1,33 +1,75 @@
 schema_version: 1
+single_transaction_capture_admission_2026_09_03:
+  status: correlated_pair_correction_full_software_validated_physical_retest_pending
+  capability: One settled capture waits for transient fresh evidence and collects one depth burst within one absolute recorder deadline. It selects the newest cached SAM mask only when its exact fresh RGB-D bundle exists and overlaps that settled burst, then freezes the proven triple and binds one final atomic diagnostic admission to its files and response. A dropped unmatched latest RGB frame cannot trap the transaction or weaken exact identity.
+  preserved: [one-second freshness, GOOD target-valid and occlusion policy, 20-frame confidence-qualified median, synchronization and TF checks, atomic schema-2 persistence, executor validation, planner and motion behavior, real-motion default]
+  evidence: [delayed-evidence success regression, absolute-timeout and failure-tag regression, unmatched-latest selection and native-burst overlap regressions, later-pair wake regression, same-burst mask and RGB-D preparation regression, 132 focused tests, 946 mobile passes with one skip, 174 Tesseract passes, 67 ordinary cuRobo passes with 11 GPU skips, mobile package build and AI YAML parse]
+population_scoped_visual_ray_quarantine_2026_09_03:
+  status: software_validated_physical_retest_pending
+  capability: A settled visual rejection excludes its exact ray for the complete bootstrap or qualified population lifetime and advances through the existing reserve frontier. New measured coverage does not revive a failed qualified ray; only explicit population replacement or a new session releases old visual culls. Generic PLANNING status suppresses redundant multiview generation and capability work without suppressing any planner or safety authority.
+  preserved: [first-capture same-ray farther retry, frozen ray population, accepted-only coverage and permanent neighbourhood retirement, population-bound hard culls, bridge shortlist and reserves, Tesseract and cuRobo planning, authorization, runtime safety, real-motion default]
+  evidence: [command-free ray 84 to reserve rays 97 and 105 regression, population-lifetime and bootstrap-ID-reuse regressions, 343 focused tests, 939 mobile passes with one skip, 174 Tesseract passes, 67 ordinary cuRobo passes with 11 GPU skips, mobile package build]
+curobo_complete_holder_clearance_2026_09_03:
+  status: software_and_pinned_gpu_validated_physical_retest_pending
+  capability: Every cuRobo acquisition and multiview candidate now mirrors the common executor's full CAD-derived camera-holder/L515 floor and obstacle clearance before publication; invalid goal-set winners are removed so remaining poses and rays can be attempted.
+  preserved: [configured floor and 5 mm clearance, cuRobo spheres and fixed-mount seam, common MotionPlan validation PlanAuthorizer runtime gates TrajectoryRunner and PiPER adapter, Tesseract behavior, real-motion default, no fallback]
+  evidence: [recorded 4.064 mm incident and expanded-obstacle regressions, 83 focused cuRobo plus typed-failure tests, 67 complete ordinary cuRobo passes with 11 GPU skips, 11 of 11 command-free pinned-GPU passes, 927 mobile passes with one skip, 174 Tesseract passes, two-package build]
+automatic_scan_vertical_scroll_2026_09_03:
+  status: implemented_and_gui_regression_validated
+  capability: The Automatic Scan tab remains width-fitted and can scroll vertically to its existing Start, Cancel, status and operator-notice controls on short displays.
+  preserved: [one mission start path, all existing control callbacks, planner camera policy and collision selectors, ROS interfaces, mission safety and motion behavior]
+  evidence: [Python compile, 118 complete GUI tests, live Tk short-viewport scroll smoke reaches yview 1.0, restarted GUI displays the vertical scrollbar]
+curobo_start_reentry_and_runtime_snapshot_2026_09_02:
+  status: software_and_pinned_gpu_validated_physical_e2e_pending
+  capability: A cuRobo plan may recover an encoder-scale measured start just outside its conservative internal inset only when that state remains inside raw limits and a dense inward transition passes the complete current world and self-collision model. Timed execution now uses one coherent lightweight safety snapshot per tick, independent of retained ray-diagnostic size.
+  preserved: [raw position limits, normal cuRobo clip, native path vertices, generic MotionPlan identity and measured start, common validation PlanAuthorizer runtime gates TrajectoryRunner and PiPER adapter, full diagnostic snapshots, Tesseract, real-motion default, no automatic fallback]
+  evidence: [exact recorded J6 regression, collision and general-bypass negative tests, 11 pinned real-GPU tests command-free, 1100 mobile and Tesseract tests with one skip, 64 ordinary cuRobo tests with 11 skips, 7.5 MB recorded-ray benchmark at 0.082 ms runtime versus 125.08 ms full snapshot median, both packages build]
+capture_admission_and_inflight_planning_quiescence_2026_09_02:
+  status: implemented_focused_software_validated_physical_retest_pending
+  feature: Final recorder admission now freezes one lock-consistent quality and occlusion snapshot and binds it to persisted metadata and response. Active multiview execution suspends redundant target-refresh generation and drops queued prequalification work, releasing automatically for the next capture generation or replacement.
+  preserved: [capture thresholds, synchronized burst and confidence qualification, candidate and cull identity, NBV ranking, planner backends, exact trajectory order, 20 Hz timing policy, authorization, runtime gates, PiPER adapter, real-motion default]
+  validation: [27 capture tests pass, combined 264 focused capture planning reachability executor tests pass, 923 complete mobile tests pass with 1 skip, 174 complete Tesseract tests pass, 60 ordinary cuRobo tests pass with 10 opt-in GPU skips, mobile package build passes]
+passive_results_campaign_2026_09_02:
+  status: implemented_software_validated_physical_campaign_pending
+  feature: Optional GUI campaign tab and ROS-free low-priority sidecar correlate a fixed 30-mission paired Tesseract/cuRobo design with existing mission, perception, capture, ray, configuration and reconstruction artifacts.
+  outputs: [atomic campaign_bookmarks JSON and CSV updated at every lifecycle milestone, report-level source and configuration evidence_manifest CSV and workbook sheet, generated-artifact hashes, normalized CSV sheets including acquisition prompt context per-capture timing emitted ray-planning events and planner qualification scope, dependency-free Excel workbook, high-resolution PNG figures, vector PDF figures, optional identical-capture five-mode reconstruction comparison, source hashes and exclusions]
+  safety: Observer hooks execute only after normal submission and after normal terminal handling; every exception is display-only; no ROS interface, mission decision, safety gate, planner, executor, capture admission, driver or raw dataset was changed.
+  evidence: [15 focused campaign tests, campaign lifecycle bookmark and report source-manifest regression, 117 complete GUI regressions, real schema-2 and mission artifact extraction, CSV parse, Excel zip and LibreOffice open-convert, PNG image verification, PDF file verification, all AI YAML parse]
 document: implemented_features_bookmark
+curobo_physical_qualification_2026_09_02:
+  status: operator_reported_hardware_qualified_supervised_5_percent_target_scan
+  authority: motion_planning/curobo/model/piper_collision_spheres.yaml qualification
+  preserved: [independent collision-model opt-in, default-disabled real motion, common authorization collision freshness execution monitoring and shutdown gates, no planner fallback]
+  limitations: [non-conservative moving-link sphere geometry, measured coverage gaps, no Tesseract collision-equivalence claim, ground floor profile unqualified, trial count not inferred]
+  validation: [51 focused model adapter and runtime-scope tests pass, 60 complete ordinary cuRobo tests pass with 10 opt-in skips, 1276 combined campaign GUI cuRobo mobile and Tesseract regressions pass with 11 skips, regenerated schema-3 model copies the hash-bound qualification record, 10 of 10 command-free real-GPU tests pass]
 joint1_symmetric_limit_correction_2026_09_02:
   status: active_software_and_derived_artifacts_corrected_physical_retest_pending
   capability: Every active robot-description planner capability and execution boundary uses the official symmetric PiPER Joint 1 SDK-safe interval [-2.6179,2.6179] rad instead of the imported +2.168-rad transposition.
   evidence: [canonical and tracked description contract tests, common raw-limit regression, regenerated cuRobo model provenance, regenerated and converged two-million-sample capability atlas, Tesseract and cuRobo regression suites]
   preserved: [all other joint limits, historical evidence, collision geometry, mission NBV capture authorization and execution behavior, real-motion default]
 curobo_fixed_rate_movej_transport_2026_09_02:
-  status: software_and_real_gpu_qualified_physical_retest_pending
+  status: software_real_gpu_and_operator_reported_supervised_physical_e2e_passed
   capability: cuRobo collision-qualified native segments are converted into an exact fixed 20 Hz position stream using the same speed-scaled PiPER MoveJ model and source-vertex-preserving method as Tesseract. Slow selections now create more small commands instead of sparse commands with long target holds.
   preserved: [native path vertices and endpoints, raw joint limits, 0.05 rad ceiling, zero derivative placeholders, generic MotionPlan and hashes, common authorization runtime safety TrajectoryRunner and PiPER adapter, Tesseract, real-motion default, no fallback]
   evidence: [fixed-rate J1 and J6 speed tests, corner-retention and native-time tests, 1146 ordinary passes and 10 skips, 10 of 10 pinned real-GPU passes, recorded acquisition 384 points over 19.15 seconds at fixed 20 Hz with 0.007482 rad maximum step, recorded multiview 83 points over 4.10 seconds at fixed 20 Hz, two-package build passed]
 curobo_runtime_parity_2026_09_02:
-  status: software_command_free_and_real_gpu_regression_passed_physical_e2e_pending
+  status: software_real_gpu_and_operator_reported_supervised_physical_e2e_passed
   capability: cuRobo now consumes the same bounded target-ray intent as Tesseract, searches capability-supported standoffs and rolls with exact aim first, keeps one fixed 54-pose goal-set tensor across a persistent worker, reports backend-neutral attempted-ray exhaustion, and supports the legacy planner RETURN_HOME policy through a manifest-authorized direct segment with dense installed-camera floor proof. Reachability admits one fresh status snapshot per complete batch without weakening stale-at-admission or downstream gates.
   evidence: [complete ordinary suite, pinned cuRobo 0.7.8 real-GPU suite including persistent acquisition-to-target-ray and direct-home regressions, /tmp/piper_curobo_runtime_qualification_20260902_v3 with five of five normal successes plus blocked rejection per backend, exact Tesseract revalidation of all ten normal paths, clean worker and CUDA shutdown]
   preserved: [one mission NBV capture authorization executor and PiPER path, Tesseract availability, generic contracts, collision joint freshness and runtime validation, real-motion default, no automatic fallback]
-  limitations: [physical cuRobo E2E pending, articulated cuRobo sphere model is not collision-equivalent to Tesseract]
+  limitations: [physical qualification is operator-reported and limited to supervised 5-percent target-scan missions, articulated cuRobo sphere model is not collision-equivalent to Tesseract]
 curobo_target_visible_path_retry_2026_09_01:
-  status: software_and_command_free_gpu_passed_physical_retest_pending
+  status: covered_by_2026_09_02_operator_reported_supervised_physical_e2e_pass
   capability: The ROS-free cuRobo adapter now turns each collision-safe MotionGen multiview result into a camera-FK-qualified attempt. Visibility-invalid paths remain private diagnostics and advance through the existing roll fallback-look and candidate order; only a qualified path can become the generic MotionPlan consumed by the unchanged shared authorization and executor.
   evidence: [codex-curobo-limit-fix-e2e-20260901-232843 root-cause trace, exact 11.1-to-20.1 regression, roll and candidate retry regressions, 49 pure cuRobo passes with 9 GPU skips, 193 executor passes, 909 mobile passes with one environment skip, 173 Tesseract passes, pinned real-GPU multiview and accepted-views-zero replay]
   preserved: [Tesseract behavior, collision and joint validation, generic planner interfaces, executor visibility backstop, final achieved-FK gate, PlanAuthorizer, TrajectoryRunner, PiPER adapter, real-motion default, no planner fallback]
 curobo_joint_limit_boundary_containment_2026_09_01:
-  status: software_and_command_free_gpu_regression_passed_physical_retest_pending
+  status: covered_by_2026_09_02_operator_reported_supervised_physical_e2e_pass
   capability: cuRobo MotionGen uses the provenance-enforced per-joint clip [0.005,0,0,0.005,0.005,0.005] rad, retaining the intentional joint2 and joint3 configured-home boundaries. The ROS-free adapter validates native rows scheduled rows and the complete generic response before it can publish success. Exact joint limit failures remain visible as structured planner diagnostics and the ROS bridge independently revalidates.
   evidence: [gui-sim-7c8f061c9e37456190a9701aa1cafd36 root-cause replay, 75 focused regressions, 44 complete ROS-free cuRobo tests with 9 opt-in skips, 173 complete Tesseract tests, schema-3 model regeneration, real CUDA joint5 1.214-rad accept and 1.217-rad reject, real private CUDA worker MULTIVIEW_SCAN success with 31 validated points and 0.1203 rad joint5 headroom, 8 of 9 opt-in GPU tests pass]
   preserved: [raw joint limits, Tesseract planning, generic planner interfaces, common execution validation, authorization, collision and freshness gates, TrajectoryRunner, PiPER adapter, real-motion default, no fallback]
 rough_acquisition_observation_floor_2026_09_01:
-  status: software_regression_passed_physical_retest_pending
+  status: covered_by_2026_09_02_operator_reported_supervised_physical_e2e_pass
   capability: Rough-target acquisition applies a 0.35 m minimum to centered and compact camera poses without an acquisition-specific maximum. The minimum combines the qualified 0.25 m L515 near-depth boundary and the GUI's declared 0.10 m positional uncertainty, moving a closer camera radially away without crossing the hint while preserving any farther measured radius.
   evidence: [gui-sim-f0df72b4a04642a59387ed3c1f52eb2a archived depth and logs, exact incident geometry regression, all 27 rough-acquisition tests, 909 complete mobile tests with one environment skip, 172 complete Tesseract tests, 40 ROS-free cuRobo adapter tests, mobile symlink build, real command-free cuRobo incident-geometry plan at 0.35 m with 98 points, no hardware command]
   preserved: [selected planner choice, capability and collision validation, common authorization and execution, measured-lock and one-second readiness gates, later size-aware rays, real-motion default]
@@ -735,7 +777,7 @@ generic_motion_planner_and_curobo_2026_08_27:
   pinned_curobo: {version: 0.7.8, commit: d64c4b005459db10c5dd867d8b30a87d5bda9bdb, warp: 1.11.1}
   runtime_evidence: [Python 3.10.20, PyTorch 2.11.0+cu128, CUDA toolkit 12.8.93, RTX 3090, native extensions, MotionGen warm-up, exact rigid-base and Bunker mesh world, neutral-to-qualified-scan and reverse command-free plans, blocked dynamic-world rejection, folded self-collision rejection, healthy worker, bounded cleanup]
   collision_model: The rigid PiPER base plus Bunker chassis and sensor station use exact hash-bound Mesh obstacles; moving articulated links and attachments use a reviewed 69-sphere operator Isaac model, exact-cover cable/mount envelopes, a measured Link-1 buffer and a deterministic 2,004-pose articulated self-collision comparison against exact Tesseract with zero state-level false negatives.
-  qualification_status: cuRobo worker runtime and command-free collision planning are available. The operator promoted hardware_qualified true on 2026-09-01 for supervised 5% testing; conservative_geometry remains false and the documented coverage gaps prevent a collision-equivalence claim. The explicit runtime environment opt-in remains mandatory.
+  qualification_status: cuRobo worker runtime and command-free collision planning are available. The operator reported successful physical end-to-end qualification on 2026-09-02 for supervised 5% target-scan missions. conservative_geometry remains false and the documented coverage gaps prevent a collision-equivalence claim. The explicit collision-model and real-motion opt-ins remain mandatory.
   unchanged: [one mission implementation, NBV, PlanAuthorizer, runtime safety gates, TrajectoryRunner, PiPER driver path, default-disabled real motion, no planner fallback]
 constrained_superposition_and_aim_control_2026_08_29:
   state: software_implemented_offline_reconstruction_not_yet_quality_qualified

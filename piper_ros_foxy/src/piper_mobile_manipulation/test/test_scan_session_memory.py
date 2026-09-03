@@ -425,6 +425,32 @@ def test_rejected_view_is_filtered_without_incrementing_accepted_count():
     assert [item['index'] for item in remaining] == [2]
 
 
+@pytest.mark.parametrize('population_phase', [None, '', 'generation-1', 1])
+def test_rejected_view_population_phase_must_be_known(population_phase):
+    rejected = dict(view(1, 5.0), ray_population_phase=population_phase)
+    with pytest.raises(ValueError, match='ray population phase'):
+        validate_history_payload({
+            'session_id': 'session-a',
+            'accepted_views': 1,
+            'max_views': 13,
+            'entries': [view(0, 0.0)],
+            'rejected_entries': [rejected],
+        }, 13)
+
+
+def test_historical_rejection_without_population_phase_remains_loadable():
+    rejected = view(1, 5.0)
+    payload = validate_history_payload({
+        'session_id': 'session-a',
+        'accepted_views': 1,
+        'max_views': 13,
+        'entries': [view(0, 0.0)],
+        'rejected_entries': [rejected],
+    }, 13)
+
+    assert payload['rejected_entries'] == [rejected]
+
+
 def test_six_degree_accepted_view_floor_removes_only_redundant_ray():
     target = {'x': 0.0, 'y': 0.0, 'z': 0.0}
     accepted = [spherical_entry(180.0, 20.0)]

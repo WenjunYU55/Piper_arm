@@ -70,7 +70,7 @@ class MissionTelemetry:
 
 @dataclass(frozen=True)
 class TelemetrySnapshot:
-    """A coherent defensive copy of all observations at one instant."""
+    """A coherent defensive copy of selected observations at one instant."""
 
     captured_at: float
     revision: int
@@ -293,4 +293,35 @@ class TelemetryStore:
                 readiness=copied[8], plan=copied[9], execution=copied[10],
                 capture=copied[11], scan_history=copied[12],
                 reachable_scan=copied[13], workflow=copied[14]),
+        )
+
+    def runtime_snapshot(self) -> TelemetrySnapshot:
+        """Copy only evidence required by runtime motion/capture gates.
+
+        Planner products, scan history and reachable-ray diagnostics can be
+        several megabytes and are never inputs to the per-tick runtime safety
+        decision. Excluding them here keeps that decision independent of
+        diagnostic payload size while retaining one coherent, defensive copy
+        of every arm, perception and workflow observation it does consume.
+        The complete :meth:`snapshot` contract is unchanged.
+        """
+        with self._lock:
+            captured_at = float(self._clock())
+            revision = self._revision
+            observations = (
+                self._joints, self._arm_status, self._motion_limits,
+                self._camera, self._target, self._tracking,
+                self._target_status, self._obstacles, self._workflow,
+            )
+        copied = tuple(self._copy(item) for item in observations)
+        return TelemetrySnapshot(
+            captured_at=captured_at,
+            revision=revision,
+            arm=ArmTelemetry(
+                joints=copied[0], status=copied[1],
+                motion_limits=copied[2]),
+            perception=PerceptionTelemetry(
+                camera=copied[3], target=copied[4], tracking=copied[5],
+                target_status=copied[6], obstacles=copied[7]),
+            mission=MissionTelemetry(workflow=copied[8]),
         )

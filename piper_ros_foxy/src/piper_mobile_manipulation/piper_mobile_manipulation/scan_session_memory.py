@@ -460,6 +460,10 @@ def validate_history_payload(payload, maximum_views):
     for entry in rejected_entries:
         vector3(entry.get('desired_camera_position'), 'rejected camera position')
         vector3(entry.get('desired_look_at_direction'), 'rejected look direction')
+        if 'ray_population_phase' in entry:
+            population_phase = entry['ray_population_phase']
+            if population_phase not in ('bootstrap', 'qualified'):
+                raise ValueError('rejected ray population phase is invalid')
         has_retry_ray = 'framing_retry_ray_id' in entry
         has_retry_minimum = 'framing_retry_min_standoff_m' in entry
         if has_retry_ray != has_retry_minimum:
@@ -494,8 +498,10 @@ def validate_history_payload(payload, maximum_views):
         'session_id': session_id,
         'accepted_views': accepted,
         'max_views': maximum,
-        # Both accepted and quality-rejected poses are excluded from a replan;
-        # only accepted entries contribute to the session completion count.
+        # Non-ray policies exclude accepted and rejected poses positionally.
+        # Ray policies use accepted entries for permanent angular retirement
+        # and population-tagged rejections for temporary exact-ray
+        # quarantine.
         'entries': list(entries) + list(rejected_entries),
         'accepted_entries': list(entries),
         'rejected_entries': list(rejected_entries),

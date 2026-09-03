@@ -1,4 +1,39 @@
 schema_version: 1
+capture_retry_loop_followup_2026_09_03:
+  status: correlated_pair_software_fix_full_regression_passed_physical_retest_pending
+  resolved: [transient low-rate diagnostic gaps wait inside one recorder-owned transaction, one absolute deadline cannot be renewed by caller retries, one native-depth burst is retained, the newest exact fresh mask/RGB-D pair overlapping that burst is selected from bounded caches, final admitted diagnostics remain commit-bound, terminal transaction timeout preserves its concrete reason]
+  evidence: [task gui-sim-8bcbf207e665452cb53fc55e9f9d2657 exposed the old ten-call diagnostic retry, task gui-sim-c3b12771f2904e53beee6b5b57ade26f saved three captures and exposed the unmatched-latest-mask freeze, 132 focused tests pass, 946 mobile passes with one skip, 174 Tesseract passes, 67 ordinary cuRobo passes with 11 GPU skips, mobile build and AI YAML parse pass]
+  remaining: [restart coordinator before live use, separately authorized physical E2E proving pair selection and one transaction]
+  do_not_resolve_by: [widening freshness or quality limits, deleting final admission, accepting stale diagnostics, collecting unbounded bursts, bypassing executor validation]
+same_ray_visual_retry_loop_2026_09_03:
+  status: software_fixed_physical_retest_pending
+  incident: Task gui-sim-ba4d94fcc94543db833e9cad2bfe5792 accepted five captures, then moved to ray 84 seven times. Each move settled but achieved aim was 5.014 through 5.255 degrees against the unchanged five-degree gate. Rejected history contained ray 84, but ray mode used accepted entries only for permanent retirement.
+  correction: Add ray_population_phase to new rejection evidence and quarantine the exact ray for the complete bootstrap or qualified population lifetime. Accepted captures no longer revive failed qualified rays; bootstrap evidence cannot cull reused qualified IDs. Preserve permanent accepted-direction and hard-cull ledgers, first-capture same-ray farther retry, and the existing bridge reserve/exhaustion cache. Pause redundant generation and capability processing only during generic PLANNING state.
+  evidence: [343 focused tests pass, 939 complete mobile tests pass with one skip, 174 complete Tesseract tests pass, 67 ordinary cuRobo tests pass with 11 opt-in GPU skips, mobile package build passes, command-free qualified-population replay excludes ray 84 across later accepted counts while preserving 97 and 105, bootstrap-ID-reuse regression passes]
+  remaining: [separately authorized physical E2E, measure planning wall-time improvement without claiming GPU kernel speedup]
+curobo_attached_tool_clearance_followup_2026_09_03:
+  status: software_and_pinned_gpu_validated_physical_functional_retest_pending
+  resolved: [the executor no longer receives a cuRobo path already known to violate the complete holder floor or obstacle envelope, invalid goal-set winners advance to remaining choices, camera-holder path rejection maps to NO_REACHABLE_PLAN]
+  evidence: [exact 4.064 mm incident and expanded-obstacle regressions, 67 ordinary cuRobo tests with 11 opt-in skips, 11 of 11 command-free pinned-GPU tests, 927 mobile tests with one skip, 174 Tesseract tests, two-package build]
+  remaining: [restart the coordinator to load the worker change, run a separately authorized tabletop 5-percent cuRobo E2E, confirm the incident ray is rejected internally and a later safe candidate is selected, retain failed task gui-sim-d2a209adfa67487ba27b1d1e4265acd1 as historical evidence]
+  do_not_resolve_by: [reducing the 5 mm clearance, raising or lowering floor without calibration, inflating all spheres speculatively, bypassing the executor backstop, automatically falling back to Tesseract]
+curobo_start_reentry_and_stream_runtime_followup_2026_09_02:
+  status: software_and_real_gpu_fixed_physical_e2e_pending
+  resolved: [recorded J6 encoder-scale clipped-limit rejection is handled without widening raw limits, re-entry is densely current-world and self-collision qualified, exact measured start is preserved in the generic plan, retained multi-megabyte ray diagnostics no longer enter per-tick safety snapshots, one coherent runtime snapshot is reused throughout a motion tick]
+  software_evidence: [recorded start exceeds internal high by 0.000030430410 rad but retains 0.004969569590 rad raw-limit headroom, 11 of 11 pinned-GPU tests pass, 1100 mobile plus Tesseract tests pass with one skip, 64 ordinary cuRobo tests pass with 11 opt-in skips, recorded 7.5 MB ray payload benchmark improves median snapshot cost from 125.08 to 0.082 ms]
+  remaining: [restart the coordinator so loaded Python uses the fix, run a separately authorized supervised 5-percent cuRobo E2E, verify achieved command cadence and following error in live diagnostics, retain the failed task as historical evidence]
+  do_not_resolve_by: [changing raw limits or the normal cuRobo inset, bypassing collision or start correlation, suppressing safety telemetry, raising speed, bursting or dropping scheduled points, switching automatically to Tesseract]
+capture_and_stream_followup_2026_09_02:
+  status: software_fixed_physical_timing_retest_pending
+  resolved: [successful capture cannot serialize a later live occlusion state, final capture diagnostics are pairwise atomic, active multiview planning and reachability recomputation no longer compete continuously with command dispatch, queued scan generations retain only the newest sample, complete retained ray diagnostics no longer enter the per-tick snapshot path]
+  remaining: [run a separately authorized 5-percent cuRobo multiview segment and require achieved command rate near 20 Hz, repeat with Tesseract, confirm the next NBV generation appears immediately after capture or VIEW_REJECTED, retain the incident run as failed campaign evidence]
+  do_not_resolve_by: [increasing robot speed, bursting overdue points, dropping collision-qualified points, disabling runtime gates or perception, relabelling the failed campaign attempt]
+passive_results_campaign_debt_2026_09_02:
+  status: implemented_instrumentation_awaiting_physical_campaign
+  remaining: [collect 30 declared missions into the generated campaign bookmark ledger, independently measure actual target pose/orientation if axis-aligned cube assumption is insufficient, add independently labelled positive/negative acquisition trials before reporting precision or recall, repeat each cell before estimating uncertainty, qualify unconfirmed target distances, review every reconstruction FAIL visually]
+  statistical_limit: One mission per backend/position in backend blocks provides MATCHED_RUNS only; elapsed time and environmental drift are confounded with backend, run-to-run variance is not estimated, and the results must not be promoted to a controlled or general planner ranking.
+  measurement_limit: Requested base_link coordinates and a known 35 mm cube are not an independent metrology reference; point-cloud and reconstruction dimensional error remain engineering consistency evidence unless surveyed ground truth is added.
+  deliberate_non_changes: [no instrumentation topics or messages, no changes to mission capture NBV planner authorization execution safety driver or reconstruction implementations, no automatic hardware workflow]
 document: technical_debt
 joint1_asymmetric_imported_limit_2026_09_02:
   status: corrected_software_and_derived_artifact_requalification_complete_physical_retest_pending
@@ -22,7 +57,7 @@ curobo_runtime_parity_followup_2026_09_02:
   status: command_free_runtime_parity_complete_physical_requalification_pending
   resolved: [reachability batch no longer self-expires after fresh admission, cuRobo searches bounded target-ray standoffs rather than one representative point, persistent camera planning retains a fixed 54-pose goal-set tensor shape, bounded exhaustion is backend-neutral and advances attempted rays, legacy planner RETURN_HOME follows the manifest direct-home policy with dense holder/L515 floor proof]
   evidence: [/tmp/piper_curobo_runtime_qualification_20260902_v3, acquisition plus four multiview successes and one blocked rejection per backend, exact Tesseract revalidation of all ten normal paths, real cuRobo GPU regressions, no orphan planner or CUDA process]
-  remaining: [separately authorized supervised low-speed physical cuRobo E2E, compare live planning and trajectory following timing, expand and qualify the non-conservative moving-link collision model, retain Tesseract as the physical regression baseline]
+  remaining: [archive independently reviewable physical qualification telemetry when available, compare live planning and trajectory following timing, improve the non-conservative moving-link collision model without broadening its scope, retain Tesseract as the physical regression baseline]
   not_claimed: [physical mission equivalence, collision-model equivalence, continuous optimization over every standoff, automatic planner fallback]
 curobo_visibility_physical_requalification_2026_09_01:
   status: software_and_command_free_gpu_complete_physical_retest_pending
@@ -30,7 +65,7 @@ curobo_visibility_physical_requalification_2026_09_01:
   resolution: cuRobo now evaluates batch camera FK on every normalized multiview path and retries the remaining roll fallback-look and candidate order before publishing. The common executor backstop is unchanged.
   evidence: [49 pure cuRobo passes with 9 opt-in skips, 193 focused executor passes, 909 complete mobile passes with one environment skip, 173 complete Tesseract passes, real pinned-GPU multiview qualification, accepted-views-zero 31-point replay]
   remaining: [run one separately authorized physical E2E, confirm the live incident geometry is rejected and replaced inside the worker rather than terminating at the executor, inspect first capture achieved aim and safe cleanup]
-  not_claimed: [physical mission success, visibility-constrained optimization inside MotionGen, equivalence of Tesseract and cuRobo collision models]
+  not_claimed: [qualification beyond the operator-reported supervised 5-percent target-scan scope, visibility-constrained optimization inside MotionGen, equivalence of Tesseract and cuRobo collision models]
 target_observation_ceiling_qualification_2026_09_01:
   status: software_regression_complete_physical_range_qualification_pending
   implemented: [3.00 m hard target-depth and camera-target ceiling across perception tracking quality occlusion framing ray generation measured-surface coverage NBV integration and offline reconstruction, existing target and surface minima retained, qualified capability map narrows the broad request before exact planning, local obstacle and scene depth retained at 1.20 m, range report aligned to the deployed policy]
@@ -41,8 +76,8 @@ target_observation_ceiling_qualification_2026_09_01:
 planner_backend_physical_and_mission_timing_followup_2026_09_01:
   status: offline_planner_comparison_complete_physical_comparison_blocked
   evidence: Both backends solved every recorded positive request and exact revalidation accepted every successful path; cuRobo proposal generation was much faster. The earlier scheduled-duration comparison used the now-repaired sparse variable-period adapter and is historical rather than current timing evidence.
-  remaining: [regenerate the paired planner schedule benchmark with fixed-rate cuRobo output, paired complete mission phase traces, live controller-following duration, settle and capture time, supervised cuRobo collision qualification, matched physical outcome and safe-shutdown evidence]
-  rule: Do not use the offline benchmark to enable cuRobo hardware. Collect paired traces only after separate staged physical qualification; historical results without phase_timing remain untimed rather than estimated.
+  remaining: [regenerate the paired planner schedule benchmark with fixed-rate cuRobo output, paired complete mission phase traces, live controller-following duration, settle and capture time, independently archived physical qualification evidence, matched physical outcome and safe-shutdown evidence]
+  rule: Do not use the offline benchmark as physical qualification evidence. The current supervised 5-percent qualification is operator-reported separately; historical results without phase_timing remain untimed rather than estimated.
 bounded_wall_hole_repair_2026_09_01:
   status: selectable_software_replay_passed_visual_and_dimensional_qualification_pending
   incident: Exact native-grid replay removed the colour-plane checkerboard input but Open3D TSDF still produced 55 small bounded openings across measured side walls plus one object-scale missing-surface boundary. Solid per-view native masks and single-view reproduction isolated the small openings to TSDF surface extraction rather than SAM registration or viewpoint coverage.

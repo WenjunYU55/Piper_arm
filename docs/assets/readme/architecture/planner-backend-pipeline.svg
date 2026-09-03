@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1850" viewBox="0 0 1280 1850" role="img">
 <title>Frozen Planner Backend and Generic Motion Contract</title>
-<desc>What is common, what remains unqualified, and how readiness and rejection return to the mission</desc>
+<desc>What is common, each backend&#x27;s qualification scope, and how readiness and rejection return to the mission</desc>
 <defs>
 <marker id="data-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
 <path d="M0,0 L0,6 L9,3 z" fill="#52606D"/>
@@ -34,7 +34,7 @@
 </defs>
 <rect width="100%" height="100%" fill="#FFFFFF"/>
 <text x="640.0" y="49" class="title" text-anchor="middle">Frozen Planner Backend and Generic Motion Contract</text>
-<text x="640.0" y="78" class="subtitle" text-anchor="middle">What is common, what remains unqualified, and how readiness and rejection return to the mission</text>
+<text x="640.0" y="78" class="subtitle" text-anchor="middle">What is common, each backend&#x27;s qualification scope, and how readiness and rejection return to the mission</text>
 <line x1="65" y1="108" x2="103" y2="108" stroke="#52606D" stroke-width="3" marker-end="url(#data-arrow)"/>
 <text x="113" y="112" class="legend" text-anchor="start">data / evidence</text>
 <line x1="270" y1="108" x2="308" y2="108" stroke="#2563A6" stroke-width="3" marker-end="url(#control-arrow)"/>
@@ -103,8 +103,8 @@
 <text x="640.0000000000001" y="548.0" class="edge-label" text-anchor="middle">matching generation</text>
 <rect x="419.3500000000001" y="796.0" width="116.8" height="23" rx="5" class="edge-label-bg"/>
 <text x="477.75000000000006" y="813.0" class="edge-label" text-anchor="middle">private spool</text>
-<rect x="717.2500000000001" y="791.0" width="170.0" height="23" rx="5" class="edge-label-bg"/>
-<text x="802.2500000000001" y="808.0" class="edge-label" text-anchor="middle">hardware-unqualified</text>
+<rect x="705.8500000000001" y="791.0" width="192.79999999999998" height="23" rx="5" class="edge-label-bg"/>
+<text x="802.2500000000001" y="808.0" class="edge-label" text-anchor="middle">qualified supervised 5%</text>
 <rect x="283.8" y="1066" width="162.4" height="23" rx="5" class="edge-label-bg"/>
 <text x="365.0" y="1083" class="edge-label" text-anchor="middle">success / rejection</text>
 <rect x="833.8000000000001" y="1066" width="162.4" height="23" rx="5" class="edge-label-bg"/>

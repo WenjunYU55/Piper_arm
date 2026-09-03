@@ -95,8 +95,10 @@ ip -details link show can0
   update; the clean-install script chain remains the reproducibility procedure.
 - A software check does not qualify a new mount, collision model, floor profile,
   arm, cable routing, speed, or workspace for physical motion.
-- cuRobo's current approximate Bunker collision model remains
-  `hardware_qualified: false`.
+- cuRobo's current 69-sphere moving-link model is hardware-qualified for the
+  supervised 5% target-scan scope reported by the operator on 2026-09-02. Its
+  non-conservative geometry and measured coverage gaps remain limitations; it
+  is not collision-equivalent to Tesseract.
 - The tracked-robot ground profile is not physically qualified.
 
 ## Jetson deployment target

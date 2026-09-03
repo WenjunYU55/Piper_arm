@@ -1,5 +1,48 @@
 schema_version: 1
 document: consolidated_problem_and_incident_log
+capture_retry_restart_and_diagnostic_cadence_2026_09_03:
+  state: correlated_pair_software_fix_full_regression_passed_physical_retest_pending
+  task: gui-sim-8bcbf207e665452cb53fc55e9f9d2657
+  symptom: After one accepted view the next stationary capture made ten service attempts, repeatedly reported RGB-D catch-up, and finally aborted because scan quality was stale despite fresh GOOD quality arriving 0.439 seconds before the rejection sequence ended.
+  root_cause: The low-rate quality publisher commonly delivered at 1.198 through 1.201 seconds while the unchanged receipt-age contract was one second. Capture preparation and three live admission reads were split across externally repeated service calls, so unrelated transient readiness states consumed one shared ten-attempt counter and reset preparation rather than sharing one bounded transaction.
+  physical_retest: gui-sim-c3b12771f2904e53beee6b5b57ade26f saved three captures and safely shut down after capture four timed out on an unmatched frozen latest mask. The recorder's approximate RGB-D synchronizer had not retained that exact raw colour frame, so waiting could never create the historical match.
+  correction: Make one service call own the complete absolute-deadline transaction, wait internally for transient evidence, collect one depth burst, select the newest cached mask only after proving its exact fresh RGB-D partner and native-burst overlap, freeze that proven triple for future-TF catch-up, and commit only after one final atomic admission. Mark CAPTURE_EVIDENCE_TIMEOUT terminal to the legacy external retry classifier.
+  boundary: Freshness and quality thresholds, confidence depth, TF correlation, atomic commit, planner execution safety and robot commands are unchanged.
+repeated_post_settle_ray_84_2026_09_03:
+  state: software_fixed_physical_retest_pending
+  task: gui-sim-ba4d94fcc94543db833e9cad2bfe5792
+  symptom: After five accepted captures the arm repeatedly moved to ray 84 and rejected it seven times at 5.014 through 5.255 degrees against the unchanged five-degree achieved-aim gate. Multiview generation and capability filtering also continued while cuRobo was already planning.
+  root_cause: Rejected history recorded the ray ID but ray mode correctly reserved permanent angular retirement for accepted captures, leaving no separate contextual visual-ray exclusion. The adapters also listened only to execution state, not the existing generic PLANNING state.
+  correction: Tag new rejections with ray_population_phase, quarantine only that exact ray for the complete bootstrap or qualified population lifetime, exempt the first-capture farther retry, and use the existing bridge reserve frontier for replacement. Accepted captures do not revive failed qualified rays, while population replacement prevents a bootstrap rejection from culling a reused qualified ID. Subscribe generation and reachability adapters to generic MotionPlanStatus and pause only during PLANNING.
+  boundary: Permanent hard culls accepted-direction retirement NBV ranking five-degree aim collision authorization execution capture safety and both backend workers are unchanged.
+curobo_holder_floor_mismatch_2026_09_03:
+  state: software_and_pinned_gpu_fixed_physical_retest_pending
+  task: gui-sim-d2a209adfa67487ba27b1d1e4265acd1
+  symptom: After two accepted captures cuRobo published ray 115 as collision checked, but the common executor rejected trajectory step 193 because camera-holder clearance was 0.004064 m below the mandatory 0.005000 m.
+  root_cause: Ordinary cuRobo candidates relied on the non-conservative sphere model against a support cuboid lowered by the 0.010 m fixed-mount seam allowance. The complete CAD-holder floor validator existed but was invoked only for configured direct home. Tesseract already invokes its equivalent during adaptive validation of every path sample.
+  correction: Apply complete link6 holder AABB floor and request-obstacle validation to every normalized cuRobo candidate, remove a failing goal-set winner and continue remaining choices, recheck any recovery-prefixed path, retain the common executor backstop, and map the human camera-holder planning detail to NO_REACHABLE_PLAN.
+  safety_result: The rejected third trajectory never moved; direct pre-home rough home storage wrist disable and cleanup completed with safe_shutdown true.
+  boundary: No floor height clearance collision model geometry speed authorization runtime gate Tesseract path or real-motion default was weakened.
+automatic_scan_controls_below_display_2026_09_03:
+  state: fixed_gui_regression_and_live_layout_validated
+  symptom: The Automatic Scan tab requested more vertical space than the available display, leaving the mission Start control below the visible window with no way to reach it.
+  root_cause: The notebook tab placed every control directly into a fixed visible frame and provided no scrolling viewport.
+  correction: Host the unchanged Automatic Scan content in a width-fitted canvas with a visible vertical scrollbar and geometry-driven scroll region.
+  boundary: Layout only; mission submission callbacks, ROS interfaces, configuration, safety and motion are unchanged.
+curobo_post_capture_clipped_limit_and_telemetry_copy_stall_2026_09_02:
+  state: software_and_pinned_gpu_fixed_physical_e2e_pending
+  task: gui-sim-dab21abe7e10480fa545076a47a82a5a
+  symptom: The first capture completed, the next cuRobo request failed immediately with INVALID_START_STATE_JOINT_LIMITS at Joint 6 equals 3.136623084 rad, and trajectory dispatch had previously fallen well below its 20 Hz schedule as ray evidence accumulated.
+  root_cause: Joint 6 remained inside the raw pi-radian limit but settled 0.000030430410 rad beyond cuRobo's intentional pi-minus-0.005 internal bound. Independently, the executor repeatedly deep-copied complete telemetry including a retained 7.5 MB RayProcesses object; one snapshot cost a 125.08 ms median against a 50 ms command period.
+  correction: Permit only a bounded raw-valid monotonic inward transition, densely qualify it with the active cuRobo world/self collision model, prepend it to the ordinary generic plan, and retain all common gates. Reuse one runtime-only telemetry snapshot per motion tick while preserving the full snapshot for diagnostics and explicit ray-history consumers.
+  rollback_warning: Do not widen physical limits, remove the planner inset, disable collision constraints, special-case the common executor, drop or burst trajectory points, or hide bulk evidence from diagnostic APIs.
+capture_live_diagnostic_toctou_and_stream_starvation_2026_09_02:
+  state: software_fixed_focused_regression_passed_physical_retest_pending
+  task: gui-sim-b907776f874c4fce831228fd3b7a64aa
+  symptom: View 001 was atomically saved with GOOD 0.9606 quality and 0.9985 valid depth but reported LOST, so the common executor rejected the malformed successful response. Its preceding 205-point cuRobo stream delivered a 10.25-second schedule over 69.10 seconds at 3.0 Hz.
+  root_cause: The recorder validated live diagnostics before preparing/committing but frame_metadata reread them later; a 0.4-second mask-stale occlusion pulse landed between those operations. Accepted-generation NBV refresh added avoidable load during movement. Subsequent profiling with the retained 7.5 MB ray report isolated repeated complete TelemetryStore deep copies as the remaining primary command-timer bottleneck.
+  correction: Freeze and bind the final admitted diagnostic pair; suppress only redundant active-MULTIVIEW_SCAN generation and queued prequalification, using latest-only scan-generation delivery, then resume on the next non-active fresh update. The later runtime-snapshot fix removes bulk diagnostics from per-tick safety copies while preserving all evidence and gates.
+  rollback_warning: Do not weaken occlusion admission, hide LOST globally, increase speed, burst or discard trajectory points, pause runtime safety telemetry, or disable next-view NBV regeneration.
 joint1_positive_limit_transposition_2026_09_02:
   state: software_sources_derived_artifacts_and_regressions_corrected_physical_retest_pending
   symptom: The modeled Joint 1 range was -2.618 through +2.168 rad, creating an artificial one-sided loss of roughly 0.45 rad or 25.8 degrees and potentially biasing sampled reachability and planner search.
@@ -1125,9 +1168,9 @@ curobo_integration_diagnostics_2026_08_27:
     root_cause: The pinned cuRobo 0.7.8 package is not installed and its setup uses CUDAExtension while the host has no nvcc toolkit compiler.
     correction: Installed toolkit-only CUDA 12.8.93 under /home/prl/.local, cuRobo 0.7.8 and Warp 1.11.1 under the explicit Python 3.10 environment; native extensions, GPU initialization, model warm-up, heartbeat and cleanup pass without changing ROS, system Python or driver.
   - id: curobo_collision_model_unqualified
-    status: fail_closed
+    status: resolved_2026_09_02_limited_physical_qualification
     symptom: Canonical PiPER moving assets require articulated collision spheres in cuRobo 0.7.8; the saved Isaac model initially created false non-adjacent self collisions and fixed-Bunker base collisions, while sparse regions could miss exact contact.
-    correction: Convert the final operator USD to a portable 69-sphere collision-owner YAML, transform holder/L515 spheres into the canonical attached assembly, replace under-filled generated cable/mount proxies with exact-cover sphere grids, model the bolted PiPER base as an exact fixed-world mesh, add the measured 0.007 m Link-1 self buffer, and add a reusable exact-Tesseract comparison tool. The 2026-09-01 operator refinement resolves the dominant link3/link5 false-positive cluster; a deterministic 2,004-pose articulated self-collision run has zero state-level false negatives, 18 conservative false positives, all reference poses classify correctly, and the exact-world bidirectional GPU path, blocking-volume and folded-collision regressions pass without adding ignore pairs. The operator then promoted hardware_qualified true for supervised 5% testing. Per-owner gaps still reach 48.3 mm and Link 5 coverage is 52.5 percent with a 34.4 mm gap, so conservative_geometry remains false and collision equivalence must not be claimed.
+    correction: Convert the final operator USD to a portable 69-sphere collision-owner YAML, transform holder/L515 spheres into the canonical attached assembly, replace under-filled generated cable/mount proxies with exact-cover sphere grids, model the bolted PiPER base as an exact fixed-world mesh, add the measured 0.007 m Link-1 self buffer, and add a reusable exact-Tesseract comparison tool. The 2026-09-01 operator refinement resolves the dominant link3/link5 false-positive cluster; a deterministic 2,004-pose articulated self-collision run has zero state-level false negatives, 18 conservative false positives, all reference poses classify correctly, and the exact-world bidirectional GPU path, blocking-volume and folded-collision regressions pass without adding ignore pairs. On 2026-09-02 the operator reported a successful physical end-to-end run and qualified the model for supervised 5 percent target-scan motion. This does not qualify other speeds, contact motion or tracked-ground operation; it does not remove the explicit qualification and real-motion opt-ins. Per-owner gaps still reach 48.3 mm and Link 5 coverage is 52.5 percent with a 34.4 mm gap, so conservative_geometry remains false and collision equivalence must not be claimed.
   - id: curobo_coarse_bunker_cuboids_reject_interpolated_path
     status: resolved_2026_08_28_exact_fixed_world_meshes
     symptom: Start and goal states and free-space joint planning pass, but enabling the fixed Bunker chassis AABB set yields MotionGen DT_EXCEPTION for the tested command-free trajectory.

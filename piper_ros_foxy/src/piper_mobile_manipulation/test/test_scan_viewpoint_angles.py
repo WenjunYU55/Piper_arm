@@ -4,10 +4,16 @@ import numpy as np
 import pytest
 
 import piper_mobile_manipulation.scan_viewpoint_planner_node as planner_module
+from piper_mobile_manipulation.planning.generation import (
+    execution_blocks_viewpoint_generation,
+    planner_request_blocks_viewpoint_generation,
+)
 from piper_mobile_manipulation.scan_viewpoint_planner_node import (
     build_viewpoint_angles,
+    current_population_rejected_ray_ids,
     pending_first_ray_framing_retry,
     provisional_first_ray_allowed,
+    quarantine_current_population_rays,
     retired_view_history,
     restrict_to_framing_retry,
     ScanViewpointPlannerNode,
@@ -38,6 +44,69 @@ def test_reachable_workstation_sector_has_five_ordered_views():
 def test_full_circle_does_not_duplicate_equivalent_endpoint():
     angles = build_viewpoint_angles(0, 360, 90, 20)
     assert angles == [-180.0, -90.0, 0.0, 90.0]
+
+
+@pytest.mark.parametrize('state', [
+    'WAITING_FOR_RUNTIME_REFRESH',
+    'MOVING',
+    'SETTLING',
+    'CAPTURING',
+    'CAPTURING_RGBD',
+    'WAIT_CAPTURE',
+    'WAITING_FOR_CAPTURE_REFRESH',
+])
+def test_multiview_generation_is_quiescent_while_approved_view_is_active(
+        state):
+    assert execution_blocks_viewpoint_generation('MULTIVIEW_SCAN', state)
+
+
+def test_viewpoint_generation_resumes_for_replacement_or_other_modes():
+    assert not execution_blocks_viewpoint_generation(
+        'MULTIVIEW_SCAN', 'VIEW_REJECTED')
+    assert not execution_blocks_viewpoint_generation(
+        'ROUGH_ACQUISITION', 'MOVING')
+
+
+def test_planner_request_quiescence_is_backend_neutral_and_bounded():
+    assert planner_request_blocks_viewpoint_generation('PLANNING')
+    assert not planner_request_blocks_viewpoint_generation('REJECTED')
+    assert not planner_request_blocks_viewpoint_generation('PROPOSAL_READY')
+
+
+def test_execution_status_freezes_and_releases_live_generation():
+    node = SimpleNamespace(
+        execution_generation_suspended=False,
+        planner_generation_suspended=False,
+        viewpoint_generation_suspended=False,
+    )
+
+    ScanViewpointPlannerNode.execution_status_cb(node, SimpleNamespace(
+        execution_mode='MULTIVIEW_SCAN', state='MOVING'))
+    assert node.viewpoint_generation_suspended
+
+    ScanViewpointPlannerNode.execution_status_cb(node, SimpleNamespace(
+        execution_mode='MULTIVIEW_SCAN', state='VIEW_REJECTED'))
+    assert not node.viewpoint_generation_suspended
+
+
+def test_independent_planner_and_execution_states_cannot_clear_each_other():
+    node = SimpleNamespace(
+        execution_generation_suspended=False,
+        planner_generation_suspended=False,
+        viewpoint_generation_suspended=False,
+    )
+
+    ScanViewpointPlannerNode.planner_status_cb(
+        node, SimpleNamespace(state='PLANNING'))
+    ScanViewpointPlannerNode.execution_status_cb(node, SimpleNamespace(
+        execution_mode='MULTIVIEW_SCAN', state='MOVING'))
+    ScanViewpointPlannerNode.planner_status_cb(
+        node, SimpleNamespace(state='REJECTED'))
+    assert node.viewpoint_generation_suspended
+
+    ScanViewpointPlannerNode.execution_status_cb(node, SimpleNamespace(
+        execution_mode='MULTIVIEW_SCAN', state='VIEW_REJECTED'))
+    assert not node.viewpoint_generation_suspended
 
 
 def test_ray_generation_does_not_apply_legacy_preferred_distance_ceiling():
@@ -404,16 +473,76 @@ def test_first_crop_retry_keeps_same_ray_and_moves_endpoint_farther():
         'x': -1.0, 'y': -0.0, 'z': -0.0}
 
 
-def test_ray_retirement_uses_accepted_views_not_path_rejections():
+def test_ray_retirement_is_permanent_only_for_accepted_views():
     accepted = {'ray_id': 3}
-    rejected = {'ray_id': 7, 'framing_retry_ray_id': 7}
+    rejected = {'ray_id': 7, 'ray_population_phase': 'qualified'}
     history = {
+        'accepted_views': 2,
         'entries': [accepted, rejected],
         'accepted_entries': [accepted],
+        'rejected_entries': [rejected],
     }
 
     assert retired_view_history(history, True) == [accepted]
     assert retired_view_history(history, False) == [accepted, rejected]
+    assert current_population_rejected_ray_ids(history) == {7}
+
+
+def test_rejected_ray_quarantine_survives_later_accepted_captures():
+    rejection = {'ray_id': 84, 'ray_population_phase': 'qualified'}
+
+    assert current_population_rejected_ray_ids({
+        'accepted_views': 5,
+        'rejected_entries': [rejection],
+    }) == {84}
+    assert current_population_rejected_ray_ids({
+        'accepted_views': 6,
+        'rejected_entries': [rejection],
+    }) == {84}
+
+
+def test_bootstrap_rejection_does_not_cull_reused_qualified_ray_id():
+    rejection = {'ray_id': 84, 'ray_population_phase': 'bootstrap'}
+
+    assert current_population_rejected_ray_ids({
+        'accepted_views': 0,
+        'rejected_entries': [rejection],
+    }) == {84}
+    assert current_population_rejected_ray_ids({
+        'accepted_views': 1,
+        'rejected_entries': [rejection],
+    }) == set()
+
+
+def test_rejected_ray_is_removed_while_reserved_rays_remain_available():
+    reasons = {}
+    history = {
+        'accepted_views': 5,
+        'rejected_entries': [{
+            'ray_id': 84,
+            'ray_population_phase': 'qualified',
+        }],
+    }
+    remaining = quarantine_current_population_rays(
+        [{'ray_id': 84}, {'ray_id': 97}, {'ray_id': 105}],
+        history, reasons)
+
+    assert [item['ray_id'] for item in remaining] == [97, 105]
+    assert reasons == {
+        84: ['visually rejected in qualified ray population'],
+    }
+
+
+def test_first_capture_framing_retry_keeps_its_same_ray_available():
+    assert current_population_rejected_ray_ids({
+        'accepted_views': 0,
+        'rejected_entries': [{
+            'ray_id': 7,
+            'ray_population_phase': 'bootstrap',
+            'framing_retry_ray_id': 7,
+            'framing_retry_min_standoff_m': 0.50,
+        }],
+    }) == set()
 
 
 def test_tracker_rate_duplicates_do_not_regenerate_candidates():

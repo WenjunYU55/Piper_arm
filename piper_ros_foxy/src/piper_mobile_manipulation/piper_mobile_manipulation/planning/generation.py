@@ -40,6 +40,26 @@ VIEW_POLICY_CAPABILITIES = {
 }
 
 
+def execution_blocks_viewpoint_generation(execution_mode, state):
+    """Avoid recomputing a generation while its approved view is in flight."""
+    return bool(
+        str(execution_mode).upper() == 'MULTIVIEW_SCAN'
+        and str(state).upper() in {
+            'WAITING_FOR_RUNTIME_REFRESH',
+            'MOVING',
+            'SETTLING',
+            'CAPTURING',
+            'CAPTURING_RGBD',
+            'WAIT_CAPTURE',
+            'WAITING_FOR_CAPTURE_REFRESH',
+        })
+
+
+def planner_request_blocks_viewpoint_generation(state):
+    """Avoid candidate work while one generic planner request is active."""
+    return str(state).upper() == 'PLANNING'
+
+
 def view_policy_capabilities(policy):
     """Return the validated private capabilities for ``policy``."""
     selected = str(policy).strip()

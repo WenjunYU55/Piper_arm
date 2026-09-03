@@ -1,4 +1,18 @@
 schema_version: 1
+visual_ray_retry_requalification_2026_09_03:
+  milestone: M5 reliable size-aware closed-loop ray NBV
+  status: software_complete_physical_retest_pending
+  completed: [population-scoped visual ray quarantine, unchanged reserve promotion, no accepted-count release, bootstrap-to-qualified ID-reuse isolation, first-capture framing retry exception, generic planner-request generation quiescence, 343 focused 939 mobile 174 Tesseract and 67 ordinary cuRobo tests, mobile package build]
+  next_gate: In a separately authorized supervised mission, reject one later ray at the achieved-aim gate and verify it remains absent after subsequent accepted captures; compare planner request wall time and prove all terminal home disable cleanup behavior remains unchanged.
+capture_and_stream_runtime_requalification_2026_09_02:
+  milestone: M5 reliable size-aware closed-loop ray NBV
+  status: focused_software_regression_passed_physical_retest_pending
+  next: [build the mobile package, run proposal-only state and generation smoke, run one separately authorized cuRobo 5-percent multiview mission, verify capture evidence remains transaction-bound and the timed stream returns near 20 Hz, repeat timing confirmation with Tesseract]
+paired_results_campaign_2026_09_02:
+  status: instrumentation_complete_data_collection_pending
+  next: [run all 30 declared trials through the unchanged GUI mission path, preserve failures and cancellations, inspect exclusions after every pair, generate the report with five reconstruction replays, visually audit reconstruction FAIL outputs, repeat cells before statistical uncertainty claims]
+  optional_stronger_evidence: [survey actual cube centre and orientation, add independently labelled acquisition positives and negatives, add at least three repetitions per backend and location, separately qualify cuRobo hardware collision behavior]
+  blocked_claims_until_then: [general cuRobo superiority, detection accuracy or recall, sensor metric accuracy, confidence intervals, complete six-face reconstruction, hardware qualification from offline planning]
 document: mission_goal_and_delivery_roadmap
 target_observation_ceiling_qualification_2026_09_01:
   milestone: M5 reliable size-aware closed-loop ray NBV

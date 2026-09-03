@@ -1,4 +1,10 @@
 schema_version: 1
+passive_results_campaign_context_2026_09_02:
+  question: How do Tesseract and cuRobo behave across target distance and height when the rest of the active-view RGB-D scan pipeline is held shared?
+  design: 15 target positions from five X distances and three Z heights at Y zero, one physical mission per backend and position, alternating backend order, fixed 35 mm cube.
+  evidence_class: PAIRED_PHYSICAL for backend missions; CONTROLLED_REPLAY for reconstruction modes on one immutable capture set.
+  recorded_variables: [first Grounding DINO confidence, first SAM2 score, target prompt profile source and obstacle count, target depth and support, submission-to-first-capture capture-transaction seconds-per-accepted-capture and captures-per-minute timing, mission phase timing, emitted ray generation cull survivor and planner diagnostics, collision-model hashes and qualification scope, accepted captures, native 10 mm voxel coverage, derived six-face coverage, azimuth and elevation span, point-cloud dimensions, reconstruction quality]
+  defensibility_limits: [confidence is not accuracy, depth spread is not sensor accuracy, one run per cell has no uncertainty estimate, requested pose is not surveyed metrology, cuRobo physical qualification is operator-reported and limited to supervised 5-percent target-scan missions, 30 cm is confirmed but 50 cm is not]
 document: research_context
 last_reviewed: '2026-08-26'
 

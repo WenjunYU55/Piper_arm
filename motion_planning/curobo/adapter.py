@@ -15,6 +15,12 @@ MAXIMUM_JOINT_STEP_RAD = 0.05
 MOVEJ_NOMINAL_VELOCITY_RAD_S = (5.0, 5.0, 5.0, 5.0, 5.0, 3.0)
 MAXIMUM_SCHEDULED_POINTS = 60000
 FIXED_MOUNT_SEAM_M = 0.010
+# Equal to the established per-joint planner inset and the existing 0.005-rad
+# feedback-only boundary allowance.  Raw limits are never expanded: a start
+# outside them is rejected before any re-entry is constructed.
+START_STATE_MAXIMUM_CLIP_EXCURSION_RAD = 0.005
+START_STATE_REENTRY_INTERIOR_OFFSET_RAD = 0.0001
+START_STATE_REENTRY_MAXIMUM_STEP_RAD = 0.00025
 
 
 class CuroboContractError(ValueError):
@@ -351,6 +357,92 @@ def validate_trajectory_position_limits(positions, position_limits):
                         low, high, excess))
 
 
+def position_limit_reentry_path(
+        start_positions, position_limits, position_limit_clip,
+        maximum_clip_excursion_rad=START_STATE_MAXIMUM_CLIP_EXCURSION_RAD,
+        interior_offset_rad=START_STATE_REENTRY_INTERIOR_OFFSET_RAD,
+        maximum_step_rad=START_STATE_REENTRY_MAXIMUM_STEP_RAD):
+    """Return a bounded path from raw-valid feedback into planner limits.
+
+    cuRobo deliberately clips selected PiPER joint limits so planned motion
+    remains away from the physical boundary.  Controller feedback can settle
+    a few encoder counts outside that *planner* inset while remaining inside
+    the authoritative raw limit.  Such a state must not be passed to
+    MotionGen, and it must not become a general limit bypass.  This helper
+    therefore accepts only a small excursion beyond the clipped interval and
+    moves monotonically to a point just inside it.  Collision qualification is
+    owned by the worker before this path can enter a MotionPlan.
+
+    An empty tuple means the measured state already satisfies the clipped
+    planner interval.
+    """
+    start = finite_vector(
+        start_positions, len(JOINT_NAMES), 'start positions')
+    if not isinstance(position_limits, (list, tuple)) or \
+            len(position_limits) != len(JOINT_NAMES):
+        raise CuroboContractError(
+            'position-limit re-entry requires six raw limit ranges')
+    clips = finite_vector(
+        position_limit_clip, len(JOINT_NAMES), 'position-limit clip')
+    maximum_excursion = float(maximum_clip_excursion_rad)
+    interior_offset = float(interior_offset_rad)
+    maximum_step = float(maximum_step_rad)
+    if (
+            not math.isfinite(maximum_excursion) or maximum_excursion < 0.0
+            or not math.isfinite(interior_offset) or interior_offset <= 0.0
+            or not math.isfinite(maximum_step) or maximum_step <= 0.0):
+        raise CuroboContractError(
+            'position-limit re-entry policy is invalid')
+
+    target = list(start)
+    changed = []
+    for joint_index, (position, raw_bounds, clip) in enumerate(zip(
+            start, position_limits, clips)):
+        low, high = finite_vector(
+            raw_bounds, 2, 'joint position limit')
+        if low >= high or clip < 0.0:
+            raise CuroboContractError(
+                'position-limit re-entry joint%d policy is invalid'
+                % (joint_index + 1))
+        clipped_low = low + clip
+        clipped_high = high - clip
+        if clipped_low + interior_offset >= clipped_high - interior_offset:
+            raise CuroboContractError(
+                'position-limit re-entry joint%d interval is empty'
+                % (joint_index + 1))
+        if position < low or position > high:
+            raise CuroboContractError(
+                'position-limit re-entry joint%d is outside the raw limit'
+                % (joint_index + 1))
+        if position < clipped_low:
+            excursion = clipped_low - position
+            if excursion > maximum_excursion + 1e-12:
+                raise CuroboContractError(
+                    'position-limit re-entry joint%d exceeds the bounded '
+                    'feedback excursion' % (joint_index + 1))
+            target[joint_index] = clipped_low + interior_offset
+            changed.append(joint_index)
+        elif position > clipped_high:
+            excursion = position - clipped_high
+            if excursion > maximum_excursion + 1e-12:
+                raise CuroboContractError(
+                    'position-limit re-entry joint%d exceeds the bounded '
+                    'feedback excursion' % (joint_index + 1))
+            target[joint_index] = clipped_high - interior_offset
+            changed.append(joint_index)
+
+    if not changed:
+        return ()
+    maximum_delta = max(
+        abs(target[index] - start[index]) for index in changed)
+    sample_count = max(
+        1, int(math.ceil(maximum_delta / maximum_step - 1e-12)))
+    return tuple([
+        float(left + (right - left) * float(sample) / float(sample_count))
+        for left, right in zip(start, target)
+    ] for sample in range(sample_count + 1))
+
+
 def normalize_trajectory(
         positions, native_dt_sec, speed_percent, position_limits=None):
     """Preserve native vertices in a fixed-rate PiPER MoveJ schedule.
@@ -415,11 +507,11 @@ def normalize_trajectory(
     return scheduled
 
 
-def prepend_bootstrap_recovery(points, recovery_positions, speed_percent):
-    """Prepend a bounded escape without rescheduling the native path."""
+def _prepend_start_transition(points, transition_positions, speed_percent):
+    """Prepend a validated transition without altering native vertices."""
     planned = [dict(point) for point in points]
     recovery = normalize_trajectory(
-        recovery_positions, 1.0 / COMMAND_RATE_HZ, speed_percent)
+        transition_positions, 1.0 / COMMAND_RATE_HZ, speed_percent)
     if any(
             abs(float(left) - float(right)) > 1e-6
             for left, right in zip(
@@ -431,6 +523,18 @@ def prepend_bootstrap_recovery(points, recovery_positions, speed_percent):
         point['time_from_start_s'] = round(
             offset + float(point['time_from_start_s']), 9)
     return recovery + planned[1:], len(recovery) - 1
+
+
+def prepend_bootstrap_recovery(points, recovery_positions, speed_percent):
+    """Prepend a bounded folded-start escape to the native path."""
+    return _prepend_start_transition(
+        points, recovery_positions, speed_percent)
+
+
+def prepend_position_limit_reentry(points, reentry_positions, speed_percent):
+    """Prepend a collision-qualified internal-limit re-entry path."""
+    return _prepend_start_transition(
+        points, reentry_positions, speed_percent)
 
 
 def trajectory_segment(points, is_return_home=False, bootstrap_recovery=None):

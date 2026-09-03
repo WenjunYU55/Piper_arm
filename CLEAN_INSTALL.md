@@ -152,9 +152,11 @@ requirement, installation commands, model preparation, and GPU tests are in
 [`docs/architecture/motion_planner_backends.md`](docs/architecture/motion_planner_backends.md#deterministic-environment-setup).
 
 The reference workstation passes command-free cuRobo import, CUDA, model warm-up,
-free-space planning, readiness, and cleanup tests. Its current mobile-platform
-collision approximation remains `hardware_qualified: false`; installing cuRobo
-does not authorize physical motion.
+free-space planning, readiness, and cleanup tests. The current 69-sphere model
+is hardware-qualified for supervised 5% target-scan missions, as recorded in
+its hash-bound source provenance. Installing cuRobo still does not authorize
+physical motion: the independent collision-model and real-motion opt-ins plus
+all common runtime gates remain mandatory.
 
 ## 6. Build and configure the L515
 

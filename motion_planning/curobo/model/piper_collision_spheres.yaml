@@ -9,6 +9,15 @@ link_remap:
   camera_holder: l515_attached_assembly
   l515_visual: l515_attached_assembly
 generated_fallback_links: []
+qualification:
+  hardware_qualified: true
+  qualification_date: '2026-09-02'
+  scope: supervised_5_percent_target_scan
+  basis: operator_reported_physical_e2e
+  floor_profile: tabletop
+  free_motion_speed_percent: 5.0
+  contact_speed_percent: 5.0
+  real_motion_requires_explicit_opt_in: true
 qualification_notes:
 - Planning-URDF provenance was rebound after correcting only the Joint 1 limit
   from the erroneous asymmetric range to the official symmetric SDK-safe
@@ -25,8 +34,12 @@ qualification_notes:
   the measured Link 1 buffer; the sparse Link 5 surface coverage remains documented.
 - Command-free GPU checks passed the known neutral/scan path in both directions, deliberate
   world-obstacle rejection, and the known folded self-collision.
-- Hardware qualification remains false pending low-speed physical validation and frozen
-  mission-request GPU fixtures.
+- The operator reports successful low-speed physical end-to-end qualification on
+  2026-09-02. Qualification is limited to supervised 5 percent target-scan motion
+  with every existing planner, authorization, collision, freshness, execution and
+  real-motion opt-in gate enabled.
+- Moving-link geometry remains a non-conservative sphere approximation and is not
+  claimed collision-equivalent to the Tesseract model.
 collision_spheres:
   link1:
   - center:

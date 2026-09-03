@@ -337,7 +337,7 @@ def test_inflight_multiview_uses_stale_snapshot_but_not_missing_scene():
         is_startup_home_static=lambda: False,
         returning_home=lambda: False,
         runtime_reasons=lambda policy, **_kwargs: calls.append(policy) or [],
-        moving_tick=lambda: calls.append('moving'),
+        moving_tick=lambda telemetry_snapshot=None: calls.append('moving'),
     )
 
     ScanViewpointExecutorNode.execution_tick(executor)
@@ -2894,10 +2894,12 @@ def test_quality_rejected_view_is_recorded_for_replan_exclusion():
         plan_id='plan-a',
         plan_viewpoints=[{
             'index': 7,
+            'ray_id': 7,
             'desired_camera_position': {'x': 0.3, 'y': 0.1, 'z': 0.2},
             'desired_look_at_direction': {'x': -1.0, 'y': 0.0, 'z': 0.0},
         }],
         plan_target_center=np.asarray([0.4, 0.0, 0.04]),
+        scan_history=[{'accepted_view': 1}, {'accepted_view': 2}],
         scan_rejections=[],
         pending_scan_qualified_target_shape={'valid': True},
         latest_achieved_scan_view={
@@ -2914,9 +2916,11 @@ def test_quality_rejected_view_is_recorded_for_replan_exclusion():
     )
 
     assert ScanViewpointExecutorNode.record_rejected_view(
-        executor, 'QUALITY_REJECTED: poor focus')
+        executor, 'QUALITY_REJECTED: poor focus',
+        {'ray_population_phase': 'bootstrap'})
     assert executor.scan_rejections[0]['viewpoint_index'] == 7
     assert executor.scan_rejections[0]['actual_camera_position']['x'] == 0.31
+    assert executor.scan_rejections[0]['ray_population_phase'] == 'qualified'
     assert 'poor focus' in executor.scan_rejections[0]['reason']
     assert executor.pending_scan_qualified_target_shape is None
     assert published == [True]

@@ -51,6 +51,55 @@ def test_missing_arm_status_fails_closed():
     ]
 
 
+def test_reachability_drops_queued_scan_generation_during_active_motion():
+    filtered = []
+    node = SimpleNamespace(
+        multiview_processing_suspended=False,
+        filter_payload=lambda *args, **kwargs: filtered.append(
+            (args, kwargs)),
+        pub=object(),
+    )
+    ViewpointReachabilityFilterNode.execution_status_cb(
+        node, SimpleNamespace(
+            execution_mode='MULTIVIEW_SCAN', state='MOVING'))
+    ViewpointReachabilityFilterNode.scan_cb(node, object())
+    assert filtered == []
+
+    ViewpointReachabilityFilterNode.execution_status_cb(
+        node, SimpleNamespace(
+            execution_mode='MULTIVIEW_SCAN', state='VIEW_REJECTED'))
+    ViewpointReachabilityFilterNode.scan_cb(node, object())
+    assert len(filtered) == 1
+
+
+def test_reachability_stays_quiescent_until_planning_and_execution_finish():
+    filtered = []
+    node = SimpleNamespace(
+        execution_processing_suspended=False,
+        planner_processing_suspended=False,
+        multiview_processing_suspended=False,
+        filter_payload=lambda *args, **kwargs: filtered.append(
+            (args, kwargs)),
+        pub=object(),
+    )
+
+    ViewpointReachabilityFilterNode.planner_status_cb(
+        node, SimpleNamespace(state='PLANNING'))
+    ViewpointReachabilityFilterNode.execution_status_cb(
+        node, SimpleNamespace(
+            execution_mode='MULTIVIEW_SCAN', state='MOVING'))
+    ViewpointReachabilityFilterNode.planner_status_cb(
+        node, SimpleNamespace(state='REJECTED'))
+    ViewpointReachabilityFilterNode.scan_cb(node, object())
+    assert filtered == []
+
+    ViewpointReachabilityFilterNode.execution_status_cb(
+        node, SimpleNamespace(
+            execution_mode='MULTIVIEW_SCAN', state='VIEW_REJECTED'))
+    ViewpointReachabilityFilterNode.scan_cb(node, object())
+    assert len(filtered) == 1
+
+
 def test_stale_arm_status_fails_closed(monkeypatch):
     monkeypatch.setattr(
         'piper_mobile_manipulation.viewpoint_reachability_filter_node.time.monotonic',

@@ -28,7 +28,9 @@ from motion_planning.curobo.adapter import (
     JOINT_NAMES,
     normalize_trajectory,
     obstacle_cuboids,
+    position_limit_reentry_path,
     prepend_bootstrap_recovery,
+    prepend_position_limit_reentry,
     target_ray_standoff_samples,
     trajectory_segment,
     validate_request,
@@ -598,6 +600,88 @@ class CuroboBackend:
             self._restore_collision_constraints()
         return bool(valid), str(status)
 
+    def _collision_path_without_position_clip(self, positions):
+        """Check a raw-valid re-entry path with every collision constraint.
+
+        The only disabled term is cuRobo's artificial position-limit inset.
+        Self-collision and the complete current world remain enabled.  The
+        bound term is restored before returning, including on CUDA failure.
+        """
+        values = np.asarray(positions, dtype=float)
+        if (
+                values.ndim != 2 or values.shape[1] != len(JOINT_NAMES)
+                or len(values) < 2 or not np.all(np.isfinite(values))):
+            raise CuroboContractError(
+                'cuRobo position-limit re-entry path is malformed')
+        rollout = self.motion_gen.rollout_fn
+        bound = rollout.bound_constraint
+        if not bool(bound.enabled):
+            raise CuroboContractError(
+                'cuRobo position-limit constraint was unexpectedly disabled')
+        self._restore_collision_constraints()
+        bound.disable_cost()
+        try:
+            # MotionGen v0.7.8 configures this start-state rollout with a
+            # fixed one-sample horizon. Keep that verified API shape rather
+            # than passing an arbitrary trajectory tensor into private CUDA
+            # buffers whose horizon was warmed as one.
+            for position in values:
+                metrics = rollout.rollout_constraint(
+                    self.tensor_args.to_device([[position.tolist()]]),
+                    use_batch_env=False)
+                feasible = np.asarray(
+                    metrics.feasible.detach().cpu().numpy(), dtype=bool)
+                if not feasible.size or not bool(np.all(feasible)):
+                    return False
+            return True
+        finally:
+            bound.enable_cost()
+            self._restore_collision_constraints()
+
+    def _position_limit_reentry(self, start, request):
+        """Recover only encoder-scale excursions outside cuRobo's inset."""
+        valid, status = self._start_state_status(start)
+        if valid or not status.endswith('INVALID_START_STATE_JOINT_LIMITS'):
+            return None
+        try:
+            positions = position_limit_reentry_path(
+                start,
+                request['limits']['position_rad'],
+                POSITION_LIMIT_CLIP_RAD,
+            )
+        except CuroboContractError as error:
+            raise CuroboContractError(
+                'cuRobo start state cannot use bounded position-limit '
+                're-entry: %s' % error) from error
+        if not positions:
+            raise CuroboContractError(
+                'cuRobo reported an internal joint-limit failure without a '
+                'bounded clipped-limit excursion')
+        positions = [list(value) for value in positions]
+        if not self._collision_path_without_position_clip(positions):
+            raise CuroboCollisionRejected(
+                'cuRobo position-limit re-entry is in collision')
+        endpoint_valid, endpoint_status = self._start_state_status(
+            positions[-1])
+        if not endpoint_valid:
+            raise CuroboContractError(
+                'cuRobo position-limit re-entry endpoint is invalid: %s'
+                % endpoint_status)
+        changed = [
+            index for index, (left, right) in enumerate(zip(
+                positions[0], positions[-1]))
+            if abs(float(right) - float(left)) > 1e-12]
+        return {
+            'positions': positions,
+            'joint_numbers': [index + 1 for index in changed],
+            'delta_rad': [
+                float(positions[-1][index] - positions[0][index])
+                for index in changed],
+            'start_status': status,
+            'validation': (
+                'raw_limit_valid_dense_curobo_collision_qualified'),
+        }
+
     def _bootstrap_recovery(self, start, request):
         """Find the same bounded acquisition-only folded-start escape as Tesseract.
 
@@ -729,6 +813,26 @@ class CuroboBackend:
             request['scene']['target_center_m'],
             initial_alignment=first_alignment,
             final_aim_deg=final_aim)
+
+    def _attached_tool_external_rejection(self, points, request):
+        """Mirror the executor's CAD-holder floor and box clearance gate."""
+        positions = np.asarray([
+            point['positions_rad'] for point in points
+        ], dtype=float)
+        try:
+            self._external_attached_validation(
+                positions, request.get('scene', {}).get('obstacles', []))
+        except CuroboCollisionRejected as error:
+            return str(error)
+        return ''
+
+    def _candidate_path_rejection(self, points, request, candidate):
+        """Return the first backend-independent path qualification failure."""
+        external_rejection = self._attached_tool_external_rejection(
+            points, request)
+        if external_rejection:
+            return external_rejection
+        return self._target_visibility_rejection(points, request, candidate)
 
     def _remaining_planning_time(self, context):
         """Bound each MotionGen call and reserve time to emit a response."""
@@ -911,12 +1015,12 @@ class CuroboBackend:
                     selected_goal['camera_position_m'])
                 qualified_candidate['look_direction'] = list(
                     selected_goal['look_direction'])
-                visibility_rejection = self._target_visibility_rejection(
+                path_rejection = self._candidate_path_rejection(
                     points, request, qualified_candidate)
-                if visibility_rejection:
+                if path_rejection:
                     attempt.update({
                         'path_qualification': 'rejected',
-                        'path_qualification_reason': visibility_rejection,
+                        'path_qualification_reason': path_rejection,
                     })
                     remaining.pop(selected_index)
                     continue
@@ -1006,12 +1110,12 @@ class CuroboBackend:
                 })
                 points = self._path(
                     result, speed, request['limits']['position_rad'])
-                visibility_rejection = self._target_visibility_rejection(
+                path_rejection = self._candidate_path_rejection(
                     points, request, candidate)
-                if visibility_rejection:
+                if path_rejection:
                     attempt.update({
                         'path_qualification': 'rejected',
-                        'path_qualification_reason': visibility_rejection,
+                        'path_qualification_reason': path_rejection,
                     })
                     remaining.pop(selected_index)
                     continue
@@ -1062,14 +1166,15 @@ class CuroboBackend:
                 % stage)
         return stage
 
-    def _external_floor_validation(self, positions):
-        """Densely validate the manifest's link6-mounted holder against floor."""
+    def _external_attached_validation(self, positions, obstacles=()):
+        """Validate the complete link6-mounted holder against floor and boxes."""
         policy = self.collision_manifest.get('external_floor_clearance', {})
         if not bool(policy.get('enabled', False)):
             raise CuroboContractError(
-                'configured home requires external-floor clearance policy')
+                'attached-tool external-floor clearance policy is required')
         floor = float(policy.get('floor_z_m'))
         clearance = float(policy.get('clearance_m'))
+        label = str(policy.get('label', 'camera holder/L515'))
         origin = np.asarray(policy.get('origin_link6_m'), dtype=float)
         size = np.asarray(policy.get('size_m'), dtype=float)
         if (
@@ -1080,14 +1185,33 @@ class CuroboBackend:
                 or not np.all(np.isfinite(origin))
                 or not np.all(np.isfinite(size))):
             raise CuroboContractError(
-                'configured home external-floor policy is invalid')
+                'attached-tool external-floor policy is invalid')
+        if not isinstance(obstacles, (list, tuple)):
+            raise CuroboContractError(
+                'attached-tool obstacle collection is invalid')
+        obstacle_bounds = []
+        for index, obstacle in enumerate(obstacles):
+            if not isinstance(obstacle, dict) or obstacle.get('type') != 'box':
+                raise CuroboContractError(
+                    'attached-tool obstacle %d is invalid' % index)
+            low = np.asarray(obstacle.get('minimum_m'), dtype=float)
+            high = np.asarray(obstacle.get('maximum_m'), dtype=float)
+            if (
+                    low.shape != (3,) or high.shape != (3,)
+                    or not np.all(np.isfinite(low))
+                    or not np.all(np.isfinite(high))
+                    or np.any(low >= high)):
+                raise CuroboContractError(
+                    'attached-tool obstacle %d bounds are invalid' % index)
+            obstacle_bounds.append((
+                str(obstacle.get('id', 'obstacle_%d' % index)), low, high))
         threshold = floor + clearance
         samples = np.asarray(positions, dtype=float)
         if (
                 samples.ndim != 2 or samples.shape[1] != 6
                 or not np.all(np.isfinite(samples))):
             raise CuroboContractError(
-                'configured home floor-validation samples are invalid')
+                'attached-tool validation samples are invalid')
         chunk_size = 2048
         minimum_z = math.inf
         for offset in range(0, len(samples), chunk_size):
@@ -1103,19 +1227,40 @@ class CuroboBackend:
             rotations = quaternion_rotation_matrices_wxyz(link_quaternions)
             centers = link_positions + np.einsum(
                 'nij,j->ni', rotations, origin)
-            half_extent_z = np.sum(
-                np.abs(rotations[:, 2, :]) * (size * 0.5), axis=1)
-            lowest = centers[:, 2] - half_extent_z
+            half_extents = np.einsum(
+                'nij,j->ni', np.abs(rotations), size * 0.5)
+            minimums = centers - half_extents
+            maximums = centers + half_extents
+            lowest = minimums[:, 2]
             local_index = int(np.argmin(lowest))
             local_minimum = float(lowest[local_index])
             minimum_z = min(minimum_z, local_minimum)
             if local_minimum < threshold - 1e-9:
                 raise CuroboCollisionRejected(
-                    'configured home external-floor clearance failed at '
-                    'sample %d: %.6fm is below %.6fm' % (
-                        offset + local_index, local_minimum, threshold),
+                    '%s envelope floor clearance %.6fm is below %.6fm at '
+                    'sample %d' % (
+                        label, local_minimum - floor, clearance,
+                        offset + local_index),
                     getattr(self, 'last_planning_diagnostics', {}))
+            for obstacle_id, obstacle_minimum, obstacle_maximum in (
+                    obstacle_bounds):
+                intersects = np.all(
+                    maximums + clearance >= obstacle_minimum,
+                    axis=1) & np.all(
+                        obstacle_maximum >= minimums - clearance,
+                        axis=1)
+                if np.any(intersects):
+                    hit_index = int(np.flatnonzero(intersects)[0])
+                    raise CuroboCollisionRejected(
+                        '%s envelope intersects obstacle %s clearance at '
+                        'sample %d' % (
+                            label, obstacle_id, offset + hit_index),
+                        getattr(self, 'last_planning_diagnostics', {}))
         return minimum_z
+
+    def _external_floor_validation(self, positions):
+        """Retain the direct-home floor-only compatibility boundary."""
+        return self._external_attached_validation(positions)
 
     def _plan_configured_home_direct(self, request, start, goal):
         """Build the common, direct SDK home target with external-floor proof."""
@@ -1235,6 +1380,7 @@ class CuroboBackend:
             'attempted_ray_ids': [],
             'planning_budget_sec': float(planning_budget),
             'attempt_planning_budget_sec': float(attempt_budget),
+            'position_limit_reentry_used': False,
         }
         self._update_world(request)
         self.planning_deadline_monotonic = time.monotonic() + planning_budget
@@ -1260,7 +1406,27 @@ class CuroboBackend:
                     'configured_home_direct_common_policy',
             })
             return [], [segment], 0.0
+        position_limit_reentry = self._position_limit_reentry(start, request)
+        if position_limit_reentry is not None:
+            start = list(position_limit_reentry['positions'][-1])
+            self.last_planning_diagnostics.update({
+                'position_limit_reentry_used': True,
+                'position_limit_reentry_joint_numbers': list(
+                    position_limit_reentry['joint_numbers']),
+                'position_limit_reentry_delta_rad': list(
+                    position_limit_reentry['delta_rad']),
+                'position_limit_reentry_start_status': str(
+                    position_limit_reentry['start_status']),
+                'position_limit_reentry_validation': str(
+                    position_limit_reentry['validation']),
+            })
         bootstrap_recovery = self._bootstrap_recovery(start, request)
+        if (
+                position_limit_reentry is not None
+                and bootstrap_recovery is not None):
+            raise CuroboContractError(
+                'combined position-limit and folded-start recovery is '
+                'unsupported')
         if bootstrap_recovery is not None:
             start = list(bootstrap_recovery['positions'][-1])
         minimum = int(request['planning'].get('min_viewpoints', 1))
@@ -1304,10 +1470,33 @@ class CuroboBackend:
                     )
                     segment_recovery = dict(bootstrap_recovery)
                     segment_recovery['end_point'] = recovery_end
+                prefixed_path = bootstrap_recovery is not None
+                if position_limit_reentry is not None:
+                    points, _reentry_end = prepend_position_limit_reentry(
+                        points,
+                        position_limit_reentry['positions'],
+                        request['planning']['effective_speed_percent'],
+                    )
+                    prefixed_path = True
+                if prefixed_path:
+                    path_rejection = self._candidate_path_rejection(
+                        points, request, view)
+                    if path_rejection:
+                        failure = {
+                            'id': int(candidate.get('id', -1)),
+                            'reason': path_rejection,
+                        }
+                        if ray_id is not None:
+                            failure['ray_id'] = int(ray_id)
+                        candidate_failures.append(failure)
+                        self.last_planning_diagnostics[
+                            'candidate_failures'].append(dict(failure))
+                        continue
                 selected.append(view)
                 segments.append(trajectory_segment(
                     points, bootstrap_recovery=segment_recovery))
                 bootstrap_recovery = None
+                position_limit_reentry = None
                 start = list(points[-1]['positions_rad'])
                 duration += elapsed
             if len(selected) < minimum:
@@ -1326,6 +1515,11 @@ class CuroboBackend:
                 raise CuroboContractError(
                     'RETURN_HOME joint target is missing')
             points, elapsed = self._plan_joint_goal(start, goal, request)
+            external_rejection = self._attached_tool_external_rejection(
+                points, request)
+            if external_rejection:
+                raise CuroboCollisionRejected(
+                    external_rejection, self.last_planning_diagnostics)
             home = trajectory_segment(points, is_return_home=True)
             home['startup_home_static'] = bool(
                 request['scene'].get('startup_home_static', False))
@@ -1385,10 +1579,33 @@ class Worker:
             self.backend = None
 
     def collision_model_qualified(self):
-        """Require model provenance and an explicit operator opt-in."""
+        """Require exact provenance, runtime scope and operator opt-in."""
+        if self.backend is None:
+            return False
+        provenance = self.backend.model_provenance
+        qualification = provenance.get('hardware_qualification', {})
+        try:
+            free_speed = float(os.environ.get(
+                'PIPER_VIEWPOINT_SPEED_PERCENT', 'nan'))
+            contact_speed = float(os.environ.get(
+                'PIPER_CONTACT_SPEED_PERCENT', 'nan'))
+        except ValueError:
+            return False
         return bool(
-            self.backend is not None
-            and self.backend.model_provenance.get('hardware_qualified') is True
+            provenance.get('hardware_qualified') is True
+            and qualification.get('hardware_qualified') is True
+            and qualification.get('scope') ==
+            'supervised_5_percent_target_scan'
+            and qualification.get('floor_profile') == 'tabletop'
+            and float(qualification.get(
+                'free_motion_speed_percent', float('nan'))) == free_speed
+            and float(qualification.get(
+                'contact_speed_percent', float('nan'))) == contact_speed
+            and free_speed == 5.0
+            and contact_speed == 5.0
+            and os.environ.get('PIPER_FLOOR_PROFILE', '') == 'tabletop'
+            and qualification.get(
+                'real_motion_requires_explicit_opt_in') is True
             and os.environ.get(
                 'PIPER_CUROBO_COLLISION_MODEL_QUALIFIED', '0') == '1')
 

@@ -77,7 +77,7 @@
 <rect x="90" y="2980" width="1140" height="985" rx="18" fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>
 <path d="M 90 3050 H 1230" stroke="#D7DDE5" stroke-width="1.2"/>
 <text x="114" y="3010" class="lane-title" text-anchor="start">5  Propose motion through one frozen backend</text>
-<text x="114" y="3034" class="lane-subtitle" text-anchor="start">Both backends are integrated; cuRobo remains hardware-unqualified.</text>
+<text x="114" y="3034" class="lane-subtitle" text-anchor="start">Both backends are integrated; cuRobo is qualified for supervised 5% target scans.</text>
 <rect x="90" y="3975" width="1140" height="720" rx="18" fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>
 <path d="M 90 4045 H 1230" stroke="#D7DDE5" stroke-width="1.2"/>
 <text x="114" y="4005" class="lane-title" text-anchor="start">6  Authorize and execute through one command owner</text>
@@ -291,8 +291,8 @@
 <text x="660" y="2971" class="edge-label" text-anchor="middle">candidate views only</text>
 <rect x="353.6" y="3331" width="192.79999999999998" height="23" rx="5" class="edge-label-bg"/>
 <text x="450" y="3348" class="edge-label" text-anchor="middle">main / selected backend</text>
-<rect x="785.0" y="3331" width="170.0" height="23" rx="5" class="edge-label-bg"/>
-<text x="870" y="3348" class="edge-label" text-anchor="middle">hardware-unqualified</text>
+<rect x="773.6" y="3331" width="192.79999999999998" height="23" rx="5" class="edge-label-bg"/>
+<text x="870" y="3348" class="edge-label" text-anchor="middle">qualified supervised 5%</text>
 <rect x="372.6" y="3621" width="154.79999999999998" height="23" rx="5" class="edge-label-bg"/>
 <text x="450" y="3638" class="edge-label" text-anchor="middle">validated response</text>
 <rect x="792.6" y="3621" width="154.79999999999998" height="23" rx="5" class="edge-label-bg"/>

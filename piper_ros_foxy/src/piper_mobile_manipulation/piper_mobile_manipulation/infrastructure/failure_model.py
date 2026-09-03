@@ -96,6 +96,11 @@ def _failure_code_from_legacy_detail(detail: str) -> FailureCode:
     if 'cancel' in lowered:
         return FailureCode.CANCELLED
     if (
+            'trajectory validation failed' in lowered
+            or 'envelope floor clearance' in lowered
+            or 'envelope intersects obstacle' in lowered):
+        return FailureCode.NO_REACHABLE_PLAN
+    if (
             'camera' in lowered
             or 'vision' in lowered
             or 'sensor' in lowered):
@@ -248,7 +253,12 @@ def legacy_failure_adapter(
                 and 'obstacles data missing or stale' in lowered)):
         tags.add(FailureTag.PLAN_REJECTION_HOME_ALLOWED)
 
-    capture_retry = (
+    # A recorder-owned transaction has already spent its complete bounded
+    # wait.  Preserve the underlying reason for diagnostics, but never feed
+    # that terminal timeout back into the historical external retry loop.
+    capture_transaction_expired = lowered.startswith(
+        'capture_evidence_timeout:')
+    capture_retry = not capture_transaction_expired and (
         (
             'timestamped camera transform is unavailable' in lowered
             and 'extrapolation into the future' in lowered)

@@ -1,6 +1,11 @@
 """Native GUI layout regressions."""
 
+from pathlib import Path
+
 from piper_gui_native import fitted_gui_geometry, primary_monitor_geometry
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_gui_fills_a_normal_display_without_crossing_screen_edges():
@@ -33,3 +38,21 @@ def test_monitor_parser_falls_back_to_first_monitor_without_primary_marker():
     output = " 0: +DP-2 1920/598x1080/336+2560+360 DP-2\n"
 
     assert primary_monitor_geometry(output) == (2560, 360, 1920, 1080)
+
+
+def test_automatic_scan_tab_has_a_width_fitted_vertical_scroll_area():
+    source = (
+        PROJECT_ROOT / "piper_gui" / "native_app.py"
+    ).read_text(encoding="utf-8")
+
+    helper = source.split("def build_vertical_scroll_area", 1)[1].split(
+        "def clamp", 1)[0]
+    build = source.split("def _build(self)", 1)[1].split(
+        "def _build_results_campaign", 1)[0]
+    assert "tk.Canvas" in helper
+    assert "ttk.Scrollbar" in helper
+    assert "yscrollcommand=scrollbar.set" in helper
+    assert 'scrollregion=canvas.bbox("all")' in helper
+    assert "width=event.width" in helper
+    assert "build_vertical_scroll_area(" in build
+    assert "self._build_automatic_scan(automatic_content)" in build

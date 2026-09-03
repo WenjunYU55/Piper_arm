@@ -315,6 +315,20 @@ def snapshot_observation(snapshot, key):
     return None
 
 
+def runtime_telemetry_snapshot(owner):
+    """Return one lightweight snapshot, reusing the active control tick."""
+    active = getattr(owner, '_active_runtime_telemetry_snapshot', None)
+    if active is not None:
+        return active
+    telemetry_store = getattr(owner, 'telemetry_store', None)
+    if telemetry_store is None:
+        return None
+    runtime_snapshot = getattr(telemetry_store, 'runtime_snapshot', None)
+    if callable(runtime_snapshot):
+        return runtime_snapshot()
+    return telemetry_store.snapshot()
+
+
 def mark_callback_observation(owner, key):
     """Keep old one-argument test seams while atomically dating production."""
     telemetry_store = getattr(owner, 'telemetry_store', None)
@@ -856,7 +870,12 @@ class ScanViewpointExecutorNode(Node):
         telemetry_store = getattr(self, 'telemetry_store', None)
         if telemetry_store is None:
             return self.now() - self.updated.get(key, -1e9) <= maximum
-        snapshot = telemetry_store.snapshot()
+        # ``scan`` is the one freshness key backed by intentionally bulky ray
+        # evidence. It is not a runtime motion-gate input, but retain the
+        # established public helper behavior for explicit callers.
+        snapshot = (
+            telemetry_store.snapshot() if key == 'scan'
+            else runtime_telemetry_snapshot(self))
         observation = snapshot_observation(snapshot, key)
         return bool(
             observation is not None
@@ -903,7 +922,7 @@ class ScanViewpointExecutorNode(Node):
             limits_fresh = self.fresh(
                 'motion_limits', motion_limits_timeout)
         else:
-            snapshot = telemetry_store.snapshot()
+            snapshot = runtime_telemetry_snapshot(self)
             observation = snapshot.arm.motion_limits
             limits = None if observation is None else observation.value
             limits_fresh = bool(
@@ -1825,7 +1844,7 @@ class ScanViewpointExecutorNode(Node):
                 camera_health = self.latest_camera_timestamp_health
                 camera_fresh = self.fresh('camera_clock')
             else:
-                snapshot = telemetry_store.snapshot()
+                snapshot = runtime_telemetry_snapshot(self)
                 observation = snapshot.perception.camera
                 camera_health = (
                     None if observation is None else observation.value)
@@ -2220,7 +2239,7 @@ class ScanViewpointExecutorNode(Node):
             camera_health = self.latest_camera_timestamp_health
             camera_fresh = self.fresh('camera_clock')
         else:
-            telemetry_snapshot = telemetry_store.snapshot()
+            telemetry_snapshot = runtime_telemetry_snapshot(self)
             camera_observation = telemetry_snapshot.perception.camera
             camera_health = (
                 None if camera_observation is None
@@ -2301,7 +2320,8 @@ class ScanViewpointExecutorNode(Node):
             return
         telemetry_store = getattr(self, 'telemetry_store', None)
         telemetry_snapshot = (
-            None if telemetry_store is None else telemetry_store.snapshot())
+            None if telemetry_store is None else
+            runtime_telemetry_snapshot(self))
         if telemetry_snapshot is None:
             obstacles = self.latest_obstacles
         else:
@@ -2359,7 +2379,7 @@ class ScanViewpointExecutorNode(Node):
                     'runtime safety gate: ' + '; '.join(reasons))
             return
         if self.state == 'MOVING':
-            self.moving_tick()
+            self.moving_tick(telemetry_snapshot=telemetry_snapshot)
         elif self.state == 'SETTLING':
             self.settling_tick()
         elif self.state == 'SETTLING_HOME':
@@ -2438,7 +2458,8 @@ class ScanViewpointExecutorNode(Node):
         return_home = getattr(self, 'plan_kind', '') == RETURN_HOME
         telemetry_store = getattr(self, 'telemetry_store', None)
         telemetry_snapshot = (
-            None if telemetry_store is None else telemetry_store.snapshot())
+            None if telemetry_store is None else
+            runtime_telemetry_snapshot(self))
         if telemetry_snapshot is None:
             obstacles = getattr(self, 'latest_obstacles', None)
         else:
@@ -2537,19 +2558,29 @@ class ScanViewpointExecutorNode(Node):
             return
         self.set_state('MOVING', reason)
 
-    def moving_tick(self):
-        now = self.now()
-        freshness_check = getattr(self, 'fresh', None)
-        if callable(freshness_check) and not freshness_check(
-                'joints', float(configured_value(self, 'home_joint_feedback_timeout_sec'))):
-            self.abort_or_finish_captures(
-                'joint feedback became invalid during SDK MoveJ: no fresh '
-                'application-level sample')
-            return
-        if getattr(self, 'current_path_streaming', False):
-            ScanViewpointExecutorNode.streaming_moving_tick(self, now)
-            return
-        ScanViewpointExecutorNode.feedback_gated_moving_tick(self, now)
+    def moving_tick(self, telemetry_snapshot=None):
+        """Run one motion tick against one immutable runtime snapshot."""
+        previous = getattr(
+            self, '_active_runtime_telemetry_snapshot', None)
+        if telemetry_snapshot is None:
+            telemetry_snapshot = runtime_telemetry_snapshot(self)
+        self._active_runtime_telemetry_snapshot = telemetry_snapshot
+        try:
+            now = self.now()
+            freshness_check = getattr(self, 'fresh', None)
+            if callable(freshness_check) and not freshness_check(
+                    'joints', float(configured_value(
+                        self, 'home_joint_feedback_timeout_sec'))):
+                self.abort_or_finish_captures(
+                    'joint feedback became invalid during SDK MoveJ: '
+                    'no fresh application-level sample')
+                return
+            if getattr(self, 'current_path_streaming', False):
+                ScanViewpointExecutorNode.streaming_moving_tick(self, now)
+                return
+            ScanViewpointExecutorNode.feedback_gated_moving_tick(self, now)
+        finally:
+            self._active_runtime_telemetry_snapshot = previous
 
     def feedback_gated_moving_tick(self, now):
         """Execute the dedicated direct-home endpoint transaction."""
@@ -2999,7 +3030,8 @@ class ScanViewpointExecutorNode(Node):
             return
         telemetry_store = getattr(self, 'telemetry_store', None)
         snapshot = (
-            None if telemetry_store is None else telemetry_store.snapshot())
+            None if telemetry_store is None else
+            runtime_telemetry_snapshot(self))
         workflow_ready = (
             self.workflow_ready() if snapshot is None else
             ScanViewpointExecutorNode.workflow_ready(self, snapshot))
@@ -3135,7 +3167,7 @@ class ScanViewpointExecutorNode(Node):
             target_status_at = self.updated.get('target_status', -1e9)
             now = self.now()
         else:
-            snapshot = telemetry_store.snapshot()
+            snapshot = runtime_telemetry_snapshot(self)
             target_observation = snapshot.perception.target
             tracking_observation = snapshot.perception.tracking
             status_observation = snapshot.perception.target_status
@@ -3201,7 +3233,7 @@ class ScanViewpointExecutorNode(Node):
             obstacles_at = self.updated.get('obstacles', -1e9)
             now = self.now()
         else:
-            snapshot = telemetry_store.snapshot()
+            snapshot = runtime_telemetry_snapshot(self)
             observation = snapshot.perception.obstacles
             obstacles = None if observation is None else observation.value
             obstacles_at = (
@@ -3334,7 +3366,8 @@ class ScanViewpointExecutorNode(Node):
                 self.set_state(
                     'CAPTURING_RGBD',
                     'capture evidence is still catching up with the settled '
-                    'frame; retrying the same viewpoint without moving')
+                    'frame; retrying the same viewpoint without moving: '
+                    + message)
                 return
             if capture_decision.action is CaptureAction.REFRESH_SAME_VIEW:
                 self.request_capture_heavy_refresh(message)
@@ -3450,7 +3483,7 @@ class ScanViewpointExecutorNode(Node):
         if telemetry_store is None:
             workflow = self.latest_workflow
         else:
-            observation = telemetry_store.snapshot().mission.workflow
+            observation = runtime_telemetry_snapshot(self).mission.workflow
             workflow = None if observation is None else observation.value
         if isinstance(workflow, dict) and str(
                 workflow.get('state', '')) == 'ABORTED':
@@ -3596,6 +3629,13 @@ class ScanViewpointExecutorNode(Node):
         }
         if metadata:
             entry.update(dict(metadata))
+        # This is deliberately additive, private history metadata. Numeric ray
+        # IDs are population-local, so bind the visual rejection to the
+        # bootstrap or qualified population that produced it. Caller metadata
+        # cannot forge or extend that lifetime.
+        if 'ray_id' in entry:
+            entry['ray_population_phase'] = (
+                'bootstrap' if not self.scan_history else 'qualified')
         self.scan_rejections.append(entry)
         self.publish_scan_history()
         return True
@@ -4264,7 +4304,7 @@ class ScanViewpointExecutorNode(Node):
         telemetry_store = getattr(self, 'telemetry_store', None)
         snapshot = (
             None if telemetry_store is None else
-            (telemetry_store.snapshot()
+            (runtime_telemetry_snapshot(self)
              if telemetry_snapshot is None else telemetry_snapshot))
 
         def snapshot_fresh(key, timeout=None):
@@ -4489,7 +4529,7 @@ class ScanViewpointExecutorNode(Node):
             if telemetry_store is None:
                 status = self.latest_arm_status
             else:
-                observation = telemetry_store.snapshot().arm.status
+                observation = runtime_telemetry_snapshot(self).arm.status
                 status = None if observation is None else observation.value
         if status is None:
             return ['arm status is missing']
@@ -4521,7 +4561,7 @@ class ScanViewpointExecutorNode(Node):
             health = self.latest_tracking_health
             target_status = self.latest_target_status
         else:
-            snapshot = telemetry_store.snapshot()
+            snapshot = runtime_telemetry_snapshot(self)
             camera_observation = snapshot.perception.camera
             tracking_observation = snapshot.perception.tracking
             status_observation = snapshot.perception.target_status
@@ -4560,7 +4600,7 @@ class ScanViewpointExecutorNode(Node):
             camera_health = self.latest_camera_timestamp_health
             snapshot = None
         else:
-            snapshot = telemetry_store.snapshot()
+            snapshot = runtime_telemetry_snapshot(self)
             observation = snapshot.perception.camera
             camera_health = None if observation is None else observation.value
         return bool(
@@ -4580,7 +4620,8 @@ class ScanViewpointExecutorNode(Node):
             snapshot = None
         else:
             snapshot = (
-                telemetry_store.snapshot() if snapshot is None else snapshot)
+                runtime_telemetry_snapshot(self)
+                if snapshot is None else snapshot)
             observation = snapshot.arm.joints
             joints = None if observation is None else observation.value
             joints_fresh = bool(
@@ -4653,7 +4694,7 @@ class ScanViewpointExecutorNode(Node):
             updated_at = float(self.updated.get('joints', -1e9))
             snapshot = None
         else:
-            snapshot = telemetry_store.snapshot()
+            snapshot = runtime_telemetry_snapshot(self)
             observation = snapshot.arm.joints
             joints = None if observation is None else observation.value
             joints_fresh = bool(
@@ -4717,7 +4758,8 @@ class ScanViewpointExecutorNode(Node):
             if telemetry_store is None:
                 workflow = self.latest_workflow
             else:
-                observation = telemetry_store.snapshot().mission.workflow
+                observation = runtime_telemetry_snapshot(
+                    self).mission.workflow
                 workflow = None if observation is None else observation.value
         else:
             observation = snapshot.mission.workflow
@@ -4730,7 +4772,8 @@ class ScanViewpointExecutorNode(Node):
         if telemetry_store is None:
             obstacles = self.latest_obstacles
         else:
-            observation = telemetry_store.snapshot().perception.obstacles
+            observation = runtime_telemetry_snapshot(
+                self).perception.obstacles
             obstacles = None if observation is None else observation.value
         if obstacles is None:
             return []
@@ -4787,7 +4830,7 @@ class ScanViewpointExecutorNode(Node):
                     'joints', float(configured_value(self, 'home_joint_feedback_timeout_sec'))))
             snapshot = None
         else:
-            snapshot = telemetry_store.snapshot()
+            snapshot = runtime_telemetry_snapshot(self)
             observation = snapshot.arm.joints
             joints = None if observation is None else observation.value
             joints_fresh = bool(
@@ -5131,7 +5174,8 @@ class ScanViewpointExecutorNode(Node):
         if telemetry_store is None:
             tracking_health = self.latest_tracking_health
         else:
-            observation = telemetry_store.snapshot().perception.tracking
+            observation = runtime_telemetry_snapshot(
+                self).perception.tracking
             tracking_health = (
                 None if observation is None else observation.value)
         msg.tracking_speed_scale = float(
@@ -5183,7 +5227,7 @@ class ScanViewpointExecutorNode(Node):
             if telemetry_store is None:
                 joints = self.latest_joint_state
             else:
-                observation = telemetry_store.snapshot().arm.joints
+                observation = runtime_telemetry_snapshot(self).arm.joints
                 joints = None if observation is None else observation.value
         else:
             observation = snapshot.arm.joints
@@ -5235,7 +5279,8 @@ class ScanViewpointExecutorNode(Node):
         if telemetry_store is None:
             tracking_health = self.latest_tracking_health
         else:
-            observation = telemetry_store.snapshot().perception.tracking
+            observation = runtime_telemetry_snapshot(
+                self).perception.tracking
             tracking_health = (
                 None if observation is None else observation.value)
         scale = (

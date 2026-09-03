@@ -2,6 +2,7 @@
 
 import copy
 import json
+import math
 import os
 from pathlib import Path
 
@@ -140,6 +141,15 @@ def test_exact_bunker_world_preserves_known_joint_path(backend):
     assert provenance['position_limit_clip_rad'] == pytest.approx(
         [0.005, 0.0, 0.0, 0.005, 0.005, 0.005])
     assert provenance['hardware_qualified'] is True
+    assert provenance['hardware_qualification']['scope'] == (
+        'supervised_5_percent_target_scan')
+    assert provenance['hardware_qualification']['floor_profile'] == 'tabletop'
+    assert provenance['hardware_qualification'][
+        'free_motion_speed_percent'] == pytest.approx(5.0)
+    assert provenance['hardware_qualification'][
+        'contact_speed_percent'] == pytest.approx(5.0)
+    assert provenance['hardware_qualification'][
+        'real_motion_requires_explicit_opt_in'] is True
     assert provenance['conservative_geometry'] is False
     assert {
         item['name'] for item in provenance['fixed_world_meshes']
@@ -212,3 +222,31 @@ def test_real_model_enforces_joint5_internal_limit_clip(backend):
     assert inside_status == 'None'
     assert outside_valid is False
     assert outside_status.endswith('INVALID_START_STATE_JOINT_LIMITS')
+
+
+def test_real_model_reenters_recorded_joint6_feedback_boundary(backend):
+    """Reproduce the 2026-09-02 post-capture clipped-limit failure."""
+    request = copy.deepcopy(_request('MULTIVIEW_SCAN'))
+    request.pop('request_sha256', None)
+    request['start_state']['positions_rad'] = [
+        0.047482568,
+        0.7713736800000001,
+        -0.659313424,
+        0.0,
+        0.71712284,
+        3.136623084,
+    ]
+    request = validate_request(attach_digest(request, 'request_sha256'))
+    backend._update_world(request)
+
+    recovery = backend._position_limit_reentry(
+        request['start_state']['positions_rad'], request)
+
+    assert recovery is not None
+    assert recovery['joint_numbers'] == [6]
+    assert recovery['positions'][0] == pytest.approx(
+        request['start_state']['positions_rad'])
+    assert recovery['positions'][-1][5] < math.pi - 0.005
+    valid, status = backend._start_state_status(recovery['positions'][-1])
+    assert valid is True
+    assert status == 'None'

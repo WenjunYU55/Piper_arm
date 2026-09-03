@@ -16,9 +16,17 @@ links and attachments use a reviewed, hash-bound 69-sphere Isaac/Lula
 approximation because cuRobo 0.7.8 does not support articulated triangle-mesh
 collision. That approximation remains marked `conservative_geometry: false`.
 On 1 September 2026 the operator explicitly promoted the reviewed model to
-`hardware_qualified: true` for supervised 5% testing after the command-free
-comparison suite. This is not a claim of Tesseract-equivalent geometry. No
-planner in this architecture directly commands the robot.
+`hardware_qualified: true` after the command-free comparison suite, and on
+2 September reported successful supervised 5% physical end-to-end
+qualification. The qualification is limited to that target-scan scope. This is
+not a claim of Tesseract-equivalent geometry. No planner in this architecture
+directly commands the robot.
+
+That scope is machine-enforced: cuRobo readiness requires the generated
+hash-bound qualification record, the `tabletop` floor profile, exactly 5%
+free/contact speed, and `PIPER_CUROBO_COLLISION_MODEL_QUALIFIED=1`. The real
+motion and speed-profile opt-ins and all common execution gates remain
+independent requirements.
 
 ## Runtime architecture
 
@@ -164,6 +172,27 @@ authorization, runtime gates, `TrajectoryRunner`, and PiPER adapter as
 Tesseract. Tensor/CUDA types never enter ROS, mission, NBV, authorization, or
 execution code.
 
+Measured controller feedback can settle a few encoder counts beyond cuRobo's
+intentional 5 mrad internal limit inset while remaining inside the
+authoritative PiPER limit. The worker does not widen either boundary or pass
+that state directly to MotionGen. It admits only the corresponding raw-valid
+excursion (at most 5 mrad), constructs a monotonic inward transition with
+steps no larger than 0.25 mrad, checks every sample against the active world
+and self-collision model, restores the normal inset, and plans from the
+interior endpoint. The complete path still begins at the exact measured state
+and passes the generic response validator, `PlanAuthorizer`, and common
+runtime gates. A raw-limit violation, another invalid-start category, or any
+collision fails closed.
+
+The executor also uses one coherent runtime-only telemetry snapshot per
+control tick. Arm, perception, and workflow evidence are still defensively
+copied and all safety checks remain active; bulk plans, scan history, and ray
+diagnostics stay in the unchanged full-snapshot API rather than being copied
+inside every timed command tick. On the recorded 7.5 MB ray report this lowers
+the median snapshot cost from 125.08 ms to 0.082 ms against the 50 ms/20 Hz
+command period. This is a software timing result; a restarted, supervised
+physical E2E remains the final cadence confirmation.
+
 `prepare_model.sh` first invokes the existing Tesseract model builder, so both
 backends start from the same current Xacro, calibrated L515 frame, SRDF,
 collision manifest, joint order and limits. The cuRobo conversion represents:
@@ -290,6 +319,17 @@ after every attempt. This contains a pinned cuRobo v0.7.8 invalid-start path
 which otherwise leaves self-collision disabled after classifying a world
 collision in a persistent worker.
 
+The cuRobo support cuboid retains a 10 mm fixed-mount seam allowance so the
+rigid base attachment does not invalidate the complete world. That allowance
+is not moving-link clearance authority. Before an acquisition or scan result
+can become a generic `MotionPlan`, the worker now computes link6 FK along the
+normalized path and transforms the complete CAD-derived camera-holder/L515
+box. It applies the same configured floor plus 5 mm clearance and expanded
+request-obstacle AABB test as the common executor. A failing goal-set winner is
+removed and the remaining rolls, standoffs, aim variants and rays are tried
+within the existing request budget. The executor repeats the check as an
+independent fail-closed backstop.
+
 Earlier qualification on 2026-08-28 proved native extension import, CUDA tensor
 execution, MotionGen model warm-up, a command-free free-space joint plan,
 healthy worker publication and bounded Ctrl-C cleanup. The generated PiPER
@@ -311,8 +351,9 @@ samples plus four reference poses. It found zero state-level false negatives,
 rejections. This is useful command-free evidence, not a proof over continuous
 configuration space.
 
-The model is operator-promoted to `hardware_qualified: true` for supervised 5%
-testing. Moving-link spheres still have per-owner sampled-surface gaps up to
+The model is hardware-qualified for supervised 5% target-scan missions after
+the operator-reported physical end-to-end run on 2026-09-02. Moving-link
+spheres still have per-owner sampled-surface gaps up to
 48.3 mm, Link 5 sampled coverage is only 52.5 percent with a 34.4 mm gap,
 conservative false positives remain. The configured-home policy is now aligned
 at the generic planner compatibility boundary, but that does not make the two
@@ -359,10 +400,10 @@ pose and cannot create a new semantic endpoint. Exhaustion returns generic
 `PLANNER_EXHAUSTED` plus attempted ray IDs, so the shared bridge can request the
 next shortlist without backend-specific mission logic.
 
-This replay also proves clean ROS-free worker/CUDA teardown, not physical robot
-behavior. A separately authorized low-speed physical cuRobo E2E remains
-required, and the cuRobo sphere model is still not claimed collision-equivalent
-to Tesseract.
+This replay proves clean ROS-free worker/CUDA teardown, not physical robot
+behavior. Physical qualification is recorded separately from this replay: the
+operator reported a successful supervised 5% cuRobo E2E on 2026-09-02. The
+cuRobo sphere model is still not claimed collision-equivalent to Tesseract.
 
 Version and installation references:
 
@@ -379,7 +420,7 @@ cd /home/prl/Piper_arm
 PIPER_PLANNER_BACKEND=tesseract ./run_target_scan_mission.sh
 ```
 
-cuRobo command-free startup (it remains unready for hardware until qualified):
+cuRobo proposal-only startup:
 
 ```bash
 cd /home/prl/Piper_arm
@@ -392,6 +433,11 @@ PATH=/home/prl/.local/cuda-12.8/bin:"$PATH" \
 
 Real arm motion remains disabled unless the existing independent mission motion
 opt-ins are also supplied. Selecting cuRobo does not enable motors or motion.
+
+The exact supervised 5% cuRobo hardware command is maintained in
+`OPERATOR_COMMANDS.md`. It additionally requires
+`PIPER_CUROBO_COLLISION_MODEL_QUALIFIED=1`; this explicit opt-in does not bypass
+any common authorization, freshness, collision or runtime execution gate.
 
 Ordinary tests do not import cuRobo:
 

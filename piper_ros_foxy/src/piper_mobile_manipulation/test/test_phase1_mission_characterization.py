@@ -218,6 +218,7 @@ def test_process_startup_order_and_environment_are_characterized(
         'manage_processes': True,
         'enable_real_arm_motion': True,
         'free_motion_speed_percent': 30.0,
+        'contact_speed_percent': 10.0,
         'maximum_captures': 24,
         'required_captures': 8,
     }
@@ -277,6 +278,7 @@ def test_process_startup_order_and_environment_are_characterized(
     assert environment['PIPER_VIEWPOINT_MISSION_POLICY'] == '1'
     assert environment['PIPER_VIEWPOINT_CLOSED_LOOP_ONE_VIEW'] == '1'
     assert environment['PIPER_VIEWPOINT_SPEED_PERCENT'] == '30.0'
+    assert environment['PIPER_CONTACT_SPEED_PERCENT'] == '10.0'
     assert environment['PIPER_VIEWPOINT_MIN_VIEWS'] == '8'
     assert environment['PIPER_VIEWPOINT_MAX_VIEWS'] == '24'
     assert environment['PIPER_FLOOR_PROFILE'] == 'ground'

@@ -8,7 +8,10 @@ These diagrams are based on a source-level audit rather than a conceptual featur
 |---|---|---|
 | `main` working tree | integrated local main | Production perception/NBV, frozen Tesseract or cuRobo selection, generic `MotionPlan`, common execution, capture, terminal handling and reconstruction |
 
-The cuRobo software path is integrated, but its current collision model remains fail-closed for physical hardware.
+The cuRobo software path is integrated and its current collision model is
+hardware-qualified for supervised 5% target-scan missions. The separate
+collision-model opt-in, all common runtime gates, and default-disabled real
+motion remain unchanged.
 
 ## Visual vocabulary
 
@@ -18,7 +21,7 @@ The cuRobo software path is integrated, but its current collision model remains 
 | Blue solid arrow | Mission control or lifecycle ownership |
 | Green dashed arrow | Feedback, retry, reacquisition, replanning or readiness return |
 | Red solid arrow | Physical motor command; intentionally appears only at the executor-to-driver boundary |
-| Gray dashed arrow | Optional or currently unqualified path |
+| Gray dashed arrow | Optional backend or auxiliary path |
 | Blue / violet / teal boxes | Physical inputs / perception / measured state and immutable data |
 | Amber / red / graphite boxes | Planning / safety and recovery / physical actuation and infrastructure |
 
@@ -70,7 +73,7 @@ The diagram separates the effects that were previously collapsed:
 
 The generic bridge publishes backend-neutral `MotionPlan`, `MotionPlanStatus`, `PlannerReadiness` and provenance while retaining Tesseract aliases only in Tesseract mode. Worker heartbeat, generation, schema, backend and model hashes must match the frozen request.
 
-The cuRobo worker uses MotionGen 0.7.8 `plan_single` for camera poses and `plan_single_js` for home motions. Fixed Bunker geometry uses exact meshes, while moving links use the audited 69-sphere model. The operator promoted that model to `hardware_qualified=true` on 2026-09-01 for supervised 5% testing; `conservative_geometry` remains false and the documented coverage gaps prevent any claim of Tesseract-equivalent geometry. There is no automatic Tesseract fallback.
+The cuRobo worker uses MotionGen 0.7.8 `plan_single` for camera poses and `plan_single_js` for home motions. Fixed Bunker geometry uses exact meshes, while moving links use the audited 69-sphere model. The operator reported successful physical end-to-end qualification on 2026-09-02, limited to supervised 5% target-scan motion; `conservative_geometry` remains false and the documented coverage gaps prevent any claim of Tesseract-equivalent geometry. There is no automatic Tesseract fallback.
 
 ## Execution feedback and recovery
 

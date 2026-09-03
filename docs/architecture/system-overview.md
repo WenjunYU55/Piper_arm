@@ -51,7 +51,7 @@ flowchart TB
 
     subgraph CUROBO["Backend option B: explicit cuRobo Python/CUDA environment"]
         CW["ROS-free MotionGen worker<br/>IK · collision · path planning"]
-        CQ["Current model<br/>hardware_qualified = false"]
+        CQ["Current model<br/>hardware_qualified = true<br/>supervised 5% scope"]
     end
 
     TSPOOL[("Tesseract spool")]

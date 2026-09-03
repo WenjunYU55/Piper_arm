@@ -4,6 +4,7 @@ from threading import Condition, Thread
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from piper_mobile_manipulation.scan_capture import (
     DepthQualityRejected,
@@ -250,20 +251,33 @@ def test_capture_burst_waits_while_camera_callbacks_fill_it():
 
 def test_service_capture_collects_burst_before_preparing_and_saving():
     events = []
+    admission = {'scan_quality_raw': {'quality_label': 'GOOD'}}
+    admissions = iter((admission, admission))
+    mask = object()
+    color_bundle = object()
     frames = [_native_bundle(30.0 + index / 10.0, 1.0 + index)
               for index in range(20)]
     harness = SimpleNamespace(
         frame_index=0,
+        prepared_capture=None,
         capture_mode=lambda: 'service',
         get_parameter=lambda name: SimpleNamespace(value={
             'max_frames_per_scan': 30,
+            'capture_timeout_sec': 20.0,
         }[name]),
-        capture_prerequisites_ready=lambda: events.append(
-            'prerequisites') or (True, ''),
-        collect_prospective_native_depth_burst=lambda _started_at: (
+        capture_transaction_deadline=lambda started_at: started_at + 18.0,
+        wait_for_capture_prerequisite_evidence=lambda _deadline: (
+            events.append('admit') or (True, '', next(admissions))),
+        collect_prospective_native_depth_burst=lambda _started_at, deadline: (
             events.append('collect') or (frames, '')),
-        capture_ready=lambda depth_burst: events.append(
-            ('prepare', depth_burst)) or (True, ''),
+        wait_for_correlated_capture_pair=lambda depth_burst, deadline: (
+            events.append(('pair', depth_burst))
+            or (mask, color_bundle, '')),
+        prepare_capture_until_ready=lambda depth_burst, selected_mask,
+        selected_color, deadline: (
+            events.append(
+                ('prepare', depth_burst, selected_mask, selected_color))
+            or ({'prepared': True}, '')),
         capture_frame=lambda _now: events.append('save') or (True, 'saved'),
         get_clock=lambda: SimpleNamespace(now=lambda: object()),
         note_skip=lambda reason: events.append(('skip', reason)),
@@ -276,7 +290,189 @@ def test_service_capture_collects_burst_before_preparing_and_saving():
     assert result.success
     assert result.message == 'saved'
     assert events == [
-        'prerequisites', 'collect', ('prepare', frames), 'save']
+        'admit', 'collect', ('pair', frames),
+        ('prepare', frames, mask, color_bundle), 'admit', 'save']
+    assert harness.prepared_capture['capture_admission_diagnostics'] is (
+        admission)
+
+
+def test_capture_transaction_waits_for_delayed_diagnostic_without_restarting():
+    condition = Condition()
+    calls = []
+    responses = [
+        (False, 'QUALITY_REJECTED: scan quality is stale', None),
+        (True, '', {'scan_quality_age_sec': 0.01}),
+    ]
+    harness = SimpleNamespace(
+        capture_evidence_condition=condition,
+        capture_prerequisite_evidence=lambda: (
+            calls.append('check') or responses.pop(0)),
+    )
+
+    def wake():
+        time.sleep(0.02)
+        with condition:
+            condition.notify_all()
+
+    thread = Thread(target=wake)
+    thread.start()
+    ready, reason, diagnostics = (
+        ScanCaptureNode.wait_for_capture_prerequisite_evidence(
+            harness, time.monotonic() + 0.5))
+    thread.join(timeout=1.0)
+
+    assert ready
+    assert reason == ''
+    assert diagnostics['scan_quality_age_sec'] == 0.01
+    assert calls == ['check', 'check']
+
+
+def test_capture_transaction_timeout_preserves_last_evidence_reason():
+    harness = SimpleNamespace(
+        capture_evidence_condition=None,
+        capture_prerequisite_evidence=lambda: (
+            False, 'QUALITY_REJECTED: scan quality is stale', None),
+    )
+
+    ready, reason, diagnostics = (
+        ScanCaptureNode.wait_for_capture_prerequisite_evidence(
+            harness, time.monotonic() - 0.01))
+
+    assert not ready
+    assert diagnostics is None
+    assert reason == (
+        'CAPTURE_EVIDENCE_TIMEOUT: '
+        'QUALITY_REJECTED: scan quality is stale')
+
+
+def test_capture_pair_skips_latest_unmatched_mask_without_weakening_identity():
+    now = time.monotonic()
+    matched_mask = message(10.02)
+    unmatched_latest_mask = message(10.03)
+    matched_color_bundle = (
+        message(10.02), message(10.02), message(10.02), now)
+    burst = [_native_bundle(10.00 + index * 0.005, now)
+             for index in range(20)]
+    parameters = {
+        'synchronization_slop_sec': 0.08,
+        'max_bundle_age_sec': 1.0,
+    }
+    harness = SimpleNamespace(
+        mask_cache=[matched_mask, unmatched_latest_mask],
+        color_bundle_cache=[matched_color_bundle],
+        get_parameter=lambda name: SimpleNamespace(value=parameters[name]),
+    )
+
+    selected_mask, selected_color, reason = (
+        ScanCaptureNode.correlated_capture_pair(
+            harness, burst, now_monotonic=now + 0.1))
+
+    assert reason == ''
+    assert selected_mask is matched_mask
+    assert selected_color is matched_color_bundle
+
+
+def test_capture_pair_requires_overlap_with_the_settled_depth_burst():
+    now = time.monotonic()
+    old_mask = message(9.0)
+    old_color_bundle = (
+        message(9.0), message(9.0), message(9.0), now)
+    burst = [_native_bundle(10.00 + index * 0.005, now)
+             for index in range(20)]
+    parameters = {
+        'synchronization_slop_sec': 0.08,
+        'max_bundle_age_sec': 1.0,
+    }
+    harness = SimpleNamespace(
+        mask_cache=[old_mask],
+        color_bundle_cache=[old_color_bundle],
+        get_parameter=lambda name: SimpleNamespace(value=parameters[name]),
+    )
+
+    selected_mask, selected_color, reason = (
+        ScanCaptureNode.correlated_capture_pair(
+            harness, burst, now_monotonic=now + 0.1))
+
+    assert selected_mask is None
+    assert selected_color is None
+    assert 'overlaps the settled native-depth burst' in reason
+
+
+def test_capture_pair_waits_for_a_later_provable_mask_rgb_match():
+    now = time.monotonic()
+    condition = Condition()
+    burst = [_native_bundle(10.00 + index * 0.005, now)
+             for index in range(20)]
+    matching_mask = message(10.04)
+    matching_color = (
+        message(10.04), message(10.04), message(10.04), now)
+    parameters = {
+        'synchronization_slop_sec': 0.08,
+        'max_bundle_age_sec': 1.0,
+    }
+    harness = SimpleNamespace(
+        capture_evidence_condition=condition,
+        mask_cache=[message(10.03)],
+        color_bundle_cache=[],
+        get_parameter=lambda name: SimpleNamespace(value=parameters[name]),
+        correlated_capture_pair=lambda received_burst: (
+            ScanCaptureNode.correlated_capture_pair(
+                harness, received_burst)),
+    )
+
+    def publish_pair():
+        time.sleep(0.02)
+        with condition:
+            harness.mask_cache.append(matching_mask)
+            harness.color_bundle_cache.append(matching_color)
+            condition.notify_all()
+
+    thread = Thread(target=publish_pair)
+    thread.start()
+    selected_mask, selected_color, reason = (
+        ScanCaptureNode.wait_for_correlated_capture_pair(
+            harness, burst, time.monotonic() + 0.5))
+    thread.join(timeout=1.0)
+
+    assert reason == ''
+    assert selected_mask is matching_mask
+    assert selected_color is matching_color
+
+
+def test_capture_preparation_keeps_one_burst_mask_and_rgbd_pair():
+    condition = Condition()
+    burst = [object()]
+    mask = object()
+    color_bundle = object()
+    calls = []
+    responses = [
+        (None, 'timestamped camera transform is unavailable: '
+         'extrapolation into the future'),
+        ({'prepared': True}, ''),
+    ]
+    harness = SimpleNamespace(
+        capture_evidence_condition=condition,
+        prepare_confidence_capture=lambda received_burst, mask_message,
+        color_bundle: (
+            calls.append((received_burst, mask_message, color_bundle))
+            or responses.pop(0)),
+    )
+
+    def wake():
+        time.sleep(0.02)
+        with condition:
+            condition.notify_all()
+
+    thread = Thread(target=wake)
+    thread.start()
+    prepared, reason = ScanCaptureNode.prepare_capture_until_ready(
+        harness, burst, mask, color_bundle, time.monotonic() + 0.5)
+    thread.join(timeout=1.0)
+
+    assert reason == ''
+    assert prepared == {'prepared': True}
+    assert calls == [
+        (burst, mask, color_bundle), (burst, mask, color_bundle)]
 
 
 def test_rigid_camera_transform_metadata_matrix_is_exact_and_finite():
@@ -469,6 +665,52 @@ def test_capture_diagnostic_fails_closed_on_malformed_or_nonfinite_values():
         'quality_label': 'GOOD', 'quality_score': 0.9,
         'target_valid': True,
     }, -0.1, clear, 0.1).startswith('QUALITY_REJECTED:')
+
+
+def test_capture_metadata_keeps_commit_admitted_diagnostics_after_live_flip():
+    admitted_quality = {
+        'scan_quality_available': True,
+        'scan_quality_score': 0.96,
+        'scan_quality_label': 'GOOD',
+        'mask_area_px': 7446,
+        'valid_depth_ratio': 0.998,
+        'depth_mean_m': 0.269,
+        'depth_stddev_m': 0.008,
+        'centredness_score': 0.93,
+        'edge_margin_score': 1.0,
+        'target_valid': True,
+    }
+    admitted_occlusion = dict(
+        ScanCaptureNode.empty_occlusion_metadata(),
+        occlusion_available=True,
+        occlusion_state='CLEAR',
+        occlusion_reason='target visible',
+    )
+    node = SimpleNamespace(
+        scan_quality_metadata=lambda: pytest.fail(
+            'live quality must not replace admitted evidence'),
+        occlusion_metadata=lambda: pytest.fail(
+            'live occlusion must not replace admitted evidence'),
+    )
+    prepared = {
+        'capture_admission_diagnostics': {
+            'scan_quality_metadata': admitted_quality,
+            'occlusion_metadata': admitted_occlusion,
+        },
+    }
+
+    quality, occlusion = ScanCaptureNode.capture_diagnostics_for_metadata(
+        node, prepared)
+
+    assert quality == admitted_quality
+    assert occlusion['occlusion_state'] == 'CLEAR'
+    # The persisted copies cannot mutate the frozen admission record.
+    quality['scan_quality_label'] = 'INVALID'
+    occlusion['occlusion_state'] = 'LOST'
+    assert prepared['capture_admission_diagnostics'][
+        'scan_quality_metadata']['scan_quality_label'] == 'GOOD'
+    assert prepared['capture_admission_diagnostics'][
+        'occlusion_metadata']['occlusion_state'] == 'CLEAR'
 
 
 def test_execution_metadata_preserves_physical_capture_provenance():

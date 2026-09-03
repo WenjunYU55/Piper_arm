@@ -236,12 +236,15 @@ Tesseract remains the exact feasibility authority.
 
 ## 7. Motion-planning method and configuration
 
-Tesseract is the final physically validated backend. A separate
-`curobo-integration` branch implemented cuRobo 0.7.8 and replayed 2,004 sampled
-joint states against the exact Tesseract collision model. The cuRobo sphere
-approximation produced zero state-level false negatives in that sample and 18
-conservative false positives. It remains `hardware_qualified=false`, has
-sampled-surface gaps up to 48.3 mm, and has no matched physical planning trial.
+Tesseract is the exact-mesh regression baseline. cuRobo 0.7.8 replayed 2,004
+sampled joint states against the exact Tesseract collision model. The cuRobo
+sphere approximation produced zero state-level false negatives in that sample
+and 18 conservative false positives. It has sampled-surface gaps up to 48.3 mm
+and remains `conservative_geometry=false`. The operator later reported a
+successful physical end-to-end run on 2026-09-02 and qualified the current
+model only for supervised tabletop target scans at 5% speed. That later event
+is not a matched physical planner comparison and does not make the two
+collision models equivalent.
 
 A new `CONTROLLED_REPLAY` benchmark then sent the same five recorded positive
 planning scenarios—rough acquisition plus four multiview transitions—through
@@ -349,7 +352,7 @@ from the current archive.
 | Temporal target estimate | Raw updates; filtered/gated prediction | Fault-replay safety contract | Near-static Kalman with innovation gating | Corrupted updates rejected in tests; empirical trace missing | Bounded continuity and fail-closed loss behavior |
 | View planning | Fixed/dome; voxel NBV; ray NBV | Coverage, novel gain, diversity, redundancy | Ray NBV in the selected matched comparison | 164 vs 111 voxels; fewer adjacent duplicates | Full-sphere, bounded, size-aware feasibility integration |
 | Feasibility | Workspace only; capability atlas; Tesseract | Recall, query time, candidate reduction | 2M atlas + exact Tesseract | 100% reference recall; 0.280 ms; 263/2520 survive | Cheap cull without replacing exact planning |
-| Motion planning | Tesseract; cuRobo | Same-request offline timing, exact revalidation, physical qualification | Tesseract for final hardware system; cuRobo remains offline | 19.646 vs 0.630 s median proposal time, but 25.046 vs 25.048 s combined proxy; cuRobo unqualified | Retain the strongest physically validated integration while preserving the faster offline candidate |
+| Motion planning | Tesseract; cuRobo | Same-request offline timing, exact revalidation, physical qualification | Both backends retained; cuRobo qualification is limited to supervised 5% target scans | 19.646 vs 0.630 s median proposal time, but 25.046 vs 25.048 s combined proxy; later operator-reported cuRobo physical E2E qualification is not part of this replay | Preserve swappable backends while keeping timing evidence separate from physical qualification |
 | Reconstruction | Robot pose; GICP; superposition; scene graph | Residual, dimensions, components, quality | Bounded auto-selection for this dataset | Auto selected multiway; all modes still FAIL | Retains baseline and fails closed on poor geometry |
 
 ## Why the final integrated methods were retained

@@ -11,7 +11,7 @@ import threading
 import time
 import tkinter as tk
 from tkinter import messagebox, ttk
-from typing import List
+from typing import List, Tuple
 
 import numpy as np
 import rclpy
@@ -41,6 +41,8 @@ from piper_gui.ray_reports import (
     RayReviewProcess,
     replay_scan_dataset,
 )
+from piper_gui.results_campaign import ResultsCampaignController
+from results_campaign.campaign import DEFAULT_CAMPAIGN_ID
 from piper_gui.scan_policy import (
     FULL_SPHERE_REGION,
     POLICY_LABELS,
@@ -107,6 +109,35 @@ PROJECT_ROOT = str(Path(__file__).resolve().parents[1])
 BOUNDS_PATH = os.path.join(PROJECT_ROOT, "piper_joint_bounds.json")
 HOME_POSE_PATH = os.path.join(PROJECT_ROOT, "piper_home_pose.json")
 DISABLED_HOME_DROOP_TOLERANCE_RAD = 0.05
+
+
+def build_vertical_scroll_area(
+        parent: ttk.Frame,
+) -> Tuple[ttk.Frame, tk.Canvas, ttk.Scrollbar]:
+    """Return a width-fitted frame inside a visible vertical scrollbar."""
+    parent.columnconfigure(0, weight=1)
+    parent.rowconfigure(0, weight=1)
+
+    canvas = tk.Canvas(parent, borderwidth=0, highlightthickness=0)
+    scrollbar = ttk.Scrollbar(
+        parent, orient=tk.VERTICAL, command=canvas.yview)
+    canvas.configure(yscrollcommand=scrollbar.set)
+    canvas.grid(row=0, column=0, sticky="nsew")
+    scrollbar.grid(row=0, column=1, sticky="ns")
+
+    content = ttk.Frame(canvas)
+    content_window = canvas.create_window(
+        (0, 0), window=content, anchor="nw")
+
+    def update_scroll_region(_event=None) -> None:
+        canvas.configure(scrollregion=canvas.bbox("all"))
+
+    def fit_content_width(event) -> None:
+        canvas.itemconfigure(content_window, width=event.width)
+
+    content.bind("<Configure>", update_scroll_region)
+    canvas.bind("<Configure>", fit_content_width)
+    return content, canvas, scrollbar
 
 
 def clamp(value: float, low: float, high: float) -> float:
@@ -398,6 +429,12 @@ class PiperGuiApp:
             value='No mission ray report selected')
         self.ray_replay_in_progress = False
         self.ray_review_process = RayReviewProcess(PROJECT_ROOT)
+        self.results_campaign = ResultsCampaignController(PROJECT_ROOT)
+        self.results_campaign_id_var = tk.StringVar(
+            value=DEFAULT_CAMPAIGN_ID)
+        self.results_campaign_status_var = tk.StringVar(
+            value='Passive recording is off; open or create a campaign to begin.')
+        self.results_campaign_reconstruct_var = tk.BooleanVar(value=False)
         self.home_status_var = tk.StringVar(
             value="Home: validated compact default")
         self.mission_view_model = MissionViewModel()
@@ -453,7 +490,10 @@ class PiperGuiApp:
 
         automatic = ttk.Frame(notebook, padding=14)
         notebook.add(automatic, text="Automatic Scan")
-        self._build_automatic_scan(automatic)
+        automatic_content, self.automatic_scan_canvas, \
+            self.automatic_scan_scrollbar = build_vertical_scroll_area(
+                automatic)
+        self._build_automatic_scan(automatic_content)
 
         manual = ttk.Frame(notebook, padding=14)
         notebook.add(manual, text="Commissioning: Manual")
@@ -471,9 +511,158 @@ class PiperGuiApp:
         notebook.add(reconstruction, text='Reconstruction Validation')
         self._build_reconstruction(reconstruction)
 
+        results_campaign = ttk.Frame(notebook, padding=14)
+        notebook.add(results_campaign, text='Results Campaign')
+        self._build_results_campaign(results_campaign)
+
         side = ttk.Frame(body, padding=14)
         body.add(side, weight=1)
         self._build_status(side)
+
+    def _build_results_campaign(self, parent: ttk.Frame) -> None:
+        parent.columnconfigure(0, weight=1)
+        ttk.Label(
+            parent, text='Backend-blocked physical results campaign',
+            font=('TkDefaultFont', 16, 'bold')).grid(
+                row=0, column=0, sticky='w')
+        ttk.Label(
+            parent,
+            text=(
+                'This is a passive file recorder. It does not publish ROS '
+                'messages, start missions, change safety decisions, retry '
+                'failures, or command the robot. The fixed design is 15 '
+                'target positions × Tesseract/cuRobo = 30 missions.'),
+            wraplength=820, justify='left').grid(
+                row=1, column=0, sticky='ew', pady=(8, 16))
+
+        campaign = ttk.LabelFrame(parent, text='Campaign', padding=12)
+        campaign.grid(row=2, column=0, sticky='ew')
+        ttk.Label(campaign, text='Campaign ID').grid(
+            row=0, column=0, sticky='w')
+        ttk.Entry(
+            campaign, textvariable=self.results_campaign_id_var,
+            width=38).grid(row=0, column=1, sticky='w', padx=(8, 0))
+        ttk.Button(
+            campaign, text='Create / Resume',
+            command=self.open_results_campaign).grid(
+                row=0, column=2, padx=(8, 0))
+        ttk.Button(
+            campaign, text='Prepare Next Trial',
+            command=self.prepare_next_results_trial).grid(
+                row=0, column=3, padx=(8, 0))
+        ttk.Label(
+            campaign,
+            text=(
+                'Prepare Next Trial fills the existing XYZ and planner '
+                'widgets only. You must review them and use the normal '
+                'Apply for Next Mission and Start buttons yourself.'),
+            foreground='#52606d', wraplength=790, justify='left').grid(
+                row=1, column=0, columnspan=4, sticky='w', pady=(8, 0))
+
+        outputs = ttk.LabelFrame(parent, text='Evidence and outputs', padding=12)
+        outputs.grid(row=3, column=0, sticky='ew', pady=(12, 0))
+        ttk.Button(
+            outputs, text='Collect Existing Files Now',
+            command=self.collect_results_campaign_now).grid(
+                row=0, column=0, sticky='w')
+        ttk.Checkbutton(
+            outputs, text='Run all five reconstruction modes',
+            variable=self.results_campaign_reconstruct_var).grid(
+                row=0, column=1, sticky='w', padx=(12, 0))
+        self.results_campaign_report_button = ttk.Button(
+            outputs, text='Generate Excel / CSV / Figures',
+            command=self.generate_results_campaign_report)
+        self.results_campaign_report_button.grid(
+            row=0, column=2, sticky='w', padx=(12, 0))
+        ttk.Label(
+            outputs, textvariable=self.results_campaign_status_var,
+            foreground='#52606d', wraplength=790, justify='left').grid(
+                row=1, column=0, columnspan=3, sticky='w', pady=(10, 0))
+
+        design = ttk.LabelFrame(parent, text='Fixed declared design', padding=12)
+        design.grid(row=4, column=0, sticky='ew', pady=(12, 0))
+        ttk.Label(
+            design,
+            text=(
+                'X = 0.30, 0.50, 0.70, 0.90, 1.10 m; Y = 0.00 m; '
+                'Z = 0.00, 0.12, 0.30 m. One mission per planner at each '
+                'position. Run all cuRobo trials first, then all Tesseract '
+                'trials. Reference target: '
+                '35 × 35 × 35 mm cube, six faces. The 120 s line is a '
+                'timing reference only. 30 cm is confirmed; 50 cm is not.'),
+            wraplength=790, justify='left').grid(row=0, column=0, sticky='w')
+
+    def _campaign_status(self, message):
+        self.results_campaign_status_var.set(str(message))
+
+    def open_results_campaign(self):
+        try:
+            progress = self.results_campaign.open(
+                self.results_campaign_id_var.get())
+        except Exception as exc:
+            self._campaign_status('Recorder was not opened: %s' % exc)
+            return
+        self._campaign_status(
+            'Passive recorder active: %d/%d terminal trials captured.' % (
+                progress['completed'], progress['total']))
+
+    def prepare_next_results_trial(self):
+        try:
+            trial = self.results_campaign.next_trial()
+        except Exception as exc:
+            self._campaign_status('Next trial was not loaded: %s' % exc)
+            return
+        if trial is None:
+            self._campaign_status('Campaign schedule is complete.')
+            return
+        for variable, value in zip(
+                self.rough_coordinate_vars,
+                (trial['x_m'], trial['y_m'], trial['z_m'])):
+            variable.set('%.2f' % float(value))
+        self.planner_backend_var.set(BACKEND_LABELS[trial['backend']])
+        self._campaign_status(
+            'Prepared %s: %s at (%.2f, %.2f, %.2f) m. Review and apply '
+            'the planner in Automatic Scan; nothing was submitted.' % (
+                trial['trial_id'], BACKEND_LABELS[trial['backend']],
+                trial['x_m'], trial['y_m'], trial['z_m']))
+
+    def collect_results_campaign_now(self):
+        def worker():
+            try:
+                paths = self.results_campaign.collect_now()
+                self.events.put(('results_campaign_status',
+                                 'Collected %d campaign attempt(s).' % len(paths)))
+            except Exception as exc:
+                self.events.put(('results_campaign_status',
+                                 'Collection warning: %s' % exc))
+        threading.Thread(target=worker, daemon=True).start()
+        self._campaign_status('Reading existing mission artifacts in the background...')
+
+    def generate_results_campaign_report(self):
+        if not self.mission_view_model.state.can_start:
+            self._campaign_status(
+                'Offline report generation was not started: wait for the '
+                'active mission to finish.')
+            return
+        try:
+            process = self.results_campaign.build_report(
+                run_reconstruction=self.results_campaign_reconstruct_var.get())
+        except Exception as exc:
+            self._campaign_status('Report was not started: %s' % exc)
+            return
+
+        def worker():
+            output, _ = process.communicate()
+            message = output.strip().splitlines()[-1] if output.strip() else ''
+            if process.returncode == 0:
+                message = 'Report complete: %s' % message
+            else:
+                message = 'Report failed without affecting the mission: %s' % message
+            self.events.put(('results_campaign_status', message))
+        threading.Thread(target=worker, daemon=True).start()
+        self._campaign_status(
+            'Generating offline results. Keep automatic missions idle until '
+            'the report completes.')
 
     def _build_automatic_scan(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
@@ -1534,11 +1723,35 @@ class PiperGuiApp:
         self.ros_node.disable_manual_command_publisher()
         self.set_manual_motion_enabled(False)
         self._render_mission_state()
+        submitted_wall_time_ns = time.time_ns()
+        submitted_monotonic_ns = time.monotonic_ns()
         if not self.ros_node.submit_mission(request):
             self.mission_view_model.submission_failed(
                 'the GUI ROS client already owns a mission request')
             self._restore_manual_controls_if_unowned()
             self._render_mission_state()
+        else:
+            # Passive observer hook only. The mission has already been
+            # submitted through the unchanged production path before this
+            # code records its task ID. Instrumentation failure is fail-open.
+            task_id = self.ros_node.mission_client.active_task_id
+
+            def record_submission():
+                try:
+                    value = self.results_campaign.record_submission(
+                        task_id, request,
+                        submitted_wall_time_ns=submitted_wall_time_ns,
+                        submitted_monotonic_ns=submitted_monotonic_ns)
+                    if value is not None:
+                        suffix = '' if value.get('matches_schedule') else (
+                            ' WARNING: request does not match the loaded trial and will be excluded.')
+                        self.events.put((
+                            'results_campaign_status',
+                            'Recorded mission %s.%s' % (task_id, suffix)))
+                except Exception as exc:
+                    self.events.put(('results_campaign_status',
+                                     'Passive recorder warning (mission continues): %s' % exc))
+            threading.Thread(target=record_submission, daemon=True).start()
 
     def apply_scan_policy(self):
         if not self.mission_view_model.state.can_start:
@@ -1682,6 +1895,8 @@ class PiperGuiApp:
             state="readonly" if state.can_start else "disabled")
         self.camera_profile_apply_button.configure(
             state="normal" if state.can_start else "disabled")
+        self.results_campaign_report_button.configure(
+            state='normal' if state.can_start else 'disabled')
 
     def _restore_manual_controls_if_unowned(self):
         publishers = self.ros_node.command_publisher_names(
@@ -2159,6 +2374,8 @@ class PiperGuiApp:
                     self.command_text.set(str(payload))
                 elif name == "mission_client":
                     self._handle_mission_client_event(payload)
+                elif name == 'results_campaign_status':
+                    self._campaign_status(payload)
                 elif name == "heavy_status":
                     self.perception_status_var.set(
                         self._format_json_status(payload, "heavy refresh"))
@@ -2293,12 +2510,34 @@ class PiperGuiApp:
             return
         elif event.kind == "submission_failed":
             self.mission_view_model.submission_failed(event.payload)
+            if self.results_campaign.store is not None:
+                try:
+                    self.results_campaign.store.record_submission_failure(
+                        event.payload)
+                except Exception:
+                    pass
             self._render_mission_state()
             self._restore_manual_controls_if_unowned()
             return
         elif event.kind == "result":
             result = event.payload
             self.mission_view_model.apply_result(result)
+            if self.results_campaign.store is not None:
+                def record_terminal():
+                    try:
+                        path = self.results_campaign.record_terminal(
+                            result.task_id, result)
+                        progress = self.results_campaign.store.progress()
+                        self.events.put((
+                            'results_campaign_status',
+                            'Recorded terminal evidence for %s (%d/%d). %s'
+                            % (result.task_id, progress['completed'],
+                               progress['total'], path or '')))
+                    except Exception as exc:
+                        self.events.put((
+                            'results_campaign_status',
+                            'Passive recorder warning after mission: %s' % exc))
+                threading.Thread(target=record_terminal, daemon=True).start()
             self.last_successful_mission = result.reconstruction_payload
             if self.last_successful_mission is not None:
                 self.mesh_status_var.set(
@@ -2317,6 +2556,7 @@ class PiperGuiApp:
             self.ros_node.cancel_mission()
         self.close_3d_joint_editor()
         self.ray_review_process.shutdown()
+        self.results_campaign.shutdown()
         if (self.reconstruction_process is not None
                 and self.reconstruction_process.poll() is None):
             self.reconstruction_process.terminate()

@@ -502,7 +502,8 @@ class MotionPlannerBridge(Node):
                 and health.get('collision_model_qualified') is not True):
             self.worker_generation_id = generation
             return [
-                'cuRobo collision model is not hardware-qualified; '
+                'cuRobo collision model/runtime configuration is outside '
+                'the hardware-qualified scope; '
                 'planning remains command-free and fail-closed']
         expected_hashes = {
             'srdf_sha256': sha256_file(self.parameter_path('srdf_path')),

@@ -44,7 +44,7 @@ This is the complete feature map, from mission request to immutable reconstructi
 The diagram deliberately combines two audited repository states:
 
 - **`main`:** Tesseract 0.35 is the active exact motion-planning path and transports `TesseractPlan`.
-- **cuRobo integration:** `main` contains a frozen `tesseract | curobo` mission choice, a backend-neutral `MotionPlan` contract, and an isolated cuRobo 0.7.8 MotionGen worker. The operator promoted the reviewed 69-sphere model to `hardware_qualified=true` on 2026-09-01 for supervised 5% testing. Its measured coverage limitations remain documented; it is not claimed geometrically equivalent to Tesseract. There is no automatic fallback or mid-mission backend switch.
+- **cuRobo integration:** `main` contains a frozen `tesseract | curobo` mission choice, a backend-neutral `MotionPlan` contract, and an isolated cuRobo 0.7.8 MotionGen worker. The operator reported successful physical end-to-end qualification of the reviewed 69-sphere model on 2026-09-02, limited to supervised 5% target-scan motion. Its measured coverage limitations remain documented; it is not claimed geometrically equivalent to Tesseract. There is no automatic fallback or mid-mission backend switch.
 
 See the [diagram audit and implementation evidence](docs/architecture/system-diagrams.md) for the exact commits and source paths used.
 
@@ -195,7 +195,10 @@ Piper_arm/
 └── tools/                          diagnostics, replay and calibration
 ```
 
-The cuRobo adapter, worker and tests are integrated into `main`; physical cuRobo execution remains blocked until its collision model is explicitly hardware-qualified.
+The cuRobo adapter, worker and tests are integrated into `main`. The current
+69-sphere model is hardware-qualified for supervised 5% target-scan missions;
+physical execution still requires its separate collision-model opt-in and all
+ordinary mission, authorization and real-motion gates.
 
 ## Mechanical design files
 
@@ -218,7 +221,9 @@ Manufacturing CAD is not a substitute for collision-qualified URDF/planner geome
 ## Safety status
 
 - Autonomous motion requires explicit launch opt-in, fresh mission authorization, valid perception and geometry, a collision-qualified plan, healthy all-six-axis feedback and a separately enabled arm.
-- The current cuRobo moving-link collision model is not hardware-qualified; the integration branch therefore blocks physical cuRobo execution.
+- The current cuRobo moving-link collision model is hardware-qualified only for
+  supervised 5% target-scan missions. It remains a non-conservative sphere
+  approximation and is not collision-equivalent to Tesseract.
 - The gripper has no autonomous command path in the target-scan mission.
 - A person or hand remains a terminal blocker; automatic contact manipulation is unqualified.
 - The tracked base must remain stationary during arm dispatch. Base repositioning and brake authority remain external integration responsibilities.

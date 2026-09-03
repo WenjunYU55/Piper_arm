@@ -35,6 +35,7 @@ maintenance records.
 | Reconstruction setup | [`CLEAN_INSTALL.md` section 9](../CLEAN_INSTALL.md#9-optional-offline-tsdf-reconstruction) |
 | Refactor baseline and equivalence evidence | [`refactor/`](refactor/) |
 | Full Tesseract/cuRobo test commands | [`architecture/motion_planner_backends.md`](architecture/motion_planner_backends.md#running-and-testing) |
+| Record paired scan results and build Excel/figures | [`experiments/results_campaign.md`](experiments/results_campaign.md) |
 
 ## Research and maintenance records
 

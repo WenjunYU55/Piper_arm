@@ -1180,6 +1180,8 @@ class TargetScanMissionNode(Node):
             'PIPER_VIEWPOINT_CLOSED_LOOP_ONE_VIEW': '1',
             'PIPER_VIEWPOINT_SPEED_PERCENT': str(
                 configured_value(self, 'free_motion_speed_percent')),
+            'PIPER_CONTACT_SPEED_PERCENT': str(
+                configured_value(self, 'contact_speed_percent')),
             'PIPER_VIEWPOINT_MAX_VIEWS': str(
                 configured_value(self, 'maximum_captures')),
             'PIPER_VIEWPOINT_MIN_VIEWS': str(

@@ -7,11 +7,14 @@ It starts isolated ROS-free planner workers and never starts ROS, a PiPER
 driver, CAN, a camera, a controller, or a motor process. `real_arm_motion` and
 `physical_result_claimed` are both false in the report.
 
-The comparison does not claim that cuRobo is physically qualified. Tesseract
+This command-free comparison is not itself physical-qualification evidence. Tesseract
 uses the exact configured moving and fixed collision geometry. cuRobo 0.7.8
-uses exact fixed meshes but a 69-sphere articulated approximation marked
-`hardware_qualified: false`. Every successful proposal from either backend was
-therefore replayed through Tesseract's exact dense-path validator.
+used exact fixed meshes but a 69-sphere articulated approximation that was
+unqualified when this frozen benchmark was created. Every successful proposal
+from either backend was therefore replayed through Tesseract's exact dense-path
+validator. The current model was subsequently operator-reported physically
+qualified on 2026-09-02 for supervised 5% target-scan missions; that later
+status must not be attributed to this offline benchmark.
 
 ## Frozen corpus
 

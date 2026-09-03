@@ -43,6 +43,9 @@ from piper_mobile_manipulation.target_scan_mission_node import (
     ('TARGET_SCAN_IMPOSSIBLE: item remains cropped at maximum distance',
      FailureCode.TARGET_SCAN_IMPOSSIBLE),
     ('no reachable IK plan exists', FailureCode.NO_REACHABLE_PLAN),
+    ('fresh trajectory validation failed: camera holder/L515 envelope floor '
+     'clearance 0.004064m is below 0.005000m',
+     FailureCode.NO_REACHABLE_PLAN),
     ('CAN bus feedback is unavailable',
      FailureCode.CONTROL_UNTRUSTWORTHY),
     ('visual replacement budget exhausted', FailureCode.MISSION_FAILED),
@@ -260,6 +263,14 @@ def test_failure_is_immutable_and_with_detail_preserves_machine_fields():
 ))
 def test_legacy_adapter_tags_string_only_ros_boundaries(detail, tag):
     assert legacy_failure_adapter(detail).has(tag)
+
+
+def test_completed_capture_transaction_timeout_is_not_retried_externally():
+    failure = legacy_failure_adapter(
+        'CAPTURE_EVIDENCE_TIMEOUT: '
+        'QUALITY_REJECTED: scan quality is stale')
+
+    assert not failure.has(FailureTag.CAPTURE_RETRY_SAME_VIEW)
 
 
 def test_ray_shortlist_and_complete_frontier_have_distinct_decisions():

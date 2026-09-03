@@ -1,5 +1,25 @@
 # PiPER Scan — Operator Quick Start
 
+## Passive results campaign
+
+The GUI **Results Campaign** tab records all cuRobo missions first and then the
+same target-position sequence with Tesseract. These are `MATCHED_RUNS`, because
+backend-block execution is confounded with elapsed time and environment. It records
+missions without publishing ROS data or changing mission behaviour. Full design,
+interpretation and output details are in
+[`docs/experiments/results_campaign.md`](docs/experiments/results_campaign.md).
+
+Command-line collection and report generation are also available:
+
+```bash
+cd /home/prl/Piper_arm
+python3 tools/record_results_campaign.py --project-root /home/prl/Piper_arm --campaign piper-poster-blocked-20260902
+python3 tools/build_results_campaign_report.py --project-root /home/prl/Piper_arm --campaign piper-poster-blocked-20260902 --run-reconstruction
+```
+
+These commands are offline/file-only. They do not start ROS, cameras, planners,
+CAN, drivers, or robot motion.
+
 This is the authoritative operating procedure for the one-button adaptive scan
 workflow. Run commands from the repository root:
 
@@ -19,7 +39,7 @@ Current operating boundary:
 |---|---|
 | Tesseract + tabletop profile | Current supervised reference; real motion still requires all explicit 5% opt-ins and every runtime gate. |
 | Tesseract + tracked-robot ground profile | Proposal-only; `qualified_for_hardware: false`. |
-| cuRobo | Command-free planning only; current collision approximation is `hardware_qualified: false`. |
+| cuRobo + tabletop profile | Hardware-qualified for supervised 5% target-scan missions; requires the independent collision-model and real-motion opt-ins plus every runtime gate. |
 
 Historical incidents, qualification runs, and detailed acceptance evidence are
 kept in [`docs/historical/system_handoff_2026_08_11.md`](docs/historical/system_handoff_2026_08_11.md) and
@@ -78,6 +98,39 @@ cd ~/Piper_arm
 This is the default and recommended first startup. It starts the coordinator
 without permission to enable or move the arm. Tesseract is the default planner.
 
+### Terminal 1 — one coordinator with GUI planner selection
+
+You do **not** need separate coordinator nodes for Tesseract and cuRobo. Start
+the same coordinator with both backends available, then use **Motion planner
+for next mission** in the GUI and press **Apply for Next Mission** while the
+mission is idle:
+
+```bash
+cd ~/Piper_arm
+PIPER_PLANNER_BACKEND=tesseract \
+PIPER_CUROBO_PYTHON=/home/prl/.venvs/piper-curobo-v0.7.8/bin/python \
+PIPER_CUROBO_COLLISION_MODEL_QUALIFIED=1 \
+PIPER_FLOOR_PROFILE=saved \
+PIPER_MISSION_ENABLE_REAL_MOTION=1 \
+PIPER_MISSION_SPEEDS_QUALIFIED=1 \
+PIPER_MISSION_FREE_MOTION_SPEED_PERCENT=5 \
+PIPER_MISSION_CONTACT_SPEED_PERCENT=5 \
+./run_target_scan_mission.sh
+```
+
+`PIPER_PLANNER_BACKEND` is the coordinator's default only. The GUI writes an
+explicit `planner_backend` into each mission goal, so its applied selection
+wins for that mission and is then frozen until the mission finishes. The
+cuRobo interpreter and qualification variables merely make cuRobo available;
+they do not select cuRobo and do not grant it a separate execution path.
+
+`PIPER_FLOOR_PROFILE=saved` makes the coordinator read the GUI's saved
+**Collision environment for next mission** when each mission starts. That
+control chooses the support-plane profile, not the planner backend. For real
+cuRobo motion, the saved environment must currently be `tabletop`; `ground`
+remains unqualified and fails closed. Set `PIPER_FLOOR_PROFILE=tabletop` only
+when you intentionally want to override and lock out the GUI floor selection.
+
 ### Terminal 1 — supervised physical motion
 
 Use this instead of the proposal-only command only after the tabletop Tesseract
@@ -95,8 +148,27 @@ PIPER_MISSION_CONTACT_SPEED_PERCENT=5 \
 ./run_target_scan_mission.sh
 ```
 
-Do not substitute `curobo` or `ground` in this physical-motion command. Those
-paths are not currently hardware-qualified and must fail closed.
+For the hardware-qualified cuRobo scope, use the same supervised 5% gates and
+add both the explicit isolated interpreter and collision-model opt-in:
+
+```bash
+cd ~/Piper_arm
+PIPER_PLANNER_BACKEND=curobo \
+PIPER_CUROBO_PYTHON=/home/prl/.venvs/piper-curobo-v0.7.8/bin/python \
+PIPER_CUROBO_COLLISION_MODEL_QUALIFIED=1 \
+PIPER_FLOOR_PROFILE=tabletop \
+PIPER_MISSION_ENABLE_REAL_MOTION=1 \
+PIPER_MISSION_SPEEDS_QUALIFIED=1 \
+PIPER_MISSION_FREE_MOTION_SPEED_PERCENT=5 \
+PIPER_MISSION_CONTACT_SPEED_PERCENT=5 \
+./run_target_scan_mission.sh
+```
+
+The cuRobo opt-in does not enable motion by itself. Do not use the unqualified
+`ground` floor profile for physical execution.
+The worker also verifies that the generated, hash-bound qualification record
+matches `tabletop` and exactly 5% free/contact speed. Any mismatch reports the
+planner outside its hardware-qualified scope before a plan can be dispatched.
 
 This launcher is a singleton. A second invocation exits with code 73 before
 starting ROS nodes or mission children. Before submitting a GUI goal, require
@@ -107,9 +179,12 @@ GUI, **Motion planner for next mission** selects Tesseract or cuRobo and
 **Collision environment for next mission** selects only the support plane:
 `Tabletop floor (z = +0.005 m)` or `Tracked-robot ground (z = -0.466 m)`.
 Apply selections while idle; the coordinator snapshots them when the next
-mission starts. The tabletop Tesseract manifest is hardware-qualified for its
-declared supervised scope. The ground profile and current cuRobo approximation
-are not. For a command-line override, start the coordinator with
+mission starts. The explicit backend in the GUI mission goal takes precedence
+over the launcher's default backend; clients that omit the field use that
+default. The tabletop Tesseract manifest and current cuRobo model are
+hardware-qualified for their declared supervised scopes. The ground profile is
+not. cuRobo remains a non-conservative sphere approximation and is not claimed
+collision-equivalent to Tesseract. For a command-line override, start the coordinator with
 `PIPER_FLOOR_PROFILE=tabletop` or `PIPER_FLOOR_PROFILE=ground`; omit it to use
 the saved GUI choice. Planner selection is similarly frozen for the mission and
 never falls back automatically.

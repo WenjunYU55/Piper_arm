@@ -39,6 +39,14 @@
     max_viewpoints: 25
     session_max_views: 13
     scan_session_history_topic: "/piper/scan_session_history"
+    # Candidate/NBV work is quiescent while the executor owns an approved
+    # multiview motion or capture transaction, then resumes on the next fresh
+    # target/history update. This prevents planning load starving 20 Hz MoveJ.
+    scan_execution_status_topic: "/piper/scan_execution_status"
+    # The existing generic planner status pauses duplicate NBV/capability work
+    # only while one request is actively PLANNING. Rejected requests release
+    # the same frozen surviving/reserve ray population for the next shortlist.
+    motion_plan_status_topic: "/piper/motion_plan_status"
     # Command-free feedback carrying only population-bound permanent ray
     # eliminations from prequalification and Tesseract endpoint evidence.
     ray_hard_culls_topic: "/piper/ray_hard_culls"
@@ -54,9 +62,10 @@
     duplicate_look_tolerance_deg: 2.0
     # This is accepted-view redundancy only. It is not a maximum transition
     # angle and cannot prevent a globally informative 60/80-degree NBV. The
-    # fifteen-degree floor retires a real neighbourhood around every achieved
-    # accepted/rejected direction in the 360-ray Fibonacci sphere. It is not a
-    # maximum transition angle; all surviving global NBV directions compete.
+    # fifteen-degree floor permanently retires a real neighbourhood around
+    # every accepted direction in the 360-ray Fibonacci sphere. A visually
+    # rejected ray is quarantined only for its current accepted-view generation.
+    # This is not a maximum transition angle; all surviving rays still compete.
     minimum_useful_direction_separation_deg: 15.0
 
     min_reach_m: 0.20

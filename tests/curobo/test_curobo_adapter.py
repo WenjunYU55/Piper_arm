@@ -15,6 +15,7 @@ from motion_planning.curobo.adapter import (
     CuroboPlanningBudgetExceeded,
     normalize_trajectory,
     obstacle_cuboids,
+    position_limit_reentry_path,
     prepend_bootstrap_recovery,
     target_ray_standoff_samples,
     trajectory_segment,
@@ -224,6 +225,100 @@ def test_wxyz_camera_quaternion_conversion_returns_optical_z():
     assert forwards[1] == pytest.approx([1.0, 0.0, 0.0])
 
 
+def test_cad_holder_gate_rejects_recorded_sub_five_mm_floor_clearance():
+    class ArrayValue:
+        def __init__(self, value):
+            self.value = value
+
+        def detach(self):
+            return self
+
+        def cpu(self):
+            return self
+
+        def numpy(self):
+            return self.value
+
+    def link_poses(values, _links):
+        count = len(values)
+        return SimpleNamespace(
+            position=ArrayValue([[0.0, 0.0, 0.059064]] * count),
+            quaternion=ArrayValue([[1.0, 0.0, 0.0, 0.0]] * count),
+        )
+
+    backend = object.__new__(CuroboBackend)
+    backend.floor_z_m = 0.005
+    backend.collision_manifest = {
+        'external_floor_clearance': {
+            'enabled': True,
+            'floor_z_m': 0.005,
+            'clearance_m': 0.005,
+            'label': 'camera holder/L515',
+            'origin_link6_m': [0.0, 0.0, 0.0],
+            'size_m': [0.10, 0.10, 0.10],
+        },
+    }
+    backend.tensor_args = SimpleNamespace(to_device=lambda value: value)
+    backend.motion_gen = SimpleNamespace(kinematics=SimpleNamespace(
+        get_link_poses=link_poses))
+    backend.last_planning_diagnostics = {}
+
+    with pytest.raises(
+            CuroboCollisionRejected,
+            match=(
+                r'camera holder/L515 envelope floor clearance 0\.004064m '
+                r'is below 0\.005000m at sample 0')):
+        backend._external_attached_validation([[0.0] * 6], [])
+
+
+def test_cad_holder_gate_matches_expanded_obstacle_box_clearance():
+    class ArrayValue:
+        def __init__(self, value):
+            self.value = value
+
+        def detach(self):
+            return self
+
+        def cpu(self):
+            return self
+
+        def numpy(self):
+            return self.value
+
+    backend = object.__new__(CuroboBackend)
+    backend.floor_z_m = 0.0
+    backend.collision_manifest = {
+        'external_floor_clearance': {
+            'enabled': True,
+            'floor_z_m': 0.0,
+            'clearance_m': 0.005,
+            'label': 'camera holder/L515',
+            'origin_link6_m': [0.0, 0.0, 0.0],
+            'size_m': [0.10, 0.10, 0.10],
+        },
+    }
+    backend.tensor_args = SimpleNamespace(to_device=lambda value: value)
+    backend.motion_gen = SimpleNamespace(kinematics=SimpleNamespace(
+        get_link_poses=lambda values, _links: SimpleNamespace(
+            position=ArrayValue([[0.0, 0.0, 0.20]] * len(values)),
+            quaternion=ArrayValue(
+                [[1.0, 0.0, 0.0, 0.0]] * len(values)))))
+    backend.last_planning_diagnostics = {}
+    obstacle = {
+        'id': 'close_box',
+        'type': 'box',
+        'minimum_m': [0.052, -0.01, 0.19],
+        'maximum_m': [0.06, 0.01, 0.21],
+    }
+
+    with pytest.raises(
+            CuroboCollisionRejected,
+            match=(
+                'camera holder/L515 envelope intersects obstacle close_box '
+                'clearance at sample 0')):
+        backend._external_attached_validation([[0.0] * 6], [obstacle])
+
+
 def test_curobo_pose_planning_retries_after_visibility_rejection():
     class Scalar:
         def __init__(self, value):
@@ -253,6 +348,8 @@ def test_curobo_pose_planning_retries_after_visibility_rejection():
     ])
     backend._target_visibility_rejection = (
         lambda *_args, **_kwargs: next(rejections))
+    backend._attached_tool_external_rejection = (
+        lambda *_args, **_kwargs: '')
     request = {
         'plan_kind': 'MULTIVIEW_SCAN',
         'planning': {
@@ -276,6 +373,66 @@ def test_curobo_pose_planning_retries_after_visibility_rejection():
     diagnostics = selected['curobo_attempt_diagnostics']
     assert len(diagnostics) == 2
     assert diagnostics[0]['path_qualification'] == 'rejected'
+    assert diagnostics[1]['path_qualification'] == 'accepted'
+
+
+def test_curobo_pose_planning_retries_after_holder_floor_rejection():
+    class Scalar:
+        def __init__(self, value):
+            self.value = value
+
+        def item(self):
+            return self.value
+
+    result = SimpleNamespace(
+        success=Scalar(True), status='SUCCESS', total_time=0.25,
+        goalset_index=Scalar(0))
+    backend = object.__new__(CuroboBackend)
+    backend.tensor_args = SimpleNamespace(to_device=lambda value: value)
+    backend.Pose = lambda **kwargs: kwargs
+    backend.MotionGenPlanConfig = lambda **kwargs: kwargs
+    backend.motion_gen = SimpleNamespace(
+        plan_goalset=lambda *_args, **_kwargs: result)
+    backend._joint_state = lambda value: value
+    backend._restore_collision_constraints = lambda: None
+    backend._path = lambda *_args, **_kwargs: [
+        {'positions_rad': [0.0] * 6},
+        {'positions_rad': [0.1] * 6},
+    ]
+    rejections = iter([
+        'camera holder/L515 envelope floor clearance 0.004064m is below '
+        '0.005000m at sample 193',
+        '',
+    ])
+    backend._attached_tool_external_rejection = (
+        lambda *_args, **_kwargs: next(rejections))
+    backend._target_visibility_rejection = lambda *_args, **_kwargs: ''
+    request = {
+        'plan_kind': 'MULTIVIEW_SCAN',
+        'planning': {
+            'effective_speed_percent': 5.0,
+            'roll_samples_rad': [0.0, 1.0],
+        },
+        'limits': {'position_rad': [[-1.0, 1.0]] * 6},
+        'scene': {
+            'target_center_m': [0.4, 0.0, 0.12],
+            'obstacles': [],
+        },
+        'scan_session': {'accepted_views': 1},
+    }
+    candidate = {
+        'id': 7,
+        'camera_position_m': [0.1, 0.0, 0.12],
+        'look_direction': [1.0, 0.0, 0.0],
+    }
+
+    selected, _points, _duration = backend._plan_pose(
+        [0.0] * 6, candidate, request)
+
+    assert selected['curobo_roll_rad'] == pytest.approx(1.0)
+    diagnostics = selected['curobo_attempt_diagnostics']
+    assert diagnostics[0]['path_qualification'] == 'rejected'
+    assert '0.004064m' in diagnostics[0]['path_qualification_reason']
     assert diagnostics[1]['path_qualification'] == 'accepted'
 
 
@@ -324,6 +481,8 @@ def test_curobo_target_ray_uses_one_goalset_and_reports_selected_standoff():
         {'positions_rad': [0.1] * 6},
     ]
     backend._target_visibility_rejection = lambda *_args, **_kwargs: ''
+    backend._attached_tool_external_rejection = (
+        lambda *_args, **_kwargs: '')
     request = {
         'plan_kind': 'MULTIVIEW_SCAN',
         'planning': {
@@ -391,6 +550,8 @@ def test_curobo_target_ray_fallback_preserves_requested_nominal_aim():
         {'positions_rad': [0.1] * 6},
     ]
     backend._target_visibility_rejection = lambda *_args, **_kwargs: ''
+    backend._attached_tool_external_rejection = (
+        lambda *_args, **_kwargs: '')
     request = {
         'plan_kind': 'MULTIVIEW_SCAN',
         'planning': {
@@ -454,6 +615,7 @@ def test_typed_curobo_failures_do_not_parse_backend_name_as_unavailable():
 def test_curobo_candidate_loop_retries_a_visibility_failed_view():
     backend = object.__new__(CuroboBackend)
     backend._update_world = lambda _request: None
+    backend._position_limit_reentry = lambda _start, _request: None
     backend._bootstrap_recovery = lambda _start, _request: None
     calls = []
 
@@ -486,6 +648,67 @@ def test_curobo_candidate_loop_retries_a_visibility_failed_view():
     assert duration == pytest.approx(0.2)
 
 
+def test_curobo_plan_prepends_limit_reentry_to_the_common_timed_path():
+    backend = object.__new__(CuroboBackend)
+    backend._update_world = lambda _request: None
+    actual = [0.0, 0.8, -0.7, 0.0, 0.7, 3.136623084]
+    projected = [0.0, 0.8, -0.7, 0.0, 0.7, math.pi - 0.0051]
+    reentry = {
+        'positions': [actual, projected],
+        'joint_numbers': [6],
+        'delta_rad': [projected[5] - actual[5]],
+        'start_status': 'MotionGenStatus.INVALID_START_STATE_JOINT_LIMITS',
+        'validation': 'raw_limit_valid_dense_curobo_collision_qualified',
+    }
+    backend._position_limit_reentry = (
+        lambda _start, _request: reentry)
+    backend._bootstrap_recovery = lambda _start, _request: None
+    backend._target_visibility_rejection = lambda *_args, **_kwargs: ''
+    backend._attached_tool_external_rejection = (
+        lambda *_args, **_kwargs: '')
+    planned = normalize_trajectory(
+        [projected, [0.0, 0.8, -0.7, 0.0, 0.7, 3.0]],
+        native_dt_sec=0.05,
+        speed_percent=5.0,
+    )
+
+    def plan_pose(start, candidate, _request):
+        assert start == pytest.approx(projected)
+        return candidate, planned, 0.2
+
+    backend._plan_pose = plan_pose
+    request = {
+        'plan_kind': 'MULTIVIEW_SCAN',
+        'start_state': {'positions_rad': actual},
+        'planning': {
+            'min_viewpoints': 1,
+            'max_viewpoints': 1,
+            'include_return_home': False,
+            'effective_speed_percent': 5.0,
+            'shortlisted_ray_count': 0,
+        },
+        'limits': {'position_rad': [[-math.pi, math.pi]] * 6},
+        'scene': {
+            'target_center_m': [0.4, 0.0, 0.12],
+            'candidate_views': [{'id': 1}],
+        },
+    }
+
+    selected, segments, duration = backend.plan(request)
+
+    assert selected == [{'id': 1}]
+    assert segments[0]['points'][0]['positions_rad'] == pytest.approx(actual)
+    assert segments[0]['points'][1]['positions_rad'] == pytest.approx(
+        projected)
+    assert segments[0]['points'][-1]['positions_rad'][5] == pytest.approx(3.0)
+    assert segments[0]['bootstrap_recovery_used'] is False
+    assert backend.last_planning_diagnostics[
+        'position_limit_reentry_used'] is True
+    assert backend.last_planning_diagnostics[
+        'position_limit_reentry_joint_numbers'] == [6]
+    assert duration == pytest.approx(0.2)
+
+
 def test_float32_joint_limit_overshoot_fails_at_curobo_boundary():
     limits = [[-1.0, 1.0] for _ in range(6)]
     positions = [[0.0] * 6, [0.0, 0.0, 0.0, 0.0, 1.000000028, 0.0]]
@@ -514,6 +737,82 @@ def test_position_limit_validation_accepts_interior_scheduled_path():
         max(abs(b - a) for a, b in zip(
             left['positions_rad'], right['positions_rad'])) <= 0.05
         for left, right in zip(points, points[1:]))
+
+
+def test_position_limit_reentry_covers_recorded_joint6_feedback_boundary():
+    limits = [[-math.pi, math.pi] for _ in range(6)]
+    clips = [0.005, 0.0, 0.0, 0.005, 0.005, 0.005]
+    start = [0.0, 0.8, -0.7, 0.0, 0.7, 3.136623084]
+
+    path = position_limit_reentry_path(
+        start, limits, clips,
+        maximum_clip_excursion_rad=0.001,
+        interior_offset_rad=0.0001,
+        maximum_step_rad=0.00025,
+    )
+
+    assert path[0] == pytest.approx(start)
+    assert path[-1][5] == pytest.approx(math.pi - 0.005 - 0.0001)
+    assert all(
+        math.pi - point[5] >= math.pi - start[5] - 1e-12
+        for point in path)
+    assert all(
+        max(abs(right - left) for left, right in zip(first, second))
+        <= 0.00025 + 1e-12
+        for first, second in zip(path, path[1:]))
+
+
+def test_position_limit_reentry_is_not_a_general_limit_bypass():
+    limits = [[-math.pi, math.pi] for _ in range(6)]
+    clips = [0.005, 0.0, 0.0, 0.005, 0.005, 0.005]
+    comfortably_inside = [0.0, 0.8, -0.7, 0.0, 0.7, 3.0]
+    assert position_limit_reentry_path(
+        comfortably_inside, limits, clips) == ()
+
+    outside_raw_limit = list(comfortably_inside)
+    outside_raw_limit[5] = math.pi + 1e-6
+    with pytest.raises(
+            CuroboContractError,
+            match='joint6 is outside the raw limit'):
+        position_limit_reentry_path(
+            outside_raw_limit, limits, clips)
+
+    tighter_than_observed_policy = list(comfortably_inside)
+    tighter_than_observed_policy[5] = math.pi - 0.0039
+    with pytest.raises(
+            CuroboContractError,
+            match='joint6 exceeds the bounded feedback excursion'):
+        position_limit_reentry_path(
+            tighter_than_observed_policy, limits, clips,
+            maximum_clip_excursion_rad=0.001)
+
+
+def test_curobo_limit_reentry_requires_collision_free_dense_transition():
+    backend = object.__new__(CuroboBackend)
+    start = [0.0, 0.8, -0.7, 0.0, 0.7, 3.136623084]
+    backend._start_state_status = lambda positions: (
+        (False, 'MotionGenStatus.INVALID_START_STATE_JOINT_LIMITS')
+        if positions == start else (True, 'None'))
+    checked = []
+    backend._collision_path_without_position_clip = (
+        lambda positions: checked.append(positions) or True)
+    request = request_fixture()
+    request['limits']['position_rad'] = [
+        [-math.pi, math.pi] for _ in range(6)]
+
+    recovery = CuroboBackend._position_limit_reentry(
+        backend, start, request)
+
+    assert recovery['joint_numbers'] == [6]
+    assert recovery['positions'][0] == pytest.approx(start)
+    assert recovery['positions'][-1][5] < math.pi - 0.005
+    assert checked and checked[0] == recovery['positions']
+
+    backend._collision_path_without_position_clip = lambda _positions: False
+    with pytest.raises(
+            CuroboCollisionRejected,
+            match='position-limit re-entry is in collision'):
+        CuroboBackend._position_limit_reentry(backend, start, request)
 
 
 def test_bootstrap_recovery_is_prepended_and_declared_generically():
@@ -578,7 +877,20 @@ def test_malformed_native_trajectory_fails_closed(bad):
 def test_collision_qualification_requires_model_evidence_and_operator_opt_in(
         monkeypatch):
     worker = SimpleNamespace(backend=SimpleNamespace(
-        model_provenance={'hardware_qualified': False}))
+        model_provenance={
+            'hardware_qualified': False,
+            'hardware_qualification': {
+                'hardware_qualified': True,
+                'scope': 'supervised_5_percent_target_scan',
+                'floor_profile': 'tabletop',
+                'free_motion_speed_percent': 5.0,
+                'contact_speed_percent': 5.0,
+                'real_motion_requires_explicit_opt_in': True,
+            },
+        }))
+    monkeypatch.setenv('PIPER_FLOOR_PROFILE', 'tabletop')
+    monkeypatch.setenv('PIPER_VIEWPOINT_SPEED_PERCENT', '5')
+    monkeypatch.setenv('PIPER_CONTACT_SPEED_PERCENT', '5')
     monkeypatch.setenv('PIPER_CUROBO_COLLISION_MODEL_QUALIFIED', '1')
     assert Worker.collision_model_qualified(worker) is False
 
@@ -588,6 +900,33 @@ def test_collision_qualification_requires_model_evidence_and_operator_opt_in(
 
     monkeypatch.setenv('PIPER_CUROBO_COLLISION_MODEL_QUALIFIED', '1')
     assert Worker.collision_model_qualified(worker) is True
+
+
+@pytest.mark.parametrize(('name', 'value'), [
+    ('PIPER_FLOOR_PROFILE', 'ground'),
+    ('PIPER_VIEWPOINT_SPEED_PERCENT', '5.1'),
+    ('PIPER_CONTACT_SPEED_PERCENT', '4.9'),
+])
+def test_collision_qualification_rejects_runtime_outside_physical_scope(
+        monkeypatch, name, value):
+    worker = SimpleNamespace(backend=SimpleNamespace(
+        model_provenance={
+            'hardware_qualified': True,
+            'hardware_qualification': {
+                'hardware_qualified': True,
+                'scope': 'supervised_5_percent_target_scan',
+                'floor_profile': 'tabletop',
+                'free_motion_speed_percent': 5.0,
+                'contact_speed_percent': 5.0,
+                'real_motion_requires_explicit_opt_in': True,
+            },
+        }))
+    monkeypatch.setenv('PIPER_CUROBO_COLLISION_MODEL_QUALIFIED', '1')
+    monkeypatch.setenv('PIPER_FLOOR_PROFILE', 'tabletop')
+    monkeypatch.setenv('PIPER_VIEWPOINT_SPEED_PERCENT', '5')
+    monkeypatch.setenv('PIPER_CONTACT_SPEED_PERCENT', '5')
+    monkeypatch.setenv(name, value)
+    assert Worker.collision_model_qualified(worker) is False
 
 
 def test_worker_health_stays_bounded_when_model_provenance_is_large():

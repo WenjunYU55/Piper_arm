@@ -16,7 +16,9 @@ from sensor_msgs.msg import CameraInfo
 from std_msgs.msg import String
 import yaml
 
-from piper_mobile_manipulation.msg import Target3D, TrackedTarget
+from piper_mobile_manipulation.msg import (
+    MotionPlanStatus, ScanExecutionStatus, Target3D, TrackedTarget,
+)
 from piper_mobile_manipulation.planning.coverage import (
     candidate_meets_minimum_information,
     MINIMUM_USEFUL_MARGINAL_INFORMATION_FRACTION,
@@ -53,7 +55,9 @@ from piper_mobile_manipulation.scan_session_memory import (
     validate_history_payload,
 )
 from piper_mobile_manipulation.planning.generation import (
+    execution_blocks_viewpoint_generation,
     make_view_generation,
+    planner_request_blocks_viewpoint_generation,
     view_policy_capabilities,
 )
 from piper_mobile_manipulation.planning.rays import (
@@ -237,6 +241,55 @@ def retired_view_history(history, ray_policy):
     return list(history.get('entries', []))
 
 
+def current_ray_population_phase(history):
+    """Return the stable ray-population phase represented by scan history."""
+    return 'bootstrap' if int(history.get('accepted_views', 0)) == 0 \
+        else 'qualified'
+
+
+def current_population_rejected_ray_ids(history):
+    """Return visual ray failures quarantined for this ray population."""
+    population_phase = current_ray_population_phase(history)
+    rejected = set()
+    for entry in history.get('rejected_entries', []):
+        if not isinstance(entry, dict):
+            continue
+        # A cropped first capture must retry this same ray farther out.
+        if entry.get('framing_retry_ray_id') is not None:
+            continue
+        # Historical records without an explicit population phase cannot
+        # safely cull a reused numeric ray ID.
+        if entry.get('ray_population_phase') != population_phase:
+            continue
+        try:
+            ray_id = int(entry['ray_id'])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if ray_id >= 0:
+            rejected.add(ray_id)
+    return rejected
+
+
+def quarantine_current_population_rays(
+        viewpoints, history, rejection_reasons=None):
+    """Remove visual failures for the lifetime of the current population."""
+    rejected = current_population_rejected_ray_ids(history)
+    if not rejected:
+        return list(viewpoints)
+    population_phase = current_ray_population_phase(history)
+    remaining = []
+    for item in viewpoints:
+        ray_id = int(item.get('ray_id', -1))
+        if ray_id in rejected:
+            if rejection_reasons is not None:
+                rejection_reasons[ray_id] = [
+                    'visually rejected in %s ray population'
+                    % population_phase]
+            continue
+        remaining.append(item)
+    return remaining
+
+
 class ScanViewpointPlannerNode(Node):
     def __init__(self):
         super().__init__('scan_viewpoint_planner_node')
@@ -253,6 +306,10 @@ class ScanViewpointPlannerNode(Node):
             'scan_capture_status_topic', '/piper/scan_capture_status')
         self.declare_parameter(
             'ray_hard_culls_topic', '/piper/ray_hard_culls')
+        self.declare_parameter(
+            'scan_execution_status_topic', '/piper/scan_execution_status')
+        self.declare_parameter(
+            'motion_plan_status_topic', '/piper/motion_plan_status')
         self.declare_parameter('planning_frame_id', 'base_link')
 
         self.declare_parameter('desired_scan_angle_deg', 250)
@@ -321,6 +378,9 @@ class ScanViewpointPlannerNode(Node):
         self.last_plan_monotonic = 0.0
         self.last_frame_warning_monotonic = 0.0
         self.latest_capture_status = None
+        self.execution_generation_suspended = False
+        self.planner_generation_suspended = False
+        self.viewpoint_generation_suspended = False
         self.nbv_scan_dir = ''
         self.nbv_model_error = 'no accepted capture is available'
         self.nbv_ranking_cache_key = None
@@ -418,6 +478,18 @@ class ScanViewpointPlannerNode(Node):
             self.capture_status_cb,
             10,
         )
+        self.execution_status_sub = self.create_subscription(
+            ScanExecutionStatus,
+            self.get_parameter('scan_execution_status_topic').value,
+            self.execution_status_cb,
+            10,
+        )
+        self.planner_status_sub = self.create_subscription(
+            MotionPlanStatus,
+            self.get_parameter('motion_plan_status_topic').value,
+            self.planner_status_cb,
+            1,
+        )
         hard_cull_qos = QoSProfile(
             depth=2,
             reliability=ReliabilityPolicy.RELIABLE,
@@ -509,6 +581,23 @@ class ScanViewpointPlannerNode(Node):
             return
         self.latest_capture_status = payload
         self.refresh_coverage_model()
+
+    def execution_status_cb(self, msg):
+        """Freeze candidate work while one approved scan view is executing."""
+        self.execution_generation_suspended = (
+            execution_blocks_viewpoint_generation(
+                msg.execution_mode, msg.state))
+        self.viewpoint_generation_suspended = bool(
+            self.execution_generation_suspended
+            or getattr(self, 'planner_generation_suspended', False))
+
+    def planner_status_cb(self, msg):
+        """Freeze candidate work while one generic plan request is active."""
+        self.planner_generation_suspended = (
+            planner_request_blocks_viewpoint_generation(msg.state))
+        self.viewpoint_generation_suspended = bool(
+            getattr(self, 'execution_generation_suspended', False)
+            or self.planner_generation_suspended)
 
     def hard_cull_cb(self, msg):
         """Accept only feedback bound to the current frozen ray universe."""
@@ -809,6 +898,8 @@ class ScanViewpointPlannerNode(Node):
     def target_cb(self, msg, source):
         if not msg.valid:
             return
+        if self.viewpoint_generation_suspended:
+            return
         frame_rejection = target_frame_rejection_reason(
             msg.header.frame_id,
             self.get_parameter('planning_frame_id').value)
@@ -961,10 +1052,22 @@ class ScanViewpointPlannerNode(Node):
         planner_rejections = {}
         viewpoints = prune_hard_culled_rays(
             viewpoints, persistent_culls, planner_rejections)
+        available_before_visual_quarantine = len(viewpoints)
+        visual_quarantine = (
+            current_population_rejected_ray_ids(history)
+            if ray_policy else set())
+        if visual_quarantine:
+            viewpoints = quarantine_current_population_rays(
+                viewpoints, history, planner_rejections)
+        visual_quarantine_exhausted = bool(
+            visual_quarantine
+            and available_before_visual_quarantine > 0
+            and not viewpoints)
         # A ray mission has two monotonic retirement sources only: accepted
         # camera directions (including their angular neighbourhood) and the
-        # permanent hard-cull ledger above.  Do not turn a path-dependent or
-        # framing rejection into an accidental permanent direction cull.
+        # permanent hard-cull ledger above. Visual endpoint failures remain
+        # quarantined only until the bootstrap/qualified population changes;
+        # framing retries remain an explicit exception.
         retired_history = retired_view_history(history, ray_policy)
         viewpoints = filter_and_order_viewpoints(
             viewpoints,
@@ -1004,6 +1107,8 @@ class ScanViewpointPlannerNode(Node):
         selection_failure_code = (
             'TARGET_FRAMING_NO_AIMED_ENDPOINT'
             if ray_policy and framing_retry and not viewpoints else
+            'RAY_FRONTIER_EXHAUSTED'
+            if visual_quarantine_exhausted else
             target_shape_failure_code(target_envelope_error)
             if ray_policy and target_envelope is None and not viewpoints else
             'NO_SAFE_TARGET_STANDOFF'

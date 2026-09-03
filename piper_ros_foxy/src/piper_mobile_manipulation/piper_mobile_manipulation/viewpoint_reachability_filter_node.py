@@ -12,6 +12,7 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
+from piper_mobile_manipulation.msg import MotionPlanStatus, ScanExecutionStatus
 from piper_mobile_manipulation.execution.motion import motor_control_reasons
 from piper_mobile_manipulation.planning.capability import (
     load_capability_map,
@@ -21,6 +22,10 @@ from piper_mobile_manipulation.planning.ray_culls import (
     hard_cull_snapshot,
     population_key,
     stable_revision,
+)
+from piper_mobile_manipulation.planning.generation import (
+    execution_blocks_viewpoint_generation,
+    planner_request_blocks_viewpoint_generation,
 )
 from piper_mobile_manipulation.ray_mission_diagnostics import (
     add_prequalification,
@@ -228,6 +233,10 @@ class ViewpointReachabilityFilterNode(Node):
         self.declare_parameter('target_status_topic', '/piper/target_status')
         self.declare_parameter(
             'ray_hard_culls_topic', '/piper/ray_hard_culls')
+        self.declare_parameter(
+            'scan_execution_status_topic', '/piper/scan_execution_status')
+        self.declare_parameter(
+            'motion_plan_status_topic', '/piper/motion_plan_status')
 
         self.declare_parameter('min_reach_m', 0.20)
         self.declare_parameter('max_reach_m', 0.75)
@@ -267,6 +276,9 @@ class ViewpointReachabilityFilterNode(Node):
         self.capability_map_artifact_sha256 = ''
         self.hard_cull_population_key = None
         self.hard_cull_entries = {}
+        self.execution_processing_suspended = False
+        self.planner_processing_suspended = False
+        self.multiview_processing_suspended = False
         self.ray_diagnostics_store = RayMissionDiagnosticsStore(
             self.get_parameter('ray_diagnostics_root').value)
         self.initialize_capability_map()
@@ -317,13 +329,25 @@ class ViewpointReachabilityFilterNode(Node):
             self.joint_cb,
             10,
         )
+        self.execution_status_sub = self.create_subscription(
+            ScanExecutionStatus,
+            self.get_parameter('scan_execution_status_topic').value,
+            self.execution_status_cb,
+            1,
+        )
+        self.planner_status_sub = self.create_subscription(
+            MotionPlanStatus,
+            self.get_parameter('motion_plan_status_topic').value,
+            self.planner_status_cb,
+            1,
+        )
         # Create the high-rate scan input last so safety-state subscriptions are
         # established before the first candidate burst arrives.
         self.scan_sub = self.create_subscription(
             String,
             self.get_parameter('scan_viewpoints_topic').value,
             self.scan_cb,
-            10,
+            1,
         )
         self.acquisition_sub = self.create_subscription(
             String,
@@ -393,7 +417,26 @@ class ViewpointReachabilityFilterNode(Node):
     def target_status_cb(self, msg):
         self.target_status = msg.data
 
+    def execution_status_cb(self, msg):
+        """Drop queued multiview generations while their view is in flight."""
+        self.execution_processing_suspended = (
+            execution_blocks_viewpoint_generation(
+                msg.execution_mode, msg.state))
+        self.multiview_processing_suspended = bool(
+            self.execution_processing_suspended
+            or getattr(self, 'planner_processing_suspended', False))
+
+    def planner_status_cb(self, msg):
+        """Drop repeated multiview work while one plan request is active."""
+        self.planner_processing_suspended = (
+            planner_request_blocks_viewpoint_generation(msg.state))
+        self.multiview_processing_suspended = bool(
+            getattr(self, 'execution_processing_suspended', False)
+            or self.planner_processing_suspended)
+
     def scan_cb(self, msg):
+        if self.multiview_processing_suspended:
+            return
         self.filter_payload(
             msg, self.pub, expected_plan_kind='MULTIVIEW_SCAN')
 

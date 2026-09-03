@@ -3,9 +3,10 @@ import json
 import math
 import os
 import time
+from copy import deepcopy
 from collections import deque
 from datetime import datetime
-from threading import Condition
+from threading import Condition, Lock
 
 import cv2
 import hashlib
@@ -25,6 +26,10 @@ from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformException, TransformListener
 
 from piper_mobile_manipulation.msg import ScanExecutionStatus, Target3D
+from piper_mobile_manipulation.infrastructure.failure_model import (
+    as_failure,
+    FailureTag,
+)
 from piper_mobile_manipulation.scan_capture import (
     DepthQualityRejected,
     capture_diagnostic_rejection,
@@ -201,7 +206,18 @@ class ScanCaptureNode(Node):
         self.native_bundle_cache = deque(maxlen=max(
             minimum_cache,
             int(self.get_parameter('capture_cache_size').value)))
-        self.native_bundle_condition = Condition()
+        # A mask may arrive for a raw colour frame that the RGB-D approximate
+        # synchronizer did not retain.  Keep a small history so capture can
+        # select a genuinely correlated pair rather than betting on whichever
+        # mask happened to arrive last.
+        self.mask_cache = deque(maxlen=max(4, min(
+            int(self.get_parameter('capture_cache_size').value),
+            2 * minimum_cache)))
+        # One recorder-owned condition wakes the bounded capture transaction
+        # for camera, target, workflow and diagnostic evidence.  Keep the
+        # historical name as an alias for focused harness compatibility.
+        self.capture_evidence_condition = Condition()
+        self.native_bundle_condition = self.capture_evidence_condition
         self.prepared_capture = None
         self.last_capture_result = None
         self.latest_scan_viewpoints = None
@@ -211,6 +227,7 @@ class ScanCaptureNode(Node):
         self.latest_scan_quality_at = None
         self.latest_occlusion_status = None
         self.latest_occlusion_status_at = None
+        self.diagnostic_lock = Lock()
         self.last_capture_time = None
         self.frame_index = 0
         self.manifest_sha256 = ''
@@ -383,12 +400,14 @@ class ScanCaptureNode(Node):
         )
 
     def rgbd_cb(self, color, depth, camera_info):
-        self.latest_color = color
-        self.latest_depth = depth
-        self.latest_camera_info = camera_info
-        self.latest_bundle_received_at = time.monotonic()
-        self.color_bundle_cache.append((
-            color, depth, camera_info, self.latest_bundle_received_at))
+        with self.capture_evidence_condition:
+            self.latest_color = color
+            self.latest_depth = depth
+            self.latest_camera_info = camera_info
+            self.latest_bundle_received_at = time.monotonic()
+            self.color_bundle_cache.append((
+                color, depth, camera_info, self.latest_bundle_received_at))
+            self.capture_evidence_condition.notify_all()
 
     def native_bundle_cb(self, depth, confidence, camera_info):
         bundle = (depth, confidence, camera_info, time.monotonic())
@@ -397,16 +416,21 @@ class ScanCaptureNode(Node):
             self.native_bundle_condition.notify_all()
 
     def mask_cb(self, msg):
-        self.latest_mask = msg
+        with self.capture_evidence_condition:
+            self.latest_mask = msg
+            self.mask_cache.append(msg)
+            self.capture_evidence_condition.notify_all()
 
     def target_cb(self, msg):
         self.latest_target = msg
+        self.notify_capture_evidence()
 
     def joint_state_cb(self, msg):
         self.latest_joint_state = msg
 
     def execution_status_cb(self, msg):
         self.latest_execution_status = msg
+        self.notify_capture_evidence()
 
     def plan_provenance_cb(self, msg):
         payload = self.parse_json_msg(msg)
@@ -437,12 +461,24 @@ class ScanCaptureNode(Node):
         self.latest_scan_coverage = self.parse_json_msg(msg)
 
     def scan_quality_cb(self, msg):
-        self.latest_scan_quality = self.parse_json_msg(msg)
-        self.latest_scan_quality_at = time.monotonic()
+        with self.diagnostic_lock:
+            self.latest_scan_quality = self.parse_json_msg(msg)
+            self.latest_scan_quality_at = time.monotonic()
+        self.notify_capture_evidence()
 
     def occlusion_status_cb(self, msg):
-        self.latest_occlusion_status = self.parse_json_msg(msg)
-        self.latest_occlusion_status_at = time.monotonic()
+        with self.diagnostic_lock:
+            self.latest_occlusion_status = self.parse_json_msg(msg)
+            self.latest_occlusion_status_at = time.monotonic()
+        self.notify_capture_evidence()
+
+    def notify_capture_evidence(self):
+        """Wake the one bounded service transaction after evidence changes."""
+        condition = getattr(self, 'capture_evidence_condition', None)
+        if condition is None:
+            return
+        with condition:
+            condition.notify_all()
 
     def timer_cb(self):
         if self.frame_index >= int(self.get_parameter('max_frames_per_scan').value):
@@ -473,7 +509,12 @@ class ScanCaptureNode(Node):
             response.success = False
             response.message = 'maximum frame count reached'
             return response
-        ok, reason = self.capture_prerequisites_ready()
+        transaction_started_at = time.monotonic()
+        transaction_deadline = self.capture_transaction_deadline(
+            transaction_started_at)
+        ok, reason, _diagnostics = (
+            self.wait_for_capture_prerequisite_evidence(
+                transaction_deadline))
         if not ok:
             self.note_skip(reason)
             self.publish_status('skipped', reason)
@@ -482,20 +523,47 @@ class ScanCaptureNode(Node):
             return response
         burst_started_at = time.monotonic()
         burst, reason = self.collect_prospective_native_depth_burst(
-            burst_started_at)
+            burst_started_at, deadline=transaction_deadline)
         if reason:
             self.note_skip(reason)
             self.publish_status('skipped', reason)
             response.success = False
             response.message = reason
             return response
-        ok, reason = self.capture_ready(depth_burst=burst)
+        mask_message, color_bundle, reason = (
+            self.wait_for_correlated_capture_pair(
+                burst, transaction_deadline))
+        if reason:
+            self.note_skip(reason)
+            self.publish_status('skipped', reason)
+            response.success = False
+            response.message = reason
+            return response
+        # The pair is selected only after proving exact mask/RGB identity and
+        # overlap with this settled native-depth burst.  Freeze both; a later
+        # SAM publication cannot move the preparation target.
+        prepared, reason = self.prepare_capture_until_ready(
+            burst, mask_message, color_bundle, transaction_deadline)
+        if reason:
+            self.note_skip(reason)
+            self.publish_status('skipped', reason)
+            response.success = False
+            response.message = reason
+            return response
+        # This is the sole final capture admission.  Wait for a fresh
+        # diagnostic callback rather than returning a transient stale result
+        # to an executor loop that would throw away and recollect the burst.
+        ok, reason, diagnostics = (
+            self.wait_for_capture_prerequisite_evidence(
+                transaction_deadline))
         if not ok:
             self.note_skip(reason)
             self.publish_status('skipped', reason)
             response.success = False
             response.message = reason
             return response
+        prepared['capture_admission_diagnostics'] = diagnostics
+        self.prepared_capture = prepared
         self.last_capture_result = None
         saved, message = self.capture_frame(self.get_clock().now())
         response.success = bool(saved)
@@ -505,39 +573,193 @@ class ScanCaptureNode(Node):
             else str(message))
         return response
 
-    def capture_prerequisites_ready(self):
-        """Check the unchanged non-image capture gates."""
+    def capture_transaction_deadline(self, started_at):
+        """Return one absolute service deadline with response-time margin."""
+        timeout = float(self.get_parameter('capture_timeout_sec').value)
+        available = timeout - CAPTURE_RESPONSE_MARGIN_SEC
+        if available <= 0.0:
+            return float(started_at)
+        return float(started_at) + available
+
+    def wait_for_capture_prerequisite_evidence(self, deadline):
+        """Wait for transient admission evidence without restarting capture."""
+        last_reason = 'capture evidence is unavailable'
+        while True:
+            ready, reason, diagnostics = self.capture_prerequisite_evidence()
+            if ready:
+                return True, '', diagnostics
+            last_reason = str(reason or last_reason)
+            if not as_failure(last_reason).has(
+                    FailureTag.CAPTURE_RETRY_SAME_VIEW):
+                return False, last_reason, None
+            remaining = float(deadline) - time.monotonic()
+            if remaining <= 0.0:
+                return False, (
+                    'CAPTURE_EVIDENCE_TIMEOUT: ' + last_reason), None
+            condition = getattr(self, 'capture_evidence_condition', None)
+            if condition is None:
+                time.sleep(min(0.05, remaining))
+                continue
+            with condition:
+                condition.wait(timeout=min(0.10, remaining))
+
+    def correlated_capture_pair(self, burst, now_monotonic=None):
+        """Return the newest fresh exact mask/RGB pair overlapping *burst*."""
+        masks = list(getattr(self, 'mask_cache', ()))
+        color_bundles = list(getattr(self, 'color_bundle_cache', ()))
+        if not masks:
+            return None, None, 'missing detection mask'
+        if not color_bundles:
+            return None, None, 'missing synchronized RGB-D bundle'
+        now = (
+            time.monotonic() if now_monotonic is None
+            else float(now_monotonic))
+        rgb_slop = float(
+            self.get_parameter('synchronization_slop_sec').value)
+        maximum_age = float(self.get_parameter('max_bundle_age_sec').value)
+        last_reason = ''
+        for mask_message in reversed(masks):
+            if nearest_stamped_item(burst, mask_message, rgb_slop) is None:
+                continue
+            color_bundle = exact_stamped_item(
+                color_bundles, mask_message)
+            if color_bundle is None:
+                continue
+            color, depth, camera_info, received_at = color_bundle
+            last_reason = synchronized_bundle_rejection(
+                color, depth, camera_info, received_at, now,
+                maximum_age, rgb_slop)
+            if not last_reason:
+                return mask_message, color_bundle, ''
+        detail = (
+            ': ' + last_reason.lower() if last_reason else '')
+        return None, None, (
+            'no fresh exact mask/RGB-D pair overlaps the settled '
+            'native-depth burst%s' % detail)
+
+    def wait_for_correlated_capture_pair(self, burst, deadline):
+        """Wait for a provable capture pair, then freeze that exact pair."""
+        last_reason = 'correlated mask/RGB-D capture pair is unavailable'
+        condition = getattr(self, 'capture_evidence_condition', None)
+        if condition is None:
+            while True:
+                mask_message, color_bundle, reason = (
+                    self.correlated_capture_pair(burst))
+                if mask_message is not None and color_bundle is not None:
+                    return mask_message, color_bundle, ''
+                last_reason = str(reason or last_reason)
+                remaining = float(deadline) - time.monotonic()
+                if remaining <= 0.0:
+                    return None, None, (
+                        'CAPTURE_EVIDENCE_TIMEOUT: ' + last_reason)
+                time.sleep(min(0.05, remaining))
+        with condition:
+            while True:
+                mask_message, color_bundle, reason = (
+                    self.correlated_capture_pair(burst))
+                if mask_message is not None and color_bundle is not None:
+                    return mask_message, color_bundle, ''
+                last_reason = str(reason or last_reason)
+                remaining = float(deadline) - time.monotonic()
+                if remaining <= 0.0:
+                    return None, None, (
+                        'CAPTURE_EVIDENCE_TIMEOUT: ' + last_reason)
+                condition.wait(timeout=min(0.10, remaining))
+
+    def prepare_capture_until_ready(
+            self, burst, mask_message, color_bundle, deadline):
+        """Prepare one frozen burst/mask pair, waiting only for companions."""
+        waitable_fragments = (
+            'extrapolation into the future',
+        )
+        last_reason = 'capture preparation evidence is unavailable'
+        while True:
+            prepared, reason = self.prepare_confidence_capture(
+                burst, mask_message=mask_message,
+                color_bundle=color_bundle)
+            if prepared is not None and not reason:
+                return prepared, ''
+            last_reason = str(reason or last_reason)
+            if not any(fragment in last_reason.lower()
+                       for fragment in waitable_fragments):
+                return None, last_reason
+            remaining = float(deadline) - time.monotonic()
+            if remaining <= 0.0:
+                return None, 'CAPTURE_EVIDENCE_TIMEOUT: ' + last_reason
+            condition = getattr(self, 'capture_evidence_condition', None)
+            if condition is None:
+                time.sleep(min(0.05, remaining))
+                continue
+            with condition:
+                condition.wait(timeout=min(0.10, remaining))
+
+    def capture_diagnostic_snapshot(self):
+        """Freeze one internally consistent quality/occlusion observation."""
+        now = time.monotonic()
+        lock = getattr(self, 'diagnostic_lock', None)
+        if lock is None:
+            quality = deepcopy(getattr(self, 'latest_scan_quality', None))
+            quality_at = getattr(self, 'latest_scan_quality_at', None)
+            occlusion = deepcopy(getattr(
+                self, 'latest_occlusion_status', None))
+            occlusion_at = getattr(self, 'latest_occlusion_status_at', None)
+        else:
+            with lock:
+                quality = deepcopy(self.latest_scan_quality)
+                quality_at = self.latest_scan_quality_at
+                occlusion = deepcopy(self.latest_occlusion_status)
+                occlusion_at = self.latest_occlusion_status_at
+        return {
+            'admitted_at_monotonic_sec': float(now),
+            'scan_quality_age_sec': (
+                None if quality_at is None else float(now - quality_at)),
+            'occlusion_age_sec': (
+                None if occlusion_at is None else float(now - occlusion_at)),
+            'scan_quality_raw': quality,
+            'occlusion_raw': occlusion,
+            'scan_quality_metadata': (
+                ScanCaptureNode.scan_quality_metadata_from_payload(quality)),
+            'occlusion_metadata': (
+                ScanCaptureNode.occlusion_metadata_from_payload(occlusion)),
+        }
+
+    def capture_prerequisite_evidence(self):
+        """Check non-image gates and return their exact diagnostic evidence."""
         self.prepared_capture = None
         if not self.param_bool('dry_run'):
-            return False, 'dry_run is false'
+            return False, 'dry_run is false', None
         if self.param_bool('enable_real_arm_motion'):
-            return False, 'enable_real_arm_motion is true'
+            return False, 'enable_real_arm_motion is true', None
         if self.param_bool('require_mask') and self.latest_mask is None:
-            return False, 'missing detection mask'
+            return False, 'missing detection mask', None
         if self.param_bool('require_valid_target'):
             if self.latest_target is None:
-                return False, 'missing target_3d'
+                return False, 'missing target_3d', None
             if not self.latest_target.valid:
-                return False, 'target_3d invalid'
+                return False, 'target_3d invalid', None
+        diagnostics = ScanCaptureNode.capture_diagnostic_snapshot(self)
         if self.capture_mode() == 'service':
             status = self.latest_execution_status
             if status is None:
-                return False, 'missing scan execution status'
+                return False, 'missing scan execution status', None
             if str(status.execution_mode) != 'MULTIVIEW_SCAN':
-                return False, 'scan execution is not MULTIVIEW_SCAN'
+                return False, 'scan execution is not MULTIVIEW_SCAN', None
             if str(status.state) not in ('CAPTURING', 'CAPTURING_RGBD'):
-                return False, 'executor is not at an accepted settled capture'
+                return (
+                    False,
+                    'executor is not at an accepted settled capture',
+                    None,
+                )
             if (
                     self.param_bool('require_good_quality_for_service')
                     or self.param_bool('require_clear_occlusion_for_service')):
-                now = time.monotonic()
                 quality = (
-                    self.latest_scan_quality
+                    diagnostics['scan_quality_raw']
                     if self.param_bool('require_good_quality_for_service')
                     else {'quality_label': 'GOOD', 'quality_score': 1.0,
                           'target_valid': True})
                 occlusion = (
-                    self.latest_occlusion_status
+                    diagnostics['occlusion_raw']
                     if self.param_bool('require_clear_occlusion_for_service')
                     else {'occlusion_state': 'CLEAR'})
                 classified_occlusion_barrier = bool(
@@ -552,13 +774,11 @@ class ScanCaptureNode(Node):
                     quality,
                     (0.0 if not self.param_bool(
                         'require_good_quality_for_service') else
-                     None if self.latest_scan_quality_at is None else
-                     now - self.latest_scan_quality_at),
+                     diagnostics['scan_quality_age_sec']),
                     occlusion,
                     (0.0 if not self.param_bool(
                         'require_clear_occlusion_for_service') else
-                     None if self.latest_occlusion_status_at is None else
-                     now - self.latest_occlusion_status_at),
+                     diagnostics['occlusion_age_sec']),
                     float(self.get_parameter('diagnostic_timeout_sec').value),
                     float(self.get_parameter(
                         'minimum_accepted_quality_score').value),
@@ -569,12 +789,19 @@ class ScanCaptureNode(Node):
                         else ('CLEAR',)),
                 )
                 if reason:
-                    return False, reason
-        return True, ''
+                    return False, reason, None
+        return True, '', diagnostics
+
+    def capture_prerequisites_ready(self):
+        """Check the unchanged non-image capture gates."""
+        ready, reason, _diagnostics = (
+            ScanCaptureNode.capture_prerequisite_evidence(self))
+        return ready, reason
 
     def capture_ready(self, depth_burst=None):
         """Prepare one capture after all established gates pass."""
-        ok, reason = self.capture_prerequisites_ready()
+        ok, reason, diagnostics = (
+            ScanCaptureNode.capture_prerequisite_evidence(self))
         if not ok:
             return False, reason
         if depth_burst is None:
@@ -584,6 +811,10 @@ class ScanCaptureNode(Node):
         prepared, reason = self.prepare_confidence_capture(depth_burst)
         if reason:
             return False, reason
+        # Interval mode retains one admission snapshot; service mode uses its
+        # dedicated transaction and performs the sole final admission after
+        # preparation.
+        prepared['capture_admission_diagnostics'] = diagnostics
         self.prepared_capture = prepared
         return True, ''
 
@@ -663,7 +894,8 @@ class ScanCaptureNode(Node):
                 % (requested, len(selected), requested))
         return selected[-requested:], ''
 
-    def collect_prospective_native_depth_burst(self, started_at):
+    def collect_prospective_native_depth_burst(
+            self, started_at, deadline=None):
         """Wait for exactly the requested number of new camera frames."""
         requested = int(self.get_parameter('capture_burst_frames').value)
         if requested < 1:
@@ -675,7 +907,10 @@ class ScanCaptureNode(Node):
             return None, (
                 'capture_timeout_sec must exceed the %.1f-second service '
                 'response margin' % CAPTURE_RESPONSE_MARGIN_SEC)
-        deadline = float(started_at) + collection_timeout
+        deadline = (
+            float(started_at) + collection_timeout
+            if deadline is None else min(
+                float(deadline), float(started_at) + collection_timeout))
         available = 0
         with self.native_bundle_condition:
             while True:
@@ -700,7 +935,8 @@ class ScanCaptureNode(Node):
             '(%d/%d received over %.2fs; synchronized rate %.2f Hz)'
             % (requested, available, requested, elapsed, rate))
 
-    def prepare_confidence_capture(self, burst):
+    def prepare_confidence_capture(
+            self, burst, mask_message=None, color_bundle=None):
         """Prepare one immutable mask/RGB plus 20-frame depth observation."""
         if not isinstance(burst, (list, tuple)):
             return None, (
@@ -710,11 +946,19 @@ class ScanCaptureNode(Node):
             return None, (
                 'confidence-qualified native depth burst requires exactly '
                 '%d frames; received %d' % (requested, len(burst)))
-        mask_message = self.latest_mask
+        mask_message = (
+            self.latest_mask if mask_message is None else mask_message)
         if mask_message is None:
             return None, 'missing detection mask'
-        color_bundle = exact_stamped_item(
-            self.color_bundle_cache, mask_message)
+        if color_bundle is None:
+            color_bundle = exact_stamped_item(
+                self.color_bundle_cache, mask_message)
+        elif (
+                not isinstance(color_bundle, (list, tuple))
+                or len(color_bundle) != 4
+                or stamp_key(color_bundle[0]) != stamp_key(mask_message)):
+            return None, (
+                'frozen RGB-D bundle does not exactly match detection mask')
         if color_bundle is None:
             return None, (
                 'confidence-qualified RGB-D bundle is still catching up with '
@@ -980,8 +1224,7 @@ class ScanCaptureNode(Node):
         planned_count = self.planned_viewpoint_count()
         reachable_count = self.reachable_viewpoint_count()
         coverage_target = self.scan_coverage_target()
-        quality = self.scan_quality_metadata()
-        occlusion = self.occlusion_metadata()
+        quality, occlusion = self.capture_diagnostics_for_metadata(prepared)
         execution = self.execution_status_metadata(
             self.latest_execution_status)
         view_selection = capture_view_selection_provenance(
@@ -1053,6 +1296,8 @@ class ScanCaptureNode(Node):
             'centredness_score': quality['centredness_score'],
             'edge_margin_score': quality['edge_margin_score'],
             'scan_quality_target_valid': quality['target_valid'],
+            'capture_diagnostics_bound_to_admission': bool(
+                prepared.get('capture_admission_diagnostics')),
             'occlusion_available': occlusion['occlusion_available'],
             'occlusion_state': occlusion['occlusion_state'],
             'occlusion_score': occlusion['occlusion_score'],
@@ -1258,10 +1503,11 @@ class ScanCaptureNode(Node):
                 return float(max(angles) - min(angles))
         return None
 
-    def scan_quality_metadata(self):
-        payload = self.latest_scan_quality if isinstance(self.latest_scan_quality, dict) else None
+    @staticmethod
+    def scan_quality_metadata_from_payload(payload):
+        payload = payload if isinstance(payload, dict) else None
         if payload is None:
-            return self.empty_scan_quality_metadata()
+            return ScanCaptureNode.empty_scan_quality_metadata()
 
         return {
             'scan_quality_available': True,
@@ -1276,6 +1522,10 @@ class ScanCaptureNode(Node):
             'edge_margin_score': float(payload.get('edge_margin_score', 0.0)),
             'target_valid': bool(payload.get('target_valid', False)),
         }
+
+    def scan_quality_metadata(self):
+        return self.scan_quality_metadata_from_payload(
+            self.latest_scan_quality)
 
     @staticmethod
     def empty_scan_quality_metadata():
@@ -1299,12 +1549,11 @@ class ScanCaptureNode(Node):
         if label in self.quality_counts:
             self.quality_counts[label] += 1
 
-    def occlusion_metadata(self):
-        payload = (
-            self.latest_occlusion_status
-            if isinstance(self.latest_occlusion_status, dict) else None)
+    @staticmethod
+    def occlusion_metadata_from_payload(payload):
+        payload = payload if isinstance(payload, dict) else None
         if payload is None:
-            return self.empty_occlusion_metadata()
+            return ScanCaptureNode.empty_occlusion_metadata()
         return {
             'occlusion_available': True,
             'occlusion_state': str(payload.get('occlusion_state', 'UNKNOWN')),
@@ -1325,6 +1574,20 @@ class ScanCaptureNode(Node):
                 payload.get('reference_session_id', '')),
             'occlusion_reason': str(payload.get('reason', '')),
         }
+
+    def occlusion_metadata(self):
+        return self.occlusion_metadata_from_payload(
+            self.latest_occlusion_status)
+
+    def capture_diagnostics_for_metadata(self, prepared):
+        """Use commit-admitted diagnostics, never a later live transition."""
+        admission = prepared.get('capture_admission_diagnostics')
+        if isinstance(admission, dict):
+            quality = admission.get('scan_quality_metadata')
+            occlusion = admission.get('occlusion_metadata')
+            if isinstance(quality, dict) and isinstance(occlusion, dict):
+                return deepcopy(quality), deepcopy(occlusion)
+        return self.scan_quality_metadata(), self.occlusion_metadata()
 
     @staticmethod
     def empty_occlusion_metadata():

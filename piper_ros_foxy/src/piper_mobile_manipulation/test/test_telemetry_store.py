@@ -143,6 +143,78 @@ def test_snapshot_dataclasses_are_frozen_and_values_are_defensive_copies():
     assert next_snapshot.mission.capture.value['samples'] == [1, 2]
 
 
+def test_runtime_snapshot_excludes_bulk_evidence_and_stays_defensive():
+    class CountedCopy:
+        copies = 0
+
+        def __deepcopy__(self, _memo):
+            type(self).copies += 1
+            return type(self)()
+
+    store = TelemetryStore(FakeClock(2.0))
+    store.update_joints({'positions': [0.1] * 6})
+    store.update_arm_status('status')
+    store.update_motion_limits('limits')
+    store.update_camera('camera')
+    store.update_target('target')
+    store.update_tracking('tracking')
+    store.update_target_status('LOCKED')
+    store.update_obstacles('obstacles')
+    store.update_workflow({'state': 'SCAN_READY'})
+    store.update_reachable_scan(CountedCopy())
+    copies_after_update = CountedCopy.copies
+
+    snapshot = store.runtime_snapshot()
+
+    assert CountedCopy.copies == copies_after_update
+    assert snapshot.arm.joints.value['positions'] == [0.1] * 6
+    assert snapshot.perception.target.value == 'target'
+    assert snapshot.mission.workflow.value == {'state': 'SCAN_READY'}
+    assert snapshot.mission.readiness is None
+    assert snapshot.mission.plan is None
+    assert snapshot.mission.execution is None
+    assert snapshot.mission.capture is None
+    assert snapshot.mission.scan_history is None
+    assert snapshot.mission.reachable_scan is None
+
+    snapshot.arm.joints.value['positions'].append(0.2)
+    assert store.runtime_snapshot().arm.joints.value['positions'] == [0.1] * 6
+
+
+def test_execution_tick_never_copies_bulk_ray_evidence_for_motion():
+    class RuntimeOnlyStore(TelemetryStore):
+        def snapshot(self):
+            raise AssertionError('full snapshot entered the execution tick')
+
+    store = RuntimeOnlyStore(FakeClock(5.0))
+    store.update_obstacles(SimpleNamespace(
+        instances=[], scene_blocked=False))
+    calls = []
+    executor = SimpleNamespace(
+        telemetry_store=store,
+        state='MOVING',
+        plan_kind='MULTIVIEW_SCAN',
+        current_view=0,
+        plan_collision_model_qualified=True,
+        acquisition_scene_snapshot_validated=False,
+        abort_return_bootstrap_static_scene=False,
+        is_acquisition=lambda: False,
+        is_return_home=lambda: False,
+        is_startup_home_static=lambda: False,
+        returning_home=lambda: False,
+        runtime_reasons=lambda policy, **kwargs: calls.append(
+            ('gate', policy, kwargs['telemetry_snapshot'])) or [],
+        moving_tick=lambda telemetry_snapshot=None: calls.append(
+            ('moving', telemetry_snapshot)),
+    )
+
+    ScanViewpointExecutorNode.execution_tick(executor)
+
+    assert calls[0][0] == 'gate'
+    assert calls[1][0] == 'moving'
+    assert calls[0][2] is calls[1][1]
+
+
 def test_snapshot_consistency_keeps_value_timestamp_and_revision_together():
     clock = FakeClock(1.0)
     store = TelemetryStore(clock)
@@ -325,6 +397,22 @@ def test_executor_freshness_decision_matches_legacy_boundary_semantics():
     clock.advance(0.0001)
     assert ScanViewpointExecutorNode.fresh(legacy, 'joints') is False
     assert ScanViewpointExecutorNode.fresh(migrated, 'joints') is False
+
+
+def test_executor_scan_freshness_retains_full_snapshot_contract():
+    clock = FakeClock(10.0)
+    executor = SimpleNamespace(
+        now=clock,
+        updated={'scan': 9.0},
+        get_parameter=lambda _name: SimpleNamespace(value=2.0),
+        telemetry_store=TelemetryStore(clock),
+    )
+    executor.telemetry_store.update_reachable_scan(
+        {'generation': 4}, received_at=9.0)
+
+    assert ScanViewpointExecutorNode.fresh(executor, 'scan') is True
+    clock.advance(1.0001)
+    assert ScanViewpointExecutorNode.fresh(executor, 'scan') is False
 
 
 def test_executor_joint_decision_uses_one_snapshot_and_matches_legacy():
