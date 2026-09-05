@@ -37,6 +37,8 @@ from motion_planning.curobo.adapter import (
     worker_rejection_code,
 )
 from motion_planning.curobo.spool import Spool
+from motion_planning.curobo.timing import (
+    RequestTiming, clock, native_metrics, timed_stage)
 from piper_tesseract_foxy.protocol.contract import (
     ContractError as PlannerContractError,
     validate_response as validate_planner_response,
@@ -638,6 +640,7 @@ class CuroboBackend:
             bound.enable_cost()
             self._restore_collision_constraints()
 
+    @timed_stage('position_limit_reentry')
     def _position_limit_reentry(self, start, request):
         """Recover only encoder-scale excursions outside cuRobo's inset."""
         valid, status = self._start_state_status(start)
@@ -682,6 +685,7 @@ class CuroboBackend:
                 'raw_limit_valid_dense_curobo_collision_qualified'),
         }
 
+    @timed_stage('bootstrap_recovery')
     def _bootstrap_recovery(self, start, request):
         """Find the same bounded acquisition-only folded-start escape as Tesseract.
 
@@ -750,6 +754,7 @@ class CuroboBackend:
         raise CuroboContractError(
             'no bounded cuRobo bootstrap recovery reaches a normally valid state')
 
+    @timed_stage('world_update')
     def _update_world(self, request):
         world_cuboids = list(self.fixed_platform_cuboids)
         world_cuboids.extend(obstacle_cuboids(request, self.floor_z_m))
@@ -759,6 +764,7 @@ class CuroboBackend:
             cuboid=cuboids, mesh=meshes))
         self._restore_collision_constraints()
 
+    @timed_stage('trajectory_normalization')
     def _path(self, result, speed, position_limits):
         if not bool(result.success.item()):
             raise CuroboContractError(
@@ -779,6 +785,7 @@ class CuroboBackend:
             positions.tolist(), float(result.interpolation_dt), speed,
             position_limits=position_limits)
 
+    @timed_stage('visibility_check')
     def _target_visibility_rejection(
             self, points, request, candidate):
         """Densely qualify one cuRobo path before exposing it as feasible."""
@@ -814,6 +821,7 @@ class CuroboBackend:
             initial_alignment=first_alignment,
             final_aim_deg=final_aim)
 
+    @timed_stage('attached_tool_check')
     def _attached_tool_external_rejection(self, points, request):
         """Mirror the executor's CAD-holder floor and box clearance gate."""
         positions = np.asarray([
@@ -921,6 +929,15 @@ class CuroboBackend:
         return values + [values[-1]] * (
             CUROBO_FIXED_GOALSET_SIZE - len(values))
 
+    def _timed_native_plan(self, method, start, goal, config, context):
+        timing = getattr(self, 'request_timing', None)
+        if timing is None:
+            return method(start, goal, config)
+        with timing.stage('motiongen', context) as event:
+            result = method(start, goal, config)
+            native_metrics(result, event)
+            return result
+
     def _plan_target_ray(self, start, candidate, request):
         """Plan one target ray as bounded MotionGen goal sets.
 
@@ -973,14 +990,22 @@ class CuroboBackend:
                         'exact' if direction_index == 0 else 'fallback',
                         len(remaining)))
                 try:
-                    result = self.motion_gen.plan_goalset(
+                    result = self._timed_native_plan(
+                        self.motion_gen.plan_goalset,
                         self._joint_state(start), goal,
                         self.MotionGenPlanConfig(
                             enable_graph=True,
                             max_attempts=20,
                             timeout=timeout,
                             fail_on_invalid_query=True,
-                        ))
+                        ), {
+                            'id': candidate.get('id'),
+                            'ray_id': candidate.get('ray_id'),
+                            'aim_variant': direction_index,
+                            'semantic_goals': len(remaining),
+                            'padded_goals': len(padded),
+                            'timeout_sec': timeout,
+                        })
                 finally:
                     self._restore_collision_constraints()
                 elapsed = float(result.total_time)
@@ -1045,6 +1070,7 @@ class CuroboBackend:
             'cuRobo found no collision-safe target-visible pose along ray %s%s'
             % (candidate.get('ray_id', candidate.get('id', -1)), suffix))
 
+    @timed_stage('candidate')
     def _plan_pose(self, start, candidate, request):
         if candidate.get('candidate_geometry') == 'target_ray':
             return self._plan_target_ray(start, candidate, request)
@@ -1076,14 +1102,22 @@ class CuroboBackend:
                         'exact' if direction_index == 0 else 'fallback',
                         len(remaining)))
                 try:
-                    result = self.motion_gen.plan_goalset(
+                    result = self._timed_native_plan(
+                        self.motion_gen.plan_goalset,
                         self._joint_state(start), goal,
                         self.MotionGenPlanConfig(
                             enable_graph=True,
                             max_attempts=20,
                             timeout=timeout,
                             fail_on_invalid_query=True,
-                        ))
+                        ), {
+                            'id': candidate.get('id'),
+                            'ray_id': candidate.get('ray_id'),
+                            'aim_variant': direction_index,
+                            'semantic_goals': len(remaining),
+                            'padded_goals': len(padded_rolls),
+                            'timeout_sec': timeout,
+                        })
                 finally:
                     self._restore_collision_constraints()
                 total_duration += float(result.total_time)
@@ -1262,6 +1296,7 @@ class CuroboBackend:
         """Retain the direct-home floor-only compatibility boundary."""
         return self._external_attached_validation(positions)
 
+    @timed_stage('direct_home_validation')
     def _plan_configured_home_direct(self, request, start, goal):
         """Build the common, direct SDK home target with external-floor proof."""
         stage = self._configured_home_direct_stage(request)
@@ -1349,12 +1384,13 @@ class CuroboBackend:
 
     def _plan_joint_goal(self, start, goal, request):
         try:
-            result = self.motion_gen.plan_single_js(
+            result = self._timed_native_plan(
+                self.motion_gen.plan_single_js,
                 self._joint_state(start), self._joint_state(goal),
                 self.MotionGenPlanConfig(
                     enable_graph=True, max_attempts=20,
                     timeout=self._remaining_planning_time('joint goal'),
-                    fail_on_invalid_query=True))
+                    fail_on_invalid_query=True), {'plan_kind': 'joint_goal'})
         finally:
             self._restore_collision_constraints()
         return (
@@ -1364,6 +1400,7 @@ class CuroboBackend:
             float(result.total_time),
         )
 
+    @timed_stage('backend_plan', reset=True)
     def plan(self, request):
         """Plan selected camera poses and optional home through one backend."""
         planning_budget, attempt_budget = planning_budgets_for_request(request)
@@ -1698,8 +1735,14 @@ class Worker:
         request_id, request = self.spool.claim_next()
         if request_id is None:
             return False
+        worker_timing = RequestTiming()
+        if self.backend is not None:
+            # A rejected request must never inherit the previous request's evidence.
+            self.backend.last_planning_diagnostics = {}
+            self.backend.request_timing = None
         try:
-            validate_request(request)
+            with worker_timing.stage('request_validation'):
+                validate_request(request)
             if self.backend is None:
                 raise BackendUnavailable(
                     self.backend_error or 'cuRobo backend unavailable')
@@ -1755,8 +1798,9 @@ class Worker:
             # bridge.  Convert violations into a structured worker failure so
             # malformed GPU output never crosses the backend boundary.
             try:
-                validate_planner_response(
-                    attach_digest(response, 'response_sha256'), request)
+                with worker_timing.stage('response_validation'):
+                    validate_planner_response(
+                        attach_digest(response, 'response_sha256'), request)
             except PlannerContractError as error:
                 raise CuroboOutputInvalid(
                     'cuRobo normalized output failed the generic contract: %s'
@@ -1781,8 +1825,39 @@ class Worker:
                     error, 'planning_diagnostics', getattr(
                         self.backend, 'last_planning_diagnostics', {}))),
             }
-        self.spool.write_response(
-            request_id, attach_digest(response, 'response_sha256'))
+        try:
+            diagnostics = response.setdefault('planning_diagnostics', {})
+            # Typed planner exceptions copy diagnostics before plan() unwinds.
+            # Attach the finalized recorder, including the failing last stage.
+            backend_timing = getattr(self.backend, 'request_timing', None)
+            if backend_timing is not None:
+                diagnostics['timing'] = backend_timing.snapshot()
+            diagnostics['worker_timing'] = worker_timing.snapshot()
+            diagnostics['worker_request_wall_sec'] = (
+                clock() - worker_timing.started)
+        except Exception:
+            pass
+        with worker_timing.stage('response_publication'):
+            self.spool.write_response(
+                request_id, attach_digest(response, 'response_sha256'))
+        # Persist all plan kinds and failures in the existing owned worker log.
+        # This runs after publication and cannot reject or alter a proposal.
+        try:
+            print('CUROBO_REQUEST_TIMING ' + json.dumps({
+                'task_id': os.environ.get('PIPER_MISSION_TASK_ID', ''),
+                'request_id': request_id,
+                'request_status': response['status'],
+                'plan_kind': request.get('plan_kind', ''),
+                'timestamp_ns': time.time_ns(),
+                'metrics': {
+                    **response.get('planning_diagnostics', {}),
+                    'worker_timing': worker_timing.snapshot(),
+                    'worker_through_publication_wall_sec': (
+                        clock() - worker_timing.started),
+                },
+            }, sort_keys=True, allow_nan=False), flush=True)
+        except Exception:
+            pass
         processing = self.spool.path('processing', request_id)
         try:
             processing.unlink()

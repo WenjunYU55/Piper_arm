@@ -1,4 +1,7 @@
 schema_version: 1
+curobo_request_timing_2026_09_05:
+  invariants: [no explicit CUDA synchronize, no new planner call, unchanged request and trajectory identity, observational bridge copy only, no thresholds deadlines warmup padding or ordering changes, timing failure cannot replace planner outcomes, no hardware required for ordinary tests]
+  must_retest_if_changed: [tests/curobo/test_curobo_timing.py, tests/curobo/test_curobo_adapter.py, Tesseract bridge and contract tests, tests/results_campaign]
 single_capture_transaction_guardrail_2026_09_03:
   invariants: [one Trigger request owns one non-resettable absolute deadline, stale or missing diagnostics are never admitted, exactly one prospective 20-frame burst is used, a mask is frozen only with its exact fresh RGB-D partner and native-burst overlap, an unmatched newer mask cannot hide an older valid pair, only future-TF preparation may wait after pair selection, final quality and occlusion are copied atomically and bound to commit metadata and response, every malformed geometry confidence and persistence error remains fail closed]
   prohibited: [resetting the capture deadline on evidence updates, recollecting a new burst for every diagnostic pulse, freezing the latest mask before proving its RGB-D partner, accepting nearest rather than exact mask/RGB identity, swapping the frozen pair mid-preparation, widening one-second freshness or synchronization thresholds, externally retrying CAPTURE_EVIDENCE_TIMEOUT ten times, weakening capture or execution safety]

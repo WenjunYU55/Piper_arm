@@ -1010,3 +1010,6 @@ def test_worker_converts_invalid_success_output_to_structured_failure(
     assert 'normalized output failed the generic contract' in (
         worker.spool.response['diagnostic'])
     assert 'joint5=' in worker.spool.response['diagnostic']
+    diagnostics = worker.spool.response['planning_diagnostics']
+    assert diagnostics['worker_request_wall_sec'] >= 0
+    assert diagnostics['worker_timing']['stages']['response_validation']['calls'] == 1

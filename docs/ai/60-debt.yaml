@@ -1,4 +1,8 @@
 schema_version: 1
+curobo_request_timing_2026_09_05:
+  resolved: Request-stage host timing and failed-attempt retention are added to existing evidence; legacy accepted-candidate native duration remains explicitly distinct from wall time.
+  remaining: [controlled GPU timing comparison, first-request versus warmed latency, goalset-aware warmup comparison, graph-first versus optimization-first comparison, padding cost measurement, identical-world cache reuse assessment]
+  non_claims: [no measured speedup, no changed planner decisions, no new physical qualification]
 capture_retry_loop_followup_2026_09_03:
   status: correlated_pair_software_fix_full_regression_passed_physical_retest_pending
   resolved: [transient low-rate diagnostic gaps wait inside one recorder-owned transaction, one absolute deadline cannot be renewed by caller retries, one native-depth burst is retained, the newest exact fresh mask/RGB-D pair overlapping that burst is selected from bounded caches, final admitted diagnostics remain commit-bound, terminal transaction timeout preserves its concrete reason]

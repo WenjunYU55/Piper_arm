@@ -1,5 +1,52 @@
 # Motion-planner backends
 
+## Passive request timing (2026-09-05)
+
+New missions automatically record cuRobo timings; no planner setting changes are
+required. Restart the coordinator/owned worker before testing updated code; do
+not restart it during a mission. This instrumentation does not change warm-up,
+54-goal padding, graph search, retries, deadlines, qualification or execution.
+
+- `planning_diagnostics.timing`: inclusive host timings for world update,
+  recovery, each candidate, MotionGen calls (including failures), normalization,
+  attached-tool/visibility checks and the complete backend plan. Events include
+  candidate/ray IDs on candidate/native calls, exact/fallback aim index (0 is
+  exact), semantic/padded goal counts, exception details and rejection reasons.
+- Native `ik_time`, `graph_time`, `trajopt_time`, `finetune_time`, `solve_time`
+  and `total_time` are copied when available. These are cuRobo's own reported
+  values, not independently measured GPU kernel times. No CUDA synchronization
+  or profiler is added. Missing native fields remain absent.
+- `worker_request_wall_sec`: after claim/read through response preparation and
+  generic validation, excluding final serialization and spool publication.
+- `worker_through_publication_wall_sec`: includes publication, available in the
+  `CUROBO_REQUEST_TIMING` JSON line in the existing `curobo_worker.log`.
+- `bridge_request_wall_sec`: request construction through validated response
+  recording, including queueing and bridge polling, before ROS publication.
+  It is added only to the observational ray-report copy, not the signed response.
+
+Nested stage durations overlap: **do not sum them**. The existing
+`planning_duration_sec` keeps its historical native accepted-candidate meaning;
+use the explicit wall-time fields for request latency. A recorder retains up to
+1024 events, reports `dropped_events`, and continues aggregate call/time totals.
+
+Multiview timings are retained under
+`datasets/ray_diagnostics/<task>/RayProcesses*.json`. All completed cuRobo requests,
+including acquisition and failures, also emit task/request-bound timing lines
+after response publication in the supervisor-owned worker log. The existing
+Results Campaign collector reads that log using the mission result's
+`action_summary.processes.curobo_worker.log`, filters the exact task ID and merges
+request IDs with ray events. Campaign reporting adds `planner_stage` and
+`planner_attempt` rows with scalar seconds/counts to the existing `Planning.csv`
+and `Planning` workbook sheet. Preserve campaign evidence before deleting logs.
+Historical runs are not backfilled. Process kills may leave no final request
+record; bridge timeouts and missing worker timings are not successful samples.
+
+Ordinary command-free checks (use the existing project test environment):
+
+```bash
+python3 -m pytest tests/curobo/test_curobo_timing.py tests/curobo/test_curobo_adapter.py tests/results_campaign
+```
+
 ## Scope and safety status
 
 The scan mission has one backend-neutral planning path. `planner_backend` is

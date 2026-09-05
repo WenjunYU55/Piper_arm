@@ -1,4 +1,9 @@
 schema_version: 1
+curobo_request_timing_2026_09_05:
+  validation: 1210 ordinary cuRobo campaign Tesseract and mobile tests passed with 12 skips including 11 opt-in GPU tests; Python syntax and all AI YAML files parsed; no hardware or GPU planner launched.
+  purpose: Passive cuRobo request-stage and failed-attempt timing carried through existing planner diagnostics and Results Campaign Planning CSV/XLSX.
+  owners: [motion_planning/curobo/timing.py, motion_planning/curobo/worker.py, piper_tesseract_foxy/bridge_node.py, results_campaign/collector.py, results_campaign/metrics.py]
+  unchanged: [planning policy, warmup, goal padding, budgets, safety gates, trajectory transport, hardware qualification, real-motion default]
 single_transaction_capture_admission_2026_09_03:
   incident: Task gui-sim-8bcbf207e665452cb53fc55e9f9d2657 completed one capture and later failed after ten recorder service calls with QUALITY_REJECTED scan quality is stale. The quality publisher was configured at one second but commonly arrived every 1.198 through 1.201 seconds, creating unavoidable stale windows against the unchanged one-second admission age. Each transient failure consumed an executor retry and restarted capture preparation.
   physical_retest_finding: Task gui-sim-c3b12771f2904e53beee6b5b57ade26f saved three captures and proved the one-call deadline, but capture four exposed that freezing the newest mask before proving its exact RGB-D partner can select a raw colour frame dropped by the recorder synchronizer. That historical frame can never arrive later, so the transaction correctly timed out but could not select an older valid matched mask.

@@ -69,6 +69,21 @@ class _Recorder:
         self.messages.append(message)
 
 
+def test_bridge_timing_is_observational_and_preserves_response(monkeypatch):
+    payload = {'request_id': 'r', 'planning_diagnostics': {'planning_duration_sec': 0.2}}
+    before = json.dumps(payload, sort_keys=True)
+    observed = []
+    monkeypatch.setattr(bridge_module.time, 'perf_counter', lambda: 12.0)
+    monkeypatch.setattr(bridge_module, 'add_planner_response',
+                        lambda snapshot, value, request: observed.append(value) or snapshot)
+    state = {'ray_diagnostics': {}, 'timing_started': 10.0, 'request': {}}
+    fake = SimpleNamespace(pending={'r': state},
+                           get_parameter=lambda _: SimpleNamespace(value=False))
+    TesseractPlanBridge._record_ray_response(fake, payload)
+    assert observed[0]['planning_diagnostics']['bridge_request_wall_sec'] == 2.0
+    assert json.dumps(payload, sort_keys=True) == before
+
+
 class _Logger:
     def __init__(self):
         self.messages = []

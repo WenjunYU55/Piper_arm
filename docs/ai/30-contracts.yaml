@@ -1,4 +1,10 @@
 schema_version: 1
+curobo_request_timing_2026_09_05:
+  schema: Additive planning_diagnostics.timing and worker_timing schema 1; existing planning_duration_sec is not redefined.
+  clock: perf_counter host wall seconds without added CUDA synchronization; native IK graph trajopt finetune solve and total fields are copied only when available.
+  boundaries: worker_request_wall_sec starts after request claim/read and stops before final response serialization/publication; worker_through_publication_wall_sec in the log includes publication; bridge_request_wall_sec starts before request construction and ends at validated response recording before ROS publication.
+  retention: Up to 1024 stage events per recorder with explicit dropped_events and untruncated stage totals; failed candidates and native exceptions remain represented. Nested stage totals are inclusive and must not be summed.
+  persistence: Hash-bound worker response; observational bridge copy only; owned worker log filtered by exact task ID; campaign merges duplicate request IDs and retains bridge timing.
 single_capture_transaction_contract_2026_09_03:
   external_boundary: The existing Trigger capture service remains unchanged. One accepted request creates one recorder-owned transaction whose absolute deadline is capture_timeout_sec minus the existing two-second service-response reserve.
   readiness: Missing or stale execution quality or occlusion evidence tagged CAPTURE_RETRY_SAME_VIEW is waited on internally and never treated as accepted. At the deadline the recorder returns CAPTURE_EVIDENCE_TIMEOUT with the last concrete reason.

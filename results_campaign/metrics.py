@@ -368,6 +368,9 @@ def summarize_evidence(evidence: Dict[str, Any]) -> Dict[str, List[Dict[str, Any
         planning = dict(common)
         planning.update({
             'record_type': 'ray_event',
+            'request_id': event.get('request_id', ''),
+            'request_status': event.get('request_status', ''),
+            'plan_kind': event.get('plan_kind', ''),
             'event_index': event_index,
             'event_timestamp_ns': event.get('timestamp_ns'),
             'event_message': event.get('message'),
@@ -376,6 +379,36 @@ def summarize_evidence(evidence: Dict[str, Any]) -> Dict[str, List[Dict[str, Any
             **(metrics if isinstance(metrics, dict) else {}),
         })
         rows['Planning'].append(planning)
+
+        # Scalar rows keep the existing Planning CSV/XLSX directly usable.
+        # Nested stages are inclusive; never sum them as total request time.
+        for timing_key in ('timing', 'worker_timing'):
+            timing = metrics.get(timing_key, {}) if isinstance(metrics, dict) else {}
+            if not isinstance(timing, dict):
+                continue
+            stages = timing.get('stages', {})
+            for stage, values in stages.items() if isinstance(stages, dict) else []:
+                if isinstance(values, dict):
+                    rows['Planning'].append({
+                        **common, 'record_type': 'planner_stage',
+                        'request_id': event.get('request_id', ''),
+                        'request_status': event.get('request_status', ''),
+                        'plan_kind': event.get('plan_kind', ''),
+                        'event_index': event_index, 'timing_scope': timing_key,
+                        'stage': stage, 'stage_calls': values.get('calls'),
+                        'stage_wall_sec': values.get('wall_sec'),
+                    })
+            events = timing.get('events', [])
+            for attempt_index, attempt in enumerate(events if isinstance(events, list) else []):
+                if isinstance(attempt, dict):
+                    rows['Planning'].append({
+                        **common, 'record_type': 'planner_attempt',
+                        'request_id': event.get('request_id', ''),
+                        'request_status': event.get('request_status', ''),
+                        'plan_kind': event.get('plan_kind', ''),
+                        'event_index': event_index, 'timing_scope': timing_key,
+                        'attempt_index': attempt_index, **attempt,
+                    })
 
     if rows['Runs']:
         capture_times = [

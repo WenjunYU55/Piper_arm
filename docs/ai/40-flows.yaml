@@ -1,4 +1,7 @@
 schema_version: 1
+curobo_request_timing_2026_09_05:
+  manual_smoke_checks: [run ordinary timing adapter bridge and campaign tests without ROS processes or CUDA, inspect future authorized mission worker log and ray plan events, rebuild campaign report and inspect Planning stage and attempt rows]
+  failure_modes: [native failure still propagates identically, malformed or missing optional timing never authorizes or rejects motion, killed workers may have no completed-request timing, missing log source remains unavailable]
 single_capture_transaction_flow_2026_09_03:
   sequence: [executor holds a settled achieved view and calls capture once, recorder establishes one absolute deadline, condition notifications wake fresh execution quality occlusion mask and RGB-D checks, recorder collects one 20-frame native-depth burst, newest cached mask with an exact fresh RGB-D partner overlapping the burst is selected, the proven triple is frozen, bounded future-TF catch-up reuses that evidence, one final diagnostic snapshot is admitted, atomic commit returns that same evidence]
   failure_modes: [deadline expires while waiting for fresh evidence, burst cannot complete before response reserve, synchronized RGB-D or TF never catches up, malformed or low-confidence depth, final diagnostic state unqualified, persistence failure]

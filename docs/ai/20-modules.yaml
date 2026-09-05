@@ -1,4 +1,9 @@
 schema_version: 1
+curobo_request_timing_2026_09_05:
+  owner_module: motion_planning/curobo/timing.py
+  supporting_owners: [motion_planning/curobo/worker.py, piper_tesseract_foxy/bridge_node.py, results_campaign/collector.py, results_campaign/metrics.py]
+  allowed_edit_paths: [listed owners, tests/curobo, tests/results_campaign, Tesseract bridge tests, docs/architecture/motion_planner_backends.md, docs/ai]
+  must_not_move_without: [generic response hashes, existing ray journal, campaign task correlation, planner deadlines, native result semantics]
 capture_transaction_ownership_2026_09_03:
   owner_module: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture_node.py
   supporting_owner: piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/infrastructure/failure_model.py

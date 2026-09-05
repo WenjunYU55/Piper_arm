@@ -1,4 +1,7 @@
 schema_version: 1
+curobo_request_timing_2026_09_05:
+  inspect: [planning_diagnostics.timing, planning_diagnostics.worker_timing, worker_request_wall_sec, bridge_request_wall_sec, curobo_worker.log CUROBO_REQUEST_TIMING, Results Campaign Planning sheet]
+  rule: Native stage times and nested host stages are not additive. Missing timing is unavailable, never zero; legacy planning_duration_sec semantics are unchanged.
 capture_transaction_maintenance_2026_09_03:
   symptoms: [capture repeatedly reports catching up before one final stale-quality failure, quality diagnostics are GOOD but their approximately 1.2-second delivery cadence crosses the one-second freshness boundary, a stationary capture invokes the recorder service many times]
   inspect_first: [scan_capture_node.py capture_view_cb wait_for_capture_prerequisite_evidence prepare_capture_until_ready capture_prerequisite_evidence, infrastructure/failure_model.py capture retry classification, scan_viewpoint_executor_node.py WAIT_CAPTURE, vision.log scan_capture.log executor.log]

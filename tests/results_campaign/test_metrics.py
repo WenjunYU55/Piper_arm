@@ -75,6 +75,11 @@ def test_summary_reports_qualification_and_ray_planning_events():
                 'generated_ray_count': 360,
                 'surviving_ray_count': 44,
                 'planning_duration_sec': 1.2,
+                'timing': {
+                    'stages': {'motiongen': {'calls': 2, 'wall_sec': 0.4}},
+                    'events': [{'stage': 'motiongen', 'wall_sec': 0.2,
+                                'native_status': 'IK_FAIL', 'semantic_goals': 6}],
+                },
             },
         }]},
     })
@@ -86,3 +91,8 @@ def test_summary_reports_qualification_and_ray_planning_events():
     assert event['record_type'] == 'ray_event'
     assert event['generated_ray_count'] == 360
     assert event['surviving_ray_count'] == 44
+    stage = next(row for row in rows['Planning'] if row['record_type'] == 'planner_stage')
+    attempt = next(row for row in rows['Planning'] if row['record_type'] == 'planner_attempt')
+    assert stage['stage_wall_sec'] == 0.4
+    assert stage['stage_calls'] == 2
+    assert attempt['native_status'] == 'IK_FAIL'

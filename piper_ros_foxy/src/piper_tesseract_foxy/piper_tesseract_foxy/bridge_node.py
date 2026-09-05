@@ -680,6 +680,7 @@ class MotionPlannerBridge(Node):
                 else 'SNAPSHOT_BLOCKED')
             self.set_status(state, response.message)
             return response
+        request_timing_started = time.perf_counter()
         try:
             home_stage = str(getattr(request, 'home_stage', '')).strip()
             joint_goal = [
@@ -699,6 +700,7 @@ class MotionPlannerBridge(Node):
         self.pending[payload['request_id']] = {
             'request': payload,
             'started': self.now(),
+            'timing_started': request_timing_started,
             'ray_diagnostics': ray_diagnostics,
         }
         response.accepted = True
@@ -1168,8 +1170,15 @@ class MotionPlannerBridge(Node):
         diagnostics = state.get('ray_diagnostics')
         if not isinstance(diagnostics, dict):
             return
+        # Enrich only the observational copy, never the hash-bound response.
+        observed_payload = dict(payload)
+        observed_metrics = dict(payload.get('planning_diagnostics', {}))
+        if state.get('timing_started') is not None:
+            observed_metrics['bridge_request_wall_sec'] = max(
+                0.0, time.perf_counter() - state['timing_started'])
+        observed_payload['planning_diagnostics'] = observed_metrics
         diagnostics = add_planner_response(
-            diagnostics, payload, state.get('request'))
+            diagnostics, observed_payload, state.get('request'))
         state['ray_diagnostics'] = diagnostics
         state['ray_response_recorded'] = True
         if bool(self.get_parameter('ray_diagnostics_enabled').value):

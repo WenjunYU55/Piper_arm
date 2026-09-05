@@ -71,3 +71,17 @@ def test_capture_artifacts_are_resolved_and_bookmarked_without_mutation(
     ])
     assert len(sources) == 1
     assert depth.read_bytes() == before
+def test_planner_logs_filter_task_and_ignore_partial_json(tmp_path):
+    import json
+    from results_campaign.collector import _planner_log_events
+    path = tmp_path / 'worker.log'
+    rows = [
+        {'task_id': 'other', 'metrics': {}},
+        {'task_id': 'wanted', 'request_id': 'r', 'metrics': {'worker_request_wall_sec': 1.2}},
+    ]
+    path.write_text('noise\n' + ''.join(
+        'CUROBO_REQUEST_TIMING ' + json.dumps(row) + '\n' for row in rows
+    ) + 'CUROBO_REQUEST_TIMING {partial\n')
+    events = _planner_log_events(path, 'wanted')
+    assert len(events) == 1
+    assert events[0]['request_id'] == 'r'

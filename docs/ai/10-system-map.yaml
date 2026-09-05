@@ -1,4 +1,7 @@
 schema_version: 1
+curobo_request_timing_2026_09_05:
+  flow: [worker request validation, timed world recovery candidate MotionGen normalization and path checks, generic response validation, existing spool response, bridge observational ray diagnostics, passive campaign collector, Planning CSV and XLSX]
+  all_plan_kinds: Post-publication CUROBO_REQUEST_TIMING records in the existing supervised worker log retain acquisition and failures absent from multiview ray reports.
 single_capture_transaction_path_2026_09_03:
   load_order: [settled executor requests one capture, recorder opens one absolute capture deadline, fresh execution quality and occlusion evidence becomes available, recorder collects 20 new native depth confidence and intrinsics samples, recorder intersects its bounded mask and RGB-D caches with the settled native burst, newest fresh exact mask/RGB-D pair is frozen, bounded future-TF catch-up reuses the same evidence, final quality and occlusion snapshot is atomically admitted, files metadata and response bind that snapshot]
   load_order_contracts: [transient evidence gaps do not become successful admissions, the absolute deadline cannot reset, one transaction does not recollect multiple depth bursts, an unmatched newest mask is skipped rather than frozen, exact mask/RGB identity and native-burst overlap remain mandatory, CAPTURE_EVIDENCE_TIMEOUT does not feed the legacy external retry loop, malformed geometry depth or persistence still fails closed]

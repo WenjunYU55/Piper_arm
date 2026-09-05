@@ -8,6 +8,7 @@ ephemeral ``/tmp`` diagnostics survive a normal coordinator shutdown.
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import time
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -253,6 +254,9 @@ def _ray_summary(project_root: Path, task_id: str) -> Tuple[Optional[Path], Dict
                 'planning_duration_sec', 'generated_ray_count',
                 'surviving_ray_count', 'candidate_viewpoints_considered')):
             planning.append({
+                'request_id': event.get('request_id', ''),
+                'request_status': event.get('request_status', ''),
+                'plan_kind': event.get('plan_kind', 'MULTIVIEW_SCAN'),
                 'timestamp_ns': event.get('timestamp_ns', event.get('created_at_ns')),
                 'message': event.get('message', ''),
                 'planner_revision': event.get('planner_revision'),
@@ -266,6 +270,26 @@ def _ray_summary(project_root: Path, task_id: str) -> Tuple[Optional[Path], Dict
         'generations': value.get('generations', []),
         'planning_events': planning,
     }
+
+
+def _planner_log_events(path: Path, task_id: str) -> List[Dict[str, Any]]:
+    """Recover acquisition/failure timings absent from multiview ray reports."""
+    events = []
+    try:
+        with path.open(encoding='utf-8', errors='replace') as stream:
+            for line in stream:
+                if not line.startswith('CUROBO_REQUEST_TIMING '):
+                    continue
+                try:
+                    value = json.loads(line.split(' ', 1)[1])
+                except (ValueError, TypeError):
+                    continue
+                if (isinstance(value, dict) and value.get('task_id') == task_id
+                        and isinstance(value.get('metrics'), dict)):
+                    events.append(value)
+    except OSError:
+        pass
+    return events
 
 
 def collect_task(project_root: Path, attempt: Path) -> Path:
@@ -331,6 +355,26 @@ def collect_task(project_root: Path, attempt: Path) -> Path:
 
     terminal = load_json(attempt / 'terminal.json', {})
     action = mission_result.get('action_summary', {})
+    processes = action.get('processes', {}) if isinstance(action, dict) else {}
+    worker = processes.get('curobo_worker', {}) if isinstance(processes, dict) else {}
+    log_name = worker.get('log') if isinstance(worker, dict) else None
+    if log_name:
+        log_path = Path(log_name)
+        log_events = _planner_log_events(log_path, task_id)
+        if log_events:
+            sources.append(_source(log_path, root))
+            planning_events = ray.setdefault('planning_events', [])
+            by_request = {event.get('request_id'): event for event in planning_events
+                          if event.get('request_id')}
+            for event in log_events:
+                previous = by_request.get(event.get('request_id'))
+                if previous is not None:
+                    # Keep bridge wall time while adding post-publication evidence.
+                    previous['metrics'].update(event['metrics'])
+                    previous['plan_kind'] = event.get('plan_kind', '')
+                else:
+                    planning_events.append(event)
+                    by_request[event.get('request_id')] = event
     consistency_errors = []
     actual_backend = action.get('planner_backend') if isinstance(action, dict) else None
     if actual_backend and str(actual_backend) != str(submission.get('requested_backend')):
