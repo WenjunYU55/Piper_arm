@@ -1,4 +1,7 @@
 schema_version: 1
+four_box_startup_flow_2026_09_05:
+  steps: [select fixed world during model preparation, validate hash-bound model, start fresh selected worker generation, require existing qualification and motion opt-ins, follow unchanged mission executor path]
+  manual_smoke_checks: [generated model has four active cuboids and zero fixed meshes, original mesh mode has three fixed meshes, blocked obstacle rejected and removal restores valid state, coordinator restart loads new model before operator-supervised E2E]
 curobo_request_timing_2026_09_05:
   manual_smoke_checks: [run ordinary timing adapter bridge and campaign tests without ROS processes or CUDA, inspect future authorized mission worker log and ray plan events, rebuild campaign report and inspect Planning stage and attempt rows]
   failure_modes: [native failure still propagates identically, malformed or missing optional timing never authorizes or rejects motion, killed workers may have no completed-request timing, missing log source remains unavailable]

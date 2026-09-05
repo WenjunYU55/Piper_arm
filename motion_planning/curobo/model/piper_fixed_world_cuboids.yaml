@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "frame": "base_link",
+  "qualification": {
+    "hardware_qualified": true,
+    "basis": "operator_reported_physical_test",
+    "scope": "supervised_5_percent_target_scan",
+    "floor_profile": "tabletop",
+    "free_motion_speed_percent": 5.0,
+    "contact_speed_percent": 5.0,
+    "real_motion_requires_explicit_opt_in": true,
+    "statement": "Operator explicitly confirmed a successful physical test of the exact four-box geometry with the tabletop profile at 5-percent speed.",
+    "independent_verification": false,
+    "physical_run_id": null,
+    "physical_log_path": null
+  },
+  "moving_sphere_sha256": "e9cc618a1a25e0731fe7c84e5c65278f061ad20cb63dbba5941d31a6484020a5",
+  "source_mesh_sha256": {
+    "bunker_chassis_collision": "ff1495901808280e438b3db3db9067e00e2aa397765e9b4cb404541fe6893853",
+    "bunker_sensor_station_collision": "32034aeff85f217e975fac3f4db09f7d8d38f88dd6ed40d0a05d58ec424f8b71",
+    "piper_base_collision": "fd4a3d6d0266205fe3f725f048645be66592c23564db22e08b0807d5569b2c64"
+  },
+  "cuboids": [
+    {
+      "name": "bunker_chassis_collision_cuboid",
+      "dims": [
+        1.0673361602087021,
+        0.7885020109672546,
+        0.4552615548480749
+      ],
+      "pose": [
+        -0.475544698536396,
+        0.000250011682510376,
+        -0.22762978411465884,
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "sensor_station_housing",
+      "dims": [
+        0.5375019642372132,
+        0.46700200762939453,
+        0.30000199999999994
+      ],
+      "pose": [
+        -0.6024999916553497,
+        0.0,
+        0.15,
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "sensor_station_lidar_camera",
+      "dims": [
+        0.3236518832702637,
+        0.17525197144937515,
+        0.14755199876022335
+      ],
+      "pose": [
+        -0.5291603803634644,
+        -0.00010685995221138,
+        0.3737749993801117,
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "piper_base_collision_cuboid",
+      "dims": [
+        0.09850199845027924,
+        0.08000199821186066,
+        0.08600200292062761
+      ],
+      "pose": [
+        -0.00925000011920929,
+        0.0,
+        0.04300000146031379,
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  ]
+}

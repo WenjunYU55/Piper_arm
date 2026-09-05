@@ -37,6 +37,7 @@ from motion_planning.curobo.adapter import (
     worker_rejection_code,
 )
 from motion_planning.curobo.spool import Spool
+from motion_planning.curobo.fixed_world import validate_fixed_world
 from motion_planning.curobo.timing import (
     RequestTiming, clock, native_metrics, timed_stage)
 from piper_tesseract_foxy.protocol.contract import (
@@ -275,6 +276,7 @@ def validate_model_provenance(config_document):
         raise ValueError(
             'cuRobo position-limit clip does not match the qualified policy')
 
+    fixed_world_representation = validate_fixed_world(provenance)
     return {
         'provenance': dict(provenance),
         'collision_manifest_path': str(Path(
@@ -284,7 +286,10 @@ def validate_model_provenance(config_document):
         'fixed_platform_cuboids': list(provenance.get(
             'fixed_world_cuboids', provenance.get(
                 'fixed_platform_cuboids', []))),
-        'fixed_world_meshes': fixed_world_meshes,
+        # Canonical meshes remain hash-validated evidence, not active obstacles
+        # when the reviewed cuboid representation is selected at startup.
+        'fixed_world_meshes': (
+            fixed_world_meshes if fixed_world_representation == 'meshes' else []),
     }
 
 

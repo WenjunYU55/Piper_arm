@@ -1,4 +1,8 @@
 schema_version: 1
+four_box_fixed_world_ownership_2026_09_05:
+  owner_module: motion_planning/curobo/fixed_world.py
+  allowed_edit_paths: [motion_planning/curobo/fixed_world.py, motion_planning/curobo/generate_robot_config.py, motion_planning/curobo/worker.py, motion_planning/curobo/prepare_model.sh, motion_planning/curobo/model/piper_fixed_world_cuboids.yaml, tests/curobo/test_curobo_model_generation.py, docs/ai, docs/architecture/motion_planner_backends.md]
+  must_not_move_without: [canonical collision manifest, moving sphere source, hardware qualification record]
 curobo_request_timing_2026_09_05:
   owner_module: motion_planning/curobo/timing.py
   supporting_owners: [motion_planning/curobo/worker.py, piper_tesseract_foxy/bridge_node.py, results_campaign/collector.py, results_campaign/metrics.py]

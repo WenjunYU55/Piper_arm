@@ -1,4 +1,7 @@
 schema_version: 1
+four_box_fixed_world_2026_09_05:
+  flow: [prepare_model.sh selects representation, generate_robot_config binds source geometry and qualification, worker validates source and canonical mesh hashes, MotionGen starts with selected representation, unchanged common planning and execution]
+  active_default: Four cuboids covering chassis, sensor housing, raised LiDAR and front camera, fixed arm base; existing moving spheres and request obstacles remain.
 curobo_request_timing_2026_09_05:
   flow: [worker request validation, timed world recovery candidate MotionGen normalization and path checks, generic response validation, existing spool response, bridge observational ray diagnostics, passive campaign collector, Planning CSV and XLSX]
   all_plan_kinds: Post-publication CUROBO_REQUEST_TIMING records in the existing supervised worker log retain acquisition and failures absent from multiview ray reports.

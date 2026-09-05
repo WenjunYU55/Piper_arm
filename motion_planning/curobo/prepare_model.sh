@@ -19,6 +19,12 @@ chmod 700 "$OUTPUT_ROOT"
 URDF="$OUTPUT_ROOT/piper_planning.urdf"
 CONFIG="$OUTPUT_ROOT/piper_curobo.yml"
 SPHERE_MODEL="$ROOT/motion_planning/curobo/model/piper_collision_spheres.yaml"
+FIXED_WORLD_ARGS=()
+case "${PIPER_CUROBO_FIXED_WORLD:-cuboids}" in
+  cuboids) FIXED_WORLD_ARGS=(--fixed-world-model "$ROOT/motion_planning/curobo/model/piper_fixed_world_cuboids.yaml") ;;
+  meshes) ;;
+  *) echo "PIPER_CUROBO_FIXED_WORLD must be cuboids or meshes" >&2; exit 2 ;;
+esac
 DESCRIPTION_ROOT="$ROOT/piper_ros_foxy/src/piper_description"
 MANIFEST="$ROOT/piper_ros_foxy/src/piper_tesseract_foxy/model/$COLLISION_MANIFEST_NAME"
 SRDF="$ROOT/piper_ros_foxy/src/piper_tesseract_foxy/model/$COLLISION_SRDF_NAME"
@@ -39,6 +45,7 @@ PYTHONPATH="$ROOT" \
   --collision-manifest "$MANIFEST" \
   --description-root "$DESCRIPTION_ROOT" \
   --sphere-model "$SPHERE_MODEL" \
+  "${FIXED_WORLD_ARGS[@]}" \
   --output "$CONFIG"
 
 chmod 600 "$URDF" "$CONFIG"

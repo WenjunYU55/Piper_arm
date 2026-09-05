@@ -1,4 +1,9 @@
 schema_version: 1
+four_box_fixed_world_contract_2026_09_05:
+  source: motion_planning/curobo/model/piper_fixed_world_cuboids.yaml
+  selector: PIPER_CUROBO_FIXED_WORLD is cuboids by default or meshes for explicit rollback; resolved once by prepare_model.sh before worker startup.
+  provenance: fixed_world_representation, hash-bound fixed_world_model, exact fixed_world_cuboids, canonical fixed_world_meshes retained as hash-checked evidence. Meshes are not active obstacles in cuboid mode.
+  checks: [source hashes, exact derived boxes, source frame and positive dimensions, moving-sphere identity, qualification scope, unchanged runtime real-motion opt-in]
 curobo_request_timing_2026_09_05:
   schema: Additive planning_diagnostics.timing and worker_timing schema 1; existing planning_duration_sec is not redefined.
   clock: perf_counter host wall seconds without added CUDA synchronization; native IK graph trajopt finetune solve and total fields are copied only when available.

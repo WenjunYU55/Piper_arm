@@ -19,6 +19,7 @@ import xml.etree.ElementTree as ET
 
 import numpy as np
 import yaml
+from motion_planning.curobo.fixed_world import bind_fixed_world
 
 from motion_planning.curobo import (
     PINNED_COMMIT,
@@ -389,7 +390,8 @@ def disabled_collision_pairs(srdf_path):
 
 def build(
         urdf_path, srdf_path, collision_manifest_path,
-        description_root, cell_size_m, sphere_model_path=None):
+        description_root, cell_size_m, sphere_model_path=None,
+        fixed_world_model_path=None):
     root = ET.parse(urdf_path).getroot()
     curated_spheres = {}
     curated_provenance = None
@@ -544,6 +546,8 @@ def build(
             'fixed_world_meshes': fixed_world_meshes(description_root),
         },
     }
+    if fixed_world_model_path is not None:
+        bind_fixed_world(config['piper_curobo_provenance'], fixed_world_model_path)
     return config
 
 
@@ -556,12 +560,14 @@ def main():
     parser.add_argument('--output', required=True)
     parser.add_argument('--cell-size-m', type=float, default=0.04)
     parser.add_argument('--sphere-model')
+    parser.add_argument('--fixed-world-model')
     args = parser.parse_args()
     if not 0.01 <= args.cell_size_m <= 0.10:
         raise SystemExit('cell-size-m must be within 0.01..0.10')
     payload = build(
         args.urdf, args.srdf, args.collision_manifest,
-        args.description_root, args.cell_size_m, args.sphere_model)
+        args.description_root, args.cell_size_m, args.sphere_model,
+        args.fixed_world_model)
     output = Path(args.output).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(

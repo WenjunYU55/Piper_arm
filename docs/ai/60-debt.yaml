@@ -1,4 +1,9 @@
 schema_version: 1
+four_box_runtime_followup_2026_09_05:
+  resolved: Qualified-source-backed four-box startup integration with explicit original-mesh rollback; no stale-mesh hot switch.
+  remaining: [complete converged E2E of deployed integration, further workspace comparison, investigate latest ray-frontier exhaustion separately]
+  latest_run: gui-sim-af49e2b4e79b405d9ad805afde303329 saved five captures and shut down safely but recorded FAILED at ray-frontier exhaustion before the eight-view minimum; do not count as complete mission success.
+  limitations: 11 additional rejected random states among 1306 offline samples; not claimed workspace-equivalent. Physical qualification is operator-reported without linked run logs.
 curobo_request_timing_2026_09_05:
   resolved: Request-stage host timing and failed-attempt retention are added to existing evidence; legacy accepted-candidate native duration remains explicitly distinct from wall time.
   remaining: [controlled GPU timing comparison, first-request versus warmed latency, goalset-aware warmup comparison, graph-first versus optimization-first comparison, padding cost measurement, identical-world cache reuse assessment]

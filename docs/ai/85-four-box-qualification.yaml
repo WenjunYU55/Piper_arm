@@ -1,0 +1,67 @@
+schema_version: 1
+record_type: operator_reported_physical_qualification
+report_date: '2026-09-05'
+model: piper_four_fixed_world_cuboids
+qualification:
+  hardware_qualified: true
+  basis: operator_reported_physical_test
+  scope: supervised_5_percent_target_scan
+  floor_profile: tabletop
+  free_motion_speed_percent: 5.0
+  contact_speed_percent: 5.0
+  real_motion_requires_explicit_opt_in: true
+  statement: Operator explicitly confirmed a successful physical test of the exact four-box geometry with the tabletop profile at 5-percent speed.
+  independent_verification: false
+  physical_run_id: null
+  physical_log_path: null
+geometry_identity:
+  source_proposal: /home/prl/Downloads/PiPER_Split_Station_20260905_haOGAQ/proposed_fixed_cuboids.yaml
+  source_proposal_sha256: 79123563669c06932ec1188f2771e0bb0de636fbb7050e38a8e99cb6a8ecc764
+  moving_sphere_model: motion_planning/curobo/model/piper_collision_spheres.yaml
+  moving_sphere_model_sha256: e9cc618a1a25e0731fe7c84e5c65278f061ad20cb63dbba5941d31a6484020a5
+  frame: base_link
+  dimensions_units: metres
+  quaternion_order: wxyz
+  cuboids:
+    - name: bunker_chassis_collision_cuboid
+      dims: [1.0673361602087021, 0.7885020109672546, 0.4552615548480749]
+      pose: [-0.475544698536396, 0.000250011682510376, -0.22762978411465884, 1.0, 0.0, 0.0, 0.0]
+    - name: sensor_station_housing
+      dims: [0.5375019642372132, 0.46700200762939453, 0.30000199999999994]
+      pose: [-0.6024999916553497, 0.0, 0.15, 1.0, 0.0, 0.0, 0.0]
+    - name: sensor_station_lidar_camera
+      dims: [0.3236518832702637, 0.17525197144937515, 0.14755199876022335]
+      pose: [-0.5291603803634644, -0.00010685995221138, 0.3737749993801117, 1.0, 0.0, 0.0, 0.0]
+    - name: piper_base_collision_cuboid
+      dims: [0.09850199845027924, 0.08000199821186066, 0.08600200292062761]
+      pose: [-0.00925000011920929, 0.0, 0.04300000146031379, 1.0, 0.0, 0.0, 0.0]
+deployment:
+  status: integrated_default_at_next_worker_startup
+  current_runtime_representation: four_cuboids_default_with_explicit_mesh_rollback
+  runtime_consumes_this_record: false
+  note: This record documents the operator report. The runtime source is motion_planning/curobo/model/piper_fixed_world_cuboids.yaml. Model preparation defaults to cuboids; existing running coordinators require restart. No automatic motion enablement.
+  integration_owners: [motion_planning/curobo/generate_robot_config.py, motion_planning/curobo/worker.py, motion_planning/curobo/prepare_model.sh]
+  integration_requirements:
+    - Bind this exact geometry and moving-sphere identity through normal model provenance validation.
+    - Preserve explicit real-motion opt-in and all common execution checks.
+    - Select geometry before worker startup; an empty mesh update in pinned cuRobo does not remove already loaded meshes.
+    - Run model-generation, malformed-provenance, planner and execution regression tests before deployment.
+limitations:
+  - No physical trial count or measured physical outcome beyond the operator statement is asserted.
+  - Existing offline reports remain unchanged and retain their original evidence classification.
+  - Offline testing found 11 additional rejected random states among 1306 samples; no equivalence of reachable workspace is claimed.
+  - No scope extension to other geometry, speeds, mounting, calibration or ground profile is implied.
+subsequent_saved_run:
+  task_id: gui-sim-af49e2b4e79b405d9ad805afde303329
+  source: /tmp/piper_target_scan_missions/results/gui-sim-af49e2b4e79b405d9ad805afde303329.json
+  source_sha256: 9c5d1da654f462548aa7acb36a8f5748622bd459b499cad5495ee2d25fff562f
+  dataset: datasets/active_scan/scan_20260905_233726
+  outcome: FAILED
+  accepted_captures: 5
+  safe_shutdown: true
+  elapsed_sec: 593.5588938320288
+  view_planning_phase_sec: 333.1248873559525
+  reason: RAY_FRONTIER_EXHAUSTED at generation 5 before eight-view minimum and coverage convergence.
+  evidence_class: HISTORICAL_OBSERVATIONAL
+  operator_observation: Run felt faster.
+  interpretation: Safe termination with captures, not a successful complete mission or a controlled speed comparison. Does not replace the preceding operator-reported qualification statement.

@@ -1,5 +1,60 @@
 # Motion-planner backends
 
+## cuRobo fixed-world geometry (2026-09-05)
+
+### Latest saved physical-run observation
+
+Task `gui-sim-af49e2b4e79b405d9ad805afde303329`, dataset
+`datasets/active_scan/scan_20260905_233726`, recorded **FAILED**, five accepted
+captures and `safe_shutdown=true`. The final reason was `RAY_FRONTIER_EXHAUSTED`:
+all 18 remaining prequalified rays were rejected at accepted-view generation 5,
+before the eight-view minimum and coverage/convergence requirements were met.
+The published failure code was `INSUFFICIENT_CAPTURE_QUALITY`; it does not mean
+that all five saved captures were rejected.
+
+Recorded elapsed time was **593.559 s**, including **333.125 s** in the
+`VIEW_PLANNING` phase. That phase includes orchestration/retries and is not native
+MotionGen execution time. The operator reported that the run felt faster; this
+single observation is not a controlled before/after timing comparison or a
+completed successful E2E. No diagnosis or behavioural fix for frontier exhaustion
+was made as part of documenting/pushing this integration.
+
+Source: `/tmp/piper_target_scan_missions/results/gui-sim-af49e2b4e79b405d9ad805afde303329.json`;
+file SHA-256 `9c5d1da654f462548aa7acb36a8f5748622bd459b499cad5495ee2d25fff562f`.
+The qualification statement remains operator-reported; this later mission result
+must not be substituted for proof of successful mission completion.
+
+### Configuration and validation
+
+Normal model preparation now selects four reviewed cuboids: chassis, sensor
+housing, raised LiDAR/front camera, and stationary arm base. Moving-arm spheres,
+request obstacles, floor policy, Tesseract, and common execution checks are unchanged.
+The source is `motion_planning/curobo/model/piper_fixed_world_cuboids.yaml`.
+Its qualification is **operator-reported**, scoped to tabletop at 5-percent free
+and contact speeds; no physical logs or independent certification are asserted.
+
+Existing operator start commands remain valid. Restart an idle coordinator so its
+next owned worker generation uses the new model. Explicit collision-model and
+real-motion opt-ins remain required; installation does not enable the arm.
+For rollback, set `PIPER_CUROBO_FIXED_WORLD=meshes` in the coordinator startup
+environment. Default is `cuboids`. Unknown values fail closed. Selection is fixed
+at model preparation/worker startup, never changed mid-mission.
+
+Canonical mesh files are retained and hash-validated as provenance even in box
+mode, but are not loaded as active obstacles. The worker verifies derived boxes,
+source hash, moving-sphere identity and qualification scope. Start a fresh worker
+when changing representation: pinned cuRobo retains meshes on an empty mesh update.
+
+Offline evidence found 11 additional rejected random states among 1,306 compared
+states; these were not near the sampled recorded capture poses. Boxes are not
+claimed workspace-equivalent. Approximately 199 ms warm planning was measured for
+one repeated query, not a mission-wide guarantee. Requalify after geometry changes.
+
+Validation: 83 ordinary cuRobo tests passed (11 opt-in GPU tests skipped), 1,121
+mobile/Tesseract tests passed (one environment skip), and a separate real-GPU
+generated-model check loaded four boxes/no meshes, solved five plans, rejected an
+enclosing obstacle and restored valid state after its removal. No hardware moved.
+
 ## Passive request timing (2026-09-05)
 
 New missions automatically record cuRobo timings; no planner setting changes are

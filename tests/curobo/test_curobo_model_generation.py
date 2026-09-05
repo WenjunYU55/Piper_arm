@@ -34,6 +34,53 @@ from motion_planning.curobo.worker import CuroboBackend, validate_model_provenan
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def cuboid_model(curated_model):
+    from motion_planning.curobo.fixed_world import bind_fixed_world
+    model = copy.deepcopy(curated_model)
+    bind_fixed_world(model['piper_curobo_provenance'],
+                     ROOT / 'motion_planning/curobo/model/piper_fixed_world_cuboids.yaml')
+    return model
+
+
+def test_four_box_model_loads_only_cuboids_and_retains_source_hashes(curated_model):
+    model = cuboid_model(curated_model)
+    checked = validate_model_provenance(model)
+    assert checked['fixed_world_meshes'] == []
+    assert len(checked['fixed_platform_cuboids']) == 4
+    assert len(checked['provenance']['fixed_world_meshes']) == 3
+    assert checked['provenance']['hardware_qualified'] is True
+    assert checked['provenance']['hardware_qualification']['basis'] == 'operator_reported_physical_test'
+    assert model['robot_cfg'] == curated_model['robot_cfg']
+
+
+@pytest.mark.parametrize('mutation', [
+    'dimension', 'pose', 'missing_box', 'source_hash', 'source_missing',
+    'representation', 'qualification', 'flag', 'mesh_source',
+])
+def test_four_box_model_tampering_fails_closed(curated_model, mutation):
+    model = cuboid_model(curated_model)
+    p = model['piper_curobo_provenance']
+    if mutation == 'dimension': p['fixed_world_cuboids'][0]['dims'][0] += .01
+    elif mutation == 'pose': p['fixed_world_cuboids'][0]['pose'][0] += .01
+    elif mutation == 'missing_box': p['fixed_world_cuboids'].pop()
+    elif mutation == 'source_hash': p['fixed_world_model']['sha256'] = '0' * 64
+    elif mutation == 'source_missing': p['fixed_world_model']['path'] += '.missing'
+    elif mutation == 'representation': p['fixed_world_representation'] = 'unknown'
+    elif mutation == 'qualification': p['hardware_qualification']['free_motion_speed_percent'] = 10.
+    elif mutation == 'flag': p['hardware_qualified'] = False
+    elif mutation == 'mesh_source': p['fixed_world_meshes'][0]['sha256'] = '0' * 64
+    with pytest.raises((ValueError, OSError)):
+        validate_model_provenance(model)
+
+
+def test_four_box_source_is_bound_to_current_moving_spheres(curated_model):
+    from motion_planning.curobo.fixed_world import bind_fixed_world
+    p = copy.deepcopy(curated_model['piper_curobo_provenance'])
+    p['curated_sphere_model']['sha256'] = '0' * 64
+    with pytest.raises(ValueError, match='moving sphere hash'):
+        bind_fixed_world(p, ROOT / 'motion_planning/curobo/model/piper_fixed_world_cuboids.yaml')
+
+
 @pytest.fixture(scope='module')
 def curated_model(tmp_path_factory):
     output_root = tmp_path_factory.mktemp('curated_curobo_model')

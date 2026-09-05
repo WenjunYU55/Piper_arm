@@ -1,4 +1,14 @@
 schema_version: 1
+four_box_runtime_integration_2026_09_05:
+  owner: motion_planning/curobo/fixed_world.py
+  source: motion_planning/curobo/model/piper_fixed_world_cuboids.yaml
+  behavior: prepare_model.sh defaults to cuboids; PIPER_CUROBO_FIXED_WORLD=meshes selects original fixed meshes at worker startup. Moving spheres and Tesseract are unchanged.
+  qualification: Operator-reported tabletop 5-percent qualification in 85-four-box-qualification.yaml; explicit runtime opt-ins remain required.
+  latest_saved_run: See 85-four-box-qualification.yaml subsequent_saved_run; five captures and safe shutdown, but FAILED at ray-frontier exhaustion. Operator-perceived speedup is not a controlled comparison.
+four_box_operator_qualification_2026_09_05:
+  record: docs/ai/85-four-box-qualification.yaml
+  evidence: Operator confirmed successful physical testing of the exact four-box proposal at 5-percent speed with the tabletop profile; no physical run ID or logs supplied.
+  deployment: Integrated through hash-bound runtime cuboid source at next worker startup; this documentation record is not a runtime enable flag.
 curobo_request_timing_2026_09_05:
   validation: 1210 ordinary cuRobo campaign Tesseract and mobile tests passed with 12 skips including 11 opt-in GPU tests; Python syntax and all AI YAML files parsed; no hardware or GPU planner launched.
   purpose: Passive cuRobo request-stage and failed-attempt timing carried through existing planner diagnostics and Results Campaign Planning CSV/XLSX.

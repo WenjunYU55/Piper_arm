@@ -1,4 +1,7 @@
 schema_version: 1
+four_box_geometry_guardrail_2026_09_05:
+  invariants: [hash-bound four-box geometry, canonical source meshes retained and verified, moving spheres unchanged, operator-reported tabletop 5-percent scope only, no automatic model fallback, no runtime hot swap, no automatic real-motion enable]
+  must_retest_if_changed: [cuRobo model generation and provenance tampering, complete cuRobo ordinary suite, complete mobile and Tesseract suites, generated-model GPU load plan and obstacle rejection, offline geometry and tight-clearance comparison, operator-supervised physical requalification for geometry changes]
 curobo_request_timing_2026_09_05:
   invariants: [no explicit CUDA synchronize, no new planner call, unchanged request and trajectory identity, observational bridge copy only, no thresholds deadlines warmup padding or ordering changes, timing failure cannot replace planner outcomes, no hardware required for ordinary tests]
   must_retest_if_changed: [tests/curobo/test_curobo_timing.py, tests/curobo/test_curobo_adapter.py, Tesseract bridge and contract tests, tests/results_campaign]
