@@ -1,4 +1,19 @@
 schema_version: 1
+reconstruction_recording_2026_09_06:
+  reference: docs/ai/86-reconstruction-recording.yaml
+  public_interfaces:
+    ReconstructionKeyframe: task_id, raw sensor_msgs RGB/depth/mask and CameraInfo; best-effort producer and subscriber
+    MotionPlan: additive float64 target_visibility_angle_tolerance_deg; zero legacy field means shared default;
+      mismatch rejects
+    scan_session_history: additive central angle and per-entry reconstruction_stamp_ns; existing accepted count
+      remains authoritative
+    reconstruction_recording_status: passive JSON counters and session state
+  visibility: Shared default 20 degrees, finite (0,90), inclusive microdegree allowance; startup frozen. Legacy
+    max(movement, final aim) motion exception remains; recorder inherits central movement setting without that exception.
+  native_pose: T_base_camera maps optical-camera coordinates to base_link; never an object pose. Exact nanosecond
+    image and lookup stamps; no latest fallback.
+  output: Lossless RGB/mask PNG and original depth NPY; complete or explicitly incomplete atomic session rename;
+    separate converter writes upstream uint16 millimetre PNG.
 stream_smoothness_contract_2026_09_06:
   following: Entry stays at configured trajectory_following_error_rad after the existing grace. Recovery requires three independently newer joint observations at or below 0.9 times the entry limit for held and next-unsent targets. Repeated source stamps do not count. Recovery must finish inside the existing grace-duration deadline; boundary oscillations do not restart it.
   curobo_timing: For experimental 100/200 Hz, one common segment duration preserves native relative timing. This retains source vertices and can only slow the former segment-rounded path. Standard 20 Hz and recovery prefixes retain their previous timing.

@@ -254,7 +254,9 @@ class FakeParameterNode:
 def test_parameter_defaults_exactly_match_the_frozen_pre_phase9_values():
     assert mission_parameter_defaults({
         'XDG_RUNTIME_DIR': '/phase9'}) == LEGACY_MISSION_DEFAULTS
-    assert executor_parameter_defaults() == LEGACY_EXECUTOR_DEFAULTS
+    # The new authoritative movement cone is additive; all legacy defaults stay fixed.
+    expected = dict(LEGACY_EXECUTOR_DEFAULTS, target_visibility_angle_tolerance_deg=20.0)
+    assert executor_parameter_defaults() == expected
 
 
 def test_mission_configuration_is_grouped_typed_and_read_once():

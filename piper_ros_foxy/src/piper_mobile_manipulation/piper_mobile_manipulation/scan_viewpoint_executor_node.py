@@ -8,6 +8,9 @@ from functools import wraps
 from threading import RLock
 
 import numpy as np
+
+from piper_mobile_manipulation.visibility import (
+    DEFAULT_VISIBILITY_ANGLE_DEG, frozen_visibility_parameters)
 import rclpy
 from geometry_msgs.msg import Point, Vector3
 from piper_msgs.msg import PiperMotionLimits, PiperStatusMsg
@@ -827,6 +830,7 @@ class ScanViewpointExecutorNode(Node):
             String, self.configuration.interfaces.heavy_refresh_status_topic,
             self.serialized_control_callback(self.heavy_refresh_status_cb), 10,
             callback_group=self.control_callback_group)
+        self.add_on_set_parameters_callback(frozen_visibility_parameters)
         command_rate = self.configuration.motion.trajectory_command_rate_hz
         if not math.isfinite(command_rate) or command_rate <= 0.0:
             raise RuntimeError('trajectory_command_rate_hz must be finite and positive')
@@ -1024,6 +1028,11 @@ class ScanViewpointExecutorNode(Node):
         segment_execution_modes = []
         maximum_step = float(
             configured_value(self, 'trajectory_joint_step_rad'))
+        supplied_angle = float(getattr(
+            msg, 'target_visibility_angle_tolerance_deg', 0.0)
+            or DEFAULT_VISIBILITY_ANGLE_DEG)
+        if supplied_angle != float(configured_value(self, 'scan_target_max_boresight_deg')):
+            reasons.append('planner/executor target visibility tolerance mismatch')
         command_rate = float(configured_value(self, 'trajectory_command_rate_hz'))
         if abs(float(msg.command_rate_hz) - command_rate) > 1e-6:
             reasons.append('planner command rate does not match the executor')
@@ -3458,6 +3467,8 @@ class ScanViewpointExecutorNode(Node):
             self.abort_motion(
                 'accepted RGB-D capture result is malformed: %s' % error)
             return
+        self.pending_reconstruction_stamp_ns = int(capture_result.get(
+            'reconstruction_stamp_ns', 0))
         self.pending_capture_occlusion_state = str(
             capture_result['occlusion_state'])
         self.capture_semantic_probe_pending = bool(
@@ -3630,6 +3641,7 @@ class ScanViewpointExecutorNode(Node):
                     str(label) for label in raw_labels if str(label)))
         self.scan_history.append({
             'accepted_view': int(accepted_views),
+            'reconstruction_stamp_ns': int(getattr(self, 'pending_reconstruction_stamp_ns', 0)),
             'plan_id': self.plan_id,
             'viewpoint_index': int(viewpoint.get('index', self.current_view)),
             # The session planner consumes these achieved values on the next
@@ -5273,6 +5285,8 @@ class ScanViewpointExecutorNode(Node):
         msg = String()
         msg.data = json.dumps({
             'session_id': self.scan_session_id,
+            'target_visibility_angle_tolerance_deg': float(configured_value(
+                self, 'scan_target_max_boresight_deg')),
             'accepted_views': len(self.scan_history),
             'max_views': int(
                 configured_value(self, 'max_execution_viewpoints')),

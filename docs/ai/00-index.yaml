@@ -1,4 +1,11 @@
 schema_version: 1
+reconstruction_active_planner: curobo  # Preserved saved mission selection; Tesseract checks are compatibility only.
+reconstruction_recording_2026_09_06:
+  reference: docs/architecture/reconstruction_recording.md
+  implementation_record: docs/ai/86-reconstruction-recording.yaml
+  status: Implemented and ROS replay validated; physical qualification and BundleSDF GPU mesh smoke remain blocked/unexecuted.
+  routing: Read 86 for current reconstruction ownership, wire additions, frozen movement-angle configuration, gates,
+    data format and validation evidence. Earlier no-interface-change claims are historical.
 stream_smoothness_repair_2026_09_06:
   reference: docs/architecture/trajectory_stream_rates.md
   behavior: Timed-stream following holds latch until three independent newer joint observations are inside 90 percent of the existing error limit; the original recovery deadline remains bounded. Experimental cuRobo 100/200 Hz uses one native-path time scale, retaining every vertex and speed ceiling. Standard 20 Hz remains the legacy timing comparison.

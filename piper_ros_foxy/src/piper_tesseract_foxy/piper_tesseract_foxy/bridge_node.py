@@ -9,6 +9,9 @@ from pathlib import Path
 import time
 
 import numpy as np
+
+from piper_mobile_manipulation.visibility import (
+    DEFAULT_VISIBILITY_ANGLE_DEG, visibility_tolerance, frozen_visibility_parameters)
 import rclpy
 from builtin_interfaces.msg import Duration
 from geometry_msgs.msg import Point, Vector3
@@ -149,6 +152,7 @@ class MotionPlannerBridge(Node):
             'joint_limit_margin_rad': 0.03,
             'trajectory_joint_step_rad': 0.05,
             'trajectory_command_rate_hz': 20.0,
+            'target_visibility_angle_tolerance_deg': DEFAULT_VISIBILITY_ANGLE_DEG,
             'speed_percent': 5.0,
             'roll_samples_rad': [-2.094395102, -1.047197551, 0.0,
                                  1.047197551, 2.094395102, 3.141592654],
@@ -180,6 +184,8 @@ class MotionPlannerBridge(Node):
         }
         for name, value in defaults.items():
             self.declare_parameter(name, value)
+        visibility_tolerance(self.get_parameter("target_visibility_angle_tolerance_deg").value)
+        self.add_on_set_parameters_callback(frozen_visibility_parameters)
         self.planner_backend = str(
             self.get_parameter('planner_backend').value).strip().lower()
         if self.planner_backend not in ('tesseract', 'curobo'):
@@ -1075,6 +1081,8 @@ class MotionPlannerBridge(Node):
                 'source': str(self.latest_motion_limits.source),
             },
             'planning': {
+                'target_visibility_angle_tolerance_deg': visibility_tolerance(
+                    self.get_parameter('target_visibility_angle_tolerance_deg').value),
                 'planner': (
                     'RRTConnect'
                     if getattr(
@@ -1569,6 +1577,8 @@ class MotionPlannerBridge(Node):
         msg.execution_speed_percent = float(
             execution['effective_speed_percent'])
         msg.command_rate_hz = float(execution['command_rate_hz'])
+        msg.target_visibility_angle_tolerance_deg = float(execution.get(
+            'target_visibility_angle_tolerance_deg', DEFAULT_VISIBILITY_ANGLE_DEG))
         msg.timing_policy = EXECUTION_TIMING_POLICY_VERSION
         msg.backend = str(payload['backend'])
         msg.backend_version = str(payload['backend_version'])

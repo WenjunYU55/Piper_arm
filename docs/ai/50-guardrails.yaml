@@ -1,4 +1,41 @@
 schema_version: 1
+reconstruction_recording_2026_09_06:
+  reference: docs/ai/86-reconstruction-recording.yaml
+  invariants:
+  - Never count reconstruction frames as mission captures or alter NBV/state transitions
+  - Never use median depth, latest TF or rectangular fallback for reconstruction
+  - No image encoding/disk I/O in motion callbacks; passive recorder failures do not stop motion
+  - All consumers bind the same startup angle; reject live partial updates
+  - Do not install BundleSDF dependencies or commit weights/datasets/meshes in ROS
+  - Retain static capability map arrays; worker provenance update requires static sampler/collision audit
+  must_retest_if_changed:
+    piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/visibility.py:
+    - three consumer boundary tests
+    - request/response binding tests
+    - rootless core and compact
+    - GPU consumer checks
+    piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/reconstruction_recorder_node.py:
+    - actual DDS nominal/failure replay
+    - bag replay and SIGINT
+    - bounded queues and multiple missions
+    piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/reconstruction_recording/core.py:
+    - all gate tests
+    - atomic writer interruption and disk failure
+    - native dataset validation/conversion
+    piper_ros_foxy/src/piper_mobile_manipulation/msg/ReconstructionKeyframe.msg:
+    - colcon build all
+    - capture raw tuple fixture
+    - sensor QoS replay
+    piper_ros_foxy/src/piper_mobile_manipulation/msg/MotionPlan.msg:
+    - colcon build all
+    - wire characterization
+    - planner/executor mismatch rejection
+    tools/bundlesdf/:
+    - native conversion and corrupt input tests
+    - pinned upstream reader
+    - official GPU mesh smoke
+  blast_radius: Additive wire rebuild affects launch participants; recording default false. Planner selection, median
+    capture and safety policies stay with their existing owners.
 stream_smoothness_guardrail_2026_09_06:
   invariants: [unchanged 0.30-rad entry and one-second deadline defaults, recovery requires margin and three independently newer observations, no timeout reset from boundary chatter, no stale sample counting, no position speed step or collision relaxation, no skipping or bursting, unchanged startup direct home disable and shutdown, experimental uniform native timing can only lengthen legacy schedule, zero public derivative placeholders]
   must_retest_if_changed: [test_scan_motion.py, complete mobile Tesseract cuRobo and GUI ordinary suites, same-native-path GPU and blocked-world tests, package build and colcon test, separately authorized physical timing tracking cancel and home]

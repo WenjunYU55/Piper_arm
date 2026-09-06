@@ -5,6 +5,10 @@ import json
 import math
 
 import numpy as np
+
+from piper_mobile_manipulation.visibility import (
+    DEFAULT_VISIBILITY_ANGLE_DEG, angle_degrees,
+)
 import yaml
 
 
@@ -166,7 +170,7 @@ def orbit_camera_view(center, angle_deg, radius_m, camera_pitch_deg):
 
 
 def camera_target_path_reasons(
-        kinematics, path, target_center, maximum_boresight_deg=20.0,
+        kinematics, path, target_center, maximum_boresight_deg=DEFAULT_VISIBILITY_ANGLE_DEG,
         minimum_target_distance_m=0.22, initial_alignment=False,
         final_aim_deg=5.0):
     """
@@ -185,7 +189,7 @@ def camera_target_path_reasons(
         return ['scan target visibility inputs are not numeric']
     if (
             target.shape != (3,) or not np.all(np.isfinite(target))
-            or not math.isfinite(maximum) or maximum <= 0.0 or maximum > 90.0
+            or not math.isfinite(maximum) or maximum <= 0.0 or maximum >= 90.0
             or not math.isfinite(minimum) or minimum <= 0.0
             or not math.isfinite(final_aim) or final_aim <= 0.0
             or final_aim > 90.0):
@@ -216,8 +220,13 @@ def camera_target_path_reasons(
                 'minimum is %.3fm' % (distance_m, index, minimum)]
         if forward_norm <= 1e-9:
             return ['scan camera optical axis is invalid at sample %d' % index]
-        cosine = float(np.dot(forward / forward_norm, ray / distance_m))
-        angle_deg = math.degrees(math.acos(float(np.clip(cosine, -1.0, 1.0))))
+        try:
+            angle_deg = angle_degrees(forward, ray)
+        except ValueError:
+            if not initial_alignment:
+                return ['scan target behind camera or invalid vector']
+            angle_deg = math.degrees(math.acos(float(np.clip(
+                np.dot(forward / forward_norm, ray / distance_m), -1.0, 1.0))))
         final_angle = angle_deg
         if initial_angle is None:
             initial_angle = angle_deg

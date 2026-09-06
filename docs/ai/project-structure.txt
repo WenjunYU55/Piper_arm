@@ -173,3 +173,15 @@ piper_ros_foxy/src/piper_mobile_manipulation/srv/RequestMotionPlan.srv - backend
 piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/bridge_node.py - generic MotionPlannerBridge routing the frozen backend to one ROS-free worker and publishing MotionPlan; historical package/class/executable aliases are compatibility-only
 piper_gui/planner_backend.py - authoritative persisted next-mission backend parsing and immutable active-mission selection; GUI offers exactly Tesseract or cuRobo through the single automatic mission path
 docs/architecture/motion_planner_backends.md - generic planner architecture, contract classification, process isolation, pinned cuRobo environment/setup, plan-kind support, collision-model limitations and test commands
+
+# Reconstruction integration (2026-09-06; additive current paths)
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/visibility.py
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/reconstruction_recorder_node.py
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/reconstruction_recording/
+piper_ros_foxy/src/piper_mobile_manipulation/config/reconstruction_recording_params.yaml
+piper_ros_foxy/src/piper_mobile_manipulation/msg/ReconstructionKeyframe.msg
+tools/bundlesdf/
+tests/reconstruction/
+docs/ai/86-reconstruction-recording.yaml
+docs/architecture/reconstruction_recording.md
+docs/experiments/reconstruction_recording_validation.md

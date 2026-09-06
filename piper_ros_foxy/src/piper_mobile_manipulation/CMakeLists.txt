@@ -19,6 +19,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Detection2D.msg"
   "msg/Target3D.msg"
   "msg/TrackedTarget.msg"
+  "msg/ReconstructionKeyframe.msg"
   "msg/TrackingHealth.msg"
   "msg/CameraTimestampHealth.msg"
   "msg/TargetError.msg"
@@ -47,7 +48,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/RequestTesseractPlan.srv"
   "srv/ReportTrackedRobotHomed.srv"
   "srv/GetMeshJobResult.srv"
-  DEPENDENCIES action_msgs builtin_interfaces geometry_msgs std_msgs trajectory_msgs
+  DEPENDENCIES action_msgs builtin_interfaces geometry_msgs sensor_msgs std_msgs trajectory_msgs
 )
 
 ament_python_install_package(${PROJECT_NAME})
@@ -68,6 +69,7 @@ install(PROGRAMS
   piper_mobile_manipulation/viewpoint_reachability_filter_node.py
   piper_mobile_manipulation/active_scan_debug_overlay_node.py
   piper_mobile_manipulation/scan_capture_node.py
+  piper_mobile_manipulation/reconstruction_recorder_node.py
   piper_mobile_manipulation/scan_quality_node.py
   piper_mobile_manipulation/occlusion_checker_node.py
   piper_mobile_manipulation/heavy_refresh_bridge_node.py

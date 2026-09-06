@@ -230,3 +230,7 @@ Manufacturing CAD is not a substitute for collision-qualified URDF/planner geome
 - ROS 2 Foxy is end-of-life. Porting the qualified Ubuntu 20.04/Foxy baseline requires deliberate interface and hardware requalification.
 
 This is research engineering software for a physical robot. Review the current qualification evidence and operator procedure before any hardware run.
+
+## Reconstruction-only RGB-D recording
+
+See [recording, replay and offline BundleSDF commands](docs/architecture/reconstruction_recording.md) and the linked executed validation report. Recording is optional and defaults off.

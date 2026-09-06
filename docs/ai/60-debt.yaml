@@ -1,4 +1,15 @@
 schema_version: 1
+reconstruction_recording_2026_09_06:
+  reference: docs/ai/86-reconstruction-recording.yaml
+  deferred:
+  - Install isolated BundleSDF Docker/native extensions/weights and rerun official sample when download quota clears;
+    no successful reconstruction claimed
+  - Calibrate blur and mask-area-growth gates against real tracked objects and camera exposure
+  - Physical arm/camera load, TF timing, tight-cone feasibility and slow-storage qualification
+  - Resolve pre-existing ray hard-cull ranking regression and rootless thin-obstacle clearance qualification separately
+  - Live multi-node atomic parameter updates are deliberately unsupported; relaunch between missions
+  recommended_next_cut: Complete blocked GPU reconstruction qualification using the pinned environment before describing
+    offline mesh production as validated.
 stream_smoothness_followup_2026_09_06:
   addressed: Feedback-boundary chatter now latches with independent samples and hysteresis; experimental native timing is uniformly scaled instead of segment-rounded.
   tradeoff: Uniform scaling may lengthen trajectories; one real-GPU source path increased from 4.4 to 6.0 seconds while retaining every source vertex. It is not jerk-limited interpolation.

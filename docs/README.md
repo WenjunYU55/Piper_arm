@@ -60,3 +60,7 @@ When documents disagree, use this order:
 
 Do not use an old handoff, session note, or copied command as authority for
 physical motion.
+
+## Reconstruction-only RGB-D recording
+
+See [recording, replay and offline BundleSDF commands](architecture/reconstruction_recording.md) and the linked executed validation report. Recording is optional and defaults off.

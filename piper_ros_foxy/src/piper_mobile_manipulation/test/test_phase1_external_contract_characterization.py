@@ -29,6 +29,9 @@ from piper_mobile_manipulation.target_scan_mission_node import (
 
 
 INTERFACE_HASHES = {
+    # Additive reconstruction tuple; contains no motion command or acceptance authority.
+    'piper_mobile_manipulation/msg/ReconstructionKeyframe.msg':
+        '08e338edb9efa6ab159ef74f255b105820f50c07411a4cdd2a02f77edd88a23b',
     'piper_mobile_manipulation/action/RunTargetScan.action':
         'c54319336ada0442c789fc52e99124d52eeee3fae758dfad571efa197f67c565',
     'piper_mobile_manipulation/msg/CameraTimestampHealth.msg':
@@ -44,7 +47,7 @@ INTERFACE_HASHES = {
     'piper_mobile_manipulation/msg/MeshJobStatus.msg':
         'de8c524f064ff6d004b1822b2dc02bd3f5b9552addd233d910f2f6b7588eb502',
     'piper_mobile_manipulation/msg/MotionPlan.msg':
-        '09ddcf657abda42c1067afb414f6f7ba29278b5dc25748b2ffb1e7c097ce058d',
+        '32400fe5591e9f6601ae9053a0992f2fc691e1a032c04a58b638ef036cce43e7',
     'piper_mobile_manipulation/msg/MotionPlanStatus.msg':
         'f2bed83e293ccc3f8f3a94ceb4e1b7f281956d1da1af37dc8cb819a317dd4559',
     'piper_mobile_manipulation/msg/ObstacleInstance3D.msg':

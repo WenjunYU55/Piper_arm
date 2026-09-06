@@ -4,6 +4,9 @@ import hashlib
 import json
 import math
 
+from piper_mobile_manipulation.visibility import (
+    DEFAULT_VISIBILITY_ANGLE_DEG, visibility_tolerance)
+
 
 JOINT_NAMES = ('joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6')
 SUPPORTED_PLAN_KINDS = (
@@ -201,6 +204,11 @@ def validate_request(request):
     if plan_kind not in SUPPORTED_PLAN_KINDS:
         raise CuroboContractError('unsupported plan kind: %s' % plan_kind)
     planning = request.get('planning', {})
+    try:
+        visibility_tolerance(planning.get(
+            'target_visibility_angle_tolerance_deg', DEFAULT_VISIBILITY_ANGLE_DEG))
+    except (TypeError, ValueError) as error:
+        raise CuroboContractError(str(error)) from error
     if (
             planning.get('planner') != 'MotionGen'
             or planning.get('pipeline') != 'CUROBO_V1'):

@@ -29,7 +29,7 @@ DESCRIPTION_ROOT="$ROOT/piper_ros_foxy/src/piper_description"
 MANIFEST="$ROOT/piper_ros_foxy/src/piper_tesseract_foxy/model/$COLLISION_MANIFEST_NAME"
 SRDF="$ROOT/piper_ros_foxy/src/piper_tesseract_foxy/model/$COLLISION_SRDF_NAME"
 
-PYTHONPATH="$ROOT/piper_ros_foxy/src/piper_tesseract_foxy" \
+PYTHONPATH="$ROOT/piper_ros_foxy/src/piper_tesseract_foxy:$ROOT/piper_ros_foxy/src/piper_mobile_manipulation" \
   /usr/bin/python3 -m piper_tesseract_foxy.model_builder \
   --xacro "$DESCRIPTION_ROOT/urdf/piper_description.xacro" \
   --calibration "$CALIBRATION" \

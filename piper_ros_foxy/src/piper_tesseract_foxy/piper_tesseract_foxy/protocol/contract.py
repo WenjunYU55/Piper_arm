@@ -8,6 +8,9 @@ import copy
 import hashlib
 import json
 import math
+
+from piper_mobile_manipulation.visibility import (
+    DEFAULT_VISIBILITY_ANGLE_DEG, visibility_tolerance)
 import re
 import time
 
@@ -447,6 +450,11 @@ def validate_request(payload, now_ns=None):
     for row in transform:
         finite_vector(row, 4, 'calibration.T_link6_camera row')
     planning = payload.get('planning', {})
+    try:
+        visibility_tolerance(planning.get(
+            'target_visibility_angle_tolerance_deg', DEFAULT_VISIBILITY_ANGLE_DEG))
+    except (TypeError, ValueError) as error:
+        raise ContractError(str(error)) from error
     expected_planner, expected_pipeline = PLANNER_CONFIGS[planner_backend]
     if planning.get('planner') != expected_planner:
         raise ContractError(
@@ -957,6 +965,13 @@ def validate_response(payload, request=None):
             raise ContractError(
                 'return home endpoint does not match the request')
     binding = payload.get('trajectory_binding')
+    if request is not None and isinstance(binding, dict):
+        expected_angle = request['planning'].get(
+            'target_visibility_angle_tolerance_deg', DEFAULT_VISIBILITY_ANGLE_DEG)
+        if binding.get('execution', {}).get(
+                'target_visibility_angle_tolerance_deg',
+                DEFAULT_VISIBILITY_ANGLE_DEG) != expected_angle:
+            raise ContractError('response visibility tolerance mismatch')
     if not isinstance(binding, dict):
         raise ContractError('successful response has no trajectory binding')
     expected = trajectory_digest(segments, binding)

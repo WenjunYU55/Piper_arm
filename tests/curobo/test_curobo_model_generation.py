@@ -380,7 +380,7 @@ def test_curobo_scripts_discard_inherited_pythonpath():
         encoding='utf-8')
     model = (ROOT / 'motion_planning/curobo/prepare_model.sh').read_text(
         encoding='utf-8')
-    assert 'export PYTHONPATH="$ROOT:$ROOT/piper_ros_foxy/src/piper_tesseract_foxy"' in worker
+    assert 'export PYTHONPATH="$ROOT:$ROOT/piper_ros_foxy/src/piper_tesseract_foxy:$ROOT/piper_ros_foxy/src/piper_mobile_manipulation"' in worker
     assert 'PYTHONPATH="$ROOT" \\\n' in model
     assert '${PYTHONPATH:+' not in worker
     assert '${PYTHONPATH:+' not in model

@@ -1,4 +1,27 @@
 schema_version: 1
+reconstruction_recording_2026_09_06:
+  owner_module: reconstruction_recording
+  allowed_edit_paths:
+  - piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/visibility.py
+  - piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/reconstruction_recorder_node.py
+  - piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/reconstruction_recording/
+  - piper_ros_foxy/src/piper_mobile_manipulation/config/reconstruction_recording_params.yaml
+  - piper_ros_foxy/src/piper_mobile_manipulation/msg/ReconstructionKeyframe.msg
+  - tools/bundlesdf/
+  - tests/reconstruction/
+  must_not_move_without:
+  - piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_capture_node.py
+  - piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py
+  - piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/execution/motion.py
+  - piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/configuration.py
+  - piper_ros_foxy/src/piper_mobile_manipulation/launch/supervised_viewpoint_execution.launch.py
+  - piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/bridge_node.py
+  - piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/protocol/contract.py
+  - piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/worker.py
+  - motion_planning/curobo/worker.py
+  authority: Mission engine retains transitions; executor retains accepted count and frozen coverage target; recorder
+    owns no command authority. visibility.py owns movement default and optical geometry.
+  reference: docs/ai/86-reconstruction-recording.yaml
 stream_smoothness_ownership_2026_09_06:
   owner_module: execution/trajectory.py owns pure following recovery; scan_viewpoint_executor_node.py owns hold lifetime and fresh-sample evidence; motion_planning/curobo/adapter.py owns optional uniform native time scaling; worker.py selects it only for experimental rates.
   allowed_edit_paths: [listed owners, scan_execution_params.yaml, test_scan_motion.py, tests/curobo/test_curobo_adapter.py, tests/curobo/test_curobo_gpu_integration.py, related docs]

@@ -25,7 +25,8 @@ from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformException, TransformListener
 
-from piper_mobile_manipulation.msg import ScanExecutionStatus, Target3D
+from piper_mobile_manipulation.msg import (
+    ReconstructionKeyframe, ScanExecutionStatus, Target3D)
 from piper_mobile_manipulation.infrastructure.failure_model import (
     as_failure,
     FailureTag,
@@ -124,6 +125,10 @@ class ScanCaptureNode(Node):
         self.declare_parameter(
             'confidence_image_topic', '/camera/confidence/image_rect_raw')
         self.declare_parameter('mask_topic', '/piper/sam2_target_mask')
+        self.declare_parameter('reconstruction_recording_enabled', False)
+        self.reconstruction_pub = (self.create_publisher(
+            ReconstructionKeyframe, '/piper/reconstruction_keyframe', qos_profile_sensor_data)
+            if self.get_parameter('reconstruction_recording_enabled').value else None)
         self.declare_parameter('target_3d_topic', '/piper/target_3d')
         self.declare_parameter('scan_viewpoints_topic', '/piper/scan_viewpoints')
         self.declare_parameter(
@@ -1198,6 +1203,9 @@ class ScanCaptureNode(Node):
             'message': 'saved viewpoint %03d to %s' % (
                 index, self.frames_dir),
             'frame_index': int(index),
+            'reconstruction_stamp_ns': (
+                int(prepared['color_message'].header.stamp.sec) * 1000000000
+                + int(prepared['color_message'].header.stamp.nanosec)),
             'metadata_file_path': paths['metadata'],
             'occlusion_state': str(metadata['occlusion_state']),
             'occlusion_score': float(metadata['occlusion_score']),
@@ -1206,6 +1214,20 @@ class ScanCaptureNode(Node):
         }
         if self.param_bool('debug'):
             self.get_logger().info('saved scan frame %03d to %s' % (index, self.frames_dir))
+        # Publish references to the already-selected raw tuple. The median-depth
+        # files and admission remain unchanged; recorder failure cannot reject a
+        # mission capture. Publication runs in the capture service, never motion.
+        if getattr(self, 'reconstruction_pub', None) is not None:
+            try:
+                raw = ReconstructionKeyframe()
+                raw.task_id = str(self.get_parameter('task_id').value)
+                raw.rgb = prepared['color_message']
+                raw.depth = prepared['aligned_depth_message']
+                raw.mask = prepared['mask_message']
+                raw.camera_info = prepared['color_info']
+                self.reconstruction_pub.publish(raw)
+            except Exception as error:
+                self.get_logger().warning('Reconstruction keyframe unavailable: %s' % error)
         self.prepared_capture = None
         return True, 'saved viewpoint %03d to %s' % (index, self.frames_dir)
 

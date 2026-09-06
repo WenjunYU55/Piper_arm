@@ -12,6 +12,8 @@ from launch.actions import (
     TimerAction,
 )
 from launch.event_handlers import OnProcessExit
+from launch.conditions import IfCondition
+import yaml
 from launch.events import Shutdown
 from launch.substitutions import (
     LaunchConfiguration,
@@ -141,6 +143,25 @@ def generate_launch_description():
     workflow_params = cfg('supervised_cube_workflow_params.yaml')
     execution_params = cfg('scan_execution_params.yaml')
     frozen_stream_rates = load_stream_rates(execution_params)
+    with open(execution_params, encoding='utf-8') as stream:
+        execution_settings = yaml.safe_load(stream)['/**']['ros__parameters']
+    visibility_default = str(execution_settings['target_visibility_angle_tolerance_deg'])
+    visibility_argument = DeclareLaunchArgument(
+        'target_visibility_angle_tolerance_deg', default_value=visibility_default,
+        description='Frozen movement cone shared by planner, worker, executor and recorder.')
+    visibility_value = ParameterValue(LaunchConfiguration(
+        'target_visibility_angle_tolerance_deg'), value_type=float)
+    recording_params = cfg('reconstruction_recording_params.yaml')
+    with open(recording_params, encoding='utf-8') as stream:
+        recording_settings = yaml.safe_load(stream)['/**']['ros__parameters']
+        recording_default = recording_settings['reconstruction_recording_enabled']
+    recording_argument = DeclareLaunchArgument(
+        'reconstruction_recording_enabled', default_value=str(recording_default).lower())
+    recording_value = ParameterValue(
+        LaunchConfiguration('reconstruction_recording_enabled'), value_type=bool)
+    recording_root_argument = DeclareLaunchArgument(
+        'reconstruction_output_root',
+        default_value=os.path.join(root, 'datasets/reconstruction_sessions'))
     frozen_final_aim_tolerance_deg = final_aim_tolerance(execution_params)
     selected_home = home_override()
     bridge = Node(
@@ -155,6 +176,7 @@ def generate_launch_description():
             {
                 'spool_root': planner_spool,
                 'planner_backend': planner_backend,
+                'target_visibility_angle_tolerance_deg': visibility_value,
                 'trajectory_command_rate_hz':
                     frozen_stream_rates['trajectory_command_rate_hz'],
                 'hand_eye_calibration_path': os.environ.get(
@@ -216,6 +238,7 @@ def generate_launch_description():
         output='screen',
         parameters=[execution_params, {
             **frozen_stream_rates,
+            'target_visibility_angle_tolerance_deg': visibility_value,
             'final_capture_aim_tolerance_deg': frozen_final_aim_tolerance_deg,
             'enable_real_arm_motion': ParameterValue(
                 LaunchConfiguration('enable_real_arm_motion'), value_type=bool),
@@ -276,6 +299,7 @@ def generate_launch_description():
             capture_params,
             {
                 'capture_mode': 'service',
+                'reconstruction_recording_enabled': recording_value,
                 'task_id': os.environ.get('PIPER_MISSION_TASK_ID', ''),
                 'mission_sha256': os.environ.get(
                     'PIPER_MISSION_SHA256', ''),
@@ -293,6 +317,17 @@ def generate_launch_description():
             },
         ],
     )
+    recorder = Node(
+        package='piper_mobile_manipulation', executable='reconstruction_recorder_node.py',
+        name='reconstruction_recorder', output='screen',
+        condition=IfCondition(LaunchConfiguration('reconstruction_recording_enabled')),
+        parameters=[quality_params, recording_params, {
+            'target_visibility_angle_tolerance_deg': visibility_value,
+            'output_root': LaunchConfiguration('reconstruction_output_root'),
+            'task_id': os.environ.get('PIPER_MISSION_TASK_ID', ''),
+        }])
+    # Optional observer is deliberately not launch-critical: disk failures must
+    # not terminate the mission or change the command/safety process lifetime.
     critical_nodes = (
         bridge, reachability, workflow, executor, planner, acquisition, capture)
     shutdown_handlers = [
@@ -305,6 +340,9 @@ def generate_launch_description():
     ]
     return LaunchDescription([
         enable_motion,
+        visibility_argument,
+        recording_argument,
+        recording_root_argument,
         speed,
         max_views,
         min_views,
@@ -338,4 +376,5 @@ def generate_launch_description():
         # participants. It is read-only and saves only on the executor's
         # accepted, settled MULTIVIEW_SCAN capture service call.
         TimerAction(period=3.0, actions=[capture]),
+        TimerAction(period=3.25, actions=[recorder]),
     ])

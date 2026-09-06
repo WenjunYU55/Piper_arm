@@ -17,6 +17,10 @@ import time
 import uuid
 
 import numpy as np
+
+from piper_mobile_manipulation.visibility import (
+    DEFAULT_VISIBILITY_ANGLE_DEG, angle_degrees, visibility_tolerance,
+)
 from scipy.optimize import least_squares
 from scipy.spatial.transform import Rotation
 import yaml
@@ -37,7 +41,7 @@ WORKER_PLANNING_BUDGET_SEC = 150.0
 AUTOMATIC_ONE_VIEW_PLANNING_BUDGET_SEC = 90.0
 AUTOMATIC_ONE_VIEW_SEGMENT_BUDGET_SEC = 3.0
 WORKER_RESPONSE_RESERVE_SEC = 5.0
-SCAN_TARGET_MAX_BORESIGHT_DEG = 20.0
+SCAN_TARGET_MAX_BORESIGHT_DEG = DEFAULT_VISIBILITY_ANGLE_DEG
 SCAN_TARGET_MIN_DISTANCE_M = 0.22
 # Qualified PiPER URDF MoveJ velocity limits. J1-J5 are 5 rad/s and J6 is
 # 3 rad/s. MotionCtrl_2 applies the operator percentage to these controller
@@ -346,7 +350,7 @@ def camera_transform_path_rejection(
     final_aim = float(final_aim_deg)
     if (
             target.shape != (3,) or not np.all(np.isfinite(target))
-            or not math.isfinite(maximum) or maximum <= 0.0 or maximum > 90.0
+            or not math.isfinite(maximum) or maximum <= 0.0 or maximum >= 90.0
             or not math.isfinite(minimum) or minimum <= 0.0
             or not math.isfinite(final_aim) or final_aim <= 0.0
             or final_aim > 90.0):
@@ -372,8 +376,13 @@ def camera_transform_path_rejection(
                 'minimum is %.3fm' % (distance_m, index, minimum))
         if forward_norm <= 1e-9:
             return 'scan camera optical axis is invalid at sample %d' % index
-        angle_deg = math.degrees(math.acos(float(np.clip(
-            np.dot(forward / forward_norm, ray / distance_m), -1.0, 1.0))))
+        try:
+            angle_deg = angle_degrees(forward, ray)
+        except ValueError:
+            if not initial_alignment:
+                return 'scan target behind camera or invalid vector'
+            angle_deg = math.degrees(math.acos(float(np.clip(
+                np.dot(forward / forward_norm, ray / distance_m), -1.0, 1.0))))
         final_angle = angle_deg
         if initial_angle is None:
             initial_angle = angle_deg
@@ -1866,6 +1875,8 @@ class TesseractBackend:
                     ]
                     rejection = camera_transform_path_rejection(
                         transforms, visibility_target,
+                        maximum_boresight_deg=getattr(
+                            self, "visibility_angle", DEFAULT_VISIBILITY_ANGLE_DEG),
                         initial_alignment=initial_target_alignment,
                         final_aim_deg=final_aim_deg)
                     if rejection:
@@ -2238,6 +2249,8 @@ class TesseractBackend:
                 for joints in positions]
             return camera_transform_path_rejection(
                 transforms, visibility_target,
+                maximum_boresight_deg=getattr(
+                            self, "visibility_angle", DEFAULT_VISIBILITY_ANGLE_DEG),
                 initial_alignment=initial_target_alignment,
                 final_aim_deg=final_aim_deg)
 
@@ -2533,6 +2546,9 @@ class TesseractBackend:
         }
 
     def plan(self, request):
+        self.visibility_angle = visibility_tolerance(request.get(
+            "planning", {}).get(
+                "target_visibility_angle_tolerance_deg", DEFAULT_VISIBILITY_ANGLE_DEG))
         planning_budget, segment_budget = planning_budgets_for_request(request)
         self.planning_budget_sec = planning_budget
         self.segment_planning_budget_sec = segment_budget
@@ -2980,6 +2996,8 @@ class Worker:
                 'calibration': request['calibration']['hand_eye_sha256'],
                 'limits': request['limits'],
                 'execution': {
+                    'target_visibility_angle_tolerance_deg': request['planning'].get(
+                        'target_visibility_angle_tolerance_deg', DEFAULT_VISIBILITY_ANGLE_DEG),
                     'effective_speed_percent':
                         request['planning']['effective_speed_percent'],
                     'command_rate_hz':

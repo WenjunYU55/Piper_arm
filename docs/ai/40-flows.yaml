@@ -1,4 +1,21 @@
 schema_version: 1
+reconstruction_recording_2026_09_06:
+  reference: docs/ai/86-reconstruction-recording.yaml
+  manual_smoke_checks:
+  - Run tests/reconstruction including actual DDS replay at 20, 10 and 5 degrees; verify two mission captures versus
+    six reconstruction frames per completed scan
+  - Replay compatible allowlisted bag in isolated unused domain; verify SIGINT journal and two consecutive missions
+  - Verify first tuple is raw synchronized data and invalid frame zero prevents later moving admission
+  - Validate and convert session; exercise pinned upstream reader; separately run official GPU sample and check
+    actual mesh
+  - On real arm/camera retest existing capture, target visibility, mask freshness, collision and following-error
+    guards before physical qualification
+  failure_modes:
+  - Missing or rejected initial raw tuple prevents reconstruction; mission continues
+  - Queue saturation drops reconstruction work only
+  - Missing TF, stale mask, clipping, invalid calibration/depth and blur are counted rejects
+  - Final completion waits bounded time for pending accepted keyframes; missing keyframes reported; abort and shutdown
+    stay incomplete
 stream_smoothness_retests_2026_09_06:
   automated: [oscillating following error retains one hold deadline, duplicate and missing source samples cannot resume, three fresh interior samples resume, nonfinite error aborts, same native GPU path retains vertices at 100 and 200 Hz, native speed profile ratios preserved, step speed and sample bounds, high-rate fallback path collision and visibility qualification]
   manual_smoke_checks: [load next-mission 100 Hz setting, supervised same-path low-speed timing and tracking comparison, inspect hold count command gaps and endpoint settling, verify cancellation and normal home shutdown, compare standard 20 Hz only on the same path and speed]

@@ -1,4 +1,15 @@
 schema_version: 1
+reconstruction_recording_2026_09_06:
+  reference: docs/ai/86-reconstruction-recording.yaml
+  maintenance_routes:
+    recorder_and_dataset: reconstruction_recording owner; consult 20, 30, 40, 50 and 86 before changing admission
+      or persistence
+    movement_visibility: shared visibility owner; coordinate executor, generic bridge, both workers, protocol bindings
+      and launch
+    bundlesdf: tools/bundlesdf offline owner; re-read pinned loader and licence before upgrading
+  documentation:
+  - docs/architecture/reconstruction_recording.md
+  - docs/experiments/reconstruction_recording_validation.md
 stream_smoothness_maintenance_2026_09_06:
   inspect: [execution/trajectory.py following_recovery_decision, scan_viewpoint_executor_node.py streaming_moving_tick, motion_planning/curobo/adapter.py normalize_trajectory, motion_planning/curobo/worker.py _path, planning_diagnostics.trajectory_timing]
   rule: Experimental 100/200 Hz applies uniform native timing; 20 Hz retains original segment timing. Source derivative peaks are diagnostic evidence only; public MoveJ derivative fields stay zero. Restart the mission stack to load changes; no active-mission rate update.

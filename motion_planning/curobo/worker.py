@@ -15,6 +15,10 @@ import uuid
 
 import numpy as np
 
+from piper_mobile_manipulation.visibility import (
+    DEFAULT_VISIBILITY_ANGLE_DEG, angle_degrees,
+)
+
 from motion_planning.curobo import (
     PINNED_COMMIT, PINNED_VERSION, PINNED_WARP_VERSION,
     POSITION_LIMIT_CLIP_RAD)
@@ -52,7 +56,7 @@ REQUIRED_FIXED_WORLD_MESHES = {
     'piper_base_collision',
 }
 
-SCAN_TARGET_MAX_BORESIGHT_DEG = 20.0
+SCAN_TARGET_MAX_BORESIGHT_DEG = DEFAULT_VISIBILITY_ANGLE_DEG
 SCAN_TARGET_MIN_DISTANCE_M = 0.22
 WORKER_PLANNING_BUDGET_SEC = 150.0
 AUTOMATIC_ONE_VIEW_PLANNING_BUDGET_SEC = 90.0
@@ -431,7 +435,7 @@ def camera_path_visibility_rejection(
             or not np.all(np.isfinite(positions))
             or not np.all(np.isfinite(forwards))
             or target.shape != (3,) or not np.all(np.isfinite(target))
-            or not math.isfinite(maximum) or maximum <= 0.0 or maximum > 90.0
+            or not math.isfinite(maximum) or maximum <= 0.0 or maximum >= 90.0
             or not math.isfinite(minimum) or minimum <= 0.0
             or not math.isfinite(final_aim) or final_aim <= 0.0
             or final_aim > 90.0):
@@ -450,10 +454,13 @@ def camera_path_visibility_rejection(
                 'minimum is %.3fm' % (distance_m, index, minimum))
         if forward_norm <= 1e-9:
             return 'scan camera optical axis is invalid at sample %d' % index
-        cosine = float(np.dot(
-            forward / forward_norm, ray / distance_m))
-        angle_deg = math.degrees(math.acos(float(np.clip(
-            cosine, -1.0, 1.0))))
+        try:
+            angle_deg = angle_degrees(forward, ray)
+        except ValueError:
+            if not initial_alignment:
+                return 'scan target behind camera or invalid vector'
+            angle_deg = math.degrees(math.acos(float(np.clip(
+                np.dot(forward / forward_norm, ray / distance_m), -1.0, 1.0))))
         final_angle = angle_deg
         if initial_angle is None:
             initial_angle = angle_deg
@@ -872,6 +879,8 @@ class CuroboBackend:
         return camera_path_visibility_rejection(
             camera_positions, camera_forwards,
             request['scene']['target_center_m'],
+            maximum_boresight_deg=request.get("planning", {}).get(
+                        "target_visibility_angle_tolerance_deg", DEFAULT_VISIBILITY_ANGLE_DEG),
             initial_alignment=first_alignment,
             final_aim_deg=final_aim)
 
@@ -928,6 +937,8 @@ class CuroboBackend:
                 reason = camera_path_visibility_rejection(
                     [position], [rotation[:, 2]],
                     request['scene']['target_center_m'],
+                    maximum_boresight_deg=request.get("planning", {}).get(
+                        "target_visibility_angle_tolerance_deg", DEFAULT_VISIBILITY_ANGLE_DEG),
                     initial_alignment=int(request.get('scan_session', {}).get(
                         'accepted_views', -1)) == 0,
                     final_aim_deg=float(candidate.get(
@@ -1884,6 +1895,8 @@ class Worker:
             'calibration': request['calibration']['hand_eye_sha256'],
             'limits': request['limits'],
             'execution': {
+                'target_visibility_angle_tolerance_deg': request['planning'].get(
+                    'target_visibility_angle_tolerance_deg', DEFAULT_VISIBILITY_ANGLE_DEG),
                 'effective_speed_percent':
                     request['planning']['effective_speed_percent'],
                 'command_rate_hz': request['planning']['command_rate_hz'],

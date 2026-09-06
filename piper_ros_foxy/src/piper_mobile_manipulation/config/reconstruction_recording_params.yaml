@@ -1,0 +1,16 @@
+/**:
+  ros__parameters:
+    reconstruction_recording_enabled: false
+    sample_rate_hz: 8.0
+    synchronization_slop_sec: 0.08
+    max_mask_age_sec: 1.0
+    # Pixel area and edge margin inherit scan_quality_params.yaml.
+    minimum_valid_depth_ratio: 0.50
+    blur_gate_enabled: true
+    # Calibrate interior target Laplacian variance with blur_diagnostic.py.
+    minimum_blur_score: 20.0
+    recorder_visibility_angle_tolerance_deg: 0.0  # inherit movement cone
+    writer_queue_size: 8
+    input_queue_size: 8
+    depth_scale_m: 0.001  # 16UC1 units; 32FC1 is always metres
+    max_mask_area_growth_ratio: 2.0

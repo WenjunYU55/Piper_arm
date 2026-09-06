@@ -1,4 +1,21 @@
 schema_version: 1
+reconstruction_active_planner: curobo  # Preserved saved mission selection; Tesseract checks are compatibility only.
+reconstruction_recording_2026_09_06:
+  reference: docs/ai/86-reconstruction-recording.yaml
+  flow:
+  - existing stationary median capture persists
+  - raw tuple pin and executor accepted history rendezvous
+  - existing frozen coverage target and image-stamped TF
+  - passive bounded admission worker
+  - bounded PNG/NPY writer
+  - native manifest
+  - offline validator and pinned BundleSDF adapter
+  load_order_contracts:
+  - visibility.py stays ROS-free and is importable in both external worker environments
+  - ReconstructionKeyframe and additive MotionPlan field require rebuilding all ROS interfaces before launch
+  - optional passive recorder starts at 3.25 seconds after stationary capture at 3.0; existing motion roles and
+    critical exit handling unchanged
+  - BundleSDF Python CUDA and weights stay outside Foxy workspace
 stream_smoothness_boundary_2026_09_06:
   timing: Native cuRobo result -> adapter applies one time scale in experimental modes -> same hashed position schedule -> common validation and sole executor command publisher.
   following: Executor owns held setpoint and fresh-sample counter; pure TrajectoryRunner owns recovery decision; TelemetryStore supplies independent joint source stamps. No new controller or shared store.

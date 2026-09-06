@@ -3,7 +3,7 @@ set -euo pipefail
 
 source "$(dirname "${BASH_SOURCE[0]}")/rootless_common.sh"
 
-PYTHONPATH="$ROOT/piper_ros_foxy/src/piper_tesseract_foxy" \
+PYTHONPATH="$ROOT/piper_ros_foxy/src/piper_tesseract_foxy:$ROOT/piper_ros_foxy/src/piper_mobile_manipulation" \
   python3 -m piper_tesseract_foxy.model_builder \
   --xacro "$ROOT/piper_ros_foxy/src/piper_description/urdf/piper_description.xacro" \
   --calibration "$ROOT/L515_camera/calibration/hand_eye/session_20260808_straight_mount/calibration_result.yaml" \

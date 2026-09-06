@@ -1,5 +1,8 @@
 """Typed static configuration for the target-scan application boundaries."""
 
+from piper_mobile_manipulation.visibility import (
+    DEFAULT_VISIBILITY_ANGLE_DEG, visibility_tolerance)
+
 from dataclasses import dataclass
 import math
 import os
@@ -444,7 +447,9 @@ def executor_parameter_defaults():
         'acquisition_target_tolerance_m': 0.30,
         'acquisition_max_viewpoints': 5,
         'closed_loop_one_view': False,
-        'scan_target_max_boresight_deg': 20.0,
+        'target_visibility_angle_tolerance_deg': DEFAULT_VISIBILITY_ANGLE_DEG,
+        # Deprecated input retained for older test/client parameter maps.
+        'scan_target_max_boresight_deg': DEFAULT_VISIBILITY_ANGLE_DEG,
         'final_capture_aim_tolerance_deg': 5.0,
         'scan_target_min_distance_m': 0.22,
         'data_timeout_sec': 2.0,
@@ -578,6 +583,10 @@ def load_executor_configuration(node):
     """Declare, read once, validate, and freeze executor parameters."""
     values = _declare_and_read(node, executor_parameter_defaults())
     validate_stream_rates(values)
+    if values['scan_target_max_boresight_deg'] != DEFAULT_VISIBILITY_ANGLE_DEG:
+        raise ConfigurationError(
+            'scan_target_max_boresight_deg is deprecated; use '
+            'target_visibility_angle_tolerance_deg for all consumers')
     interfaces = _interface_config(values)
     motion = MotionConfig(
         enable_real_arm_motion=_as_bool(values['enable_real_arm_motion']),
@@ -666,9 +675,8 @@ def load_executor_configuration(node):
             values['acquisition_target_tolerance_m']),
         acquisition_max_viewpoints=_positive_int(
             'acquisition_max_viewpoints', values['acquisition_max_viewpoints']),
-        scan_target_max_boresight_deg=_positive(
-            'scan_target_max_boresight_deg',
-            values['scan_target_max_boresight_deg']),
+        scan_target_max_boresight_deg=visibility_tolerance(
+            values['target_visibility_angle_tolerance_deg']),
         final_capture_aim_tolerance_deg=final_capture_aim_tolerance_deg,
         scan_target_min_distance_m=_positive(
             'scan_target_min_distance_m',

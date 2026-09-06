@@ -493,6 +493,7 @@ def test_valid_but_rejected_tesseract_proposal_keeps_full_request_id():
             'acquisition_max_viewpoints': 5,
             'trajectory_joint_step_rad': 0.03,
             'trajectory_command_rate_hz': 100.0,
+            'scan_target_max_boresight_deg': 20.0,
             'motion_limits_timeout_sec': 2.0,
             'speed_percent': 5.0,
         }[name]),

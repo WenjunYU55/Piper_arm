@@ -114,7 +114,7 @@
     acquisition_max_viewpoints: 5
     # A collision-free joint interpolation is still rejected if it would turn
     # the eye-in-hand camera off the measured target or pass through it.
-    scan_target_max_boresight_deg: 20.0
+    target_visibility_angle_tolerance_deg: 20.0
     # Final planned and achieved optical-axis error. Rough acquisition and the
     # first target lock remain capped at 5 degrees; later scan views use this
     # frozen GUI-selected value in the inclusive 1-90 degree range.

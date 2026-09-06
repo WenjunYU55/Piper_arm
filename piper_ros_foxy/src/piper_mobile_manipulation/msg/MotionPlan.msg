@@ -44,3 +44,6 @@ uint32 candidate_viewpoints_considered
 uint32 candidate_viewpoints_rejected
 uint32 feasible_viewpoints
 uint32 successful_viewpoints
+
+# Frozen planner/worker/executor movement cone in degrees.
+float64 target_visibility_angle_tolerance_deg

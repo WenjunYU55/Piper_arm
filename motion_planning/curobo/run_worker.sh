@@ -52,6 +52,6 @@ else
 fi
 # Deliberately replace, rather than extend, the login-shell PYTHONPATH.  This
 # worker runs in Python 3.10 and must never inherit Foxy's Python 3.8 packages.
-export PYTHONPATH="$ROOT:$ROOT/piper_ros_foxy/src/piper_tesseract_foxy"
+export PYTHONPATH="$ROOT:$ROOT/piper_ros_foxy/src/piper_tesseract_foxy:$ROOT/piper_ros_foxy/src/piper_mobile_manipulation"
 
 exec "$CUROBO_PYTHON" -m motion_planning.curobo.worker
