@@ -798,8 +798,9 @@ class ViewpointReachabilityFilterNode(Node):
             clearance = float(capability_map.metadata[
                 'tool_floor_clearance_m'])
             floor_z = float(self.get_parameter('floor_z_m').value)
-            result = capability_map.intersects_ray(
-                target, direction, minimum, maximum, floor_z, clearance)
+            from piper_mobile_manipulation.planning.prequalification import query_capability_ray
+            result = query_capability_ray(
+                capability_map, viewpoint, minimum, maximum, floor_z)
         except (KeyError, TypeError, ValueError) as error:
             return {
                 'available': True,

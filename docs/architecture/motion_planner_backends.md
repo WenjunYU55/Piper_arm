@@ -1,5 +1,63 @@
 # Motion-planner backends
 
+## Reuse unchanged collision-world uploads (2026-09-06)
+
+The cuRobo worker compares an exact SHA-256 identity of converted cuboids and
+fixed meshes before native world upload. Identical geometry reuses the loaded
+world; moved/resized/added/removed obstacles cause an update. No rounding or
+movement threshold is introduced. Reordering may conservatively trigger another
+upload. The cache is in memory per backend instance, never a persistent file.
+Fixed geometry/representation remains startup-bound; this is not hot swapping.
+
+The cache is invalidated before a changed upload and committed only after native
+upload and collision-constraint restoration succeed. Hits also restore collision
+constraints. Request validation, scene/target freshness, current starting joints,
+authorization and dense path checks remain unchanged and are never cached.
+`world_geometry_reused` and `world_geometry_sha256` are recorded alongside the
+existing `world_update` timings. Previous mission world updates totalled only
+about 0.31 s, so no large mission speedup is claimed for this optimization.
+
+Validation: 101 ordinary cuRobo tests passed (13 opt-in GPU tests skipped there);
+all 13 command-free real-GPU tests passed separately, including unchanged-blocker
+reuse and obstacle removal. No physical mission or robot-control process was run.
+
+## Endpoint prechecks and ray retry lifetime (2026-09-06)
+
+cuRobo filters requested endpoints before MotionGen. Loaded-model FK gives the
+rigid camera-to-link6 transform; the existing holder AABB validator checks the
+endpoint against the unchanged floor and request obstacles. Multiview endpoints
+also use existing target distance/aim checks. This is not a separate IK pass or
+a pose database. Every generated path still passes dense achieved-path checks
+and common authorization/execution validation. Endpoint screening does not prove
+reachability or guarantee improved solve time.
+
+The shared bridge retains exhausted rays for the session's complete qualified
+population rather than releasing them after each accepted capture. Explicit
+bootstrap-to-qualified replacement/new session resets exclusions. cuRobo reports
+`planning_diagnostics.exhausted_ray_ids` even if a later ray in that request
+succeeds; only IDs intersecting the correlated request are excluded. Timeout,
+stale-world and worker-unavailable failures cannot retire rays. These are
+search-policy exclusions, not proof of permanent geometric infeasibility or
+coverage. This can end the frontier earlier because a failed ray is intentionally
+not retried from a later arm starting pose. The legacy diagnostic status
+`culled_generation_exhausted` remains for viewer compatibility, with its reason
+updated to describe population-lifetime exclusion.
+
+Freshness, current joint-state admission, world validity, collision geometry,
+speeds, real-motion opt-ins and the 54-slot goal-set shape are unchanged. Separate
+IK screening and inter-request regeneration optimization remain deferred.
+Restart an idle coordinator before a new physical trial. No physical validation
+was performed during this change and no mission was launched.
+
+Validation: 92 ordinary cuRobo tests and 1,127 mobile/Tesseract tests passed,
+with one environment skip. All 12 opt-in real-GPU tests passed separately on the
+generated four-box model and frozen requests, including endpoint projection
+against loaded link FK, supported plan kinds and collision rejection. The
+ordinary run skips those 12 GPU tests by design. Another 124 GUI/ray-cull tests
+passed after sourcing the Foxy environment (the unsourced invocation could not
+collect ROS-dependent tests). Both ROS packages built; AI YAML and diff checks pass.
+No speedup claim is made.
+
 ## cuRobo fixed-world geometry (2026-09-05)
 
 ### Latest saved physical-run observation
@@ -569,3 +627,40 @@ Plan comparison data is recorded in `MotionPlan`, motion-plan provenance and
 ray diagnostics: backend/version, plan/request IDs, result and failure reason,
 planning time, trajectory duration/point count/path length, candidate counts,
 selected views and available clearance evidence.
+## Bounded cuRobo ray aim search (2026-09-06)
+
+The bridge keeps exact centre aim first. For cuRobo target rays only it now
+adds four local tangent-plane directions to the existing current-look fallback.
+Their offsets are at most `min(4 degrees, effective capture tolerance - 1 degree)`;
+the existing one-degree execution margin and first-capture five-degree ceiling
+remain unchanged. Duplicate directions are removed. Tesseract and rough
+acquisition requests retain their previous behavior.
+
+All alternatives are explicit in the hashed request. The private schema-5
+validator admits up to five fallback directions for cuRobo target rays only;
+response validation still requires exact membership in that requested list,
+with correct nominal aim and offset evidence. Restart both bridge and worker
+after deployment; an old validator deliberately rejects the expanded request.
+ROS schemas and public configuration are unchanged.
+
+The worker tries the original exact-aim batch first. After failure it builds
+one fallback batch, with up to 54 semantic poses balanced across directions
+and spread through the endpoint-qualified distance/roll combinations. The
+native shape stays 54, with the established padding behavior. Invalid winners
+still require removal and retry; request deadlines are not increased. Full
+collision, attached-tool, target-visibility, authorization and execution checks
+remain mandatory. Actual selected directions remain visible in existing
+selected-view evidence and fallback attempts in timing diagnostics.
+
+This bounded downsampling is not an exhaustive orientation search. Successful
+nominal requests incur no extra native planning call; difficult requests may
+take longer or succeed sooner. Coverage and mission speed improvements require
+paired replay and physical measurements, not assumptions from endpoint IK.
+
+Validation: 1,246 ordinary mobile/Tesseract/cuRobo tests passed, with 15 skips
+(14 opt-in GPU tests plus one environment skip). All 14 pinned real-GPU tests
+also passed separately, including bounded fallback, blocked world, persistent
+worker, acquisition and home regressions. The bounded-fallback test injects a
+nominal failure only; its fallback MotionGen solve and path checks are real.
+The bridge package builds, AI YAML parses and diff whitespace checks pass.
+No physical E2E or timing improvement is claimed by these tests.

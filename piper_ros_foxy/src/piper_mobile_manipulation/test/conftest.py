@@ -402,7 +402,7 @@ class MissionCharacterizationHarness:
         self.maybe_fail('acquisition', session)
         return 'acquisition-request-%d' % session.acquisition_attempt
 
-    def clear_plan_cache(self):
+    def clear_plan_cache(self, preserve_generation=False):
         self.events.append('plan_cache_clear')
 
     def wait_for_plan(

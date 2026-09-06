@@ -227,8 +227,8 @@ class FakeMissionOperations:
     def return_home_diagnostic(_context):
         return 'fake home diagnostic'
 
-    def clear_plan_cache(self, _context):
-        pass
+    def clear_plan_cache(self, _context, preserve_generation=False):
+        self.events.append('reuse_generation' if preserve_generation else 'fresh_generation')
 
     def prepare_acquisition(self, context):
         self._record('acquisition', context)
@@ -668,6 +668,9 @@ def test_ray_shortlist_exhaustion_requests_next_untried_batch():
     assert result.succeeded
     assert operations.plan_requests == 9
     assert context.session.accepted_captures == 8
+    assert operations.events.count('reuse_generation') == 1
+    index = operations.events.index('reuse_generation')
+    assert 'fresh_generation' in operations.events[index + 1:]
 
 
 def test_plain_tesseract_exhaustion_remains_terminal():

@@ -241,6 +241,7 @@ def generate_launch_description():
         name='scan_viewpoint_planner',
         output='screen',
         parameters=[scan_params, {
+            'floor_z_m': ParameterValue(profile_floor, value_type=float),
             'session_max_views': ParameterValue(
                 LaunchConfiguration('max_execution_viewpoints'),
                 value_type=int),

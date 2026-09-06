@@ -1,4 +1,17 @@
 schema_version: 1
+bounded_curobo_aim_search_2026_09_06:
+  implemented: Explicit bounded cone alternatives for cuRobo rays, exact-first then one fixed-size fallback batch.
+  remaining: Compare coverage and planning time on paired recorded requests and supervised physical runs. Fallback semantic downsampling trades exhaustive distance-roll search per direction for bounded latency; this is not full orientation-cone completeness. No demonstrated mission-level speedup yet.
+early_capability_limits_2026_09_06:
+  addressed: Enforcing ray mode no longer projects information for atlas-unsupported directions; information filtering precedes sorting.
+  retained: Downstream static query repeats for the small survivor set; startup loads a second immutable CPU atlas. Missing/shadow-map coarse fallback order is unchanged. Planner-exhaustion ownership remains in the bridge, not duplicated into the NBV node.
+  pending: Physical timing benefit and coverage outcome; do not attribute all planning overhead or failed IK time to NBV scoring.
+world_upload_reuse_update_2026_09_06:
+  addressed: Identical collision geometry no longer triggers another MotionGen world upload.
+  limitation: Previous mission spent about 0.31 seconds in world updates; this is not expected to remove the major IK/retry or inter-request overhead. Candidate and capability regeneration optimization remains deferred.
+planner_endpoint_and_exhaustion_update_2026_09_06:
+  addressed: Nominal endpoint holder floor/obstacle and visibility failures are prefiltered; exhausted rays no longer return merely because an accepted capture changes the generation count.
+  remaining: [benchmark end-to-end latency on matched recorded requests, separate batched IK remains deferred, reduce redundant candidate and capability work separately, physical E2E confirmation, endpoint prechecks cannot prevent invalid intermediate paths]
 four_box_runtime_followup_2026_09_05:
   resolved: Qualified-source-backed four-box startup integration with explicit original-mesh rollback; no stale-mesh hot switch.
   remaining: [complete converged E2E of deployed integration, further workspace comparison, investigate latest ray-frontier exhaustion separately]

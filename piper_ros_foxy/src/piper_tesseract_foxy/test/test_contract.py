@@ -230,6 +230,33 @@ def test_expanded_ray_request_requires_direction_contiguous_attempts():
         validate_request(expanded_ray_request([3, 9, 3]))
 
 
+def test_curobo_cone_directions_are_bounded_and_response_remains_request_bound():
+    request = target_ray_request()
+    request['planner_backend'] = 'curobo'
+    request['planning'].update(planner='MotionGen', pipeline='CUROBO_V1')
+    candidate = request['scene']['candidate_views'][0]
+    candidate['maximum_final_aim_offset_deg'] = 5.0
+    candidate['fallback_look_directions'] = [
+        [-math.cos(math.radians(a)), math.sin(math.radians(a)), 0.0]
+        for a in (1, 2, 3, 4, -4)]
+    request = attach_digest(request, 'request_sha256')
+    assert validate_request(request) is request
+    response = response_fixture(request)
+    selected = response['selected_viewpoints'][0]
+    selected.update(look_direction=candidate['fallback_look_directions'][-1],
+                    nominal_look_direction=candidate['look_direction'],
+                    aim_fallback_used=True, aim_offset_deg=4.0)
+    assert validate_response(rehash_response(response), request)
+    selected['look_direction'] = [-math.cos(math.radians(2.5)),
+                                  math.sin(math.radians(2.5)), 0.0]
+    with pytest.raises(ContractError, match='does not match request'):
+        validate_response(rehash_response(response), request)
+    request['scene']['candidate_views'][0]['fallback_look_directions'].append(
+        [-1.0, 0.0, 0.0])
+    with pytest.raises(ContractError, match='direction count'):
+        validate_request(attach_digest(request, 'request_sha256'))
+
+
 def test_expanded_ray_request_cannot_exceed_direction_attempt_bound():
     request = expanded_ray_request([1, 2, 3, 4, 5, 6, 7])
 

@@ -315,8 +315,8 @@ class _MissionNodeOperations:
     def return_home_diagnostic(self, _context):
         return str(getattr(self.node, 'last_return_home_diagnostic', ''))
 
-    def clear_plan_cache(self, _context):
-        return self.node.clear_plan_cache()
+    def clear_plan_cache(self, _context, preserve_generation=False):
+        return self.node.clear_plan_cache(preserve_generation=preserve_generation)
 
     def prepare_acquisition(self, context):
         return self.node.prepare_acquisition(
@@ -2383,11 +2383,12 @@ class TargetScanMissionNode(Node):
         if values.shape != (6,) or not np.all(np.isfinite(values)):
             raise MissionFailure('joint feedback is not six finite positions')
 
-    def clear_plan_cache(self):
+    def clear_plan_cache(self, preserve_generation=False):
         with self._lock:
             self.latest_plan = None
             self.latest_plan_at = 0.0
-            self.view_generation_barrier_at = time.monotonic()
+            if not preserve_generation:
+                self.view_generation_barrier_at = time.monotonic()
             telemetry_store = getattr(self, 'telemetry_store', None)
             if telemetry_store is not None:
                 telemetry_store.clear_plan()

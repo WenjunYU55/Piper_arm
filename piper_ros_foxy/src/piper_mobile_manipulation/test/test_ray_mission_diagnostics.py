@@ -144,7 +144,7 @@ def test_schema2_journal_has_golden_later_cycle_and_terminal_order():
 
     assert value['schema_version'] == 2
     assert [event['stage'] for event in value['events']] == [
-        'cull_used_redundant', 'nbv_rank', 'information_cull',
+        'cull_used_redundant', 'information_cull', 'nbv_rank',
         'prequalify', 'plan', 'capture', 'update_target', 'completed']
     assert len({event['event_id'] for event in value['events']}) == len(
         value['events'])

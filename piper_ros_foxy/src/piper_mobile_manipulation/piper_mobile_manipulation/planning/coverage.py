@@ -603,7 +603,8 @@ def candidate_information(
     }
 
 
-def rank_next_best_views(snapshot, viewpoints, current_camera=None):
+def rank_next_best_views(snapshot, viewpoints, current_camera=None,
+                        minimum_information_fraction=None, rejected=None):
     """
     Return candidates in information-first, direction-diverse order.
 
@@ -664,6 +665,16 @@ def rank_next_best_views(snapshot, viewpoints, current_camera=None):
                 'nbv_positive_information_gain': bool(
                     metrics['positive_information_gain']),
             })
+        if minimum_information_fraction is not None and (
+                not metrics['positive_information_gain']
+                or not candidate_meets_minimum_information(
+                    alternatives[0], minimum_information_fraction)):
+            if rejected is not None:
+                for item in alternatives:
+                    item.pop('_nbv_distance_m', None)
+                    item.pop('_nbv_position', None)
+                    rejected.append(item)
+            continue
         alternatives.sort(key=lambda item: (
             float(item['nbv_camera_travel_m']),
             float(item['_nbv_distance_m']),

@@ -1,4 +1,30 @@
 schema_version: 1
+bounded_curobo_aim_search_2026_09_06:
+  request: Existing fallback_look_directions may contain up to five directions only for cuRobo target-ray requests; other candidates retain the one-direction bound. Every direction remains bounded by maximum_final_aim_offset_deg and covered by request_sha256.
+  generation: Existing current-look fallback plus four orthogonal local directions at min(4 degrees, effective tolerance minus existing 1-degree execution margin); duplicates removed. Tesseract and rough acquisition unchanged.
+  response: Selected look must be exactly one explicitly requested direction; nominal direction, offset, fallback marker and trajectory correlation remain mandatory.
+early_capability_contract_2026_09_06:
+  unchanged: [ray identity and geometry, information gain calculation, minimum gain threshold, useful survivor relative order, bridge reserve and persistent-exclusion authority, current joint target world admission, exact collision planning, robot speed and execution]
+  change: Only useful survivors are sorted and assigned ordinal NBV ranks; scalar rank scores and diagnostic rank counts therefore refer to the filtered set. Unranked rejected information metrics remain available in diagnostic snapshots.
+  diagnostics: New capability_cull event precedes information_cull and nbv_rank. Later prequalify still reports runtime admission and endpoint bounding; it is not the first static atlas decision in enforcing ray mode.
+  cache: Up to 1024 exact target/direction/interval queries per immutable startup-verified atlas instance; no runtime telemetry or trajectories cached. Planner and reachability process each load an atlas; downstream checks are intentionally retained.
+ray_review_effective_state_2026_09_06:
+  camera_glyph_admission: A non-blocked survivor needs an explicit successful prequalify event or recorded planned camera position before rendering a camera mesh. Passing an intermediate history filter alone is insufficient. Representative positions remain explicitly labelled as uncommitted.
+  scope: Native GUI replay only; raw per-stage events remain unchanged for audit.
+  precedence: Explicit exhausted_ray_ids or bridge population-exclusion evidence persists over upstream survival until population_reset. Retry-eligible prequalification holds are not permanent culls and have no camera glyph. Deferred shortlist is labelled RESERVE.
+  limitation: Historical HTML remains its original renderer; reopen the JSON in native Ray Review for corrected state projection.
+shortlist_receipt_retry_contract_2026_09_06:
+  owner: mission/engine.py and target_scan_mission_node.py
+  behavior: RAY_SHORTLIST_EXHAUSTED permits one next-iteration clear_plan_cache(preserve_generation=True); successive typed exhaustion may repeat it. This preserves only the old receipt barrier, never a motion plan or safety snapshot.
+  mandatory: Current receipt must still match scan history session, accepted count, model generation and readiness. Fresh bridge request validation and normal approval remain mandatory. Capture, visual rejection, drift replan and new missions use normal barrier advancement.
+world_upload_reuse_contract_2026_09_06:
+  identity: SHA-256 of exact converted ordered cuboid and mesh dictionaries including fixed geometry and floor; no rounding. Reordering may conservatively cause another upload. Geometry is cached in memory per backend instance only.
+  invalidation: Cache is cleared before a changed upload and committed only after native update and constraint restoration succeed. Any obstacle geometry addition removal movement resizing or changed floor changes the key.
+  diagnostics: Additive world_geometry_reused and world_geometry_sha256 alongside unchanged world_update timing. Hits still restore collision constraints; request freshness and current joints are never cached.
+planner_endpoint_and_exhaustion_contract_2026_09_06:
+  endpoint: Requested optical poses are transformed to link6 using loaded-model rigid FK; the existing holder AABB floor/obstacle validator is reused. MULTIVIEW_SCAN endpoint distance and aim use existing visibility rules. Passing is not path qualification; dense achieved-path checks remain unchanged.
+  diagnostics: Additive exhausted_ray_ids lists fully exhausted cuRobo ray choices even in successful responses. The bridge intersects IDs with the correlated request and ignores infrastructure failures. Legacy typed shortlist exhaustion remains supported.
+  lifetime: Exclusions persist across accepted counts within the same session and population SHA. Explicit bootstrap replacement or a new session resets them. Legacy callers without population metadata use bootstrap versus qualified phase. These are search-policy exclusions, not permanent endpoint hard-cull evidence.
 four_box_fixed_world_contract_2026_09_05:
   source: motion_planning/curobo/model/piper_fixed_world_cuboids.yaml
   selector: PIPER_CUROBO_FIXED_WORLD is cuboids by default or meshes for explicit rollback; resolved once by prepare_model.sh before worker startup.
@@ -84,7 +110,7 @@ curobo_runtime_parity_contract_2026_09_02:
   reachability_batch_admission: A 360-ray callback evaluates arm-status freshness validity and motor evidence once at admission and applies that frozen decision to the batch. A stale or invalid admission sample rejects the batch; CPU work inside an admitted callback cannot retroactively expire it. Planner bridge executor and runtime freshness checks remain independent.
   target_ray_goalset: A cuRobo MULTIVIEW_SCAN target ray is sampled only inside its validated capability-supported standoff intervals, with at most nine semantic standoffs and at most six rolls. Exact aim is attempted before the bounded fallback look. Every camera-pose request is padded by duplicating its final semantic pose to exactly 54 poses so cuRobo 0.7.8 retains one persistent solver tensor shape; padding creates no new semantic candidate and result indices map back to the final semantic pose.
   budgets: Automatic one-view planning has a 90-second request budget and 3-second per-attempt budget; other supported requests have 150-second and 5-second budgets, with five seconds reserved for response publication and validation.
-  exhaustion: Exhausting bounded semantic candidates returns PLANNER_EXHAUSTED with attempted ray IDs and candidate diagnostics. The bridge advances only those attempted IDs for the same session generation. Legacy TESSERACT_EXHAUSTED is accepted solely for compatibility and neither code is permanent infeasibility evidence.
+  exhaustion: Exhausting bounded semantic candidates returns PLANNER_EXHAUSTED with attempted ray IDs and candidate diagnostics. Since 2026-09-06 the bridge retains correlated exhausted IDs for the same session population across accepted counts. Legacy TESSERACT_EXHAUSTED is accepted for compatibility and neither code is permanent infeasibility evidence.
   legacy_planner_return_home: A cuRobo RETURN_HOME request produces the manifest-authorized exact measured-start plus configured-goal direct segment. It bypasses only robot self-collision, retains raw joint limits and generic response validation, and densely samples the joint chord while real cuRobo link6 FK proves the exact holder/L515 box remains above floor plus 0.005 m. Production automatic missions still use planner-independent ExecuteHomeStage.
   unchanged: [generic ROS interfaces, MotionPlan and ScanExecutionPlan schemas, PlanAuthorizer, common execution validation, target and scene freshness, runtime monitoring, TrajectoryRunner, PiPER command path, real-motion default, no fallback]
 curobo_target_visible_motion_plan_contract_2026_09_01:

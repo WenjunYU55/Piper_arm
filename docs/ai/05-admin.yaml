@@ -1,4 +1,16 @@
 schema_version: 1
+bounded_curobo_aim_search_2026_09_06:
+  routing: Edit candidate_selection.py and protocol/contract.py together with cuRobo worker.py when changing bounded aim alternatives. Recheck request/response correlation, first-capture ceiling, dense visibility and fixed goal-set shape.
+early_capability_routing_2026_09_06:
+  inspect: [planning/prequalification.py, scan_viewpoint_planner_node.py apply_view_selection, planning/coverage.py rank_next_best_views, supervised_viewpoint_execution.launch.py floor profile]
+  rule: Early and downstream capability checks use the same query helper and configured atlas/floor/range. Do not narrow scoring positions as part of this reorder or bypass downstream admission.
+world_upload_reuse_maintenance_2026_09_06:
+  inspect: [worker.py _update_world, planning_diagnostics.world_geometry_reused, planning_diagnostics.world_geometry_sha256, existing world_update timing]
+  rule: Compare exact converted geometry, never timestamps alone. Failed uploads invalidate reuse; obstacle removal must update the native world. Fixed mesh/cuboid representation remains startup-only.
+planner_endpoint_and_exhaustion_maintenance_2026_09_06:
+  inspect_first: [motion_planning/curobo/worker.py _endpoint_precheck, piper_tesseract_foxy/bridge_node.py exclude_planner_exhausted_rays and remember_planner_exhausted_rays]
+  rule: An exhausted ray is a population-scoped search-policy exclusion, not proof of permanent geometric infeasibility. Preserve it across accepted counts, reset at population replacement or a new session, and never retire rays for stale data or infrastructure failure.
+  tests: [tests/curobo/test_endpoint_precheck.py, tests/curobo/test_curobo_adapter.py, test_bridge_feedback_freshness.py, complete mobile and Tesseract suites, command-free GPU suite]
 four_box_runtime_routing_2026_09_05:
   inspect_first: [motion_planning/curobo/prepare_model.sh, motion_planning/curobo/fixed_world.py, motion_planning/curobo/model/piper_fixed_world_cuboids.yaml]
   rule: Geometry is fixed at worker generation startup. Default cuboids, explicit PIPER_CUROBO_FIXED_WORLD=meshes rollback. Never hot-swap via an empty mesh list because pinned cuRobo retains old mesh cache entries.

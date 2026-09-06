@@ -41,6 +41,38 @@ def _request(kind):
     return validate_request(request)
 
 
+def test_rigid_endpoint_projection_matches_loaded_link_fk(backend, monkeypatch):
+    import numpy as np
+    from motion_planning.curobo.worker import (
+        camera_quaternion, quaternion_rotation_matrices_wxyz)
+    start = _request('MULTIVIEW_SCAN')['start_state']['positions_rad']
+    observed = []
+    monkeypatch.setattr(backend, '_external_attached_validation',
+                        lambda *a, **kw: observed.append(kw['link_transforms']))
+    for delta in (0.0, 0.1, -0.1):
+        joints = list(start)
+        joints[0] += delta
+        tensor = backend.tensor_args.to_device([joints])
+        state = backend.motion_gen.kinematics.get_state(tensor)
+        position = state.ee_position.detach().cpu().numpy().reshape(-1, 3)[0]
+        rotation = quaternion_rotation_matrices_wxyz(
+            state.ee_quaternion.detach().cpu().numpy().reshape(-1, 4))[0]
+        forward = rotation[:, 2]
+        zero = quaternion_rotation_matrices_wxyz(np.asarray([
+            camera_quaternion(forward, 0.0)]))[0]
+        roll = math.atan2(np.dot(rotation[:, 0], zero[:, 1]),
+                          np.dot(rotation[:, 0], zero[:, 0]))
+        pose = backend.motion_gen.kinematics.get_link_poses(tensor, ['link6'])
+        expected_position = pose.position.detach().cpu().numpy().reshape(-1, 3)[0]
+        expected_rotation = quaternion_rotation_matrices_wxyz(
+            pose.quaternion.detach().cpu().numpy().reshape(-1, 4))[0]
+        backend._endpoint_precheck(start, [{
+            'camera_position_m': position, 'look_direction': forward,
+            'roll_rad': roll}], {'plan_kind': 'ROUGH_ACQUISITION'}, {})
+        assert observed[-1][0][0] == pytest.approx(expected_position, abs=2e-6)
+        assert observed[-1][1][0] == pytest.approx(expected_rotation, abs=2e-6)
+
+
 def _assert_fixed_rate_schedule(segment):
     points = segment['points']
     assert len(points) >= 2
@@ -48,6 +80,55 @@ def _assert_fixed_rate_schedule(segment):
         right['time_from_start_s'] - left['time_from_start_s']
         == pytest.approx(0.05, abs=1e-9)
         for left, right in zip(points, points[1:]))
+
+
+def test_real_bounded_fallback_batch_preserves_aim_and_collision_checks(backend, monkeypatch):
+    """Inject only the nominal miss; fallback MotionGen and all checks are real."""
+    import numpy as np
+    from types import SimpleNamespace
+    from motion_planning.curobo.worker import quaternion_rotation_matrices_wxyz
+    start = [0.0, 0.8, -0.7, 0.0, 0.7, 0.0]
+    backend._update_world({'scene': {'obstacles': []}})
+    state = backend.motion_gen.kinematics.get_state(backend.tensor_args.to_device([start]))
+    position = state.ee_position.detach().cpu().numpy().reshape(3)
+    rotation = quaternion_rotation_matrices_wxyz(
+        state.ee_quaternion.detach().cpu().numpy().reshape(1, 4))[0]
+    forward = rotation[:, 2]
+    # The known orientation is one explicitly requested alternative, not a
+    # worker-invented result. Reconstruct its roll in the worker convention.
+    from motion_planning.curobo.worker import camera_quaternion
+    zero = quaternion_rotation_matrices_wxyz(
+        np.asarray([camera_quaternion(forward, 0.0)]))[0]
+    roll = float(np.arctan2(np.dot(rotation[:, 0], zero[:, 1]),
+                            np.dot(rotation[:, 0], zero[:, 0])))
+    nominal = forward * math.cos(math.radians(2)) + rotation[:, 0] * math.sin(math.radians(2))
+    target = position + nominal * 0.4
+    candidate = {'id': 1, 'ray_id': 1, 'candidate_geometry': 'target_ray',
+                 'camera_position_m': position.tolist(), 'ray_direction': (-nominal).tolist(),
+                 'look_direction': nominal.tolist(), 'ray_min_standoff_m': 0.4,
+                 'ray_max_standoff_m': 0.4, 'ray_standoff_m': 0.4,
+                 'maximum_final_aim_offset_deg': 5.0,
+                 'fallback_look_directions': [forward.tolist(),
+                     (forward * math.cos(0.01) + rotation[:, 1] * math.sin(0.01)).tolist()]}
+    request = {'plan_kind': 'MULTIVIEW_SCAN', 'scan_session': {'accepted_views': 1},
+               'scene': {'target_center_m': target.tolist(), 'obstacles': []},
+               'planning': {'effective_speed_percent': 5.0, 'roll_samples_rad': [roll]},
+               'limits': {'position_rad': [[-3.2, 3.2]] * 6}}
+    native = backend.motion_gen.plan_goalset
+    calls = []
+    def nominal_miss_then_native(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            return SimpleNamespace(success=SimpleNamespace(item=lambda: False),
+                                   status='IK_FAIL', total_time=0.0)
+        return native(*args, **kwargs)
+    monkeypatch.setattr(backend.motion_gen, 'plan_goalset', nominal_miss_then_native)
+    selected, points, _duration = backend._plan_pose(start, candidate, request)
+    assert len(calls) == 2
+    assert selected['look_direction'] in candidate['fallback_look_directions']
+    assert selected['aim_offset_deg'] < 4.0
+    assert selected['curobo_attempt_diagnostics'][-1]['path_qualification'] == 'accepted'
+    assert not backend._candidate_path_rejection(points, request, selected)
 
 
 @pytest.fixture(scope='module')
@@ -179,6 +260,29 @@ def test_exact_bunker_world_preserves_known_joint_path(backend):
     assert len(inbound) >= 2
     assert outbound[-1]['positions_rad'] == pytest.approx(qualified_scan)
     assert inbound[-1]['positions_rad'] == pytest.approx(neutral)
+
+
+def test_world_reuse_preserves_collision_and_obstacle_removal(backend):
+    clear = {'scene': {'obstacles': []}}
+    joints = [0.0, 0.8, -0.7, 0.0, 0.7, 0.0]
+    backend.last_planning_diagnostics = {}
+    backend._update_world(clear)
+    backend._update_world(clear)
+    assert backend.last_planning_diagnostics['world_geometry_reused']
+    assert backend._start_state_status(joints)[0]
+    blocked = {'scene': {'obstacles': [{
+        'id': 'cache_block', 'type': 'box',
+        'minimum_m': [-2, -2, -2], 'maximum_m': [2, 2, 2]}]}}
+    try:
+        backend._update_world(blocked)
+        assert not backend.last_planning_diagnostics['world_geometry_reused']
+        backend._update_world(blocked)
+        assert backend.last_planning_diagnostics['world_geometry_reused']
+        assert not backend._start_state_status(joints)[0]
+    finally:
+        backend._update_world(clear)
+    assert not backend.last_planning_diagnostics['world_geometry_reused']
+    assert backend._start_state_status(joints)[0]
 
 
 def test_exact_world_still_rejects_blocking_dynamic_geometry(backend):

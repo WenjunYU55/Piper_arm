@@ -68,6 +68,27 @@ def initialized_model():
     return model
 
 
+def test_information_cull_before_sort_preserves_survivor_order_and_metrics():
+    snapshot = initialized_model().snapshot()
+    candidates = [viewpoint(i, p) for i, p in enumerate((
+        [0., 0., 0.], [0., 0., .8], [.4, 0., .4], [-.4, 0., .4]))]
+    old = rank_next_best_views(snapshot, candidates)
+    for minimum in (0.0, 0.02):
+        rejected = []
+        new = rank_next_best_views(snapshot, candidates,
+                                  minimum_information_fraction=minimum,
+                                  rejected=rejected)
+        expected = [r for r in old if r['nbv_positive_information_gain']
+                    and candidate_meets_minimum_information(r, minimum)]
+        assert [r['index'] for r in new] == [r['index'] for r in expected]
+        for a, b in zip(new, expected):
+            for key in ('nbv_marginal_information_fraction',
+                        'nbv_predicted_unknown_pixels', 'nbv_camera_travel_m'):
+                assert a[key] == b[key]
+        assert len(new) + len(rejected) == len(candidates)
+        assert all('nbv_rank' not in r for r in rejected)
+
+
 def test_live_nbv_retains_supported_target_depth_at_two_and_half_metres():
     depth = np.full((4, 5), 2.5, dtype=float)
     support = np.ones((4, 5), dtype=bool)
@@ -248,7 +269,7 @@ def test_authoritative_nbv_policies_apply_same_two_percent_floor(
     monkeypatch.setattr(
         'piper_mobile_manipulation.scan_viewpoint_planner_node.'
         'rank_next_best_views',
-        lambda _snapshot, _views, _camera: [dict(item) for item in ranked])
+        lambda _snapshot, _views, _camera, **_kwargs: [dict(item) for item in ranked])
     planner = type('Planner', (), {})()
     planner.selection_policy = lambda: policy
     planner.refresh_coverage_model = lambda: True

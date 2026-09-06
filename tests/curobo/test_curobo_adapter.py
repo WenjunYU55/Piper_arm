@@ -333,6 +333,8 @@ def test_curobo_pose_planning_retries_after_visibility_rejection():
     backend = object.__new__(CuroboBackend)
     backend.tensor_args = SimpleNamespace(to_device=lambda value: value)
     backend.Pose = lambda **kwargs: kwargs
+    # This test isolates post-plan retry/selection; prechecks have separate tests.
+    backend._endpoint_precheck = lambda start, goals, request, candidate: goals
     backend.MotionGenPlanConfig = lambda **kwargs: kwargs
     backend.motion_gen = SimpleNamespace(
         plan_goalset=lambda *_args, **_kwargs: result)
@@ -390,6 +392,8 @@ def test_curobo_pose_planning_retries_after_holder_floor_rejection():
     backend = object.__new__(CuroboBackend)
     backend.tensor_args = SimpleNamespace(to_device=lambda value: value)
     backend.Pose = lambda **kwargs: kwargs
+    # This test isolates post-plan retry/selection; prechecks have separate tests.
+    backend._endpoint_precheck = lambda start, goals, request, candidate: goals
     backend.MotionGenPlanConfig = lambda **kwargs: kwargs
     backend.motion_gen = SimpleNamespace(
         plan_goalset=lambda *_args, **_kwargs: result)
@@ -470,6 +474,8 @@ def test_curobo_target_ray_uses_one_goalset_and_reports_selected_standoff():
     backend = object.__new__(CuroboBackend)
     backend.tensor_args = SimpleNamespace(to_device=lambda value: value)
     backend.Pose = lambda **kwargs: kwargs
+    # This test isolates post-plan retry/selection; prechecks have separate tests.
+    backend._endpoint_precheck = lambda start, goals, request, candidate: goals
     backend.MotionGenPlanConfig = lambda **kwargs: kwargs
     backend.motion_gen = SimpleNamespace(
         plan_goalset=lambda *args, **kwargs: (
@@ -521,7 +527,8 @@ def test_curobo_target_ray_uses_one_goalset_and_reports_selected_standoff():
     assert duration == pytest.approx(0.2)
 
 
-def test_curobo_target_ray_fallback_preserves_requested_nominal_aim():
+@pytest.mark.parametrize('fallback_count', [1, 5])
+def test_curobo_target_ray_fallback_preserves_requested_nominal_aim(fallback_count):
     class Scalar:
         def __init__(self, value):
             self.value = value
@@ -540,6 +547,8 @@ def test_curobo_target_ray_fallback_preserves_requested_nominal_aim():
     backend = object.__new__(CuroboBackend)
     backend.tensor_args = SimpleNamespace(to_device=lambda value: value)
     backend.Pose = lambda **kwargs: kwargs
+    # This test isolates post-plan retry/selection; prechecks have separate tests.
+    backend._endpoint_precheck = lambda start, goals, request, candidate: goals
     backend.MotionGenPlanConfig = lambda **kwargs: kwargs
     backend.motion_gen = SimpleNamespace(
         plan_goalset=lambda *_args, **_kwargs: next(results))
@@ -570,7 +579,9 @@ def test_curobo_target_ray_fallback_preserves_requested_nominal_aim():
         'ray_id': 7,
         'camera_position_m': [0.10, 0.0, 0.12],
         'look_direction': nominal,
-        'fallback_look_directions': [fallback],
+        'fallback_look_directions': [fallback] + [
+            [math.cos(math.radians(angle)), math.sin(math.radians(angle)), 0.0]
+            for angle in range(1, fallback_count)],
         'ray_direction': [-1.0, 0.0, 0.0],
         'ray_min_standoff_m': 0.28,
         'ray_max_standoff_m': 0.60,
@@ -587,6 +598,20 @@ def test_curobo_target_ray_fallback_preserves_requested_nominal_aim():
     assert selected['aim_fallback_used'] is True
     assert selected['aim_offset_deg'] == pytest.approx(4.0)
     assert duration == pytest.approx(0.3)
+
+
+def test_bounded_cone_batch_balances_directions_without_growing_cuda_shape():
+    goals = [{'look_direction': [1, direction, 0], 'distance': distance, 'roll': roll}
+             for distance in range(9) for roll in range(6) for direction in range(5)]
+    selected = CuroboBackend._bounded_aim_goals(goals)
+    assert len(selected) == 54
+    for direction in range(5):
+        subset = [g for g in selected if g['look_direction'][1] == direction]
+        assert len(subset) in (10, 11)
+        assert {g['distance'] for g in subset} >= {0, 8}
+    assert all(goal in goals for goal in selected)
+    assert len(CuroboBackend._padded_goalset(selected)) == 54
+    assert CuroboBackend._bounded_aim_goals(goals[:10]) == goals[:10]
 
 
 def test_curobo_planning_budgets_match_closed_loop_policy():

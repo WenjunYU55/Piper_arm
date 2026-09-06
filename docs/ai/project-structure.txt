@@ -1,4 +1,5 @@
 Piper_arm/
+  Planning test addition: piper_ros_foxy/src/piper_tesseract_foxy/test/test_bounded_aim_search.py covers request-owned cuRobo cone directions, execution margin and unchanged Tesseract defaults.
 ├── ARCHITECTURE.md                  Concise subsystem ownership, dependency direction, runtime pipeline, compatibility and extension guide
 ├── integration/track_robot_description/  Ready two-file tracked-root description bundle, pinned manifest, install and odom-target contract
 ├── scripts/                         Operator-facing setup, robot commissioning, and guarded calibration entry points grouped by responsibility
@@ -116,7 +117,7 @@ piper_ros_foxy/src/piper_mobile_manipulation/test/test_mission_resources.py - ex
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/safety_evaluator.py - pure named immutable runtime evidence policies; no ROS, thresholds, telemetry evaluation or second permission authority
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/execution/{authorization,capture,modes,motion,recovery,trajectory,validation}.py - ROS-free execution authorization, mode policy, conservative motion/schedule validation, monitoring, settled capture and recovery owners
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/{plan_authorizer,capture_coordinator,scan_execution_modes,scan_motion,executor_recovery,trajectory_runner,scan_trajectory}.py - explicit old-path compatibility facades only
-piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/planning/{capability,coverage,generation,measured_surface,ray_culls,rays}.py - ROS-free capability lookup, generation identity, bounded ray lifecycle, accepted measured coverage and NBV ranking owners
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/planning/{capability,prequalification,coverage,generation,measured_surface,ray_culls,rays}.py - ROS-free capability lookup and early static prefilter, generation identity, bounded ray lifecycle, accepted measured coverage and NBV ranking owners
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/{capability_map,nbv_coverage,view_generation,surface_coverage,ray_hard_culls,viewpoint_rays}.py - explicit old-path planning compatibility facades only
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/perception/{acquisition,target_envelope,landmark_geometry,obstacle_geometry,occlusion}.py - ROS-free target acquisition/model, landmark, obstacle and occlusion policy owners
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/{target_acquisition,target_envelope,target_landmark_geometry,obstacle_geometry,occlusion_policy}.py - explicit old-path perception compatibility facades only
@@ -161,7 +162,7 @@ piper_ros_foxy/src/piper_mobile_manipulation/srv/GetMeshJobResult.srv - durable 
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/startup_gates.py - pure pre-enable and post-enable joint/status stability validation
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission/engine.py - enable, powered stability proof, STARTUP_WRIST, simultaneous ROUGH_HOME and terminal ordering
 piper_ros_foxy/src/piper/piper/joint_state_policy.py - side-effect-free controller command clamping, J6 startup mapping and raw CAN joint-cycle coherence; piper_ctrl_single_node.py retains hardware lifecycle and compatible exports
-motion_planning/curobo/ - ROS-free pinned-cuRobo MotionGen worker, canonical-model generator, pinned runtime constraints, atomic spool protocol, native-result adapter, passive request-stage timing.py and explicit interpreter/CUDA launcher; never imports rclpy or commands PiPER
+motion_planning/curobo/ - ROS-free pinned-cuRobo MotionGen worker with rigid-camera endpoint prechecks and dense path checks, canonical-model generator, pinned runtime constraints, atomic spool protocol, native-result adapter, passive request-stage timing.py and explicit interpreter/CUDA launcher; never imports rclpy or commands PiPER
 piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/planning/backend.py - immutable backend-neutral PlannerBackend, PlannerReadiness, MotionPlanRequest and MotionPlanResult concepts
 piper_ros_foxy/src/piper_mobile_manipulation/msg/{MotionPlan,PlannerReadiness,MotionPlanStatus}.msg - generic planner transport, readiness and status contracts consumed by shared mission/executor code
 piper_ros_foxy/src/piper_mobile_manipulation/srv/RequestMotionPlan.srv - backend-neutral plan request boundary; legacy RequestTesseractPlan remains compatibility-only

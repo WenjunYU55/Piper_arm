@@ -310,8 +310,8 @@ def relax_closed_loop_candidate_aims(
 
 def exact_target_aim_candidates(
         candidates, target_center, current_look_direction,
-        maximum_fallback_offset_deg):
-    """Bind exact target aim and at most one bounded fallback per candidate."""
+        maximum_fallback_offset_deg, *, bounded_cone_search=False):
+    """Bind exact aim and explicit, execution-margin-bounded alternatives."""
     center = np.asarray(target_center, dtype=float)
     if center.shape != (3,) or not np.all(np.isfinite(center)):
         raise ValueError('target-centred aim requires a finite target center')
@@ -342,6 +342,21 @@ def exact_target_aim_candidates(
         candidate['look_direction'] = nominal.tolist()
         candidate['fallback_look_directions'] = (
             [fallback.tolist()] if offset > 1e-6 else [])
+        if bounded_cone_search and candidate.get('candidate_geometry') == 'target_ray':
+            # Four local alternatives, not an unbounded orientation sweep.
+            # Preserve the existing execution margin and keep large GUI
+            # tolerances from turning this local search into a hemisphere.
+            angle = math.radians(min(4.0, fallback_limit))
+            if angle > 1e-9:
+                axis = np.eye(3)[int(np.argmin(np.abs(nominal)))]
+                tangent = np.cross(nominal, axis)
+                tangent /= np.linalg.norm(tangent)
+                other = np.cross(nominal, tangent)
+                for side in (tangent, -tangent, other, -other):
+                    direction = nominal * math.cos(angle) + side * math.sin(angle)
+                    if not any(np.linalg.norm(direction - np.asarray(existing)) < 1e-9
+                               for existing in candidate['fallback_look_directions']):
+                        candidate['fallback_look_directions'].append(direction.tolist())
         candidate['maximum_final_aim_offset_deg'] = float(
             maximum_fallback_offset_deg)
         result.append(candidate)

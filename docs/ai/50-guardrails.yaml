@@ -1,4 +1,17 @@
 schema_version: 1
+bounded_curobo_aim_search_2026_09_06:
+  invariant: Goal search uses existing capture tolerance with the existing one-degree execution margin. Do not widen capture gates, collision clearance, joint bounds, native IK tolerance or request deadlines. A bounded search failure is not proof of mathematical infeasibility.
+  must_retest_if_changed: [cone bounds and first-capture ceiling, Tesseract unchanged default, explicit response-direction membership, balanced 54-goal budget, real GPU path qualification and blocked world, common executor regression]
+early_capability_guardrail_2026_09_06:
+  invariant: Early static culling never grants motion authority or changes camera scoring positions. Capability rejection remains approximate filtering, not proof of exact infeasibility. Downstream runtime and exact safety checks cannot be removed using cache evidence.
+  must_retest_if_changed: [static-ray prefilter, NBV score and order equivalence, complete mobile and Tesseract suites, ray diagnostic order and GUI replay, common launch floor binding]
+world_upload_reuse_guardrail_2026_09_06:
+  invariant: Only the collision-world upload may be skipped. Never reuse request admission, old joints, target freshness, world freshness, or a previously qualified trajectory. No coordinate rounding or geometry mutation.
+  must_retest_if_changed: [tests/curobo/test_world_cache.py, real-GPU obstacle add reuse remove test, complete cuRobo tests, ordinary validation and timing tests]
+planner_endpoint_and_exhaustion_guardrail_2026_09_06:
+  invariant: Endpoint filtering cannot grant trajectory safety; original dense collision holder visibility checks and common execution checks remain authoritative. Exhaustion quarantine is population-scoped search policy, never a claim of exact infeasibility or accepted coverage.
+  must_retest_if_changed: [worker endpoint transform and shared holder validator, bridge population reset and request correlation, partial-success exhausted IDs, malformed native output, bootstrap and qualified identity reuse, ray diagnostic reason, GPU path regression]
+  tradeoff: Permanent-within-population search exclusion can end coverage earlier than reconsidering a ray from a later robot start; this is the explicitly requested predictable-runtime policy.
 four_box_geometry_guardrail_2026_09_05:
   invariants: [hash-bound four-box geometry, canonical source meshes retained and verified, moving spheres unchanged, operator-reported tabletop 5-percent scope only, no automatic model fallback, no runtime hot swap, no automatic real-motion enable]
   must_retest_if_changed: [cuRobo model generation and provenance tampering, complete cuRobo ordinary suite, complete mobile and Tesseract suites, generated-model GPU load plan and obstacle rejection, offline geometry and tight-clearance comparison, operator-supervised physical requalification for geometry changes]
@@ -206,7 +219,7 @@ object_sized_coverage_and_monotonic_ray_guardrails_2026_08_26:
     - After qualified population creation, stable IDs and directions plus qualified centre and frame define identity; later representative points and standoff bounds cannot reset it.
     - Matching qualified permanent workspace capability and endpoint-static culls are monotonic for their source revision. Apply them before accepted-direction filtering and ranking.
     - Only accepted achieved camera directions retire angular neighbours. The configured floor is inclusive at 15 degrees. Framing and path-dependent rejection cannot accidentally retire a direction.
-    - Typed RAY_IK_FAILURE may be endpoint-static only after the worker exhausts all configured standoff roll exact-aim and fallback-aim variants. Collision path visibility timeout transport and generic planning failures remain generation-scoped.
+    - Typed RAY_IK_FAILURE may be endpoint-static only after the worker exhausts all configured standoff roll exact-aim and fallback-aim variants. Exhausted planning choices are now population-scoped search exclusions, not endpoint-static evidence. Timeout transport and generic failures cannot prove ray infeasibility.
     - NBV scores are recalculated only for survivors after each accepted capture. Never regenerate a removed ray or allow predicted revolution geometry to rewrite stable direction identity.
     - The event journal must expose upgrade_population with population_reset true. Keep past culls visible by default, never label an unchanged carried cull newly culled, and never visually combine bootstrap culls with qualified rays as one population.
     - Captured ray IDs are population-scoped presentation state. Clear them on population_reset so a reused numeric ID cannot attach a bootstrap capture to qualified geometry; retain the recorded capture event and achieved robot pose as the historical evidence.

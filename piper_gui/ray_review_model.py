@@ -41,6 +41,7 @@ STAGE_LABELS = {
     'upgrade_population': 'Create qualified rays',
     'cull': 'Cull',
     'prequalify': 'Prequalify',
+    'capability_cull': 'Capability cull',
     'seed_rank': 'Seed rank',
     'cull_used_redundant': 'Cull used/redundant',
     'nbv_rank': 'NBV rank',
@@ -250,11 +251,13 @@ def state_at_event(document, event_index):
     target_envelope = None
     robot_pose = None
     captured = []
+    planner_exclusions = {}
     for event in events[:index + 1]:
         event_token = str(event.get(
             'event_id', event.get('sequence', '')))
         if event.get('population_reset') is True:
             rays = {}
+            planner_exclusions = {}
             # Ray IDs are scoped to one population. A bootstrap capture must
             # not mark a numerically identical qualified ray as captured.
             captured = []
@@ -286,6 +289,32 @@ def state_at_event(document, event_index):
                         current.get('reasons', []))
                     current['_reevaluated_event_id'] = event_token
                 current.update(deepcopy(delta))
+                if event.get('stage') == 'prequalify':
+                    current['camera_endpoint_prequalified'] = (
+                        delta.get('culled') is False
+                        and delta.get('status') in ('surviving', 'remaining'))
+                # Admission holds are not geometric culls. Preserve the raw
+                # stage evidence, but distinguish its display state.
+                if (delta.get('cull_stage') == 'prequalification'
+                        and delta.get('cull_disposition') == 'retry_eligible'
+                        and delta.get('culled')):
+                    current.update(status='temporarily_blocked', culled=False)
+                if (delta.get('cull_stage') == 'bridge'
+                        and delta.get('culled')
+                        and any('excluded for this ray population' in str(reason)
+                                for reason in delta.get('reasons', []))):
+                    planner_exclusions[ray_id] = deepcopy(delta.get('reasons', []))
+        # These IDs are authoritative planner outcomes, including failures
+        # preceding a successful result. Upstream snapshots cannot revive them.
+        for ray_id in event.get('metrics', {}).get('exhausted_ray_ids', []):
+            planner_exclusions[int(ray_id)] = [
+                'planner search exhausted; excluded for this population']
+        for ray_id, reasons in planner_exclusions.items():
+            if ray_id in rays:
+                rays[ray_id].update(
+                    status='planner_excluded', culled=True,
+                    cull_stage='planner', cull_disposition='population_excluded',
+                    reasons=deepcopy(reasons))
         if event.get('target_model') is not None:
             target_model = deepcopy(event['target_model'])
         if event.get('target_envelope') is not None:
@@ -304,11 +333,13 @@ def state_at_event(document, event_index):
         int(value) for value in events[index].get('newly_culled_ray_ids', [])}
     for ray_id, ray in rays.items():
         ray['selected_at_event'] = ray_id in selected
-        ray['newly_culled_at_event'] = ray_id in newly_culled
+        ray['newly_culled_at_event'] = ray_id in newly_culled and bool(ray.get('culled'))
         ray['captured'] = ray_id in captured
         ray['reevaluated_at_event'] = (
             ray.get('_reevaluated_event_id') == str(events[index].get(
                 'event_id', events[index].get('sequence', ''))))
+        if ray.get('status') == 'planner_excluded':
+            ray['reevaluated_at_event'] = False
     return {
         'rays': rays,
         'event': events[index],

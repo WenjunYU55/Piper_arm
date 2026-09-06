@@ -216,7 +216,7 @@ def test_only_ray_policy_reduces_direction_attempt_bound_to_six():
         view_policy_capabilities('voxel_nbv'), 12) == 12
 
 
-def test_only_contextual_failures_reset_after_an_accepted_view():
+def test_exhausted_rays_stay_excluded_after_an_accepted_view():
     bridge = object.__new__(TesseractPlanBridge)
     bridge.tesseract_exhausted_ray_generation = None
     bridge.tesseract_exhausted_ray_ids = set()
@@ -240,14 +240,29 @@ def test_only_contextual_failures_reset_after_an_accepted_view():
     bridge.retired_ray_ids.add(10)
     available = TesseractPlanBridge.exclude_tesseract_exhausted_rays(
         bridge, candidates, 'session-a', 3)
-    assert [item['ray_id'] for item in available] == [11, 12]
-    assert bridge.tesseract_exhausted_ray_ids == set()
+    assert [item['ray_id'] for item in available] == [11]
+    assert bridge.tesseract_exhausted_ray_ids == {10, 12}
     assert bridge.remaining_ray_ids == {11, 12}
     assert bridge.retired_ray_ids == {10}
     assert TesseractPlanBridge.exclude_tesseract_exhausted_rays(
         bridge, candidates, 'session-b', 0) == candidates
     assert bridge.remaining_ray_ids == {10, 11, 12}
     assert bridge.retired_ray_ids == set()
+
+
+def test_population_replacement_releases_exhausted_and_static_ids():
+    bridge = object.__new__(TesseractPlanBridge)
+    bridge.get_logger = lambda: _Logger()
+    candidates = [_policy_candidate('ray_nbv', 'target_ray', item_id=i)
+                  for i in (10, 11)]
+    call = TesseractPlanBridge.exclude_planner_exhausted_rays
+    call(bridge, candidates, 's', 0, {'sha256': 'a' * 64})
+    bridge.planner_exhausted_ray_ids.add(10)
+    assert len(call(bridge, candidates, 's', 0, {'sha256': 'a' * 64})) == 1
+    assert call(bridge, candidates, 's', 1, {'sha256': 'b' * 64}) == candidates
+    bridge.planner_exhausted_ray_ids.add(10)
+    assert len(call(bridge, candidates, 's', 5, {'sha256': 'b' * 64})) == 1
+    assert call(bridge, candidates, 'new', 0, {'sha256': 'b' * 64}) == candidates
 
 
 def test_successful_plan_remembers_static_failures_before_selected_ray():
@@ -418,6 +433,34 @@ def test_generic_curobo_exhaustion_retires_only_attempted_request_rays():
 
     assert retired == [10]
     assert bridge.planner_exhausted_ray_ids == {10}
+
+
+@pytest.mark.parametrize('status,codes,expected', [
+    ('success', [], [10]),
+    ('failed', ['PLANNER_EXHAUSTED'], [10]),
+    ('failed', ['PLANNER_TIMEOUT'], []),
+    ('failed', ['STALE_WORLD'], []),
+    ('failed', ['PLANNER_UNAVAILABLE'], []),
+])
+def test_explicit_exhaustion_does_not_retire_success_or_infrastructure_failure(
+        status, codes, expected):
+    bridge = object.__new__(TesseractPlanBridge)
+    bridge.get_logger = lambda: _Logger()
+    bridge.planner_exhausted_ray_generation = ('s', 2)
+    bridge.planner_exhausted_population = ('s', 'a'*64)
+    bridge.planner_exhausted_ray_ids = set()
+    bridge.pending = {'r': {'request': {
+        'planning': {'shortlisted_ray_count': 2},
+        'scan_session': {'session_id': 's', 'accepted_views': 2},
+        'ray_population': {'sha256': 'a'*64},
+        'scene': {'candidate_views': [{'ray_id': 10}, {'ray_id': 11}]},
+    }}}
+    payload = {'request_id': 'r', 'status': status, 'rejection_codes': codes,
+               'planning_diagnostics': {'attempted_ray_ids': [10, 11],
+                                        'exhausted_ray_ids': [10, 999]}}
+    assert bridge.remember_planner_exhausted_rays(payload) == expected
+    bridge.planner_exhausted_population = ('s', 'b'*64)
+    assert bridge.remember_planner_exhausted_rays(payload) == []
 
 
 def test_ray_worker_exhaustion_publishes_retryable_batch_diagnostic():

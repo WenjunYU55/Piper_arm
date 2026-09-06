@@ -26,6 +26,28 @@ from piper_gui.ray_review_viewer import (
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def test_planner_exclusion_survives_upstream_pass_until_population_reset():
+    doc = {'events': [
+        {'ray_deltas': {'1': {'ray_id': 1, 'status': 'culled', 'culled': True}},
+         'metrics': {'exhausted_ray_ids': [1]}},
+        {'ray_deltas': {'1': {'ray_id': 1, 'status': 'surviving', 'culled': False}}},
+        {'population_reset': True,
+         'ray_deltas': {'1': {'ray_id': 1, 'status': 'surviving', 'culled': False}}}]}
+    assert state_at_event(doc, 1)['rays'][1]['status'] == 'planner_excluded'
+    assert state_at_event(doc, 2)['rays'][1]['status'] == 'surviving'
+
+
+def test_temporary_prequalification_hold_is_not_permanent_cull():
+    doc = {'events': [{'ray_deltas': {'1': {
+        'ray_id': 1, 'status': 'culled', 'culled': True,
+        'cull_stage': 'prequalification', 'cull_disposition': 'retry_eligible',
+        'reasons': ['target_status=LOW_CONFIDENCE']}}}]}
+    ray = state_at_event(doc, 0)['rays'][1]
+    assert ray['status'] == 'temporarily_blocked'
+    assert not ray['culled']
+    assert _active_camera_glyph_rays([ray]) == []
+
+
 def test_event_scrubbing_never_leaks_a_later_rank(tmp_path):
     report = tmp_path / 'report.json'
     report.write_text(json.dumps({
@@ -117,9 +139,10 @@ def test_population_reset_does_not_reuse_bootstrap_capture_identity(tmp_path):
 
 
 def test_camera_glyphs_exclude_every_culled_ray():
-    active = {'ray_id': 1, 'status': 'remaining'}
-    selected = {'ray_id': 2, 'status': 'selected'}
-    captured = {'ray_id': 3, 'status': 'captured', 'captured': True}
+    active = {'ray_id': 1, 'status': 'remaining', 'camera_endpoint_prequalified': True}
+    selected = {'ray_id': 2, 'status': 'selected', 'camera_position_m': [0, 0, 1]}
+    captured = {'ray_id': 3, 'status': 'captured', 'captured': True,
+                'camera_position_m': [0, 0, 1]}
     culled_capture = {
         'ray_id': 4, 'status': 'culled', 'captured': True,
         'representative_position_m': [-1.12, 0.14, 0.67],
@@ -129,6 +152,17 @@ def test_camera_glyphs_exclude_every_culled_ray():
         active, selected, captured, culled_capture])
 
     assert visible == [active, selected, captured]
+
+
+def test_intermediate_survivor_cannot_render_unqualified_camera():
+    doc = {'events': [
+        {'stage': 'cull', 'ray_deltas': {'165': {
+            'ray_id': 165, 'status': 'surviving', 'culled': False,
+            'representative_position_m': [-1.3, -0.23, 0.15]}}},
+        {'stage': 'prequalify', 'ray_deltas': {'165': {
+            'ray_id': 165, 'status': 'surviving', 'culled': False}}}]}
+    assert _active_camera_glyph_rays(list(state_at_event(doc, 0)['rays'].values())) == []
+    assert len(_active_camera_glyph_rays(list(state_at_event(doc, 1)['rays'].values()))) == 1
 
 
 def test_prequalification_scrub_preserves_requested_and_supported_bounds(
@@ -340,7 +374,8 @@ def test_rank_colours_and_transient_culls_are_explained_in_the_viewer():
     assert 'Show standoff bounds' in source
     assert 'grey dashed = requested' in source
     assert 'cyan = capability-supported' in source
-    assert 'camera meshes = post-cull survivors only' in source
+    assert 'cameras = prequalified representatives or planned endpoints' in source
+    assert 'representative distance is not a committed plan' in source
     assert 'population_has_culls = any(' in source
     assert 'if not _is_culled(ray) and not ray.get' in source
     assert 'for ray in camera_rays:' in source

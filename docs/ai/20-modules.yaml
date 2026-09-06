@@ -1,4 +1,20 @@
 schema_version: 1
+bounded_curobo_aim_search_2026_09_06:
+  owner_module: piper_tesseract_foxy/candidate_selection.py
+  allowed_edit_paths: [piper_tesseract_foxy/candidate_selection.py, piper_tesseract_foxy/bridge_node.py, piper_tesseract_foxy/protocol/contract.py, motion_planning/curobo/worker.py, planner tests, docs/ai]
+  must_not_move_without: [request hash and explicit selected-direction binding, first-capture five-degree ceiling, final capture tolerance, endpoint and dense path validation, fixed 54-goal CUDA shape]
+early_capability_owner_2026_09_06:
+  owner_module: piper_mobile_manipulation/planning/prequalification.py
+  owns: Shared pure ray-to-atlas query and bounded exact-input static cache used before NBV. Node owns source-verified atlas startup and common launch floor/range configuration.
+  allowed_edit_paths: [planning/prequalification.py, planning/coverage.py, scan_viewpoint_planner_node.py, viewpoint_reachability_filter_node.py, ray_mission_diagnostics.py, test/test_static_ray_prefilter.py, test/test_nbv_coverage.py]
+world_upload_reuse_ownership_2026_09_06:
+  owner_module: motion_planning/curobo/worker.py _update_world
+  allowed_edit_paths: [motion_planning/curobo/worker.py, tests/curobo/test_world_cache.py, tests/curobo/test_curobo_gpu_integration.py, docs/ai, docs/architecture/motion_planner_backends.md]
+  must_not_move_without: [request validation and freshness, current joint-state admission, pinned cuRobo update_world behavior, fixed world startup identity, collision constraint restoration]
+planner_endpoint_and_exhaustion_ownership_2026_09_06:
+  owner_module: motion_planning/curobo/worker.py for rigid endpoint checks; piper_tesseract_foxy/bridge_node.py for exhausted-ray lifetime
+  allowed_edit_paths: [listed owners, ray_mission_diagnostics.py diagnostic reason, tests/curobo, test_bridge_feedback_freshness.py, docs/ai, docs/architecture/motion_planner_backends.md]
+  must_not_move_without: [canonical holder geometry and camera mount, full path validation, request correlation, ray population identity, bootstrap replacement, accepted-direction retirement, generic authorization and freshness checks]
 four_box_fixed_world_ownership_2026_09_05:
   owner_module: motion_planning/curobo/fixed_world.py
   allowed_edit_paths: [motion_planning/curobo/fixed_world.py, motion_planning/curobo/generate_robot_config.py, motion_planning/curobo/worker.py, motion_planning/curobo/prepare_model.sh, motion_planning/curobo/model/piper_fixed_world_cuboids.yaml, tests/curobo/test_curobo_model_generation.py, docs/ai, docs/architecture/motion_planner_backends.md]

@@ -890,7 +890,8 @@ class MotionPlannerBridge(Node):
                     # this after shortlisting mistakes one exhausted batch for
                     # exhaustion of the full ray frontier.
                     candidates = self.exclude_planner_exhausted_rays(
-                        candidates, session_id, accepted_views)
+                        candidates, session_id, accepted_views,
+                        scan.get('ray_population', {}))
                 if authoritative_nbv:
                     effective_limit = bounded_candidate_attempt_limit(
                         candidate_capabilities, candidate_limit)
@@ -929,6 +930,7 @@ class MotionPlannerBridge(Node):
                         self.get_parameter(
                             'final_capture_aim_tolerance_deg').value,
                         accepted_views),
+                    bounded_cone_search=(self.planner_backend == 'curobo'),
                 )
             else:
                 candidates = candidates[:candidate_limit]
@@ -1263,15 +1265,23 @@ class MotionPlannerBridge(Node):
         return result
 
     def exclude_planner_exhausted_rays(
-            self, candidates, session_id, accepted_views):
-        """Exclude static mission failures and current-generation failures."""
+            self, candidates, session_id, accepted_views, population=None):
+        """Keep exhausted rays excluded until the population is replaced."""
         session = str(session_id)
         generation = (session, int(accepted_views))
+        population_scope = (session, str((population or {}).get('sha256', ''))
+                            or ('bootstrap' if int(accepted_views) == 0
+                                else 'qualified'))
+        previous_scope = getattr(self, 'planner_exhausted_population', None)
+        population_changed = (previous_scope is not None
+                              and previous_scope != population_scope)
+        self.planner_exhausted_population = population_scope
         candidate_ids = {
             int(item.get('ray_id', item.get('id', -1)))
             for item in candidates
         }
-        if getattr(self, 'remaining_ray_pool_session', None) != session:
+        if (getattr(self, 'remaining_ray_pool_session', None) != session
+                or population_changed):
             self.remaining_ray_pool_session = session
             self.remaining_ray_ids = set(candidate_ids)
             self.retired_ray_ids = set()
@@ -1282,12 +1292,14 @@ class MotionPlannerBridge(Node):
             # retired for the whole session.
             self.remaining_ray_ids.update(
                 candidate_ids.difference(self.retired_ray_ids))
-        if getattr(
+        previous_generation = getattr(
                 self, 'planner_exhausted_ray_generation', getattr(
                     self, 'tesseract_exhausted_ray_generation', None)
-        ) != generation:
-            self.planner_exhausted_ray_generation = generation
+        )
+        if (population_changed or previous_generation is None
+                or previous_generation[0] != session):
             self.planner_exhausted_ray_ids = set()
+        self.planner_exhausted_ray_generation = generation
         transient = set(getattr(
             self, 'planner_exhausted_ray_ids', getattr(
                 self, 'tesseract_exhausted_ray_ids', set())))
@@ -1306,7 +1318,7 @@ class MotionPlannerBridge(Node):
                 % (len(candidates), int(accepted_views)))
         self.get_logger().info(
             'mission ray pool session=%s accepted=%d: pool=%d, '
-            'transiently exhausted=%d, available=%d'
+            'population-exhausted=%d, available=%d'
             % (
                 str(session_id), int(accepted_views),
                 len(self.remaining_ray_ids), len(transient),
@@ -1394,9 +1406,14 @@ class MotionPlannerBridge(Node):
                 'Could not publish permanent hard-ray culls: %s' % error)
 
     def remember_planner_exhausted_rays(self, payload):
-        """Retire only rays actually attempted by one failed worker request."""
+        """Quarantine correlated exhausted rays, never infrastructure failures."""
         codes = [str(value) for value in payload.get('rejection_codes', [])]
-        if not {'PLANNER_EXHAUSTED', 'TESSERACT_EXHAUSTED'}.intersection(codes):
+        diagnostics = payload.get('planning_diagnostics', {})
+        explicit = diagnostics.get('exhausted_ray_ids')
+        if (payload.get('status') != 'success'
+                and not {'PLANNER_EXHAUSTED', 'TESSERACT_EXHAUSTED'}.intersection(codes)):
+            return []
+        if payload.get('status') == 'success' and explicit is None:
             return []
         request_id = str(payload.get('request_id', ''))
         pending = getattr(self, 'pending', {}).get(request_id, {})
@@ -1409,6 +1426,11 @@ class MotionPlannerBridge(Node):
             str(session.get('session_id', '')),
             int(session.get('accepted_views', -1)),
         )
+        request_population = request.get('ray_population', {}).get('sha256')
+        current_population = getattr(self, 'planner_exhausted_population', None)
+        if (request_population and current_population is not None
+                and current_population != (generation[0], request_population)):
+            return []
         if (
                 not generation[0]
                 or generation != getattr(
@@ -1421,8 +1443,9 @@ class MotionPlannerBridge(Node):
             if item.get('ray_id') is not None
         }
         attempted = {
-            int(value) for value in payload.get(
-                'planning_diagnostics', {}).get('attempted_ray_ids', [])
+            int(value) for value in (
+                explicit if explicit is not None
+                else diagnostics.get('attempted_ray_ids', []))
         }.intersection(request_ray_ids)
         exhausted = getattr(
             self, 'planner_exhausted_ray_ids', getattr(
@@ -1495,6 +1518,8 @@ class MotionPlannerBridge(Node):
     def publish_plan(self, payload):
         self.record_ray_response(payload)
         self.remember_permanently_infeasible_rays(payload)
+        if payload.get('status') == 'success':
+            self.remember_planner_exhausted_rays(payload)
         if payload.get('status') != 'success':
             codes = payload.get('rejection_codes') or ['PLANNING_FAILED']
             exhausted_rays = self.remember_planner_exhausted_rays(payload)

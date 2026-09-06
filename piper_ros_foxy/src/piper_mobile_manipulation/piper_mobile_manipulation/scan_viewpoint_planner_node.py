@@ -15,6 +15,7 @@ from rclpy.qos import (
 from sensor_msgs.msg import CameraInfo
 from std_msgs.msg import String
 import yaml
+from piper_mobile_manipulation.planning.prequalification import StaticRayPrefilter
 
 from piper_mobile_manipulation.msg import (
     MotionPlanStatus, ScanExecutionStatus, Target3D, TrackedTarget,
@@ -311,6 +312,27 @@ class ScanViewpointPlannerNode(Node):
         self.declare_parameter(
             'motion_plan_status_topic', '/piper/motion_plan_status')
         self.declare_parameter('planning_frame_id', 'base_link')
+        root = os.environ.get('PIPER_ARM_ROOT', '/home/prl/Piper_arm')
+        defaults = {
+            'capability_map_mode': 'enforce',
+            'capability_map_project_root': root,
+            'capability_map_path': str(Path(root) / 'piper_ros_foxy/src/piper_mobile_manipulation/config/piper_camera_capability_map.npz'),
+            'min_camera_object_distance_m': 0.25,
+            'max_camera_object_distance_m': 3.0,
+            'floor_z_m': 0.005,
+        }
+        for name, value in defaults.items():
+            self.declare_parameter(name, value)
+        self.static_ray_prefilter = None
+        try:
+            self.static_ray_prefilter = StaticRayPrefilter.load(*[
+                self.get_parameter(name).value for name in (
+                    'capability_map_mode', 'capability_map_path',
+                    'capability_map_project_root', 'min_camera_object_distance_m',
+                    'max_camera_object_distance_m', 'floor_z_m')])
+        except (OSError, KeyError, TypeError, ValueError) as error:
+            self.get_logger().warn(
+                'Early capability filter unavailable; downstream filtering retained: %s' % error)
 
         self.declare_parameter('desired_scan_angle_deg', 250)
         self.declare_parameter('viewpoint_center_angle_deg', 0.0)
@@ -850,8 +872,17 @@ class ScanViewpointPlannerNode(Node):
         if cache_key == self.nbv_ranking_cache_key:
             ranked = [dict(item) for item in self.nbv_ranking_cache]
         else:
+            rejected_information = []
             ranked = rank_next_best_views(
-                snapshot, viewpoints, current_camera)
+                snapshot, viewpoints, current_camera,
+                minimum_information_fraction=(
+                    MINIMUM_USEFUL_MARGINAL_INFORMATION_FRACTION
+                    if capabilities.minimum_gain_required else 0.0)
+                if is_authoritative_nbv_policy(policy) else None,
+                rejected=rejected_information)
+            # Retain unranked rejected score evidence for diagnostics; it is
+            # excluded from the candidate list below, never shortlisted.
+            ranked += rejected_information
             self.nbv_ranking_cache_key = cache_key
             self.nbv_ranking_cache = [dict(item) for item in ranked]
         ranked_by_index = {
@@ -1084,6 +1115,11 @@ class ScanViewpointPlannerNode(Node):
             rejection_reasons=planner_rejections,
         )
         nonduplicate_candidate_count = len(viewpoints)
+        early_culls = {}
+        prefilter = getattr(self, 'static_ray_prefilter', None)
+        if ray_policy and prefilter is not None:
+            viewpoints, early_culls = prefilter.partition(viewpoints)
+            persistent_culls.update(early_culls)
         history_remaining_viewpoints = [dict(item) for item in viewpoints]
         selected_viewpoints = self.apply_view_selection(viewpoints, history)
         selection_ready = selected_viewpoints is not None
@@ -1108,7 +1144,8 @@ class ScanViewpointPlannerNode(Node):
             'TARGET_FRAMING_NO_AIMED_ENDPOINT'
             if ray_policy and framing_retry and not viewpoints else
             'RAY_FRONTIER_EXHAUSTED'
-            if visual_quarantine_exhausted else
+            if (visual_quarantine_exhausted
+                or (early_culls and not history_remaining_viewpoints)) else
             target_shape_failure_code(target_envelope_error)
             if ray_policy and target_envelope is None and not viewpoints else
             'NO_SAFE_TARGET_STANDOFF'
@@ -1159,6 +1196,7 @@ class ScanViewpointPlannerNode(Node):
                     mission_id=os.environ.get('PIPER_MISSION_TASK_ID', ''),
                     persistent_culls=persistent_culls,
                     target_envelope=target_envelope,
+                    early_capability_culls=early_culls,
                 )
                 if self.param_bool('ray_diagnostics_enabled'):
                     _json_path, html_path = self.ray_diagnostics_store.record(
@@ -1305,7 +1343,7 @@ class ScanViewpointPlannerNode(Node):
                 'duplicate_rejected_candidates': int(
                     generated_candidate_count - nonduplicate_candidate_count),
                 'information_scored_candidates': int(
-                    nonduplicate_candidate_count),
+                    len(history_remaining_viewpoints)),
                 'positive_information_candidates': int(
                     positive_information_count),
                 'minimum_information_fraction': float(

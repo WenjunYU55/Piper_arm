@@ -761,13 +761,32 @@ class CuroboBackend:
 
     @timed_stage('world_update')
     def _update_world(self, request):
+        """Upload changed geometry only; never cache request admission evidence."""
         world_cuboids = list(self.fixed_platform_cuboids)
         world_cuboids.extend(obstacle_cuboids(request, self.floor_z_m))
-        cuboids = [self.Cuboid(**value) for value in world_cuboids]
-        meshes = [self.Mesh(**value) for value in self.fixed_world_meshes]
-        self.motion_gen.update_world(self.WorldConfig(
-            cuboid=cuboids, mesh=meshes))
+        # Exact, unrounded geometry identity. Target stamps, robot joints and
+        # request IDs are deliberately not collision-world cache keys. Their
+        # validation and all current-start checks still run on every request.
+        identity = hashlib.sha256(json.dumps({
+            'cuboids': world_cuboids, 'meshes': self.fixed_world_meshes,
+        }, sort_keys=True, allow_nan=False, separators=(',', ':')).encode()).hexdigest()
+        reused = identity == getattr(self, '_loaded_world_identity', None)
+        if not reused:
+            # An unsuccessful/partial native upload must never leave a cache
+            # hit for the previous world on a subsequent request.
+            self._loaded_world_identity = None
+            cuboids = [self.Cuboid(**value) for value in world_cuboids]
+            meshes = [self.Mesh(**value) for value in self.fixed_world_meshes]
+            self.motion_gen.update_world(self.WorldConfig(
+                cuboid=cuboids, mesh=meshes))
+        # This is required even on a hit: prior planning may have toggled a
+        # solver constraint, but cached geometry grants no collision bypass.
         self._restore_collision_constraints()
+        self._loaded_world_identity = identity
+        diagnostics = getattr(self, 'last_planning_diagnostics', None)
+        if isinstance(diagnostics, dict):
+            diagnostics['world_geometry_reused'] = reused
+            diagnostics['world_geometry_sha256'] = identity
 
     @timed_stage('trajectory_normalization')
     def _path(self, result, speed, position_limits):
@@ -847,6 +866,64 @@ class CuroboBackend:
             return external_rejection
         return self._target_visibility_rejection(points, request, candidate)
 
+    @timed_stage('endpoint_precheck')
+    def _endpoint_precheck(self, start, goals, request, candidate):
+        """Reject impossible rigid-camera endpoints without a separate IK solve.
+
+        Derive the fixed camera-to-link6 transform from the loaded model FK.
+        This only filters requested endpoints; dense achieved-path validation
+        remains mandatory, including the initial non-worsening alignment rule.
+        """
+        joints = self.tensor_args.to_device([list(start)])
+        state = self.motion_gen.kinematics.get_state(joints)
+        camera_position = np.asarray(
+            state.ee_position.detach().cpu().numpy()).reshape(-1, 3)[0]
+        camera_rotation = quaternion_rotation_matrices_wxyz(np.asarray(
+            state.ee_quaternion.detach().cpu().numpy()).reshape(-1, 4))[0]
+        link = self.motion_gen.kinematics.get_link_poses(joints, ['link6'])
+        link_position = np.asarray(
+            link.position.detach().cpu().numpy()).reshape(-1, 3)[0]
+        link_rotation = quaternion_rotation_matrices_wxyz(np.asarray(
+            link.quaternion.detach().cpu().numpy()).reshape(-1, 4))[0]
+        camera_from_link_rotation = camera_rotation.T @ link_rotation
+        camera_from_link_position = camera_rotation.T @ (
+            link_position - camera_position)
+        retained = []
+        for goal in goals:
+            position = np.asarray(goal['camera_position_m'], dtype=float)
+            rotation = quaternion_rotation_matrices_wxyz(np.asarray([
+                camera_quaternion(goal['look_direction'], goal['roll_rad'])]))[0]
+            reason = ''
+            if request.get('plan_kind') == 'MULTIVIEW_SCAN':
+                reason = camera_path_visibility_rejection(
+                    [position], [rotation[:, 2]],
+                    request['scene']['target_center_m'],
+                    initial_alignment=int(request.get('scan_session', {}).get(
+                        'accepted_views', -1)) == 0,
+                    final_aim_deg=float(candidate.get(
+                        'maximum_final_aim_offset_deg', 5.0)))
+            if not reason:
+                endpoint_position = position + rotation @ camera_from_link_position
+                endpoint_rotation = rotation @ camera_from_link_rotation
+                try:
+                    self._external_attached_validation(
+                        [start], request.get('scene', {}).get('obstacles', []),
+                        link_transforms=(
+                            np.asarray([endpoint_position]),
+                            np.asarray([endpoint_rotation])))
+                except CuroboCollisionRejected as error:
+                    reason = str(error)
+            if reason:
+                timing = getattr(self, 'request_timing', None)
+                if timing is not None:
+                    with timing.stage('endpoint_rejected', {
+                            'ray_id': candidate.get('ray_id'),
+                            'rejection_reason': reason}):
+                        pass
+            else:
+                retained.append(goal)
+        return retained
+
     def _remaining_planning_time(self, context):
         """Bound each MotionGen call and reserve time to emit a response."""
         deadline = getattr(self, 'planning_deadline_monotonic', None)
@@ -918,6 +995,23 @@ class CuroboBackend:
         return index
 
     @staticmethod
+    def _bounded_aim_goals(goals):
+        """Balance a fixed goal budget across explicitly requested directions."""
+        if len(goals) <= CUROBO_FIXED_GOALSET_SIZE:
+            return goals
+        groups = {}
+        for goal in goals:
+            groups.setdefault(tuple(goal['look_direction']), []).append(goal)
+        selected = []
+        for index, values in enumerate(groups.values()):
+            quota = (CUROBO_FIXED_GOALSET_SIZE // len(groups)
+                     + (index < CUROBO_FIXED_GOALSET_SIZE % len(groups)))
+            indices = np.linspace(0, len(values) - 1,
+                                  min(quota, len(values)), dtype=int)
+            selected.extend(values[int(i)] for i in indices)
+        return selected
+
+    @staticmethod
     def _padded_goalset(goals):
         """Keep cuRobo v0.7.8 on one immutable CUDA goal-set shape.
 
@@ -946,7 +1040,7 @@ class CuroboBackend:
     def _plan_target_ray(self, start, candidate, request):
         """Plan one target ray as bounded MotionGen goal sets.
 
-        Exact target-facing aim is exhausted before the optional fallback aim.
+        Exact target-facing aim is exhausted before one bounded fallback batch.
         Within one aim variant, cuRobo chooses among capability-supported
         standoffs and wrist rolls in one GPU call instead of multiplying a
         fixed 30-second timeout across individual poses.
@@ -962,22 +1056,27 @@ class CuroboBackend:
             candidate, TARGET_RAY_MAX_STANDOFF_SAMPLES)
         rolls = [float(value) for value in request["planning"].get(
             'roll_samples_rad', [0.0])]
-        directions = [candidate['look_direction']]
-        directions.extend(candidate.get('fallback_look_directions', []))
+        direction_batches = [[candidate['look_direction']]]
+        fallbacks = candidate.get('fallback_look_directions', [])
+        if fallbacks:
+            direction_batches.append(fallbacks)
         diagnostics = []
         total_duration = 0.0
-        for direction_index, direction in enumerate(directions):
+        for direction_index, directions in enumerate(direction_batches):
             goals = []
             for standoff in standoffs:
                 camera_position = (target + ray * float(standoff)).tolist()
                 for roll in rolls:
-                    goals.append({
-                        'camera_position_m': camera_position,
-                        'look_direction': list(direction),
-                        'roll_rad': float(roll),
-                        'standoff_m': float(standoff),
-                    })
-            remaining = list(goals)
+                    for direction in directions:
+                        goals.append({
+                            'camera_position_m': camera_position,
+                            'look_direction': list(direction),
+                            'roll_rad': float(roll),
+                            'standoff_m': float(standoff),
+                        })
+            remaining = self._endpoint_precheck(
+                start, goals, request, candidate)
+            remaining = self._bounded_aim_goals(remaining)
             while remaining:
                 padded = self._padded_goalset(remaining)
                 positions = [
@@ -1027,6 +1126,9 @@ class CuroboBackend:
                 }
                 diagnostics.append(attempt)
                 if not bool(result.success.item()):
+                    if 'INVALID' in str(result.status):
+                        raise CuroboContractError(
+                            'cuRobo rejected the planning input: %s' % result.status)
                     break
                 native_index = self._goalset_index(result, len(padded))
                 selected_index = min(native_index, len(remaining) - 1)
@@ -1071,7 +1173,7 @@ class CuroboBackend:
         suffix = (
             ': %s' % visibility_failures[0]
             if visibility_failures else '')
-        raise CuroboContractError(
+        raise CuroboCandidateExhausted(
             'cuRobo found no collision-safe target-visible pose along ray %s%s'
             % (candidate.get('ray_id', candidate.get('id', -1)), suffix))
 
@@ -1085,9 +1187,12 @@ class CuroboBackend:
         diagnostics = []
         total_duration = 0.0
         for direction_index, direction in enumerate(directions):
-            remaining = [
-                float(value) for value in request['planning'].get(
-                    'roll_samples_rad', [0.0])]
+            goals = [{
+                'camera_position_m': candidate['camera_position_m'],
+                'look_direction': direction, 'roll_rad': float(value),
+            } for value in request['planning'].get('roll_samples_rad', [0.0])]
+            remaining = [goal['roll_rad'] for goal in self._endpoint_precheck(
+                start, goals, request, candidate)]
             while remaining:
                 padded_rolls = self._padded_goalset(remaining)
                 positions = [
@@ -1205,7 +1310,8 @@ class CuroboBackend:
                 % stage)
         return stage
 
-    def _external_attached_validation(self, positions, obstacles=()):
+    def _external_attached_validation(
+            self, positions, obstacles=(), link_transforms=None):
         """Validate the complete link6-mounted holder against floor and boxes."""
         policy = self.collision_manifest.get('external_floor_clearance', {})
         if not bool(policy.get('enabled', False)):
@@ -1255,15 +1361,23 @@ class CuroboBackend:
         minimum_z = math.inf
         for offset in range(0, len(samples), chunk_size):
             chunk = samples[offset:offset + chunk_size]
-            pose = self.motion_gen.kinematics.get_link_poses(
-                self.tensor_args.to_device(chunk.tolist()), ['link6'])
-            link_positions = np.asarray(
-                pose.position.detach().cpu().numpy(), dtype=float).reshape(
-                    -1, 3)
-            link_quaternions = np.asarray(
-                pose.quaternion.detach().cpu().numpy(), dtype=float).reshape(
-                    -1, 4)
-            rotations = quaternion_rotation_matrices_wxyz(link_quaternions)
+            if link_transforms is None:
+                pose = self.motion_gen.kinematics.get_link_poses(
+                    self.tensor_args.to_device(chunk.tolist()), ['link6'])
+                link_positions = np.asarray(
+                    pose.position.detach().cpu().numpy(), dtype=float).reshape(-1, 3)
+                link_quaternions = np.asarray(
+                    pose.quaternion.detach().cpu().numpy(), dtype=float).reshape(-1, 4)
+                rotations = quaternion_rotation_matrices_wxyz(link_quaternions)
+            else:
+                link_positions, rotations = link_transforms
+                if (link_positions.shape != (len(samples), 3)
+                        or rotations.shape != (len(samples), 3, 3)
+                        or not np.all(np.isfinite(link_positions))
+                        or not np.all(np.isfinite(rotations))):
+                    raise CuroboContractError('endpoint link transforms are invalid')
+                link_positions = link_positions[offset:offset + chunk_size]
+                rotations = rotations[offset:offset + chunk_size]
             centers = link_positions + np.einsum(
                 'nij,j->ni', rotations, origin)
             half_extents = np.einsum(
@@ -1420,6 +1534,7 @@ class CuroboBackend:
             'candidate_attempts': 0,
             'candidate_failures': [],
             'attempted_ray_ids': [],
+            'exhausted_ray_ids': [],
             'planning_budget_sec': float(planning_budget),
             'attempt_planning_budget_sec': float(attempt_budget),
             'position_limit_reentry_used': False,
@@ -1493,12 +1608,19 @@ class CuroboBackend:
                 except CuroboPlanningBudgetExceeded:
                     raise
                 except CuroboContractError as error:
+                    if ray_id is not None and not isinstance(
+                            error, CuroboCandidateExhausted):
+                        # Invalid native data or a bad request is not evidence
+                        # that this ray has exhausted its geometric choices.
+                        raise
                     failure = {
                         'id': int(candidate.get('id', -1)),
                         'reason': str(error),
                     }
                     if ray_id is not None:
                         failure['ray_id'] = int(ray_id)
+                        self.last_planning_diagnostics[
+                            'exhausted_ray_ids'].append(int(ray_id))
                     candidate_failures.append(failure)
                     self.last_planning_diagnostics[
                         'candidate_failures'].append(dict(failure))

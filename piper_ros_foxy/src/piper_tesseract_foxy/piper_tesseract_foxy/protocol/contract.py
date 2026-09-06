@@ -300,9 +300,12 @@ def validate_request(payload, now_ns=None):
         if sum(value * value for value in direction) <= 1e-12:
             raise ContractError('candidate look_direction must be non-zero')
         fallbacks = candidate.get('fallback_look_directions', [])
-        if not isinstance(fallbacks, list) or len(fallbacks) > 1:
+        fallback_count_limit = (5 if planner_backend == 'curobo'
+                                and candidate.get('candidate_geometry') == 'target_ray'
+                                else 1)
+        if not isinstance(fallbacks, list) or len(fallbacks) > fallback_count_limit:
             raise ContractError(
-                'candidate fallback_look_directions must contain at most one direction')
+                'candidate fallback_look_directions exceeds bounded direction count')
         maximum_aim_offset = float(candidate.get(
             'maximum_final_aim_offset_deg', 0.0))
         if (

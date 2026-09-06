@@ -189,7 +189,8 @@ def planner_generation_snapshot(
         session_id, generation, target_center, frame_id, policy, generated,
         history_remaining, ranked, selected, planner_rejections=None,
         selection_ready=True, selection_reason='', remaining_views=1,
-        mission_id='', persistent_culls=None, target_envelope=None):
+        mission_id='', persistent_culls=None, target_envelope=None,
+        early_capability_culls=None):
     """Build the complete planner-owned ray snapshot for one generation."""
     generated = [dict(item) for item in generated]
     history_ids = {_candidate_id(item) for item in history_remaining}
@@ -363,8 +364,11 @@ def planner_generation_snapshot(
     hard_culled = [
         ray for ray in rays if ray['planner_status'] == 'culled_hard']
     initial_cycle = population_created
+    early_ids = {int(key) for key in (early_capability_culls or {})}
     culled_this_event = (
         history_culled + hard_culled if initial_cycle else history_culled)
+    culled_this_event = [ray for ray in culled_this_event
+                         if ray['ray_id'] not in early_ids]
     cull_input_count = (
         len(rays) if initial_cycle else len(rays) - len(hard_culled))
     cull_stage = 'cull' if initial_cycle else 'cull_used_redundant'
@@ -388,7 +392,7 @@ def planner_generation_snapshot(
             'reasons': (deepcopy(ray['planner_reasons'])
                         if ray['planner_status'] in (
                             'culled_history', 'culled_hard') else [])}
-            for ray in rays},
+            for ray in rays if ray['ray_id'] not in early_ids},
         newly_culled_ray_ids=[ray['ray_id'] for ray in culled_this_event],
         reasons={str(ray['ray_id']): ray['planner_reasons']
                  for ray in culled_this_event},
@@ -399,23 +403,21 @@ def planner_generation_snapshot(
             'carried_hard_culled_count': (
                 0 if initial_cycle else len(hard_culled)),
         })
+    if early_ids:
+        result = _append_event(
+            result, 'capability_cull',
+            ray_deltas={str(ray['ray_id']): {
+                'ray_id': ray['ray_id'], 'status': 'culled', 'culled': True,
+                'cull_stage': 'capability_prequalification',
+                'cull_disposition': 'permanent',
+                'reasons': deepcopy(ray['planner_reasons'])}
+                for ray in rays if ray['ray_id'] in early_ids},
+            newly_culled_ray_ids=sorted(early_ids),
+            message='Static capability cull before information scoring; runtime admission remains downstream',
+            metrics={'eliminated_ray_count': len(early_ids)})
     rank_stage = 'seed_rank' if int(generation) == 0 else 'nbv_rank'
     rankable = [ray for ray in rays if ray['planner_status'] not in (
         'culled_history', 'culled_hard')]
-    if int(generation) > 0:
-        result = _append_event(
-            result, rank_stage,
-            ray_deltas={str(ray['ray_id']): dict({
-                'ray_id': ray['ray_id'], 'rank': ray['rank'],
-                'rank_kind': ray['rank_kind']}, **{
-                    key: deepcopy(ray[key]) for key in ray
-                    if key.startswith('nbv_')}) for ray in rankable},
-            metrics={
-                'ranked_ray_count': len(rankable),
-                'input_ray_count': len(rankable),
-                'eliminated_ray_count': 0,
-                'surviving_ray_count': len(rankable),
-            })
     if int(generation) > 0:
         information_culled = [
             ray for ray in rays
@@ -435,6 +437,21 @@ def planner_generation_snapshot(
                 'eliminated_ray_count': len(information_culled),
                 'surviving_ray_count': (
                     len(rankable) - len(information_culled)),
+            })
+        rankable = [ray for ray in rankable
+                    if ray['planner_status'] != 'culled_information']
+        result = _append_event(
+            result, rank_stage,
+            ray_deltas={str(ray['ray_id']): dict({
+                'ray_id': ray['ray_id'], 'rank': ray['rank'],
+                'rank_kind': ray['rank_kind']}, **{
+                    key: deepcopy(ray[key]) for key in ray
+                    if key.startswith('nbv_')}) for ray in rankable},
+            metrics={
+                'ranked_ray_count': len(rankable),
+                'input_ray_count': len(rankable),
+                'eliminated_ray_count': 0,
+                'surviving_ray_count': len(rankable),
             })
     return result
 
@@ -556,7 +573,7 @@ def add_bridge_request(
         elif ray_id in transient:
             ray['bridge_status'] = 'culled_generation_exhausted'
             ray['bridge_reasons'] = [
-                'already exhausted by Tesseract in this accepted-view generation']
+                'planner attempts exhausted; excluded for this ray population']
         elif ray_id in shortlisted:
             ray['bridge_status'] = 'shortlisted'
             ray['bridge_reasons'] = []

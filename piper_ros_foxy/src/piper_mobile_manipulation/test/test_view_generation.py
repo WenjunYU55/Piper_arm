@@ -4,6 +4,10 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
+from threading import Lock
+from types import SimpleNamespace
+from piper_mobile_manipulation.target_scan_mission_node import TargetScanMissionNode
+
 from piper_mobile_manipulation.view_generation import (
     generation_matches_expected,
     make_view_generation,
@@ -19,6 +23,23 @@ def _receipt(session='scan-a', accepted=2, policy='voxel_nbv', ready=True):
             session, accepted, policy, accepted, ready, 18,
             '' if ready else 'coverage model is rebuilding').to_dict(),
     }
+
+
+@pytest.mark.parametrize('preserve', [False, True])
+def test_plan_clear_preserves_only_retry_generation_barrier(preserve):
+    cleared = []
+    node = SimpleNamespace(
+        _lock=Lock(), latest_plan=object(), latest_plan_at=10.0,
+        view_generation_barrier_at=1.0,
+        telemetry_store=SimpleNamespace(clear_plan=lambda: cleared.append(True)))
+    TargetScanMissionNode.clear_plan_cache(node, preserve_generation=preserve)
+    assert node.latest_plan is None
+    assert node.latest_plan_at == 0.0
+    assert cleared == [True]
+    if preserve:
+        assert node.view_generation_barrier_at == 1.0
+    else:
+        assert node.view_generation_barrier_at > 1.0
 
 
 def test_matching_bridge_generation_is_ready_for_one_planning_request():

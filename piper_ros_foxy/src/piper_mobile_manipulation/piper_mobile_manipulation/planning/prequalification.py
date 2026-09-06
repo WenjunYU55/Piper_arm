@@ -1,0 +1,67 @@
+"""Static capability prefilter before NBV; never authorizes motion.
+
+Keep candidate positions untouched: narrowing the representative before NBV
+would change projected information and is not a structural reorder.
+"""
+
+from collections import OrderedDict
+import json
+
+from .capability import load_capability_map
+
+
+def query_capability_ray(atlas, viewpoint, minimum, maximum, floor_z):
+    target = [float(viewpoint['target_object_center'][k]) for k in ('x', 'y', 'z')]
+    raw = viewpoint['ray_direction']
+    direction = ([float(raw[k]) for k in ('x', 'y', 'z')]
+                 if isinstance(raw, dict) else [float(v) for v in raw])
+    return atlas.intersects_ray(
+        target, direction,
+        max(float(viewpoint['ray_min_standoff_m']), float(minimum)),
+        min(float(viewpoint['ray_max_standoff_m']), float(maximum)),
+        float(floor_z), float(atlas.metadata['tool_floor_clearance_m']))
+
+
+class StaticRayPrefilter:
+    """Bounded exact-input cache for an immutable, source-verified atlas."""
+
+    def __init__(self, atlas, minimum, maximum, floor_z):
+        self.atlas = atlas
+        self.minimum, self.maximum, self.floor_z = minimum, maximum, floor_z
+        self.cache = OrderedDict()
+
+    @classmethod
+    def load(cls, mode, path, root, minimum, maximum, floor_z):
+        if mode != 'enforce':
+            return None
+        atlas = load_capability_map(path, root, verify_sources=True)
+        if not atlas.metadata.get('qualified_for_enforcement', False):
+            return None
+        return cls(atlas, minimum, maximum, floor_z)
+
+    def partition(self, viewpoints):
+        survivors, rejected = [], {}
+        for item in viewpoints:
+            if item.get('candidate_geometry') != 'target_ray':
+                survivors.append(item)
+                continue
+            # Exact JSON identity, no rounded geometry and no current-state
+            # evidence cached. Runtime admission remains downstream.
+            key = json.dumps({k: item[k] for k in (
+                'target_object_center', 'ray_direction',
+                'ray_min_standoff_m', 'ray_max_standoff_m')}, sort_keys=True)
+            if key not in self.cache:
+                self.cache[key] = query_capability_ray(
+                    self.atlas, item, self.minimum, self.maximum, self.floor_z)
+                if len(self.cache) > 1024:
+                    self.cache.popitem(last=False)
+            result = self.cache[key]
+            if result.supported:
+                survivors.append(item)
+            else:
+                rejected[int(item['ray_id'] if 'ray_id' in item else item['index'])] = {
+                    'stage': 'capability_prequalification',
+                    'reason': 'CAPABILITY_MAP_NO_SUPPORT: bounded ray has no nearby collision-qualified camera capability cell',
+                    'evidence': {'checked_keys': int(result.checked_keys)},
+                }
+        return survivors, rejected

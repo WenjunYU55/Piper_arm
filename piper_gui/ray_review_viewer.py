@@ -274,7 +274,10 @@ def _is_culled(ray):
 
 def _active_camera_glyph_rays(rays):
     """Return only current active rays that may own a camera glyph."""
-    return [ray for ray in rays if not _is_culled(ray)]
+    return [ray for ray in rays if not _is_culled(ray)
+            and ray.get('status') != 'temporarily_blocked'
+            and (ray.get('camera_endpoint_prequalified')
+                 or isinstance(ray.get('camera_position_m'), (list, tuple)))]
 
 
 def _numeric_rank(ray):
@@ -669,7 +672,9 @@ class MissionScene:
             end = np.asarray(target) + direction * maximum
             rank_color = _rank_color(
                 _numeric_rank(ray), best_rank, worst_rank)
-            if newly_culled:
+            if ray.get('status') == 'temporarily_blocked':
+                color, opacity, width = (0.9, 0.65, 0.2), 0.55, 1.5
+            elif newly_culled:
                 color, opacity, width = NEWLY_CULLED, 1.0, 2.5
             elif ray.get('reevaluated_at_event'):
                 color, opacity, width = REEVALUATED, 1.0, 1.5
@@ -897,7 +902,13 @@ class Inspector(QtWidgets.QWidget):
         self.table.setRowCount(len(rays))
         for row, ray in enumerate(rays):
             reasons = ray.get('reasons', ray.get('planner_reasons', []))
-            if ray.get('reevaluated_at_event'):
+            if ray.get('status') == 'planner_excluded':
+                state_label = 'PLANNER EXCLUDED'
+            elif ray.get('status') == 'temporarily_blocked':
+                state_label = 'TEMPORARY HOLD'
+            elif ray.get('status') == 'deferred':
+                state_label = 'RESERVE'
+            elif ray.get('reevaluated_at_event'):
                 state_label = 'REEVALUATED'
                 previous = ray.get('previous_cull_reasons', [])
                 reasons = list(reasons) + ([
@@ -982,7 +993,8 @@ class MissionTab(QtWidgets.QWidget):
             '<b>thick line = selected</b> &nbsp; Bounds: '
             '<span style="color:#b8beca">grey dashed = requested</span>, '
             '<span style="color:#33d1e6">cyan = capability-supported</span>'
-            ' &nbsp; camera meshes = post-cull survivors only')
+            ' &nbsp; cameras = prequalified representatives or planned endpoints; '
+            'representative distance is not a committed plan')
         self.ray_legend.setAlignment(QtCore.Qt.AlignCenter)
         outer.addWidget(self.ray_legend)
         self.population = QtWidgets.QLabel('No ray population loaded')
@@ -1181,7 +1193,9 @@ class MissionTab(QtWidgets.QWidget):
         rays = list(self.current_state.get('rays', {}).values())
         known = len(rays)
         active = sum(not _is_culled(ray) and not ray.get('captured')
+                     and ray.get('status') != 'temporarily_blocked'
                      for ray in rays)
+        held = sum(ray.get('status') == 'temporarily_blocked' for ray in rays)
         culled = sum(_is_culled(ray) and not ray.get('captured')
                      for ray in rays)
         captured = sum(bool(ray.get('captured')) for ray in rays)
@@ -1195,7 +1209,7 @@ class MissionTab(QtWidgets.QWidget):
             generation = next((item for item in self.document.get(
                 'generations', []) if int(item.get('generation', -1)) == cycle), {})
         expected = int(generation.get('generated_ray_count', known))
-        eliminated_now = len(event.get('newly_culled_ray_ids', []))
+        eliminated_now = sum(bool(ray.get('newly_culled_at_event')) for ray in rays)
         if not self.document.get('journal_complete', True):
             self.population.setText(
                 'Partial historical evidence: %d of %d rays recorded · '
@@ -1203,10 +1217,10 @@ class MissionTab(QtWidgets.QWidget):
         else:
             self.population.setText(
                 '%s%s · recorded population: %d · active: %d · culled: %d · '
-                'captured: %d%s' % (
+                'captured: %d · temporary holds: %d%s' % (
                     self.display_mode.currentText(), phase_label,
                     known, active, culled,
-                    captured,
+                    captured, held,
                     '' if not eliminated_now else
                     ' · <span style="color:#f26e4d"><b>eliminated now: '
                     '%d</b></span>' % eliminated_now))

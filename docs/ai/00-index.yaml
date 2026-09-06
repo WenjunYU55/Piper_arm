@@ -1,4 +1,24 @@
 schema_version: 1
+bounded_curobo_aim_search_2026_09_06:
+  validation: 1246 ordinary tests passed with 15 skips; all 14 pinned command-free GPU tests passed separately; bridge build and YAML validation passed. Physical retest pending.
+  summary: cuRobo ray requests retain exact aim first and add four local cone directions to the existing current-look fallback. One fixed-size fallback batch follows nominal failure; no additional ray population or safety relaxation.
+  reference: docs/architecture/motion_planner_backends.md
+early_capability_nbv_2026_09_06:
+  behavior: In enforcing-atlas ray mode the planner removes statically unsupported rays before NBV projection. Information rejection precedes sorting; useful survivors alone receive ranks. Runtime reachability admission and exact planner checks remain downstream.
+  evidence: Saved cycle-one geometry replay retained exactly the same 37 of 352 rays; score/order equivalence tests pass. Physical speed and coverage retest pending.
+ray_review_state_ownership_2026_09_06:
+  behavior: Native Ray Review retains explicitly recorded planner-exhausted IDs until population reset despite upstream survivor snapshots. Retry-eligible prequalification rejection displays as a temporary hold; deferred shortlist displays as reserve. Raw journals and planning behaviour are unchanged.
+  owners: [piper_gui/ray_review_model.py, piper_gui/ray_review_viewer.py]
+shortlist_receipt_reuse_2026_09_06:
+  behavior: Only typed shortlist-exhaustion retries preserve the previously admitted generation-receipt barrier. Cached plans are always cleared; current session/count/readiness matching and fresh request gates still run. Other iterations advance the barrier normally.
+  validation: Command-free mission and generation regressions; physical timing retest pending. No claim that all 59 seconds of planning-phase overhead is removed.
+world_upload_reuse_2026_09_06:
+  behavior: cuRobo reuses an exactly identical loaded collision world; changed geometry is uploaded. This is not a freshness or start-state cache.
+  owner: motion_planning/curobo/worker.py _update_world
+planner_endpoint_and_exhaustion_2026_09_06:
+  behavior: cuRobo filters requested rigid-camera endpoints before MotionGen; correlated exhausted rays stay excluded for the entire qualified population, including failures reported before a successful selected ray.
+  boundaries: No separate IK pass or persistent pose database; no fresh-world or joint-feedback gate removed; dense path checks and authorization remain mandatory.
+  evidence: Ordinary and command-free GPU validation recorded in docs/architecture/motion_planner_backends.md; no physical retest performed.
 four_box_runtime_integration_2026_09_05:
   owner: motion_planning/curobo/fixed_world.py
   source: motion_planning/curobo/model/piper_fixed_world_cuboids.yaml

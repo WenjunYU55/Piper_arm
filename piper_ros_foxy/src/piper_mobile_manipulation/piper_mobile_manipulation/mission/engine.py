@@ -604,6 +604,7 @@ class MissionEngine:
                 % (required, maximum),
                 failure_code='MISSION_FAILED', retryable=False)
         adaptive_completion = False
+        retry_shortlist = False
         while True:
             accepted = self.operations.capture_count(context)
             coverage = self.operations.current_feature_coverage(context)
@@ -633,7 +634,11 @@ class MissionEngine:
                 'requesting one correlated feature-driven view; up to %d '
                 'bounded views remain (model seed floor %d)'
                 % (remaining, required))
-            self.operations.clear_plan_cache(context)
+            if retry_shortlist:
+                self.operations.clear_plan_cache(context, preserve_generation=True)
+            else:
+                self.operations.clear_plan_cache(context)
+            retry_shortlist = False
             self.operations.wait_for_view_generation(
                 context, accepted,
                 self.workflow_config.plan_result_timeout_sec)
@@ -656,6 +661,10 @@ class MissionEngine:
                 coverage = self.operations.current_feature_coverage(context)
                 if as_failure(exc).has(
                         FailureTag.RAY_SHORTLIST_EXHAUSTED):
+                    # No motion occurred. Keep the previously admitted receipt
+                    # barrier, but still validate the current generation/history
+                    # and take a fresh request snapshot on the next iteration.
+                    retry_shortlist = True
                     self.operations.progress(
                         context,
                         'informative ray shortlist was infeasible; '
