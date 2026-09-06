@@ -1,4 +1,12 @@
 schema_version: 1
+early_capability_retention_2026_09_06:
+  behavior: Early capability exclusions are retained in the prefilter under the canonical population identity and pruned before later history and NBV work; only new exclusions produce capability_cull events. Bootstrap-to-qualified replacement or new mission/session clears retention.
+  invariant: No ranking policy or safety gate changes; remaining-ray exact-input cache and downstream current-state admission remain.
+direction_lookup_and_queued_diagnostics_2026_09_06:
+  validation: 1377 mobile Tesseract GUI and cuRobo ordinary tests passed with 15 skips after GUI linkage; both affected packages built. Earlier default-five production-loader recall retained 48 of 48 poses and copied journal retained all 44 events. No physical test performed.
+  behavior: Mission launch binds both capability consumers to the GUI's frozen final_capture_aim_tolerance_deg (1-90 degrees, default 5); standalone capability_direction_tolerance_deg defaults to 5. The atlas remains unchanged and source verified. The generic bridge queues private diagnostic snapshots for ordered background persistence.
+  evidence: Offline lookup retained 48 of 48 recorded achieved poses from 12 post-build scans and excluded 19 of 26 rays from failed requests. Failed searches are not proof of infeasibility; full-workspace recall and live speedup remain unproven.
+  reference: docs/architecture/planning_latency_improvements.md
 bounded_curobo_aim_search_2026_09_06:
   validation: 1246 ordinary tests passed with 15 skips; all 14 pinned command-free GPU tests passed separately; bridge build and YAML validation passed. Physical retest pending.
   summary: cuRobo ray requests retain exact aim first and add four local cone directions to the existing current-look fallback. One fixed-size fallback batch follows nominal failure; no additional ray population or safety relaxation.

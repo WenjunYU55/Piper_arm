@@ -5,6 +5,7 @@ would change projected information and is not a structural reorder.
 """
 
 from collections import OrderedDict
+from copy import deepcopy
 import json
 
 from .capability import load_capability_map
@@ -29,12 +30,24 @@ class StaticRayPrefilter:
         self.atlas = atlas
         self.minimum, self.maximum, self.floor_z = minimum, maximum, floor_z
         self.cache = OrderedDict()
+        self.population = None
+        self.rejected_rays = {}
+
+    def carried_culls(self, population):
+        """Retain static exclusions until the canonical population changes."""
+        if population != self.population:
+            self.population = deepcopy(population)
+            self.rejected_rays = {}
+        return deepcopy(self.rejected_rays)
 
     @classmethod
-    def load(cls, mode, path, root, minimum, maximum, floor_z):
+    def load(cls, mode, path, root, minimum, maximum, floor_z,
+             direction_tolerance_deg=None):
         if mode != 'enforce':
             return None
-        atlas = load_capability_map(path, root, verify_sources=True)
+        atlas = load_capability_map(
+            path, root, verify_sources=True,
+            direction_tolerance_deg=direction_tolerance_deg)
         if not atlas.metadata.get('qualified_for_enforcement', False):
             return None
         return cls(atlas, minimum, maximum, floor_z)
@@ -62,6 +75,10 @@ class StaticRayPrefilter:
                 rejected[int(item['ray_id'] if 'ray_id' in item else item['index'])] = {
                     'stage': 'capability_prequalification',
                     'reason': 'CAPABILITY_MAP_NO_SUPPORT: bounded ray has no nearby collision-qualified camera capability cell',
-                    'evidence': {'checked_keys': int(result.checked_keys)},
+                    'evidence': {
+                        'checked_keys': int(result.checked_keys),
+                        'direction_tolerance_deg': self.atlas.direction_tolerance_deg},
                 }
+        if self.population is not None:
+            self.rejected_rays.update(deepcopy(rejected))
         return survivors, rejected

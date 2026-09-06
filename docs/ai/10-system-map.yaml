@@ -1,4 +1,10 @@
 schema_version: 1
+early_capability_retention_path_2026_09_06:
+  sequence: [canonical population identity, restore prefilter-owned capability exclusions, prune carried hard culls, history retirement, query remaining rays with exact-input cache, retain new capability exclusions, information and NBV ranking, downstream admission and exact planner]
+planning_latency_boundaries_2026_09_06:
+  capability: GUI scan_execution_params.yaml aim value -> one frozen mission-launch float -> both capability lookup consumers plus bridge and executor -> existing exact planner and common execution checks. Lookup slack follows selected aim; first-capture admission remains capped at five degrees.
+  diagnostics: Generic bridge callback -> bounded FIFO of private snapshots -> daemon writer -> unchanged locked atomic JSON and HTML merge. Bridge destruction drains for up to two seconds and warns if incomplete.
+  unchanged: [ROS interfaces, worker selection, NBV scoring, IK retry budgets, collision checks, freshness, capture aim, robot command path]
 bounded_curobo_aim_search_2026_09_06:
   flow: Bridge binds bounded cone alternatives into the hashed cuRobo target-ray request; worker attempts exact aim then one balanced fallback goal set; unchanged response validation requires the selected direction to be explicitly requested.
   unchanged: [Tesseract goals, ROS interfaces, mission progression, camera positions on supported intervals, execution authorization]

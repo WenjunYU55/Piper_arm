@@ -187,6 +187,7 @@ def generate_launch_description():
         name='viewpoint_reachability_filter',
         output='screen',
         parameters=[scan_params, {
+            'capability_direction_tolerance_deg': frozen_final_aim_tolerance_deg,
             'floor_z_m': ParameterValue(profile_floor, value_type=float),
         }],
     )
@@ -210,6 +211,7 @@ def generate_launch_description():
         name='scan_viewpoint_executor',
         output='screen',
         parameters=[execution_params, {
+            'final_capture_aim_tolerance_deg': frozen_final_aim_tolerance_deg,
             'enable_real_arm_motion': ParameterValue(
                 LaunchConfiguration('enable_real_arm_motion'), value_type=bool),
             'speed_percent': ParameterValue(
@@ -241,6 +243,7 @@ def generate_launch_description():
         name='scan_viewpoint_planner',
         output='screen',
         parameters=[scan_params, {
+            'capability_direction_tolerance_deg': frozen_final_aim_tolerance_deg,
             'floor_z_m': ParameterValue(profile_floor, value_type=float),
             'session_max_views': ParameterValue(
                 LaunchConfiguration('max_execution_viewpoints'),

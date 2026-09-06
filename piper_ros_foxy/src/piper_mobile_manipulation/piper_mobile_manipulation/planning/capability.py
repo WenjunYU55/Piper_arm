@@ -202,7 +202,7 @@ class CapabilityMap:
                 or self.position_voxel_m <= 0.0
                 or not math.isfinite(self.direction_tolerance_deg)
                 or self.direction_tolerance_deg < 0.0
-                or self.direction_tolerance_deg > 45.0
+                or self.direction_tolerance_deg > 90.0
                 or self.spatial_dilation_cells < 0
                 or self.spatial_dilation_cells > 2):
             raise ValueError('capability map lookup policy is invalid')
@@ -410,7 +410,8 @@ def write_capability_map(path, keys, maximum_tool_minimum_z_m, metadata):
     return output
 
 
-def load_capability_map(path, project_root=None, verify_sources=True):
+def load_capability_map(path, project_root=None, verify_sources=True,
+                        direction_tolerance_deg=None):
     """Load and optionally hash-validate one capability artifact."""
     artifact = Path(path)
     with np.load(str(artifact), allow_pickle=False) as archive:
@@ -440,4 +441,12 @@ def load_capability_map(path, project_root=None, verify_sources=True):
             if sha256_file(source) != str(expected):
                 raise ValueError(
                     'capability map source hash mismatch: %s' % relative)
+    if direction_tolerance_deg is not None:
+        # Keep the artifact and its qualification provenance intact. This is
+        # an explicit process-frozen lookup policy, not a regenerated atlas.
+        policy = dict(result.metadata)
+        policy['artifact_direction_tolerance_deg'] = result.direction_tolerance_deg
+        policy['direction_tolerance_deg'] = float(direction_tolerance_deg)
+        result = CapabilityMap(
+            result.keys, result.maximum_tool_minimum_z_m, policy)
     return result

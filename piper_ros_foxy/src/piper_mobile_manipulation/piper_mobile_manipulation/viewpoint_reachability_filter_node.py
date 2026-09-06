@@ -250,6 +250,7 @@ class ViewpointReachabilityFilterNode(Node):
         self.declare_parameter('enforce_static_reach_bounds', False)
         project_root = os.environ.get('PIPER_ARM_ROOT', '/home/prl/Piper_arm')
         self.declare_parameter('capability_map_mode', 'enforce')
+        self.declare_parameter('capability_direction_tolerance_deg', 5.0)
         self.declare_parameter('capability_map_project_root', project_root)
         self.declare_parameter(
             'capability_map_path', str(Path(project_root) / (
@@ -376,6 +377,8 @@ class ViewpointReachabilityFilterNode(Node):
                 self.get_parameter('capability_map_path').value,
                 self.get_parameter('capability_map_project_root').value,
                 verify_sources=True,
+                direction_tolerance_deg=self.get_parameter(
+                    'capability_direction_tolerance_deg').value,
             )
             self.capability_map_artifact_sha256 = sha256_file(
                 self.get_parameter('capability_map_path').value)
@@ -842,6 +845,10 @@ class ViewpointReachabilityFilterNode(Node):
         if capability_map is not None:
             summary.update({
                 'occupied_pose_direction_bins': int(len(capability_map.keys)),
+                'direction_tolerance_deg': capability_map.direction_tolerance_deg,
+                'artifact_direction_tolerance_deg': capability_map.metadata.get(
+                    'artifact_direction_tolerance_deg',
+                    capability_map.direction_tolerance_deg),
                 'checkpoint_samples': int(capability_map.metadata.get(
                     'selected_checkpoint_samples',
                     capability_map.metadata.get('checkpoint_samples', 0))),

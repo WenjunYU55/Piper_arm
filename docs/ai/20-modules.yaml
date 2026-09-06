@@ -1,4 +1,13 @@
 schema_version: 1
+early_capability_retention_owner_2026_09_06:
+  owner_module: planning/prequalification.py StaticRayPrefilter
+  responsibility: Retain its own unsupported-ray evidence for one canonical population; node merges it into persistent_culls before filtering and diagnostics.
+  reset: Exact canonical population change only, including mission/session and bootstrap-qualified replacement; never accepted capture count alone.
+planning_latency_owners_2026_09_06:
+  gui_binding_owner: supervised_viewpoint_execution.launch.py reads the authoritative GUI aim setting once and passes it explicitly to both map consumers, bridge and executor.
+  owner_module: planning/capability.py owns optional source-verified runtime lookup policy; ray_mission_diagnostics.py owns queued observational persistence.
+  allowed_edit_paths: [planning/capability.py, planning/prequalification.py, scan_viewpoint_planner_node.py, viewpoint_reachability_filter_node.py, scan_planning_params.yaml, ray_mission_diagnostics.py, piper_tesseract_foxy/bridge_node.py, related tests and docs]
+  must_not_move_without: [both capability consumers, artifact provenance and legacy loader defaults, atomic multi-writer journal merge, bridge shutdown budget]
 bounded_curobo_aim_search_2026_09_06:
   owner_module: piper_tesseract_foxy/candidate_selection.py
   allowed_edit_paths: [piper_tesseract_foxy/candidate_selection.py, piper_tesseract_foxy/bridge_node.py, piper_tesseract_foxy/protocol/contract.py, motion_planning/curobo/worker.py, planner tests, docs/ai]

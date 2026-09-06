@@ -9,6 +9,7 @@ motion behaviour.
 """
 
 from copy import deepcopy
+from collections import deque
 from datetime import datetime
 import fcntl
 import hashlib
@@ -19,6 +20,7 @@ import os
 from pathlib import Path
 import re
 import tempfile
+import threading
 import time
 
 import numpy as np
@@ -1218,6 +1220,72 @@ def replay_historical_dataset(dataset_dir, output_root):
         'html_path': artifact_paths[1],
         'command_free': True,
     }
+
+
+class QueuedRayDiagnosticsStore:
+    """Persist ordered snapshots outside callbacks, with bounded backpressure.
+
+    The synchronous store remains the atomic multi-process merge authority.
+    No snapshots are coalesced or silently dropped. A saturated queue applies
+    backpressure rather than growing without bound. Shutdown drains pending
+    records for a bounded interval and explicitly reports incomplete delivery.
+    """
+
+    def __init__(self, store, on_error, capacity=64):
+        if capacity < 1:
+            raise ValueError('diagnostic queue capacity must be positive')
+        self._store = store
+        self._on_error = on_error
+        self._capacity = capacity
+        self._pending = deque()
+        self._condition = threading.Condition()
+        self._closing = False
+        self._thread = threading.Thread(
+            target=self._run, name='ray-diagnostics-writer', daemon=True)
+        self._thread.start()
+
+    def record(self, snapshot):
+        """Transfer a private snapshot to the writer, not a mutable reference."""
+        with self._condition:
+            while len(self._pending) >= self._capacity and not self._closing:
+                self._condition.wait()
+            if self._closing:
+                raise RuntimeError('ray diagnostic writer is closed')
+            self._pending.append(deepcopy(snapshot))
+            self._condition.notify_all()
+
+    def _report(self, message):
+        try:
+            self._on_error(message)
+        except Exception:
+            pass  # Reporting must not kill the writer or affect planning.
+
+    def _run(self):
+        while True:
+            with self._condition:
+                while not self._pending and not self._closing:
+                    self._condition.wait()
+                if not self._pending:
+                    return
+                snapshot = self._pending.popleft()
+                self._condition.notify_all()
+            try:
+                self._store.record(snapshot)
+            except Exception as error:
+                self._report('Ray diagnostic persistence failed: %s' % error)
+
+    def close(self, timeout_sec=2.0):
+        """Drain accepted snapshots, reporting rather than hiding timeout."""
+        with self._condition:
+            self._closing = True
+            self._condition.notify_all()
+        self._thread.join(timeout=max(0.0, float(timeout_sec)))
+        complete = not self._thread.is_alive()
+        if not complete:
+            self._report(
+                'Ray diagnostic shutdown flush incomplete; pending evidence '
+                'may be absent from the report')
+        return complete
 
 
 class RayMissionDiagnosticsStore:

@@ -1,4 +1,12 @@
 schema_version: 1
+early_capability_retention_maintenance_2026_09_06:
+  inspect: [planning/prequalification.py carried_culls, scan_viewpoint_planner_node.py persistent_culls, ray_mission_diagnostics.py planner_generation_snapshot]
+  rule: Early rejects never reach downstream prequalification, so the early owner must retain them. Do not reclassify carried exclusions as newly culled or clear them when accepted count increases.
+  retest: [test_static_ray_prefilter.py, ray diagnostic carry-forward replay, full mobile Tesseract GUI tests, package build]
+planning_latency_maintenance_2026_09_06:
+  inspect_first: [planning/capability.py, planning/prequalification.py, scan_planning_params.yaml, ray_mission_diagnostics.py QueuedRayDiagnosticsStore, piper_tesseract_foxy/bridge_node.py]
+  rule: Mission launch derives both lookup values from the GUI's authoritative final_capture_aim_tolerance_deg; no second mission selector. Standalone capability_direction_tolerance_deg remains available. First-lock admission still caps at min selected and 5 degrees even when lookup is more permissive. Do not alter atlas hashes. Diagnose incomplete diagnostic flush warnings rather than treating missing events as absent planning activity.
+  required_retests: [complete mobile and Tesseract tests, GUI ray review tests, queued writer ordering ownership failure and timeout tests, achieved-pose recall replay, affected package builds]
 bounded_curobo_aim_search_2026_09_06:
   routing: Edit candidate_selection.py and protocol/contract.py together with cuRobo worker.py when changing bounded aim alternatives. Recheck request/response correlation, first-capture ceiling, dense visibility and fixed goal-set shape.
 early_capability_routing_2026_09_06:

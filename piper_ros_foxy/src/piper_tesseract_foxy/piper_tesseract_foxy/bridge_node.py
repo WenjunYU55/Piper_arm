@@ -54,6 +54,7 @@ from piper_mobile_manipulation.ray_mission_diagnostics import (
     add_request_rejection,
     add_planner_response,
     RayMissionDiagnosticsStore,
+    QueuedRayDiagnosticsStore,
 )
 from piper_mobile_manipulation.planning.ray_culls import (
     hard_cull_snapshot,
@@ -224,8 +225,10 @@ class MotionPlannerBridge(Node):
         self.remaining_ray_pool_session = None
         self.remaining_ray_ids = set()
         self.retired_ray_ids = set()
-        self.ray_diagnostics_store = RayMissionDiagnosticsStore(
-            self.get_parameter('ray_diagnostics_root').value)
+        self.ray_diagnostics_store = QueuedRayDiagnosticsStore(
+            RayMissionDiagnosticsStore(
+                self.get_parameter('ray_diagnostics_root').value),
+            self.warn_ray_diagnostics)
         self.state = 'IDLE'
         self.reason = 'waiting for an explicit plan request'
         self.worker_generation_id = ''
@@ -1206,6 +1209,13 @@ class MotionPlannerBridge(Node):
         state['ray_diagnostics'] = diagnostics
         if bool(self.get_parameter('ray_diagnostics_enabled').value):
             self.ray_diagnostics_store.record(diagnostics)
+
+    def destroy_node(self):
+        """Flush observational work within the supervisor shutdown budget."""
+        store = getattr(self, 'ray_diagnostics_store', None)
+        if isinstance(store, QueuedRayDiagnosticsStore):
+            store.close(timeout_sec=2.0)
+        return super().destroy_node()
 
     def warn_ray_diagnostics(self, message):
         try:

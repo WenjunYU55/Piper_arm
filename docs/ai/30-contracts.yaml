@@ -1,4 +1,11 @@
 schema_version: 1
+early_capability_retention_contract_2026_09_06:
+  cache: Exact-input query cache remains bounded to 1024 entries. A separate population-bound exclusion dictionary retains at most one record per rejected generated ray, even if a query cache entry is evicted.
+  diagnostics: Carried exclusions appear in carried_hard_culled_count and remain culled; capability_cull is emitted only for newly queried unsupported candidates. No existing report is rewritten.
+planning_latency_contract_2026_09_06:
+  configuration: Mission launch overrides capability_direction_tolerance_deg in both consumers with the single frozen GUI final_capture_aim_tolerance_deg value in range 1-90. Standalone lookup defaults to 5. Lookup adds bin half-diagonal slack; it is not exact capture admission. First capture remains capped at min selected and 5 degrees. Loader calls without override preserve artifact policy.
+  provenance: Source hash verification is mandatory before runtime override. Record effective and artifact direction tolerance separately; do not rewrite NPZ data or original qualification evidence.
+  persistence: Bridge record transfers a deep-copied snapshot into a 64-entry FIFO. Full queues apply backpressure; no coalescing or silent dropping. The existing store still owns locks, merges, filenames and atomic writes. Errors warn and subsequent records continue; destruction allows two seconds to drain and warns explicitly on timeout.
 bounded_curobo_aim_search_2026_09_06:
   request: Existing fallback_look_directions may contain up to five directions only for cuRobo target-ray requests; other candidates retain the one-direction bound. Every direction remains bounded by maximum_final_aim_offset_deg and covered by request_sha256.
   generation: Existing current-look fallback plus four orthogonal local directions at min(4 degrees, effective tolerance minus existing 1-degree execution margin); duplicates removed. Tesseract and rough acquisition unchanged.
@@ -1061,6 +1068,7 @@ texture_baking_contract_2026_08_30:
 
 final_capture_aim_tolerance_contract_2026_08_29:
   authoritative_key: final_capture_aim_tolerance_deg in scan_execution_params.yaml
+  capability_consumers: Mission launch binds early prefilter and downstream reachability lookup slack to the same frozen selected value; a permissive lookup does not relax first-lock or exact planning gates.
   valid_range_deg: [1.0, 90.0]
   freeze: Applied only when the next mission launch constructs planner and executor processes; an active mission cannot be changed through the GUI.
   first_lock_ceiling_deg: 5.0

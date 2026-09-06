@@ -22,6 +22,34 @@ from piper_mobile_manipulation.viewpoint_reachability_filter_node import (
 )
 
 
+def test_runtime_direction_policy_preserves_artifact_and_sources(tmp_path):
+    atlas = synthetic_map([capability_key([0.4, 0, 0.3], [1, 0, 0], .02, 10)])
+    path = tmp_path / 'map.npz'
+    write_capability_map(path, atlas.keys, atlas.maximum_tool_minimum_z_m,
+                         atlas.metadata)
+    before = sha256_file(path)
+    changed = load_capability_map(
+        path, verify_sources=False, direction_tolerance_deg=5.0)
+    assert changed.direction_tolerance_deg == 5.0
+    assert changed.metadata['artifact_direction_tolerance_deg'] == 15.0
+    assert np.array_equal(changed.keys, atlas.keys)
+    assert np.array_equal(changed.maximum_tool_minimum_z_m,
+                          atlas.maximum_tool_minimum_z_m)
+    assert sha256_file(path) == before
+    assert load_capability_map(path, verify_sources=False).direction_tolerance_deg == 15.0
+    # A policy override cannot bypass provenance validation.
+    with pytest.raises(ValueError, match='source is missing'):
+        load_capability_map(path, tmp_path, direction_tolerance_deg=5.0)
+    for valid in [1.0, 5.0, 15.0, 45.0, 90.0]:
+        assert load_capability_map(
+            path, verify_sources=False,
+            direction_tolerance_deg=valid).direction_tolerance_deg == valid
+    for invalid in [float('nan'), float('inf'), -1, 91]:
+        with pytest.raises(ValueError):
+            load_capability_map(path, verify_sources=False,
+                                direction_tolerance_deg=invalid)
+
+
 def synthetic_map(keys, floor_values=None, qualified=True, sources=None):
     ordered = np.asarray(sorted(int(value) for value in keys), dtype=np.uint64)
     floors = np.asarray(

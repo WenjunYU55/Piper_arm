@@ -315,6 +315,7 @@ class ScanViewpointPlannerNode(Node):
         root = os.environ.get('PIPER_ARM_ROOT', '/home/prl/Piper_arm')
         defaults = {
             'capability_map_mode': 'enforce',
+            'capability_direction_tolerance_deg': 5.0,
             'capability_map_project_root': root,
             'capability_map_path': str(Path(root) / 'piper_ros_foxy/src/piper_mobile_manipulation/config/piper_camera_capability_map.npz'),
             'min_camera_object_distance_m': 0.25,
@@ -329,7 +330,8 @@ class ScanViewpointPlannerNode(Node):
                 self.get_parameter(name).value for name in (
                     'capability_map_mode', 'capability_map_path',
                     'capability_map_project_root', 'min_camera_object_distance_m',
-                    'max_camera_object_distance_m', 'floor_z_m')])
+                    'max_camera_object_distance_m', 'floor_z_m',
+                    'capability_direction_tolerance_deg')])
         except (OSError, KeyError, TypeError, ValueError) as error:
             self.get_logger().warn(
                 'Early capability filter unavailable; downstream filtering retained: %s' % error)
@@ -1080,6 +1082,11 @@ class ScanViewpointPlannerNode(Node):
             persistent_culls = dict(envelope_culls)
             persistent_culls.update(
                 self.hard_cull_ledger.entries(ray_population))
+        prefilter = getattr(self, 'static_ray_prefilter', None)
+        if ray_policy and prefilter is not None:
+            # Early rejections never reach the downstream publisher, so this
+            # owner must retain them under the same canonical population.
+            persistent_culls.update(prefilter.carried_culls(ray_population))
         planner_rejections = {}
         viewpoints = prune_hard_culled_rays(
             viewpoints, persistent_culls, planner_rejections)
@@ -1116,7 +1123,6 @@ class ScanViewpointPlannerNode(Node):
         )
         nonduplicate_candidate_count = len(viewpoints)
         early_culls = {}
-        prefilter = getattr(self, 'static_ray_prefilter', None)
         if ray_policy and prefilter is not None:
             viewpoints, early_culls = prefilter.partition(viewpoints)
             persistent_culls.update(early_culls)

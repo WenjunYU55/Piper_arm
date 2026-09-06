@@ -9,6 +9,7 @@ def test_partition_preserves_candidates_and_caches_exact_queries():
     calls = []
     class Atlas:
         metadata = {'tool_floor_clearance_m': 0.005}
+        direction_tolerance_deg = 5.0
         def intersects_ray(self, target, direction, minimum, maximum, floor, clearance):
             calls.append((target, direction, minimum, maximum, floor, clearance))
             return SimpleNamespace(supported=direction[0] > 0, checked_keys=3)
@@ -36,3 +37,31 @@ def test_nonray_and_disabled_mode_are_unchanged():
     gate = StaticRayPrefilter(None, .25, 3, 0)
     points = [{'index': 2, 'candidate_geometry': 'exact_point'}]
     assert gate.partition(points) == (points, {})
+
+
+def test_capability_culls_survive_capture_generation_but_not_population_reset():
+    from piper_mobile_manipulation.planning.ray_culls import prune_hard_culled_rays
+    calls = []
+    class Atlas:
+        metadata = {'tool_floor_clearance_m': 0.005}
+        direction_tolerance_deg = 5.0
+        def intersects_ray(self, *args):
+            calls.append(args)
+            return SimpleNamespace(supported=False, checked_keys=3)
+    gate = StaticRayPrefilter(Atlas(), .25, 3, .005)
+    population = {'mission_id': 'm', 'session_id': 's', 'sha256': 'qualified'}
+    ray = dict(index=1, ray_id=1, candidate_geometry='target_ray',
+               target_object_center=dict(x=.3, y=0, z=0),
+               ray_direction=dict(x=1, y=0, z=0),
+               ray_min_standoff_m=.28, ray_max_standoff_m=3.)
+    assert gate.carried_culls(population) == {}
+    assert gate.partition([ray])[0] == []
+    for _accepted_count in range(2, 6):
+        carried = gate.carried_culls(dict(population))
+        assert set(carried) == {1}
+        survivors = prune_hard_culled_rays([ray], carried, {})
+        assert gate.partition(survivors) == ([], {})
+        carried.clear()  # Caller cannot mutate the retained evidence.
+    assert len(calls) == 1
+    assert gate.carried_culls(dict(population, sha256='replacement')) == {}
+    assert gate.carried_culls(None) == {}

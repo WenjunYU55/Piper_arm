@@ -1,4 +1,10 @@
 schema_version: 1
+early_capability_retention_smoke_2026_09_06:
+  checks: [cycle-one qualified population reports initial capability exclusions, later unchanged cycles retain exclusions without another capability_cull stage, surviving rays retain NBV score and order, new population releases old IDs, original reports remain untouched]
+planning_latency_flow_2026_09_06:
+  sequence: [load common lookup tolerance at process startup, verify atlas provenance, apply same policy before NBV and during reachability, retain ordinary exact planning and authorization, enqueue observational bridge snapshots, persist in order off callback, drain on bridge shutdown]
+  manual_smoke_checks: [verify effective lookup slack equals selected GUI tolerance and artifact slack remains 15, verify first capture still requires min selected and five degrees, confirm captured-ray events and failed requests remain visible after report catches up, verify no incomplete flush warning on ordinary shutdown, compare a new mission timing without claiming historical framed-policy timing as a cone baseline]
+  offline_checks: [recorded achieved-pose recall, queued versus synchronous journal equality, blocked writer does not block ordinary enqueue, bounded shutdown warning, complete mobile Tesseract and GUI regression]
 bounded_curobo_aim_search_2026_09_06:
   sequence: [bind explicit cone alternatives in bridge, attempt unchanged exact-aim goal set, precheck fallback endpoints, balance at most 54 semantic goals across fallback directions and supported standoffs, attempt one fallback batch with existing invalid-winner retries and request deadline, qualify full path, validate response and authorize normally]
   mandatory_retests: [test_bounded_aim_search.py, generic request and response contract, complete ordinary mobile Tesseract and cuRobo suites, real GPU bounded fallback and collision regressions, package build, separately authorized physical E2E]

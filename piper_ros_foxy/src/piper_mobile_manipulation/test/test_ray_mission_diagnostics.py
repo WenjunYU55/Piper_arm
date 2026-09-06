@@ -54,6 +54,23 @@ def snapshot():
         selection_ready=True, remaining_views=11)
 
 
+def test_carried_capability_exclusion_is_not_a_new_cull_stage():
+    generated = [ray(0, [1., 0., 0.]), ray(1, [0., 1., 0.])]
+    culls = {0: {'stage': 'capability_prequalification',
+                 'reason': 'CAPABILITY_MAP_NO_SUPPORT'}}
+    for cycle in [2, 3, 4]:
+        value = planner_generation_snapshot(
+            'session', cycle, dict(x=.3, y=0., z=0.), 'base_link',
+            'ray_nbv', generated, generated[1:], generated[1:], generated[1:],
+            persistent_culls=culls, early_capability_culls={})
+        assert not any(e['stage'] == 'capability_cull' for e in value['events'])
+        carry = next(e for e in value['events']
+                     if e['stage'] == 'cull_used_redundant')
+        assert carry['metrics']['carried_hard_culled_count'] == 1
+        assert carry['ray_deltas']['0']['culled']
+        assert 0 not in carry['newly_culled_ray_ids']
+
+
 def test_planner_snapshot_retains_every_generated_ray_and_exact_rank():
     value = snapshot()
     rays = {item['ray_id']: item for item in value['rays']}
@@ -283,6 +300,92 @@ def test_selected_worker_endpoint_supplies_the_urdf_replay_pose():
         0.1, 0.2, -0.3, 0.4, 0.5, -0.6]
     assert selected['robot_pose_source'] == 'tesseract_planned_endpoint'
     assert selected['camera_position_m'] == [0.2, 0.0, 0.5]
+
+
+def test_queued_store_preserves_order_and_snapshot_ownership(tmp_path):
+    import threading
+    from piper_mobile_manipulation.ray_mission_diagnostics import QueuedRayDiagnosticsStore
+
+    entered, release = threading.Event(), threading.Event()
+    written, errors = [], []
+    class SlowStore:
+        def record(self, value):
+            entered.set()
+            assert release.wait(3.0)
+            written.append(value)
+
+    store = QueuedRayDiagnosticsStore(SlowStore(), errors.append)
+    value = {'events': [1]}
+    try:
+        store.record(value)
+        assert entered.wait(1.0)
+        value['events'].append(2)
+        store.record(value)  # Must return while the first write is blocked.
+        assert written == []
+    finally:
+        release.set()
+        assert store.close(3.0)
+    assert written == [{'events': [1]}, {'events': [1, 2]}]
+    assert errors == []
+    import pytest
+    with pytest.raises(RuntimeError):
+        store.record(value)
+
+
+def test_queued_store_merge_matches_synchronous_events(tmp_path):
+    from piper_mobile_manipulation.ray_mission_diagnostics import QueuedRayDiagnosticsStore
+    errors = []
+    sync = RayMissionDiagnosticsStore(tmp_path / 'sync')
+    queued = QueuedRayDiagnosticsStore(
+        RayMissionDiagnosticsStore(tmp_path / 'queued'), errors.append)
+    base = snapshot()
+    for value in (base, add_bridge_request(base, 'request-1', [2]), base):
+        reference, _ = sync.record(value)
+        queued.record(value)
+    assert queued.close(3.0)
+    actual = next((tmp_path / 'queued').glob('*/*.json'))
+    expected = json.loads(Path(reference).read_text())
+    result = json.loads(actual.read_text())
+    expected.pop('updated_at_ns')
+    result.pop('updated_at_ns')
+    assert result == expected
+    assert not errors
+
+
+def test_queued_store_reports_failure_and_continues():
+    from piper_mobile_manipulation.ray_mission_diagnostics import QueuedRayDiagnosticsStore
+    errors, written = [], []
+    class FailingStore:
+        def record(self, value):
+            if value == {'fail': True}:
+                raise OSError('disk unavailable')
+            written.append(value)
+    store = QueuedRayDiagnosticsStore(FailingStore(), errors.append)
+    store.record({'fail': True})
+    store.record({'ok': True})
+    assert store.close(3.0)
+    assert written == [{'ok': True}]
+    assert len(errors) == 1 and 'disk unavailable' in errors[0]
+
+
+def test_queued_store_shutdown_timeout_is_explicit():
+    import threading
+    from piper_mobile_manipulation.ray_mission_diagnostics import QueuedRayDiagnosticsStore
+    release, entered = threading.Event(), threading.Event()
+    errors = []
+    class BlockedStore:
+        def record(self, value):
+            entered.set()
+            release.wait(3.0)
+    store = QueuedRayDiagnosticsStore(BlockedStore(), errors.append)
+    store.record({})
+    assert entered.wait(1.0)
+    try:
+        assert not store.close(0.01)
+        assert 'flush incomplete' in errors[-1]
+    finally:
+        release.set()
+        assert store.close(3.0)
 
 
 def test_store_merges_stages_and_writes_self_contained_html(tmp_path):

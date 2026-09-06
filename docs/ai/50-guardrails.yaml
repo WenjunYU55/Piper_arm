@@ -1,4 +1,12 @@
 schema_version: 1
+early_capability_retention_guardrail_2026_09_06:
+  invariants: [canonical identity bounds retention, captured count never resets exclusions, no new permanent rejection sources, no NBV scoring change, no downsteam freshness or exact safety bypass, approximate capability rejection remains not proof of infeasibility]
+  retest: [population carry and reset tests, diagnostic event regression, complete mobile Tesseract GUI and cuRobo ordinary tests, affected package build]
+planning_latency_guardrail_2026_09_06:
+  gui_link: Both capability consumers use the mission-frozen GUI tolerance across the full 1-90 range; no mid-mission reload, no independent mission lookup control, no relaxation of the first-capture five-degree ceiling. Wider lookup can forward more rays and increase planning time.
+  invariants: [no atlas data or source-hash mutation, common lookup setting frozen at startup, no capture aim relaxation, no IK budget change, no NBV score change, exact planning remains authoritative, no diagnostic event coalescing, immutable queued snapshots, existing file lock and atomic writes retained, explicit persistence failure and flush timeout warnings, no real-motion default change]
+  limitation: Tighter lookup may introduce false-negative culls outside the 48-pose sample; it is not a full-workspace recall qualification. The artifact qualification record describes its original lookup policy, not proof of the tighter policy.
+  must_retest_if_changed: [test_capability_map.py, test_static_ray_prefilter.py, test_ray_mission_diagnostics.py, full mobile and Tesseract suites, GUI ray tests, command-free recall and diagnostic replay, package build]
 bounded_curobo_aim_search_2026_09_06:
   invariant: Goal search uses existing capture tolerance with the existing one-degree execution margin. Do not widen capture gates, collision clearance, joint bounds, native IK tolerance or request deadlines. A bounded search failure is not proof of mathematical infeasibility.
   must_retest_if_changed: [cone bounds and first-capture ceiling, Tesseract unchanged default, explicit response-direction membership, balanced 54-goal budget, real GPU path qualification and blocked world, common executor regression]

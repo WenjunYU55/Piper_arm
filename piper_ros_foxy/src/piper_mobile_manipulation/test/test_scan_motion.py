@@ -1388,6 +1388,44 @@ def test_fixed_j6_planner_cannot_return_as_a_fallback():
     assert 'MotionPlan' in executor_source
 
 
+@pytest.mark.parametrize('selected', [1.0, 5.0, 15.0, 45.0, 90.0])
+def test_gui_aim_value_is_frozen_for_all_planning_consumers(tmp_path, selected):
+    import ast
+    import re
+    tree = ast.parse((PACKAGE_ROOT / 'launch' /
+                      'supervised_viewpoint_execution.launch.py').read_text())
+    reader = next(n for n in tree.body if isinstance(n, ast.FunctionDef)
+                  and n.name == 'final_aim_tolerance')
+    scope = {'re': re}
+    exec(compile(ast.Module(body=[reader], type_ignores=[]),
+                 '<launch-reader>', 'exec'), scope)
+    config = tmp_path / 'execution.yaml'
+    config.write_text('final_capture_aim_tolerance_deg: %s\n' % selected)
+    frozen = scope['final_aim_tolerance'](config)
+    config.write_text('final_capture_aim_tolerance_deg: 2.0\n')
+    assert frozen == selected  # Later GUI writes cannot change the float.
+    expected = {
+        'planner': 'capability_direction_tolerance_deg',
+        'reachability': 'capability_direction_tolerance_deg',
+        'bridge': 'final_capture_aim_tolerance_deg',
+        'executor': 'final_capture_aim_tolerance_deg',
+    }
+    for assignment in ast.walk(tree):
+        if not isinstance(assignment, ast.Assign):
+            continue
+        target = assignment.targets[0]
+        if not isinstance(target, ast.Name) or target.id not in expected:
+            continue
+        key = expected.pop(target.id)
+        values = [v for d in ast.walk(assignment.value) if isinstance(d, ast.Dict)
+                  for k, v in zip(d.keys, d.values)
+                  if isinstance(k, ast.Constant) and k.value == key]
+        assert len(values) == 1
+        assert isinstance(values[0], ast.Name)
+        assert values[0].id == 'frozen_final_aim_tolerance_deg'
+    assert not expected
+
+
 def test_automatic_capture_maximum_is_shared_with_session_planner():
     launch_source = (
         PACKAGE_ROOT / 'launch' / 'supervised_viewpoint_execution.launch.py'

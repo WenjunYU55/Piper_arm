@@ -1,4 +1,11 @@
 schema_version: 1
+early_capability_retention_followup_2026_09_06:
+  addressed: The early prefilter now retains its own population-bound exclusions, which cannot be supplied by the downstream publisher because those rays never reach it. Later cycles carry exclusions rather than reapply and report cached rejections as a new capability step.
+  remaining: Physical coverage and timing comparison; observed 55.43-degree versus historical 70-degree span is not a controlled regression attribution. Prior achieved poses retain five-degree lookup support, but that is not complete ray or trajectory feasibility proof.
+planning_latency_followup_2026_09_06:
+  implemented: Runtime atlas lookup slack follows the mission-frozen GUI aim tolerance (default 5 degrees); background ordered bridge diagnostic persistence.
+  remaining: [full-workspace tighter-policy recall, matched cone-policy E2E timing and coverage, diagnose residual inter-request gaps, measure CPU and lock contention from other synchronous diagnostic producers]
+  limits: Queue saturation deliberately applies backpressure; a two-second shutdown drain timeout or disk error is explicitly reported but can leave incomplete diagnostic evidence. Background work is not zero CPU cost. No IK retry budget change.
 bounded_curobo_aim_search_2026_09_06:
   implemented: Explicit bounded cone alternatives for cuRobo rays, exact-first then one fixed-size fallback batch.
   remaining: Compare coverage and planning time on paired recorded requests and supervised physical runs. Fallback semantic downsampling trades exhaustive distance-roll search per direction for bounded latency; this is not full orientation-cone completeness. No demonstrated mission-level speedup yet.

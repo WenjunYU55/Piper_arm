@@ -82,6 +82,10 @@
     # Missing, stale-hash or unqualified artifacts retain the conservative
     # coarse fallback and leave exact feasibility to the selected planner.
     capability_map_mode: "enforce"
+    # Lookup slack beyond the 10-degree bin half-diagonal, NOT capture aim.
+    # Standalone default only. Mission launch overrides this from the GUI's
+    # authoritative final_capture_aim_tolerance_deg (1-90), frozen at startup.
+    capability_direction_tolerance_deg: 5.0
     floor_z_m: 0.005
     arm_status_timeout_sec: 1.0
 
