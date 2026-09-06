@@ -1,4 +1,26 @@
 schema_version: 1
+stream_smoothness_ownership_2026_09_06:
+  owner_module: execution/trajectory.py owns pure following recovery; scan_viewpoint_executor_node.py owns hold lifetime and fresh-sample evidence; motion_planning/curobo/adapter.py owns optional uniform native time scaling; worker.py selects it only for experimental rates.
+  allowed_edit_paths: [listed owners, scan_execution_params.yaml, test_scan_motion.py, tests/curobo/test_curobo_adapter.py, tests/curobo/test_curobo_gpu_integration.py, related docs]
+  must_not_move_without: [fresh telemetry identity, existing recovery deadline, no-burst schedule, zero public derivative placeholders, native vertices, speed and position bounds, recovery prefixes, unchanged configured home path]
+approval_deadline_owner_2026_09_06:
+  owner_module: piper_mobile_manipulation/execution/authorization.py
+  consumers: [target_scan_mission_node.py, scan_viewpoint_executor_node.py]
+  allowed_edit_paths: [execution/authorization.py, mission and executor adapters, test_approval_deadline.py, CMakeLists.txt, related docs]
+  must_not_move_without: [exact plan and mission identity, validation before motion, request expiry before runtime refresh, bounded client wait, terminal recovery]
+gui_mouse_wheel_owner_2026_09_06:
+  owner_module: piper_gui/native_app.py build_vertical_scroll_area
+  owns: Scoped wheel routing for Automatic Scan content and its scrollbar; no mission or configuration callbacks.
+  allowed_edit_paths: [piper_gui/native_app.py, tests/gui/test_piper_gui_layout.py, docs/ai]
+gui_stream_rate_owner_2026_09_06:
+  owner_module: piper_gui/stream_rate.py
+  allowed_edit_paths: [piper_gui/stream_rate.py, piper_gui/native_app.py, tests/gui/test_piper_gui_stream_rate.py, related docs]
+  must_not_move_without: [authoritative command and timer pair, frozen launch configuration, active mission lockout, high-rate experimental qualification label]
+stream_rate_ownership_2026_09_06:
+  owner_module: piper_mobile_manipulation/configuration.py
+  allowed_edit_paths: [configuration.py, supervised_viewpoint_execution.launch.py, execution/trajectory.py, motion_planning/curobo/adapter.py, motion_planning/curobo/worker.py, piper_tesseract_foxy/protocol/contract.py, piper_tesseract_foxy/bridge_node.py, related tests and docs]
+  must_not_move_without: [request and trajectory rate binding, recovery evidence indices, next-unsent scheduler, no-burst policy, physical transport requalification]
+  offline_tool: tools/diagnostics/benchmark_stream_transport.py
 early_capability_retention_owner_2026_09_06:
   owner_module: planning/prequalification.py StaticRayPrefilter
   responsibility: Retain its own unsupported-ray evidence for one canonical population; node merges it into persistent_culls before filtering and diagnostics.

@@ -30,12 +30,15 @@
     # At 20 Hz this permits the qualified 20% MoveJ rate for J1-J5
     # (5 rad/s * 0.20 / 20 Hz = 0.05 rad per target).
     trajectory_joint_step_rad: 0.05
-    # Time-followed Tesseract position stream. The executor publishes only the
-    # newest due sample, never bursts stale samples, and feedback-gates the
+    # Shared timed position stream. The executor publishes only the next
+    # unsent sample, never bursts stale samples, and feedback-gates the
     # final endpoint rather than stopping at every intermediate point.
-    trajectory_command_rate_hz: 20.0
+    trajectory_command_rate_hz: 200.0
+    # Experimental 100/200 Hz transport is opt-in and NOT physically qualified.
+    # Launch freezes this rate for BOTH planner bridge and executor. Keep 20
+    # for normal missions pending supervised tracking/cancel/hold comparison.
     # Poll feedback and safety state independently of command issuance.
-    executor_tick_rate_hz: 200.0
+    executor_tick_rate_hz: 400.0
     trajectory_following_error_rad: 0.30
     trajectory_following_error_grace_sec: 1.0
     plan_start_tolerance_rad: 0.025

@@ -51,6 +51,7 @@ from piper_mobile_manipulation.execution.recovery import (
     runtime_refresh_action,
 )
 from piper_mobile_manipulation.execution.authorization import (
+    parse_approval_confirmation,
     configured_home_endpoint_rejection,
     direct_home_stage_rejection,
     direct_home_stage_targets,
@@ -632,6 +633,8 @@ class ScanViewpointExecutorNode(Node):
         self.stream_last_tick_at = None
         self.stream_schedule_paused_sec = 0.0
         self.stream_following_hold_started_at = None
+        self.stream_following_recovery_samples = 0
+        self.stream_following_recovery_stamp = None
         self.stream_schedule_completion_logged = False
         self.stream_late_event_count = 0
         self.stream_late_missed_samples = 0
@@ -1869,10 +1872,19 @@ class ScanViewpointExecutorNode(Node):
             return
 
     def approve_cb(self, request, response):
+        approval_received_ns = time.time_ns()
+        approval_received_monotonic = time.monotonic()
+        try:
+            confirmation, approval_deadline_ns = parse_approval_confirmation(
+                request.confirmation, approval_received_ns)
+        except ValueError as error:
+            response.accepted = False
+            response.message = str(error)
+            return response
         expected = str(configured_value(self, 'approval_confirmation'))
         mission_confirmation = 'MISSION_POLICY:' + self.mission_sha256
         mission_authorization_requested = (
-            str(request.confirmation) == mission_confirmation)
+            confirmation == mission_confirmation)
         mission_authorization_granted = (
             self.mission_authorization_valid()
             and str(getattr(self, 'plan_backend', '')).strip().lower() ==
@@ -1885,7 +1897,7 @@ class ScanViewpointExecutorNode(Node):
             state=self.state,
             loaded_plan_id=self.plan_id if self.plan_targets else '',
             requested_plan_id=str(request.plan_id),
-            confirmation=str(request.confirmation),
+            confirmation=confirmation,
             expected_confirmation=expected,
             real_motion_enabled=self.real_motion_enabled(),
             plan_age_sec=self.now() - self.plan_created,
@@ -1980,6 +1992,13 @@ class ScanViewpointExecutorNode(Node):
                     )))
             response.accepted = False
             response.message = authorization.detail
+            return response
+        if (approval_deadline_ns is not None and (
+                time.time_ns() >= approval_deadline_ns
+                or time.monotonic() - approval_received_monotonic
+                >= (approval_deadline_ns - approval_received_ns) / 1e9)):
+            response.accepted = False
+            response.message = 'mission approval deadline expired; no motion authorized'
             return response
         self.abort_return_in_progress = False
         self.abort_return_reason = ''
@@ -2698,6 +2717,8 @@ class ScanViewpointExecutorNode(Node):
             if hold_started is None:
                 hold_started = now
                 self.stream_following_hold_started_at = now
+                self.stream_following_recovery_samples = 0
+                self.stream_following_recovery_stamp = None
                 self.get_logger().warning(
                     'planner stream feedback corridor reached; holding '
                     'the last collision-qualified setpoint until measured '
@@ -2728,6 +2749,60 @@ class ScanViewpointExecutorNode(Node):
                     % (error, limit, current, np.asarray(target).tolist()))
                 return True
             return False
+
+        hold_started = getattr(self, 'stream_following_hold_started_at', None)
+        if hold_started is not None:
+            # Judge the next unsent target as well as the held target, so
+            # resuming cannot immediately re-enter the same boundary hold.
+            targets = ([self.command_target]
+                       if self.command_target is not None else [])
+            if self.path_index < len(self.current_path):
+                targets.append(self.current_path[self.path_index])
+            error = max((self.max_joint_error(target) for target in targets),
+                        default=math.inf)
+            limit = float(configured_value(self, 'trajectory_following_error_rad'))
+            timeout = float(configured_value(
+                self, 'trajectory_following_error_grace_sec'))
+            snapshot = runtime_telemetry_snapshot(self)
+            observation = None if snapshot is None else snapshot.arm.joints
+            stamp = None if observation is None else (
+                observation.source_stamp_ns or observation.received_at)
+            count = getattr(self, 'stream_following_recovery_samples', 0)
+            if (stamp is None or not math.isfinite(float(stamp))
+                    or not math.isfinite(error)
+                    or error > limit * TrajectoryRunner.FOLLOWING_RESUME_FRACTION):
+                count = 0
+            elif stamp is not None and (getattr(
+                    self, 'stream_following_recovery_stamp', None) is None
+                    or stamp > self.stream_following_recovery_stamp):
+                count += 1
+            self.stream_following_recovery_samples = count
+            if stamp is not None and math.isfinite(float(stamp)):
+                self.stream_following_recovery_stamp = max(
+                    stamp, getattr(self, 'stream_following_recovery_stamp', None)
+                    or stamp)
+            decision = TrajectoryRunner.following_recovery_decision(
+                error, limit, now - hold_started, timeout, count)
+            # Include this final held interval even when recovery succeeds.
+            self.stream_schedule_paused_sec += tick_interval
+            elapsed = max(0.0, elapsed - tick_interval)
+            if decision.action is TrajectoryAction.FAILED_FOLLOWING:
+                self.abort_or_finish_captures(
+                    'measured joints did not recover inside the scheduled '
+                    'planner following corridor: max_error=%.9f rad '
+                    'limit=%.9f rad' % (error, limit))
+                return
+            if decision.action is TrajectoryAction.HOLD_FOLLOWING:
+                if now - self.last_motion_status_at >= 0.10:
+                    self.last_motion_status_at = now
+                    self.publish_status()
+                return
+            self.get_logger().info(
+                'measured joints recovered inside the planner stream '
+                'feedback corridor for three fresh samples; resuming the unchanged path')
+            self.stream_following_hold_started_at = None
+            self.stream_following_recovery_samples = 0
+            self.stream_following_recovery_stamp = None
 
         if self.command_target is not None:
             grace = float(configured_value(
@@ -4233,6 +4308,8 @@ class ScanViewpointExecutorNode(Node):
         self.stream_last_tick_at = None
         self.stream_schedule_paused_sec = 0.0
         self.stream_following_hold_started_at = None
+        self.stream_following_recovery_samples = 0
+        self.stream_following_recovery_stamp = None
         self.stream_schedule_completion_logged = False
         self.stream_late_event_count = 0
         self.stream_late_missed_samples = 0

@@ -28,6 +28,27 @@ def optical_transform(angle_deg=0.0, z_m=0.0):
     return transform
 
 
+@pytest.mark.parametrize('rate', [100., 200.])
+def test_tesseract_high_rate_transport_preserves_corner_and_limits(rate):
+    from piper_mobile_manipulation.execution.validation import validate_timed_execution_path
+    positions = [[0.] * 6, [.1, 0, 0, 0, 0, 0], [.1, .1, 0, 0, 0, 0]]
+    source = [dict(positions_rad=q, velocities_rad_s=[0.] * 6,
+                   accelerations_rad_s2=[0.] * 6, time_from_start_s=i * .5)
+              for i, q in enumerate(positions)]
+    points, validation = sdk_movej_waypoint_trajectory(
+        source, 5., rate, .05, [[-3., 3.]] * 6, [1.] * 6, [1.] * 6)
+    assert validation == source
+    q = np.asarray([p['positions_rad'] for p in points])
+    t = np.asarray([p['time_from_start_s'] for p in points])
+    assert np.diff(t) == pytest.approx(1. / rate)
+    for vertex in positions:
+        assert any(np.array_equal(row, vertex) for row in q)
+    validate_timed_execution_path(
+        q, np.zeros_like(q), np.zeros_like(q), t, rate,
+        velocity_limits_rad_s=[1.] * 6, acceleration_limits_rad_s2=[1.] * 6,
+        speed_percent=5.)
+
+
 def test_worker_camera_path_rejects_off_axis_intermediate_fk():
     rejection = camera_transform_path_rejection(
         [optical_transform(0.0), optical_transform(25.0)],

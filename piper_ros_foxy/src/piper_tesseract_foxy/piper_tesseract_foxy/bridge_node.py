@@ -1770,7 +1770,8 @@ class MotionPlannerBridge(Node):
         motion_plan_pub = getattr(self, 'motion_plan_pub', None)
         if motion_plan_pub is not None:
             motion_plan_pub.publish(msg)
-        if self.planner_backend == 'tesseract':
+        if (self.planner_backend == 'tesseract'
+                and float(msg.command_rate_hz) == 20.0):
             self.plan_pub.publish(self.legacy_plan(msg))
         if self.param_bool('debug') and payload['selected_viewpoints']:
             selected = payload['selected_viewpoints'][0]

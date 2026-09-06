@@ -82,7 +82,8 @@ def _assert_fixed_rate_schedule(segment):
         for left, right in zip(points, points[1:]))
 
 
-def test_real_bounded_fallback_batch_preserves_aim_and_collision_checks(backend, monkeypatch):
+@pytest.mark.parametrize('rate', [20., 100., 200.])
+def test_real_bounded_fallback_batch_preserves_aim_and_collision_checks(backend, monkeypatch, rate):
     """Inject only the nominal miss; fallback MotionGen and all checks are real."""
     import numpy as np
     from types import SimpleNamespace
@@ -112,7 +113,8 @@ def test_real_bounded_fallback_batch_preserves_aim_and_collision_checks(backend,
                      (forward * math.cos(0.01) + rotation[:, 1] * math.sin(0.01)).tolist()]}
     request = {'plan_kind': 'MULTIVIEW_SCAN', 'scan_session': {'accepted_views': 1},
                'scene': {'target_center_m': target.tolist(), 'obstacles': []},
-               'planning': {'effective_speed_percent': 5.0, 'roll_samples_rad': [roll]},
+               'planning': {'effective_speed_percent': 5.0, 'roll_samples_rad': [roll],
+                            'command_rate_hz': rate},
                'limits': {'position_rad': [[-3.2, 3.2]] * 6}}
     native = backend.motion_gen.plan_goalset
     calls = []
@@ -164,6 +166,24 @@ def test_real_planner_supports_each_declared_plan_kind(backend, kind):
             attempt.get('path_qualification') == 'accepted'
             for viewpoint in selected
             for attempt in viewpoint['curobo_attempt_diagnostics'])
+
+
+@pytest.mark.parametrize('rate', [100., 200.])
+def test_real_high_rate_acquisition_schedule(backend, rate):
+    """Command-free real MotionGen output honors the requested transport rate."""
+    request = copy.deepcopy(_request('ROUGH_ACQUISITION'))
+    request['planning']['command_rate_hz'] = rate
+    request = attach_digest(request, 'request_sha256')
+    selected, segments, _ = backend.plan(request)
+    assert selected and segments
+    for segment in segments:
+        points = segment['points']
+        assert len(points) >= 2
+        for left, right in zip(points, points[1:]):
+            dt = right['time_from_start_s'] - left['time_from_start_s']
+            assert dt == pytest.approx(1. / rate, abs=1e-9)
+            assert max(abs(a - b) for a, b in zip(
+                left['positions_rad'], right['positions_rad'])) <= .05 + 1e-9
 
 
 def test_real_planner_rejects_a_deliberately_blocked_scene(backend):
@@ -305,6 +325,53 @@ def test_exact_world_still_rejects_blocking_dynamic_geometry(backend):
                 'limits': {
                     'position_rad': [[-3.2, 3.2] for _ in range(6)]},
             })
+
+
+def test_same_native_gpu_trajectory_retains_profile_at_experimental_rates(
+        backend, monkeypatch, tmp_path):
+    """One real solve, three software-only schedules; no robot connection."""
+    import numpy as np
+    native_results = []
+    native_plan = backend._timed_native_plan
+
+    def record_native(*args, **kwargs):
+        result = native_plan(*args, **kwargs)
+        native_results.append(result)
+        return result
+
+    monkeypatch.setattr(backend, '_timed_native_plan', record_native)
+    backend._update_world({'scene': {'obstacles': []}})
+    backend.last_planning_diagnostics = {}
+    limits = [[-3.2, 3.2]] * 6
+    baseline, _ = backend._plan_joint_goal(
+        [0., .8, -.7, 0., .7, 0.],
+        [.3189509166, .7800870124, -1.6258884709,
+         -.6660237320, -.2154052887, .0403545644],
+        {'planning': {'effective_speed_percent': 5.},
+         'limits': {'position_rad': limits}})
+    assert len(native_results) == 1
+    result = native_results[0]
+    source = result.get_interpolated_plan().position.detach().cpu().numpy().reshape(-1, 6)
+    reports = []
+    for rate in (100., 200.):
+        points = backend._path(result, 5., limits, rate)
+        q = np.array([p['positions_rad'] for p in points])
+        stride = (len(points) - 1) // (len(source) - 1)
+        assert q[::stride] == pytest.approx(source, abs=1e-12)
+        assert points[-1]['time_from_start_s'] >= baseline[-1]['time_from_start_s']
+        assert np.diff([p['time_from_start_s'] for p in points]) == pytest.approx(1 / rate)
+        velocity = np.diff(q, axis=0) * rate
+        assert np.all(np.max(np.abs(velocity), axis=0) <= np.array([.25] * 5 + [.15]) + 1e-8)
+        timing = backend.last_planning_diagnostics['trajectory_timing']
+        assert timing['policy'] == 'uniform_native_time_scale'
+        assert len(timing['native_peak_velocity']) == 6
+        reports.append(dict(timing))
+    (tmp_path / 'same_native_trajectory.json').write_text(json.dumps({
+        'evidence': 'COMMAND_FREE_GPU_SAME_NATIVE_PATH',
+        'baseline_duration_sec': baseline[-1]['time_from_start_s'],
+        'experimental': reports,
+    }, indent=2))
+    print('same-native timing report:', tmp_path / 'same_native_trajectory.json')
 
 
 def test_curated_model_rejects_known_folded_self_collision(backend):

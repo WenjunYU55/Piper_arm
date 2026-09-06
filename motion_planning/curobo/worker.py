@@ -789,7 +789,7 @@ class CuroboBackend:
             diagnostics['world_geometry_sha256'] = identity
 
     @timed_stage('trajectory_normalization')
-    def _path(self, result, speed, position_limits):
+    def _path(self, result, speed, position_limits, command_rate_hz=20.0):
         if not bool(result.success.item()):
             raise CuroboContractError(
                 'cuRobo planning failed: %s' % result.status)
@@ -805,9 +805,39 @@ class CuroboBackend:
                 'cuRobo trajectory joint names do not match PiPER')
         positions = positions[:, [
             native_names.index(name) for name in JOINT_NAMES]]
-        return normalize_trajectory(
+        points = normalize_trajectory(
             positions.tolist(), float(result.interpolation_dt), speed,
-            position_limits=position_limits)
+            position_limits=position_limits, command_rate_hz=command_rate_hz,
+            uniform_time_scale=float(command_rate_hz) > 20.0)
+        # Keep derivative evidence diagnostic: the common PiPER contract
+        # deliberately uses zero derivative placeholders for position MoveJ.
+        # A common time scale preserves the source profile without inserting
+        # unqualified spline corners or changing cuRobo's collision proof.
+        diagnostics = getattr(self, 'last_planning_diagnostics', None)
+        if isinstance(diagnostics, dict):
+            timing = {
+                'policy': ('uniform_native_time_scale'
+                           if float(command_rate_hz) > 20.0
+                           else 'legacy_segment_time_scale'),
+                'native_dt_sec': float(result.interpolation_dt),
+                'native_samples': len(positions),
+                'command_rate_hz': float(command_rate_hz),
+                'scheduled_samples': len(points),
+                'scheduled_duration_sec': points[-1]['time_from_start_s'],
+            }
+            for name in ('velocity', 'acceleration', 'jerk'):
+                value = getattr(path, name, None)
+                if value is not None:
+                    values = value.detach().cpu().numpy().reshape(-1, 6)
+                    if (values.shape != positions.shape
+                            or not np.all(np.isfinite(values))):
+                        raise CuroboContractError(
+                            'cuRobo returned malformed %s evidence' % name)
+                    timing['native_peak_' + name] = np.max(
+                        np.abs(values[:, [native_names.index(n) for n in JOINT_NAMES]]),
+                        axis=0).tolist()
+            diagnostics['trajectory_timing'] = timing
+        return points
 
     @timed_stage('visibility_check')
     def _target_visibility_rejection(
@@ -1140,7 +1170,8 @@ class CuroboBackend:
                     'selected_roll_rad': selected_goal['roll_rad'],
                 })
                 points = self._path(
-                    result, speed, request['limits']['position_rad'])
+                    result, speed, request['limits']['position_rad'],
+                    request['planning'].get('command_rate_hz', 20.0))
                 qualified_candidate = dict(candidate)
                 qualified_candidate['_target_center_m'] = target.tolist()
                 qualified_candidate['camera_position_m'] = list(
@@ -1253,7 +1284,8 @@ class CuroboBackend:
                     'selected_roll_rad': selected_roll,
                 })
                 points = self._path(
-                    result, speed, request['limits']['position_rad'])
+                    result, speed, request['limits']['position_rad'],
+                    request['planning'].get('command_rate_hz', 20.0))
                 path_rejection = self._candidate_path_rejection(
                     points, request, candidate)
                 if path_rejection:
@@ -1515,7 +1547,8 @@ class CuroboBackend:
         return (
             self._path(
                 result, request['planning']['effective_speed_percent'],
-                request['limits']['position_rad']),
+                request['limits']['position_rad'],
+                request['planning'].get('command_rate_hz', 20.0)),
             float(result.total_time),
         )
 
@@ -1631,6 +1664,7 @@ class CuroboBackend:
                         points,
                         bootstrap_recovery['positions'],
                         request['planning']['effective_speed_percent'],
+                        request['planning'].get('command_rate_hz', 20.0),
                     )
                     segment_recovery = dict(bootstrap_recovery)
                     segment_recovery['end_point'] = recovery_end
@@ -1640,6 +1674,7 @@ class CuroboBackend:
                         points,
                         position_limit_reentry['positions'],
                         request['planning']['effective_speed_percent'],
+                        request['planning'].get('command_rate_hz', 20.0),
                     )
                     prefixed_path = True
                 if prefixed_path:

@@ -1,4 +1,22 @@
 schema_version: 1
+stream_smoothness_retests_2026_09_06:
+  automated: [oscillating following error retains one hold deadline, duplicate and missing source samples cannot resume, three fresh interior samples resume, nonfinite error aborts, same native GPU path retains vertices at 100 and 200 Hz, native speed profile ratios preserved, step speed and sample bounds, high-rate fallback path collision and visibility qualification]
+  manual_smoke_checks: [load next-mission 100 Hz setting, supervised same-path low-speed timing and tracking comparison, inspect hold count command gaps and endpoint settling, verify cancellation and normal home shutdown, compare standard 20 Hz only on the same path and speed]
+  limitation: Software and GPU tests cannot prove physical smoothness or sustainable real-time command delivery. Historical GPU request fixtures formerly in tmp may be absent after reboot.
+approval_deadline_simulation_2026_09_06:
+  tests: test_approval_deadline.py exercises real approve_cb with virtual validation delays of 11.5 and 54 seconds accepted, 55 and 61 seconds rejected without motion, expired queued and malformed requests, and a complete real MissionEngine run with fake peripheral operations and eight simulated captures.
+  manual_smoke_checks: [operator recovery from prior NEEDS_OPERATOR before any restart, restart both coordinator and scan stack, verify bounded approval response before motion, supervised low-speed cancellation and home after approval]
+  limitation: Simulated sensors motion capture and shutdown do not prove a physical or ROS E2E; no hardware processes launched by tests.
+gui_mouse_wheel_smoke_2026_09_06:
+  manual_smoke_checks: [reopen GUI and wheel over Automatic Scan labels and buttons, wheel over rate combo without changing its selection, scroll to mission start controls and back up, verify nested text scrolling and other tabs remain independent]
+  automated: Real Tk event tests cover Linux up/down, standard and small MouseWheel deltas, unchanged combo selection, nested text and unrelated widgets, and destruction cleanup.
+gui_stream_rate_checks_2026_09_06:
+  manual_smoke_checks: [reopen GUI and locate trajectory rate below camera-on-ray tolerance, choose and Apply 100 Hz then confirm saved 100 and timer 200, choose 200 Hz then confirm timer 400, confirm controls disabled during mission, return to 20 Hz without changing speed or motion authority]
+  tests: tests/gui/test_piper_gui_stream_rate.py covers all pairs, production loader agreement, immutable loaded snapshot, active handler lockout, invalid values, duplicate/missing keys and unrelated YAML preservation.
+stream_rate_experiment_retests_2026_09_06:
+  reference: docs/architecture/trajectory_stream_rates.md
+  manual_smoke_checks: [offline same-source vertex and duration comparison, generic rate and hash mismatch rejection, real command-free GPU 100 and 200 Hz acquisition, common executor rate tests, late tick and following hold tests, separately agreed low-speed physical tracking hold cancel and shutdown comparison before promotion]
+  default: Code default and standard comparison remain 20 Hz; next-mission saved experiment is 100 Hz. No physical process started by this change.
 early_capability_retention_smoke_2026_09_06:
   checks: [cycle-one qualified population reports initial capability exclusions, later unchanged cycles retain exclusions without another capability_cull stage, surviving rays retain NBV score and order, new population releases old IDs, original reports remain untouched]
 planning_latency_flow_2026_09_06:

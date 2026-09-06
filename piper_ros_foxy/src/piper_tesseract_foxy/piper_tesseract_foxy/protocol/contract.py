@@ -21,6 +21,7 @@ JOINT_NAMES = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
 TIMING_POLICY = 'timed_stream_v1'
 LEGACY_TESSERACT_TIMING_POLICY = 'tesseract_stream_v3'
 COMMAND_RATE_HZ = 20.0
+SUPPORTED_COMMAND_RATES_HZ = (20.0, 100.0, 200.0)
 MOVEJ_NOMINAL_VELOCITY_RAD_S = (5.0, 5.0, 5.0, 5.0, 5.0, 3.0)
 MAX_PROTOCOL_VELOCITY_RAD_S = 3.0
 MAX_PROTOCOL_ACCELERATION_RAD_S2 = 5.0
@@ -466,10 +467,12 @@ def validate_request(payload, now_ns=None):
         raise ContractError('planning.timing_policy is unsupported')
     command_rate = float(planning.get('command_rate_hz', 0.0))
     if (
-            not math.isfinite(command_rate)
-            or abs(command_rate - COMMAND_RATE_HZ) > 1e-9):
+            command_rate not in SUPPORTED_COMMAND_RATES_HZ
+            or (timing_policy == LEGACY_TESSERACT_TIMING_POLICY
+                and command_rate != COMMAND_RATE_HZ)):
         raise ContractError(
-            'planning.command_rate_hz must be %.0f Hz' % COMMAND_RATE_HZ)
+            'planning.command_rate_hz must be 20, 100 or 200 Hz; '
+            'legacy timing requires 20 Hz')
     speed = float(planning.get('effective_speed_percent', 0.0))
     if not math.isfinite(speed) or speed < 1.0 or speed > 100.0:
         raise ContractError(
@@ -678,6 +681,14 @@ def validate_response(payload, request=None):
         raise ContractError(
             'selected viewpoint and trajectory segment counts differ from '
             'the capture-plus-home contract')
+    try:
+        declared_rate = float(
+            request['planning']['command_rate_hz'] if request is not None
+            else payload['trajectory_binding']['execution']['command_rate_hz'])
+    except (KeyError, TypeError, ValueError) as error:
+        raise ContractError('response command rate is missing or malformed') from error
+    if declared_rate not in SUPPORTED_COMMAND_RATES_HZ:
+        raise ContractError('response command rate is unsupported')
     for segment_index, segment in enumerate(segments):
         points = segment.get('points') if isinstance(segment, dict) else None
         if not isinstance(points, list) or len(points) < 2:
@@ -811,7 +822,7 @@ def validate_response(payload, request=None):
                     '%s derivatives must be zero transport placeholders'
                     % prefix)
             if point_index:
-                period = 1.0 / COMMAND_RATE_HZ
+                period = 1.0 / declared_rate
                 if when - float(points[point_index - 1].get(
                         'time_from_start_s', 0.0)) < period - 1e-6:
                     raise ContractError(

@@ -1,4 +1,7 @@
 Piper_arm/
+  Startup approval replay: piper_ros_foxy/src/piper_mobile_manipulation/test/test_approval_deadline.py covers bounded acceptance and command-free mission-engine simulation.
+  GUI stream-rate selector: piper_gui/stream_rate.py persists the atomic command/timer pair for the next mission; tests/gui/test_piper_gui_stream_rate.py verifies freeze and persistence.
+  Stream-rate experiment: docs/architecture/trajectory_stream_rates.md; command-free response replay at tools/diagnostics/benchmark_stream_transport.py. Normal default remains 20 Hz.
   Planning latency notes: docs/architecture/planning_latency_improvements.md documents frozen capability lookup slack, queued bridge diagnostics, replay evidence and rollback.
   Planning test addition: piper_ros_foxy/src/piper_tesseract_foxy/test/test_bounded_aim_search.py covers request-owned cuRobo cone directions, execution margin and unchanged Tesseract defaults.
 ├── ARCHITECTURE.md                  Concise subsystem ownership, dependency direction, runtime pipeline, compatibility and extension guide

@@ -1,5 +1,6 @@
 import copy
 import math
+from pathlib import Path
 import time
 
 import numpy as np
@@ -17,6 +18,46 @@ from piper_tesseract_foxy.contract import (
     validate_response,
 )
 from piper_tesseract_foxy.worker import Worker
+
+
+@pytest.mark.parametrize('backend', ['tesseract', 'curobo'])
+@pytest.mark.parametrize('rate', [20., 100., 200.])
+def test_generic_high_rate_roundtrip_and_rate_mismatch(backend, rate, monkeypatch):
+    # colcon runs from the ROS package; this ROS-free backend lives at repo root.
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[4]))
+    from motion_planning.curobo.adapter import normalize_trajectory
+    request = request_fixture()
+    request['planner_backend'] = backend
+    request['planning']['command_rate_hz'] = rate
+    request['planning']['timing_policy'] = 'timed_stream_v1'
+    if backend == 'curobo':
+        request['planning']['planner'] = 'MotionGen'
+        request['planning']['pipeline'] = 'CUROBO_V1'
+    request = attach_digest(request, 'request_sha256')
+    validate_request(request)
+    response = response_fixture(request)
+    response['backend'] = backend
+    for segment in response['segments']:
+        segment['points'] = normalize_trajectory(
+            [p['positions_rad'] for p in segment['points']], .5,
+            request['planning']['effective_speed_percent'], command_rate_hz=rate)
+    response['trajectory_sha256'] = trajectory_digest(
+        response['segments'], response['trajectory_binding'])
+    response = attach_digest(response, 'response_sha256')
+    validate_response(response, request)
+    if rate > 20:
+        wrong = dict(request, planning=dict(request['planning'], command_rate_hz=20.))
+        with pytest.raises(ContractError):
+            validate_response(response, wrong)
+
+
+def test_legacy_policy_does_not_claim_high_rate_qualification():
+    request = request_fixture()
+    request['planning']['command_rate_hz'] = 100.
+    request['planning']['timing_policy'] = 'tesseract_stream_v3'
+    request = attach_digest(request, 'request_sha256')
+    with pytest.raises(ContractError, match='legacy timing'):
+        validate_request(request)
 
 
 def request_fixture(plan_kind='MULTIVIEW_SCAN'):

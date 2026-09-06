@@ -1,4 +1,15 @@
 schema_version: 1
+stream_smoothness_followup_2026_09_06:
+  addressed: Feedback-boundary chatter now latches with independent samples and hysteresis; experimental native timing is uniformly scaled instead of segment-rounded.
+  tradeoff: Uniform scaling may lengthen trajectories; one real-GPU source path increased from 4.4 to 6.0 seconds while retaining every source vertex. It is not jerk-limited interpolation.
+  remaining: [supervised physical smoothness comparison, explain physical tracking lag on the earlier 0.3002-rad segment, measure remaining ROS scheduling jitter, full historical GPU replay requires archived request fixtures lost from tmp]
+  deferred: Native retime_trajectory reinterpolates optimized geometry; deploying it or spline interpolation requires fresh collision qualification. filter_robot_command only filters derivatives unused by PiPER MoveJ. C++ transport and alternative controller modes remain separate work.
+high_rate_approval_and_stream_debt_2026_09_06:
+  resolved: Bounded mission approval acceptance deadline prevents the new coordinator from abandoning a slow callback that later initiates motion; bounded wait accommodates observed dense validation.
+  remaining: Current 200 Hz physical stream achieved 132.3 Hz with 1714 late ticks. Full path validation remains expensive; this fix does not optimize it or physically qualify higher rates. Legacy confirmation clients lack the new request deadline until migrated.
+stream_smoothness_remaining_2026_09_06:
+  reference: docs/architecture/trajectory_stream_rates.md
+  remaining: Measure actual command intervals and feedback for controlled 20 versus 100 Hz trials before promotion; evaluate 200 Hz only after timing and tracking proof. Linear densification does not eliminate velocity discontinuities at source corners. Spline or MIT changes remain separate unimplemented work.
 early_capability_retention_followup_2026_09_06:
   addressed: The early prefilter now retains its own population-bound exclusions, which cannot be supplied by the downstream publisher because those rays never reach it. Later cycles carry exclusions rather than reapply and report cached rejections as a new capability step.
   remaining: Physical coverage and timing comparison; observed 55.43-degree versus historical 70-degree span is not a controlled regression attribution. Prior achieved poses retain five-degree lookup support, but that is not complete ray or trajectory feasibility proof.

@@ -1,6 +1,10 @@
 """Native GUI layout regressions."""
 
 from pathlib import Path
+import tkinter as tk
+from tkinter import ttk
+
+import pytest
 
 from piper_gui_native import fitted_gui_geometry, primary_monitor_geometry
 
@@ -56,3 +60,69 @@ def test_automatic_scan_tab_has_a_width_fitted_vertical_scroll_area():
     assert "width=event.width" in helper
     assert "build_vertical_scroll_area(" in build
     assert "self._build_automatic_scan(automatic_content)" in build
+
+
+@pytest.fixture
+def scroll_widgets():
+    from piper_gui.native_app import build_vertical_scroll_area
+    try:
+        root = tk.Tk()
+    except tk.TclError:
+        pytest.skip('Tk display required for widget event test')
+    root.geometry('400x180')
+    parent = ttk.Frame(root)
+    parent.pack(fill='both', expand=True)
+    content, canvas, scrollbar = build_vertical_scroll_area(parent)
+    combo = ttk.Combobox(content, values=('20 Hz', '100 Hz', '200 Hz'), state='readonly')
+    combo.set('20 Hz')
+    combo.pack()
+    text = tk.Text(content, height=2)
+    text.insert('end', '\n'.join(str(i) for i in range(50)))
+    text.pack()
+    ttk.Frame(content, height=700).pack()
+    root.update()
+    try:
+        yield root, canvas, combo, text
+    finally:
+        root.destroy()
+
+
+@pytest.mark.parametrize('sequence,options', [
+    ('<Button-5>', {}), ('<MouseWheel>', {'delta': -120}),
+    ('<MouseWheel>', {'delta': -1}),
+])
+def test_wheel_scrolls_page_without_changing_combo(scroll_widgets, sequence, options):
+    root, canvas, combo, _text = scroll_widgets
+    before = canvas.yview()
+    combo.event_generate(sequence, **options)
+    root.update()
+    assert canvas.yview()[0] > before[0]
+    assert combo.get() == '20 Hz'
+    combo.event_generate('<Button-4>')
+    root.update()
+    assert canvas.yview()[0] == pytest.approx(before[0])
+
+
+def test_nested_text_and_other_widgets_do_not_scroll_page(scroll_widgets):
+    root, canvas, _combo, text = scroll_widgets
+    before = canvas.yview()
+    text.event_generate('<Button-5>')
+    root.update()
+    assert canvas.yview() == before
+    assert text.yview()[0] > 0
+    outside = ttk.Button(root, text='Other tab')
+    outside.pack()
+    root.update()
+    before = canvas.yview()
+    outside.event_generate('<Button-5>')
+    root.update()
+    assert canvas.yview() == before
+
+
+def test_destroy_removes_private_wheel_bindings(scroll_widgets):
+    root, canvas, combo, _text = scroll_widgets
+    tag = combo.bindtags()[0]
+    assert tag.startswith('PiPERScroll:')
+    assert root.bind_class(tag, '<MouseWheel>')
+    canvas.destroy()
+    assert not root.bind_class(tag, '<MouseWheel>')

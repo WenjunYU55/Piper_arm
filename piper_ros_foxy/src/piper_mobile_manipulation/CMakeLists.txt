@@ -161,6 +161,7 @@ if(BUILD_TESTING)
   ament_add_pytest_test(
     test_ray_mission_diagnostics test/test_ray_mission_diagnostics.py)
   ament_add_pytest_test(test_configuration test/test_configuration.py)
+  ament_add_pytest_test(test_approval_deadline test/test_approval_deadline.py)
   ament_add_pytest_test(
     test_planner_backend test/test_planner_backend.py)
   ament_add_pytest_test(

@@ -1,4 +1,21 @@
 schema_version: 1
+stream_smoothness_repair_2026_09_06:
+  reference: docs/architecture/trajectory_stream_rates.md
+  behavior: Timed-stream following holds latch until three independent newer joint observations are inside 90 percent of the existing error limit; the original recovery deadline remains bounded. Experimental cuRobo 100/200 Hz uses one native-path time scale, retaining every vertex and speed ceiling. Standard 20 Hz remains the legacy timing comparison.
+  saved_selection: 100 Hz commands and 200 Hz executor timer for the next mission; no live restart or physical qualification performed.
+  validation: 1444 ordinary tests pass with 20 skips; nine self-contained real-GPU tests pass; both packages build and functional colcon suites pass. Mobile colcon lint retains 99 pre-existing flake8 and ten docstring findings. Ten historical GPU cases lack their tmp request fixtures after reboot.
+bounded_approval_startup_repair_2026_09_06:
+  incident: gui-sim-4697e21310804c61a5c7ceed05ba56d5 timed out on the old 10-second approval wait but the callback later started motion, conflicting with terminal recovery. NEEDS_OPERATOR and safe_shutdown false.
+  correction: 60-second client wait with 55-second request acceptance deadline checked before and after validation; no collision checks removed.
+  reference: docs/architecture/trajectory_stream_rates.md
+gui_mouse_wheel_2026_09_06:
+  behavior: Automatic Scan supports Linux wheel buttons and MouseWheel events over the page and controls; scrolling cannot change combo spinbox or slider values. Nested text/list/tree controls keep their native scrolling.
+gui_stream_rate_2026_09_06:
+  behavior: Automatic Scan offers 20 Hz standard and 100/200 Hz experimental next-mission transport selections; Apply atomically saves both command and executor timer rates. Active missions disable selection and Apply.
+  reference: docs/architecture/trajectory_stream_rates.md
+high_rate_transport_experiment_2026_09_06:
+  reference: docs/architecture/trajectory_stream_rates.md
+  status: Optional 100 and 200 Hz transport implemented; normal 20 Hz unchanged; physical smoothness and higher-rate qualification pending.
 early_capability_retention_2026_09_06:
   behavior: Early capability exclusions are retained in the prefilter under the canonical population identity and pruned before later history and NBV work; only new exclusions produce capability_cull events. Bootstrap-to-qualified replacement or new mission/session clears retention.
   invariant: No ranking policy or safety gate changes; remaining-ray exact-input cache and downstream current-state admission remain.

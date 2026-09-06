@@ -35,6 +35,110 @@ from motion_planning.curobo.worker import (
 ROOT = Path(__file__).resolve().parents[2]
 
 
+@pytest.mark.parametrize('rate', [20.0, 100.0, 200.0])
+def test_transport_rate_preserves_baseline_duration_vertices_and_recovery(rate):
+    """Higher rate subdivides the approved geometry, not its movement time."""
+    import numpy as np
+    from piper_mobile_manipulation.execution.validation import validate_timed_execution_path
+
+    source = [[0.0] * 6, [0.1, 0, 0, 0, 0, 0], [0.1, 0.1, 0, 0, 0, 0]]
+    baseline = normalize_trajectory(source, 0.04, 5)
+    points = normalize_trajectory(source, 0.04, 5, command_rate_hz=rate)
+    factor = int(rate / 20)
+    assert len(points) == (len(baseline) - 1) * factor + 1
+    assert points[-1]['time_from_start_s'] == baseline[-1]['time_from_start_s']
+    assert [p['positions_rad'] for p in points[::factor]] == [
+        p['positions_rad'] for p in baseline]
+    q = np.asarray([p['positions_rad'] for p in points])
+    times = np.asarray([p['time_from_start_s'] for p in points])
+    assert np.diff(times) == pytest.approx(1.0 / rate)
+    assert np.max(np.abs(np.diff(q, axis=0))) <= 0.25 / rate + 1e-10
+    validate_timed_execution_path(
+        q, np.zeros_like(q), np.zeros_like(q), times, rate,
+        velocity_limits_rad_s=[1.] * 6, acceleration_limits_rad_s2=[1.] * 6,
+        speed_percent=5)
+    joined, boundary = prepend_bootstrap_recovery(
+        points, [[-0.01, 0, 0, 0, 0, 0], source[0]], 5,
+        command_rate_hz=rate)
+    assert joined[boundary]['positions_rad'] == source[0]
+    assert np.diff([p['time_from_start_s'] for p in joined]) == pytest.approx(1 / rate)
+
+
+@pytest.mark.parametrize('rate', [0, 50, 201, float('nan'), float('inf')])
+def test_transport_rate_rejects_unsupported_values(rate):
+    with pytest.raises(CuroboContractError, match='command rate'):
+        normalize_trajectory([[0.] * 6, [0.1] * 6], .04, 5, command_rate_hz=rate)
+
+
+@pytest.mark.parametrize('rate', [100., 200.])
+def test_uniform_time_scale_preserves_native_speed_profile_and_all_vertices(rate):
+    import numpy as np
+    increments = np.array([.011, .013, .015, .013, .011])
+    source = np.zeros((6, 6))
+    source[1:, 0] = np.cumsum(increments)
+    old = normalize_trajectory(source.tolist(), .05, 5, command_rate_hz=rate)
+    new = normalize_trajectory(source.tolist(), .05, 5, command_rate_hz=rate,
+                               uniform_time_scale=True)
+    q = np.array([p['positions_rad'] for p in new])
+    stride = (len(q) - 1) // (len(source) - 1)
+    assert q[::stride] == pytest.approx(source)
+    assert np.diff([p['time_from_start_s'] for p in new]) == pytest.approx(1 / rate)
+    # One scale preserves acceleration/deceleration instead of creating
+    # speed dips at independently rounded .05 -> .10 second boundaries.
+    speeds = increments / (stride / rate)
+    assert speeds / increments == pytest.approx([speeds[0] / increments[0]] * 5)
+    old_q = np.array([p['positions_rad'] for p in old])
+    old_velocity = np.diff(old_q[:, 0]) * rate
+    new_velocity = np.diff(q[:, 0]) * rate
+    assert np.max(np.abs(np.diff(new_velocity))) < np.max(np.abs(np.diff(old_velocity)))
+    assert np.max(np.abs(new_velocity)) <= .25 + 1e-10
+    assert new[-1]['time_from_start_s'] >= old[-1]['time_from_start_s']
+    assert np.all(q[:, 1:] == 0.)
+
+
+def test_uniform_time_scale_retains_detours_and_lower_wrist_speed():
+    source = [[0.] * 6, [.02, 0, 0, 0, 0, .04], [.02, .01, 0, 0, 0, .04]]
+    points = normalize_trajectory(source, .05, 5, command_rate_hz=100.,
+                                   uniform_time_scale=True)
+    stride = (len(points) - 1) // 2
+    assert [p['positions_rad'] for p in points[::stride]] == source
+    assert all(p['positions_rad'][1] == 0 for p in points[:stride])
+    assert max(abs(b['positions_rad'][5] - a['positions_rad'][5]) * 100
+               for a, b in zip(points, points[1:])) <= .15 + 1e-10
+
+
+def test_uniform_time_scale_point_bound_fails_before_allocation(monkeypatch):
+    import motion_planning.curobo.adapter as adapter
+    monkeypatch.setattr(adapter, 'MAXIMUM_SCHEDULED_POINTS', 30)
+    with pytest.raises(CuroboContractError, match='point limit'):
+        normalize_trajectory([[0.] * 6, [.1] * 6, [.101] * 6], .05, 5,
+                             command_rate_hz=100., uniform_time_scale=True)
+
+
+def test_offline_transport_tool_reports_density_and_preserves_source(tmp_path):
+    import csv
+    import subprocess
+    import sys
+
+    source = tmp_path / 'response.json'
+    points = normalize_trajectory([[0.] * 6, [.1] * 6], .05, 5)
+    payload = dict(status='success', trajectory_binding=dict(
+        execution=dict(command_rate_hz=20., effective_speed_percent=5.)),
+        segments=[dict(points=points)])
+    source.write_text(json.dumps(payload))
+    original = source.read_bytes()
+    output = tmp_path / 'report'
+    command = [sys.executable, str(ROOT / 'tools/diagnostics/benchmark_stream_transport.py'),
+               str(source), '--output', str(output)]
+    subprocess.run(command, check=True, capture_output=True)
+    with (output / 'transport.csv').open() as stream:
+        rows = list(csv.DictReader(stream))
+    assert len(rows) == 3
+    assert {row['duration_sec'] for row in rows} == {str(points[-1]['time_from_start_s'])}
+    assert source.read_bytes() == original
+    assert subprocess.run(command, capture_output=True).returncode != 0
+
+
 def request_fixture():
     request = {
         'schema_version': 5,

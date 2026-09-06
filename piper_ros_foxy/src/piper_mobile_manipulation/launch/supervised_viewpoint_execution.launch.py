@@ -20,6 +20,7 @@ from launch.substitutions import (
 )
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
+from piper_mobile_manipulation.configuration import load_stream_rates
 
 
 def cfg(name):
@@ -139,6 +140,7 @@ def generate_launch_description():
     capture_params = cfg('scan_capture_params.yaml')
     workflow_params = cfg('supervised_cube_workflow_params.yaml')
     execution_params = cfg('scan_execution_params.yaml')
+    frozen_stream_rates = load_stream_rates(execution_params)
     frozen_final_aim_tolerance_deg = final_aim_tolerance(execution_params)
     selected_home = home_override()
     bridge = Node(
@@ -153,6 +155,8 @@ def generate_launch_description():
             {
                 'spool_root': planner_spool,
                 'planner_backend': planner_backend,
+                'trajectory_command_rate_hz':
+                    frozen_stream_rates['trajectory_command_rate_hz'],
                 'hand_eye_calibration_path': os.environ.get(
                     'PIPER_HAND_EYE_CALIBRATION', os.path.join(
                         root,
@@ -211,6 +215,7 @@ def generate_launch_description():
         name='scan_viewpoint_executor',
         output='screen',
         parameters=[execution_params, {
+            **frozen_stream_rates,
             'final_capture_aim_tolerance_deg': frozen_final_aim_tolerance_deg,
             'enable_real_arm_motion': ParameterValue(
                 LaunchConfiguration('enable_real_arm_motion'), value_type=bool),

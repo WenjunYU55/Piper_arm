@@ -6,6 +6,33 @@ from types import SimpleNamespace
 
 import pytest
 import yaml
+from piper_mobile_manipulation.configuration import load_stream_rates, validate_stream_rates
+
+
+@pytest.mark.parametrize('rate,tick', [(20, 200), (100, 200), (200, 400)])
+def test_frozen_stream_rates(rate, tick):
+    values = dict(trajectory_command_rate_hz=rate, executor_tick_rate_hz=tick)
+    assert validate_stream_rates(values) == values
+
+
+@pytest.mark.parametrize('rate,tick', [(50, 200), (200, 200), (float('nan'), 400)])
+def test_invalid_stream_rates(rate, tick):
+    with pytest.raises(ValueError):
+        validate_stream_rates(dict(trajectory_command_rate_hz=rate, executor_tick_rate_hz=tick))
+
+
+def test_launch_uses_authoritative_frozen_stream_rates():
+    root = Path(__file__).resolve().parents[1]
+    rates = load_stream_rates(root / 'config/scan_execution_params.yaml')
+    # GUI edits are deliberate operator settings, not factory defaults.
+    deployed = yaml.safe_load((root / 'config/scan_execution_params.yaml').read_text())['/**']['ros__parameters']
+    assert rates == {key: deployed[key] for key in rates}
+    assert executor_parameter_defaults()['trajectory_command_rate_hz'] == 20.
+    assert executor_parameter_defaults()['executor_tick_rate_hz'] == 200.
+    source = (root / 'launch/supervised_viewpoint_execution.launch.py').read_text()
+    assert "frozen_stream_rates = load_stream_rates(execution_params)" in source
+    assert "frozen_stream_rates['trajectory_command_rate_hz']" in source
+    assert '**frozen_stream_rates' in source
 
 from piper_mobile_manipulation.configuration import (
     CaptureConfig,

@@ -8,6 +8,9 @@ from pathlib import Path
 import signal
 import threading
 import time
+from piper_mobile_manipulation.execution.authorization import (
+    bounded_mission_confirmation, PLAN_APPROVAL_SERVICE_TIMEOUT_SEC,
+)
 
 import numpy as np
 import rclpy
@@ -1775,9 +1778,10 @@ class TargetScanMissionNode(Node):
             request = ApproveScanExecution.Request()
             request.plan_id = str(plan.plan_id)
             request.trajectory_sha256 = str(plan.trajectory_sha256)
-            request.confirmation = 'MISSION_POLICY:' + session.mission_sha256
+            request.confirmation = bounded_mission_confirmation(
+                session.mission_sha256, time.time_ns())
             result = self.call_service(
-                self.approve_client, request, 10.0,
+                self.approve_client, request, PLAN_APPROVAL_SERVICE_TIMEOUT_SEC,
                 'mission plan approval service')
             if result.accepted:
                 break

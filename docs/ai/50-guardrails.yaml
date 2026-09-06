@@ -1,4 +1,21 @@
 schema_version: 1
+stream_smoothness_guardrail_2026_09_06:
+  invariants: [unchanged 0.30-rad entry and one-second deadline defaults, recovery requires margin and three independently newer observations, no timeout reset from boundary chatter, no stale sample counting, no position speed step or collision relaxation, no skipping or bursting, unchanged startup direct home disable and shutdown, experimental uniform native timing can only lengthen legacy schedule, zero public derivative placeholders]
+  must_retest_if_changed: [test_scan_motion.py, complete mobile Tesseract cuRobo and GUI ordinary suites, same-native-path GPU and blocked-world tests, package build and colcon test, separately authorized physical timing tracking cancel and home]
+  qualification: Saved 100 Hz choice is an experiment. Native derivative diagnostics and no-command GPU tests cannot establish physical smoothness.
+approval_deadline_guardrail_2026_09_06:
+  invariants: [client future cancellation is not server cancellation, expired bounded approval cannot start runtime refresh, all collision samples retained, no safety or authority bypass, legacy compatibility explicitly separate]
+  must_retest_if_changed: [test_approval_deadline.py, full mission executor and mobile tests, full Tesseract tests, ordinary cuRobo and GUI tests, affected package build]
+gui_mouse_wheel_guardrail_2026_09_06:
+  invariants: [layout only, no global wheel binding, no wheel-induced setting changes, no robot or mission calls, preserve native nested scrolling, destroy private bindings with viewport]
+  must_retest_if_changed: [tests/gui/test_piper_gui_layout.py with a Tk display, complete GUI tests]
+gui_stream_rate_guardrail_2026_09_06:
+  invariant: Selection changes only next-mission persisted rates; high-rate choices remain visibly experimental and grant no qualification or motor authority.
+  must_retest_if_changed: [GUI stream-rate and existing GUI suite, configuration and launch freeze tests]
+experimental_stream_rate_guardrail_2026_09_06:
+  reference: docs/architecture/trajectory_stream_rates.md
+  invariant: Existing 20 Hz and collision-model physical evidence does not qualify experimental 100 or 200 Hz execution; do not promote defaults or claim smoother hardware from offline tests.
+  must_retest_if_changed: [complete mobile and Tesseract suites, cuRobo adapter and real GPU suites, rate hash and legacy rejection, recovery prefix evidence, detour preservation, no-burst following and cancellation tests, package builds, separately authorized physical tracking hold cancel and shutdown]
 early_capability_retention_guardrail_2026_09_06:
   invariants: [canonical identity bounds retention, captured count never resets exclusions, no new permanent rejection sources, no NBV scoring change, no downsteam freshness or exact safety bypass, approximate capability rejection remains not proof of infeasibility]
   retest: [population carry and reset tests, diagnostic event regression, complete mobile Tesseract GUI and cuRobo ordinary tests, affected package build]

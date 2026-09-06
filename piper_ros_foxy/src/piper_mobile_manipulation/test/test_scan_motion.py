@@ -2559,7 +2559,8 @@ def test_executor_sends_each_sdk_movej_endpoint_only_once():
     assert fake.waypoint_last_progress_at == pytest.approx(1.0)
 
 
-def test_executor_streams_due_tesseract_samples_without_waiting_at_each_one():
+@pytest.mark.parametrize('rate', [20., 100., 200.])
+def test_executor_streams_due_tesseract_samples_without_waiting_at_each_one(rate):
     published = []
     first = np.full(6, 0.01)
     second = np.full(6, 0.02)
@@ -2572,7 +2573,7 @@ def test_executor_streams_due_tesseract_samples_without_waiting_at_each_one():
         command_target=None,
         path_index=0,
         current_path=[first, second],
-        current_path_times=[0.05, 0.10],
+        current_path_times=[1.0 / rate, 2.0 / rate],
         current_waypoint_error=0.0,
         max_waypoint_error=0.0,
         dropped_command_samples=0,
@@ -2597,21 +2598,23 @@ def test_executor_streams_due_tesseract_samples_without_waiting_at_each_one():
         abort_or_finish_captures=lambda reason: pytest.fail(reason),
     )
 
-    ScanViewpointExecutorNode.streaming_moving_tick(fake, 0.051)
+    first_tick = 1.0 / rate + 0.001
+    final_tick = 2.0 / rate + 0.001
+    ScanViewpointExecutorNode.streaming_moving_tick(fake, first_tick)
     assert len(published) == 1
     assert fake.path_index == 1
 
     # The first point remains 0.20 rad away, but is below the generous path-
     # following guard; the second scheduled point is sent without a stop.
-    ScanViewpointExecutorNode.streaming_moving_tick(fake, 0.101)
+    ScanViewpointExecutorNode.streaming_moving_tick(fake, final_tick)
     assert len(published) == 2
     np.testing.assert_allclose(published[-1], second)
     assert fake.path_index == 2
-    assert fake.waypoint_started_at == pytest.approx(0.101)
+    assert fake.waypoint_started_at == pytest.approx(final_tick)
     assert fake.stream_schedule_completion_logged
-    assert fake.last_stream_planned_duration_sec == pytest.approx(0.10)
-    assert fake.last_stream_actual_duration_sec == pytest.approx(0.101)
-    assert fake.last_stream_achieved_rate_hz == pytest.approx(1.0 / 0.101)
+    assert fake.last_stream_planned_duration_sec == pytest.approx(2.0 / rate)
+    assert fake.last_stream_actual_duration_sec == pytest.approx(final_tick)
+    assert fake.last_stream_achieved_rate_hz == pytest.approx(1.0 / final_tick)
 
 
 def test_executor_stretches_schedule_without_bursting_or_skipping_path():
@@ -2739,10 +2742,11 @@ def test_executor_rate_limits_repeated_stream_lateness_warnings():
 
 
 def test_executor_holds_stream_until_feedback_catches_up():
+    from piper_mobile_manipulation.infrastructure.telemetry_store import TelemetryStore
     published = []
     aborts = []
     target = np.full(6, 0.2)
-    errors = iter((0.31, 0.31, 0.25))
+    errors = iter((0.31, 0.31, 0.25, 0.25, 0.25, 0.25))
     parameters = {
         'trajectory_following_error_grace_sec': 1.0,
         'trajectory_following_error_rad': 0.30,
@@ -2756,6 +2760,7 @@ def test_executor_holds_stream_until_feedback_catches_up():
         stream_last_tick_at=1.0,
         stream_schedule_paused_sec=0.0,
         stream_following_hold_started_at=None,
+        telemetry_store=TelemetryStore(),
         command_target=None,
         path_index=0,
         current_path=[target],
@@ -2792,9 +2797,67 @@ def test_executor_holds_stream_until_feedback_catches_up():
     assert fake.stream_schedule_paused_sec == pytest.approx(0.10)
 
     ScanViewpointExecutorNode.streaming_moving_tick(fake, 1.15)
+    assert published == []  # No fresh feedback cannot release a hold.
+    for stamp in (1.20, 1.25, 1.30):
+        fake.telemetry_store.update_joints(
+            SimpleNamespace(position=[0.] * 6), received_at=stamp,
+            source_stamp_ns=int(stamp * 1e9))
+        # Recovered samples may be read twice on the final publish tick.
+        fake.max_joint_error = lambda _target: 0.25
+        ScanViewpointExecutorNode.streaming_moving_tick(fake, stamp)
     assert len(published) == 1
     assert fake.path_index == 1
     assert fake.stream_following_hold_started_at is None
+
+
+@pytest.mark.parametrize('error,count,elapsed,expected', [
+    (0.3002, 0, 0.1, 'hold_following'),
+    (0.2998, 30, 0.1, 'hold_following'),
+    (0.27, 2, 0.1, 'hold_following'),
+    (0.27, 3, 0.1, 'publish'),
+    (0.25, 3, 1.001, 'abort_following'),
+    (float('nan'), 3, 0.1, 'abort_following'),
+])
+def test_following_recovery_requires_margin_samples_and_original_deadline(
+        error, count, elapsed, expected):
+    from piper_mobile_manipulation.execution.trajectory import TrajectoryRunner
+    assert TrajectoryRunner.following_recovery_decision(
+        error, .30, elapsed, 1.0, count).action.value == expected
+
+
+def test_executor_following_hold_counts_new_feedback_not_timer_ticks():
+    from piper_mobile_manipulation.infrastructure.telemetry_store import TelemetryStore
+    store = TelemetryStore()
+    published, aborts = [], []
+    fake = SimpleNamespace(
+        motion_started_at=0., stream_wall_started_at=0., stream_last_tick_at=1.,
+        stream_schedule_paused_sec=0., stream_following_hold_started_at=1.,
+        stream_following_recovery_samples=0, stream_following_recovery_stamp=None,
+        command_target=None, path_index=0, current_path=[np.zeros(6)],
+        current_path_times=[1.], last_motion_status_at=1., telemetry_store=store,
+        max_joint_error=lambda target: .25, publish_status=lambda: None,
+        publish_joint_command=published.append, abort_or_finish_captures=aborts.append,
+        get_parameter=lambda name: SimpleNamespace(value={
+            'trajectory_following_error_rad': .30,
+            'trajectory_following_error_grace_sec': 1.,
+        }[name]))
+    for i in range(20):
+        # A duplicate source stamp remains one independent sample even if
+        # callbacks continue arriving at the executor's faster timer rate.
+        store.update_joints(SimpleNamespace(position=[0.] * 6),
+                            received_at=1.01 + i * .005, source_stamp_ns=10)
+        ScanViewpointExecutorNode.streaming_moving_tick(fake, 1.01 + i * .005)
+    assert fake.stream_following_recovery_samples == 1
+    assert not published and not aborts
+    fake.max_joint_error = lambda target: .2998
+    for i in range(20):
+        store.update_joints(SimpleNamespace(position=[0.] * 6),
+                            received_at=1.2 + i * .005, source_stamp_ns=20 + i)
+        ScanViewpointExecutorNode.streaming_moving_tick(fake, 1.2 + i * .005)
+    assert fake.stream_following_recovery_samples == 0
+    assert fake.stream_following_hold_started_at == 1.
+    ScanViewpointExecutorNode.streaming_moving_tick(fake, 2.001)
+    assert not published and len(aborts) == 1
 
 
 def test_executor_aborts_movej_immediately_when_joint_delivery_is_stale():

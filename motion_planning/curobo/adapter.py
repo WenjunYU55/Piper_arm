@@ -11,6 +11,7 @@ SUPPORTED_PLAN_KINDS = (
 UNSUPPORTED_PLAN_KINDS = (
     'OCCLUSION_PROBE', 'OCCLUDER_PICK_PLACE', 'OCCLUDER_PUSH')
 COMMAND_RATE_HZ = 20.0
+SUPPORTED_COMMAND_RATES_HZ = (20.0, 100.0, 200.0)
 MAXIMUM_JOINT_STEP_RAD = 0.05
 MOVEJ_NOMINAL_VELOCITY_RAD_S = (5.0, 5.0, 5.0, 5.0, 5.0, 3.0)
 MAXIMUM_SCHEDULED_POINTS = 60000
@@ -444,16 +445,23 @@ def position_limit_reentry_path(
 
 
 def normalize_trajectory(
-        positions, native_dt_sec, speed_percent, position_limits=None):
+        positions, native_dt_sec, speed_percent, position_limits=None,
+        command_rate_hz=COMMAND_RATE_HZ, uniform_time_scale=False):
     """Preserve native vertices in a fixed-rate PiPER MoveJ schedule.
 
     cuRobo supplies collision-checked path geometry at ``native_dt_sec``.
     PiPER's JointCtrl boundary accepts positions rather than trajectory time,
     velocity, or acceleration fields, so each native segment is sampled at the
-    common 20 Hz transport rate.  Whole ticks are allocated independently per
+    selected transport rate. Whole baseline 20 Hz ticks are allocated per
     segment from the native duration, the speed-scaled MoveJ velocity model,
     and the hard adjacent-command step ceiling.  This retains every native
-    vertex and never shortcuts a collision-checked corner.
+    vertex and never shortcuts a collision-checked corner. Higher rates only
+    subdivide those ticks: they never shorten the baseline movement duration.
+
+    Experimental transport can use one common tick count for all native
+    segments. This preserves the native relative timing instead of rounding
+    each segment's speed independently. Geometry and speed ceilings are
+    identical, and this can only lengthen the legacy schedule.
     """
     rows = [finite_vector(row, 6, 'trajectory position') for row in positions]
     if len(rows) < 2:
@@ -461,34 +469,44 @@ def normalize_trajectory(
             'native trajectory must contain at least two positions')
     native_dt = float(native_dt_sec)
     speed = float(speed_percent)
+    rate = float(command_rate_hz)
+    if rate not in SUPPORTED_COMMAND_RATES_HZ:
+        raise CuroboContractError('command rate must be 20, 100 or 200 Hz')
+    subdivisions = int(rate / COMMAND_RATE_HZ)
     if not math.isfinite(native_dt) or native_dt <= 0.0:
         raise CuroboContractError('native trajectory dt is invalid')
     if not math.isfinite(speed) or speed < 1.0 or speed > 100.0:
         raise CuroboContractError('execution speed must be within 1..100')
     if position_limits is not None:
         validate_trajectory_position_limits(rows, position_limits)
-    period = 1.0 / COMMAND_RATE_HZ
+    baseline_period = 1.0 / COMMAND_RATE_HZ
+    period = 1.0 / rate
     scaled_velocity = tuple(
         value * speed / 100.0 for value in MOVEJ_NOMINAL_VELOCITY_RAD_S)
-    result = [rows[0]]
+    segment_ticks = []
     for left, right in zip(rows, rows[1:]):
         deltas = tuple(abs(b - a) for a, b in zip(left, right))
         ticks_for_native_time = int(math.ceil(
-            native_dt / period - 1e-12))
+            native_dt / baseline_period - 1e-12))
         ticks_for_velocity = int(math.ceil(max(
-            delta / (limit * period)
+            delta / (limit * baseline_period)
             for delta, limit in zip(deltas, scaled_velocity)) - 1e-12))
         ticks_for_step = int(math.ceil(
             max(deltas) / MAXIMUM_JOINT_STEP_RAD - 1e-12))
-        ticks = max(
+        ticks = subdivisions * max(
             1,
             ticks_for_native_time,
             ticks_for_velocity,
             ticks_for_step,
         )
-        if len(result) + ticks > MAXIMUM_SCHEDULED_POINTS:
-            raise CuroboContractError(
-                'scheduled cuRobo path exceeds point limit')
+        segment_ticks.append(ticks)
+    if uniform_time_scale:
+        segment_ticks = [max(segment_ticks)] * len(segment_ticks)
+    if 1 + sum(segment_ticks) > MAXIMUM_SCHEDULED_POINTS:
+        raise CuroboContractError(
+            'scheduled cuRobo path exceeds point limit')
+    result = [rows[0]]
+    for left, right, ticks in zip(rows, rows[1:], segment_ticks):
         for tick in range(1, ticks + 1):
             fraction = float(tick) / float(ticks)
             point = tuple(
@@ -507,11 +525,14 @@ def normalize_trajectory(
     return scheduled
 
 
-def _prepend_start_transition(points, transition_positions, speed_percent):
+def _prepend_start_transition(
+        points, transition_positions, speed_percent,
+        command_rate_hz=COMMAND_RATE_HZ):
     """Prepend a validated transition without altering native vertices."""
     planned = [dict(point) for point in points]
     recovery = normalize_trajectory(
-        transition_positions, 1.0 / COMMAND_RATE_HZ, speed_percent)
+        transition_positions, 1.0 / COMMAND_RATE_HZ, speed_percent,
+        command_rate_hz=command_rate_hz)
     if any(
             abs(float(left) - float(right)) > 1e-6
             for left, right in zip(
@@ -525,16 +546,20 @@ def _prepend_start_transition(points, transition_positions, speed_percent):
     return recovery + planned[1:], len(recovery) - 1
 
 
-def prepend_bootstrap_recovery(points, recovery_positions, speed_percent):
+def prepend_bootstrap_recovery(
+        points, recovery_positions, speed_percent,
+        command_rate_hz=COMMAND_RATE_HZ):
     """Prepend a bounded folded-start escape to the native path."""
     return _prepend_start_transition(
-        points, recovery_positions, speed_percent)
+        points, recovery_positions, speed_percent, command_rate_hz)
 
 
-def prepend_position_limit_reentry(points, reentry_positions, speed_percent):
+def prepend_position_limit_reentry(
+        points, reentry_positions, speed_percent,
+        command_rate_hz=COMMAND_RATE_HZ):
     """Prepend a collision-qualified internal-limit re-entry path."""
     return _prepend_start_transition(
-        points, reentry_positions, speed_percent)
+        points, reentry_positions, speed_percent, command_rate_hz)
 
 
 def trajectory_segment(points, is_return_home=False, bootstrap_recovery=None):

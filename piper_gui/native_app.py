@@ -54,6 +54,9 @@ from piper_gui.scan_policy import (
     read_scan_settings,
     write_scan_settings,
 )
+from piper_gui.stream_rate import (
+    STREAM_RATE_LABELS, read_stream_rate, write_stream_rate,
+)
 from piper_gui.scan_aim import (
     DEFAULT_AIM_TOLERANCE_DEG,
     default_scan_aim_path,
@@ -137,6 +140,51 @@ def build_vertical_scroll_area(
 
     content.bind("<Configure>", update_scroll_region)
     canvas.bind("<Configure>", fit_content_width)
+
+    # A private bindtag runs before widget class bindings: wheeling over a
+    # combo, scale or spinbox scrolls the page instead of changing a setting.
+    # Unlike bind_all, this cannot steal scrolling from another tab/window.
+    wheel_tag = 'PiPERScroll:' + str(canvas)
+
+    def wheel(event):
+        if event.widget.winfo_class() in ('Text', 'Listbox', 'Treeview'):
+            return None  # Keep native scrolling in nested scrollable content.
+        number = getattr(event, 'num', None)
+        delta = getattr(event, 'delta', 0)
+        if number == 4:
+            units = -3
+        elif number == 5:
+            units = 3
+        elif delta:
+            units = -3 * (int(delta / 120) if abs(delta) >= 120
+                          else (1 if delta > 0 else -1))
+        else:
+            return None
+        if canvas.yview() != (0.0, 1.0):
+            canvas.yview_scroll(units, 'units')
+        return 'break'
+
+    sequences = ('<MouseWheel>', '<Button-4>', '<Button-5>')
+    for sequence in sequences:
+        canvas.bind_class(wheel_tag, sequence, wheel)
+
+    def install_wheel_tags(_event=None):
+        def visit(widget):
+            tags = widget.bindtags()
+            if wheel_tag not in tags:
+                widget.bindtags((wheel_tag,) + tags)
+            for child in widget.winfo_children():
+                visit(child)
+        visit(canvas)
+        visit(scrollbar)
+
+    def remove_wheel_bindings(event):
+        if event.widget == canvas:
+            for sequence in sequences:
+                canvas.unbind_class(wheel_tag, sequence)
+
+    content.bind('<Map>', install_wheel_tags, add='+')
+    canvas.bind('<Destroy>', remove_wheel_bindings, add='+')
     return content, canvas, scrollbar
 
 
@@ -351,6 +399,15 @@ class PiperGuiApp:
         self.scan_aim_tolerance_var = tk.DoubleVar(
             value=saved_aim_tolerance)
         self.scan_aim_status_var = tk.StringVar(value=aim_status)
+        try:
+            saved_stream = read_stream_rate(self.scan_aim_path)
+            stream_label = STREAM_RATE_LABELS[saved_stream.trajectory_command_rate_hz]
+            stream_status = 'Saved for next mission: %s' % stream_label
+        except (OSError, ValueError) as exc:
+            stream_label = ''
+            stream_status = 'Stream rate configuration unavailable: %s' % exc
+        self.stream_rate_var = tk.StringVar(value=stream_label)
+        self.stream_rate_status_var = tk.StringVar(value=stream_status)
         self.collision_environment_path = default_collision_environment_path(
             PROJECT_ROOT)
         try:
@@ -831,6 +888,28 @@ class PiperGuiApp:
                 '1°-90° tolerance.'),
             foreground='#52606d', wraplength=760, justify='left').grid(
                 row=2, column=0, columnspan=4, sticky='w', pady=(4, 0))
+
+        stream = ttk.LabelFrame(
+            aim, text='Trajectory stream rate for next mission', padding=10)
+        stream.grid(row=3, column=0, columnspan=4, sticky='ew', pady=(12, 0))
+        self.stream_rate_combo = ttk.Combobox(
+            stream, textvariable=self.stream_rate_var,
+            values=tuple(STREAM_RATE_LABELS.values()), state='readonly', width=28)
+        self.stream_rate_combo.grid(row=0, column=0, sticky='w')
+        self.stream_rate_apply_button = ttk.Button(
+            stream, text='Apply for Next Mission', command=self.apply_stream_rate)
+        self.stream_rate_apply_button.grid(row=0, column=1, padx=(8, 0))
+        ttk.Label(
+            stream, textvariable=self.stream_rate_status_var,
+            foreground='#52606d', wraplength=700, justify='left').grid(
+                row=1, column=0, columnspan=2, sticky='w', pady=(8, 0))
+        ttk.Label(
+            stream, text=(
+                '100/200 Hz are experimental and not physically qualified. '
+                'Try 100 Hz first under supervision. The executor timer adjusts '
+                'automatically. This does not enable motion or change an active mission.'),
+            foreground='#9a5b13', wraplength=700, justify='left').grid(
+                row=2, column=0, columnspan=2, sticky='w', pady=(4, 0))
 
         environment = ttk.LabelFrame(
             parent, text='Collision environment for next mission', padding=12)
@@ -1812,6 +1891,26 @@ class PiperGuiApp:
             'Selected planner for next mission: %s'
             % BACKEND_LABELS[backend])
 
+    def apply_stream_rate(self):
+        if not self.mission_view_model.state.can_start:
+            self.stream_rate_status_var.set(
+                'Stream rate was not changed: wait for the active mission to finish.')
+            return
+        selected = {label: rate for rate, label in STREAM_RATE_LABELS.items()}.get(
+            self.stream_rate_var.get())
+        if selected is None:
+            self.stream_rate_status_var.set('Stream rate was not changed: invalid selection.')
+            return
+        try:
+            settings = write_stream_rate(self.scan_aim_path, selected)
+        except (OSError, ValueError) as exc:
+            self.stream_rate_status_var.set('Stream rate was not changed: %s' % exc)
+            return
+        self.stream_rate_status_var.set(
+            'Saved for next mission: %s; executor timer %.0f Hz'
+            % (STREAM_RATE_LABELS[settings.trajectory_command_rate_hz],
+               settings.executor_tick_rate_hz))
+
     def apply_scan_aim(self):
         if not self.mission_view_model.state.can_start:
             self.scan_aim_status_var.set(
@@ -1884,6 +1983,10 @@ class PiperGuiApp:
         self.scan_aim_scale.configure(
             state='normal' if state.can_start else 'disabled')
         self.scan_aim_apply_button.configure(
+            state='normal' if state.can_start else 'disabled')
+        self.stream_rate_combo.configure(
+            state='readonly' if state.can_start else 'disabled')
+        self.stream_rate_apply_button.configure(
             state='normal' if state.can_start else 'disabled')
         self.floor_profile_combo.configure(
             state='readonly' if state.can_start else 'disabled')

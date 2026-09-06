@@ -1,6 +1,7 @@
 """Pure monitoring decisions for one already-authorized trajectory."""
 
 import math
+from bisect import bisect_right
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, Tuple
@@ -47,6 +48,25 @@ class TrajectoryDecision:
 class TrajectoryRunner:
     """Own pure schedule and feedback decisions; publish no commands."""
 
+    # Resume inside the entry corridor, with independent feedback evidence.
+    # These only tighten recovery; the configured entry limit is unchanged.
+    FOLLOWING_RESUME_FRACTION = 0.9
+    FOLLOWING_RESUME_SAMPLES = 3
+
+    @staticmethod
+    def following_recovery_decision(
+            error_rad, limit_rad, hold_elapsed_sec, timeout_sec,
+            consecutive_samples):
+        """Keep a latched hold from chattering or restarting its deadline."""
+        if (not math.isfinite(float(error_rad))
+                or float(hold_elapsed_sec) > float(timeout_sec)):
+            return TrajectoryDecision(TrajectoryAction.FAILED_FOLLOWING)
+        if (float(error_rad) <= float(limit_rad)
+                * TrajectoryRunner.FOLLOWING_RESUME_FRACTION
+                and consecutive_samples >= TrajectoryRunner.FOLLOWING_RESUME_SAMPLES):
+            return TrajectoryDecision(TrajectoryAction.PUBLISH)
+        return TrajectoryDecision(TrajectoryAction.HOLD_FOLLOWING)
+
     @staticmethod
     def begin(plan_id, positions, times_sec, streaming):
         """Freeze one already-authorized trajectory for execution."""
@@ -85,17 +105,15 @@ class TrajectoryRunner:
     def stream_decision(path_index, times_sec, elapsed_sec):
         """Select the next unsent sample without bursting or skipping it."""
         index = int(path_index)
-        schedule = tuple(float(value) for value in times_sec)
+        # The admitted schedule is already numeric and ordered. Avoid copying
+        # the entire trajectory on every high-rate control tick.
+        schedule = times_sec
         elapsed = float(elapsed_sec)
         if index >= len(schedule):
             return TrajectoryDecision(TrajectoryAction.COMPLETE)
         if elapsed + 1e-6 < schedule[index]:
             return TrajectoryDecision(TrajectoryAction.WAIT)
-        due_index = index
-        while (
-                due_index + 1 < len(schedule)
-                and schedule[due_index + 1] <= elapsed + 1e-6):
-            due_index += 1
+        due_index = max(index, bisect_right(schedule, elapsed + 1e-6) - 1)
         missed = due_index - index
         return TrajectoryDecision(
             TrajectoryAction.PUBLISH,

@@ -1,4 +1,22 @@
 schema_version: 1
+stream_smoothness_maintenance_2026_09_06:
+  inspect: [execution/trajectory.py following_recovery_decision, scan_viewpoint_executor_node.py streaming_moving_tick, motion_planning/curobo/adapter.py normalize_trajectory, motion_planning/curobo/worker.py _path, planning_diagnostics.trajectory_timing]
+  rule: Experimental 100/200 Hz applies uniform native timing; 20 Hz retains original segment timing. Source derivative peaks are diagnostic evidence only; public MoveJ derivative fields stay zero. Restart the mission stack to load changes; no active-mission rate update.
+  reference: docs/architecture/trajectory_stream_rates.md
+  validation_note: Package-local colcon rate tests add the repository path with monkeypatch for the ROS-free cuRobo import. Functional tests pass; existing package-wide lint debt remains listed in the reference.
+approval_timeout_routing_2026_09_06:
+  inspect: [target_scan_mission_node.py approve_plan, scan_viewpoint_executor_node.py approve_cb, execution/authorization.py, test_approval_deadline.py]
+  rule: A cancelled service future does not cancel its server callback. Preserve request expiry at the server; do not permit a late callback to start motion after caller timeout. Restart coordinator and executor together after this change.
+gui_mouse_wheel_maintenance_2026_09_06:
+  inspect: [piper_gui/native_app.py build_vertical_scroll_area, tests/gui/test_piper_gui_layout.py]
+  rule: Use a private descendant bindtag before control class bindings, never bind_all; remove class bindings when the viewport is destroyed.
+gui_stream_rate_routing_2026_09_06:
+  inspect: [piper_gui/stream_rate.py, piper_gui/native_app.py, tests/gui/test_piper_gui_stream_rate.py]
+  authority: Existing scan_execution_params.yaml; no independent GUI setting or live ROS parameter write.
+stream_rate_maintenance_2026_09_06:
+  route: docs/architecture/trajectory_stream_rates.md
+  owners: [configuration.py, supervised_viewpoint_execution.launch.py, curobo adapter and worker, generic protocol contract, execution/trajectory.py]
+  warning: Rate changes require transport requalification; collision-model qualification is not higher-rate execution qualification.
 early_capability_retention_maintenance_2026_09_06:
   inspect: [planning/prequalification.py carried_culls, scan_viewpoint_planner_node.py persistent_culls, ray_mission_diagnostics.py planner_generation_snapshot]
   rule: Early rejects never reach downstream prequalification, so the early owner must retain them. Do not reclassify carried exclusions as newly culled or clear them when accepted count increases.

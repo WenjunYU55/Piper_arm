@@ -14,6 +14,33 @@ from piper_mobile_manipulation.infrastructure.failure_model import (
 from piper_mobile_manipulation.execution.motion import approval_rejection_reason
 
 
+PLAN_APPROVAL_SERVICE_TIMEOUT_SEC = 60.0
+PLAN_APPROVAL_VALIDATION_BUDGET_SEC = 55.0
+
+
+def bounded_mission_confirmation(mission_sha256, now_ns):
+    """Carry an absolute acceptance deadline inside the confirmation token."""
+    deadline = int(now_ns) + int(PLAN_APPROVAL_VALIDATION_BUDGET_SEC * 1e9)
+    return 'MISSION_POLICY:%s;deadline_ns=%d' % (mission_sha256, deadline)
+
+
+def parse_approval_confirmation(confirmation, now_ns):
+    """Retain legacy/manual tokens; reject malformed or expired deadlines."""
+    token = str(confirmation)
+    if ';deadline_ns=' not in token:
+        return token, None
+    base, raw = token.split(';deadline_ns=', 1)
+    if (not base.startswith('MISSION_POLICY:')
+            or not raw.isdigit() or len(raw) > 20):
+        raise ValueError('malformed mission approval deadline')
+    deadline = int(raw)
+    if deadline <= int(now_ns):
+        raise ValueError('mission approval deadline expired; no motion authorized')
+    if deadline - int(now_ns) > int(PLAN_APPROVAL_VALIDATION_BUDGET_SEC * 1e9):
+        raise ValueError('mission approval deadline exceeds its bounded budget')
+    return base, deadline
+
+
 def trajectory_count_rejection(
         plan_kind, trajectory_count, viewpoint_count, closed_loop_one_view):
     """Bind trajectory count to the established plan-kind contract."""

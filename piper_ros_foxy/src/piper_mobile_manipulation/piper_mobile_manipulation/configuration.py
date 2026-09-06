@@ -21,6 +21,32 @@ class ConfigurationError(ValueError):
     """Report an invalid static configuration before runtime decisions."""
 
 
+def validate_stream_rates(values):
+    """Validate one frozen planner/executor transport-rate selection."""
+    rate = _finite('trajectory_command_rate_hz',
+                   values['trajectory_command_rate_hz'])
+    tick = _finite('executor_tick_rate_hz', values['executor_tick_rate_hz'])
+    if rate not in (20.0, 100.0, 200.0):
+        raise ConfigurationError('trajectory_command_rate_hz must be 20, 100 or 200')
+    if tick < 2.0 * rate:
+        raise ConfigurationError(
+            'executor_tick_rate_hz must be at least twice trajectory_command_rate_hz')
+    return {'trajectory_command_rate_hz': rate, 'executor_tick_rate_hz': tick}
+
+
+def load_stream_rates(path):
+    """Read the authoritative execution YAML once for both launch consumers."""
+    import yaml
+
+    with open(path, encoding='utf-8') as stream:
+        payload = yaml.safe_load(stream)
+    try:
+        return validate_stream_rates(
+            payload['/**']['ros__parameters'])
+    except (KeyError, TypeError) as error:
+        raise ConfigurationError('execution YAML has no valid stream rates') from error
+
+
 def _as_bool(value):
     if isinstance(value, str):
         return value.lower() in ('1', 'true', 'yes', 'on')
@@ -551,6 +577,7 @@ def _interface_config(values):
 def load_executor_configuration(node):
     """Declare, read once, validate, and freeze executor parameters."""
     values = _declare_and_read(node, executor_parameter_defaults())
+    validate_stream_rates(values)
     interfaces = _interface_config(values)
     motion = MotionConfig(
         enable_real_arm_motion=_as_bool(values['enable_real_arm_motion']),

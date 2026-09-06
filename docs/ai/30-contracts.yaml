@@ -1,4 +1,29 @@
 schema_version: 1
+stream_smoothness_contract_2026_09_06:
+  following: Entry stays at configured trajectory_following_error_rad after the existing grace. Recovery requires three independently newer joint observations at or below 0.9 times the entry limit for held and next-unsent targets. Repeated source stamps do not count. Recovery must finish inside the existing grace-duration deadline; boundary oscillations do not restart it.
+  curobo_timing: For experimental 100/200 Hz, one common segment duration preserves native relative timing. This retains source vertices and can only slow the former segment-rounded path. Standard 20 Hz and recovery prefixes retain their previous timing.
+  diagnostics: Existing private planning_diagnostics gains trajectory_timing with policy native dt and sample counts, command rate, scheduled duration and available per-joint native velocity acceleration and jerk peaks. These are source-model estimates, not measured motor derivatives.
+  public_interfaces: No changes; MotionPlan derivative arrays remain zero MoveJ placeholders.
+mission_approval_deadline_contract_2026_09_06:
+  service: Existing ApproveScanExecution schema unchanged.
+  confirmation: 'MISSION_POLICY:<mission_sha256>;deadline_ns=<unix_nanoseconds>'
+  budget: Coordinator sets acceptance deadline 55 seconds from creation and waits at most 60 seconds for service response; existing separate service-discovery wait remains bounded at 5 seconds.
+  gates: Reject malformed, unbounded or expired tokens before validation; recheck absolute expiry and monotonic elapsed budget after complete path validation and before runtime refresh. Same-host clock assumption; remote deployment requires clock synchronization.
+  compatibility: Legacy plain mission/manual tokens remain supported; an old executor rejects the new token rather than silently ignoring its deadline. Restart both consumers for the fix.
+gui_mouse_wheel_contract_2026_09_06:
+  inputs: [MouseWheel delta events, Linux Button-4 and Button-5]
+  effect: Scroll Automatic Scan viewport only; return break before combo spinbox and scale class handling. Text Listbox and Treeview retain native wheel handling. No settings are written and no ROS calls occur.
+gui_stream_rate_contract_2026_09_06:
+  mapping: {20: 200, 100: 200, 200: 400}
+  persistence: Apply updates trajectory_command_rate_hz and executor_tick_rate_hz together in the existing execution YAML, preserving all other settings. Missing or duplicate keys fail without mutation; invalid persisted settings display an error, not a silent default.
+  lifecycle: Apply and selector disabled while mission view model cannot start; handler independently refuses writes. The next fresh scan stack freezes both values; no active-node update and no motion enable.
+experimental_stream_rates_2026_09_06:
+  supersedes: Fixed-20 assertions elsewhere describe the retained default and legacy policy; generic timed_stream_v1 additionally accepts explicit 100 or 200 Hz.
+  rates_hz: [20, 100, 200]
+  invariants: [rate bound into request and trajectory hashes, minimum interval enforced from selected rate, same bridge and executor frozen rate, no vertex skipping or corner cutting, zero derivative placeholders, unchanged speed step collision authorization freshness and runtime gates]
+  legacy: tesseract_stream_v3 accepts only 20 Hz; higher-rate valid plans are generic-only.
+  curobo: Higher rates use uniform native time scaling before on-segment subdivision, never shortening the former duration; recovery prefixes use legacy segment timing at the same rate and recompute endpoint indices.
+  tesseract: Existing rate-aware normalizer retains vertices and speed limits but whole-tick rounding may shorten duration at higher rates.
 early_capability_retention_contract_2026_09_06:
   cache: Exact-input query cache remains bounded to 1024 entries. A separate population-bound exclusion dictionary retains at most one record per rejected generated ray, even if a query cache entry is evicted.
   diagnostics: Carried exclusions appear in carried_hard_culled_count and remain culled; capability_cull is emitted only for newly queried unsupported candidates. No existing report is rewritten.

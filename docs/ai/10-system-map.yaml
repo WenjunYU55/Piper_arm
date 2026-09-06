@@ -1,4 +1,12 @@
 schema_version: 1
+stream_smoothness_boundary_2026_09_06:
+  timing: Native cuRobo result -> adapter applies one time scale in experimental modes -> same hashed position schedule -> common validation and sole executor command publisher.
+  following: Executor owns held setpoint and fresh-sample counter; pure TrajectoryRunner owns recovery decision; TelemetryStore supplies independent joint source stamps. No new controller or shared store.
+approval_transaction_boundary_2026_09_06:
+  flow: Coordinator creates deadline-bound mission confirmation -> executor verifies authorization and unexpired request -> unchanged complete path validation -> expiry recheck -> runtime freshness barrier -> motion.
+stream_rate_selection_2026_09_06:
+  flow: GUI next-mission selector and atomic Apply -> authoritative execution YAML rates -> frozen shared launch values -> generic bridge request -> selected backend normalizer -> hash-bound generic response -> common validation authorization and executor.
+  default: Code defaults remain 20 Hz commands and 200 Hz timer; saved next-mission experiment is 100 Hz commands and 200 Hz timer. Experimental commands require at least twice-rate timer.
 early_capability_retention_path_2026_09_06:
   sequence: [canonical population identity, restore prefilter-owned capability exclusions, prune carried hard culls, history retirement, query remaining rays with exact-input cache, retain new capability exclusions, information and NBV ranking, downstream admission and exact planner]
 planning_latency_boundaries_2026_09_06:
