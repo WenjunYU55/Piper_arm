@@ -1,0 +1,60 @@
+--- a/BundleTrack/CMakeLists.txt
++++ b/BundleTrack/CMakeLists.txt
+@@ -47,6 +47,11 @@
+     set(CMAKE_CUDA_ARCHITECTURES "52;60;61;70;75;80;86;90")
+ else()
+     set(CMAKE_CUDA_ARCHITECTURES "52;60;61;70;75;80;86")
++endif()
++
++# Allow a caller to compile only the installed GPU architecture.
++if(DEFINED BUNDLESDF_CUDA_ARCHITECTURES)
++    set(CMAKE_CUDA_ARCHITECTURES "${BUNDLESDF_CUDA_ARCHITECTURES}")
+ endif()
+
+ # Feature flags
+@@ -91,7 +96,8 @@
+ include_directories(
+     src
+     ${Boost_INCLUDE_DIRS}
+-    ${PYTHON_INCLUDE_DIRS}
++    ${Python_INCLUDE_DIRS}
++    ${pybind11_INCLUDE_DIRS}
+     ${EIGEN3_INCLUDE_DIR}
+     ${GLUT_INCLUDE_DIRS}
+     ${CUDA_INCLUDE_DIRS}
+@@ -177,9 +183,9 @@
+     ${OPENGL_LIBRARIES}
+     ${CUDA_LIBRARIES}
+     ${GLUT_LIBRARIES}
+-    ${PYTHON_LIBRARIES}
++    ${Python_LIBRARIES}
+     ${G2O_LIBS}
+-    zmq
++    ${ZMQ_LIB}
+ )
+
+ if(DEFINED GUROBI)
+@@ -208,7 +214,7 @@
+     ${GLUT_LIBRARIES}
+     ${CUDA_LIBRARIES}
+     ${CUDA_CUDART_LIBRARY}
+-    ${PYTHON_LIBRARIES}
++    ${Python_LIBRARIES}
+     ${OpenMP_CXX_FLAGS}
+-    zmq
+-)
++    ${ZMQ_LIB}
++)
+diff --git a/mycuda/setup.py b/mycuda/setup.py
+index bbc31ea..d9d926c 100644
+--- a/mycuda/setup.py
++++ b/mycuda/setup.py
+@@ -32,7 +32,7 @@ setup(
+     ext_modules=ext_modules,
+     cmdclass={'build_ext': BuildExt},
+     include_dirs=[
+-        "/usr/local/include/eigen3",
++        os.environ.get("BUNDLESDF_EIGEN_INCLUDE", "/usr/local/include/eigen3"),
+         "/usr/include/eigen3",
+     ],
+     zip_safe=False,

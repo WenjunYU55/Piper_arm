@@ -1,9 +1,27 @@
 schema_version: 1
+bundlesdf_native_runtime_2026_09_07:
+  implementation_record: docs/ai/87-bundlesdf-native-runtime.yaml
+  evidence: docs/experiments/bundlesdf_native_validation.md
+  reference: docs/architecture/bundlesdf_native_runtime.md
+  owner_module: reconstruction_recording
+  scope: Optional offline BundleSDF native environment following explicit cuRobo Python/CUDA boundary; no ROS or
+    planner selection changes.
+  allowed_edit_paths:
+  - tools/bundlesdf/
+  - tests/reconstruction/
+  runtime_contract: Native is the wrapper default; Docker requires --runtime docker. Replace ROS Python/native search
+    paths; pin upstream, source archive hashes, LoFTR weight hash and matching Torch/Kaolin ABI. Preserve per-run
+    local patch and dependency provenance.
+  must_retest_if_changed:
+  - isolated launcher environment test
+  - synthetic native RGB-D geometry and recorder gates
+  - actual GPU imports and tracking-to-mesh smoke
+  - dataset conversion and wrapper mesh validation
 reconstruction_active_planner: curobo  # Preserved saved mission selection; Tesseract checks are compatibility only.
 reconstruction_recording_2026_09_06:
   reference: docs/architecture/reconstruction_recording.md
   implementation_record: docs/ai/86-reconstruction-recording.yaml
-  status: Implemented and ROS replay validated; physical qualification and BundleSDF GPU mesh smoke remain blocked/unexecuted.
+  status: Implemented and ROS replay validated; native GPU follow-up is recorded in 87-bundlesdf-native-runtime.yaml. Physical qualification remains open.
   routing: Read 86 for current reconstruction ownership, wire additions, frozen movement-angle configuration, gates,
     data format and validation evidence. Earlier no-interface-change claims are historical.
 stream_smoothness_repair_2026_09_06:

@@ -1,0 +1,50 @@
+schema_version: 1
+date: '2026-09-07'
+title: Optional native BundleSDF GPU environment
+owner_module: reconstruction_recording
+reference: docs/architecture/bundlesdf_native_runtime.md
+evidence: docs/experiments/bundlesdf_native_validation.md
+previous_behavior: Offline wrapper defaulted to unavailable Docker; validated datasets existed but no GPU reconstruction had completed.
+reason: Reuse the existing explicit external Python and local CUDA integration pattern used for cuRobo without contaminating ROS Foxy.
+allowed_edit_paths: [tools/bundlesdf/, tests/reconstruction/, docs/]
+must_not_move_without: [motion_planning/curobo/, piper_ros_foxy/src/piper_mobile_manipulation/]
+architecture:
+  - Native session validator and adapter run outside motion callbacks.
+  - Wrapper invokes python_native.sh with private Python 3.10, libraries and pinned BundleSDF.
+  - Launcher replaces ROS Python/native paths and clears PYTHONHOME.
+  - Installer extracts packages and builds libraries in user-owned directories, never apt-installs into host.
+  - Native diagnostics execute Kaolin GPU operations, pybind mapping API and known-triangle UV CUDA output.
+  - Upstream tracking, neural SDF optimization and mesh export remain upstream algorithm code.
+  - Wrapper checks exit status, finite mesh, valid indices, rigid T_camera_object trajectory and nondegenerate texture.
+upstream_commit: ffa67d425240b5b76d2e387a7dd3d3735a7cf1a1
+build_patch: tools/bundlesdf/patches/native-build.patch
+build_contracts:
+  - Matching Torch 2.6.0 cu124 and Kaolin 0.18.0 cu124 wheel.
+  - Private Eigen 3.4.0 for BOTH BundleTrack and mycuda; host 3.3.7 generated a no-op UV kernel in this environment.
+  - Modern pybind11 2.13.6 headers and Python 3.10 CMake cache; do not extract old Ubuntu pybind headers into prefix.
+  - OpenCV 4.11 CUDA with rgbd headers; source hashes and weight SHA256 checked.
+  - PyTorch3D pinned pure transforms only; no claim of its native renderers/ops.
+  - Full local upstream diff and installed dependency provenance saved with each native run.
+parameters:
+  wrapper_runtime: native
+  alternative_runtime: docker via --runtime docker
+  setup_variables: See complete defaults in docs/architecture/bundlesdf_native_runtime.md
+  ros_parameters_added: none
+manual_smoke_checks:
+  - Run setup_native.sh and require native_diagnostics.py including triangle UV [25,25].
+  - Generate synthetic_smoke.py 30-view input; require 30 accepted and zero rejected/dropped.
+  - Run run.py and inspect actual mesh, texture and estimated object trajectory plus logs.
+  - Run pytest tests/reconstruction with built Foxy overlay, including isolated public ROS replay.
+must_retest_if_changed: [native launcher isolation, real GPU native diagnostics, actual tracking-to-mesh reconstruction, dataset and output validation]
+remaining:
+  - Official supplied milk dataset download is quota-blocked; supplied-example reconstruction unexecuted.
+  - Real arm/camera timing, moving-frame quality and real-object reconstruction accuracy remain unqualified.
+  - Artifact structural validity does not establish watertightness, hidden-surface quality or metric accuracy.
+
+executed_result:
+  tests: 70 passed including isolated ROS replay; lint and shell checks passed; 15 AI YAMLs parsed.
+  installer: Complete native installer rerun exit 0 including real GPU diagnostics.
+  reconstruction: Third full upstream run exit 0; 93530 vertices, 119499 faces, 30 valid T_camera_object poses, 82045 coloured texture pixels.
+  input_frames: {accepted: 30, rejected: 0, dropped: 0, synthetic_mission_captures: 2}
+  output: /home/prl/.local/share/piper-bundlesdf/evidence/2026-09-07-native-smoke/result/textured_mesh.obj
+  evidence_class: SYNTHETIC_GPU_RECONSTRUCTION_NOT_PHYSICAL

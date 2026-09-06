@@ -1,3 +1,6 @@
+> Historical first checkpoint. See [native BundleSDF follow-up](bundlesdf_native_validation.md)
+> for the subsequent isolated GPU runtime and reconstruction evidence.
+
 # Reconstruction recording: executed validation, 2026-09-06
 
 Implementation is validated through unit tests, actual ROS DDS replay, synthetic

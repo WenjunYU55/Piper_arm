@@ -153,7 +153,11 @@ BundleSDF is pinned to **ffa67d425240b5b76d2e387a7dd3d3735a7cf1a1** at
 <https://github.com/NVlabs/BundleSDF>. Read its pinned `LICENSE.txt`: the NVIDIA
 license restricts use to noncommercial research/evaluation. Upstream is cloned
 outside ROS; its implementation, weights and generated artifacts are not vendored.
-Install Docker and NVIDIA Container Toolkit separately, then:
+The recommended machine-native environment follows the cuRobo interpreter pattern:
+see [native installation and smoke commands](bundlesdf_native_runtime.md). Run
+`bash tools/bundlesdf/setup_native.sh`, then use `run.py` (native is its default).
+Docker remains an optional alternative; install Docker and NVIDIA Container Toolkit
+separately for the following Docker-only setup:
 
 ```bash
 bash tools/bundlesdf/setup.sh
@@ -169,7 +173,7 @@ docker run --rm --gpus all -v "$UPSTREAM:$UPSTREAM" \
   "piper-bundlesdf:$PIN" python3 run_custom.py --mode run_video \
   --video_dir /data/milk --out_folder /outputs/bundlesdf-official-smoke \
   --use_segmenter 0 --use_gui 0 --debug_level 2
-python3 tools/bundlesdf/run.py "$SESSION" --output /tmp/bundlesdf-run
+python3 tools/bundlesdf/run.py "$SESSION" --output /tmp/bundlesdf-run --runtime docker
 ```
 
 The wrapper also accepts `--upstream`, a separately installed environment's
@@ -221,5 +225,6 @@ keyframes and accepted identity are rejected explicitly.
 | CUDA/extensions/weights failure | Inspect bundlesdf.log/failure.json; repair the isolated image, not Foxy Python |
 
 See [executed validation](../experiments/reconstruction_recording_validation.md)
-for measured evidence and blocked tests. No physical arm/camera qualification or
-successful BundleSDF mesh reconstruction is claimed by this implementation record.
+for the initial measured evidence and blocked tests. The later
+[native GPU validation](../experiments/bundlesdf_native_validation.md) records the
+isolated runtime follow-up. Physical arm/camera qualification remains open.

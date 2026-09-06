@@ -3,12 +3,14 @@
 
 import argparse
 import json
+import os
 from pathlib import Path
 import re
 import shutil
 import subprocess
 
 from dataset import UPSTREAM_COMMIT, atomic_json, convert, validate
+from output_validation import inspect_result
 
 
 def run(args):
@@ -61,6 +63,8 @@ def run(args):
     ]
     if args.python:
         command[0] = str(args.python.resolve())
+    elif args.runtime == "native":
+        command[0] = str(Path(__file__).resolve().with_name("python_native.sh"))
     else:
         if not shutil.which("docker"):
             raise ValueError(
@@ -92,11 +96,24 @@ def run(args):
                 'install weights in ROS'
             )
         )
+    diff = subprocess.check_output(
+        ["git", "-C", str(checkout), "diff", "HEAD"], text=True
+    )
+    (output / "upstream-local.patch").write_text(diff)
+    runtime_root = Path(os.environ.get(
+        "PIPER_BUNDLESDF_RUNTIME", str(Path.home() / ".local/share/piper-bundlesdf")
+    ))
+    if args.runtime == "native" and not args.python:
+        for name in ("python-requirements.lock", "native-debs.lock", "runtime.json"):
+            source = runtime_root / name
+            if source.is_file():
+                shutil.copyfile(str(source), str(output / name))
     atomic_json(
         output / "run.json",
         dict(
             upstream_commit=pin,
             command=command,
+            runtime="explicit_python" if args.python else args.runtime,
             upstream_config_files=["config.yml", "BundleTrack/config_ho3d.yml"],
         ),
     )
@@ -105,6 +122,16 @@ def run(args):
         ("BundleTrack/config_ho3d.yml", "upstream_bundletrack.yml"),
     ]:
         shutil.copyfile(str(checkout / source), str(output / target))
+    if args.runtime == "native" and not args.python:
+        with (output / "native-diagnostics.log").open("w") as diagnostics:
+            diagnostic_result = subprocess.run([
+                command[0], str(Path(__file__).with_name("native_diagnostics.py").resolve()),
+                "--output", str(output / "runtime-verified.json"),
+            ], stdout=diagnostics, stderr=subprocess.STDOUT)
+        if diagnostic_result.returncode:
+            raise RuntimeError(
+                "Native GPU preflight failed; inspect native-diagnostics.log and rerun "
+                "tools/bundlesdf/setup_native.sh in the isolated environment")
     with (output / "bundlesdf.log").open("w") as log:
         result = subprocess.run(
             command, cwd=str(checkout), stdout=log, stderr=subprocess.STDOUT
@@ -123,21 +150,7 @@ def run(args):
         raise RuntimeError(
             "BundleSDF exited without textured_mesh.obj; reconstruction is not successful"
         )
-    vertices = faces = 0
-    with mesh.open() as stream:
-        for line in stream:
-            vertices += line.startswith("v ")
-            faces += line.startswith("f ")
-    if (
-        not vertices
-        or not faces
-        or not list((output / "result/ob_in_cam").glob("*.txt"))
-    ):
-        raise RuntimeError("empty mesh or missing estimated object trajectory")
-    atomic_json(
-        output / "result_validation.json",
-        dict(success=True, vertices=vertices, faces=faces, mesh=str(mesh)),
-    )
+    atomic_json(output / "result_validation.json", inspect_result(output / "result"))
     print(mesh)
 
 
@@ -154,6 +167,10 @@ def main():
         "--python",
         type=Path,
         help="Python executable in an already-installed isolated BundleSDF environment",
+    )
+    parser.add_argument(
+        "--runtime", choices=("native", "docker"), default="native",
+        help="native uses the dedicated Python/CUDA launcher; Docker is optional",
     )
     parser.add_argument("--validate-only", action="store_true")
     parser.add_argument("--allow-incomplete", action="store_true")

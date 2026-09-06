@@ -1,15 +1,31 @@
 schema_version: 1
+bundlesdf_native_runtime_2026_09_07:
+  implementation_record: docs/ai/87-bundlesdf-native-runtime.yaml
+  evidence: docs/experiments/bundlesdf_native_validation.md
+  reference: docs/architecture/bundlesdf_native_runtime.md
+  owner_module: reconstruction_recording
+  scope: Optional offline BundleSDF native environment following explicit cuRobo Python/CUDA boundary; no ROS or
+    planner selection changes.
+  allowed_edit_paths:
+  - tools/bundlesdf/
+  - tests/reconstruction/
+  runtime_contract: Native is the wrapper default; Docker requires --runtime docker. Replace ROS Python/native search
+    paths; pin upstream, source archive hashes, LoFTR weight hash and matching Torch/Kaolin ABI. Preserve per-run
+    local patch and dependency provenance.
+  must_retest_if_changed:
+  - isolated launcher environment test
+  - synthetic native RGB-D geometry and recorder gates
+  - actual GPU imports and tracking-to-mesh smoke
+  - dataset conversion and wrapper mesh validation
 reconstruction_recording_2026_09_06:
   reference: docs/ai/86-reconstruction-recording.yaml
   deferred:
-  - Install isolated BundleSDF Docker/native extensions/weights and rerun official sample when download quota clears;
-    no successful reconstruction claimed
+  - Run the official supplied BundleSDF sample when its download quota clears; native installation and synthetic GPU reconstruction evidence are in 87-bundlesdf-native-runtime.yaml
   - Calibrate blur and mask-area-growth gates against real tracked objects and camera exposure
   - Physical arm/camera load, TF timing, tight-cone feasibility and slow-storage qualification
   - Resolve pre-existing ray hard-cull ranking regression and rootless thin-obstacle clearance qualification separately
   - Live multi-node atomic parameter updates are deliberately unsupported; relaunch between missions
-  recommended_next_cut: Complete blocked GPU reconstruction qualification using the pinned environment before describing
-    offline mesh production as validated.
+  recommended_next_cut: Qualify real-camera reconstruction and retry the official supplied sample; see native synthetic GPU evidence in 87-bundlesdf-native-runtime.yaml.
 stream_smoothness_followup_2026_09_06:
   addressed: Feedback-boundary chatter now latches with independent samples and hysteresis; experimental native timing is uniformly scaled instead of segment-rounded.
   tradeoff: Uniform scaling may lengthen trajectories; one real-GPU source path increased from 4.4 to 6.0 seconds while retaining every source vertex. It is not jerk-limited interpolation.

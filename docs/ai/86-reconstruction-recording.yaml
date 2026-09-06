@@ -1,4 +1,5 @@
 schema_version: 1
+native_runtime_followup: docs/ai/87-bundlesdf-native-runtime.yaml
 reconstruction_active_planner: curobo  # Preserved saved mission selection; Tesseract checks are compatibility only.
 title: Passive synchronized RGB-D recording and optional offline BundleSDF
 date: '2026-09-06'
@@ -129,11 +130,10 @@ evidence:
     21 accepted, 12 gate rejects, zero backpressure drops
   rootless: Compact PASS; core thin-obstacle detour failure exactly reproduced at baseline
   bundlesdf: Pinned reader loaded six converted frames; actual reconstruction failed missing torch, isolated setup
-    blocked missing Docker, official sample download quota exceeded; no mesh
+    initial checkpoint blocked by missing Docker and official sample quota; superseded for native synthetic GPU execution by 87-bundlesdf-native-runtime.yaml
   hardware: No physical arm or camera validation performed
 remaining:
-- Install isolated BundleSDF Docker/native extensions/weights and rerun official sample when download quota clears;
-  no successful reconstruction claimed
+- Run official supplied BundleSDF sample when download quota clears; later native GPU installation and synthetic smoke are recorded in 87-bundlesdf-native-runtime.yaml
 - Calibrate blur and mask-area-growth gates against real tracked objects and camera exposure
 - Physical arm/camera load, TF timing, tight-cone feasibility and slow-storage qualification
 - Resolve pre-existing ray hard-cull ranking regression and rootless thin-obstacle clearance qualification separately

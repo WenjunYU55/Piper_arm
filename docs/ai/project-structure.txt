@@ -185,3 +185,17 @@ tests/reconstruction/
 docs/ai/86-reconstruction-recording.yaml
 docs/architecture/reconstruction_recording.md
 docs/experiments/reconstruction_recording_validation.md
+
+# Native BundleSDF runtime continuation
+tools/bundlesdf/setup_native.sh
+tools/bundlesdf/python_native.sh
+tools/bundlesdf/native-requirements.txt
+tools/bundlesdf/patches/native-build.patch
+tools/bundlesdf/synthetic_smoke.py
+tests/reconstruction/test_bundlesdf_native.py
+docs/architecture/bundlesdf_native_runtime.md
+tools/bundlesdf/native_diagnostics.py
+
+tools/bundlesdf/output_validation.py
+docs/experiments/bundlesdf_native_validation.md
+docs/ai/87-bundlesdf-native-runtime.yaml
