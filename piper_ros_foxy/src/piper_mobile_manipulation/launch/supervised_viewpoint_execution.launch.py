@@ -3,11 +3,12 @@ import math
 import os
 import re
 
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import get_package_prefix, get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     EmitEvent,
+    ExecuteProcess,
     RegisterEventHandler,
     TimerAction,
 )
@@ -157,11 +158,32 @@ def generate_launch_description():
         recording_default = recording_settings['reconstruction_recording_enabled']
     recording_argument = DeclareLaunchArgument(
         'reconstruction_recording_enabled', default_value=str(recording_default).lower())
-    recording_value = ParameterValue(
-        LaunchConfiguration('reconstruction_recording_enabled'), value_type=bool)
     recording_root_argument = DeclareLaunchArgument(
         'reconstruction_output_root',
         default_value=os.path.join(root, 'datasets/reconstruction_sessions'))
+    archive_argument = DeclareLaunchArgument(
+        'mission_archive_enabled',
+        default_value=str(recording_settings['mission_archive_enabled']).lower())
+    # Raw accepted-view pins are needed for offline bag replay even when the
+    # optional live quality-filtered writer is explicitly disabled.
+    keyframe_value = ParameterValue(PythonExpression([
+        "'", LaunchConfiguration('reconstruction_recording_enabled'),
+        "'.lower() in ('true', '1') or '", LaunchConfiguration('mission_archive_enabled'),
+        "'.lower() in ('true', '1')",
+    ]), value_type=bool)
+    archive_root_argument = DeclareLaunchArgument(
+        'mission_archive_output_root',
+        default_value=os.path.join(root, 'datasets/mission_recordings'))
+    archive = ExecuteProcess(
+        cmd=[os.path.join(get_package_prefix('piper_mobile_manipulation'),
+                          'lib/piper_mobile_manipulation/mission_archive.py'),
+             '--output-root', LaunchConfiguration('mission_archive_output_root'),
+             '--minimum-free-bytes', str(recording_settings['mission_archive_minimum_free_bytes']),
+             '--task-id', os.environ.get('PIPER_MISSION_TASK_ID', ''),
+             '--visibility-angle', LaunchConfiguration('target_visibility_angle_tolerance_deg'),
+             '--config-dir', os.path.dirname(recording_params)],
+        condition=IfCondition(LaunchConfiguration('mission_archive_enabled')),
+        output='screen', sigterm_timeout='10', sigkill_timeout='2')
     frozen_final_aim_tolerance_deg = final_aim_tolerance(execution_params)
     selected_home = home_override()
     bridge = Node(
@@ -299,7 +321,7 @@ def generate_launch_description():
             capture_params,
             {
                 'capture_mode': 'service',
-                'reconstruction_recording_enabled': recording_value,
+                'reconstruction_recording_enabled': keyframe_value,
                 'task_id': os.environ.get('PIPER_MISSION_TASK_ID', ''),
                 'mission_sha256': os.environ.get(
                     'PIPER_MISSION_SHA256', ''),
@@ -343,6 +365,9 @@ def generate_launch_description():
         visibility_argument,
         recording_argument,
         recording_root_argument,
+        archive_argument,
+        archive_root_argument,
+        archive,
         speed,
         max_views,
         min_views,

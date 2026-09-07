@@ -1,7 +1,7 @@
 # Reconstruction-only RGB-D recording
 
 cuRobo is the active mission planner (`config/planner_backend.yaml` selects `curobo`).
-The optional recorder observes accepted mission captures and moving scan status. It
+The default-enabled recorder observes accepted mission captures and moving scan status. It
 cannot command the arm, complete a viewpoint, change NBV scores, or increment the
 mission capture count. The existing stationary median-depth output is retained.
 The first semantically accepted capture freezes the executor's existing coverage
@@ -69,7 +69,9 @@ from the existing `scan_quality_params.yaml` by the launch file.
 
 | Parameter | Default | Meaning |
 |---|---:|---|
-| reconstruction_recording_enabled | false | Launch recorder and raw keyframe publisher |
+| reconstruction_recording_enabled | true | Launch quality-filtered recorder |
+| mission_archive_enabled | true | Retain whole-scan sensor/event ROS bag |
+| mission_archive_minimum_free_bytes | 2147483648 | Stop archive below 2 GiB free disk |
 | target_visibility_angle_tolerance_deg | 20.0 | Shared movement/acceptance configuration |
 | recorder_visibility_angle_tolerance_deg | 0.0 | Inherit; positive value may only tighten |
 | sample_rate_hz | 8.0 | Moving admission rate, permitted 5–10 Hz |
@@ -228,3 +230,69 @@ See [executed validation](../experiments/reconstruction_recording_validation.md)
 for the initial measured evidence and blocked tests. The later
 [native GPU validation](../experiments/bundlesdf_native_validation.md) records the
 isolated runtime follow-up. Physical arm/camera qualification remains open.
+
+## Automatic whole-scan recording and later reconstruction
+
+Every normal supervised scan now starts a separate ROS bag recorder automatically.
+It records RGB, aligned depth, CameraInfo, masks, dynamic/static TF and the accepted
+capture/mission events from scan-stack startup until shutdown. The existing
+stationary captures still perform their original median-depth operation and count
+as the mission viewpoints. Reconstruction remains offline; recording never runs
+BundleSDF during arm execution.
+
+Two outputs are retained under `PIPER_ARM_ROOT/datasets/`:
+
+- `mission_recordings/scan_recording_UUID.closed/bag/`: whole-scan raw ROS evidence,
+  including frames not accepted by the reconstruction quality gates.
+- `reconstruction_sessions/reconstruction_UUID.complete/`: the existing quality-
+  filtered synchronized sequence, normally sampled at 8 Hz after capture zero.
+
+The raw archive has `recording.json`, topic/message counts, the task ID, actual
+frozen angle, configuration snapshots and `rosbag.log`. Its `.closed` suffix
+means the bag closed normally, **not** that the mission succeeded. Cancellation
+or failed-mission events remain in the bag; native reconstruction sessions keep
+their existing complete/incomplete mission semantics. Low disk, recorder failure
+or forced termination retains partial evidence as `.incomplete` or `.inprogress`.
+No earlier scan is overwritten or deleted.
+
+The archive uses best-effort sensor subscriptions, DDS history depth 8 and a
+disabled write cache (its partial batch loses tail messages on this Foxy build), splitting SQLite files at 1 GiB. Slow storage can drop
+messages rather than backpressure sensor publishers. Foxy does not expose an
+accurate transport-drop total; `dropped_messages` is explicitly unknown. Native
+quality-filtered recording retains its existing precise admission/drop counters.
+The default 2 GiB free-space reserve stops the archive when reached. This is a
+storage guard, not a promise that other processes cannot consume that reserve.
+
+To disable either output for the next scan, set its boolean in
+`config/reconstruction_recording_params.yaml` or pass
+`mission_archive_enabled:=false` / `reconstruction_recording_enabled:=false` to
+`supervised_viewpoint_execution.launch.py`. Set `mission_archive_output_root` to
+redirect whole-scan storage. Raw accepted-view pins stay enabled when either
+recorder needs them. Startup changes do not restart an active mission.
+
+For offline processing, prefer the already filtered session if it is usable:
+
+```bash
+python3 tools/bundlesdf/run.py /absolute/reconstruction_UUID.complete \
+  --output /absolute/new_bundle_result
+```
+
+Or replay the whole-scan archive into a new filtered dataset, then reconstruct:
+
+```bash
+source piper_ros_foxy/install/setup.bash
+# Choose an unused ROS domain; never replay into the live robot domain.
+ROS_DOMAIN_ID=190 ROS_LOCALHOST_ONLY=1 tools/bundlesdf/replay_bag.sh \
+  /absolute/scan_recording_UUID.closed/bag /absolute/new_replayed_sessions
+python3 tools/bundlesdf/run.py /absolute/new_replayed_sessions/SESSION.complete \
+  --output /absolute/new_bundle_result
+```
+
+Archive replay inherits its recorded task ID, angle and available parameter
+snapshots. `PIPER_REPLAY_TASK_ID` and `PIPER_REPLAY_VISIBILITY_DEG` remain explicit
+overrides for compatible older bags. The replay gate remains strict: a bag can be
+recorded successfully yet have too little valid target evidence to reconstruct.
+The system cannot reconstruct unobserved surfaces merely because recording ran.
+Open the resulting output folder from **Reconstruction Validation → BundleSDF
+results → Open BundleSDF Model**. That GUI button opens results; offline building
+still uses the commands above.

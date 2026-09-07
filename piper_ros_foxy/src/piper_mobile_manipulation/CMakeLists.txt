@@ -70,6 +70,7 @@ install(PROGRAMS
   piper_mobile_manipulation/active_scan_debug_overlay_node.py
   piper_mobile_manipulation/scan_capture_node.py
   piper_mobile_manipulation/reconstruction_recorder_node.py
+  piper_mobile_manipulation/mission_archive.py
   piper_mobile_manipulation/scan_quality_node.py
   piper_mobile_manipulation/occlusion_checker_node.py
   piper_mobile_manipulation/heavy_refresh_bridge_node.py

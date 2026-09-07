@@ -1,6 +1,8 @@
 /**:
   ros__parameters:
-    reconstruction_recording_enabled: false
+    reconstruction_recording_enabled: true
+    mission_archive_enabled: true
+    mission_archive_minimum_free_bytes: 2147483648  # 2 GiB reserve
     sample_rate_hz: 8.0
     synchronization_slop_sec: 0.08
     max_mask_age_sec: 1.0

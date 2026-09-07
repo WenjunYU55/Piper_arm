@@ -63,6 +63,6 @@ physical motion.
 
 ## Reconstruction-only RGB-D recording
 
-See [recording, replay and offline BundleSDF commands](architecture/reconstruction_recording.md) and the linked executed validation report. Recording is optional and defaults off.
+See [recording, replay and offline BundleSDF commands](architecture/reconstruction_recording.md) and the linked executed validation report. Normal scans now record a whole-scan ROS bag and the filtered reconstruction sequence by default; either can be disabled explicitly.
 
 The optional offline BundleSDF runner now uses a [dedicated native GPU environment](architecture/bundlesdf_native_runtime.md) by default, following the cuRobo interpreter boundary. Docker remains available explicitly.

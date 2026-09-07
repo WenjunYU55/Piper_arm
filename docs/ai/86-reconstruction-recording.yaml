@@ -23,7 +23,7 @@ architecture:
   load_order_contracts:
   - visibility.py stays ROS-free and is importable in both external worker environments
   - ReconstructionKeyframe and additive MotionPlan field require rebuilding all ROS interfaces before launch
-  - optional passive recorder starts at 3.25 seconds after stationary capture at 3.0; existing motion roles and
+  - default-enabled passive recorder starts at 3.25 seconds after stationary capture at 3.0; existing motion roles and
     critical exit handling unchanged
   - BundleSDF Python CUDA and weights stay outside Foxy workspace
 ownership:
@@ -121,7 +121,7 @@ guardrails:
     - native conversion and corrupt input tests
     - pinned upstream reader
     - official GPU mesh smoke
-  blast_radius: Additive wire rebuild affects launch participants; recording default false. Planner selection, median
+  blast_radius: Additive wire rebuild affects launch participants; recording default true. Planner selection, median
     capture and safety policies stay with their existing owners.
 evidence:
   report: docs/experiments/reconstruction_recording_validation.md
@@ -138,3 +138,5 @@ remaining:
 - Physical arm/camera load, TF timing, tight-cone feasibility and slow-storage qualification
 - Resolve pre-existing ray hard-cull ranking regression and rootless thin-obstacle clearance qualification separately
 - Live multi-node atomic parameter updates are deliberately unsupported; relaunch between missions
+
+whole_scan_archive_followup: docs/ai/88-automatic-scan-recording.yaml

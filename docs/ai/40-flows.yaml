@@ -1,4 +1,13 @@
 schema_version: 1
+automatic_scan_recording_2026_09_07:
+  reference: docs/ai/88-automatic-scan-recording.yaml
+  owner_module: piper_mobile_manipulation/mission_archive.py
+  behavior: Every normal supervised scan defaults to a separate whole-scan RGB-D/mask/calibration/TF/event rosbag plus the existing accepted-frame reconstruction dataset. Archive starts with the scan stack and closes on its shutdown; capture counts, median output and safety are unchanged.
+  defaults: {mission_archive_enabled: true, reconstruction_recording_enabled: true, mission_archive_minimum_free_bytes: 2147483648}
+  boundary: Archive is never launch-critical; best-effort sensor subscriptions and eight-message DDS histories isolate slow storage; Foxy write cache is disabled to preserve shutdown tail messages. Only tf_static is reliable/transient-local. Low disk stops the archive and retains incomplete evidence.
+  lifecycle: Unique inprogress folder becomes closed or incomplete. Closed describes the archive, not mission success; mission outcome remains in recorded events. SIGKILL may leave inspectable inprogress data.
+  replay: replay_bag.sh inherits recorded task identity, frozen angle and available quality/recorder YAML snapshots; checks recorder startup and keeps explicit override support.
+  must_retest_if_changed: [production launch flag combinations, recorder and GUI regressions, actual rosbag record/SIGINT/playback, offline session validation and conversion, package build and tests]
 bundlesdf_gui_results_2026_09_07:
   owner_module: piper_gui/bundlesdf_results.py
   reference: docs/architecture/bundlesdf_native_runtime.md

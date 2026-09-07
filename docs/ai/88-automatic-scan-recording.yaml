@@ -1,0 +1,55 @@
+schema_version: 1
+date: '2026-09-07'
+title: Whole-scan evidence recording by default, offline reconstruction later
+owner_module: piper_mobile_manipulation/mission_archive.py
+reference: docs/architecture/reconstruction_recording.md
+previous_behavior: Quality-filtered reconstruction recorder was opt-in and began only after accepted capture zero; no whole-scan archive started automatically.
+reason: Retain every scan's available sensor evidence alongside unchanged stationary mission captures so filtering and reconstruction can be repeated offline.
+allowed_edit_paths:
+- piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission_archive.py
+- piper_ros_foxy/src/piper_mobile_manipulation/config/reconstruction_recording_params.yaml
+- piper_ros_foxy/src/piper_mobile_manipulation/launch/supervised_viewpoint_execution.launch.py
+- piper_ros_foxy/src/piper_mobile_manipulation/CMakeLists.txt
+- piper_ros_foxy/src/piper_mobile_manipulation/package.xml
+- tools/bundlesdf/replay_bag.sh
+- tests/reconstruction/test_mission_archive.py
+must_not_move_without: [scan_capture_node.py, reconstruction_recorder_node.py, mission lifecycle owner]
+architecture:
+  - Non-critical ExecuteProcess starts the separate rosbag supervisor at scan-stack startup.
+  - Camera RGB aligned depth CameraInfo SAM2 masks TF raw accepted-view tuples and mission history/status are allowlisted.
+  - Sensor subscriptions are best-effort depth 8; tf_static is reliable transient-local depth 100.
+  - Disk writes occur only in the external recorder process, with 1 GiB SQLite splitting.
+  - Foxy write cache is zero because its eight-message cache lost an unflushed final partial batch in actual testing.
+  - Preserve config snapshots, task ID and actual frozen angle; replay inherits them unless explicitly overridden.
+  - Existing native quality-filtered recorder stays at 8 Hz after accepted capture zero; capture pins remain enabled for archive-only mode.
+  - Native and bag output failures never become launch-critical or change robot command authority.
+parameters:
+  reconstruction_recording_enabled: true
+  mission_archive_enabled: true
+  mission_archive_minimum_free_bytes: 2147483648
+  mission_archive_output_root: PIPER_ARM_ROOT/datasets/mission_recordings
+lifecycle:
+  - UUID inprogress directory is never reused or overwritten.
+  - SIGINT/SIGTERM is forwarded to the owned rosbag group, with eight-second graceful wait.
+  - Foxy ros2cli handles KeyboardInterrupt with exit code 2; this is accepted only for requested shutdown and existing metadata.
+  - SQLite row counts must equal declared metadata counts before the archive is labelled closed.
+  - Closed means archive closure only, never mission success; cancelled/failed outcomes remain in recorded events.
+  - Low disk or recorder error retains incomplete data. SIGKILL may leave an inspectable inprogress directory.
+  - Transport drop count is explicitly unknown on Foxy; never report invented zero drops.
+manual_smoke_checks:
+  - Launch-description checks for all four archive/native flag combinations; raw pins on if either is enabled.
+  - Record actual synthetic public ROS topics and close via SIGINT; compare SQLite rows with metadata.
+  - Replay archive on isolated domain, requiring recorder startup and at least one accepted frame.
+  - Confirm final accepted capture and terminal event survive playback; validate and convert resulting session.
+  - Confirm zero motion/enable/command topics in archive allowlist.
+must_retest_if_changed: [archive lifecycle and SQLite mismatch tests, recorder and GUI tests, package build and tests, actual rosbag capture/playback, native validation/conversion]
+remaining:
+  - Real camera throughput, disk contention and physical arm/camera timing remain unqualified.
+  - Best-effort recording can lose frames; retained data does not guarantee every scan is reconstructable.
+  - Reconstruction GUI currently opens generated results; offline building still uses documented commands.
+evidence:
+  report: docs/experiments/automatic_scan_recording_validation.md
+  tests: 238 passed; package build passed; 48 of 50 CTest checks passed with unchanged 99 flake8 and 10 pep257 findings.
+  nominal: 29 recorded messages equal 29 SQLite rows; replay yields one complete six-frame two-mission-capture session with zero native rejects or writer drops.
+  converter: All six converted frames loaded by pinned upstream reader; no new GPU mesh run for this recording-only change.
+  hardware: Synthetic ROS publishers only; no physical qualification claimed.

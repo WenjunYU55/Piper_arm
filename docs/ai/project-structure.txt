@@ -204,3 +204,8 @@ piper_gui/bundlesdf_results.py
 reconstruction/view_bundlesdf.py
 tests/gui/test_bundlesdf_results.py
 docs/experiments/bundlesdf_gui_validation.md
+
+piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission_archive.py
+tests/reconstruction/test_mission_archive.py
+docs/ai/88-automatic-scan-recording.yaml
+docs/experiments/automatic_scan_recording_validation.md
