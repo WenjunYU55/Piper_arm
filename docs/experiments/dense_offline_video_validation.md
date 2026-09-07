@@ -70,7 +70,7 @@ separate Torch/CUDA environment and pin `ffa67d425240b5b76d2e387a7dd3d3735a7cf1a
 ```bash
 source piper_ros_foxy/install/setup.bash
 python3 -m pytest -q tests/reconstruction tests/gui reconstruction/test_gui_support.py
-# Baseline: 253 passed. Implementation suite: 269 passed, including pre-GPU timestamp/calibration rejection.
+# Baseline: 253 passed. Final implementation suite: 271 passed in 24.42 s.
 python3 tools/bundlesdf/extract_video.py \
   datasets/mission_recordings/scan_recording_f62ed65bbeb4459cb35a9b36e64869f9.closed \
   /home/prl/.local/share/piper-bundlesdf/evidence/2026-09-07-dense-video-extracted
@@ -122,11 +122,108 @@ The exact job command it launched is:
 
 This independently repeated extraction and actual SAM2 propagation (193.093 s,
 2,041 accepted) and entered upstream `run_custom.py --mode run_video` with final
-global refinement included by upstream. **GPU reconstruction is in progress at
-this record's initial writing; completion and mesh quality are not yet claimed.**
-The final execution result must be appended after the command exits.
+global refinement included by upstream. The command exited successfully on
+2026-09-07 at approximately 17:12:59 BST. The GUI reported the exported mesh and
+warned about **15 explicitly failed tracking frames**. GPU usage was checked with
+`nvidia-smi`: RTX 3090, 70% utilization at the sampled instant, two BundleSDF CUDA
+processes using approximately 3.3 GiB. This was an actual GPU reconstruction.
+
+**Structural output PASS; visual reconstruction quality FAIL.** The OBJ contains
+12,107 vertices and 16,125 faces, with a PNG texture (54,372 nonzero pixels),
+2,041 saved pose matrices and 24 reference-recovery messages. Pose-file count is
+not a count of successful tracks. Failed frame IDs are 384, 615, 636, 694, 712,
+758, 818, 843, 956, 962, 1020, 1046, 1084, 1100 and 1103. Opposing offscreen views
+show extended sheets, holes and large black regions rather than a faithful cube.
+The dense pipeline fixes missing temporal input but has not demonstrated accurate
+mesh reconstruction on this archive. No result is promoted to calibrated accuracy.
+
+Artifacts are retained at
+`/home/prl/.local/share/piper-bundlesdf/evidence/2026-09-07-scan-3761faaf5bd3/`:
+`result/textured_mesh.obj`, its MTL/PNG, `result/ob_in_cam/`, `bundlesdf.log`,
+`run.json`, input/configuration snapshots, `result_validation.json`,
+`mesh-inspection.json`, `mesh-preview.png` and `mesh-preview-opposite.png`.
+Mesh SHA256: `c3083ad26b0af5a147b4eafe3fcecde549fc81c8bcee48f23896cebaeea9fe99`.
+The actual viewer loader passed `--check-only`; offscreen rendering also completed.
+The exact upstream invocation (cwd: pinned upstream checkout) was:
+
+```bash
+/home/prl/Piper_arm/tools/bundlesdf/python_native.sh run_custom.py --mode run_video \
+  --video_dir /home/prl/.local/share/piper-bundlesdf/evidence/2026-09-07-scan-3761faaf5bd3/input \
+  --out_folder /home/prl/.local/share/piper-bundlesdf/evidence/2026-09-07-scan-3761faaf5bd3/result \
+  --use_segmenter 0 --use_gui 0 --debug_level 2
+```
+
+This real-archive run is not the download-blocked official milk example.
 
 Logs: `/tmp/piper-dense-*.log` plus durable job stage logs and output `bundlesdf.log`.
 The official supplied milk sample remains download-quota-blocked as documented in
 the upstream audit; its reconstruction has not run. No new physical arm/camera
 qualification or calibrated ground-truth mesh accuracy test was performed.
+
+## Separate depth/transform diagnostic
+
+A read-only diagnostic fused 103 sampled frames using recorded image-time
+`T_base_camera` and calibrated rays, independently of BundleSDF's estimated object
+poses. Its 77,240 voxel-deduplicated points still show overlapping sheets and
+extended surfaces. This indicates that increasing input frame count alone cannot
+be assumed to fix all geometry errors; it does not identify a specific calibration,
+depth or TF fault. No speculative depth correction or robot-pose prior was applied.
+Diagnostic NPZ, JSON and PNG are retained beside the standalone dense native session
+in `/home/prl/.local/share/piper-bundlesdf/evidence/2026-09-07-dense-video-full`.
+This cloud is not a BundleSDF result or calibrated ground truth.
+
+## Implementation commits and file inventory
+
+Implementation commit: `069ab95531a0f1aea47d36d7f051b7a7df080bab` (abbreviated `069ab95`),
+“Reconstruct recorded RGB-D sequences with offline SAM2 tracking”. The repository's
+active remote integration destination is `main`; the deleted remote cuRobo branch
+and existing local worktree are not recreated or reset. This evidence document is
+committed separately after the real GPU job completed.
+
+Exact implementation file inventory (`A` added, `M` modified):
+
+```text
+M	docs/ai/00-index.yaml
+M	docs/ai/05-admin.yaml
+M	docs/ai/10-system-map.yaml
+M	docs/ai/20-modules.yaml
+M	docs/ai/30-contracts.yaml
+M	docs/ai/40-flows.yaml
+M	docs/ai/50-guardrails.yaml
+M	docs/ai/86-reconstruction-recording.yaml
+M	docs/ai/87-bundlesdf-native-runtime.yaml
+M	docs/ai/88-automatic-scan-recording.yaml
+A	docs/ai/89-offline-distortion.yaml
+A	docs/ai/91-dense-offline-video.yaml
+M	docs/ai/project-structure.txt
+M	docs/architecture/bundlesdf_native_runtime.md
+A	docs/architecture/dense_offline_video.md
+M	docs/architecture/reconstruction_recording.md
+A	docs/experiments/bundlesdf_upstream_workflow_audit.md
+A	docs/experiments/dense_offline_video_validation.md
+A	docs/experiments/offline_distortion_validation.md
+A	docs/experiments/saved_camera_bundlesdf_recovery.md
+M	piper_gui/bundlesdf_results.py
+M	piper_gui/native_app.py
+M	piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/reconstruction_recorder_node.py
+M	piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/reconstruction_recording/core.py
+M	tests/gui/test_bundlesdf_results.py
+A	tests/reconstruction/test_bag_import.py
+A	tests/reconstruction/test_dense_video.py
+A	tests/reconstruction/test_distortion.py
+A	tests/reconstruction/test_reconstruct_job.py
+M	tests/reconstruction/test_recording.py
+M	tests/reconstruction/test_ros_replay.py
+M	tools/bundlesdf/dataset.py
+A	tools/bundlesdf/distortion.py
+A	tools/bundlesdf/extract_video.py
+A	tools/bundlesdf/import_bag.py
+M	tools/bundlesdf/output_validation.py
+A	tools/bundlesdf/patches/headless-tracking.patch
+A	tools/bundlesdf/python_sam2.sh
+A	tools/bundlesdf/reconstruct_job.py
+M	tools/bundlesdf/replay.py
+M	tools/bundlesdf/replay_bag.sh
+A	tools/bundlesdf/segment_video.py
+M	tools/bundlesdf/setup_native.sh
+```

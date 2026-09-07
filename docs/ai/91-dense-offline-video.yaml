@@ -41,3 +41,10 @@ lifecycle:
 manual_smoke_checks: [deserialize a serialized bag without later masks or MOVING events, GPU temporal mask propagation on saved real frames, native dataset validation and pinned reader, actual GUI Reconstruct action through all stages, inspect mesh and tracking failure report, cancel and inspect partial output]
 must_retest_if_changed: [dense timestamp matching and quality unit tests, serialized bag extraction, interruption and multi-job tests, GUI tests, isolated SAM2 inference, complete recording/converter suite, pinned BundleSDF reader and actual GPU reconstruction]
 invariants: [no robot or mission commands, unchanged captures and NBV, no stale-mask fallback, no latest TF fallback, raw data immutable, no weights or data in Git, no pose-count accuracy claim]
+
+executed_evidence:
+  automated: 271 reconstruction/GUI tests and 7 existing SAM2 worker tests passed; package build passed; pre-existing package lint failures remain documented.
+  real_archive: 2041 synchronized frames accepted after actual GPU SAM2; 41 unmatched RGB timestamps; zero offline quality rejections or backpressure drops; mission capture count 3.
+  bundlesdf: Actual GUI-to-GPU run including global refinement completed and exported 12107 vertices and 16125 faces; 15 explicit tracking failures and 24 recovery messages.
+  quality: Visual inspection FAIL, with warped sheets, holes and black regions. Dense preparation is implemented; accurate geometry on this recording remains unresolved.
+  limitations: Official milk download quota blocked; no new physical motion, camera calibration or ground-truth accuracy qualification.
