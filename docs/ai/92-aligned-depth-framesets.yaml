@@ -24,3 +24,10 @@ manual_smoke_checks:
 must_retest_if_changed: [software camera complete/incomplete framesets and mismatched calibration, serialized bag extraction, full reconstruction and GUI tests, camera build, stationary camera validation]
 evidence: docs/experiments/aligned_depth_fix_validation.md
 remaining_hardware: Patched driver compiled and software-tested only; camera was not started. Stationary real-camera validation and later scan remain required.
+
+executed_evidence:
+  tests: 273 reconstruction/GUI tests passed; SDK software-device guard regression passed; camera and ROS package builds passed.
+  package_checks: 48/50; unchanged 99 flake8 and 10 pep257 findings remain.
+  recovery: 1633 exact pairs retained; 408 ambiguous pairs and 41 unmatched RGB rejected; three mission captures; zero offline quality rejections/backpressure drops.
+  gpu: Actual full-sequence BundleSDF plus global refinement completed; zero explicit tracking failures and zero recovery messages; textured OBJ has 4506 vertices and 6299 faces.
+  visual: Observed surfaces substantially more coherent and cube-like, but holes/open surfaces and dark texture regions remain. Complete mesh and dimensional accuracy are unqualified.

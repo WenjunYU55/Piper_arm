@@ -71,7 +71,7 @@ Source: `datasets/mission_recordings/scan_recording_f62ed65bbeb4459cb35a9b36e648
 Corrected extractor retained **1,633** pairs; rejected **408 ambiguous aligned-depth
 pairs** and **41 unmatched RGB frames**. It preserves the three accepted mission
 captures and incomplete/unknown terminal status. Actual offline SAM2 accepted all
-1,633 frames with no quality rejections. No offline backpressure drops occurred.
+1,633 frames with no quality rejections in **153.847 s**, retaining at most 16 temporal images. No offline backpressure drops occurred.
 
 ```bash
 source piper_ros_foxy/install/setup.bash
@@ -89,6 +89,70 @@ python3 tools/bundlesdf/reconstruct_job.py \
 ```
 
 BundleSDF pin remains `ffa67d425240b5b76d2e387a7dd3d3735a7cf1a1`. The fresh full-sequence
-GPU job is in progress; final mesh and tracking findings will be recorded after exit.
+GPU job completed successfully on 2026-09-07 at approximately 19:06:58 BST,
+including final global refinement. Output: **4,506 vertices, 6,299 faces**, OBJ/MTL/PNG,
+1,633 saved pose matrices, 75,284 nonzero texture pixels. The log contains **zero
+explicit tracking failures and zero reference-recovery messages**, versus 15 and 24
+in the contaminated run. This is not a claim that every estimated pose is accurate.
+
+Two opposing offscreen views were inspected. The observed surfaces are now
+recognizably cube-like and substantially more coherent than the previous separated
+sheets. Holes/open surfaces and dark texture regions remain. Structural output and
+viewer loading **PASS**; complete mesh/dimensional accuracy remains **unqualified**.
+The mesh extents are 50.494 × 54.505 × 47.728 mm; these are measured output extents,
+not validation against a calibrated physical reference. No cosmetic hole filling
+or superposition correction was applied.
+
+Artifacts reside under
+`/home/prl/.local/share/piper-bundlesdf/evidence/aligned-fix-reconstruction/`:
+`result/textured_mesh.obj`, material/texture files, `result/ob_in_cam/`,
+`mesh-preview.png`, `mesh-preview-opposite.png`, `mesh-inspection.json`,
+`result_validation.json`, configuration/provenance and `bundlesdf.log`.
+Mesh SHA256: `6b26d68d79f715855032cb862dbcd8151d3d02f6c0c16652a24f69decab10fae`.
+The actual viewer loader passed `--check-only`.
+
+Exact upstream command is in `run.json`: isolated `python_native.sh run_custom.py
+--mode run_video --video_dir <output>/input --out_folder <output>/result
+--use_segmenter 0 --use_gui 0 --debug_level 2`. No BundleSDF settings, pose priors or
+model weights were changed for this comparison.
 Logs are `/tmp/piper-aligned-*.log` and durable job/output logs. The official example
 remains download-quota-blocked as previously documented; it was not executed.
+
+## Change inventory
+
+Implementation commit: `8e25a1e` — Reject unaligned depth framesets and require
+coherent reconstruction pairs. A following evidence commit records completion
+and clarifies the software-device test output. The integration destination remains
+`main`, via normal fast-forward and push. No published history is rewritten.
+
+```text
+M	L515_camera/README.md
+M	L515_camera/build_realsense_ws.sh
+A	L515_camera/patches/realsense-ros-4.0.4-aligned-depth-guard.patch
+A	L515_camera/test_aligned_depth_guard.cpp
+A	L515_camera/test_aligned_depth_guard.sh
+M	docs/ai/00-index.yaml
+M	docs/ai/05-admin.yaml
+M	docs/ai/10-system-map.yaml
+M	docs/ai/20-modules.yaml
+M	docs/ai/30-contracts.yaml
+M	docs/ai/40-flows.yaml
+M	docs/ai/50-guardrails.yaml
+M	docs/ai/86-reconstruction-recording.yaml
+M	docs/ai/88-automatic-scan-recording.yaml
+M	docs/ai/91-dense-offline-video.yaml
+A	docs/ai/92-aligned-depth-framesets.yaml
+M	docs/ai/project-structure.txt
+M	docs/architecture/dense_offline_video.md
+M	docs/architecture/reconstruction_recording.md
+A	docs/experiments/aligned_depth_fix_validation.md
+M	piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/reconstruction_recorder_node.py
+M	piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/reconstruction_recording/core.py
+M	tests/reconstruction/test_bag_import.py
+M	tests/reconstruction/test_dense_video.py
+M	tests/reconstruction/test_recording.py
+M	tools/bundlesdf/dataset.py
+M	tools/bundlesdf/extract_video.py
+M	tools/bundlesdf/replay.py
+M	tools/bundlesdf/segment_video.py
+```

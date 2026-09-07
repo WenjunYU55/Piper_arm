@@ -23,7 +23,7 @@ int main(){
   composite.start(fq);composite.invoke(depth);auto fs=fq.wait_for_frame().as<rs2::frameset>();
   rs2::align align(RS2_STREAM_COLOR);auto out=align.process(fs);auto d=out.get_depth_frame();
   auto k=d.get_profile().as<rs2::video_stream_profile>().get_intrinsics();
-  std::cout<<"has_color="<<has_color<<" output_fx="<<k.fx<<" original_depth_fx="<<di.fx<<" color_fx="<<ci.fx<<" wrapper_would_label_color="<<bool(d)<<std::endl;
+  std::cout<<"has_color="<<has_color<<" output_fx="<<k.fx<<" original_depth_fx="<<di.fx<<" color_fx="<<ci.fx<<" guard_admits="<<realsense2_camera::alignedDepthMatchesColor(d, has_color ? color : rs2::frame())<<std::endl;
   if(k.fx!=(has_color?ci.fx:di.fx)) return 2;
   assert(realsense2_camera::alignedDepthMatchesColor(d, has_color ? color : rs2::frame()) == has_color);
   assert(!realsense2_camera::alignedDepthMatchesColor(depth, color));
