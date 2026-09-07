@@ -1,4 +1,7 @@
 schema_version: 1
+saved_camera_recovery_2026_09_07:
+  reference: docs/ai/88-automatic-scan-recording.yaml
+  flow: Default GUI archive path is extract_video.py -> isolated segment_video.py -> raw native session -> calibrated converter -> BundleSDF -> viewer. import_bag.py retains legacy filtered-recorder recovery for diagnostics.
 automatic_scan_recording_2026_09_07:
   reference: docs/ai/88-automatic-scan-recording.yaml
   owner_module: piper_mobile_manipulation/mission_archive.py
@@ -12,9 +15,9 @@ bundlesdf_gui_results_2026_09_07:
   owner_module: piper_gui/bundlesdf_results.py
   reference: docs/architecture/bundlesdf_native_runtime.md
   allowed_edit_paths: [piper_gui/bundlesdf_results.py, piper_gui/native_app.py, reconstruction/view_bundlesdf.py, tests/gui/test_bundlesdf_results.py]
-  behavior: Reconstruction Validation includes BundleSDF folder selection, retained-result discovery, explicit evidence origin and Open BundleSDF Model. A separate interactive textured viewer follows the existing GUI viewer pattern.
-  boundaries: No capture, reconstruction execution, ROS command, planner or source-data mutation. Unknown origin is never labelled live; the synthetic demo is explicitly marked not a live recording.
-  runtime: GUI stays in Foxy Python; mesh loading and graphics run through the isolated BundleSDF launcher. Child failures return to the Tk status label through bounded periodic polling.
+  behavior: Reconstruction Validation selects recorded datasets or results, runs dense offline extraction/SAM2/BundleSDF through Reconstruct, validates or cancels jobs, and opens an interactive textured viewer with explicit evidence origin.
+  boundaries: No capture, robot command, planner or source-data mutation. Offline GPU jobs use isolated child processes and cannot start through this panel during an active mission. Unknown origin remains unverified; synthetic inputs are labelled.
+  runtime: GUI stays in Foxy Python; read-only extraction, temporal SAM2, BundleSDF and viewing run in child processes with explicit interpreter boundaries. Atomic job progress and failures return through bounded Tk polling.
   manual_smoke_checks: [select retained synthetic output and verify origin label, invoke actual GUI button and inspect titled textured viewer, close viewer and reopen, browse invalid folder and verify readable error, scroll Reconstruction Validation on a short display]
   must_retest_if_changed: [all GUI tests, reconstruction GUI-support tests, isolated-domain GUI launch and close, actual native mesh viewer launch, Python compile and changed-file lint]
 bundlesdf_native_runtime_2026_09_07:
@@ -808,3 +811,15 @@ measured_textured_surface_path_2026_08_30:
   sequence: [constrained corrected frames, dense consensus-supported measured points, adjacent source-depth-grid triangles, fine-voxel measured fusion, depth-visible best-source RGB selection, OBJ MTL PNG write, quality report, command-free textured viewer]
   ownership: {geometry_and_texture: reconstruction/texture_baking.py, report_routing: reconstruction/tsdf_reconstruct.py plus reconstruction/gui_support.py, GUI_view: piper_gui/native_app.py}
   load_order_contracts: [registration completes before measured surface derivation, texture qualification happens after measured geometry, no derived surface feeds back into registration TSDF consensus quality or motion]
+
+offline_distortion_followup_2026_09_07:
+  reference: docs/ai/89-offline-distortion.yaml
+  summary: Offline-only shared calibrated remap, post-remap depth support check, explicit calibration provenance and read-only pixel/plane diagnostics; motion and capture policy unchanged.
+
+bundlesdf_full_video_workflow_audit_2026_09_07:
+  reference: docs/experiments/bundlesdf_upstream_workflow_audit.md
+  historical_finding: At audit time offline mask propagation was missing. The dense path is now implemented in 91-dense-offline-video.yaml; saved pose count still is not successful-track count.
+
+dense_offline_video_2026_09_07:
+  reference: docs/ai/91-dense-offline-video.yaml
+  routing: Default GUI archive reconstruction now recovers all synchronized RGB-D and propagates SAM2 masks offline before quality admission; live mission and capture policy is unchanged.

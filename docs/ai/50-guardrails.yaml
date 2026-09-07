@@ -1,4 +1,8 @@
 schema_version: 1
+saved_camera_recovery_2026_09_07:
+  reference: docs/ai/88-automatic-scan-recording.yaml
+  invariants: [never discard distortion while claiming raw imagery is pinhole, never rectify depth by linear interpolation, no replacement of original archive or native files, no latest TF fallback, no mission or command authority in offline import, keep tracking failure checks when removing upstream debugger pause]
+  must_retest_if_changed: [distorted and pinhole public DDS replay, direct serialized-bag recovery, repeated shutdown signals, native calibration-change and rectification tests, recorder and GUI suites, package build and tests, actual recorded-bag recovery and pinned native GPU run]
 visibility_binding_correction_2026_09_07:
   reference: docs/ai/86-reconstruction-recording.yaml
   invariant: A valid current cuRobo worker response must pass the generic contract. Never remove binding equality, digest checks or angle agreement to restore mission execution.
@@ -20,9 +24,9 @@ bundlesdf_gui_results_2026_09_07:
   owner_module: piper_gui/bundlesdf_results.py
   reference: docs/architecture/bundlesdf_native_runtime.md
   allowed_edit_paths: [piper_gui/bundlesdf_results.py, piper_gui/native_app.py, reconstruction/view_bundlesdf.py, tests/gui/test_bundlesdf_results.py]
-  behavior: Reconstruction Validation includes BundleSDF folder selection, retained-result discovery, explicit evidence origin and Open BundleSDF Model. A separate interactive textured viewer follows the existing GUI viewer pattern.
-  boundaries: No capture, reconstruction execution, ROS command, planner or source-data mutation. Unknown origin is never labelled live; the synthetic demo is explicitly marked not a live recording.
-  runtime: GUI stays in Foxy Python; mesh loading and graphics run through the isolated BundleSDF launcher. Child failures return to the Tk status label through bounded periodic polling.
+  behavior: Reconstruction Validation selects recorded datasets or results, runs dense offline extraction/SAM2/BundleSDF through Reconstruct, validates or cancels jobs, and opens an interactive textured viewer with explicit evidence origin.
+  boundaries: No capture, robot command, planner or source-data mutation. Offline GPU jobs use isolated child processes and cannot start through this panel during an active mission. Unknown origin remains unverified; synthetic inputs are labelled.
+  runtime: GUI stays in Foxy Python; read-only extraction, temporal SAM2, BundleSDF and viewing run in child processes with explicit interpreter boundaries. Atomic job progress and failures return through bounded Tk polling.
   manual_smoke_checks: [select retained synthetic output and verify origin label, invoke actual GUI button and inspect titled textured viewer, close viewer and reopen, browse invalid folder and verify readable error, scroll Reconstruction Validation on a short display]
   must_retest_if_changed: [all GUI tests, reconstruction GUI-support tests, isolated-domain GUI launch and close, actual native mesh viewer launch, Python compile and changed-file lint]
 bundlesdf_native_runtime_2026_09_07:
@@ -1223,3 +1227,15 @@ final_capture_aim_guardrail_2026_08_29:
   invariants: [valid saved range is 1.0-90.0 degrees, rough acquisition behavior is unchanged, accepted_views zero uses min selected and five degrees, exact aim remains first at every view, later fallback and effective dense-path visibility use the frozen selected value, executor applies the same effective value to achieved FK, planner and executor consume one frozen next-mission value, active mission settings do not change, collision minimum-distance authorization runtime monitoring and real-motion defaults remain unchanged]
   blast_radius: [candidate fallback generation, Tesseract path qualification, executor final capture admission]
   must_retest_if_changed: [GUI scan-aim tests including 1 and 90 boundaries, configuration fail-closed tests, launch generation, Tesseract protocol candidate and worker visibility tests, first-lock five-degree regression, later-view selected-gate regression, capability-map source binding, executor achieved-FK characterization, separately authorized low-speed E2E]
+
+offline_distortion_followup_2026_09_07:
+  reference: docs/ai/89-offline-distortion.yaml
+  summary: Offline-only shared calibrated remap, post-remap depth support check, explicit calibration provenance and read-only pixel/plane diagnostics; motion and capture policy unchanged.
+
+bundlesdf_full_video_workflow_audit_2026_09_07:
+  reference: docs/experiments/bundlesdf_upstream_workflow_audit.md
+  historical_finding: At audit time offline mask propagation was missing. The dense path is now implemented in 91-dense-offline-video.yaml; saved pose count still is not successful-track count.
+
+dense_offline_video_2026_09_07:
+  reference: docs/ai/91-dense-offline-video.yaml
+  routing: Default GUI archive reconstruction now recovers all synchronized RGB-D and propagates SAM2 masks offline before quality admission; live mission and capture policy is unchanged.

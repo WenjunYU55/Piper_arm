@@ -209,3 +209,27 @@ piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission_a
 tests/reconstruction/test_mission_archive.py
 docs/ai/88-automatic-scan-recording.yaml
 docs/experiments/automatic_scan_recording_validation.md
+
+tools/bundlesdf/import_bag.py
+tools/bundlesdf/patches/headless-tracking.patch
+tests/reconstruction/test_bag_import.py
+docs/experiments/saved_camera_bundlesdf_recovery.md
+
+Offline distortion follow-up:
+  docs/ai/89-offline-distortion.yaml
+  docs/experiments/offline_distortion_validation.md
+  tools/bundlesdf/distortion.py
+  tests/reconstruction/test_distortion.py
+
+  docs/experiments/bundlesdf_upstream_workflow_audit.md — source-level demo/input/segmentation/refinement audit
+
+Dense offline video pipeline:
+  docs/ai/91-dense-offline-video.yaml
+  docs/architecture/dense_offline_video.md
+  docs/experiments/dense_offline_video_validation.md
+  tools/bundlesdf/extract_video.py
+  tools/bundlesdf/segment_video.py
+  tools/bundlesdf/python_sam2.sh
+  tools/bundlesdf/reconstruct_job.py
+  tests/reconstruction/test_dense_video.py
+  tests/reconstruction/test_reconstruct_job.py

@@ -1,0 +1,43 @@
+schema_version: 1
+date: '2026-09-07'
+title: Whole RGB-D recording to temporal masks and BundleSDF through the GUI
+owner_module: reconstruction_recording
+reference: docs/architecture/dense_offline_video.md
+evidence: docs/experiments/dense_offline_video_validation.md
+previous_behavior: GUI recovery reused mission-recorder callbacks, MOVING admission, live mask timestamps and 8 Hz sampling; 141 frames reached BundleSDF from the retained archive.
+reason: The creators' RGB-D video workflow needs a temporally segmented sequence, not only frames paired with the slower live mask publisher.
+allowed_edit_paths: [tools/bundlesdf/, tests/reconstruction/, piper_gui/bundlesdf_results.py, piper_gui/native_app.py, tests/gui/test_bundlesdf_results.py, docs/]
+must_not_move_without: [AI_perception_tests/sam2_live_worker.py, reconstruction_recording/core.py, mission archive and capture owners]
+architecture:
+  - extract_video.py reads SQLite through Foxy deserialization and a local TF buffer; it creates no ROS node, publishers or subscribers.
+  - An accepted-history stamp authorizes the exact raw initial pin and frozen target; earlier images cannot establish a competing target.
+  - Recover all available synchronized RGB-D after that seed, including stationary intervals. Exact timestamp pairs have priority; depth is never reused. Camera calibration must stay fixed.
+  - Retain image-time TF and explicit missing-TF markers; unavailable TF prevents reconstruction admission but does not prevent temporal image propagation.
+  - python_sam2.sh invokes the existing isolated perception environment; segment_video.py uses its SAM2 temporal predictor and existing memory compactor, without starting the live worker.
+  - Infer every extracted frame, even when its depth or TF is unsuitable for reconstruction. The accepted seed remains conditioning authority and is not replaced by predicted masks.
+  - Preserve angle, edge, depth, blur and perspective-normalized mask expansion gates using recorded configuration. No offline MOVING predicate or 8 Hz cap.
+  - Native output remains raw RGB/depth with generated exact-frame masks and model provenance; dataset.py performs calibrated pinhole conversion.
+  - reconstruct_job.py owns extraction, segmentation, validation and isolated upstream tracking/global refinement; GUI polls small atomic progress records and can cancel its owned process group.
+  - output_validation.py exposes explicit upstream FAIL frame IDs separately from saved pose count and structural mesh success. Accuracy remains unqualified.
+upstream:
+  bundlesdf_commit: ffa67d425240b5b76d2e387a7dd3d3735a7cf1a1
+  existing_sam2_repository_commit: b7a9c29f196edff0eb54dbe14588d7ae5e3dde28
+  model: SAM2.1 tiny; config/checkpoint paths reuse existing sam2_live_worker defaults. Persist checkpoint and predictor/compactor hashes in each prepared manifest.
+parameters:
+  ros_parameters_added: none
+  frame_stride: 1, applied after temporal segmentation, selectable in GUI or wrapper
+  allow_incomplete: CLI false; GUI Allow partial scan defaults true; incomplete missions remain labelled incomplete
+  limit_frames: Optional diagnostic segmentation prefix, never marks a truncated scan complete
+  temporal_memory_limit: 16 retained images, preserving the conditioning frame
+  segmentation_device: CUDA in existing Grounded-SAM2 environment
+  quality_and_geometry: Inherit saved RecorderConfig, including central visibility angle, synchronization slop, pixel margin, blur, depth and mask-expansion settings. Saved sample_rate_hz describes live policy; acquisition_policy explicitly declares no offline rate gate.
+lifecycle:
+  - New unique job/output directories only; input archive and original captures are never written.
+  - Extraction inprogress/ready/failed state is explicit. Only ready extraction enters segmentation.
+  - Native preparation uses an inprogress directory and atomic final rename; exceptions or interruption retain a manifest and completed frames in an incomplete directory.
+  - Multiple jobs use independent model state; bounded SAM2 memory retains at most 16 images in normal single-seed use.
+  - Missing terminal workflow evidence stays UNKNOWN/incomplete, never inferred successful from a closed archive.
+  - The legacy import_bag.py callback recovery remains available for diagnostic comparison; it is no longer the GUI archive reconstruction path.
+manual_smoke_checks: [deserialize a serialized bag without later masks or MOVING events, GPU temporal mask propagation on saved real frames, native dataset validation and pinned reader, actual GUI Reconstruct action through all stages, inspect mesh and tracking failure report, cancel and inspect partial output]
+must_retest_if_changed: [dense timestamp matching and quality unit tests, serialized bag extraction, interruption and multi-job tests, GUI tests, isolated SAM2 inference, complete recording/converter suite, pinned BundleSDF reader and actual GPU reconstruction]
+invariants: [no robot or mission commands, unchanged captures and NBV, no stale-mask fallback, no latest TF fallback, raw data immutable, no weights or data in Git, no pose-count accuracy claim]

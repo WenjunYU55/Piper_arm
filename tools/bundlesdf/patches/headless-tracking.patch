@@ -1,0 +1,11 @@
+--- a/bundlesdf.py
++++ b/bundlesdf.py
+@@ -603,7 +603,7 @@
+       visibles = np.array(visibles)
+       ids = np.argsort(visibles)[::-1]
+       found = False
+-      pdb.set_trace()
++      logging.info("Insufficient reference matches; trying existing keyframe recovery")
+       for id in ids:
+         kf = self.bundler._keyframes[id]
+         logging.info(f"trying new ref frame {kf._id_str}")

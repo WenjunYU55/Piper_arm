@@ -44,6 +44,11 @@ if git -C "$BUNDLESDF_UPSTREAM" apply --check "$BUNDLESDF_SCRIPTS/patches/native
 else
   git -C "$BUNDLESDF_UPSTREAM" apply --reverse --check "$BUNDLESDF_SCRIPTS/patches/native-build.patch"
 fi
+if git -C "$BUNDLESDF_UPSTREAM" apply --check "$BUNDLESDF_SCRIPTS/patches/headless-tracking.patch"; then
+  git -C "$BUNDLESDF_UPSTREAM" apply "$BUNDLESDF_SCRIPTS/patches/headless-tracking.patch"
+else
+  git -C "$BUNDLESDF_UPSTREAM" apply --reverse --check "$BUNDLESDF_SCRIPTS/patches/headless-tracking.patch"
+fi
 # Download and extract packages without apt installation or system mutation.
 (cd "$BUNDLESDF_RUNTIME" && apt-get download libyaml-cpp-dev=0.6.2-4ubuntu1 libyaml-cpp0.6=0.6.2-4ubuntu1 libzmq3-dev=4.3.2-2ubuntu1 libzmq5=4.3.2-2ubuntu1 freeglut3-dev=2.8.1-3 freeglut3=2.8.1-3 libpgm-5.2-0=5.2.122~dfsg-3ubuntu1 libnorm1=1.5.8+dfsg2-2build1)
 for archive in "$BUNDLESDF_RUNTIME"/*.deb; do dpkg-deb -x "$archive" "$BUNDLESDF_RUNTIME/native"; done

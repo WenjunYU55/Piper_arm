@@ -113,3 +113,34 @@ The panel discovers `PIPER_BUNDLESDF_RUNTIME/evidence/*/run.json` (default
 The Reconstruction tab scrolls so its existing TSDF controls remain accessible.
 A running GUI must be reopened to load new code; no running mission GUI is restarted
 automatically by this change.
+
+The native installer also applies `patches/headless-tracking.patch`. Pinned
+BundleSDF contains an interactive debugger in its insufficient-reference-match
+recovery branch. On unattended runs this raises `BdbQuit`. The patch replaces
+that pause with logging and leaves recovery and tracking rejection unchanged.
+For an existing pinned installation, apply this small patch without rebuilding:
+
+```bash
+git -C "$HOME/.local/share/piper-bundlesdf/upstream" apply --check \
+  /home/prl/Piper_arm/tools/bundlesdf/patches/headless-tracking.patch
+git -C "$HOME/.local/share/piper-bundlesdf/upstream" apply \
+  /home/prl/Piper_arm/tools/bundlesdf/patches/headless-tracking.patch
+```
+
+If the check reports it is already applied, do not apply it twice. Every new run
+retains its full local upstream diff. See the [saved-camera recovery record](../experiments/saved_camera_bundlesdf_recovery.md).
+
+Results containing the archive importer's `recovery.json` are labelled
+**Recorded ROS RGB-D session — offline reconstruction**. This identifies the
+recorded input source, not physical accuracy or mission success. Synthetic
+provenance still takes precedence. Existing GUI processes can browse and open
+the new output; the improved origin label loads on the next normal GUI restart.
+
+## Whole-recording reconstruction from the GUI
+
+The BundleSDF panel now provides Reconstruct, Validate dataset and Cancel reconstruction.
+Archive inputs use every available synchronized RGB-D frame after the accepted seed
+and run temporal SAM2 offline; they no longer depend on live mask publication or
+MOVING-only admission. See [dense offline video](dense_offline_video.md) for commands,
+environment boundaries, progress, partial datasets and tracking-quality warnings.
+The legacy callback importer above remains available for diagnostic comparison.

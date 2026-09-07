@@ -28,6 +28,7 @@ from piper_mobile_manipulation.reconstruction_recording.core import (
     mask_metrics,
 )  # noqa: E402
 from dataset import convert, validate  # noqa: E402
+from distortion import diagnose  # noqa: E402
 
 
 def example(stamp=1_000_000_000, source="first_capture"):
@@ -207,6 +208,70 @@ def test_sequence_convert_and_validate(tmp_path):
     (recorder.final_path / "00000001/mask.png").write_bytes(b"corrupt")
     with pytest.raises(ValueError):
         validate(recorder.final_path)
+
+
+def test_distorted_raw_session_rectifies_only_offline(tmp_path):
+    recorder = session(tmp_path)
+    frame = replace(example(), distortion_model="plumb_bob",
+                    distortion_coefficients=(0.169, -0.514, -0.0021, 0.0013, 0.475))
+    # Distinct depth values make interpolated/non-nearest resampling detectable.
+    frame.depth[:, 80:] = 700
+    assert recorder.submit(frame)
+    assert recorder.close("complete")
+    raw_depth = recorder.final_path / "00000000/depth.npy"
+    before = raw_depth.read_bytes()
+    output = tmp_path / "rectified"
+    convert(recorder.final_path, output, minimum_frames=1)
+    assert raw_depth.read_bytes() == before
+    assert np.array_equal(np.load(raw_depth), frame.depth)
+    K = frame.K
+    maps = cv2.initUndistortRectifyMap(
+        K, np.asarray(frame.distortion_coefficients), np.eye(3), K,
+        (160, 120), cv2.CV_32FC1)
+    depth = cv2.imread(str(output / "depth/00000000.png"), -1)
+    mask = cv2.imread(str(output / "masks/00000000.png"), -1)
+    assert np.array_equal(depth, cv2.remap(frame.depth, *maps, cv2.INTER_NEAREST))
+    assert np.array_equal(mask, cv2.remap(frame.mask, *maps, cv2.INTER_NEAREST))
+    assert set(np.unique(depth)) <= {0, 500, 700}
+    assert set(np.unique(mask)) <= {0, 255}
+    assert np.array_equal(np.loadtxt(output / "cam_K.txt"), K)
+    _, manifest = validate(recorder.final_path, minimum_frames=1)
+    assert manifest['frames'][0]['distortion_model'] == 'plumb_bob'
+    report = diagnose(recorder.final_path, tmp_path / 'diagnostic', plane_roi=(5, 5, 50, 50))
+    assert report['correction_applied']
+    assert report['maximum_displacement_px'] > 0
+    assert report['plane_with_calibration']['rms_mm'] < 1e-8
+    assert (tmp_path / 'diagnostic/comparison.png').is_file()
+    assert raw_depth.read_bytes() == before
+    with pytest.raises(FileExistsError):
+        diagnose(recorder.final_path, tmp_path / 'diagnostic')
+    with pytest.raises(ValueError, match='ROI'):
+        diagnose(recorder.final_path, tmp_path / 'bad-roi', plane_roi=(-1, 0, 10, 10))
+
+
+@pytest.mark.parametrize('model,coefficients', [
+    ('equidistant', (0.,) * 4), ('plumb_bob', (0.,) * 4),
+    ('plumb_bob', (float('nan'),) * 5), ('', (1.,) * 5),
+])
+def test_unsupported_distortion_rejects(tmp_path, model, coefficients):
+    recorder = session(tmp_path)
+    assert not recorder.submit(replace(example(), distortion_model=model,
+                                       distortion_coefficients=coefficients))
+    assert recorder.rejected['invalid_intrinsics'] == 1
+    recorder.close()
+
+
+def test_distortion_change_rejects(tmp_path):
+    recorder = session(tmp_path)
+    first = replace(example(), distortion_model='plumb_bob',
+                    distortion_coefficients=(0.,) * 5)
+    assert recorder.submit(first)
+    later = replace(first, rgb_stamp_ns=2_000_000_000, depth_stamp_ns=2_000_000_000,
+                    mask_stamp_ns=2_000_000_000, tf_stamp_ns=2_000_000_000,
+                    source='moving', distortion_coefficients=(0.1,) * 5)
+    assert not recorder.submit(later)
+    assert recorder.rejected['intrinsics_or_resolution_changed'] == 1
+    recorder.close()
 
 
 def test_float_depth_precision_and_partial(tmp_path):

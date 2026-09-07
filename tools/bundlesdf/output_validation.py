@@ -1,9 +1,20 @@
 """Check actual reconstructed geometry, trajectory and texture artifacts."""
 
 from pathlib import Path
+import re
 
 import cv2
 import numpy as np
+
+
+def tracking_health(log):
+    """Expose upstream failures; pose files can exist even for failed tracking frames."""
+    failed = sorted(set(re.findall(r'frame (\d{8})[^\n]*?FAIL', log)))
+    return dict(explicit_failed_frame_ids=failed,
+                reference_recovery_messages=log.count(
+                    'Insufficient reference matches; trying existing keyframe recovery'),
+                assessment='failures_reported' if failed else 'no_explicit_failures_logged',
+                accuracy_qualified=False)
 
 
 def inspect_result(root):
@@ -38,7 +49,10 @@ def inspect_result(root):
     # This detects that failure, not subjective texture quality or coverage.
     if colored <= 1:
         raise ValueError('degenerate mesh texture: check native CUDA UV kernel diagnostic')
-    return dict(success=True, vertices=len(vertices), faces=len(faces),
+    log_path = root.parent / 'bundlesdf.log'
+    health = (tracking_health(log_path.read_text(errors='replace')) if log_path.is_file()
+              else dict(assessment='log_unavailable', accuracy_qualified=False))
+    return dict(success=True, vertices=len(vertices), faces=len(faces), tracking_health=health,
                 estimated_pose_count=len(poses), pose_convention='T_camera_object',
                 texture_nonzero_pixels=colored, texture_total_pixels=int(texture.shape[0]
                                                                          * texture.shape[1]),

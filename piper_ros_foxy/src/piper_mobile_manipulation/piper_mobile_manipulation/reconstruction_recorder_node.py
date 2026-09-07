@@ -27,6 +27,7 @@ from piper_mobile_manipulation.reconstruction_recording.core import (
     Frame,
     RecorderConfig,
     RecordingSession,
+    distortion_valid,
 )
 from piper_mobile_manipulation.visibility import frozen_visibility_parameters
 
@@ -213,7 +214,7 @@ class ReconstructionRecorderNode(Node):
         if (
             info.width != rgb.width
             or info.height != rgb.height
-            or any(abs(float(x)) > 1e-10 for x in info.d)
+            or not distortion_valid(info.distortion_model, info.d)
         ):
             raise ValueError("invalid_intrinsics")
         # Exact image-time TF lookup, zero wait on this background worker.
@@ -256,6 +257,8 @@ class ReconstructionRecorderNode(Node):
             stamp_ns(tf),
             source=source,
             accepted_view=view,
+            distortion_model=info.distortion_model,
+            distortion_coefficients=tuple(info.d),
         )
 
     def admit(self, raw, source, view=0):
@@ -449,9 +452,12 @@ def main(args=None):
     """Run the passive recorder until orderly shutdown."""
     rclpy.init(args=args)
     node = None
+    shutdown_requested = threading.Event()
 
     def interrupt(_signum, _frame):
-        raise KeyboardInterrupt
+        # Do not inject exceptions into tf2's native message conversion, or
+        # interrupt the admission/writer joins on a second supervisor signal.
+        shutdown_requested.set()
 
     # Background shells may inherit SIGINT=SIG_IGN. Install explicit handlers
     # so bag replay and supervisor shutdown still flush the native journal.
@@ -459,7 +465,8 @@ def main(args=None):
     signal.signal(signal.SIGTERM, interrupt)
     try:
         node = ReconstructionRecorderNode()
-        rclpy.spin(node)
+        while rclpy.ok() and not shutdown_requested.is_set():
+            rclpy.spin_once(node, timeout_sec=0.1)
     except KeyboardInterrupt:
         pass
     finally:

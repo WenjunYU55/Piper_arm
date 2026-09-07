@@ -120,7 +120,13 @@ angle, mask bounds/margin, blur, valid depth fraction, source and accepted viewp
 `T_base_camera` maps optical camera coordinates into base coordinates:
 `p_base = R_base_camera * p_camera + t_base_camera`. It is **not** an object pose.
 No latest-TF fallback exists. Rotation, translation and homogeneous row are checked.
-CameraInfo changes, distortion, mismatched dimensions or stream identity reject.
+CameraInfo changes, unsupported distortion, mismatched dimensions or stream identity reject.
+Raw frames retain their recorded `distortion_model` and `distortion_coefficients`.
+ROS `plumb_bob` (five coefficients) and `rational_polynomial` (eight) are supported.
+The offline converter rectifies RGB, aligned depth and masks together into the same
+pinhole K: linear RGB sampling, nearest depth/mask sampling and zero borders.
+Native PNG/NPY files remain unchanged; legacy sessions without distortion fields
+retain their original pinhole interpretation.
 Non-finite target depth rejects; non-finite depth outside the mask is retained in
 the native file and converted to zero for BundleSDF. Moving sample timing uses
 image timestamps; duplicates/out-of-order candidates reject.
@@ -296,3 +302,38 @@ The system cannot reconstruct unobserved surfaces merely because recording ran.
 Open the resulting output folder from **Reconstruction Validation → BundleSDF
 results → Open BundleSDF Model**. That GUI button opens results; offline building
 still uses the commands above.
+
+
+## Recover a saved whole-scan archive without DDS replay loss
+
+For archives whose large keyframe messages are lost during DDS playback, use
+this importer. It reads SQLite in recorded order and calls the actual recorder
+callbacks, RGB/depth synchronizer, timestamped TF buffer, gates and writer.
+Only the offline feeder waits for admission capacity; live motion is unaffected.
+The output is still incomplete if no successful terminal event was recorded.
+
+```bash
+source piper_ros_foxy/install/setup.bash
+ROS_DOMAIN_ID=198 ROS_LOCALHOST_ONLY=1 python3 tools/bundlesdf/import_bag.py \
+  /absolute/scan_recording_UUID.closed/bag /absolute/new-recovery-directory
+# Use the exact session path printed by the importer:
+python3 tools/bundlesdf/run.py /absolute/new-recovery-directory/SESSION.incomplete \
+  --allow-incomplete --output /absolute/new-bundlesdf-result
+```
+
+This is callback-based offline recovery, not a new physical mission or DDS test.
+The ordinary `replay_bag.sh` also restores transient-local history/static-TF
+publisher QoS when Foxy omitted offered profiles, but best-effort large image
+messages can still be lost in playback. Prefer the importer for retained archives.
+The recorder's SIGINT/SIGTERM handlers now request orderly shutdown rather than
+raising exceptions inside native TF conversion; repeated signals cannot interrupt
+its worker joins.
+
+## Whole-recording reconstruction from the GUI
+
+The BundleSDF panel now provides Reconstruct, Validate dataset and Cancel reconstruction.
+Archive inputs use every available synchronized RGB-D frame after the accepted seed
+and run temporal SAM2 offline; they no longer depend on live mask publication or
+MOVING-only admission. See [dense offline video](dense_offline_video.md) for commands,
+environment boundaries, progress, partial datasets and tracking-quality warnings.
+The legacy callback importer above remains available for diagnostic comparison.

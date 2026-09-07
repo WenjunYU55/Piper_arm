@@ -54,3 +54,30 @@ gui_followup:
   viewer: reconstruction/view_bundlesdf.py
   behavior: BundleSDF output browsing and model opening from the existing Reconstruction Validation tab; isolated interactive viewer, explicit synthetic or unverified origin, no live-recording claim.
   evidence: docs/experiments/bundlesdf_gui_validation.md
+real_recording_tracking_followup:
+  reference: docs/experiments/saved_camera_bundlesdf_recovery.md
+  patch: tools/bundlesdf/patches/headless-tracking.patch
+  cause: Pinned bundlesdf.py enters pdb.set_trace when reference matches are insufficient. The first 141-frame recorded-data run exited with BdbQuit at frame 28 before final mesh export.
+  correction: Replace only the interactive debugger with logging; retain keyframe recovery, minimum-match thresholds and FAIL behavior. Installer applies the patch after pin verification; run provenance saves the exact local diff.
+  completed_gpu_evidence:
+    reference: docs/experiments/saved_camera_bundlesdf_recovery.md
+    output: /home/prl/.local/share/piper-bundlesdf/evidence/2026-09-07-real-scan-142623-headless
+    result: Exit zero; 14730 vertices, 19475 faces, 141 rigid estimated poses, 43211 nonzero texture pixels. Actual viewer opened through GUI helper.
+    quality: Structural success only. Visual quality fails due to spurious surrounding surfaces and dark/untextured regions; accuracy unqualified. Retain the original mesh and previews without cosmetic removal.
+    checks: 248 focused recorder/replay/converter/GUI tests passed; package build passed; 48 of 50 package checks passed with unchanged 99 flake8 and 10 pep257 findings.
+
+offline_distortion_followup_2026_09_07:
+  reference: docs/ai/89-offline-distortion.yaml
+  summary: Offline-only shared calibrated remap, post-remap depth support check, explicit calibration provenance and read-only pixel/plane diagnostics; motion and capture policy unchanged.
+
+upstream_workflow_audit_2026_09_07:
+  reference: docs/experiments/bundlesdf_upstream_workflow_audit.md
+  confirmed: Pinned custom reader format and run_video invocation match; global refinement is called automatically by run_one_video.
+  historical_missing: Full-recording offline mask propagation was absent at audit time; see 91-dense-offline-video.yaml for the implemented follow-up. Legacy import_bag.py retains mission filtering.
+  quality: Previous real log contains explicit failures for frames 4, 47, 99 and 137; 141 saved poses do not mean 141 successful tracks.
+  official_example: Retried download exits 1 due Google Drive quota; supplied-example reconstruction remains unexecuted.
+  scope: Audit only; no runtime or capture policy changes and no new GPU mesh.
+
+dense_offline_video_2026_09_07:
+  reference: docs/ai/91-dense-offline-video.yaml
+  routing: Default GUI archive reconstruction now recovers all synchronized RGB-D and propagates SAM2 masks offline before quality admission; live mission and capture policy is unchanged.

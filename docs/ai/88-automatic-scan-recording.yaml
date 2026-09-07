@@ -46,10 +46,40 @@ must_retest_if_changed: [archive lifecycle and SQLite mismatch tests, recorder a
 remaining:
   - Real camera throughput, disk contention and physical arm/camera timing remain unqualified.
   - Best-effort recording can lose frames; retained data does not guarantee every scan is reconstructable.
-  - Reconstruction GUI currently opens generated results; offline building still uses documented commands.
+  - GUI archive Reconstruct now uses dense temporal segmentation; see 91-dense-offline-video.yaml. Legacy callback import remains diagnostic.
 evidence:
   report: docs/experiments/automatic_scan_recording_validation.md
   tests: 238 passed; package build passed; 48 of 50 CTest checks passed with unchanged 99 flake8 and 10 pep257 findings.
   nominal: 29 recorded messages equal 29 SQLite rows; replay yields one complete six-frame two-mission-capture session with zero native rejects or writer drops.
   converter: All six converted frames loaded by pinned upstream reader; no new GPU mesh run for this recording-only change.
   hardware: Synthetic ROS publishers only; no physical qualification claimed.
+saved_camera_recovery_followup:
+  reference: docs/experiments/saved_camera_bundlesdf_recovery.md
+  archive: datasets/mission_recordings/scan_recording_f62ed65bbeb4459cb35a9b36e64869f9.closed
+  task_id: gui-sim-f5956c842de64128b5f97592c3c179c6
+  recorded_messages: 97547
+  mission: Three accepted captures followed by recorded operator cancellation; do not label the recovered session complete.
+  replay_failure: Foxy recorded empty offered QoS for late mission-history publisher; volatile playback could not reach transient-local history subscriber. Explicit playback QoS restores history, but a best-effort large first keyframe was still lost in observed DDS playback.
+  recovery: tools/bundlesdf/import_bag.py reads SQLite in recorded order and invokes real recorder callbacks, synchronizer, TF listener, admission gates and writer. Offline feeder waits for bounded queue capacity. It publishes no command topics and does not require replay DDS transport.
+  acceptance: One incomplete session, 141 accepted raw frames including all three stationary captures, zero writer/backpressure drops in the retained recovery.
+  rejected_by_reason: {rgb_depth_unsynchronised: 3, sample_rate_throttled: 39, stale_mask: 32, unmatched_sensor_frame: 2335}
+  distinction: The bag came from the existing camera mission. Callback import and GPU reconstruction are offline tests, not a new physical-system validation. Best-effort live native keyframe delivery is not guaranteed; use archive recovery when needed.
+  gui_origin: A saved result with this importer's recovery.json is labelled Recorded ROS RGB-D session - offline reconstruction. Synthetic evidence takes precedence; absent provenance remains unverified. No claim of physical accuracy is inferred.
+  completed_gpu_evidence:
+    reference: docs/experiments/saved_camera_bundlesdf_recovery.md
+    output: /home/prl/.local/share/piper-bundlesdf/evidence/2026-09-07-real-scan-142623-headless
+    result: Exit zero; 14730 vertices, 19475 faces, 141 rigid estimated poses, 43211 nonzero texture pixels. Actual viewer opened through GUI helper.
+    quality: Structural success only. Visual quality fails due to spurious surrounding surfaces and dark/untextured regions; accuracy unqualified. Retain the original mesh and previews without cosmetic removal.
+    checks: 248 focused recorder/replay/converter/GUI tests passed; package build passed; 48 of 50 package checks passed with unchanged 99 flake8 and 10 pep257 findings.
+
+offline_distortion_followup_2026_09_07:
+  reference: docs/ai/89-offline-distortion.yaml
+  summary: Offline-only shared calibrated remap, post-remap depth support check, explicit calibration provenance and read-only pixel/plane diagnostics; motion and capture policy unchanged.
+
+bundlesdf_full_video_workflow_audit_2026_09_07:
+  reference: docs/experiments/bundlesdf_upstream_workflow_audit.md
+  historical_finding: At audit time offline mask propagation was missing. The dense path is now implemented in 91-dense-offline-video.yaml; saved pose count still is not successful-track count.
+
+dense_offline_video_2026_09_07:
+  reference: docs/ai/91-dense-offline-video.yaml
+  routing: Default GUI archive reconstruction now recovers all synchronized RGB-D and propagates SAM2 masks offline before quality admission; live mission and capture policy is unchanged.

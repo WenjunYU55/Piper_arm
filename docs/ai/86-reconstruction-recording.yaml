@@ -171,3 +171,17 @@ remaining:
 - Live multi-node atomic parameter updates are deliberately unsupported; relaunch between missions
 
 whole_scan_archive_followup: docs/ai/88-automatic-scan-recording.yaml
+saved_camera_calibration_followup:
+  reference: docs/experiments/saved_camera_bundlesdf_recovery.md
+  previous_failure: Raw RealSense color CameraInfo has nonzero plumb_bob coefficients; the recorder incorrectly rejected every distorted stream as invalid_intrinsics. Synthetic pinhole-only fixtures missed this compatibility gap.
+  correction: Preserve raw RGB, aligned depth and mask plus finite supported distortion metadata. Detect calibration changes. Rectify only in the offline BundleSDF adapter with unchanged K, linear RGB and nearest depth/mask sampling.
+  shutdown: SIGINT and SIGTERM set a shutdown request instead of raising KeyboardInterrupt inside tf2 native conversion. Repeated signals do not interrupt worker joins. The original rotation-member traceback occurred during shutdown and was not proof of malformed recorded transforms.
+  tests: Distorted and pinhole public DDS replay at 20/10/5 degrees; raw depth preservation and nearest rectification; unsupported/nonfinite/changing calibration rejection; repeated shutdown signals; serialized-bag callback recovery.
+
+offline_distortion_followup_2026_09_07:
+  reference: docs/ai/89-offline-distortion.yaml
+  summary: Offline-only shared calibrated remap, post-remap depth support check, explicit calibration provenance and read-only pixel/plane diagnostics; motion and capture policy unchanged.
+
+dense_offline_video_2026_09_07:
+  reference: docs/ai/91-dense-offline-video.yaml
+  routing: Default GUI archive reconstruction now recovers all synchronized RGB-D and propagates SAM2 masks offline before quality admission; live mission and capture policy is unchanged.

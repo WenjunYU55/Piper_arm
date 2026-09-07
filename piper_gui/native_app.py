@@ -1114,13 +1114,14 @@ class PiperGuiApp:
         ttk.Label(
             parent,
             text=(
-                'This tab reads completed datasets only. It never starts ROS '
-                'or commands the arm. Robot-pose TSDF is the baseline; bounded '
+                'This tab reconstructs saved RGB-D datasets offline and never '
+                'commands the arm. Robot-pose TSDF is the baseline; bounded '
                 'GICP is an optional local registration correction.'),
             wraplength=820, justify='left').grid(
                 row=1, column=0, sticky='ew', pady=(8, 16))
         inputs = ttk.LabelFrame(parent, text='Dataset and expected size', padding=12)
-        BundleSDFResults(parent, PROJECT_ROOT).grid(
+        BundleSDFResults(parent, PROJECT_ROOT, can_reconstruct=(
+            lambda: self.mission_view_model.state.can_start)).grid(
             row=2, column=0, sticky='ew', pady=(0, 12))
         inputs.grid(row=3, column=0, sticky='ew')
         ttk.Label(inputs, text='Dataset').grid(row=0, column=0, sticky='w')

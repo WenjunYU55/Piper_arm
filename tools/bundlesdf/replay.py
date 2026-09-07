@@ -214,13 +214,23 @@ class Replay:
         self.publisher.destroy_node()
 
 
-def run(output):
+def run(output, distorted=False):
     output.mkdir(parents=True, exist_ok=False)
     evidence = []
     rclpy.init()
     try:
         for angle in (20.0, 10.0, 5.0):
             replay = Replay(output / ("angle_%02d" % angle), angle)
+            if distorted:
+                original_image = replay.image
+
+                def calibrated_image(*args, **kwargs):
+                    raw = original_image(*args, **kwargs)
+                    raw[2].distortion_model = 'plumb_bob'
+                    raw[2].d = [0.169, -0.514, -0.0021, 0.0013, 0.475]
+                    return raw
+
+                replay.image = calibrated_image
             try:
                 replay.stationary(replay.image())
                 replay.motion()
@@ -289,4 +299,6 @@ def run(output):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
-    run(parser.parse_args().output)
+    parser.add_argument("--distorted", action="store_true")
+    arguments = parser.parse_args()
+    run(arguments.output, arguments.distorted)

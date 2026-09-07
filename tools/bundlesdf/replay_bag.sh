@@ -26,6 +26,18 @@ if missing:
     raise SystemExit('Incompatible bag; missing raw evidence or accepted-capture identity topics: ' + ', '.join(sorted(missing)))
 PY
 mkdir -p "$BUNDLESDF_OUTPUT"
+python3 - "$BUNDLESDF_OUTPUT/playback_qos.yaml" <<'PYQOS'
+import pathlib, sys, yaml
+# Foxy may save empty offered_qos_profiles for publishers discovered after
+# recording starts. Its volatile playback default cannot reach a transient
+# history subscriber. Restore these existing public-interface requirements.
+profiles = {
+    topic: dict(history='keep_last', depth=depth, reliability='reliable',
+                durability='transient_local')
+    for topic, depth in [('/piper/scan_session_history', 1), ('/tf_static', 100)]
+}
+pathlib.Path(sys.argv[1]).write_text(yaml.safe_dump(profiles))
+PYQOS
 BUNDLESDF_DEFAULT_ANGLE="$(python3 -c 'from piper_mobile_manipulation.visibility import DEFAULT_VISIBILITY_ANGLE_DEG; print(DEFAULT_VISIBILITY_ANGLE_DEG)')"
 BUNDLESDF_ARCHIVED_ANGLE="$(python3 - "$BUNDLESDF_BAG" "$BUNDLESDF_DEFAULT_ANGLE" <<'PYANGLE'
 import json, pathlib, sys
@@ -72,7 +84,8 @@ fi
 # Foxy has no --clock option. Recorder admission and TF use original message
 # stamps; replay scheduling and shutdown use monotonic time. Playback launches
 # no driver, mission engine, planner or command publisher.
-ros2 bag play "$BUNDLESDF_BAG" --rate 1.0 --topics \
+ros2 bag play "$BUNDLESDF_BAG" --rate 1.0 \
+  --qos-profile-overrides-path "$BUNDLESDF_OUTPUT/playback_qos.yaml" --topics \
   /camera/color/image_raw /camera/aligned_depth_to_color/image_raw \
   /camera/color/camera_info /piper/sam2_target_mask /tf /tf_static \
   /piper/reconstruction_keyframe /piper/scan_session_history \

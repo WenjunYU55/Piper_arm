@@ -11,11 +11,14 @@ import uuid
 import cv2
 import numpy as np
 
+from distortion import rectification_maps
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(ROOT / "piper_ros_foxy/src/piper_mobile_manipulation"))
 from piper_mobile_manipulation.reconstruction_recording.core import (  # noqa: E402
     atomic_json,
     intrinsics_valid,
+    distortion_valid,
 )
 from piper_mobile_manipulation.visibility import validate_transform  # noqa: E402
 
@@ -129,12 +132,18 @@ def validate(session, minimum_frames=5, allow_incomplete=False):
             raise ValueError("invalid target depth")
         if not intrinsics_valid(entry["K"], entry["width"], entry["height"]):
             raise ValueError("invalid intrinsics")
+        model = entry.get("distortion_model", "")
+        coefficients = entry.get("distortion_coefficients", [])
+        if not distortion_valid(model, coefficients):
+            raise ValueError("invalid or unsupported distortion calibration")
         identity = (
             entry["width"],
             entry["height"],
             entry["base_frame"],
             entry["camera_optical_frame"],
             json.dumps(entry["K"]),
+            model,
+            tuple(coefficients),
         )
         if (
             not entry["base_frame"]
@@ -217,14 +226,37 @@ def convert(
                 raise ValueError("depth exceeds BundleSDF uint16 millimetre range")
             depth[~np.isfinite(depth) | (depth < 0)] = 0
             encoded = np.rint(depth).astype(np.uint16)
+            coefficients = np.asarray(entry.get("distortion_coefficients", []), dtype=float)
+            if np.any(coefficients):
+                # BundleSDF's loader is pinhole-only. Rectify the entire aligned
+                # tuple into the same K; nearest sampling preserves depth edges
+                # and binary semantic support. Native files remain untouched.
+                K = np.asarray(entry["K"], dtype=float)
+                maps = rectification_maps(K, coefficients, entry["width"], entry["height"])
+                encoded = cv2.remap(encoded, *maps, cv2.INTER_NEAREST)
+                for key, folder, interpolation in (
+                    ("rgb", "rgb", cv2.INTER_LINEAR),
+                    ("mask", "masks", cv2.INTER_NEAREST),
+                ):
+                    source = cv2.imread(str(artifact(root, entry[key])), cv2.IMREAD_UNCHANGED)
+                    rectified = cv2.remap(source, *maps, interpolation)
+                    if key == "mask" and not rectified.any():
+                        raise ValueError("rectification removed the target mask")
+                    if key == "mask":
+                        ratio = np.count_nonzero(encoded[rectified > 0]) / np.count_nonzero(rectified)
+                        if ratio < manifest["configuration"]["minimum_valid_depth_ratio"]:
+                            raise ValueError("rectification left insufficient target depth")
+                    if not cv2.imwrite(str(temporary / folder / filename), rectified):
+                        raise OSError("rectified image PNG encoding failed")
             if not cv2.imwrite(str(temporary / "depth" / filename), encoded):
                 raise OSError("depth PNG encoding failed")
-            shutil.copyfile(
-                str(artifact(root, entry["rgb"])), str(temporary / "rgb" / filename)
-            )
-            shutil.copyfile(
-                str(artifact(root, entry["mask"])), str(temporary / "masks" / filename)
-            )
+            if not np.any(coefficients):
+                shutil.copyfile(
+                    str(artifact(root, entry["rgb"])), str(temporary / "rgb" / filename)
+                )
+                shutil.copyfile(
+                    str(artifact(root, entry["mask"])), str(temporary / "masks" / filename)
+                )
             mapping.append(
                 dict(
                     filename=filename,
@@ -238,6 +270,17 @@ def convert(
         )
         report.update(
             converted_frames=len(entries),
+            calibration=dict(
+                input_distortion_model=entries[0].get("distortion_model", ""),
+                input_distortion_coefficients=entries[0].get("distortion_coefficients", []),
+                input_K=entries[0]["K"], output_K=entries[0]["K"],
+                applied=bool(np.any(entries[0].get("distortion_coefficients", []))),
+                output_distortion_coefficients=[0.0] * 5,
+                depth_convention="axial Z, not radial range; pixel remap does not change Z",
+            ),
+            rectification=(
+                "Recorded Brown-Conrady distortion to pinhole with unchanged K; "
+                "RGB linear, aligned depth and mask nearest; zero border"),
             depth_conversion=(
                 'uint16 millimetres; round nearest, maximum quantization error 0.5 '
                 'mm'

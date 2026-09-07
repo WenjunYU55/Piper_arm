@@ -108,6 +108,20 @@ class Frame:
     source: str = "moving"
     mask_source: str = "sam2_target_mask"
     accepted_view: int = 0
+    distortion_model: str = ""
+    distortion_coefficients: tuple = ()
+
+
+def distortion_valid(model, coefficients):
+    """Support recorded ROS Brown-Conrady calibration, retaining legacy pinhole data."""
+    values = np.asarray(coefficients, dtype=float)
+    return bool(
+        values.ndim == 1
+        and np.isfinite(values).all()
+        and ((model == "" and values.size == 0)
+             or (model == "plumb_bob" and values.size == 5)
+             or (model == "rational_polynomial" and values.size == 8))
+    )
 
 
 def intrinsics_valid(K, width, height):
@@ -239,7 +253,9 @@ class RecordingSession:
         ):
             return self.reject("resolution_mismatch")
         h, w = frame.depth.shape
-        if not intrinsics_valid(frame.K, w, h):
+        if not intrinsics_valid(frame.K, w, h) or not distortion_valid(
+            frame.distortion_model, frame.distortion_coefficients
+        ):
             return self.reject("invalid_intrinsics")
         identity = (
             h,
@@ -247,6 +263,8 @@ class RecordingSession:
             frame.base_frame,
             frame.camera_frame,
             tuple(np.asarray(frame.K).ravel()),
+            frame.distortion_model,
+            tuple(frame.distortion_coefficients),
         )
         if self.calibration is not None and identity != self.calibration:
             return self.reject("intrinsics_or_resolution_changed")
@@ -316,6 +334,8 @@ class RecordingSession:
             "camera_optical_frame": frame.camera_frame,
             "T_base_camera": transform.tolist(),
             "K": np.asarray(frame.K).tolist(),
+            "distortion_model": frame.distortion_model,
+            "distortion_coefficients": list(frame.distortion_coefficients),
             "width": w,
             "height": h,
             "depth_encoding": frame.depth_encoding,
