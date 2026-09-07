@@ -2,6 +2,7 @@ import copy
 import math
 from pathlib import Path
 import time
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -18,6 +19,62 @@ from piper_tesseract_foxy.contract import (
     validate_response,
 )
 from piper_tesseract_foxy.worker import Worker
+
+
+@pytest.mark.parametrize('kind', ['ROUGH_ACQUISITION', 'MULTIVIEW_SCAN', 'RETURN_HOME'])
+@pytest.mark.parametrize('angle', [5., 10., 20.])
+def test_curobo_produced_binding_validates(kind, angle, monkeypatch, tmp_path):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[4]))
+    from motion_planning.curobo.worker import Worker as CuroboWorker
+    request = request_fixture(kind)
+    request['planner_backend'] = 'curobo'
+    request['planning'].update(
+        planner='MotionGen', pipeline='CUROBO_V1',
+        target_visibility_angle_tolerance_deg=angle)
+    request = attach_digest(request, 'request_sha256')
+    validate_request(request)
+    response = response_fixture(request)
+    response['trajectory_binding'] = CuroboWorker.binding(request)
+    assert validate_response(rehash_response(response), request)
+
+    # Exercise real worker publication and its internal generic validation too.
+    # Only GPU planning is stubbed; no ROS process or arm command is involved.
+    published = []
+    worker = object.__new__(CuroboWorker)
+    worker.spool = SimpleNamespace(
+        claim_next=lambda: (request['request_id'], request),
+        write_response=lambda _id, value: published.append(value),
+        path=lambda _queue, _id: tmp_path / 'claimed.json')
+    worker.backend = SimpleNamespace(
+        version='0.7.8', plan=lambda _request: (
+            response['selected_viewpoints'], response['segments'], 0.1))
+    worker.collision_model_qualified = lambda: True
+    assert worker.process_once()
+    assert published[0]['status'] == 'success', published[0].get('diagnostic')
+    assert validate_response(published[0], request)
+
+    # A correctly rehashed response must still match every request binding field.
+    for field, value in [('target_visibility_angle_tolerance_deg', angle + 1.),
+                         ('command_rate_hz', 100.),
+                         ('effective_speed_percent', 50.),
+                         ('timing_policy', 'different')]:
+        wrong = copy.deepcopy(response)
+        wrong['trajectory_binding']['execution'][field] = value
+        with pytest.raises(ContractError):
+            validate_response(rehash_response(wrong), request)
+
+
+@pytest.mark.parametrize('angle', [5., 10., 20.])
+def test_legacy_binding_only_compatible_with_default_angle(angle):
+    request = request_fixture()
+    request['planning']['target_visibility_angle_tolerance_deg'] = angle
+    request = attach_digest(request, 'request_sha256')
+    response = response_fixture(request)
+    if angle == 20.:
+        assert validate_response(response, request)
+    else:
+        with pytest.raises(ContractError, match='visibility tolerance mismatch'):
+            validate_response(response, request)
 
 
 @pytest.mark.parametrize('backend', ['tesseract', 'curobo'])

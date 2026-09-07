@@ -1,4 +1,12 @@
 schema_version: 1
+visibility_binding_correction_2026_09_07:
+  reference: docs/ai/86-reconstruction-recording.yaml
+  invariant: A valid current cuRobo worker response must pass the generic contract. Never remove binding equality, digest checks or angle agreement to restore mission execution.
+  must_retest_if_changed:
+    piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/protocol/contract.py:
+    - Actual Worker.binding and Worker.process_once publication through validate_response at 5, 10 and 20 degrees for acquisition, multiview and home
+    - Rehashed angle, rate, speed and timing mismatches still reject; legacy omission only accepts the shared default
+    - Generic planner package build and tests, cuRobo adapter, mobile mission/executor and reconstruction regression suites
 automatic_scan_recording_2026_09_07:
   reference: docs/ai/88-automatic-scan-recording.yaml
   owner_module: piper_mobile_manipulation/mission_archive.py

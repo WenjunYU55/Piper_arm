@@ -1,4 +1,8 @@
 schema_version: 1
+visibility_binding_correction_2026_09_07:
+  reference: docs/ai/86-reconstruction-recording.yaml
+  owner_module: piper_tesseract_foxy/protocol/contract.py
+  contract: Current worker trajectory bindings include the request visibility angle in execution. Validate it in the exact expected binding as well as the trajectory digest. Legacy omission is accepted only when the request uses the shared default; nondefault omission and mismatches reject.
 automatic_scan_recording_2026_09_07:
   reference: docs/ai/88-automatic-scan-recording.yaml
   owner_module: piper_mobile_manipulation/mission_archive.py

@@ -1043,6 +1043,12 @@ def validate_response(payload, request=None):
                     request['planning']['timing_policy'],
             },
         }
+        # Current workers bind the visibility setting into the signed trajectory.
+        # Legacy responses omit it and are allowed only at the shared default,
+        # as enforced by the visibility comparison above.
+        if 'target_visibility_angle_tolerance_deg' in binding.get('execution', {}):
+            expected_binding['execution'][
+                'target_visibility_angle_tolerance_deg'] = expected_angle
         if binding != expected_binding:
             raise ContractError('trajectory binding does not match the request')
     return payload

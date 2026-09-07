@@ -1,4 +1,35 @@
 schema_version: 1
+visibility_binding_incident_2026_09_07:
+  stable_reference: b1d1e54de1ba55677801ad2bde1b64c57083995d
+  introducing_commit: 8e591e1f69f841d82bcacd85ff1513dedb7b2b66
+  inspected_head: 2d3d1b48841d8bbb0026706d51ae5a355336af98
+  observed_mission: gui-sim-1791b2ab05064c30b3b1bb91f7b84ba4
+  evidence:
+  - Local ray report records NO_REACHABLE_PLAN during ROUGH_ACQUISITION with trajectory binding does not match the request.
+  - /run/user/1000/piper_target_scan_logs/curobo_worker.log records a successful feasible viewpoint followed by generic response-validation rejection, before execution.
+  cause: The new worker execution binding included target_visibility_angle_tolerance_deg but the validator's exact expected dictionary omitted it. The earlier angle comparison passed, then dictionary equality rejected every new successful worker response.
+  stable_comparison:
+  - Driver, mission engine and mission implementation directory, and saved cuRobo planner selection have no diff from the pre-BundleSDF reference.
+  - Motion visibility helper, configuration, worker and executor angle propagation did change in the initial reconstruction commit; the work was not limited to passive recording.
+  - Stationary capture adds raw keyframe publication and timestamp metadata; existing median-depth output remains.
+  - Later automatic recording enables additional observer processes and storage work; this is separate from the evidenced contract rejection.
+  correction: Include the request angle in the exact expected execution binding when the producer supplies it. Preserve strict binding equality and digest checks. Preserve legacy default-angle omission compatibility, rejecting omitted nondefault angles.
+  coverage_gap: Earlier response fixtures manually constructed the old binding. Testing a binding digest without validating the produced response missed this regression.
+  regression_test: test_curobo_produced_binding_validates uses actual cuRobo Worker.binding and Worker.process_once with stubbed GPU planning and real generic validation/publication. Three plan kinds at each of 5, 10 and 20 degrees pass; rehashed angle, rate, speed and timing mismatches reject.
+  evidence_commands:
+  - 'source piper_ros_foxy/install/setup.bash'
+  - 'python3 -m pytest -q piper_ros_foxy/src/piper_tesseract_foxy/test/test_contract.py tests/curobo/test_curobo_adapter.py'
+  - 'python3 -m pytest -q piper_ros_foxy/src/piper_tesseract_foxy/test/test_contract.py tests/curobo/test_curobo_adapter.py tests/reconstruction'
+  - 'python3 -m pytest -q piper_ros_foxy/src/piper_mobile_manipulation/test'
+  - 'cd piper_ros_foxy && colcon build --packages-select piper_tesseract_foxy --symlink-install'
+  - 'cd piper_ros_foxy && colcon test --packages-select piper_tesseract_foxy --event-handlers console_direct+'
+  results:
+    existing_baseline: 105 passed
+    new_tests_before_correction: 9 failed with the observed binding error; 3 legacy compatibility cases passed
+    corrected_contract_adapter_reconstruction: 197 passed
+    mobile_regressions: 989 passed, 1 skipped
+    generic_planner_package: 213 passed; build passed
+  limitations: No robot activation, live stack restart or physical motion performed. Worker regression stubs GPU planning and is not physical or new GPU qualification. A supervised real-arm mission after restarting the stack remains unverified.
 native_runtime_followup: docs/ai/87-bundlesdf-native-runtime.yaml
 reconstruction_active_planner: curobo  # Preserved saved mission selection; Tesseract checks are compatibility only.
 title: Passive synchronized RGB-D recording and optional offline BundleSDF
