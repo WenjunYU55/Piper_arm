@@ -199,3 +199,8 @@ tools/bundlesdf/native_diagnostics.py
 tools/bundlesdf/output_validation.py
 docs/experiments/bundlesdf_native_validation.md
 docs/ai/87-bundlesdf-native-runtime.yaml
+
+piper_gui/bundlesdf_results.py
+reconstruction/view_bundlesdf.py
+tests/gui/test_bundlesdf_results.py
+docs/experiments/bundlesdf_gui_validation.md

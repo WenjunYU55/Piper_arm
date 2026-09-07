@@ -17,6 +17,7 @@ import numpy as np
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
 from piper_gui.app import run_gui
+from piper_gui.bundlesdf_results import BundleSDFResults
 from piper_gui.camera_profile import (
     CAMERA_PROFILE_FPS,
     CameraProfile,
@@ -566,7 +567,8 @@ class PiperGuiApp:
 
         reconstruction = ttk.Frame(notebook, padding=14)
         notebook.add(reconstruction, text='Reconstruction Validation')
-        self._build_reconstruction(reconstruction)
+        reconstruction_content, _, _ = build_vertical_scroll_area(reconstruction)
+        self._build_reconstruction(reconstruction_content)
 
         results_campaign = ttk.Frame(notebook, padding=14)
         notebook.add(results_campaign, text='Results Campaign')
@@ -1118,7 +1120,9 @@ class PiperGuiApp:
             wraplength=820, justify='left').grid(
                 row=1, column=0, sticky='ew', pady=(8, 16))
         inputs = ttk.LabelFrame(parent, text='Dataset and expected size', padding=12)
-        inputs.grid(row=2, column=0, sticky='ew')
+        BundleSDFResults(parent, PROJECT_ROOT).grid(
+            row=2, column=0, sticky='ew', pady=(0, 12))
+        inputs.grid(row=3, column=0, sticky='ew')
         ttk.Label(inputs, text='Dataset').grid(row=0, column=0, sticky='w')
         self.reconstruction_dataset_combo = ttk.Combobox(
             inputs, textvariable=self.reconstruction_dataset_var,
@@ -1242,7 +1246,7 @@ class PiperGuiApp:
             foreground='#52606d').grid(
             row=8, column=1, columnspan=4, sticky='w', pady=(3, 0))
         controls = ttk.Frame(parent)
-        controls.grid(row=3, column=0, sticky='w', pady=(14, 8))
+        controls.grid(row=4, column=0, sticky='w', pady=(14, 8))
         self.reconstruction_build_button = ttk.Button(
             controls, text='Build Raw + Cleaned',
             command=self.start_reconstruction)
@@ -1288,7 +1292,7 @@ class PiperGuiApp:
             variable=self.reconstruction_show_input_var).grid(
                 row=0, column=4, padx=(12, 0))
         result = ttk.LabelFrame(parent, text='Quality report', padding=12)
-        result.grid(row=4, column=0, sticky='ew')
+        result.grid(row=5, column=0, sticky='ew')
         ttk.Label(
             result, textvariable=self.reconstruction_status_var,
             wraplength=800, justify='left').grid(row=0, column=0, sticky='ew')

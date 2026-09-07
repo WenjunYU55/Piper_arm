@@ -1,4 +1,13 @@
 schema_version: 1
+bundlesdf_gui_results_2026_09_07:
+  owner_module: piper_gui/bundlesdf_results.py
+  reference: docs/architecture/bundlesdf_native_runtime.md
+  allowed_edit_paths: [piper_gui/bundlesdf_results.py, piper_gui/native_app.py, reconstruction/view_bundlesdf.py, tests/gui/test_bundlesdf_results.py]
+  behavior: Reconstruction Validation includes BundleSDF folder selection, retained-result discovery, explicit evidence origin and Open BundleSDF Model. A separate interactive textured viewer follows the existing GUI viewer pattern.
+  boundaries: No capture, reconstruction execution, ROS command, planner or source-data mutation. Unknown origin is never labelled live; the synthetic demo is explicitly marked not a live recording.
+  runtime: GUI stays in Foxy Python; mesh loading and graphics run through the isolated BundleSDF launcher. Child failures return to the Tk status label through bounded periodic polling.
+  manual_smoke_checks: [select retained synthetic output and verify origin label, invoke actual GUI button and inspect titled textured viewer, close viewer and reopen, browse invalid folder and verify readable error, scroll Reconstruction Validation on a short display]
+  must_retest_if_changed: [all GUI tests, reconstruction GUI-support tests, isolated-domain GUI launch and close, actual native mesh viewer launch, Python compile and changed-file lint]
 bundlesdf_native_runtime_2026_09_07:
   implementation_record: docs/ai/87-bundlesdf-native-runtime.yaml
   evidence: docs/experiments/bundlesdf_native_validation.md

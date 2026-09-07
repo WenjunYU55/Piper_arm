@@ -91,3 +91,25 @@ known-triangle UV test as well as real Kaolin GPU operations and mapping API che
 The wrapper repeats native diagnostics before reconstruction and validates finite
 mesh coordinates, face indices, rigid `T_camera_object` poses and texture output.
 These structural checks do not qualify real-object accuracy.
+
+## Open a saved result from the Piper GUI
+
+On the next GUI launch, open **Reconstruction Validation → BundleSDF results**.
+Choose a retained result from the list, or **Browse…** to the output folder that
+contains `run.json` and `result/textured_mesh.obj`. Click **Open BundleSDF Model**.
+The interactive 3D window opens through the same explicit native interpreter;
+left-drag rotates, the wheel zooms, and Shift + left-drag pans. This follows the
+existing GUI viewer-window pattern; the 3D view is not embedded inside Tk.
+Keep the OBJ, MTL and PNG together. Viewer failures appear in the tab's status.
+
+The retained colourful cube is **synthetic**, with an artificial multicoloured
+surface for feature tracking. It is **not a live recording**. The GUI displays
+that distinction before opening it and in the viewer title. Outputs without
+explicit origin evidence are labelled unverified, never automatically called
+live. Opening a result does not start camera recording or reconstruction.
+
+The panel discovers `PIPER_BUNDLESDF_RUNTIME/evidence/*/run.json` (default
+`~/.local/share/piper-bundlesdf/evidence/`); Browse supports other output locations.
+The Reconstruction tab scrolls so its existing TSDF controls remain accessible.
+A running GUI must be reopened to load new code; no running mission GUI is restarted
+automatically by this change.

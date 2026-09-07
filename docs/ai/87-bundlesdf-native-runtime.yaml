@@ -48,3 +48,9 @@ executed_result:
   input_frames: {accepted: 30, rejected: 0, dropped: 0, synthetic_mission_captures: 2}
   output: /home/prl/.local/share/piper-bundlesdf/evidence/2026-09-07-native-smoke/result/textured_mesh.obj
   evidence_class: SYNTHETIC_GPU_RECONSTRUCTION_NOT_PHYSICAL
+
+gui_followup:
+  owner_module: piper_gui/bundlesdf_results.py
+  viewer: reconstruction/view_bundlesdf.py
+  behavior: BundleSDF output browsing and model opening from the existing Reconstruction Validation tab; isolated interactive viewer, explicit synthetic or unverified origin, no live-recording claim.
+  evidence: docs/experiments/bundlesdf_gui_validation.md
