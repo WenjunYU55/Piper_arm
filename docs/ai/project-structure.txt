@@ -233,3 +233,10 @@ Dense offline video pipeline:
   tools/bundlesdf/reconstruct_job.py
   tests/reconstruction/test_dense_video.py
   tests/reconstruction/test_reconstruct_job.py
+
+Aligned RGB-D correction:
+  docs/ai/92-aligned-depth-framesets.yaml
+  docs/experiments/aligned_depth_fix_validation.md
+  L515_camera/patches/realsense-ros-4.0.4-aligned-depth-guard.patch
+  L515_camera/test_aligned_depth_guard.cpp
+  L515_camera/test_aligned_depth_guard.sh

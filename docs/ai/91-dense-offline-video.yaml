@@ -11,7 +11,7 @@ must_not_move_without: [AI_perception_tests/sam2_live_worker.py, reconstruction_
 architecture:
   - extract_video.py reads SQLite through Foxy deserialization and a local TF buffer; it creates no ROS node, publishers or subscribers.
   - An accepted-history stamp authorizes the exact raw initial pin and frozen target; earlier images cannot establish a competing target.
-  - Recover all available synchronized RGB-D after that seed, including stationary intervals. Exact timestamp pairs have priority; depth is never reused. Camera calibration must stay fixed.
+  - Recover all available synchronized RGB-D after that seed, including stationary intervals. Exact timestamp pairs are required for legacy recovery; depth is never reused. See 92-aligned-depth-framesets.yaml. Camera calibration must stay fixed.
   - Retain image-time TF and explicit missing-TF markers; unavailable TF prevents reconstruction admission but does not prevent temporal image propagation.
   - python_sam2.sh invokes the existing isolated perception environment; segment_video.py uses its SAM2 temporal predictor and existing memory compactor, without starting the live worker.
   - Infer every extracted frame, even when its depth or TF is unsuitable for reconstruction. The accepted seed remains conditioning authority and is not replaced by predicted masks.
@@ -48,3 +48,5 @@ executed_evidence:
   bundlesdf: Actual GUI-to-GPU run including global refinement completed and exported 12107 vertices and 16125 faces; 15 explicit tracking failures and 24 recovery messages.
   quality: Visual inspection FAIL, with warped sheets, holes and black regions. Dense preparation is implemented; accurate geometry on this recording remains unresolved.
   limitations: Official milk download quota blocked; no new physical motion, camera calibration or ground-truth accuracy qualification.
+
+input_validity_correction: The earlier 2041-frame evidence passed old checks but included 408 ambiguous aligned-depth pairs. It is historical failed-input evidence, not qualified aligned RGB-D.

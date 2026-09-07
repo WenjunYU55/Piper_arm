@@ -1,0 +1,26 @@
+schema_version: 1
+date: '2026-09-07'
+title: Reject native depth mislabelled as color-aligned
+owner_module: L515_camera
+allowed_edit_paths: [L515_camera/patches/, L515_camera/build_realsense_ws.sh, L515_camera/test_aligned_depth_guard.cpp, L515_camera/test_aligned_depth_guard.sh, tools/bundlesdf/, tests/reconstruction/, piper_mobile_manipulation/reconstruction_recording/core.py, piper_mobile_manipulation/reconstruction_recorder_node.py, docs/]
+must_not_move_without: [camera startup and stream profile owners, native-depth stationary capture, live reconstruction recorder]
+previous_behavior: RealSense ROS 4.0.4 published depth on the aligned-color topic whenever alignment was enabled, even when SDK processing passed through a frameset without color. Approximate offline pairing admitted that mislabelled depth.
+source_versions: {realsense_ros: 8abb4657c0add15f87b0edbfb67eaba2c1c2c439, librealsense: c94410a420b74e5fb6a414bd12215c05ddd82b69}
+architecture:
+  - A tracked patch adds alignedDepthMatchesColor to the camera wrapper. Publication requires color from the original frameset and processed depth with matching finite color intrinsics, dimensions, distortion and identity depth-to-color extrinsics.
+  - Invalid aligned output is skipped with a five-second throttled warning; native depth publication remains available. No static or dynamic TF is changed.
+  - Build applies existing compatibility patches with whitespace/hunk-count handling and verifies reverse applicability; their contents remain unchanged.
+  - Build applies the alignment patch or verifies reverse applicability; source mismatch fails the build rather than silently omitting the guard.
+  - Legacy ROS archive recovery requires exact RGB/depth stamps, including accepted pins. Ambiguous first pin fails preparation. Later ambiguous candidates increment ambiguous_aligned_depth_pair.
+  - Live reconstruction retains bounded approximate candidate delivery for rejection accounting, but Session admission requires exact stamps. Native validation and offline SAM2 preparation enforce the same requirement; old ambiguous native datasets fail with recovery guidance.
+  - Exact timestamps are conservative recovery evidence, not a calibration certificate. No approximate override is provided for this known legacy input route.
+parameters_added: none
+unchanged: [robot activation and movement, planner and safety checks, stationary native-depth/confidence median capture, NBV and mission capture counting, camera stream profiles, TF, superposition]
+manual_smoke_checks:
+  - Run test_aligned_depth_guard.sh against installed SDK without hardware.
+  - Run serialized bag extraction tests with incomplete first pin and later near-timestamp depth.
+  - Build realsense2_camera and run reconstruction/GUI regressions.
+  - Before physical qualification, record a stationary camera sequence and confirm aligned depth never switches geometry; verify RGB/depth publication and native-depth capture continue under missing color.
+must_retest_if_changed: [software camera complete/incomplete framesets and mismatched calibration, serialized bag extraction, full reconstruction and GUI tests, camera build, stationary camera validation]
+evidence: docs/experiments/aligned_depth_fix_validation.md
+remaining_hardware: Patched driver compiled and software-tested only; camera was not started. Stationary real-camera validation and later scan remain required.

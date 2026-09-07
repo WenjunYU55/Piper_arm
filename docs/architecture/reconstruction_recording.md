@@ -337,3 +337,12 @@ and run temporal SAM2 offline; they no longer depend on live mask publication or
 MOVING-only admission. See [dense offline video](dense_offline_video.md) for commands,
 environment boundaries, progress, partial datasets and tracking-quality warnings.
 The legacy callback importer above remains available for diagnostic comparison.
+
+### Aligned-depth admission correction
+
+Reconstruction now requires exact RGB/depth frameset timestamps even when the
+bounded ROS candidate synchronizer delivers a nearby pair. Such pairs increment
+`rgb_depth_unsynchronised`; they never enter the dataset. The configured slop
+remains in historical metadata but does not relax this requirement. Accepted raw
+pins and offline native validation follow the same rule. See
+[the camera frameset fix](../ai/92-aligned-depth-framesets.yaml).

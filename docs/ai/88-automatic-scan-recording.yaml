@@ -83,3 +83,7 @@ bundlesdf_full_video_workflow_audit_2026_09_07:
 dense_offline_video_2026_09_07:
   reference: docs/ai/91-dense-offline-video.yaml
   routing: Default GUI archive reconstruction now recovers all synchronized RGB-D and propagates SAM2 masks offline before quality admission; live mission and capture policy is unchanged.
+
+aligned_depth_admission_correction:
+  reference: docs/ai/92-aligned-depth-framesets.yaml
+  behavior: Exact frameset stamps are required by reconstruction admission, native validation and legacy archive extraction. Approximate synchronizer candidates can still be delivered to count rejection; they cannot be saved. Recorded synchronization_slop_sec remains compatibility/provenance, not permission to bypass the exact frameset gate.

@@ -98,3 +98,42 @@ c.commit();c.close()
     assert data['frames'][0]['rgb_stamp_ns'] == 1_000_000_000
     assert all(f['tf_error'] is None for f in data['frames'])
     assert data['frames'][1]['tf_stamp_ns'] == 1_200_000_000
+
+    # A nearby depth-only frameset must not be relabelled as synchronized RGB-D.
+    mutate = r'''import sqlite3, sys
+from rclpy.serialization import deserialize_message, serialize_message
+from sensor_msgs.msg import Image
+c=sqlite3.connect(sys.argv[1])
+tid=c.execute("SELECT id FROM topics WHERE name='/camera/aligned_depth_to_color/image_raw'").fetchone()[0]
+mid,blob=c.execute('SELECT id,data FROM messages WHERE topic_id=? ORDER BY id LIMIT 1',(tid,)).fetchone()
+m=deserialize_message(blob,Image);m.header.stamp.nanosec+=11000000
+c.execute('UPDATE messages SET data=? WHERE id=?',(serialize_message(m),mid));c.commit()
+'''
+    subprocess.run([sys.executable, '-c', mutate, str(next((tmp_path / 'bag').glob('*.db3')))], check=True)
+    conservative = tmp_path / 'conservative'
+    result = subprocess.run([sys.executable, str(root / 'tools/bundlesdf/extract_video.py'),
+                             str(tmp_path / 'bag'), str(conservative)],
+                            capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+    checked = json.loads((conservative / 'extraction.json').read_text())
+    assert len(checked['frames']) == 5
+    assert checked['rejected_by_reason']['ambiguous_aligned_depth_pair'] == 1
+    assert all(f['rgb_stamp_ns'] == f['depth_stamp_ns'] for f in checked['frames'])
+
+    # The accepted initial pin must obey the same rule; it has no bypass.
+    mutate_seed = r'''import sqlite3, sys
+from rclpy.serialization import deserialize_message, serialize_message
+from piper_mobile_manipulation.msg import ReconstructionKeyframe
+c=sqlite3.connect(sys.argv[1])
+tid=c.execute("SELECT id FROM topics WHERE name='/piper/reconstruction_keyframe'").fetchone()[0]
+mid,blob=c.execute('SELECT id,data FROM messages WHERE topic_id=? LIMIT 1',(tid,)).fetchone()
+m=deserialize_message(blob,ReconstructionKeyframe);m.depth.header.stamp.nanosec+=11000000
+c.execute('UPDATE messages SET data=? WHERE id=?',(serialize_message(m),mid));c.commit()
+'''
+    subprocess.run([sys.executable, '-c', mutate_seed,
+                    str(next((tmp_path / 'bag').glob('*.db3')))], check=True)
+    result = subprocess.run([sys.executable, str(root / 'tools/bundlesdf/extract_video.py'),
+                             str(tmp_path / 'bag'), str(tmp_path / 'bad-seed')],
+                            capture_output=True, text=True, timeout=30)
+    assert result.returncode != 0
+    assert 'Initial raw pin has ambiguous aligned-depth frameset' in result.stderr

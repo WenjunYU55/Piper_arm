@@ -96,6 +96,8 @@ class ReconstructionRecorderNode(Node):
         self.create_subscription(
             CameraInfo, self.options["camera_info_topic"], self.info_cb, sensor_qos
         )
+        # Candidate matching is bounded; Session admission requires exact stamps
+        # and counts near-pair rejections instead of silently recording them.
         self.sync = message_filters.ApproximateTimeSynchronizer(
             [self.rgb_sub, self.depth_sub], 10, 0.1
         )

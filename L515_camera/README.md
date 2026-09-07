@@ -507,3 +507,21 @@ For RViz:
 ```bash
 ./view_l515_rviz.sh
 ```
+
+## Aligned RGB-D correctness
+
+The 4.0.4 wrapper patch `patches/realsense-ros-4.0.4-aligned-depth-guard.patch`
+prevents depth-only SDK framesets from being published as color-aligned. It also
+checks processed depth calibration and extrinsics against the same frameset's RGB.
+Native depth and the stationary capture algorithm are unchanged. Missing color
+reduces aligned-depth output instead of publishing incorrectly labelled geometry.
+
+Run `./L515_camera/test_aligned_depth_guard.sh` for the software-device regression.
+Apply/build using `./L515_camera/build_realsense_ws.sh` after the existing documented
+build dependencies are installed. Source mismatch for this patch fails the build.
+The new driver loads on the next normal camera launch; no automatic restart is needed.
+A stationary real-camera validation is required before claiming physical qualification.
+
+Existing bags cannot prove SDK frameset membership. BundleSDF recovery now uses
+exact timestamp pairs conservatively and records `ambiguous_aligned_depth_pair`
+rejections. See `docs/ai/92-aligned-depth-framesets.yaml`.

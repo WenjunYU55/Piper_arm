@@ -130,6 +130,7 @@ def test_optical_convention_and_transform():
     "reason,change",
     [
         ("rgb_depth_unsynchronised", dict(depth_stamp_ns=900_000_000)),
+        ("rgb_depth_unsynchronised", dict(depth_stamp_ns=1_011_000_000)),
         ("stale_mask", dict(mask_stamp_ns=900_000_000)),
         ("stale_mask", dict(mask_received_age_sec=1.1)),
         ("missing_mask", dict(mask=None)),

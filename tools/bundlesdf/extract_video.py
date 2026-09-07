@@ -172,8 +172,13 @@ def extract(bag, output):
     color_stamps = sorted(s for s in images[RGB] if first < s <= end_ns and s not in pinned_stamps)
     reserved_depth = {stamp(pins[s].depth) for s in accepted if s in pins}
     depth_stamps = [s for s in images[DEPTH] if s not in reserved_depth]
-    pairs = match_stamps(color_stamps, depth_stamps, round(config['synchronization_slop_sec']*1e9))
-    rejects['rgb_depth_unsynchronised'] += len(color_stamps) - len(pairs)
+    # Legacy RealSense 4.0.4 can mislabel a depth-only frameset as aligned.
+    # This ROS archive does not retain SDK frameset membership: refuse to
+    # pair a different frameset solely because its timestamp is nearby.
+    approximate = match_stamps(color_stamps, depth_stamps, round(config['synchronization_slop_sec']*1e9))
+    pairs = match_stamps(color_stamps, depth_stamps, 0)
+    rejects['ambiguous_aligned_depth_pair'] += len(approximate) - len(pairs)
+    rejects['rgb_depth_unsynchronised'] += len(color_stamps) - len(approximate)
     info_stamps = sorted(infos)
     candidates = sorted(set(pairs) | {s for s in accepted if s in pins and first <= s <= end_ns})
     try:
@@ -189,6 +194,11 @@ def extract(bag, output):
                 raise ValueError('Camera intrinsics/resolution changed during sequence')
             if any(m.header.frame_id != expected['camera_optical_frame'] for m in (rgb, depth)):
                 raise ValueError('RGB/depth optical-frame mismatch')
+            if s != stamp(depth):
+                if s == first:
+                    raise ValueError('Initial raw pin has ambiguous aligned-depth frameset')
+                rejects['ambiguous_aligned_depth_pair'] += 1
+                continue
             if abs(s-stamp(depth)) > round(config['synchronization_slop_sec']*1e9):
                 raise ValueError('Accepted pin is not synchronized')
             color = bridge.imgmsg_to_cv2(rgb, 'bgr8')
@@ -236,7 +246,9 @@ def extract(bag, output):
                       mission_capture_count=int(history['accepted_views']), configuration=config,
                       coverage_target_center=target, frames=records, seed_mask='00000000/seed.png',
                       source_message_counts=dict(counts), rejected_by_reason=dict(rejects),
-                      selection='Every synchronized RGB-D after accepted seed; no MOVING or rate gate')
+                      selection='Exact RGB-D frameset timestamps after seed; no MOVING or rate gate',
+                      alignment_admission=('Conservative legacy ROS archive recovery; '
+                                           'exact stamps are not calibration proof'))
         atomic_json(output / 'extraction.json', report)
         print('Extracted %d synchronized frames' % len(records), flush=True)
         return report

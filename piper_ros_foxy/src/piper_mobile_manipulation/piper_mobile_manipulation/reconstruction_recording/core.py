@@ -230,9 +230,9 @@ class RecordingSession:
             return self.reject("missing_initial_keyframe")
         if frame.rgb_stamp_ns <= self.last_stamp or frame.rgb_stamp_ns <= 0:
             return self.reject("duplicate_or_out_of_order")
-        if abs(frame.rgb_stamp_ns - frame.depth_stamp_ns) > round(
-            cfg.synchronization_slop_sec * 1e9
-        ):
+        # The synchronized RealSense wrapper stamps a complete frameset once.
+        # Near timestamps cannot prove aligned-depth frameset membership.
+        if frame.rgb_stamp_ns != frame.depth_stamp_ns:
             return self.reject("rgb_depth_unsynchronised")
         if frame.mask is None:
             return self.reject("missing_mask")

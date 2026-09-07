@@ -245,9 +245,9 @@ def run(output, distorted=False):
                 replay.moving(replay.image(mask_kind="empty"), expected=False)
                 if angle == 20.0:
                     # Actual synchronizer delivers a pair inside its diagnostic
-                    # 100 ms window; admission must enforce configured 80 ms.
+                    # 100 ms window; admission must require exact frameset stamps.
                     delayed = replay.image()
-                    delayed_stamp = replay.tick - 90_000_000
+                    delayed_stamp = replay.tick - 11_000_000
                     (
                         delayed[1].header.stamp.sec,
                         delayed[1].header.stamp.nanosec,

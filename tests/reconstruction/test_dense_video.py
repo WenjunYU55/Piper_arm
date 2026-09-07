@@ -149,6 +149,8 @@ def test_upstream_failures_are_not_successful_pose_counts():
 @pytest.mark.parametrize('mutation,reason', [
     (lambda d: d['frames'][1].update(rgb_stamp_ns=1_000_000_000), 'Nonmonotonic'),
     (lambda d: d['frames'][1].update(depth_stamp_ns=1), 'synchronization'),
+    (lambda d: d['frames'][1].update(
+        depth_stamp_ns=d['frames'][1]['rgb_stamp_ns']+11_000_000), 'synchronization'),
     (lambda d: d['frames'][1].update(tf_stamp_ns=1), 'TF'),
     (lambda d: d['frames'][1].update(distortion_coefficients=[.1]*5), 'calibration changed'),
 ])

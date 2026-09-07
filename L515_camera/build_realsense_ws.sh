@@ -13,14 +13,26 @@ for PATCH_FILE in \
 do
   if [ -f "$PATCH_FILE" ]; then
     PATCH_NAME="$(basename "$PATCH_FILE")"
-    if git -C src/realsense-ros apply --check "$PATCH_FILE" >/dev/null 2>&1; then
+    if git -C src/realsense-ros apply --ignore-space-change --recount --check "$PATCH_FILE" >/dev/null 2>&1; then
       echo "Applying $PATCH_NAME."
-      git -C src/realsense-ros apply "$PATCH_FILE"
+      git -C src/realsense-ros apply --ignore-space-change --recount "$PATCH_FILE"
+    elif git -C src/realsense-ros apply --ignore-space-change --recount --reverse --check "$PATCH_FILE" >/dev/null 2>&1; then
+      echo "$PATCH_NAME is already applied."
     else
-      echo "$PATCH_NAME is already applied or not applicable."
+      echo "$PATCH_NAME cannot be applied or verified; refusing build." >&2
+      exit 1
     fi
   fi
 done
+
+# This correctness patch must never be silently skipped on source drift.
+PATCH_FILE="$ROOT/L515_camera/patches/realsense-ros-4.0.4-aligned-depth-guard.patch"
+if git -C src/realsense-ros apply --ignore-space-change --recount --check "$PATCH_FILE"; then
+  git -C src/realsense-ros apply --ignore-space-change --recount "$PATCH_FILE"
+elif ! git -C src/realsense-ros apply --reverse --check "$PATCH_FILE"; then
+  echo "Aligned-depth guard cannot be applied or verified; refusing build." >&2
+  exit 1
+fi
 
 colcon build \
   --symlink-install \

@@ -93,8 +93,10 @@ bags or generated meshes belong in Git.
 
 ## Quality and limitations
 
-Sensor pairs use original timestamps with exact matches preferred and no depth
-reuse. The maximum delta comes from recorded `synchronization_slop_sec`. Camera
+Legacy archive recovery requires identical RGB/depth message timestamps and no depth
+reuse. The recorded `synchronization_slop_sec` remains provenance, but does not authorize
+approximate pairing here: unpatched RealSense 4.0.4 can mislabel unaligned depth.
+An ambiguous accepted initial pin fails rather than seeding incorrect geometry. Camera
 calibration must remain fixed; TF is looked up at the image stamp, never latest.
 Every paired image updates SAM2 temporal state even if that frame's TF, angle,
 mask envelope, depth or blur later prevents reconstruction admission. Predicted
@@ -112,3 +114,6 @@ upstream failures: a saved pose matrix can exist even when that frame failed tra
 More frames improve continuity but cannot guarantee reconstruction accuracy, unseen
 surface coverage or recover sensor frames absent from the bag. A closed archive
 without a terminal workflow event remains an incomplete mission.
+
+See [aligned-depth correction and validation](../experiments/aligned_depth_fix_validation.md)
+for the camera publication guard and conservative recovery of existing recordings.

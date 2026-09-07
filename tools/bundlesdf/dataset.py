@@ -87,8 +87,9 @@ def validate(session, minimum_frames=5, allow_incomplete=False):
         if entry["mask_stamp_ns"] != previous or entry["tf_stamp_ns"] != previous:
             raise ValueError("mask/TF does not match exact image time")
         delta = abs(previous - entry["depth_stamp_ns"]) * 1e-9
-        if delta > manifest["configuration"]["synchronization_slop_sec"] + 1e-12:
-            raise ValueError("RGB/depth synchronization limit exceeded")
+        if previous != entry["depth_stamp_ns"]:
+            raise ValueError("RGB/depth synchronization requires exact frameset stamps; "
+                             "recover the source archive")
         if abs(delta - entry["synchronization_delta_sec"]) > 1e-12:
             raise ValueError("incorrect synchronization metadata")
         paths = [artifact(root, entry[key]) for key in ("rgb", "depth", "mask")]

@@ -35,7 +35,7 @@ def validate_extraction(data):
         stamp = entry['rgb_stamp_ns']
         if entry['index'] != i or not isinstance(stamp, int) or stamp <= previous:
             raise ValueError('Nonmonotonic extracted image timestamps or indices')
-        if abs(stamp-entry['depth_stamp_ns']) > round(config.synchronization_slop_sec*1e9):
+        if stamp != entry['depth_stamp_ns']:
             raise ValueError('Extracted RGB-D synchronization limit exceeded')
         if entry['tf_stamp_ns'] != stamp:
             raise ValueError('Extracted TF is not at image time')
