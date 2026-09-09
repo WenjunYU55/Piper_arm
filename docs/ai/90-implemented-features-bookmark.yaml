@@ -703,9 +703,10 @@ later_feature_reintegration_status:
   - id: smooth_direct_movej_or_streamed_detour
     status: [ACTIVE, SOFTWARE_REQUALIFIED, PHYSICAL_REQUALIFICATION_REQUIRED]
     summary: >-
-      A densely proven straight joint chord could use one native MoveJ endpoint
-      for continuous controller interpolation; a route needing collision
-      avoidance retained its complete Tesseract stream and detour geometry.
+      Both densely proven straight joint chords and collision-avoidance detours
+      retain every approved point through the shared cuRobo/Tesseract timed
+      stream. Normal scan endpoint collapse was removed on 2026-09-08 after
+      recorded unequal-axis MoveJ motion departed from its validated chord.
     authority: [worker.py, scan_viewpoint_executor_node.py]
 
   - id: pass_through_stream_smoothing

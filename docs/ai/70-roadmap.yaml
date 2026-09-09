@@ -40,7 +40,7 @@ executor_capture_integration_requalification_2026_08_27:
 automatic_one_view_budget_requalification_2026_08_27:
   milestone: M5 reliable size-aware closed-loop ray NBV
   status: superseded_as_root_cause_by_first_capture_alignment_fix
-  software_status: The automatic one-view worker budget remains 90 seconds with three-second attempts, but deeper diagnostics proved the recurring zero-capture failure was not one slow ray. Every proposed path inherited an approximately 30.8-degree acquired sample zero and was rejected by the ordinary 20-degree visibility gate. The bounded first-capture alignment rule is now the root fix; all later paths retain strict 20-degree behavior.
+  software_status: The automatic one-view Tesseract worker budget is 120 seconds with three-second attempts, but deeper diagnostics proved the recurring zero-capture failure was not one slow ray. Every proposed path inherited an approximately 30.8-degree acquired sample zero and was rejected by the ordinary 20-degree visibility gate. The bounded first-capture alignment rule is now the root fix; all later paths retain strict 20-degree behavior.
   next_gate: Run a command-free one-view planning request; then require separate authorization for a five-percent physical mission and verify capture one plus permanent ray retirement without weakening collision or motion gates.
 capture_one_model_seed_requalification_2026_08_26:
   milestone: M5 reliable size-aware closed-loop ray NBV

@@ -346,3 +346,20 @@ bounded ROS candidate synchronizer delivers a nearby pair. Such pairs increment
 remains in historical metadata but does not relax this requirement. Accepted raw
 pins and offline native validation follow the same rule. See
 [the camera frameset fix](../ai/92-aligned-depth-framesets.yaml).
+
+## Robot-base orientation (8 September 2026)
+
+All reconstruction viewers use a base-Z-up, robot-side opening view when recorded frame evidence is available. Offset red/green/blue arrows show axes parallel to base X/Y/Z; a magenta arrow points toward the robot base origin in XY. These nearby arrows are orientation cues, not the base's physical location. The direction is undefined directly on the base Z axis. Titles label unverified frames explicitly.
+
+Capture-based geometry is already in the recorded base frame. New quality reports and sibling `<geometry>.frame.json` files record base identity, units and hashes for raw, cleaned, measured, input, consensus and textured variants. Retained reports resolve parent-frame identity from capture metadata where necessary.
+
+BundleSDF native output stays in its own model frame. After native validation, the wrapper adds `base_link/textured_mesh.obj` and material/texture files, using `T_base_camera[0] @ T_camera_object[0]` with exactly matching image identity and the pinned upstream initial gauge. Missing correspondence/frame identity produces `orientation_unavailable.json`; it does not relabel or destroy the native result. The viewer also resolves retained native runs in memory; a hash-bound already-oriented export is not transformed twice.
+
+To orient retained results without reconstruction or source modification, choose a NEW output directory:
+
+```bash
+python3 reconstruction/coordinate_frames.py /path/to/bundlesdf-run --output /new/base_link-export
+python3 reconstruction/coordinate_frames.py /path/to/target_mesh.ply.quality.json --report --output /new/capture-export
+```
+
+Include frame sidecars and the export README when sharing; OBJ/PLY viewers may need Z-up selected. Orientation does not establish depth, hand-eye, tracking or dimensional accuracy. See `docs/ai/93-reconstruction-coordinate-frames.yaml` for ownership and checks.

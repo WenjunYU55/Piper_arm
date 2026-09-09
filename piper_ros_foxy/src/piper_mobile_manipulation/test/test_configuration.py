@@ -256,6 +256,10 @@ def test_parameter_defaults_exactly_match_the_frozen_pre_phase9_values():
         'XDG_RUNTIME_DIR': '/phase9'}) == LEGACY_MISSION_DEFAULTS
     # The new authoritative movement cone is additive; all legacy defaults stay fixed.
     expected = dict(LEGACY_EXECUTOR_DEFAULTS, target_visibility_angle_tolerance_deg=20.0)
+    expected.update(trajectory_clearance_monitor_enabled=True,
+                    trajectory_near_collision_error_rad=.03,
+                    trajectory_clearance_transition_m=.025,
+                    trajectory_clearance_reaction_sec=.25)
     assert executor_parameter_defaults() == expected
 
 

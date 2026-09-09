@@ -437,3 +437,36 @@ def test_authoritative_ray_policy_has_distinct_seed_identity():
 
     assert selected[0]['view_selection_policy'] == 'ray_nbv_seed'
     assert selected[0]['view_selection_requested_policy'] == 'ray_nbv'
+
+
+def test_ray_scores_supported_distance_without_moving_its_motion_geometry():
+    from copy import deepcopy
+    snapshot = initialized_model().snapshot()
+    candidate = dict(viewpoint(1, [0., 0., -1.24]), candidate_geometry='target_ray',
+                     ray_min_standoff_m=0.28, ray_max_standoff_m=3.,
+                     nbv_scoring_standoff_m=0.4,
+                     nbv_scoring_source='capability_supported_interval')
+    before = deepcopy(candidate)
+    result = rank_next_best_views(snapshot, [candidate])[0]
+    expected = candidate_information(snapshot, [0., 0., 0.])
+    assert candidate == before
+    assert result['desired_camera_position'] == candidate['desired_camera_position']
+    assert result['nbv_scoring_position_m'] == pytest.approx([0., 0., 0.])
+    assert result['nbv_projected_object_pixels'] == expected['projected_object_pixels']
+    assert result['nbv_marginal_information_fraction'] == expected['marginal_information_fraction']
+    far = candidate_information(snapshot, [0., 0., -1.24])
+    assert result['nbv_projected_object_pixels'] > far['projected_object_pixels']
+    candidate['nbv_scoring_standoff_m'] = 0.1
+    with pytest.raises(ValueError, match='outside the ray interval'):
+        rank_next_best_views(snapshot, [candidate])
+
+
+def test_ray_without_atlas_scores_sensor_minimum_and_keeps_gain_primary():
+    snapshot = initialized_model().snapshot()
+    candidates = [dict(viewpoint(i, p), candidate_geometry='target_ray',
+                       ray_min_standoff_m=0.4, ray_max_standoff_m=3.)
+                  for i, p in enumerate(([0., 0., -1.24], [0., 0., 2.04]))]
+    ranked = rank_next_best_views(snapshot, candidates, current_camera=[0., 0., 0.])
+    assert all(x['nbv_scoring_standoff_m'] == 0.4 for x in ranked)
+    assert all(x['nbv_scoring_source'] == 'ray_minimum_no_capability_map' for x in ranked)
+    assert ranked[0]['nbv_marginal_information_fraction'] >= ranked[1]['nbv_marginal_information_fraction']

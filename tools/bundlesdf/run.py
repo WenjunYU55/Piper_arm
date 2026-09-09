@@ -151,6 +151,15 @@ def run(args):
             "BundleSDF exited without textured_mesh.obj; reconstruction is not successful"
         )
     atomic_json(output / "result_validation.json", inspect_result(output / "result"))
+    # Add a robot-base export after reconstruction; native upstream artifacts stay intact.
+    exporter = Path(__file__).resolve().parents[2] / 'reconstruction/coordinate_frames.py'
+    oriented = subprocess.run(
+        ['/usr/bin/python3', str(exporter), str(output), '--output', str(output / 'base_link')],
+        capture_output=True, text=True)
+    if oriented.returncode:
+        atomic_json(output / 'orientation_unavailable.json', dict(
+            frame_id='unverified', reason=oriented.stderr[-2000:]))
+        print('Base-frame export unavailable; native output retained: ' + oriented.stderr[-2000:])
     print(mesh)
 
 

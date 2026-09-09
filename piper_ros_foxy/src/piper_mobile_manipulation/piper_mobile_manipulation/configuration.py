@@ -233,6 +233,10 @@ class MotionConfig:
     trajectory_command_rate_hz: float
     executor_tick_rate_hz: float
     trajectory_following_error_rad: float
+    trajectory_clearance_monitor_enabled: bool
+    trajectory_near_collision_error_rad: float
+    trajectory_clearance_transition_m: float
+    trajectory_clearance_reaction_sec: float
     trajectory_following_error_grace_sec: float
     plan_start_tolerance_rad: float
     joint_goal_tolerance_rad: float
@@ -410,6 +414,10 @@ def executor_parameter_defaults():
         'trajectory_command_rate_hz': 20.0,
         'executor_tick_rate_hz': 200.0,
         'trajectory_following_error_rad': 0.30,
+        'trajectory_clearance_monitor_enabled': True,
+        'trajectory_near_collision_error_rad': 0.03,
+        'trajectory_clearance_transition_m': 0.025,
+        'trajectory_clearance_reaction_sec': 0.25,
         'trajectory_following_error_grace_sec': 1.0,
         'plan_start_tolerance_rad': 0.025,
         'joint_goal_tolerance_rad': 0.025,
@@ -601,6 +609,13 @@ def load_executor_configuration(node):
         trajectory_following_error_rad=_positive(
             'trajectory_following_error_rad',
             values['trajectory_following_error_rad']),
+        trajectory_clearance_monitor_enabled=_as_bool(values['trajectory_clearance_monitor_enabled']),
+        trajectory_near_collision_error_rad=_positive(
+            'trajectory_near_collision_error_rad', values['trajectory_near_collision_error_rad']),
+        trajectory_clearance_transition_m=_positive(
+            'trajectory_clearance_transition_m', values['trajectory_clearance_transition_m']),
+        trajectory_clearance_reaction_sec=_non_negative(
+            'trajectory_clearance_reaction_sec', values['trajectory_clearance_reaction_sec']),
         trajectory_following_error_grace_sec=_non_negative(
             'trajectory_following_error_grace_sec',
             values['trajectory_following_error_grace_sec']),

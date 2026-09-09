@@ -7,9 +7,14 @@ import os
 from pathlib import Path
 import signal
 import threading
+import tempfile
 import time
 from piper_mobile_manipulation.execution.authorization import (
     bounded_mission_confirmation, PLAN_APPROVAL_SERVICE_TIMEOUT_SEC,
+)
+
+from piper_mobile_manipulation.infrastructure.process_supervisor import (
+    component_failures,
 )
 
 import numpy as np
@@ -202,6 +207,7 @@ class _MissionNodeOperations:
     def begin_process_generation(self, _context):
         live = self.node.processes.begin_generation()
         if not live:
+            self.node.scan_component_exit_directory = None
             return []
         cleanup_targets = previous_generation_cleanup_targets(
             live, self.node.fresh_all_motors_disabled())
@@ -226,7 +232,10 @@ class _MissionNodeOperations:
                 'previous-generation cleanup remains incomplete: %s'
                 % ', '.join(report.still_running))
             return list(report.still_running)
-        return self.node.processes.begin_generation()
+        remaining = self.node.processes.begin_generation()
+        if not remaining:
+            self.node.scan_component_exit_directory = None
+        return remaining
 
     def snapshot_target(self, _context):
         return self.node.snapshot_target(self.rough_target)
@@ -1315,6 +1324,11 @@ class TargetScanMissionNode(Node):
             goal_handle, session,
             'new %s worker ready; starting supervised scan stack'
             % backend_label)
+        # A new private directory prevents an old child exit poisoning a retry.
+        self.scan_component_exit_directory = tempfile.mkdtemp(
+            prefix='piper_scan_component_exits_')
+        environment['PIPER_SCAN_COMPONENT_EXIT_DIRECTORY'] = (
+            self.scan_component_exit_directory)
         self.processes.start(
             'scan_stack', [
                 str(root / 'L515_camera/run_supervised_viewpoint_execution.sh')],
@@ -2051,23 +2065,11 @@ class TargetScanMissionNode(Node):
             names = sorted(set(failed).intersection(('driver', 'scan_stack')))
             return names
 
-        try:
-            if self.at_configured_home(
-                    session, target_positions=target_positions,
-                    home_stage=home_stage):
-                record_stage_proof()
-                self.last_return_home_diagnostic = (
-                    'fresh feedback is already within %s tolerance'
-                    % str(home_stage).lower())
-                return True
-        except MissionFailure as exc:
-            return fail_home(exc)
-        if startup:
-            try:
-                self.require_fresh_joint_feedback()
-            except MissionFailure as exc:
-                return fail_home(exc)
-        else:
+        # No perception scene does not mean no executor work: acquisition
+        # motion and visual waits both precede scene establishment. Terminal
+        # recovery must cancel that work before even accepting an already-home
+        # sample, otherwise an active stream can move away after the sample.
+        if goal_handle is None or not startup:
             result = self.call_service(
                 self.cancel_client, Trigger.Request(), 8.0,
                 'executor stop-and-hold-before-home service')
@@ -2084,6 +2086,23 @@ class TargetScanMissionNode(Node):
             except MissionFailure as exc:
                 return fail_home(exc)
 
+        elif startup:
+            try:
+                self.require_fresh_joint_feedback()
+            except MissionFailure as exc:
+                return fail_home(exc)
+
+        try:
+            if self.at_configured_home(
+                    session, target_positions=target_positions,
+                    home_stage=home_stage):
+                record_stage_proof()
+                self.last_return_home_diagnostic = (
+                    'fresh feedback is already within %s tolerance'
+                    % str(home_stage).lower())
+                return True
+        except MissionFailure as exc:
+            return fail_home(exc)
         # Terminal recovery is intentionally non-interrupting.  The original
         # scan authorization may have expired (that is what led us here), so
         # renew it after the terminal path has either stopped/held scan motion
@@ -2332,6 +2351,13 @@ class TargetScanMissionNode(Node):
         failed = self.processes.failed()
         if failed:
             raise MissionFailure('managed process exited: %s' % failed)
+        try:
+            child_failures = component_failures(getattr(
+                self, 'scan_component_exit_directory', None))
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            raise MissionFailure('scan component health is unreadable: %s' % error)
+        if child_failures:
+            raise MissionFailure('managed scan component exited: %s' % child_failures)
         self.publish_feedback(goal_handle, session)
 
     def readiness_rejection(self, mode):

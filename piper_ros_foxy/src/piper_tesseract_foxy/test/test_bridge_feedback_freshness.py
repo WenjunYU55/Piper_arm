@@ -1564,3 +1564,49 @@ def test_clipped_target_failure_is_preserved_for_the_coordinator():
 
     assert 'TARGET_TOO_LARGE_OR_CLOSE' in reasons
     assert 'NO_PREQUALIFIED_VIEWPOINT_CANDIDATE' not in reasons
+
+
+@pytest.mark.parametrize('backend,expected', [('tesseract', [10]), ('curobo', [])])
+def test_partial_success_remembers_only_fully_exhausted_tesseract_rays(backend, expected):
+    bridge = object.__new__(TesseractPlanBridge)
+    bridge.get_logger = lambda: _Logger()
+    bridge.planner_exhausted_ray_generation = ('s', 2)
+    bridge.planner_exhausted_population = ('s', 'a' * 64)
+    bridge.planner_exhausted_ray_ids = set()
+    candidates = [
+        {'id': 100, 'ray_id': 10},  # fully failed
+        {'id': 110, 'ray_id': 11},  # failed earlier, then selected
+        {'id': 120, 'ray_id': 12},  # never attempted
+        {'id': 130, 'ray_id': 13},  # generic failure is not typed exhaustion
+        {'id': 140, 'ray_id': 14},  # unattempted alternative on the same ray
+        {'id': 141, 'ray_id': 14},
+    ]
+    bridge.pending = {'r': {'request': {
+        'planning': {'shortlisted_ray_count': 5},
+        'scan_session': {'session_id': 's', 'accepted_views': 2},
+        'ray_population': {'sha256': 'a' * 64},
+        'scene': {'candidate_views': candidates},
+    }}}
+    payload = {
+        'request_id': 'r', 'status': 'success', 'backend': backend,
+        'selected_viewpoints': [{'id': 110}],
+        'planning_diagnostics': {
+            'attempted_ray_ids': [10, 11, 13, 14, 999],
+            'candidate_failures': [
+                {'id': i, 'stage': 'AIM_VARIANTS_EXHAUSTED'}
+                for i in (100, 110, 140, 999)] + [
+                    {'id': 130, 'stage': 'PLANNING_FAILURE'}],
+        },
+    }
+    assert bridge.remember_planner_exhausted_rays(payload) == expected
+    assert bridge.remember_planner_exhausted_rays(payload) == []
+    assert bridge.planner_exhausted_ray_ids == set(expected)
+    available = bridge.exclude_planner_exhausted_rays(
+        candidates, 's', 3, {'sha256': 'a' * 64})
+    assert {v['ray_id'] for v in available} == {10, 11, 12, 13, 14} - set(expected)
+    # An old response cannot alter a newer capture generation or population.
+    assert bridge.remember_planner_exhausted_rays(payload) == []
+    available = bridge.exclude_planner_exhausted_rays(
+        candidates, 's', 3, {'sha256': 'b' * 64})
+    assert len(available) == len(candidates)
+    assert bridge.remember_planner_exhausted_rays(payload) == []

@@ -96,3 +96,17 @@ def test_summary_reports_qualification_and_ray_planning_events():
     assert stage['stage_wall_sec'] == 0.4
     assert stage['stage_calls'] == 2
     assert attempt['native_status'] == 'IK_FAIL'
+
+
+def test_run_retains_execution_policy_hashes_without_changing_duration():
+    evidence = {
+        'task_id': 'policy', 'planner_backend': 'tesseract',
+        'phase_timing': {'total_elapsed_sec': 123.4},
+        'submission': {'configuration_snapshot': {'files': [
+            {'path': 'config/scan_execution_params.yaml', 'available': True,
+             'sha256': 'abc123'},
+            {'path': 'execution/clearance.py', 'available': True, 'sha256': 'def456'}]}}}
+    row = summarize_evidence(evidence)['Runs'][0]
+    assert row['total_mission_sec'] == 123.4
+    assert 'abc123' in row['execution_policy_sources']
+    assert 'def456' in row['execution_policy_sources']

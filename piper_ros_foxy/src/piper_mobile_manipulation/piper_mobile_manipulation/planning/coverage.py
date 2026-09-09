@@ -132,6 +132,11 @@ def persist_coverage_snapshot(path, snapshot, capture_artifacts=None,
         'radius_m': float(snapshot.radius_m),
         'voxel_size_m': float(snapshot.voxel_size_m),
         'grid_shape': shape,
+        'tan_half_fov_x': float(snapshot.tan_half_fov_x),
+        'tan_half_fov_y': float(snapshot.tan_half_fov_y),
+        'render_width': int(snapshot.render_width),
+        'render_height': int(snapshot.render_height),
+        'maximum_scoring_voxels': int(snapshot.maximum_scoring_voxels),
         'state_encoding': {'UNKNOWN': 0, 'FREE': 1, 'SURFACE': 2},
         'capture_artifacts': [
             _artifact_binding(value, root) for value in capture_artifacts or []],
@@ -604,7 +609,7 @@ def candidate_information(
 
 
 def rank_next_best_views(snapshot, viewpoints, current_camera=None,
-                        minimum_information_fraction=None, rejected=None):
+                         minimum_information_fraction=None, rejected=None):
     """
     Return candidates in information-first, direction-diverse order.
 
@@ -627,6 +632,18 @@ def rank_next_best_views(snapshot, viewpoints, current_camera=None,
             raise ValueError('candidate camera coincides with coverage target')
         direction /= distance
         key = tuple(float(value) for value in np.round(direction, 6))
+        if candidate.get('candidate_geometry') == 'target_ray':
+            scoring_distance = float(candidate.get(
+                'nbv_scoring_standoff_m', candidate['ray_min_standoff_m']))
+            if (not math.isfinite(scoring_distance)
+                    or not float(candidate['ray_min_standoff_m']) <= scoring_distance
+                    <= float(candidate['ray_max_standoff_m'])):
+                raise ValueError('NBV scoring distance is outside the ray interval')
+            distance = scoring_distance
+            position = center + direction * distance
+            candidate['nbv_scoring_standoff_m'] = distance
+            candidate.setdefault('nbv_scoring_source', 'ray_minimum_no_capability_map')
+            candidate['nbv_scoring_position_m'] = position.tolist()
         candidate['_nbv_distance_m'] = distance
         candidate['_nbv_position'] = position
         groups.setdefault(key, []).append(candidate)

@@ -1,0 +1,125 @@
+schema_version: 1
+status: software_validated_physical_retest_pending
+problem:
+  scoring: Recent cube rays projected to four pixels at an approximately 1.64 m nominal midpoint; supported endpoints
+    were near 0.29 m. Gain quantization created many ties.
+ownership:
+  scoring:
+    owner_module: piper_mobile_manipulation/planning/coverage.py
+    allowed_edit_paths:
+    - planning/coverage.py
+    - planning/prequalification.py
+    - scan_viewpoint_planner_node.py
+    - test/test_nbv_coverage.py
+    - test/test_static_ray_prefilter.py
+  retry:
+    owner_module: piper_tesseract_foxy/bridge_node.py
+    allowed_edit_paths:
+    - piper_tesseract_foxy/bridge_node.py
+    - test/test_bridge_feedback_freshness.py
+  diagnostics:
+    owner_module: piper_mobile_manipulation/ray_mission_diagnostics.py
+    allowed_edit_paths:
+    - ray_mission_diagnostics.py
+    - test/test_ray_mission_diagnostics.py
+    - piper_gui/ray_review_model.py
+    - tests/gui/test_piper_gui_ray_review.py
+  must_not_move_without:
+  - canonical ray population
+  - permanent capability and endpoint ledgers
+  - accepted-only coverage
+  - exact planner checks
+  - generic request identity
+  - current joint feedback
+  - capture and execution safety
+load_order_contracts:
+- frozen ray generation and permanent culls
+- enforcing capability lookup supplies scoring-only nearest supported interval; missing atlas uses ray minimum
+- accepted-only coverage projects at scoring position and keeps normalized information primary
+- unchanged downstream runtime admission and ray endpoint bounding
+- bridge retains correlated exhausted-ray exclusions for the population lifetime and separately preserves permanent
+  endpoint culls
+- six best surviving information-ranked rays go to exact planner
+- ordinary authorization execution capture and shutdown
+scoring_contract:
+  fields:
+  - nbv_scoring_standoff_m
+  - nbv_scoring_position_m
+  - nbv_scoring_source
+  source_values:
+  - capability_supported_interval
+  - ray_minimum_no_capability_map
+  unchanged:
+  - desired camera motion geometry
+  - ray ID/direction/universe
+  - endpoint search interval
+  - 64x48 projection
+  - 0.02 minimum normalized gain
+  - angular novelty then absolute gain/travel tie-breaks
+  - bootstrap seed policy
+  cache: Ranking identity includes scoring standoff. Static atlas query cache remains exact-input and bounded.
+  coverage_snapshot: Future NPZ metadata also retains FOV tangents, render dimensions and maximum scoring voxels;
+    existing snapshots are untouched.
+retry_contract:
+  lifetime: Correlated exhausted ray IDs remain excluded across robot movement and accepted counts within the same
+    session/population.
+  reset: Explicit bootstrap-to-qualified population replacement or a new session only.
+  correlation: Only IDs in the exact pending request and matching generation/population can be recorded; infrastructure
+    failures do not retire rays.
+  tradeoff: 'Intentional runtime-saving search policy: a ray may remain excluded even if a later starting pose could
+    make it feasible. This is not proof of permanent geometric infeasibility.'
+  viewer: Ray Review retains exhausted-ray evidence over upstream survivor snapshots until population reset. No
+    retry-context field or joint-movement reset is added.
+  unchanged:
+  - typed endpoint culls
+  - capability culls
+  - visual rejection quarantine
+  - accepted-direction retirement
+  - six-ray information-ranked shortlist
+  - all motion and capture safety checks
+manual_smoke_checks:
+- At an idle next mission, first capture remains seed policy; inspect post-capture scoring distance and pixel support.
+- Confirm exact planner attempts remain NBV-ranked and every accepted endpoint passes normal path/visibility/capture
+  checks.
+- Supervised physical retest must independently demonstrate authorization, capture quality and normal staged shutdown.
+- Verify exhausted rays remain excluded after movement and accepted captures, and reset on population replacement/new
+  session.
+- Verify Ray Review preserves the same population lifetime; scoring metadata remains present.
+must_retest_if_changed:
+- complete mobile/Tesseract/GUI/ordinary cuRobo suites
+- command-free GPU path/collision regressions
+- five-package colcon build
+- affected package functional colcon tests
+- saved exact-coverage scoring replay
+- changed-file lint and compile
+- AI YAML unique-key parse
+- supervised physical qualification separately
+evidence: docs/experiments/nbv_scoring_retry_validation.md
+limitations:
+- Offline re-ranking does not prove newly selected rays reachable or scans complete.
+- Approximate capability-map false negatives remain possible; atlas membership and enforcement are unchanged.
+- Unknown/unobserved geometry may legitimately give equal scores even after projection repair.
+preserved_policy: User confirmed population-lifetime failed-ray exclusions are intentional to reduce repeated planning.
+  The proposed movement/capture retry reset was withdrawn before any physical validation.
+
+partial_success_fix_2026_09_09:
+  owner_module: piper_tesseract_foxy/bridge_node.py
+  behavior: For successful Tesseract responses without explicit exhausted_ray_ids, map typed AIM_VARIANTS_EXHAUSTED
+    candidate IDs through the exact pending request. Retire a ray only when every request alternative
+    failed and none was selected. Keep existing generation/population correlation and population-lifetime
+    exclusions.
+  preserved:
+  - cuRobo explicit exhaustion handling
+  - successful and unattempted rays
+  - generic/infrastructure failure handling
+  - worker geometry and capability-map source binding
+  - NBV scoring and collision/authorization gates
+  required_retests:
+  - partial-success Tesseract and cuRobo regressions
+  - selected/shared-ray/unattempted/foreign-ID guards
+  - generation and population reset tests
+  - complete ordinary mobile/Tesseract/GUI/cuRobo suites
+  - five-package build
+  evidence: datasets/experiment_results/tesseract_retry_fix_20260909/
+  physical_status: No live restart or robot command; supervised next-mission exclusion and terminal
+    recovery check pending.

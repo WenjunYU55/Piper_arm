@@ -182,9 +182,10 @@ qualification. The qualification is limited to that target-scan scope. This is
 not a claim of Tesseract-equivalent geometry. No planner in this architecture
 directly commands the robot.
 
-That scope is machine-enforced: cuRobo readiness requires the generated
-hash-bound qualification record, the `tabletop` floor profile, exactly 5%
-free/contact speed, and `PIPER_CUROBO_COLLISION_MODEL_QUALIFIED=1`. The real
+cuRobo readiness requires the generated hash-bound qualification record, the
+`tabletop` floor profile, finite free/contact speeds within 1–100%, and
+`PIPER_CUROBO_COLLISION_MODEL_QUALIFIED=1`. On 8 September the operator requested
+removal of the fixed 5% restriction; the original 5% physical evidence is retained. The real
 motion and speed-profile opt-ins and all common execution gates remain
 independent requirements.
 

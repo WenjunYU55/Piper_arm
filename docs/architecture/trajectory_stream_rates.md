@@ -1,3 +1,65 @@
+## Clearance-aware streaming and timing overhead — 8 September 2026
+
+Normal Tesseract streams now retain the existing 0.30-rad maximum lead
+in open space and tighten toward 0.03 rad within 0.025 m remaining collision-proxy
+margin. Closing speed, feedback age and a configurable 0.25-second reaction estimate
+bring tightening forward. `execution/clearance.py` uses measured FK and the next
+approved target against the existing arm/holder, floor and frozen obstacle snapshot.
+cuRobo bypasses this new monitor using the accepted plan_backend.
+A measured negative margin enters collision-fault abort handling before another
+point is emitted. This supplements approval; it is not a physical stopping-distance
+or collision-avoidance guarantee. Dedicated RETURN_HOME is unchanged. Qualified
+bootstrap self proximity stays exempt until the recovery cursor has passed and the
+measured pose is fully clear; external/table monitoring remains active throughout.
+
+Tesseract now rounds directly at the requested rate, avoiding unnecessary 20 Hz
+pre-rounding while retaining native durations, vertices and speed/step ceilings.
+The same isolated native 3.52843-second path now schedules 3.66 seconds / 733 positions
+instead of 5.90 seconds / 1181 positions. cuRobo normalization is unchanged.
+Feedback holds can still increase actual elapsed time. Campaign Runs expose relevant
+execution source/configuration hashes; recorded durations are not adjusted.
+
+Evidence: `datasets/experiment_results/clearance_stream_20260908/`. Supervised
+physical tracking, hold/cancel/home and duration qualification remain pending.
+The dated entries below describe earlier stages, superseded by this section.
+
+## Native timing and immediate feedback — 8 September 2026
+
+Tesseract now respects native segment durations instead of replacing them with
+a distance-only schedule. At 100/200 Hz, a common native-path stretch is derived
+from continuous segment rates; rounding tiny ISP intervals cannot amplify the
+whole-path stretch. Baseline intervals account for native time, velocity and step
+limits; higher transport rates subdivide those intervals. Source geometry and
+collision validation remain unchanged.
+
+The shared following check now applies from the first point. The one-second
+parameter bounds recovery after a hold, not an unchecked startup period. This
+also closes the sub-second-move exemption for cuRobo; its normalizer is unchanged.
+The 0.30-rad entry limit is unchanged and is not a tight collision-clearance proof.
+
+An isolated real Tesseract plan with native duration 3.52843 seconds previously
+produced a 1.45-second 200 Hz schedule. It now produces 5.90 seconds, with identical
+source geometry and 1181 positions instead of 291. This is planning evidence,
+not physical tracking validation or a measured whole-mission runtime estimate.
+See datasets/experiment_results/tesseract_timing_fix_20260908/README.md for the
+regressions, provenance audit and separate mission-failure diagnosis.
+
+## Tesseract transport correction — 8 September 2026
+
+Normal Tesseract scan proposals labelled DIRECT_MOVEJ now send every approved
+position sample and timestamp through the same timed-stream executor as cuRobo.
+The label remains planner evidence that the straight chord passed dense validation;
+it no longer causes the executor to discard intermediate samples. Detours retain
+their approved geometry. Dedicated configured-home transactions are unchanged.
+
+The saved selection is **200 Hz commands / 400 Hz executor timer**. Existing
+following-error threshold, recovery and settling settings remain unchanged
+at the operator's request to use the cuRobo streaming behavior. Measured envelope
+monitoring is not implemented by this correction. The nominal rate and endpoint
+success do not establish physical path accuracy; qualify commanded-versus-measured
+motion, hold/cancel and table clearance in a supervised run. No robot was moved
+or live process restarted for the change. Older saved selections below are history.
+
 # PiPER transport-rate experiment
 
 ## Status — 6 September 2026
@@ -69,9 +131,9 @@ transaction behaviour, not physical tracking, perception or a real ROS E2E.
   and joint-limit re-entry prefixes use the same requested rate and retain their
   correctly recomputed evidence indices. The 60,000-point bound is unchanged.
 - Tesseract already accepts a rate in its normalizer. Generic validation and
-  launch now permit the additional rates. Its per-source-segment whole-tick
-  rounding can shorten the schedule at higher rates; unlike cuRobo, equal total
-  duration is not guaranteed. Speed-scaled limits and every source vertex remain.
+  launch now permit the additional rates. Its native-duration-preserving baseline now subdivides into 100/200 Hz samples
+  without shortening the 20 Hz schedule. Continuous-rate native scaling preserves
+  speed ceilings before per-segment rounding; every source vertex remains.
 - TrajectoryRunner uses binary search on the admitted numeric schedule rather
   than rebuilding a complete tuple every control tick. Next-unsent selection,
   no bursts/skips, late-schedule stretching and feedback holds are unchanged.
@@ -172,7 +234,7 @@ These are delivery/following observations, not proof of cuRobo geometry failure.
 Two local changes address those observations:
 
 1. Following recovery is latched. Entry remains at the configured threshold
-   (default 0.30 rad after the existing one-second grace). Resume requires both
+   (default 0.30 rad from the first point; one second bounds recovery only). Resume requires both
    the held and next-unsent target errors at or below 90% of that threshold
    (0.27 rad by default), demonstrated by three independently newer joint
    source stamps. Duplicate timestamps and missing observations cannot count;

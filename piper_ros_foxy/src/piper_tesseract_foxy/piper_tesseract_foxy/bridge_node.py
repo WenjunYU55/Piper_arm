@@ -1431,8 +1431,6 @@ class MotionPlannerBridge(Node):
         if (payload.get('status') != 'success'
                 and not {'PLANNER_EXHAUSTED', 'TESSERACT_EXHAUSTED'}.intersection(codes)):
             return []
-        if payload.get('status') == 'success' and explicit is None:
-            return []
         request_id = str(payload.get('request_id', ''))
         pending = getattr(self, 'pending', {}).get(request_id, {})
         request = pending.get('request', {})
@@ -1455,6 +1453,32 @@ class MotionPlannerBridge(Node):
                     self, 'planner_exhausted_ray_generation', getattr(
                         self, 'tesseract_exhausted_ray_generation', None))):
             return []
+        if payload.get('status') == 'success' and explicit is None:
+            # Tesseract supplies typed per-candidate failures on partial success,
+            # whereas cuRobo supplies explicit exhausted_ray_ids. Normalize only
+            # fully exhausted aim searches, never generic/infrastructure errors.
+            if payload.get('backend') != 'tesseract':
+                return []
+            failed_ids = {
+                int(item['id'])
+                for item in diagnostics.get('candidate_failures', [])
+                if item.get('stage') == 'AIM_VARIANTS_EXHAUSTED'
+                and item.get('id') is not None
+            }
+            selected_ids = {
+                int(item['id']) for item in payload.get('selected_viewpoints', [])
+                if item.get('id') is not None
+            }
+            candidates_by_ray = {}
+            for item in request.get('scene', {}).get('candidate_views', []):
+                if item.get('ray_id') is not None:
+                    candidates_by_ray.setdefault(int(item['ray_id']), set()).add(
+                        int(item['id']))
+            explicit = [
+                ray for ray, candidate_ids in candidates_by_ray.items()
+                if candidate_ids.issubset(failed_ids)
+                and not candidate_ids.intersection(selected_ids)
+            ]
         request_ray_ids = {
             int(item['ray_id'])
             for item in request.get('scene', {}).get('candidate_views', [])

@@ -20,10 +20,13 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 import yaml
 
+from .modes import applied_settings, condition_mismatches, mode_definition, mode_trials
+
 
 CAMPAIGN_SCHEMA_VERSION = 1
 EVIDENCE_SCHEMA_VERSION = 1
-DEFAULT_CAMPAIGN_ID = 'piper-poster-blocked-20260902'
+DEFAULT_CAMPAIGN_ID = 'piper-paired-20cm-20260908'
+LEGACY_BLOCKED_CAMPAIGN_ID = 'piper-poster-blocked-20260902'
 LEGACY_ALTERNATING_CAMPAIGN_ID = 'piper-poster-20260902'
 DEFAULT_X_M = (0.30, 0.50, 0.70, 0.90, 1.10)
 DEFAULT_Y_M = 0.0
@@ -96,7 +99,7 @@ def _make_trial(sequence: int, pair_index: int, backend: str,
     )
 
 
-def default_trial_schedule() -> List[TrialDefinition]:
+def blocked_trial_schedule() -> List[TrialDefinition]:
     """Return 15 cuRobo missions followed by the same 15 Tesseract cells."""
     positions = list(_position_grid())
     trials: List[TrialDefinition] = []
@@ -106,6 +109,18 @@ def default_trial_schedule() -> List[TrialDefinition]:
             trials.append(_make_trial(
                 sequence, pair_index, backend, coordinates))
             sequence += 1
+    return trials
+
+
+def default_trial_schedule() -> List[TrialDefinition]:
+    """Pair planners at each position, alternating the first planner."""
+    trials: List[TrialDefinition] = []
+    for pair_index, coordinates in enumerate(_position_grid(), start=1):
+        order = (('curobo', 'tesseract') if pair_index % 2
+                 else ('tesseract', 'curobo'))
+        for backend in order:
+            trials.append(_make_trial(
+                len(trials) + 1, pair_index, backend, coordinates))
     return trials
 
 
@@ -194,6 +209,9 @@ def configuration_snapshot(project_root: Path) -> Dict[str, Any]:
         'piper_ros_foxy/src/piper_mobile_manipulation/config/camera_params.yaml',
         'piper_ros_foxy/src/piper_mobile_manipulation/config/scan_planning_params.yaml',
         'piper_ros_foxy/src/piper_mobile_manipulation/config/scan_execution_params.yaml',
+        'piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/execution/clearance.py',
+        'piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/execution/trajectory.py',
+        'piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/worker.py',
         'piper_ros_foxy/src/piper_mobile_manipulation/config/scan_capture_params.yaml',
         'piper_ros_foxy/src/piper_mobile_manipulation/config/piper_camera_capability_map.npz',
         'piper_ros_foxy/src/piper_tesseract_foxy/model/collision_model.yaml',
@@ -204,6 +222,7 @@ def configuration_snapshot(project_root: Path) -> Dict[str, Any]:
         'piper_ros_foxy/src/piper_description/urdf/piper_description.urdf',
         'motion_planning/curobo/model/piper_collision_spheres.yaml',
         'motion_planning/curobo/constraints.txt',
+        'L515_camera/rgb_profile.conf',
         'piper_home_pose.json',
         'piper_joint_bounds.json',
     )
@@ -305,6 +324,23 @@ def _result_mapping(result: object) -> Dict[str, Any]:
     return {name: getattr(result, name, None) for name in names}
 
 
+def trial_skip_records(campaign_root: Path, definition: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Read explicit operator skips, bound to the immutable scheduled trial."""
+    records = []
+    for trial in definition.get('trials', []):
+        path = campaign_root / 'trials' / trial['trial_id'] / 'skip.json'
+        record = load_json(path)
+        if record is None:
+            continue
+        if (record.get('schema_version') != 1
+                or record.get('state') != 'SKIPPED'
+                or record.get('campaign_id') != definition.get('campaign_id')
+                or record.get('expected_trial') != trial):
+            raise ValueError('invalid campaign skip record: %s' % path)
+        records.append(record)
+    return records
+
+
 class CampaignStore:
     """Manage generated campaign files without interacting with ROS."""
 
@@ -322,20 +358,31 @@ class CampaignStore:
         from .bookmarks import write_campaign_bookmarks
         return write_campaign_bookmarks(self.project_root, self.root)
 
-    def create_or_load(self) -> Dict[str, Any]:
+    def create_or_load(self, mode=None, settings=None) -> Dict[str, Any]:
         existing = load_json(self.definition_path)
         expected_trials = [asdict(item) for item in default_trial_schedule()]
         if existing is not None:
+            if existing.get('schema_version') == 2:
+                if existing['trials'] != mode_trials(existing['campaign_mode'], existing['settings']):
+                    raise ValueError('saved sweep trials differ from the frozen design')
+                self.refresh_bookmarks()
+                return existing
             if int(existing.get('schema_version', -1)) != CAMPAIGN_SCHEMA_VERSION:
                 raise ValueError('unsupported campaign schema version')
             legacy_trials = [
                 asdict(item) for item in alternating_trial_schedule()]
-            if existing.get('trials') not in (expected_trials, legacy_trials):
+            blocked_trials = [asdict(item) for item in blocked_trial_schedule()]
+            if existing.get('trials') not in (expected_trials, legacy_trials, blocked_trials):
                 raise ValueError(
                     'existing campaign uses a different trial design; choose '
                     'a new campaign ID')
             self.refresh_bookmarks()
             return existing
+        if mode and mode != 'planner_comparison':
+            definition = mode_definition(self.campaign_id, mode, settings, utc_now())
+            atomic_write_json(self.definition_path, definition)
+            self.refresh_bookmarks()
+            return definition
         definition = {
             'schema_version': CAMPAIGN_SCHEMA_VERSION,
             'campaign_id': self.campaign_id,
@@ -352,12 +399,12 @@ class CampaignStore:
                 'cube_dimensions_mm': list(DEFAULT_CUBE_DIMENSIONS_MM),
                 'coverage_faces': 6,
                 'runtime_reference_sec': DEFAULT_RUNTIME_REFERENCE_SEC,
-                'backend_order': 'curobo_block_then_tesseract_block',
+                'backend_order': 'alternating_by_position_curobo_first',
                 'limitation': (
-                    'N=1 per backend and position; backend-block execution '
-                    'confounds planner with elapsed time and environmental '
-                    'drift. Per-cell variance and confidence intervals are '
-                    'not supported.'),
+                    'N=1 per backend and position; alternating the first planner '
+                    'reduces systematic order bias but does not eliminate '
+                    'environmental drift. Per-cell variance and confidence '
+                    'intervals are not supported.'),
             },
             'trials': expected_trials,
         }
@@ -394,26 +441,172 @@ class CampaignStore:
         for trial in definition['trials']:
             if self._matched_terminal_exists(trial['trial_id']):
                 completed.append(trial['trial_id'])
+        skipped = [record['expected_trial']['trial_id'] for record in self.skip_records()]
         active = load_json(self.active_path, {}) or {}
         return {
             'completed': len(completed),
+            'skipped': len(skipped),
+            'skipped_trial_ids': skipped,
+            'remaining': len(definition['trials']) - len(set(completed + skipped)),
             'total': len(definition['trials']),
             'completed_trial_ids': completed,
             'active_trial': active,
         }
 
+    def trial_rows(self):
+        """Describe every frozen schedule entry without changing campaign state."""
+        rows = []
+        skipped = set(self.progress()['skipped_trial_ids'])
+        active = load_json(self.active_path, {}) or {}
+        for trial in self.definition()['trials']:
+            attempts = []
+            for path in self._attempt_directories(trial['trial_id']):
+                submission = load_json(path / 'submission.json', {})
+                if submission:
+                    attempts.append((submission, load_json(path / 'terminal.json', {}),
+                                     (path / 'submission_failure.json').is_file()))
+            attempts.sort(key=lambda item: int(item[0].get('submitted_wall_time_ns', 0)))
+            matched = [item for item in attempts if item[0].get('matches_schedule') and item[1]]
+            status = 'Done' if matched else 'Skipped' if trial['trial_id'] in skipped else 'To do'
+            outcome = str(matched[-1][1].get('outcome', 'Unknown')) if matched else ''
+            if attempts:
+                submission, terminal, failed_submit = attempts[-1]
+                if not terminal and not failed_submit:
+                    status = 'In progress'
+                elif not submission.get('matches_schedule'):
+                    status += ' / mismatched attempt'
+            if active.get('trial_id') == trial['trial_id'] and not active.get('task_id'):
+                status += ' / retry prepared' if active.get('retry_of_task_id') else ' / prepared'
+            rows.append(dict(trial, status=status, outcome=outcome, attempts=len(attempts)))
+        return rows
+
+    def superseded_tasks(self):
+        """Return old tasks replaced in reports by a completed matching retry."""
+        result = set()
+        for attempt in self.task_attempts():
+            submission = load_json(attempt / 'submission.json', {})
+            previous = submission.get('retry_of_task_id')
+            if (previous and submission.get('matches_schedule') is True
+                    and (attempt / 'terminal.json').is_file()):
+                result.add(str(previous))
+                for older in self.task_attempts():
+                    old = load_json(older / 'submission.json', {})
+                    if (old.get('trial_id') == submission.get('trial_id')
+                            and old.get('matches_schedule') is True
+                            and int(old.get('submitted_wall_time_ns', 0))
+                            < int(submission.get('submitted_wall_time_ns', 0))):
+                        result.add(str(old.get('task_id', '')))
+        return result
+
+    def retry_last_attempt(self, trial_id=None):
+        """Prepare the latest campaign attempt without starting a mission."""
+        selected = None
+        if trial_id is not None:
+            selected = next((t for t in self.definition()['trials']
+                             if t['trial_id'] == trial_id), None)
+            if selected is None:
+                raise ValueError('unknown campaign trial')
+        candidates = []
+        for attempt in self.task_attempts():
+            submission = load_json(attempt / 'submission.json', {})
+            terminal_path = attempt / 'terminal.json'
+            if (submission and not terminal_path.is_file()
+                    and not (attempt / 'submission_failure.json').is_file()):
+                raise ValueError('a submitted campaign mission is still unresolved')
+            terminal = load_json(terminal_path, {})
+            if selected is not None and (
+                    not self._schedule_match(selected, submission.get('requested_coordinates_m', []),
+                                             submission.get('requested_backend', ''))
+                    or condition_mismatches(selected, submission.get('requested_target_label', ''),
+                                            submission.get('applied_settings', {}))):
+                continue
+            if submission and (terminal or (attempt / 'submission_failure.json').is_file()):
+                candidates.append((int(submission.get(
+                    'submitted_wall_time_ns', attempt.stat().st_mtime_ns)), submission))
+        if not candidates:
+            raise ValueError('no completed campaign attempt is available to retry')
+        submission = max(candidates, key=lambda item: item[0])[1]
+        # A mismatched submission may have been attached to the next slot.
+        # Match its actual recorded conditions so retry cannot change position.
+        matches = [dict(item) for item in self.definition()['trials']
+                   if self._schedule_match(
+                       item, submission.get('requested_coordinates_m', []),
+                       submission.get('requested_backend', ''))
+                   and not condition_mismatches(
+                       item, submission.get('requested_target_label', ''),
+                       submission.get('applied_settings', {}))]
+        if not matches:
+            raise ValueError('last attempt settings do not match a scheduled campaign trial')
+        trial = dict(selected) if selected is not None else next((item for item in matches
+                      if item['trial_id'] == submission['trial_id']), matches[0])
+        active = dict(trial)
+        active.update({
+            'campaign_id': self.campaign_id, 'task_id': '',
+            'loaded_utc': utc_now(),
+            'retry_of_task_id': submission['task_id'],
+        })
+        atomic_write_json(self.active_path, active)
+        self.refresh_bookmarks()
+        return trial
+
     def next_trial(self) -> Optional[Dict[str, Any]]:
         definition = self.definition()
         active = load_json(self.active_path, {}) or {}
+        skipped = {record['expected_trial']['trial_id'] for record in self.skip_records()}
         active_id = str(active.get('trial_id', ''))
-        if active_id and not self._matched_terminal_exists(active_id):
+        if active_id and active.get('retry_of_task_id'):
+            attempt = self._find_attempt(active.get('task_id', ''))
+            completed_retry = bool(
+                attempt is not None and (attempt / 'terminal.json').is_file()
+                and load_json(attempt / 'submission.json', {}).get('matches_schedule'))
+            if not completed_retry:
+                return next((dict(item) for item in definition['trials']
+                             if item['trial_id'] == active_id), None)
+        if active_id and active_id not in skipped and not self._matched_terminal_exists(active_id):
             return next((
                 dict(item) for item in definition['trials']
                 if item['trial_id'] == active_id), None)
         for trial in definition['trials']:
-            if not self._matched_terminal_exists(trial['trial_id']):
+            if (trial['trial_id'] not in skipped
+                    and not self._matched_terminal_exists(trial['trial_id'])):
                 return dict(trial)
         return None
+
+    def skip_records(self) -> List[Dict[str, Any]]:
+        return trial_skip_records(self.root, self.definition())
+
+    def skip_next_trial(self) -> Optional[Dict[str, Any]]:
+        # Inspect durable submissions, even if Prepare was pressed again or
+        # the GUI restarted and lost its in-memory mission state.
+        for attempt in self.task_attempts():
+            if ((attempt / 'submission.json').is_file()
+                    and not (attempt / 'terminal.json').is_file()
+                    and not (attempt / 'submission_failure.json').is_file()):
+                raise ValueError('wait for the submitted mission result before skipping')
+        trial = self.next_trial()
+        if trial is None:
+            return None
+        record = {
+            'schema_version': 1,
+            'campaign_id': self.campaign_id,
+            'expected_trial': trial,
+            'state': 'SKIPPED',
+            'evidence_class': 'OPERATOR_SKIP_NOT_A_MISSION',
+            'recorded_utc': utc_now(),
+            'reason': 'Skipped by operator',
+        }
+        active = load_json(self.active_path, {}) or {}
+        if active.get('retry_of_task_id'):
+            record['reason'] = 'Pending retry skipped by operator; original result retained'
+            record['retry_of_task_id'] = active['retry_of_task_id']
+            atomic_write_json(self._trial_dir(trial['trial_id']) / 'retry_skips'
+                              / ('%d.json' % time.time_ns()), record)
+            self.active_path.unlink()
+        else:
+            atomic_write_json(self._trial_dir(trial['trial_id']) / 'skip.json', record)
+        self.load_next_trial()
+        self.refresh_bookmarks()
+        return record
 
     def load_next_trial(self) -> Optional[Dict[str, Any]]:
         trial = self.next_trial()
@@ -423,7 +616,10 @@ class CampaignStore:
             except FileNotFoundError:
                 pass
             return None
+        previous = load_json(self.active_path, {}) or {}
         active = dict(trial)
+        if previous.get('trial_id') == trial['trial_id'] and previous.get('retry_of_task_id'):
+            active['retry_of_task_id'] = previous['retry_of_task_id']
         active.update({
             'campaign_id': self.campaign_id,
             'loaded_utc': utc_now(),
@@ -458,7 +654,12 @@ class CampaignStore:
             raise ValueError('task ID is invalid')
         coordinates = tuple(_request_value(request, 'coordinates', ()))
         backend = str(_request_value(request, 'planner_backend', '')).lower()
+        applied = applied_settings(self.project_root)
+        condition_errors = condition_mismatches(
+            trial, _request_value(request, 'target_label', ''), applied)
         submission = {
+            'applied_settings': applied,
+            'condition_mismatches': condition_errors,
             'schema_version': EVIDENCE_SCHEMA_VERSION,
             'campaign_id': self.campaign_id,
             'trial_id': trial['trial_id'],
@@ -476,10 +677,14 @@ class CampaignStore:
                 _request_value(request, 'target_label', '')),
             'expected_trial': dict(trial),
             'matches_schedule': self._schedule_match(
-                trial, coordinates, backend),
+                trial, coordinates, backend) and not condition_errors,
             'configuration_snapshot': configuration_snapshot(
                 self.project_root),
         }
+        previous_active = load_json(self.active_path, {}) or {}
+        if (previous_active.get('trial_id') == trial['trial_id']
+                and previous_active.get('retry_of_task_id')):
+            submission['retry_of_task_id'] = previous_active['retry_of_task_id']
         attempt = self._trial_dir(trial['trial_id']) / 'attempts' / identifier
         destination = attempt / 'submission.json'
         if destination.exists():
@@ -495,6 +700,8 @@ class CampaignStore:
             'submission_path': str(destination),
             'matches_schedule': submission['matches_schedule'],
         })
+        if submission.get('retry_of_task_id'):
+            active['retry_of_task_id'] = submission['retry_of_task_id']
         atomic_write_json(self.active_path, active)
         self.refresh_bookmarks()
         return submission
@@ -527,6 +734,12 @@ class CampaignStore:
         atomic_write_json(path, terminal)
         active = load_json(self.active_path, {}) or {}
         if str(active.get('task_id', '')) == str(task_id):
+            submission = load_json(attempt / 'submission.json', {})
+            if active.get('retry_of_task_id') and not submission.get('matches_schedule'):
+                active['task_id'] = ''
+                atomic_write_json(self.active_path, active)
+                self.refresh_bookmarks()
+                return path
             try:
                 self.active_path.unlink()
             except FileNotFoundError:

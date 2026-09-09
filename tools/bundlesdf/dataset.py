@@ -295,6 +295,7 @@ def convert(
             temporary / "robot_camera_poses.json",
             dict(
                 pose_convention=manifest["pose_convention"],
+                base_frame=entries[0]['base_frame'],
                 frames=mapping,
                 upstream_use=(
                     'diagnostic only; not object-in-camera estimates or annotated '

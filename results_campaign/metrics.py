@@ -162,6 +162,14 @@ def cloud_dimension_metrics(cloud: np.ndarray, known_dimensions_mm=(35.0, 35.0, 
         return {'point_count': int(len(cloud)), 'qualified': False}
     low, high = np.percentile(cloud, [1.0, 99.0], axis=0)
     observed = (high - low) * 1000.0
+    if known_dimensions_mm is None:
+        return {
+            'point_count': int(len(cloud)), 'qualified': True,
+            'observed_x_mm': float(observed[0]), 'observed_y_mm': float(observed[1]),
+            'observed_z_mm': float(observed[2]),
+            'reference_basis': 'unknown; no dimensional accuracy claim',
+            'extent_estimator': '1st-to-99th percentile in base_link',
+        }
     known = np.asarray(known_dimensions_mm, dtype=float)
     error = np.abs(observed - known)
     return {
@@ -203,6 +211,14 @@ def summarize_evidence(evidence: Dict[str, Any]) -> Dict[str, List[Dict[str, Any
         'code_dirty': submission.get(
             'configuration_snapshot', {}).get('git', {}).get('dirty'),
     }
+    if 'campaign_mode' in expected:
+        common.update({key: expected.get(key) for key in (
+            'campaign_mode', 'object_key', 'target_label', 'aim_tolerance_deg',
+            'reference_dimensions_mm', 'reference_basis')})
+        profile = expected['camera_profile']
+        common.update(rgb_width=profile[0], rgb_height=profile[1], requested_rgb_fps=profile[2])
+        common['applied_settings'] = submission.get('applied_settings', {})
+    reference = expected.get('reference_dimensions_mm', [35.0] * 3)
     mission = evidence.get('mission_result', {})
     terminal = evidence.get('terminal', {})
     action = mission.get('action_summary', {}) if isinstance(mission, dict) else {}
@@ -234,7 +250,14 @@ def summarize_evidence(evidence: Dict[str, Any]) -> Dict[str, List[Dict[str, Any
         item for item in configuration_files
         if item.get('available') and any(
             token in item.get('path', '') for token in selected_tokens)]
+    execution_sources = [item for item in configuration_files
+                         if item.get('available') and any(token in item.get('path', '')
+                         for token in ('scan_execution_params.yaml', 'execution/clearance.py',
+                                       'execution/trajectory.py', 'piper_tesseract_foxy/worker.py'))]
     run = dict(common)
+    run['execution_policy_sources'] = ', '.join(
+        item.get('path', '') + ':' + item.get('sha256', '')[:12]
+        for item in execution_sources)
     run.update({
         'outcome': terminal.get('outcome', mission.get('outcome')),
         'reason': terminal.get('reason', mission.get('reason')),
@@ -295,7 +318,8 @@ def summarize_evidence(evidence: Dict[str, Any]) -> Dict[str, List[Dict[str, Any
     frames = evidence.get('frames', [])
     centre = mission_target_centre(frames)
     frame_clouds = [frame_cloud_base(frame, Path(evidence.get('dataset_path', '.'))) for frame in frames]
-    coverages = cumulative_cube_coverage(frame_clouds, centre) if centre is not None else [{} for _ in frames]
+    coverages = (cumulative_cube_coverage(frame_clouds, centre, dimensions_mm=reference)
+                 if centre is not None and reference is not None else [{} for _ in frames])
     azimuths, elevations = [], []
     previous_capture_ns = None
     submitted_ns = submission.get('submitted_wall_time_ns')
@@ -340,7 +364,8 @@ def summarize_evidence(evidence: Dict[str, Any]) -> Dict[str, List[Dict[str, Any
                 max(elevations) - min(elevations)
                 if len(elevations) > 1 else 0.0),
             'cumulative_uncovered_fraction': (
-                1.0 - coverage.get('cumulative_coverage_fraction', 0.0)),
+                1.0 - coverage['cumulative_coverage_fraction']
+                if 'cumulative_coverage_fraction' in coverage else None),
             'system_new_surface_fraction': (
                 surface.get('per_view_novel_fraction', [])[position]
                 if isinstance(surface, dict)
@@ -442,7 +467,7 @@ def summarize_evidence(evidence: Dict[str, Any]) -> Dict[str, List[Dict[str, Any
         })
     combined = np.vstack([cloud for cloud in frame_clouds if len(cloud)]) if any(len(cloud) for cloud in frame_clouds) else np.empty((0, 3))
     point_row = dict(common)
-    point_row.update(cloud_dimension_metrics(combined))
+    point_row.update(cloud_dimension_metrics(combined, known_dimensions_mm=reference))
     point_row['method'] = 'robot-pose fused qualified depth points'
     point_row['limitation'] = 'Dimensions are geometric stability evidence, not independent metrology.'
     rows['PointCloud'].append(point_row)

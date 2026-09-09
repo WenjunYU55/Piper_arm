@@ -11,12 +11,14 @@ from pathlib import Path
 import tempfile
 from typing import Any, Dict, Iterable, List
 
-from .campaign import atomic_write_json, load_json, sha256_file, utc_now
+from .campaign import atomic_write_json, load_json, sha256_file, trial_skip_records, utc_now
 
 
 BOOKMARK_SCHEMA_VERSION = 1
 BOOKMARK_COLUMNS = (
-    'bookmark_id', 'campaign_id', 'trial_id', 'pair_index', 'task_id',
+    'campaign_mode', 'object_key', 'target_label', 'camera_profile', 'aim_tolerance_deg',
+    'bookmark_id', 'campaign_id', 'trial_id', 'pair_index', 'task_id', 'retry_of_task_id',
+    'skipped_utc', 'skip_reason', 'skip_path', 'skip_sha256',
     'state', 'planner_backend', 'target_x_m', 'target_y_m', 'target_z_m',
     'submitted_utc', 'terminal_recorded_utc', 'evidence_collected_utc',
     'outcome', 'failure_code', 'safe_shutdown', 'accepted_captures',
@@ -102,6 +104,7 @@ def _bookmark_entry(attempt: Path) -> Dict[str, Any]:
         'trial_id': submission.get('trial_id'),
         'pair_index': expected.get('pair_index'),
         'task_id': submission.get('task_id'),
+        'retry_of_task_id': submission.get('retry_of_task_id', ''),
         'state': state,
         'planner_backend': backend,
         'target_x_m': expected.get('x_m'),
@@ -138,6 +141,9 @@ def _bookmark_entry(attempt: Path) -> Dict[str, Any]:
         'collision_model_qualification_scope': planner_model.get(
             'qualification_scope'),
     }
+    expected = submission.get('expected_trial', {})
+    entry.update({key: expected.get(key) for key in (
+        'campaign_mode', 'object_key', 'target_label', 'camera_profile', 'aim_tolerance_deg')})
     entry['bookmark_sha256'] = _canonical_hash(entry)
     return entry
 
@@ -177,6 +183,25 @@ def write_campaign_bookmarks(
             _bookmark_entry(attempt) for attempt in attempts
             if (attempt / 'submission.json').is_file()]
         definition = campaign / 'campaign.json'
+        for record in trial_skip_records(campaign, load_json(definition, {})):
+            trial = record['expected_trial']
+            path = campaign / 'trials' / trial['trial_id'] / 'skip.json'
+            entry = {
+                'bookmark_id': trial['trial_id'] + '/skip',
+                'campaign_id': record['campaign_id'],
+                'trial_id': trial['trial_id'], 'pair_index': trial['pair_index'],
+                'state': 'SKIPPED', 'planner_backend': trial['backend'],
+                'target_x_m': trial['x_m'], 'target_y_m': trial['y_m'],
+                'target_z_m': trial['z_m'],
+                'skipped_utc': record['recorded_utc'], 'skip_reason': record['reason'],
+                'skip_path': str(path), 'skip_sha256': sha256_file(path),
+                'included_in_comparison': False,
+                'exclusion_reason': 'Operator skip; no physical mission result.',
+            }
+            entry.update({key: trial.get(key) for key in (
+                'campaign_mode', 'object_key', 'target_label', 'camera_profile', 'aim_tolerance_deg')})
+            entry['bookmark_sha256'] = _canonical_hash(entry)
+            entries.append(entry)
         document = {
             'schema_version': BOOKMARK_SCHEMA_VERSION,
             'generated_utc': utc_now(),

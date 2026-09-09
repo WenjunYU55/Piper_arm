@@ -270,6 +270,8 @@ def quality_summary(report):
         'Depth geometry: %s' % report.get(
             'geometry_source', configuration.get(
                 'geometry_source', 'projected_color_depth')),
+        'Orientation: %s; viewer labels verified axes and direction toward robot' % (
+            report.get('coordinate_frame', {}).get('frame_id', 'checked when opened')),
     ]
     repair = report.get('hole_repair') or {}
     if repair.get('applied'):

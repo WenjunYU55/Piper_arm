@@ -126,3 +126,142 @@ def test_destroy_removes_private_wheel_bindings(scroll_widgets):
     assert root.bind_class(tag, '<MouseWheel>')
     canvas.destroy()
     assert not root.bind_class(tag, '<MouseWheel>')
+
+
+def test_campaign_skip_button_prepares_next_without_robot_interfaces(tmp_path):
+    from types import SimpleNamespace
+    from piper_gui.native_app import PiperGuiApp, BACKEND_LABELS
+    from piper_gui.results_campaign import ResultsCampaignController
+    from results_campaign.campaign import CampaignStore
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = object.__new__(PiperGuiApp)
+        app.results_campaign_id_var = tk.StringVar(root, 'button-test')
+        app.results_campaign_status_var = tk.StringVar(root)
+        app.results_campaign_reconstruct_var = tk.BooleanVar(root, False)
+        app.rough_coordinate_vars = [tk.StringVar(root) for _ in range(3)]
+        app.planner_backend_var = tk.StringVar(root)
+        app.mission_view_model = SimpleNamespace(state=SimpleNamespace(can_start=True))
+        app.results_campaign = ResultsCampaignController(tmp_path)
+        app.results_campaign.start_recorder = lambda: None
+        app._build_results_campaign(ttk.Frame(root))
+        assert app.results_campaign_skip_button.instate(['disabled'])
+        app.open_results_campaign()
+        app.prepare_next_results_trial()
+        app.results_campaign_skip_button.invoke()
+        store = app.results_campaign.store
+        assert store.progress()['skipped'] == 1
+        assert store.progress()['completed'] == 0
+        assert app.planner_backend_var.get() == BACKEND_LABELS['tesseract']
+        assert 'Skipped ' in app.results_campaign_status_var.get()
+        assert list(store.task_attempts()) == []
+        app.mission_view_model.state.can_start = False
+        app.skip_results_trial()
+        assert store.progress()['skipped'] == 1
+        assert 'active mission' in app.results_campaign_status_var.get()
+    finally:
+        root.destroy()
+
+
+def test_campaign_modes_prepare_all_conditions_without_applying_settings(tmp_path):
+    from types import SimpleNamespace
+    from piper_gui.native_app import PiperGuiApp
+    from piper_gui.results_campaign import ResultsCampaignController
+    from results_campaign.modes import MODE_LABELS
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = object.__new__(PiperGuiApp)
+        app.results_campaign_id_var = tk.StringVar(root, 'mode-test')
+        app.results_campaign_status_var = tk.StringVar(root)
+        app.results_campaign_reconstruct_var = tk.BooleanVar(root, False)
+        app.rough_coordinate_vars = [tk.StringVar(root) for _ in range(3)]
+        app.planner_backend_var = tk.StringVar(root)
+        app.mission_label_var = tk.StringVar(root, 'green cube')
+        app.camera_resolution_var = tk.StringVar(root, '640x480')
+        app.camera_fps_var = tk.StringVar(root, '30')
+        app.camera_fps_combo = ttk.Combobox(root)
+        app.scan_aim_tolerance_var = tk.DoubleVar(root, 5)
+        app.camera_profile_path = tmp_path / 'rgb_profile.conf'
+        app.camera_profile_path.write_text('640,480,30\n')
+        app.mission_view_model = SimpleNamespace(state=SimpleNamespace(can_start=True))
+        app.results_campaign = ResultsCampaignController(tmp_path)
+        app.results_campaign.start_recorder = lambda: None
+        app._build_results_campaign(ttk.Frame(root))
+        for mode, label in MODE_LABELS.items():
+            if mode == 'planner_comparison':
+                continue
+            app.results_campaign_mode_var.set(label)
+            app._campaign_mode_changed()
+            app.open_results_campaign()
+            app.prepare_next_results_trial()
+            store = app.results_campaign.store
+            assert store.definition()['campaign_mode'] == mode
+            assert store.next_trial()['backend'] == 'curobo'
+            if mode == 'camera_profiles':
+                assert app.camera_fps_var.get() == '15'
+            elif mode == 'aim_tolerance':
+                assert app.scan_aim_tolerance_var.get() == 1
+                app.skip_results_trial()
+                assert app.scan_aim_tolerance_var.get() == 5
+            else:
+                app.skip_results_trial()
+                assert app.mission_label_var.get() == 'cup'
+                assert [v.get() for v in app.rough_coordinate_vars] == ['0.30', '0.00', '0.00']
+                assert app.scan_aim_tolerance_var.get() == 5
+            assert app.camera_profile_path.read_text() == '640,480,30\n'
+            assert list(store.task_attempts()) == []
+    finally:
+        root.destroy()
+
+
+def test_campaign_retry_button_restores_last_successful_attempt(tmp_path):
+    from types import SimpleNamespace
+    from piper_gui.native_app import PiperGuiApp, BACKEND_LABELS
+    from piper_gui.results_campaign import ResultsCampaignController
+    from piper_gui.view_model import MissionRequest
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = object.__new__(PiperGuiApp)
+        app.results_campaign_id_var = tk.StringVar(root, 'retry-button')
+        app.results_campaign_status_var = tk.StringVar(root)
+        app.results_campaign_reconstruct_var = tk.BooleanVar(root, False)
+        app.rough_coordinate_vars = [tk.StringVar(root) for _ in range(3)]
+        app.planner_backend_var = tk.StringVar(root)
+        app.mission_view_model = SimpleNamespace(state=SimpleNamespace(can_start=True))
+        app.results_campaign = ResultsCampaignController(tmp_path)
+        app.results_campaign.start_recorder = lambda: None
+        app._build_results_campaign(ttk.Frame(root))
+        assert app.results_campaign_retry_button.instate(['disabled'])
+        app.open_results_campaign()
+        trial = app.results_campaign.store.load_next_trial()
+        request = MissionRequest((trial['x_m'], trial['y_m'], trial['z_m']),
+                                 'green cube', trial['backend'])
+        app.results_campaign.store.record_submission('last-success', request)
+        app.results_campaign.store.record_terminal('last-success', {'outcome': 'SUCCEEDED'})
+        app.prepare_next_results_trial()
+        app.results_campaign_retry_button.invoke()
+        assert app.results_campaign.store.next_trial() == trial
+        assert tuple(float(v.get()) for v in app.rough_coordinate_vars) == request.coordinates
+        assert app.planner_backend_var.get() == BACKEND_LABELS[trial['backend']]
+        assert len(app.results_campaign.store.task_attempts()) == 1
+        app.refresh_campaign_table()
+        assert len(app.results_campaign_table.get_children()) == 30
+        app.results_campaign_table.selection_set(trial['trial_id'])
+        app._campaign_selection_changed()
+        app.results_campaign_selected_retry_button.invoke()
+        assert app.results_campaign.store.next_trial() == trial
+        assert 'Retry prepared' in app.results_campaign_status_var.get()
+        assert len(app.results_campaign.store.task_attempts()) == 1
+        app.mission_view_model.state.can_start = False
+        app.retry_selected_results_trial()
+        assert 'active mission' in app.results_campaign_status_var.get()
+        app.retry_results_trial()
+        assert 'active mission' in app.results_campaign_status_var.get()
+    finally:
+        root.destroy()

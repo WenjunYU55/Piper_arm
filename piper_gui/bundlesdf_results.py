@@ -1,5 +1,6 @@
 """Command-free BundleSDF result selection and viewer controls for the Tk GUI."""
 
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -11,6 +12,8 @@ import time
 import uuid
 import tkinter as tk
 from tkinter import filedialog, ttk
+
+import yaml
 
 
 def job_progress(job_dir, output, stage):
@@ -86,13 +89,16 @@ def result_details(selection):
     root = Path(selection).expanduser().resolve()
     if root.name == 'textured_mesh.obj':
         root = root.parent
-    if root.name == 'result':
+    if root.name in ('result', 'base_link'):
         root = root.parent
     mesh = root / 'result/textured_mesh.obj'
     if not mesh.is_file() or not (root / 'run.json').is_file():
         raise ValueError(
             'Choose a BundleSDF output folder containing run.json '
             'and result/textured_mesh.obj.')
+    oriented = root / 'base_link/textured_mesh.obj'
+    if oriented.is_file() and oriented.with_name(oriented.name + '.frame.json').is_file():
+        mesh = oriented
     evidence = {}
     inspection = root / 'mesh-inspection.json'
     if inspection.is_file():
@@ -111,6 +117,71 @@ def result_details(selection):
                     'RECORDED_RGBD_DENSE_OFFLINE_SAM2')):
             label = 'Recorded ROS RGB-D session — offline reconstruction'
     return root, mesh, label
+
+
+def selection_details(selection, targets=None):
+    """Cheap metadata eligibility, not a promise of successful reconstruction."""
+    root = Path(selection).expanduser().resolve()
+    targets = targets or {}
+    try:
+        if not selection:
+            raise ValueError('Select a recording or saved mesh')
+        if root.name == 'bag' and (root.parent / 'recording.json').is_file():
+            root = root.parent
+        if (root / 'recording.json').is_file() or (root / 'manifest.json').is_file():
+            root, detail = input_details(root)
+            archive = (root / 'recording.json').is_file()
+            data = json.loads((root / ('recording.json' if archive else 'manifest.json')).read_text())
+            target = targets.get(data.get('task_id'), data.get('target_label', 'Target unknown'))
+            when = ''
+            if archive and data.get('started_unix_ns'):
+                when = datetime.fromtimestamp(
+                    int(data['started_unix_ns']) / 1e9).strftime('%d %b %Y %H:%M')
+            counts = data.get('topic_counts', {})
+            count = counts.get('/camera/color/image_raw', 0) if archive else data.get('accepted', 0)
+            reason = ''
+            if archive and counts.get('/piper/reconstruction_keyframe') == 0:
+                reason = 'No accepted reconstruction keyframe; this pipeline cannot reconstruct it'
+            elif not count:
+                reason = 'No usable frames recorded'
+            label = 'Cannot reconstruct' if reason else 'Reconstruct input'
+            title = ' — '.join(filter(None, [label, target, when, '{:,} {} frames'.format(
+                count, 'RGB' if archive else 'usable'),
+                root.name.replace('scan_recording_', '').split('.')[0][:8]]))
+            detail = reason or (detail + '. Eligible input; validation still required.')
+            return title, detail, not reason, False
+        root, _, origin = result_details(root)
+        name = root.name.replace('_', ' ').replace('-', ' ')
+        context = []
+        try:
+            recovery = json.loads((root / 'recovery.json').read_text())
+            source = Path(recovery['source_bag']).parent / 'recording.json'
+            recording = json.loads(source.read_text())
+            target = targets.get(recording.get('task_id'))
+            if target:
+                context.append(target)
+        except (OSError, ValueError, TypeError, KeyError, AttributeError):
+            pass
+        try:
+            validation = json.loads((root / 'validation.json').read_text())
+            if validation.get('converted_frames') is not None:
+                context.append(str(validation['converted_frames']) + ' input frames')
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
+        if context:
+            name = ' — '.join(context + [name])
+        title = ('Synthetic mesh' if origin.startswith('Synthetic') else 'Saved mesh')
+        return (title + ' — View only — ' + name,
+                origin + '. Open this mesh to inspect it; '
+                'select its source recording to reconstruct again.',
+                False, True)
+    except (OSError, ValueError, TypeError, AttributeError, OverflowError) as exc:
+        if (root / 'run.json').is_file() and not (root / 'result/textured_mesh.obj').is_file():
+            detail = ('No exported mesh. Select the source recording to retry; '
+                      'retain this run for diagnostics.')
+        else:
+            detail = str(exc)
+        return 'Unavailable — ' + root.name, detail, False, False
 
 
 def viewer_command(project_root, selection):
@@ -140,14 +211,17 @@ class BundleSDFResults(ttk.LabelFrame):
         self.allow_partial = tk.BooleanVar(self, True)
         self.stride = tk.StringVar(self, '1')
         self.selection = tk.StringVar(self)
+        self.display_selection = tk.StringVar(self)
+        self.choices = {}
+        self.targets = {}
         self.status = tk.StringVar(self, 'Select a recorded RGB-D dataset or BundleSDF result.')
         self.process = None
         self.log = None
         self.poll_id = None
         self.columnconfigure(0, weight=1)
-        self.combo = ttk.Combobox(self, textvariable=self.selection, width=48)
+        self.combo = ttk.Combobox(self, textvariable=self.display_selection, width=70, state='readonly')
         self.combo.grid(row=0, column=0, sticky='ew')
-        self.combo.bind('<<ComboboxSelected>>', self.show_selection)
+        self.combo.bind('<<ComboboxSelected>>', self.choose_selection)
         self.combo.bind('<Return>', self.show_selection)
         ttk.Button(self, text='Browse…', command=self.browse).grid(row=0, column=1, padx=6)
         ttk.Button(self, text='Refresh', command=self.refresh).grid(row=0, column=2)
@@ -169,6 +243,8 @@ class BundleSDFResults(ttk.LabelFrame):
         ttk.Spinbox(actions, from_=1, to=30, width=4, textvariable=self.stride).pack(side='left')
         ttk.Label(self, textvariable=self.status, wraplength=780).grid(
             row=3, column=0, columnspan=3, sticky='w', pady=(6, 0))
+        ttk.Label(self, textvariable=self.selection, wraplength=780).grid(
+            row=4, column=0, columnspan=3, sticky='w', pady=(4, 0))
         self.bind('<Destroy>', self.on_destroy, add='+')
         self.refresh()
 
@@ -183,8 +259,26 @@ class BundleSDFResults(ttk.LabelFrame):
         for state in ('complete', 'incomplete', 'failed', 'cancelled'):
             candidates += list((project / 'datasets/reconstruction_sessions').glob(
                 '*.' + state + '/manifest.json'))
+        self.targets = {}
+        for path in (project / 'datasets/active_scan').glob('*/metadata.yaml'):
+            try:
+                data = yaml.safe_load(path.read_text())
+                if data.get('task_id') and data.get('target_label'):
+                    self.targets[data['task_id']] = data['target_label']
+            except (OSError, ValueError, AttributeError, yaml.YAMLError):
+                continue
         candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-        self.combo.configure(values=[str(path.parent) for path in candidates])
+        self.choices = {}
+        for path in candidates:
+            label = selection_details(str(path.parent), self.targets)[0]
+            # A numeric suffix disambiguates equal display names; paths remain literal.
+            unique = label
+            number = 2
+            while unique in self.choices:
+                unique = label + ' (' + str(number) + ')'
+                number += 1
+            self.choices[unique] = str(path.parent)
+        self.combo.configure(values=list(self.choices))
         if not self.selection.get() and candidates:
             self.selection.set(str(candidates[0].parent))
         self.show_selection()
@@ -196,16 +290,21 @@ class BundleSDFResults(ttk.LabelFrame):
             self.selection.set(selected)
             self.show_selection()
 
+    def choose_selection(self, _event=None):
+        self.selection.set(self.choices[self.display_selection.get()])
+        self.show_selection()
+
     def show_selection(self, _event=None):
-        """Display evidence origin before opening the model."""
-        try:
-            try:
-                _, label = input_details(self.selection.get())
-            except ValueError:
-                _, _, label = result_details(self.selection.get())
-            self.status.set(label)
-        except (OSError, ValueError, TypeError) as exc:
-            self.status.set(str(exc))
+        """Show readable identity and enable only applicable actions."""
+        title, detail, reconstructable, viewable = selection_details(self.selection.get(), self.targets)
+        self.display_selection.set(next((label for label, path in self.choices.items()
+                                        if path == self.selection.get()), title))
+        self.status.set(detail)
+        self.build_button.configure(state='normal' if reconstructable and self.job_process is None
+                                    else 'disabled')
+        self.validate_button.configure(state='normal' if reconstructable and self.job_process is None
+                                       else 'disabled')
+        self.open_button.configure(state='normal' if viewable and self.process is None else 'disabled')
 
     def reconstruct(self, validate_only=False):
         """Launch the offline job separately and keep Tk responsive."""
@@ -255,7 +354,8 @@ class BundleSDFResults(ttk.LabelFrame):
             if not self.job_cancel_time:
                 try:
                     state = json.loads((self.job_dir / 'job.json').read_text())
-                    self.status.set(job_progress(self.job_dir, self.job_output, state.get('stage', 'Starting'))
+                    self.status.set(job_progress(
+                        self.job_dir, self.job_output, state.get('stage', 'Starting'))
                                     + ' — logs: ' + str(self.job_dir))
                 except (OSError, ValueError):
                     pass
@@ -265,8 +365,7 @@ class BundleSDFResults(ttk.LabelFrame):
         diagnostic = self.job_log.read()[-1600:]
         self.job_log.close()
         self.job_process = None
-        self.build_button.configure(state='normal')
-        self.validate_button.configure(state='normal')
+        self.show_selection()
         self.cancel_button.configure(state='disabled')
         if self.job_cancel_time:
             self.status.set('Reconstruction cancelled; retained logs: ' + str(self.job_dir))
@@ -319,7 +418,7 @@ class BundleSDFResults(ttk.LabelFrame):
         self.log.close()
         self.log = None
         self.process = None
-        self.open_button.configure(state='normal')
+        self.show_selection()
         if code:
             self.status.set('Viewer failed: ' + message)
         else:

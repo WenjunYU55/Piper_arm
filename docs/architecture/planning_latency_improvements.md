@@ -90,3 +90,14 @@ failure isolation and bounded shutdown. Full mobile/Tesseract/GUI suites and
 package builds are run without starting ROS or robot processes. Physical testing
 is separate. Offline audit scripts and original detailed results are under
 `/home/prl/Downloads/PiPER_Direction_Timing_Audit_20260906_EDdigH`.
+
+## Supported-distance NBV scoring (8 September 2026)
+
+The early atlas prefilter now supplies the nearest supported interval as separate
+scoring metadata. The coverage scorer uses that position instead of the nominal
+ray midpoint, preserving the motion candidate geometry and exact endpoint search.
+Without an enforcing atlas, ray scoring uses the sensor/envelope minimum. The
+64x48 projection, normalized gain and gain-first ranking stay unchanged. Future
+coverage snapshots retain scorer/FOV settings for direct replay. The intentional population-lifetime exclusion of exhausted planner rays is
+preserved across movement and accepted captures, bounding repeated planning work.
+Static atlas culls also retain their existing lifetime. See [validation](../experiments/nbv_scoring_retry_validation.md).

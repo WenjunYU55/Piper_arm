@@ -1,7 +1,7 @@
 """Static capability prefilter before NBV; never authorizes motion.
 
-Keep candidate positions untouched: narrowing the representative before NBV
-would change projected information and is not a structural reorder.
+Keep motion geometry untouched; supply a separate capability-supported
+scoring distance so a distant nominal midpoint cannot alias a small target.
 """
 
 from collections import OrderedDict
@@ -70,11 +70,19 @@ class StaticRayPrefilter:
                     self.cache.popitem(last=False)
             result = self.cache[key]
             if result.supported:
-                survivors.append(item)
+                # The nearest supported interval maximizes target resolution.
+                # This is scoring evidence, never an IK or motion endpoint.
+                intervals = result.supported_intervals_m
+                if not intervals:
+                    raise ValueError('Supported capability ray has no intervals')
+                survivors.append(dict(
+                    item, nbv_scoring_standoff_m=min(float(a) for a, _b in intervals),
+                    nbv_scoring_source='capability_supported_interval'))
             else:
                 rejected[int(item['ray_id'] if 'ray_id' in item else item['index'])] = {
                     'stage': 'capability_prequalification',
-                    'reason': 'CAPABILITY_MAP_NO_SUPPORT: bounded ray has no nearby collision-qualified camera capability cell',
+                    'reason': ('CAPABILITY_MAP_NO_SUPPORT: bounded ray has no '
+                               'nearby collision-qualified camera capability cell'),
                     'evidence': {
                         'checked_keys': int(result.checked_keys),
                         'direction_tolerance_deg': self.atlas.direction_tolerance_deg},

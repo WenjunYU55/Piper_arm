@@ -2,9 +2,10 @@
 
 ## Passive results campaign
 
-The GUI **Results Campaign** tab records all cuRobo missions first and then the
-same target-position sequence with Tesseract. These are `MATCHED_RUNS`, because
-backend-block execution is confounded with elapsed time and environment. It records
+The GUI **Results Campaign** tab records both planners at each position:
+cuRobo/Tesseract, then Tesseract/cuRobo at the next position, repeating over the
+20 cm X grid and three configured heights. These are `MATCHED_RUNS` with one
+run per planner/position. Existing campaigns retain their saved order. It records
 missions without publishing ROS data or changing mission behaviour. Full design,
 interpretation and output details are in
 [`docs/experiments/results_campaign.md`](docs/experiments/results_campaign.md).
@@ -13,8 +14,8 @@ Command-line collection and report generation are also available:
 
 ```bash
 cd /home/prl/Piper_arm
-python3 tools/record_results_campaign.py --project-root /home/prl/Piper_arm --campaign piper-poster-blocked-20260902
-python3 tools/build_results_campaign_report.py --project-root /home/prl/Piper_arm --campaign piper-poster-blocked-20260902 --run-reconstruction
+python3 tools/record_results_campaign.py --project-root /home/prl/Piper_arm --campaign piper-paired-20cm-20260908
+python3 tools/build_results_campaign_report.py --project-root /home/prl/Piper_arm --campaign piper-paired-20cm-20260908 --run-reconstruction
 ```
 
 These commands are offline/file-only. They do not start ROS, cameras, planners,
@@ -167,8 +168,9 @@ PIPER_MISSION_CONTACT_SPEED_PERCENT=5 \
 The cuRobo opt-in does not enable motion by itself. Do not use the unqualified
 `ground` floor profile for physical execution.
 The worker also verifies that the generated, hash-bound qualification record
-matches `tabletop` and exactly 5% free/contact speed. Any mismatch reports the
-planner outside its hardware-qualified scope before a plan can be dispatched.
+matches `tabletop`, requires the explicit model opt-in, and validates selected
+free/contact speeds within 1–100%. The fixed 5% restriction was removed at the
+operator’s request on 8 September; the historical physical evidence remains at 5%.
 
 This launcher is a singleton. A second invocation exits with code 73 before
 starting ROS nodes or mission children. Before submitting a GUI goal, require
@@ -434,3 +436,14 @@ After the GUI confirms home, hold, and disable:
 3. Press `Ctrl+C` in the RViz terminal.
 
 The CAN boot service may remain active; it does not enable or command the arm.
+
+Campaign **Skip Trial** records the current pending entry as skipped and prepares
+the next entry. It persists across restarts, requires no active/pending mission,
+and does not apply the planner or start a scan. Skips appear separately in
+campaign bookmarks and CSV/XLSX reports, never as completed scans.
+
+Results Campaign now includes camera-profile (8 trials), aim-tolerance (30 trials)
+and object (4 trials) modes, all cuRobo-only. Select mode, Create / Resume, then
+Prepare Next Trial; review and apply planner, camera and aim controls before Start.
+The aim sequence is 1/5/10/15/20/25 degrees; other modes prepare 5 degrees.
+See `docs/experiments/results_campaign.md` for exact conditions and evidence limits.

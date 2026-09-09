@@ -22,9 +22,14 @@ class ResultsCampaignController:
         self.recorder_process = None
         self.report_process = None
 
-    def open(self, campaign_id):
+    def open(self, campaign_id, mode=None, settings=None):
         store = CampaignStore(self.project_root, campaign_id)
-        store.create_or_load()
+        store.create_or_load(mode=mode, settings=settings)
+        if (self.store is not None and self.store.campaign_id != store.campaign_id
+                and self.recorder_process is not None and self.recorder_process.poll() is None):
+            self.recorder_process.terminate()
+            self.recorder_process.wait(timeout=5)
+            self.recorder_process = None
         self.store = store
         self.start_recorder()
         return store.progress()
@@ -46,6 +51,16 @@ class ResultsCampaignController:
         if self.store is None:
             raise ValueError('open a campaign first')
         return self.store.load_next_trial()
+
+    def skip_trial(self):
+        if self.store is None:
+            raise ValueError('open a campaign first')
+        return self.store.skip_next_trial()
+
+    def retry_trial(self, trial_id=None):
+        if self.store is None:
+            raise ValueError('open a campaign first')
+        return self.store.retry_last_attempt(trial_id)
 
     def record_submission(self, *args, **kwargs):
         if self.store is None:

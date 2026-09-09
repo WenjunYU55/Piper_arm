@@ -38,7 +38,7 @@ from piper_tesseract_foxy.contract import (
 )
 
 WORKER_PLANNING_BUDGET_SEC = 150.0
-AUTOMATIC_ONE_VIEW_PLANNING_BUDGET_SEC = 90.0
+AUTOMATIC_ONE_VIEW_PLANNING_BUDGET_SEC = 120.0
 AUTOMATIC_ONE_VIEW_SEGMENT_BUDGET_SEC = 3.0
 WORKER_RESPONSE_RESERVE_SEC = 5.0
 SCAN_TARGET_MAX_BORESIGHT_DEG = DEFAULT_VISIBILITY_ANGLE_DEG
@@ -553,12 +553,12 @@ def sdk_movej_waypoint_trajectory(
         bootstrap_start_limit_tolerance_rad=0.0,
 ):
     """
-    Turn the exact Tesseract path into 20 Hz MoveJ position targets.
+    Preserve native Tesseract timing in fixed-rate MoveJ position targets.
 
     Tesseract supplies collision-free geometry; its ISP derivatives are not
     commands accepted by the PiPER interface. Each source segment is therefore
-    sampled using the robot model's MoveJ speed multiplied once by the operator
-    percentage. Every source vertex remains in the emitted path, the hard
+    sampled without shortening its native segment durations, using the robot
+    model's MoveJ speed multiplied once by the operator percentage. Every source vertex remains in the emitted path, the hard
     per-command step ceiling still applies, and MotionCtrl_2 receives the same
     percentage for the controller's interpolation. The queried motor-limit
     record remains validated and hash-bound health evidence, but it is not
@@ -632,18 +632,44 @@ def sdk_movej_waypoint_trajectory(
                 'Tesseract stream path exceeds a position limit')
 
     period = 1.0 / rate
+    # Round at the actual transport period. Native ISP intervals vary in
+    # length, so 20 Hz pre-rounding adds needless dwell to short segments.
+    baseline_period = period
+    subdivisions = 1
+    native_durations = np.diff(times)
+    baseline_ticks = []
+    for duration, first, second in zip(
+            native_durations, positions[:-1], positions[1:]):
+        delta = np.abs(second - first)
+        baseline_ticks.append(max(
+            1,
+            int(math.ceil(float(duration) / baseline_period - 1e-12)),
+            int(math.ceil(float(np.max(
+                delta / (scheduled_velocity_bounds * baseline_period))) - 1e-12)),
+            int(math.ceil(float(np.max(delta)) / maximum_step - 1e-12)),
+        ))
+    if rate > 20.0:
+        # Like cuRobo's experimental stream, retain one native-path time
+        # scale. Increasing transport density must never accelerate a move.
+        # Derive scale from continuous segment rates before tick rounding.
+        # A tiny ISP segment must not magnify tick quantization into a
+        # whole-path slowdown (cuRobo's native segments have equal dt).
+        deltas = np.abs(np.diff(positions, axis=0))
+        scale = max(
+            1.0,
+            float(np.max(deltas / (
+                native_durations[:, None] * scheduled_velocity_bounds))),
+            float(np.max(deltas * baseline_period / (
+                native_durations[:, None] * maximum_step))),
+        )
+        baseline_ticks = [max(ticks, int(math.ceil(
+            float(duration) * scale / baseline_period - 1e-12)))
+            for ticks, duration in zip(baseline_ticks, native_durations)]
     output_positions = [positions[0].copy()]
-    # Allocate whole 20 Hz ticks independently to each collision-checked
-    # source segment. This makes the formula explicit and keeps every source
-    # vertex instead of cutting across a corner while resampling.
-    for first, second in zip(positions[:-1], positions[1:]):
+    for first, second, baseline_count in zip(
+            positions[:-1], positions[1:], baseline_ticks):
         delta = second - first
-        ticks_for_velocity = int(math.ceil(float(np.max(
-            np.abs(delta)
-            / (scheduled_velocity_bounds * period))) - 1e-12))
-        ticks_for_step = int(math.ceil(
-            float(np.max(np.abs(delta))) / maximum_step - 1e-12))
-        ticks = max(1, ticks_for_velocity, ticks_for_step)
+        ticks = subdivisions * baseline_count
         if len(output_positions) + ticks > 60000:
             raise ContractError('scheduled Tesseract path exceeds point limit')
         for tick in range(1, ticks + 1):

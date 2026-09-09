@@ -81,3 +81,9 @@ upstream_workflow_audit_2026_09_07:
 dense_offline_video_2026_09_07:
   reference: docs/ai/91-dense-offline-video.yaml
   routing: Default GUI archive reconstruction now recovers all synchronized RGB-D and propagates SAM2 masks offline before quality admission; live mission and capture policy is unchanged.
+
+reconstruction_base_frame_orientation_2026_09_08:
+  reference: docs/ai/93-reconstruction-coordinate-frames.yaml
+  owner_module: reconstruction/coordinate_frames.py
+  behavior: All capture reconstruction variants retain base_link geometry with explicit frame/hash sidecars; BundleSDF adds a separate same-image-anchored base_link export. Both viewers open Z-up from the robot side with labelled axes and robot-direction arrows. Unknown orientation remains explicit.
+  boundary: Offline export/display only; original geometry, tracking, capture poses, quality gates and evidence ZIPs are preserved.

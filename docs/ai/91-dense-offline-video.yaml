@@ -50,3 +50,9 @@ executed_evidence:
   limitations: Official milk download quota blocked; no new physical motion, camera calibration or ground-truth accuracy qualification.
 
 input_validity_correction: The earlier 2041-frame evidence passed old checks but included 408 ambiguous aligned-depth pairs. It is historical failed-input evidence, not qualified aligned RGB-D.
+
+reconstruction_base_frame_orientation_2026_09_08:
+  reference: docs/ai/93-reconstruction-coordinate-frames.yaml
+  owner_module: reconstruction/coordinate_frames.py
+  behavior: All capture reconstruction variants retain base_link geometry with explicit frame/hash sidecars; BundleSDF adds a separate same-image-anchored base_link export. Both viewers open Z-up from the robot side with labelled axes and robot-direction arrows. Unknown orientation remains explicit.
+  boundary: Offline export/display only; original geometry, tracking, capture poses, quality gates and evidence ZIPs are preserved.

@@ -56,7 +56,8 @@ def build_acquisition_viewpoints(
 
     ``minimum_standoff_m`` is an observation-protection floor around the
     uncertain rough hint. A camera already inside that floor is moved only
-    radially away from the hint; otherwise its current radius is preserved.
+    radially away from the hint; otherwise its current radius is preferred,
+    with bounded nearer alternatives available above the same minimum.
     Rough acquisition deliberately has no maximum-radius policy: capability,
     exact planning, collision checking and the finite perception profile own
     the actual reachable/observable boundary. The first view always rotates
@@ -312,9 +313,30 @@ def build_acquisition_viewpoints(
             'desired_look_at_direction': dict(zip(
                 ('x', 'y', 'z'), (float(value) for value in look))),
         })
+    if minimum_standoff > 0.0 and effective_standoff > minimum_standoff + 1e-6:
+        # Preserve the current-distance preference, but do not make an
+        # unreachable radius the only acquisition option. These are planner
+        # candidates, never direct camera or joint commands.
+        radial_candidates = []
+        radial_direction = (primary_camera - target) / effective_standoff
+        for label, radius in (
+                ('minimum', minimum_standoff),
+                ('midpoint', 0.5 * (minimum_standoff + effective_standoff))):
+            camera = target + radial_direction * radius
+            radial_candidates.append({
+                **primary,
+                'acquisition_look': '%s_radial_%s' % (
+                    primary['acquisition_look'], label),
+                'acquisition_search_stage': 'radial_fallback',
+                'desired_camera_position': dict(zip(
+                    ('x', 'y', 'z'), (float(value) for value in camera))),
+                'camera_object_distance_m': float(radius),
+                'distance_policy': 'minimum_only_radial_fallback',
+            })
+        local_candidates = (
+            [primary] + radial_candidates + local_candidates[1:])[:5]
     selected = local_candidates
-    # Every transaction offers only one compact angular neighborhood at the
-    # measured camera position. The
+    # Every transaction offers a bounded angular/radial neighborhood. The
     # first candidate is the mandatory semantic look for this transaction;
     # remaining candidates are bounded IK alternatives, not extra looks.
     for index, item in enumerate(selected[:5]):

@@ -466,11 +466,11 @@ def test_sdk_movej_target_keeps_joint6_free_and_zero_derivatives():
     assert fast[-1]['positions_rad'][5] == pytest.approx(0.4)
     assert slow[-1]['positions_rad'][5] == pytest.approx(0.4)
     assert len(slow) > len(fast)
-    assert slow[-1]['time_from_start_s'] == pytest.approx(1.35)
+    assert slow[-1]['time_from_start_s'] == pytest.approx(4.0)
     assert fast_validation == source
     assert all(point['velocities_rad_s'] == [0.0] * 6 for point in fast)
     assert all(point['accelerations_rad_s2'] == [0.0] * 6 for point in fast)
-    assert len(fast) == 9
+    assert len(fast) == 21
     assert fast[0]['positions_rad'] == pytest.approx([0.0] * 6)
     assert fast[-1]['positions_rad'] == pytest.approx(
         [0.2, 0.0, 0.0, 0.0, 0.0, 0.4])
@@ -975,7 +975,7 @@ def test_scene_setup_time_does_not_consume_candidate_budget(monkeypatch):
     assert [item['id'] for item in selected] == [0]
     assert len(segments) == 1
     assert candidate_calls[0][-1] is True
-    assert backend.planning_deadline_monotonic == pytest.approx(150.0)
+    assert backend.planning_deadline_monotonic == pytest.approx(180.0)
 
 
 def test_automatic_one_view_replan_has_a_tight_bounded_budget():
@@ -987,7 +987,7 @@ def test_automatic_one_view_replan_has_a_tight_bounded_budget():
             'include_return_home': False,
         },
     }
-    assert planning_budgets_for_request(request) == (90.0, 3.0)
+    assert planning_budgets_for_request(request) == (120.0, 3.0)
 
     request['planning']['include_return_home'] = True
     assert planning_budgets_for_request(request) == (150.0, 5.0)
@@ -1603,3 +1603,46 @@ def test_bootstrap_limit_recovery_binds_one_dual_joint_target():
         [0.031, -0.065])
     assert recovery['positions'][0][1:3] == pytest.approx([-0.001, 0.035])
     assert recovery['positions'][-1][1:3] == pytest.approx([0.03, -0.03])
+
+
+def test_200hz_preserves_native_timing_and_every_corner():
+    source = [dict(time_from_start_s=t, positions_rad=q,
+                   velocities_rad_s=[0.] * 6, accelerations_rad_s2=[0.] * 6)
+              for t, q in [(0., [0.] * 6), (.5, [.02, 0., 0., 0., 0., 0.]),
+                           (1.5, [.02, .03, 0., 0., 0., 0.])]]
+    durations = []
+    for rate in [20., 100., 200.]:
+        points, geometry = sdk_movej_waypoint_trajectory(
+            source, 50., rate, .05, [[-3., 3.]] * 6, [5.] * 6, [10.] * 6)
+        durations.append(points[-1]['time_from_start_s'])
+        assert geometry == source
+        corner = next(p for p in points if p['positions_rad'] == source[1]['positions_rad'])
+        assert corner['time_from_start_s'] >= .5
+        assert points[-1]['time_from_start_s'] - corner['time_from_start_s'] >= 1.
+        np.testing.assert_allclose(np.diff([p['time_from_start_s'] for p in points]), 1. / rate)
+        assert all(p['positions_rad'][1] == 0. or p['positions_rad'][0] == .02 for p in points)
+    assert durations == pytest.approx([1.5, 1.5, 1.5])
+
+
+def test_200hz_equal_native_segments_match_curobo_uniform_timing():
+    # Native segment one needs stretching; segment two must preserve that
+    # same native time scale instead of jumping to maximum velocity.
+    source = [dict(time_from_start_s=t, positions_rad=[q, 0., 0., 0., 0., 0.],
+                   velocities_rad_s=[0.] * 6, accelerations_rad_s2=[0.] * 6)
+              for t, q in [(0., 0.), (.1, .4), (.2, .41)]]
+    points, _ = sdk_movej_waypoint_trajectory(
+        source, 20., 200., .05, [[-3., 3.]] * 6, [5.] * 6, [10.] * 6)
+    middle = next(p for p in points if p['positions_rad'] == source[1]['positions_rad'])
+    assert middle['time_from_start_s'] == pytest.approx(.4)
+    assert points[-1]['time_from_start_s'] == pytest.approx(.8)
+    assert len(points) == 161
+
+
+def test_tiny_isp_interval_does_not_amplify_whole_path_tick_rounding():
+    source = [dict(time_from_start_s=t, positions_rad=[q, 0., 0., 0., 0., 0.],
+                   velocities_rad_s=[0.] * 6, accelerations_rad_s2=[0.] * 6)
+              for t, q in [(0., 0.), (.001, .0005), (.5, .2)]]
+    points, _ = sdk_movej_waypoint_trajectory(
+        source, 50., 200., .05, [[-3., 3.]] * 6, [5.] * 6, [10.] * 6)
+    assert points[-1]['time_from_start_s'] == pytest.approx(.505)
+    assert len(points) == 102

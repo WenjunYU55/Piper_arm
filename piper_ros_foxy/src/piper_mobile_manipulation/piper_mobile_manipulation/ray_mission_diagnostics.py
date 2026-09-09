@@ -284,7 +284,9 @@ def planner_generation_snapshot(
                 'nbv_novel_surface_pixels', 'nbv_marginal_information_pixels',
                 'nbv_marginal_information_fraction',
                 'nbv_projected_object_pixels', 'nbv_direction_novelty_deg',
-                'nbv_camera_travel_m', 'nbv_positive_information_gain'):
+                'nbv_camera_travel_m', 'nbv_positive_information_gain',
+                'nbv_scoring_standoff_m', 'nbv_scoring_source',
+                'nbv_scoring_position_m'):
             if key in scored:
                 ray[key] = scored[key]
         rays.append(ray)
@@ -1055,7 +1057,9 @@ def historical_replay_snapshot(dataset, metadata, source_path,
             'nbv_novel_surface_pixels', 'nbv_marginal_information_pixels',
             'nbv_marginal_information_fraction',
             'nbv_projected_object_pixels', 'nbv_direction_novelty_deg',
-            'nbv_camera_travel_m', 'nbv_positive_information_gain'):
+            'nbv_camera_travel_m', 'nbv_positive_information_gain',
+            'nbv_scoring_standoff_m', 'nbv_scoring_source',
+            'nbv_scoring_position_m'):
         if key in view:
             ray[key] = view[key]
     planned_count = max(1, int(metadata.get('planned_viewpoint_count', 1)))

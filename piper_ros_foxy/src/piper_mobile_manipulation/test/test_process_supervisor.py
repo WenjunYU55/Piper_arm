@@ -281,3 +281,49 @@ def test_process_spec_is_immutable_and_owns_environment_copy():
     assert spec.environment['TOKEN'] == 'original'
     with pytest.raises(TypeError):
         spec.environment['TOKEN'] = 'mutated'
+
+
+def test_component_exit_is_generation_bound_and_includes_clean_exit(tmp_path):
+    from piper_mobile_manipulation.infrastructure.process_supervisor import (
+        component_failures, record_component_exit,
+    )
+    old = tmp_path / 'old'
+    new = tmp_path / 'new'
+    old.mkdir()
+    new.mkdir()
+    record_component_exit(old, 'planner', 1)
+    record_component_exit(old, 'capture', 0)
+    assert component_failures(old) == {'capture': 0, 'planner': 1}
+    assert component_failures(new) == {}
+    assert component_failures(None) == {}
+
+
+@pytest.mark.parametrize('managed,shutting_down,expected_shutdown', [
+    (True, False, False), (False, False, True), (True, True, False),
+])
+def test_launch_child_failure_preserves_managed_recovery(
+        tmp_path, monkeypatch, managed, shutting_down, expected_shutdown):
+    import ast
+    from pathlib import Path
+    from types import SimpleNamespace
+    from piper_mobile_manipulation.infrastructure.process_supervisor import (
+        component_failures, record_component_exit,
+    )
+    path = Path(__file__).parents[1] / 'launch/supervised_viewpoint_execution.launch.py'
+    tree = ast.parse(path.read_text())
+    fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef)
+              and n.name == 'critical_component_exit')
+    import os
+    monkeypatch.setenv('PIPER_SCAN_COMPONENT_EXIT_DIRECTORY', str(tmp_path))
+    scope = dict(os=os, record_component_exit=record_component_exit,
+                 LaunchConfiguration=lambda _: SimpleNamespace(
+                     perform=lambda context: str(managed)),
+                 Shutdown=lambda **kwargs: kwargs,
+                 EmitEvent=lambda **kwargs: kwargs)
+    exec(compile(ast.Module(body=[fn], type_ignores=[]), '<exit-handler>', 'exec'), scope)
+    actions = scope['critical_component_exit'](
+        SimpleNamespace(returncode=1), SimpleNamespace(is_shutdown=shutting_down),
+        'planner')
+    assert bool(actions) == expected_shutdown
+    assert component_failures(tmp_path) == (
+        {'planner': 1} if managed and not shutting_down else {})

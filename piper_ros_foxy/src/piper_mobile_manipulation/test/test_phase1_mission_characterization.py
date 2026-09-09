@@ -674,3 +674,28 @@ def test_terminal_phase_is_success_only_after_disable_and_cleanup(
     assert cached['safe_shutdown'] is True
     assert mission_harness.registry.active is None
     assert mission_harness.phase_trace[-1] == MissionPhase.STOPPING.value
+
+
+def test_child_exit_enters_mission_failure_with_live_scan_launcher(tmp_path):
+    from piper_mobile_manipulation.infrastructure.process_supervisor import record_component_exit
+    record_component_exit(tmp_path, 'planner', 1)
+    harness = SimpleNamespace(
+        telemetry_store=None, latest_capture={},
+        _process_shutdown_requested=False,
+        _active_cancellation_token=CancellationToken(),
+        guard_motor_control=lambda session: None,
+        param_bool=lambda name: False,
+        processes=SimpleNamespace(failed=lambda: {}),
+        scan_component_exit_directory=tmp_path,
+        publish_feedback=lambda *args: pytest.fail('failure must precede feedback'),
+    )
+    session = SimpleNamespace(accepted_captures=1, deadline_expired=lambda: False)
+    with pytest.raises(MissionFailure, match='managed scan component exited'):
+        TargetScanMissionNode.guard(harness, None, session)
+
+
+def test_new_process_generation_forgets_old_child_exit():
+    operations, processes = _generation_operations((), True)
+    operations.node.scan_component_exit_directory = '/old/generation'
+    assert operations.begin_process_generation(None) == []
+    assert operations.node.scan_component_exit_directory is None

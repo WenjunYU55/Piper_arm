@@ -1789,7 +1789,7 @@ class Worker:
             self.backend = None
 
     def collision_model_qualified(self):
-        """Require exact provenance, runtime scope and operator opt-in."""
+        """Require model evidence and opt-in; speed is an independent selection."""
         if self.backend is None:
             return False
         provenance = self.backend.model_provenance
@@ -1807,12 +1807,8 @@ class Worker:
             and qualification.get('scope') ==
             'supervised_5_percent_target_scan'
             and qualification.get('floor_profile') == 'tabletop'
-            and float(qualification.get(
-                'free_motion_speed_percent', float('nan'))) == free_speed
-            and float(qualification.get(
-                'contact_speed_percent', float('nan'))) == contact_speed
-            and free_speed == 5.0
-            and contact_speed == 5.0
+            and math.isfinite(free_speed) and 1.0 <= free_speed <= 100.0
+            and math.isfinite(contact_speed) and 1.0 <= contact_speed <= 100.0
             and os.environ.get('PIPER_FLOOR_PROFILE', '') == 'tabletop'
             and qualification.get(
                 'real_motion_requires_explicit_opt_in') is True

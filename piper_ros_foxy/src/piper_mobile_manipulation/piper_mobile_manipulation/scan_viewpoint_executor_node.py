@@ -75,6 +75,9 @@ from piper_mobile_manipulation.execution.modes import (
     ROUGH_ACQUISITION,
     uses_bootstrap_static_scene,
 )
+from piper_mobile_manipulation.execution.clearance import (
+    clearance_margin, tracking_limit,
+)
 from piper_mobile_manipulation.execution.motion import (
     camera_target_path_reasons,
     bootstrap_recovery_declaration_reasons,
@@ -250,7 +253,7 @@ def qualified_scan_center_update(
 
 def sdk_command_path(path, velocities, accelerations, times, execution_mode,
                      direct_home=False):
-    """Collapse a fully validated straight chord to one PiPER MoveJ goal."""
+    """Stream every approved scan sample; retain dedicated home semantics."""
     command_path = [np.asarray(item, dtype=float).copy() for item in path[1:]]
     command_velocities = [
         np.asarray(item, dtype=float).copy() for item in velocities[1:]]
@@ -261,13 +264,10 @@ def sdk_command_path(path, velocities, accelerations, times, execution_mode,
     if mode == 'TESSERACT_STREAM':
         mode = 'TIMED_STREAM'
     if mode == 'DIRECT_MOVEJ' and not bool(direct_home):
-        return (
-            [np.asarray(path[-1], dtype=float).copy()],
-            [np.zeros(6, dtype=float)],
-            [np.zeros(6, dtype=float)],
-            [float(times[-1])],
-            False,
-        )
+        # This label proves the planner's dense straight chord, not that
+        # physical MoveJ synchronizes the axes along that chord. Keep its
+        # admitted samples/timestamps and use the same stream as cuRobo.
+        mode = 'TIMED_STREAM'
     return (
         command_path, command_velocities, command_accelerations,
         command_times, bool(not direct_home and mode == 'TIMED_STREAM'))
@@ -2703,6 +2703,66 @@ class ScanViewpointExecutorNode(Node):
             return
         self.publish_next_waypoint(now)
 
+    def stream_clearance_limit(self, now):
+        """Tighten Tesseract stream lead using measured and next-target clearance."""
+        open_limit = float(configured_value(self, 'trajectory_following_error_rad'))
+        if (getattr(self, 'plan_backend', '') != 'tesseract'
+                or not configured_value(self, 'trajectory_clearance_monitor_enabled')
+                or self.plan_kind == RETURN_HOME):
+            return open_limit
+        state = getattr(self, 'stream_clearance_state', None)
+        if state is None:
+            raise ValueError('collision monitor has no approved scene')
+        def margin(q, include_self=None):
+            return clearance_margin(
+                self.kinematics, q, state['boxes'],
+                float(configured_value(self, 'floor_z_m')),
+                float(configured_value(self, 'link_radius_m')),
+                float(configured_value(self, 'self_clearance_m')),
+                configured_value(self, 'camera_holder_envelope_center_link6_m'),
+                configured_value(self, 'camera_holder_envelope_size_m'),
+                float(configured_value(self, 'camera_holder_external_clearance_m')),
+                include_self=state['ready'] if include_self is None else include_self)
+        measured = self.current_joints()
+        cached = state.get('measured')
+        if cached is None or not np.array_equal(cached[0], measured):
+            remaining, label = margin(measured)
+            closing = (max(0., (cached[1] - remaining) / max(.001, now - cached[2]))
+                       if cached else 0.)
+            state['measured'] = (measured.copy(), remaining, now, label, closing)
+        _, remaining, _, label, closing = state['measured']
+        if not state['ready'] and self.path_index >= state['recovery_end']:
+            # Only internal proximity is exempt during a qualified bootstrap
+            # prefix; table and external obstacle monitoring is always active.
+            full_margin, full_label = margin(measured, include_self=True)
+            if full_margin >= 0.:
+                state['ready'] = True
+                remaining, label = full_margin, full_label
+                state['measured'] = (measured.copy(), remaining, now, label, closing)
+                state.pop('target_index', None)
+        if remaining < 0.:
+            raise ValueError('measured collision clearance violated: %s margin=%.6fm'
+                             % (label, remaining))
+        if self.path_index < len(self.current_path):
+            if state.get('target_index') != self.path_index:
+                state['target_margin'] = margin(self.current_path[self.path_index])[0]
+                state['target_index'] = self.path_index
+            remaining = min(remaining, state['target_margin'])
+        snapshot = runtime_telemetry_snapshot(self)
+        observation = None if snapshot is None else snapshot.arm.joints
+        age = max(0., observation.age_at(snapshot.captured_at)) if observation else 0.
+        limit = tracking_limit(
+            remaining, closing,
+            age + float(configured_value(self, 'trajectory_clearance_reaction_sec')),
+            float(configured_value(self, 'trajectory_near_collision_error_rad')),
+            open_limit, float(configured_value(self, 'trajectory_clearance_transition_m')))
+        if now - state.get('last_log', -math.inf) >= .5:
+            self.get_logger().info(
+                'clearance-aware stream: margin=%.4fm lead_limit=%.4frad closing=%.3fm/s'
+                % (remaining, limit, closing))
+            state['last_log'] = now
+        return limit
+
     def streaming_moving_tick(self, now):
         """Follow planner timestamps; feedback gates safety and the endpoint."""
         if self.motion_started_at is None:
@@ -2719,6 +2779,15 @@ class ScanViewpointExecutorNode(Node):
             now - self.motion_started_at
             - float(getattr(self, 'stream_schedule_paused_sec', 0.0)),
         )
+
+        allowed_lead = float(configured_value(self, 'trajectory_following_error_rad'))
+        monitor = getattr(self, 'stream_clearance_limit', None)
+        if callable(monitor):
+            try:
+                allowed_lead = monitor(now)
+            except (ValueError, TypeError, ArithmeticError) as error:
+                self.abort_or_finish_captures('collision monitor stopped stream: ' + str(error))
+                return
 
         def hold_or_abort_following(error, target, grace, limit):
             hold_started = getattr(
@@ -2769,7 +2838,7 @@ class ScanViewpointExecutorNode(Node):
                 targets.append(self.current_path[self.path_index])
             error = max((self.max_joint_error(target) for target in targets),
                         default=math.inf)
-            limit = float(configured_value(self, 'trajectory_following_error_rad'))
+            limit = allowed_lead
             timeout = float(configured_value(
                 self, 'trajectory_following_error_grace_sec'))
             snapshot = runtime_telemetry_snapshot(self)
@@ -2816,8 +2885,7 @@ class ScanViewpointExecutorNode(Node):
         if self.command_target is not None:
             grace = float(configured_value(
                 self, 'trajectory_following_error_grace_sec'))
-            limit = float(configured_value(
-                self, 'trajectory_following_error_rad'))
+            limit = allowed_lead
             following_error = self.max_joint_error(self.command_target)
             self.current_waypoint_error = following_error
             if math.isfinite(following_error):
@@ -2862,8 +2930,7 @@ class ScanViewpointExecutorNode(Node):
             target = self.current_path[due_index]
             grace = float(configured_value(
                 self, 'trajectory_following_error_grace_sec'))
-            limit = float(configured_value(
-                self, 'trajectory_following_error_rad'))
+            limit = allowed_lead
             candidate_error = self.max_joint_error(target)
             candidate_decision = TrajectoryRunner.following_decision(
                 elapsed, candidate_error, grace, limit)
@@ -4294,6 +4361,11 @@ class ScanViewpointExecutorNode(Node):
                 self.plan_path_velocities[self.current_view],
                 self.plan_path_accelerations[self.current_view],
                 path_times, execution_mode, direct_home)
+        self.stream_clearance_state = {
+            'boxes': tuple(obstacle_boxes),
+            'recovery_end': max(0, recovery_end, powered_start_end),
+            'ready': recovery_end < 0 and powered_start_end < 0,
+        }
         self.current_path = command_path
         self.current_path_velocities = command_velocities
         self.current_path_accelerations = command_accelerations

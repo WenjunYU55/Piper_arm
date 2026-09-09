@@ -77,6 +77,10 @@ def test_pre_home_proof_does_not_claim_rough_home_completion():
     )
     node = SimpleNamespace(
         last_return_home_diagnostic='',
+        cancel_client=object(),
+        call_service=lambda *args: SimpleNamespace(
+            success=True, message='current joint hold requested'),
+        require_fresh_joint_feedback=lambda: None,
         processes=SimpleNamespace(failed=lambda: {}),
         at_configured_home=lambda _session, **_kwargs: True,
     )
@@ -522,8 +526,9 @@ def test_shutdown_accepts_fresh_feedback_when_already_at_home():
     )
     node = SimpleNamespace(
         cancel_client=object(),
-        call_service=lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError('already-home feedback must not command motion')),
+        call_service=lambda *_args, **_kwargs: SimpleNamespace(
+            success=True, message='current joint hold requested'),
+        require_fresh_joint_feedback=lambda: None,
         processes=SimpleNamespace(failed=lambda: {}),
         at_configured_home=lambda _session, **_kwargs: True,
     )
@@ -532,7 +537,8 @@ def test_shutdown_accepts_fresh_feedback_when_already_at_home():
     assert session.return_home_proved
 
 
-def test_shutdown_holds_current_state_then_uses_dedicated_home_plan():
+@pytest.mark.parametrize('startup', [False, True])
+def test_shutdown_holds_current_state_then_uses_dedicated_home_plan(startup):
     session = SimpleNamespace(
         return_home_proved=False,
         home_positions_rad=[0.0] * 6,
@@ -576,7 +582,8 @@ def test_shutdown_holds_current_state_then_uses_dedicated_home_plan():
             accepted=True, execution_id='direct-home', message='accepted')
     node.call_service = call_service
 
-    assert TargetScanMissionNode.prove_return_home_for_shutdown(node, session)
+    assert TargetScanMissionNode.prove_return_home_for_shutdown(
+        node, session, startup=startup)
     assert state['approved']
     assert session.return_home_proved
     assert events == ['stop_hold', 'terminal_authority', 'direct_home']
@@ -1261,3 +1268,70 @@ def test_gateway_spool_is_atomic_hashed_and_permission_bounded(tmp_path):
     spool.path('goals', 'scan-task-0001').write_text('{}')
     with pytest.raises(ValueError, match='SHA-256'):
         spool.read('goals', 'scan-task-0001')
+
+
+@pytest.mark.parametrize('executor_state', [
+    'MOVING', 'SETTLING', 'WAITING_FOR_FRESH_FRAME',
+    'WAITING_FOR_GROUNDING_DINO', 'WAITING_FOR_RUNTIME_REFRESH',
+])
+def test_terminal_static_home_cancels_real_executor_before_authorization(executor_state):
+    from piper_mobile_manipulation.scan_viewpoint_executor_node import ScanViewpointExecutorNode
+    executor = SimpleNamespace(
+        state=executor_state, reason='acquisition active',
+        now=lambda: 1.0, publish_hold=lambda: True,
+        publish_status=lambda: None,
+        get_logger=lambda: SimpleNamespace(error=lambda reason: None),
+        param_bool=lambda name: True,
+    )
+    executor._terminal_abort = lambda reason: ScanViewpointExecutorNode._terminal_abort(
+        executor, reason)
+    events = []
+    cancel_client = object()
+    home_client = object()
+    session = SimpleNamespace(
+        task_id='cancel-before-first-capture', mission_sha256='a' * 64,
+        home_positions_rad=[0.0] * 6, return_home_proved=False)
+    node = SimpleNamespace(
+        cancel_client=cancel_client, execute_home_stage_client=home_client,
+        processes=SimpleNamespace(failed=lambda: {}),
+        require_fresh_joint_feedback=lambda: None,
+        at_configured_home=lambda *args, **kwargs: False)
+
+    def authorize(session, terminal_home=False):
+        events.append('authorize')
+        assert terminal_home
+        request = SimpleNamespace(
+            revoke=False, task_id=session.task_id, mission_sha256=session.mission_sha256,
+            planner_backend='curobo', expires_at=SimpleNamespace(
+                sec=int(time.time()) + 120, nanosec=0))
+        response = ScanViewpointExecutorNode.authorize_mission_cb(
+            executor, request, SimpleNamespace())
+        assert response.accepted, response.message
+
+    def call(client, request, *args):
+        if client is cancel_client:
+            events.append('cancel')
+            return ScanViewpointExecutorNode.cancel_cb(executor, request, SimpleNamespace())
+        assert client is home_client
+        events.append('home')
+        # Stop before commanding any home motion; this test proves the handoff.
+        return SimpleNamespace(accepted=False, message='test ends at home admission')
+
+    node.call_service = call
+    node.authorize_mission = authorize
+    assert not TargetScanMissionNode.prove_return_home_for_shutdown(
+        node, session, startup=True, home_stage='PRE_HOME')
+    assert events == ['cancel', 'authorize', 'home']
+    assert executor.state == 'ABORTED'
+
+
+def test_failed_terminal_stop_cannot_renew_authority_or_claim_already_home():
+    session = SimpleNamespace(home_positions_rad=[0.0] * 6, return_home_proved=False)
+    node = SimpleNamespace(
+        cancel_client=object(),
+        call_service=lambda *args: SimpleNamespace(success=False, message='hold unavailable'),
+        at_configured_home=lambda *args, **kwargs: pytest.fail('must stop before pose proof'),
+        authorize_mission=lambda *args, **kwargs: pytest.fail('must stop before renewal'))
+    assert not TargetScanMissionNode.prove_return_home_for_shutdown(
+        node, session, startup=True)
+    assert not session.return_home_proved

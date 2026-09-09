@@ -60,16 +60,16 @@ def test_direct_home_stage_rejects_wrong_pre_home_endpoint():
         pre_home=pre_home)
 
 
-def test_direct_movej_uses_only_final_anchor_after_full_path_validation():
+def test_direct_movej_streams_every_validated_sample_like_curobo():
     path = [np.zeros(6), np.full(6, 0.1), np.full(6, 0.2)]
     vectors = [np.zeros(6) for _item in path]
     command_path, _velocities, _accelerations, times, streaming = (
         sdk_command_path(
             path, vectors, vectors, [0.0, 0.5, 1.0], 'DIRECT_MOVEJ'))
-    assert len(command_path) == 1
-    assert np.allclose(command_path[0], path[-1])
-    assert times == [1.0]
-    assert streaming is False
+    assert len(command_path) == 2
+    np.testing.assert_allclose(command_path, path[1:])
+    assert times == [0.5, 1.0]
+    assert streaming is True
 
 
 def test_tesseract_detour_keeps_streamed_waypoints():
@@ -439,3 +439,18 @@ def test_zero_capture_cleanup_refuses_completed_capture(tmp_path):
     assert removed is False
     assert 'completed captures' in reason
     assert scan.exists()
+
+
+def test_tesseract_200hz_chord_uses_identical_curobo_stream_transport():
+    path = [np.full(6, i * .001) for i in range(201)]
+    vectors = [np.zeros(6) for _ in path]
+    times = [i / 200. for i in range(201)]
+    tesseract = sdk_command_path(path, vectors, vectors, times, 'DIRECT_MOVEJ')
+    curobo = sdk_command_path(path, vectors, vectors, times, 'TIMED_STREAM')
+    for left, right in zip(tesseract[:4], curobo[:4]):
+        np.testing.assert_allclose(left, right)
+    assert tesseract[4] is curobo[4] is True
+    assert len(tesseract[0]) == 200
+    np.testing.assert_allclose(np.diff(tesseract[3]), .005)
+    home = sdk_command_path(path, vectors, vectors, times, 'DIRECT_MOVEJ', direct_home=True)
+    assert home[4] is False

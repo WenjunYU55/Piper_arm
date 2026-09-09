@@ -20,7 +20,7 @@ import numpy as np  # noqa: E402
 from .campaign import (  # noqa: E402
     CampaignStore, atomic_write_json, load_json, sha256_file, utc_now)
 from .collector import collect_campaign  # noqa: E402
-from .metrics import summarize_evidence  # noqa: E402
+from .metrics import finite_float, summarize_evidence  # noqa: E402
 from .workbook import write_xlsx  # noqa: E402
 
 
@@ -141,7 +141,10 @@ def _quality_row(quality_path: Path, common: Mapping[str, Any]) -> Dict[str, Any
     expected = _nested(quality, 'configuration', 'expected_dimensions_m', default=[0.035] * 3)
     observed_mm = [float(value) * 1000.0 if value is not None else None for value in dimensions[:3]]
     expected_mm = [float(value) * 1000.0 for value in expected[:3]] if expected else [35.0] * 3
-    errors = [abs(a - b) for a, b in zip(observed_mm, expected_mm) if a is not None]
+    if common.get('campaign_mode'):
+        expected_mm = common.get('reference_dimensions_mm') or [None] * 3
+    errors = [abs(a - b) for a, b in zip(observed_mm, expected_mm)
+              if a is not None and b is not None]
     registration = quality.get('registration_summary', {})
     component = quality.get('component_filter', {})
     residual = mesh_metrics.get('point_to_mesh_residual', {})
@@ -174,6 +177,10 @@ def _quality_row(quality_path: Path, common: Mapping[str, Any]) -> Dict[str, Any
         'evidence_class': 'CONTROLLED_REPLAY',
         'limitation': 'All modes use identical accepted captures; lower registration residual alone is not reconstruction accuracy.',
     })
+    if common.get('campaign_mode') and common.get('reference_dimensions_mm') is None:
+        row['source_dimension_quality'] = row.get('dimension_quality')
+        row['dimension_quality'] = 'UNAVAILABLE_NO_REFERENCE'
+        row['limitation'] += ' Object dimensions are unknown; source quality is retained, not revalidated.'
     for key in ('median_point_to_mesh_residual_mm', 'p90_point_to_mesh_residual_mm'):
         if row[key] is not None:
             row[key] = float(row[key]) * 1000.0
@@ -190,12 +197,15 @@ def _run_reconstructions(project_root: Path, output: Path, run_rows: List[Mappin
         dataset = Path(dataset_text) if dataset_text else None
         if dataset is None or not dataset.is_dir():
             continue
-        common = {key: run.get(key) for key in ('campaign_id', 'trial_id', 'pair_index', 'task_id', 'planner_backend', 'target_x_m', 'target_y_m', 'target_z_m')}
+        common = {key: run.get(key) for key in ('campaign_id', 'trial_id', 'pair_index', 'task_id', 'planner_backend', 'target_x_m', 'target_y_m', 'target_z_m', 'campaign_mode', 'object_key', 'target_label', 'rgb_width', 'rgb_height', 'requested_rgb_fps', 'aim_tolerance_deg', 'reference_dimensions_mm')}
         for mode in MODES:
             directory = output / 'reconstruction' / str(run.get('trial_id')) / mode
             directory.mkdir(parents=True, exist_ok=True)
             mesh = directory / 'target_mesh.ply'
             command = [str(interpreter), str(project_root / 'reconstruction' / 'tsdf_reconstruct.py'), str(dataset), '--output', str(mesh), '--registration-mode', mode, '--expected-dimensions-mm', '35', '35', '35', '--mask-source', 'captured', '--geometry-source', 'native_depth', '--hole-repair', 'none', '--voxel-length', '0.003', '--sdf-trunc', '0.015']
+            if run.get('campaign_mode') and run.get('reference_dimensions_mm') is None:
+                position = command.index('--expected-dimensions-mm')
+                del command[position:position + 4]
             completed = subprocess.run(command, cwd=str(project_root), text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             log = directory / 'reconstruction.log'
             log.write_text(completed.stdout, encoding='utf-8')
@@ -218,7 +228,7 @@ def _existing_reconstructions(run_rows: List[Mapping[str, Any]]) -> List[Dict[st
         dataset = Path(dataset_text) if dataset_text else None
         if dataset is None or not dataset.is_dir():
             continue
-        common = {key: run.get(key) for key in ('campaign_id', 'trial_id', 'pair_index', 'task_id', 'planner_backend', 'target_x_m', 'target_y_m', 'target_z_m')}
+        common = {key: run.get(key) for key in ('campaign_id', 'trial_id', 'pair_index', 'task_id', 'planner_backend', 'target_x_m', 'target_y_m', 'target_z_m', 'campaign_mode', 'object_key', 'target_label', 'rgb_width', 'rgb_height', 'requested_rgb_fps', 'aim_tolerance_deg', 'reference_dimensions_mm')}
         for path in sorted((dataset / 'reconstruction').glob('**/*.quality.json')):
             rows.append(_quality_row(path, common))
     return rows
@@ -396,6 +406,31 @@ def _figures(output: Path, sheets: Mapping[str, List[Mapping[str, Any]]],
     _save_figure(fig, output, '05_pointcloud_reconstruction_accuracy')
 
 
+def _sweep_figures(output, sheets, evidence_class):
+    """Keep every condition and attempt distinct; never collapse into backend cells."""
+    specs = (
+        ('Acquisition', 'grounding_dino_confidence', 'Confidence (not accuracy)', '01_acquisition_confidence'),
+        ('Runs', 'accepted_captures', 'Accepted captures', '02_capture_count'),
+        ('Runs', 'total_mission_sec', 'Physical mission duration (s)', '03_mission_duration'),
+        ('Runs', 'seconds_per_accepted_capture', 'Seconds per accepted capture', '04_capture_timing'),
+        ('PointCloud', 'point_count', 'Persisted qualified point count', '05_point_count'),
+    )
+    for sheet, metric, title, filename in specs:
+        rows = [row for row in sheets.get(sheet, []) if finite_float(row.get(metric)) is not None]
+        fig, ax = plt.subplots(figsize=(max(10, len(rows) * 0.5), 6))
+        if not rows:
+            _no_data(ax, title)
+        else:
+            labels = ['%s\n%s' % (row['trial_id'], str(row.get('task_id', ''))[-8:]) for row in rows]
+            ax.bar(range(len(rows)), [float(row[metric]) for row in rows], color=BLUE)
+            ax.set_xticks(range(len(rows)))
+            ax.set_xticklabels(labels, rotation=75, ha='right', fontsize=8)
+        ax.set_title('%s — %s' % (title, evidence_class))
+        ax.set_ylabel(title)
+        ax.set_xlabel('Trial and attempt; conditions are in scheduled_trials.csv and Runs')
+        _save_figure(fig, output, filename)
+
+
 def build_report(project_root: Path, campaign_id: str, output: Optional[Path] = None, run_reconstruction: bool = False) -> Path:
     root = Path(project_root).resolve()
     store = CampaignStore(root, campaign_id)
@@ -425,18 +460,38 @@ def build_report(project_root: Path, campaign_id: str, output: Optional[Path] = 
             'alternating physical missions, Tesseract versus cuRobo, with '
             'one run per backend at each of 15 declared target positions')
         order_limitation = ''
+    if definition.get('schema_version') == 2:
+        design_description = definition['design']['description']
+        evidence_definition = ('PHYSICAL_PARAMETER_SWEEP: one physical attempt per condition; '
+                               'requested RGB FPS is a setting, not measured throughput.')
+        order_limitation = definition['design']['limitation'] + ' '
     collect_campaign(root, store.root)
     destination = _new_output_directory(root, campaign_id, output)
     sheets: Dict[str, List[Dict[str, Any]]] = {
         'Campaign': [definition], 'Runs': [], 'Acquisition': [], 'Capture_Timeline': [], 'Coverage': [], 'Planning': [], 'PointCloud': [], 'Phase_Timing': [], 'Reconstruction': [], 'Evidence_Manifest': [], 'Exclusions': [], 'Definitions': [],
     }
+    sheets['Scheduled_Trials'] = definition['trials']
+    sheets['Skipped_Trials'] = []
+    for record in store.skip_records():
+        trial = record['expected_trial']
+        sheets['Skipped_Trials'].append(dict(
+            trial, state=record['state'], recorded_utc=record['recorded_utc'],
+            reason=record['reason'], evidence_class=record['evidence_class']))
+        atomic_write_json(destination / 'skipped_trials' / (trial['trial_id'] + '.json'), record)
+    superseded_tasks = store.superseded_tasks()
     for attempt in store.task_attempts():
         evidence = load_json(attempt / 'evidence.json', {})
         if not isinstance(evidence, dict):
             continue
         if evidence.get('matches_schedule') is not True:
-            reason = 'Submitted coordinates or planner backend did not match the loaded campaign trial.'
+            reason = 'Submitted coordinates, planner, object or saved camera/aim settings did not match the loaded campaign trial.'
             sheets['Exclusions'].append({'task_id': evidence.get('task_id'), 'trial_id': evidence.get('trial_id'), 'reason': reason, 'evidence_path': str(attempt / 'evidence.json')})
+            sheets['Evidence_Manifest'].extend(
+                _evidence_manifest_rows(evidence, attempt, False, reason))
+            continue
+        if str(evidence.get('task_id', '')) in superseded_tasks:
+            reason = 'Superseded by an explicitly requested completed matching retry; original attempt retained.'
+            sheets['Exclusions'].append({'task_id': evidence.get('task_id'), 'trial_id': evidence.get('trial_id'), 'reason': reason})
             sheets['Evidence_Manifest'].extend(
                 _evidence_manifest_rows(evidence, attempt, False, reason))
             continue
@@ -454,10 +509,17 @@ def build_report(project_root: Path, campaign_id: str, output: Optional[Path] = 
         {'metric': 'Dimension error', 'definition': 'Absolute difference between 1st-to-99th percentile fused cloud extents and the 35 mm reference cube; not independent metrology.'},
         {'metric': '120 s line', 'definition': 'Reference only; 30 cm is the only confirmed target distance and 50 cm remains unconfirmed.'},
     ]
+    sheets['Definitions'].append({
+        'metric': 'Missing object reference',
+        'definition': 'Only the nominal cube supports cube-reference coverage/dimension differences. '
+                      'Cup, stick and flower reference metrics remain unavailable.'})
     for name, rows in sheets.items():
         _write_csv(destination / (name.lower() + '.csv'), rows)
     write_xlsx(destination / 'PiPER_results_campaign.xlsx', sheets)
-    _figures(destination, sheets, evidence_class)
+    if definition.get('schema_version') == 2:
+        _sweep_figures(destination, sheets, evidence_class)
+    else:
+        _figures(destination, sheets, evidence_class)
     bookmark_document = store.refresh_bookmarks()
     for name in ('campaign_bookmarks.json', 'campaign_bookmarks.csv'):
         shutil.copy2(store.root / name, destination / name)
@@ -470,14 +532,14 @@ Campaign: `{campaign}`
 
 Evidence design: {design_description}. Evidence class: `{evidence_class}`.
 
-Progress: {completed}/{total} scheduled trials have a matching terminal record.
+Progress: {completed}/{total} scheduled trials have a matching terminal record; {skipped} skipped. Skips are listed separately in `skipped_trials.csv` and the workbook, and are excluded from measured results. Skipped cells do not supply a matched planner comparison.
 
 The recorder is passive and file-only. It reads existing mission results, schema-2 capture metadata, heavy-perception outputs, ray diagnostics, and reconstruction quality reports. It never publishes ROS data or commands hardware.
 
-`campaign_bookmarks.json` and `campaign_bookmarks.csv` are the durable one-row-per-attempt ledger. `evidence_manifest.csv` maps included and excluded attempts to every source/configuration hash used by this report. `PiPER_results_campaign.xlsx` contains all normalized result tables, including the evidence manifest. Matching CSV files are provided for reproducibility. PNG/PDF figures are generated from those tables. Reconstruction rows are CONTROLLED_REPLAY only when the same stored capture set is processed by each mode.
+`campaign_bookmarks.json` and `campaign_bookmarks.csv` are the durable attempt and explicit-skip ledger. `evidence_manifest.csv` maps included and excluded attempts to every source/configuration hash used by this report. `PiPER_results_campaign.xlsx` contains all normalized result tables, including the evidence manifest. Matching CSV files are provided for reproducibility. PNG/PDF figures are generated from those tables. Reconstruction rows are CONTROLLED_REPLAY only when the same stored capture set is processed by each mode.
 
 Important limitations: {order_limitation}one run per backend/location does not support confidence intervals; acquisition confidence is not accuracy; depth spread is stability/contamination evidence rather than metric sensor accuracy; cube coverage assumes a 35 mm axis-aligned six-face reference; 30 cm is confirmed but 50 cm is not.
-""".format(generated=utc_now(), campaign=campaign_id, evidence_class=evidence_class, design_description=design_description, order_limitation=order_limitation, completed=progress['completed'], total=progress['total'])
+""".format(generated=utc_now(), campaign=campaign_id, evidence_class=evidence_class, design_description=design_description, order_limitation=order_limitation, completed=progress['completed'], total=progress['total'], skipped=progress['skipped'])
     (destination / 'README.md').write_text(readme, encoding='utf-8')
     artifacts = []
     for path in sorted(destination.rglob('*')):
@@ -495,6 +557,8 @@ Important limitations: {order_limitation}one run per backend/location does not s
         'campaign_definition_sha256': sha256_file(store.definition_path),
         'campaign_bookmark_entry_count': bookmark_document['entry_count'],
         'completed_trials': progress['completed'],
+        'skipped_trials': progress['skipped'],
+        'remaining_trials': progress['remaining'],
         'total_trials': progress['total'],
         'run_reconstruction': run_reconstruction,
         'output_directory': str(destination),

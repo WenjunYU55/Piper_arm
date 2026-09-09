@@ -205,7 +205,7 @@ def test_compact_fallback_deduplicates_primary_poses_at_same_radius():
     assert len(viewpoints) == 5
 
 
-def test_acquisition_has_no_fixed_maximum_or_inward_compact_fallback():
+def test_acquisition_preserves_far_primary_and_adds_protected_radial_fallbacks():
     target = np.asarray([0.25, 0.0, 0.0])
     current_camera = np.asarray([0.90, 0.0, 0.20])
     current_distance = np.linalg.norm(current_camera - target)
@@ -217,9 +217,14 @@ def test_acquisition_has_no_fixed_maximum_or_inward_compact_fallback():
     assert current_distance > 0.45
     assert np.allclose(vector(viewpoints[0]['desired_camera_position']),
                        current_camera)
-    assert all(np.isclose(
-        np.linalg.norm(vector(item['desired_camera_position']) - target),
-        current_distance) for item in viewpoints)
+    distances = [np.linalg.norm(
+        vector(item['desired_camera_position']) - target)
+        for item in viewpoints]
+    assert len(viewpoints) == 5
+    assert np.isclose(distances[1], 0.35)
+    assert np.isclose(distances[2], (0.35 + current_distance) / 2)
+    assert all(0.35 - 1e-9 <= d <= current_distance + 1e-9
+               for d in distances)
     assert all('maximum_standoff_m' not in item for item in viewpoints)
 
 
@@ -660,3 +665,20 @@ def test_acquired_lock_is_new_measured_stable_and_near_rough_hint():
         stable=True,
     )
     assert 'predates' in acquired_target_rejection(old_target, *args[1:])
+
+
+def test_recorded_far_hint_offers_the_previously_missing_centered_endpoint():
+    target = np.array([0.7, 0.0, 0.0])
+    camera = np.array([0.1128021948, -0.0003378220, 0.2302727765])
+    views = build_acquisition_viewpoints(
+        target, camera, minimum_standoff_m=0.35,
+        include_compact_candidates=True, sweep_angle_deg=15.0)
+    first = vector(views[0]['desired_camera_position'])
+    nearer = vector(views[1]['desired_camera_position'])
+    assert np.allclose(first, camera)
+    assert np.allclose(nearer, target + (camera - target) * (
+        0.35 / np.linalg.norm(camera - target)))
+    assert np.allclose(vector(views[1]['desired_look_at_direction']),
+                       (target - nearer) / np.linalg.norm(target - nearer))
+    assert views[1]['keep_object_centered']
+    assert len(views) == 5

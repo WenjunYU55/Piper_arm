@@ -407,3 +407,15 @@ def test_recovery_does_not_depend_on_human_wording():
         RecoveryContext.RUNTIME, (original,)).action is RecoveryAction.RETRY
     assert RecoveryPolicy.decide(
         RecoveryContext.RUNTIME, (rewritten,)).action is RecoveryAction.RETRY
+
+
+@pytest.mark.parametrize('elapsed', [0., .005, .395, .85])
+def test_short_stream_has_no_unchecked_startup_window(elapsed):
+    assert TrajectoryRunner.following_decision(
+        elapsed, .6279, 1., .30).action is TrajectoryAction.FAILED_FOLLOWING
+    assert TrajectoryRunner.following_decision(
+        elapsed, .6279, 1., .30, over_limit_elapsed_sec=0.).action is TrajectoryAction.HOLD_FOLLOWING
+    assert TrajectoryRunner.following_decision(
+        elapsed, .6279, 1., .30, over_limit_elapsed_sec=1.01).action is TrajectoryAction.FAILED_FOLLOWING
+    assert TrajectoryRunner.following_decision(
+        elapsed, float('nan'), 1., .30).action is TrajectoryAction.FAILED_FOLLOWING

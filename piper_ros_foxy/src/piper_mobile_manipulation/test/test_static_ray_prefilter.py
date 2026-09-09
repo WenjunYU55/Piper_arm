@@ -1,4 +1,4 @@
-"""Early culling uses identical atlas queries without changing score geometry."""
+"""Early atlas membership and scoring distance never change motion geometry."""
 from copy import deepcopy
 from types import SimpleNamespace
 
@@ -12,7 +12,8 @@ def test_partition_preserves_candidates_and_caches_exact_queries():
         direction_tolerance_deg = 5.0
         def intersects_ray(self, target, direction, minimum, maximum, floor, clearance):
             calls.append((target, direction, minimum, maximum, floor, clearance))
-            return SimpleNamespace(supported=direction[0] > 0, checked_keys=3)
+            return SimpleNamespace(supported=direction[0] > 0, checked_keys=3,
+                                   supported_intervals_m=((0.4, 0.5), (0.8, 0.9)))
     gate = StaticRayPrefilter(Atlas(), 0.25, 3.0, 0.005)
     candidates = [dict(index=i, ray_id=i, candidate_geometry='target_ray',
         target_object_center=dict(x=0.3, y=0, z=0.1),
@@ -22,7 +23,10 @@ def test_partition_preserves_candidates_and_caches_exact_queries():
         for i, sign in enumerate((1, -1))]
     before = deepcopy(candidates)
     survivors, rejected = gate.partition(candidates)
-    assert survivors == [candidates[0]]
+    assert survivors[0]['nbv_scoring_standoff_m'] == 0.4
+    assert survivors[0]['desired_camera_position'] == candidates[0]['desired_camera_position']
+    assert survivors[0]['ray_min_standoff_m'] == 0.28
+    assert survivors[0]['ray_max_standoff_m'] == 3.0
     assert set(rejected) == {1}
     assert candidates == before
     gate.partition(candidates)

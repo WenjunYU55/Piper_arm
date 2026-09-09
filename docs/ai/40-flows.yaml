@@ -12,6 +12,7 @@ automatic_scan_recording_2026_09_07:
   replay: replay_bag.sh inherits recorded task identity, frozen angle and available quality/recorder YAML snapshots; checks recorder startup and keeps explicit override support.
   must_retest_if_changed: [production launch flag combinations, recorder and GUI regressions, actual rosbag record/SIGINT/playback, offline session validation and conversion, package build and tests]
 bundlesdf_gui_results_2026_09_07:
+  selector_contract: Readable input/view-only/unavailable labels retain literal paths; recordings show recorded start time, target when matched by task ID, and frame count. Known zero-keyframe or zero-frame inputs disable reconstruction; eligibility still requires pipeline validation. No files are renamed or deleted.
   owner_module: piper_gui/bundlesdf_results.py
   reference: docs/architecture/bundlesdf_native_runtime.md
   allowed_edit_paths: [piper_gui/bundlesdf_results.py, piper_gui/native_app.py, reconstruction/view_bundlesdf.py, tests/gui/test_bundlesdf_results.py]
@@ -74,7 +75,13 @@ stream_rate_experiment_retests_2026_09_06:
   manual_smoke_checks: [offline same-source vertex and duration comparison, generic rate and hash mismatch rejection, real command-free GPU 100 and 200 Hz acquisition, common executor rate tests, late tick and following hold tests, separately agreed low-speed physical tracking hold cancel and shutdown comparison before promotion]
   default: Code default and standard comparison remain 20 Hz; next-mission saved experiment is 100 Hz. No physical process started by this change.
 early_capability_retention_smoke_2026_09_06:
-  checks: [cycle-one qualified population reports initial capability exclusions, later unchanged cycles retain exclusions without another capability_cull stage, surviving rays retain NBV score and order, new population releases old IDs, original reports remain untouched]
+  checks:
+  - cycle-one qualified population reports initial capability exclusions
+  - later unchanged cycles retain exclusions without another capability_cull stage
+  - verify supported-distance score reproducibility and information-first order
+  - new population releases old IDs
+  - original reports remain untouched
+  current_contract: docs/ai/94-nbv-scoring-and-retries.yaml
 planning_latency_flow_2026_09_06:
   sequence: [load common lookup tolerance at process startup, verify atlas provenance, apply same policy before NBV and during reachability, retain ordinary exact planning and authorization, enqueue observational bridge snapshots, persist in order off callback, drain on bridge shutdown]
   manual_smoke_checks: [verify effective lookup slack equals selected GUI tolerance and artifact slack remains 15, verify first capture still requires min selected and five degrees, confirm captured-ray events and failed requests remain visible after report catches up, verify no incomplete flush warning on ordinary shutdown, compare a new mission timing without claiming historical framed-policy timing as a cone baseline]
@@ -83,8 +90,18 @@ bounded_curobo_aim_search_2026_09_06:
   sequence: [bind explicit cone alternatives in bridge, attempt unchanged exact-aim goal set, precheck fallback endpoints, balance at most 54 semantic goals across fallback directions and supported standoffs, attempt one fallback batch with existing invalid-winner retries and request deadline, qualify full path, validate response and authorize normally]
   mandatory_retests: [test_bounded_aim_search.py, generic request and response contract, complete ordinary mobile Tesseract and cuRobo suites, real GPU bounded fallback and collision regressions, package build, separately authorized physical E2E]
 early_capability_smoke_2026_09_06:
-  manual_smoke_checks: [qualified atlas culls before score projection, zero-gain views not ranked, survivors retain gain metrics and order, unsupported map retains downstream fallback, floor profile agrees across nodes, no revival of bridge-exhausted rays, new report shows capability then information then rank, next physical mission completes normal authorization and shutdown]
-  offline_evidence: Latest saved cycle-one atlas membership matches exactly at 37 of 352; no robot processes launched for validation.
+  manual_smoke_checks:
+  - qualified atlas culls before score projection
+  - zero-gain views not ranked
+  - verify supported-distance projection has adequate target support
+  - unsupported map retains downstream fallback
+  - floor profile agrees across nodes
+  - exhausted rays remain excluded across movement and accepted captures until population replacement or new session
+  - new report shows capability then information then rank
+  - next physical mission completes normal authorization and shutdown
+  offline_evidence: Latest saved cycle-one atlas membership matches exactly at 37 of 352; no robot processes launched
+    for validation.
+  current_contract: docs/ai/94-nbv-scoring-and-retries.yaml
 world_upload_reuse_flow_2026_09_06:
   manual_smoke_checks: [same geometry new request skips native upload, constraints restored on every hit, tiny obstacle movement forces upload, obstacle removal forces upload, failed native upload prevents old-world cache hit, real-GPU unchanged blocker still rejects and removal restores feasibility]
   mandatory_retests: [complete tests/curobo ordinary suite, command-free GPU integration suite, YAML validation]
@@ -98,7 +115,7 @@ curobo_request_timing_2026_09_05:
   manual_smoke_checks: [run ordinary timing adapter bridge and campaign tests without ROS processes or CUDA, inspect future authorized mission worker log and ray plan events, rebuild campaign report and inspect Planning stage and attempt rows]
   failure_modes: [native failure still propagates identically, malformed or missing optional timing never authorizes or rejects motion, killed workers may have no completed-request timing, missing log source remains unavailable]
 single_capture_transaction_flow_2026_09_03:
-  sequence: [executor holds a settled achieved view and calls capture once, recorder establishes one absolute deadline, condition notifications wake fresh execution quality occlusion mask and RGB-D checks, recorder collects one 20-frame native-depth burst, newest cached mask with an exact fresh RGB-D partner overlapping the burst is selected, the proven triple is frozen, bounded future-TF catch-up reuses that evidence, one final diagnostic snapshot is admitted, atomic commit returns that same evidence]
+  sequence: [executor holds a settled achieved view and calls capture once, recorder establishes one absolute deadline, condition notifications wake fresh execution quality occlusion mask and RGB-D checks, recorder collects a 20-frame native-depth burst and may reselect a complete post-settle cached window before pair qualification, newest cached mask with an exact fresh RGB-D partner overlapping the burst is selected, the proven triple is frozen, bounded future-TF catch-up reuses that evidence, one final diagnostic snapshot is admitted, atomic commit returns that same evidence]
   failure_modes: [deadline expires while waiting for fresh evidence, burst cannot complete before response reserve, synchronized RGB-D or TF never catches up, malformed or low-confidence depth, final diagnostic state unqualified, persistence failure]
   manual_smoke_checks: [delay GOOD quality beyond one second then publish a fresh sample and prove the same service call proceeds, publish a newest mask whose RGB frame was dropped and prove an older exact matched mask from the same burst is selected, withhold every matched pair and prove one CAPTURE_EVIDENCE_TIMEOUT, change the live mask after pair selection and prove the frozen pair remains authoritative, flip CLEAR after final admission and prove metadata and response retain the admitted state]
   mandatory_retests: [test_scan_capture.py, test_failure_model.py, executor capture-response characterization, complete mobile suite, package build]
@@ -127,10 +144,77 @@ atomic_capture_and_20hz_load_flow_2026_09_02:
   manual_smoke_checks: [proposal-only status replay proves MOVING suppresses planner and reachability publication and VIEW_REJECTED resumes it, replay a CLEAR-to-LOST change after capture_ready and confirm persisted/returned state stays CLEAR, separately authorized 5-percent multiview run reports near-20-Hz achieved rate with zero or bounded late ticks, verify next accepted capture produces a new generation]
   mandatory_retests: [capture node tests, viewpoint planner tests, reachability freshness tests, executor stream and callback-isolation tests, complete mobile suite, package build]
 passive_results_campaign_flow_2026_09_02:
-  sequence: [Create or Resume freezes schema-1 design and creates the campaign bookmark ledger, Prepare Next Trial fills existing GUI fields without applying or submitting, operator reviews and uses normal mission controls, successful local submit records task identity plus hash-bound planner qualification and refreshes bookmarks, low-priority sidecar reads already-produced files every five seconds and refreshes evidence hashes, normal terminal result closes the attempt and refreshes bookmarks, offline report copies the ledger and emits a source-level evidence manifest before recomputing acquisition context per-capture timing ray-planning events coverage and reconstruction tables and figures, optional reconstruction processes identical captures through five modes]
-  failure_behavior: [observer exception becomes GUI warning only, mission continues unchanged, malformed or missing evidence remains blank or excluded, schedule mismatch cannot advance progress, report directory collision creates timestamp suffix, failed reconstruction remains FAIL with its log]
-  manual_smoke_checks: [create temporary campaign and verify 15 cuRobo trials followed by the same 15 Tesseract position cells, verify MATCHED_RUNS evidence labeling, prepare trial and verify no mission starts and planner configuration file is not written, submit to unavailable action server and verify observer cannot change failure, run --once with no ROS graph, generate empty report and open XLSX PNG PDF, compare raw source hashes before and after report generation]
-  required_automated_checks: [tests/results_campaign campaign bookmark state and hashes, tests/gui/test_piper_gui_layout.py, tests/gui/test_piper_gui_automation.py, tests/gui/test_piper_gui_planner_backend.py, Python compile, YAML parse, campaign and evidence CSV parse, XLSX zip validation, generated artifact hash validation]
+  sequence:
+  - 'Select mode and Create / Resume: freeze schema-1 paired or schema-2 sweep design and create bookmark
+    ledger'
+  - Prepare Next Trial fills existing GUI fields without applying or submitting
+  - Optional idle Skip Trial persists an operator skip and prepares the next pending entry; no planner
+    apply or mission submit.
+  - operator reviews and uses normal mission controls
+  - successful local submit records task identity plus hash-bound planner qualification and refreshes
+    bookmarks
+  - low-priority sidecar reads already-produced files every five seconds and refreshes evidence hashes
+  - normal terminal result closes the attempt and refreshes bookmarks
+  - offline report copies the ledger and emits a source-level evidence manifest before recomputing acquisition
+    context per-capture timing ray-planning events coverage and reconstruction tables and figures
+  - optional reconstruction processes identical captures through five modes
+  failure_behavior:
+  - observer exception becomes GUI warning only
+  - mission continues unchanged
+  - malformed or missing evidence remains blank or excluded
+  - schedule mismatch cannot advance progress
+  - report directory collision creates timestamp suffix
+  - failed reconstruction remains FAIL with its log
+  manual_smoke_checks:
+  - 'create temporary campaign and verify 30 trials: cuRobo/Tesseract at position one, Tesseract/cuRobo
+    at position two, repeating across all 15 positions'
+  - verify MATCHED_RUNS evidence labeling
+  - prepare trial and verify no mission starts and planner configuration file is not written
+  - submit to unavailable action server and verify observer cannot change failure
+  - run --once with no ROS graph
+  - generate empty report and open XLSX PNG PDF
+  - compare raw source hashes before and after report generation
+  - Resume historical blocked and original alternating definitions without rewriting them; new report
+    describes alternating order.
+  - In a temporary campaign, click Skip Trial and verify next planner/XYZ fields, no mission submission
+    and a SKIPPED bookmark; reopen and verify the skip persists.
+  - Reject skip during an active or unresolved submitted mission, including after repeated Prepare; export
+    separate skipped CSV/XLSX rows with zero fabricated completed results.
+  - Create temporary campaigns for all three sweeps and verify 8/30/4 trials, cuRobo only, coordinates,
+    5-degree baselines and 1-through-25 tolerance sequence.
+  - Prepare and skip across conditions; confirm object label, camera profile and tolerance widgets change
+    while source configuration bytes and hardware remain untouched.
+  - Record mismatched applied settings; verify exclusion and no progress. Export cup evidence with blank
+    reference errors/coverage and separate per-condition plots.
+  required_automated_checks:
+  - tests/results_campaign campaign bookmark state and hashes
+  - tests/gui/test_piper_gui_layout.py
+  - tests/gui/test_piper_gui_automation.py
+  - tests/gui/test_piper_gui_planner_backend.py
+  - Python compile
+  - YAML parse
+  - campaign and evidence CSV parse
+  - XLSX zip validation
+  - generated artifact hash validation
+  order_update_2026_09_08: New campaign IDs use adjacent planner pairs with alternating first planner.
+    Existing campaign.json trial order and attempts are never migrated.
+  skip_update_2026_09_08: Skip Trial persists a schema-1 trials/<trial>/skip.json receipt and prepares
+    the next pending trial without applying settings or starting a mission. Resume excludes explicitly
+    skipped trials; completed and skipped counts remain separate.
+  campaign_modes_2026_09_08:
+    owner_module: results_campaign/modes.py
+    gui: Results Campaign mode selector; new IDs per mode, existing IDs resume their frozen design
+    camera_profiles: cuRobo only; eight admitted RGB profiles, four resolutions each at 15 then 30 FPS;
+      XYZ (0.30,0,0.30) m; aim 5 degrees; depth profile unchanged
+    aim_tolerance: cuRobo only; at each X 0.30/0.50/0.70/0.90/1.10 m, sweep 1/5/10/15/20/25 degrees; Y
+      0, Z 0.30 m; freeze saved RGB profile at creation
+    objects: cuRobo only; cube, cup, stick, flower at XYZ (0.30,0,0) m; aim 5 degrees; freeze saved RGB
+      profile at creation
+    coordinate_basis: base_link Z convention; no table offset inferred from calibration
+    preparation: Populate target label, RGB/FPS and aim controls; normal explicit Apply controls are still
+      required. No runtime write or mission start from Prepare.
+    evidence: PHYSICAL_PARAMETER_SWEEP, one attempt per condition; requested RGB FPS is not measured FPS.
+      Non-cube reference coverage and dimensional errors remain unavailable.
 document: runtime_flows
 joint1_limit_propagation_flow_2026_09_02:
   sequence: [set canonical J1 to symmetric -2.6179 through 2.6179 rad, intersect optional measured bounds, generate Tesseract planning model and request, generate cuRobo model with unchanged per-joint clip, validate backend output against the same raw request limits, construct generic MotionPlan, run common validation authorization runtime monitoring and PiPER execution]
@@ -251,7 +335,7 @@ capture_one_model_seed_flow_2026_08_26:
   physical_observation: Task codex-e2e-model-seed-20260827-0123 persisted view_000 with model seed delta 0.032565248 seconds, advanced generation one to 353 rays without live-TF expiry, accepted three total captures and preserved the dataset through an operator-requested safe cancellation. Automatic completion was not attempted.
 object_sized_coverage_and_monotonic_ray_flow_2026_08_26:
   sequence: [create temporary bootstrap rays around the visible-surface lock, prequalify and use them only to obtain accepted capture one, construct and promote the exact persisted capture-one mask/depth plus recorded-transform model seed, revolve the silhouette directly through that matrix, set planning_anchor_m and grey centre to axis_origin_m, emit upgrade_population and replace bootstrap rays with the permanent 360-ray population around that object centre, reset all bootstrap centre-dependent culls, prequalify the qualified population afresh, thereafter apply only matching qualified permanent culls, remove every direction within or equal to 15 degrees of accepted achieved camera directions, rank only survivors by measured information, shortlist six, execute one accepted capture and repeat]
-  retry_behavior: [same-ray outward framing retry bypasses accepted-history retirement because it has no accepted capture, exhausted planning choices stay excluded within the population under the 2026-09-06 policy, timeout transport and generic failures do not prove ray infeasibility, typed exhaustive RAY_IK_FAILURE and worker permanent endpoint failures do not return]
+  retry_behavior: [same-ray outward framing retry bypasses accepted-history retirement because it has no accepted capture, exhausted planning choices stay excluded within the population to bound runtime, timeout transport and generic failures do not prove ray infeasibility, typed exhaustive RAY_IK_FAILURE and worker permanent endpoint failures do not return]
   manual_smoke_checks: [require bootstrap centre equals recorded surface lock, require upgrade_population after accepted capture one, require qualified ray centre grey centre planning_anchor_m and axis_origin_m exactly match, require bootstrap and qualified population SHA differ, require old-population hard culls are not reused, require captured ray IDs clear at population reset even when the qualified population reuses the same numeric ID, require the capture event retains its recorded camera position, require qualified SHA remains stable thereafter, require no repeated-new-cull or culled-to-active transition within one population, require past culls visible by default as dashed rays without camera glyphs, require no candidate camera shell before population culling and camera meshes only on current survivors afterward, require the Target layers controls stay visible at the top of the right-hand inspector, toggle each layer independently, accept one direction and require its inclusive 15-degree neighbourhood absent from every later rank, load offline-cube-qualified-centre-replay-20260826 and inspect all phases]
   mandatory_retests: [test_target_envelope.py, test_nbv_coverage.py, test_scan_session_memory.py, test_scan_viewpoint_angles.py, tests/planning/test_ray_hard_culls.py, test_ray_mission_diagnostics.py, test_bridge_feedback_freshness.py, test_capability_map.py, complete mobile and Tesseract suites, package build, command-free lifecycle replay]
 first_scan_ray_framing_flow_2026_08_26:
@@ -635,7 +719,7 @@ flows:
   rough_target_acquisition:
     sequence:
       - An external source or the native GUI calls /scan_target_acquisition/prepare with one unique session_id and one fresh finite PointStamped in base_link. This typed request atomically binds identity and target; an exact duplicate is idempotent, while reusing an ID with changed target data is rejected. Receipt never approves or commands motion.
-      - PrepareAcquisition includes look_index 0..4. It obtains fresh camera TF and publishes one compact transaction with at most five exact IK alternatives. Look zero applies the configured 0.35 m minimum to the measured camera-to-hint radius and offers centered/compact alternatives; later transactions use distinct 15-degree left/right/up/down neighborhoods. Every camera position remains in the original target-facing half-space. A camera inside 0.35 m moves only radially away from the hint, while a camera already farther away and every compact alternative preserve that measured radius. There is no acquisition-specific maximum; capability, finite perception admission and exact selected-planner validation own the outer boundary.
+      - PrepareAcquisition includes look_index 0..4. It obtains fresh camera TF and publishes one compact transaction with at most five exact IK alternatives. Look zero applies the configured 0.35 m minimum to the measured camera-to-hint radius and offers centered/compact alternatives; later transactions use distinct 15-degree left/right/up/down neighborhoods. Every camera position remains in the original target-facing half-space. A camera inside 0.35 m moves only radially away from the hint, while a camera already farther away retains its measured radius as the primary and receives nearer minimum/midpoint alternatives. There is no acquisition-specific maximum; capability, finite perception admission and exact selected-planner validation own the outer boundary.
       - Dedicated reachability output preserves ROUGH_ACQUISITION provenance and may ignore target_status LOST only; arm-status and view-geometry checks remain mandatory while static reach bounds are disabled and Tesseract owns actual feasibility.
       - The coordinator republishes the command-free candidates and retries only rejected non-queued bridge calls for at most 10 seconds, with no more than one call in flight. Scan subscriptions remain stable for node lifetime; stale or missing callbacks block without DDS endpoint recreation. Once accepted, exactly one spool request exists. Schema-v5 hashes bind plan kind, source_request_id, base_link provenance, target stamp, candidates, scene observation mode, model, calibration, limits, and exact trajectory.
       - source_request_id is preserved through candidate JSON, the canonical spool, TesseractPlan, ScanExecutionPlan, and GUI. A plan or terminal status from another session cannot satisfy the current request.
@@ -1181,7 +1265,7 @@ generic_motion_planner_flow_2026_08_27:
   sequence: [mission freezes backend, ProcessSupervisor starts only that worker, cuRobo writes full startup provenance to worker_diagnostics.json and a compact bounded worker_health.json, bridge proves matching readiness, mission requests a generic plan, first bootstrap_static rough acquisition may use the bounded joint-2/joint-3 folded-start escape before ordinary backend planning, adapter validates backend-native output, bridge publishes MotionPlan with recovery evidence, executor applies shared normalization bootstrap validation authorization and runtime gates, TrajectoryRunner uses the existing PiPER adapter, capture and NBV continue unchanged]
   failure_modes: [invalid backend, missing interpreter, worker import or GPU initialization failure, missing malformed stale wrong-generation or oversized heartbeat, stale or mismatched request/world/target, unsupported plan kind, malformed trajectory, missing collision qualification, backend loss]
   failure_behavior: Explicit mission planning failure, no automatic fallback, no direct command from either worker, bounded worker cleanup.
-  curobo_qualification_flow: [generate schema-3 model from canonical Tesseract URDF/SRDF and mesh manifest, verify all asset hashes and moving-link surface audit before CUDA, copy the hash-bound qualification record into generated provenance, load the exact rigid PiPER base and fixed Bunker meshes plus request-correlated floor and obstacles, execute deterministic command-free Tesseract comparison, install pinned cuRobo 0.7.8 in explicit Python environment with CUDA toolkit, execute opt-in command-free GPU suite, run frozen mission requests and physical low-speed validation, set hardware_qualified only in reviewed provenance, require the worker to match tabletop plus exact 5-percent free/contact speeds, explicitly opt in with PIPER_CUROBO_COLLISION_MODEL_QUALIFIED=1]
+  curobo_qualification_flow: [generate schema-3 model from canonical Tesseract URDF/SRDF and mesh manifest, verify all asset hashes and moving-link surface audit before CUDA, copy the hash-bound qualification record into generated provenance, load the exact rigid PiPER base and fixed Bunker meshes plus request-correlated floor and obstacles, execute deterministic command-free Tesseract comparison, install pinned cuRobo 0.7.8 in explicit Python environment with CUDA toolkit, execute opt-in command-free GPU suite, run frozen mission requests and physical low-speed validation, set hardware_qualified only in reviewed provenance, require the worker to match tabletop and validate finite selected free/contact speeds within 1..100 percent without matching the historical 5-percent values, explicitly opt in with PIPER_CUROBO_COLLISION_MODEL_QUALIFIED=1]
   manual_smoke_checks: [default Tesseract mission dry run, cuRobo readiness failure for absent interpreter or changed mesh hash, pure model and adapter suite, command-free configured-rough-home acquisition requiring bounded recovery evidence and common proxy-gate acceptance, opt-in neutral-to-qualified-scan and reverse GPU plans, deliberately blocked dynamic-world rejection, complete frozen-request GPU suite, shutdown process audit]
   current_curobo_evidence: [native CUDA extensions import, MotionGen warm-up, worker heartbeat, exact rigid-base and Bunker mesh world, reviewed 69-sphere operator Isaac model, deterministic 2,004-pose articulated self-collision comparison against exact Tesseract with zero state-level false negatives, three reference clear poses remain clear, ordinary planning still rejects the folded start, acquisition-only bootstrap replay from configured rough home selects J3 -0.06 rad then returns a normally checked acquisition path and passes the common 60 mm proxy gate, command-free neutral-to-qualified-scan and reverse plans, blocking-volume rejection followed by restored self-collision rejection, deliberate worker Ctrl-C leaves no process]
   current_curobo_status: The operator reported successful physical end-to-end qualification on 2026-09-02 for supervised 5-percent target-scan missions using the current tabletop model. The refined reviewed model has 18 conservative false positives and zero sampled false negatives across the deterministic 2,004-pose comparison, but moving geometry remains non-conservative, Link 5 sampled coverage is 52.5 percent with a 34.4 mm gap, and the worst per-owner gap remains 48.3 mm. Preserve the explicit collision-model opt-in and every downstream safety gate; this qualification is not evidence of Tesseract-equivalent collision geometry.
@@ -1214,3 +1298,295 @@ dense_offline_video_2026_09_07:
 aligned_depth_frameset_fix_2026_09_07:
   reference: docs/ai/92-aligned-depth-framesets.yaml
   routing: Camera aligned-depth publication requires a complete frameset and verified color geometry; legacy BundleSDF recovery rejects approximate pairs. Read this record before changing camera publication or bag synchronization.
+
+scan_calibration_and_recovery_integration_2026_09_07:
+  manual_smoke_checks:
+  - In an isolated ROS domain with no driver, deliver best-effort CameraInfo to the actual planner and require receipt.
+  - Replay accepted cup seed before and after calibration delivery; require withholding before and valid FOV intervals
+    after.
+  - Start proposal-only scan stack in an isolated domain, terminate its owned planner, require an exit record and
+    a responsive executor cancel service while launcher remains alive, then stop test-owned group.
+  - For supervised physical requalification, inject a non-motor planning failure and prove PRE_HOME ROUGH_HOME STORAGE_WRIST
+    all-six disable and cleanup. Physical requalification remains pending; isolated tests do not prove physical
+    home.
+  recorded_framing: Cup generation zero selected 0.28 m from its surface target. The saved full cup is visible;
+    the qualified model is about 0.135 m axial by 0.097 m transverse and requires at least 0.3585 m from its new
+    model anchor for FOV. Bootstrap and model-anchor distances have different origins.
+
+reconstruction_base_frame_orientation_2026_09_08:
+  reference: docs/ai/93-reconstruction-coordinate-frames.yaml
+  owner_module: reconstruction/coordinate_frames.py
+  behavior: All capture reconstruction variants retain base_link geometry with explicit frame/hash sidecars; BundleSDF adds a separate same-image-anchored base_link export. Both viewers open Z-up from the robot side with labelled axes and robot-direction arrows. Unknown orientation remains explicit.
+  boundary: Offline export/display only; original geometry, tracking, capture poses, quality gates and evidence ZIPs are preserved.
+
+nbv_scoring_and_preserved_retry_policy_2026_09_08:
+  reference: docs/ai/94-nbv-scoring-and-retries.yaml
+  status: Offline validated; supervised physical qualification pending.
+
+terminal_cancel_before_scene_fix_2026_09_08:
+  failure_reproduction: Cancel during first TARGET_LOCK with no established scene passes startup=True to terminal
+    PRE_HOME. Previously it refreshed joints without cancel and authorization failed because executor remained active.
+  manual_smoke_checks:
+  - 'software: real coordinator helper to real executor cancel and authorize callbacks in MOVING SETTLING WAITING_FOR_FRESH_FRAME
+    WAITING_FOR_GROUNDING_DINO WAITING_FOR_RUNTIME_REFRESH'
+  - failed stop must prevent both authority renewal and already-home proof
+  - 'physical pending: supervised cancel during first acquisition and verify stop PRE_HOME ROUGH_HOME STORAGE_WRIST
+    disable cleanup'
+
+curobo_selected_speed_readiness_2026_09_08:
+  owner_module: motion_planning/curobo/worker.py Worker.collision_model_qualified
+  change: Operator requested removal of the hard-coded 5-percent startup restriction. Valid finite selected
+    free/contact speeds in 1..100 percent no longer have to equal historical qualification speeds.
+  retained: Hash-bound model evidence, recorded scope identity, tabletop profile, explicit collision-model
+    opt-in, common motion/speed-profile opt-ins, collision/path validation and execution gates.
+  provenance: The original 5-percent physical evidence and model hashes remain unchanged. Passing readiness
+    at another selected speed does not create new physical-test evidence.
+  load_order_contract: Each mission starts a new worker from the source Python file; no coordinator restart
+    or ROS rebuild is needed for this worker-only change.
+  must_retest_if_changed:
+  - tests/curobo
+  - piper_tesseract_foxy/test
+  - Python compile
+  - architecture YAML parse
+  validation: 333 tests passed, 19 optional/environment tests skipped; no new motion, CUDA planning or
+    reconstruction.
+
+settled_capture_window_refresh_2026_09_08:
+  owner_module: piper_mobile_manipulation/scan_capture_node.py
+  behavior: Both planner backends share bounded complete post-settle native-window reselection when the first burst has no fresh exact mask/RGB-D partner. Search cached windows newest first and freeze the selected burst and pair together before preparation.
+  invariants: [original absolute deadline and response margin, exactly 20 unique synchronized prospective native frames, fresh native reference and exact RGB-D partner, unchanged confidence and TF checks, unchanged final admission and atomic commit]
+  must_retest_if_changed: [capture delayed-match and expired-first-burst regressions, pre-settle and duplicate exclusion, exact identity and deadline rejection, frozen preparation, failure and executor characterization, complete mobile and Tesseract suites, package build]
+  manual_smoke_checks: [withhold the first burst pair then deliver a later complete native burst and exact pair during the same settled request, verify one accepted capture and unchanged deadline, withhold all exact pairs and verify one terminal timeout]
+  physical_validation: Pending supervised hardware retest; automated regressions do not establish camera or motion qualification.
+  validation_record: datasets/experiment_results/capture_window_fix_20260908/README.md
+  validation: 37 capture tests pass; full mobile and Tesseract run has 1226 passed and 1 skipped with one saved capability-map hash failure caused by the prior worker planning-budget change. Mobile build passes. This historical hash failure is resolved by capability_budget_repair_2026_09_08; the restored artifact now passes enforcement validation.
+
+capability_budget_repair_2026_09_08:
+  owner_module: piper_mobile_manipulation/planning/capability.py
+  incident: The Tesseract automatic planning budget change from 90 to 120 seconds invalidated the shared capability-map worker hash and forced the following cuRobo mission into coarse filtering.
+  correction: Rebound only the artifact source metadata with explicit non_geometric_source_rebind provenance after reversing the single budget literal reproduced the exact prior hash. All other source hashes match and both stored geometry arrays are byte-identical. The 120-second budget is retained.
+  artifact: piper_ros_foxy/src/piper_mobile_manipulation/config/piper_camera_capability_map.npz
+  evidence: datasets/experiment_results/capability_budget_repair_20260908/
+  validation: Full mobile and Tesseract suites pass with 1227 passed and 1 skipped; an isolated real ROS reachability-filter instance loads the artifact in enforce mode; both packages build.
+  guardrail: Changes to any capability-bound source require checking artifact enforcement before declaring readiness for either backend. Never bypass source verification or relabel changed geometry as qualified.
+  runtime: A new mission scan stack loads the repaired artifact; no running robot processes were restarted and no hardware command was issued.
+  recorded_replay: The restored map rejects 314 of 360 recorded generation-one directions including all 138 directions attempted across the 23 failed batches. Remaining directions still require exact selected-planner validation.
+
+acquisition_radial_alternatives_2026_09_08:
+  owner_module: piper_mobile_manipulation/perception/acquisition.py
+  behavior: Both backends share the same acquisition candidates. No acquisition-specific upper distance cap is added. Preserve the current-distance primary; when it exceeds the positive protection minimum, insert a candidate at that minimum and one at the midpoint, retaining at most five total candidates. Neither minimum nor midpoint is a mandatory commanded distance.
+  safety: Preserve the 0.35 m production minimum, target-facing half-space, original look direction, session identity, selected-planner IK and collision/path validation, and all executor gates. Physical joint limits and post-enable stability thresholds are unchanged.
+  validation: 28 acquisition tests and full mobile/Tesseract suites pass with 1228 passed and 1 skipped. Command-free recorded-configuration replay is recorded in the evidence directory; physical qualification remains pending.
+  evidence: datasets/experiment_results/acquisition_range_fix_20260908/
+  must_retest_if_changed: [recorded far-hint radial endpoint regression, unbounded far primary retention, close-hint minimum protection, five-candidate and five-transaction contracts, full mobile and Tesseract suites, capability source hashes, package build, command-free planner replay]
+
+campaign_retry_last_attempt_2026_09_08:
+  owner_module: results_campaign/campaign.py
+  supporting_owners: [piper_gui/results_campaign.py, piper_gui/native_app.py, results_campaign/bookmarks.py, results_campaign/report.py]
+  behavior: Idle Retry Last Attempt prepares the last completed campaign submission regardless of outcome. Actual submitted conditions determine the scheduled trial, including when a prior mismatch was attached to the next slot. No mission is started or settings applied automatically.
+  contract: Pending active_trial.json persists retry_of_task_id across reopen and Prepare. Each submission has a fresh task directory and retry linkage. A completed matching retry supersedes earlier matching attempts for report summaries while all original evidence and bookmark entries remain. Incomplete or mismatched retries do not supersede measured results. Normal schedule resumes after completion.
+  skip: Skipping a pending retry writes trials/<trial>/retry_skips/<timestamp>.json and clears retry preparation without changing the original trial result or scheduled skip count.
+  boundaries: Unresolved campaign submissions and active GUI missions block retry preparation; unmatched conditions are reported instead of coerced. No ROS or motor authority added to the campaign package.
+  required_retests: [success and failure retry, mismatched attempt routing, persistence across reopen, submission and active-mission guards, pending-retry skip, report supersession with retained evidence, actual Tk button invocation, full campaign and GUI suites]
+  reference: docs/experiments/results_campaign.md
+
+campaign_trial_table_2026_09_08:
+  owner_module: results_campaign/campaign.py
+  allowed_edit_paths:
+  - results_campaign/campaign.py
+  - piper_gui/results_campaign.py
+  - piper_gui/native_app.py
+  - tests/results_campaign/
+  - tests/gui/
+  behavior: Opening a campaign shows every frozen trial with planner, XYZ, sweep condition,
+    Done/To do/Skipped/In progress status, latest matching terminal outcome and attempt
+    count. Done means a matching terminal result, including failure, not success.
+    Retry Selected Trial prepares the latest resolved attempt matching the selected
+    scheduled conditions regardless of outcome; Retry Last Attempt remains available.
+  contracts: Selected retries retain existing retry_of_task_id persistence, report
+    supersession and immutable attempt evidence. Unresolved submissions and GUI-active
+    missions block retry. Unattempted rows cannot be retried; use Prepare Next Trial
+    for pending schedule entries. Mismatched attempts do not count as completion.
+  refresh: Refresh on campaign open, preparation and campaign status events; manual
+    Refresh Table reads durable files. Selection and scroll position survive refresh.
+  manual_smoke_checks:
+  - Open a temporary campaign and inspect all scheduled rows, including pending, succeeded
+    and failed outcomes
+  - Select an older completed trial, invoke Retry Selected Trial, verify fields and
+    unchanged attempt count
+  - Retry across reopen, finish with fresh task ID, verify normal remaining schedule
+    resumes
+  - Verify active/unresolved guards, mismatch exclusion and retained report evidence
+  must_retest_if_changed:
+  - full campaign and GUI suites
+  - Python compile
+  - AI YAML parse
+
+tesseract_shared_point_stream_2026_09_08:
+  owner_module: piper_mobile_manipulation/scan_viewpoint_executor_node.py
+  allowed_edit_paths:
+  - piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py
+  - piper_ros_foxy/src/piper_mobile_manipulation/test/test_reintegrated_features.py
+  behavior: Normal Tesseract DIRECT_MOVEJ-labelled proposals now retain every already-approved
+    intermediate position and timestamp and enter the same TIMED_STREAM executor used
+    by cuRobo. The planner label describes dense chord validation, not permission
+    to collapse transport to one endpoint. Existing detour streams are unchanged.
+  settings: Saved command rate 200 Hz and executor timer 400 Hz remain selected. Existing
+    cuRobo/shared following limits, grace, hold/recovery, no-burst/no-skip scheduling
+    and final settling are unchanged at operator clarification.
+  boundaries: Dedicated configured home stages retain their separate direct-home behavior.
+    No worker, geometry, source binding, driver, motor enable, controller mode or
+    runtime parameter change. Capability-map provenance remains valid. No live restart
+    or hardware commands.
+  validation: 1349 mobile/Tesseract/cuRobo tests passed with 20 skips; 151 GUI tests passed; mobile package built. Regression compares all 200 Tesseract samples/timestamps with the identical
+    cuRobo stream input and checks dedicated home remains non-streaming; full mobile/Tesseract/cuRobo
+    ordinary and GUI suites plus package build.
+  manual_smoke_checks:
+  - 'New supervised mission: verify Tesseract scan moves emit stream-completion diagnostics
+    and command sample counts'
+  - Compare recorded commanded/measured joint paths and minimum holder clearance;
+    200 Hz requested rate is not a physical accuracy guarantee
+  - Verify following hold/recovery, cancellation, endpoint settling and separate home/disable
+    behavior
+  remaining: Measured path/envelope monitoring and new durable per-command recording
+    were not added in this transport-only change. Physical tracking qualification
+    remains required; existing 0.30-rad corridor is not a tight path-clearance guarantee.
+
+tesseract_native_timing_and_immediate_feedback_2026_09_08:
+  owner_module: piper_tesseract_foxy/worker.py sdk_movej_waypoint_trajectory; execution/trajectory.py
+    TrajectoryRunner.following_decision
+  allowed_edit_paths:
+  - piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/worker.py
+  - piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/execution/trajectory.py
+  - piper_ros_foxy/src/piper_mobile_manipulation/config/piper_camera_capability_map.npz
+  - piper_ros_foxy/src/piper_tesseract_foxy/test/test_worker_validation.py
+  - piper_ros_foxy/src/piper_mobile_manipulation/test/test_phase7_viewpoint_components.py
+  behavior: Tesseract retains native segment durations when resampling. Baseline ticks
+    satisfy native time, speed-scaled MoveJ limits and step ceiling; 100/200 Hz subdivides
+    that baseline (superseded below by actual-rate rounding) and applies one native-path stretch from continuous segment rates
+    before rounding. Tiny ISP intervals must not magnify tick quantization into whole-path
+    slowdown. Every source vertex and zero derivative placeholder remains.
+  feedback_contract: Shared cuRobo/Tesseract command-lead enforcement begins at the
+    first point, including sub-second moves. trajectory_following_error_grace_sec
+    now bounds recovery only, never startup exemption. Entry limit 0.30 rad, three
+    fresh interior recovery samples, no burst/skip, final settling and dedicated home
+    behavior remain unchanged.
+  capability_provenance: 'Only the transport-normalizer function differs in the bound
+    worker: deleting that function from before/after ASTs makes complete worker ASTs
+    identical. Static capability sampler does not call normalization. Every other
+    source hash and both arrays verified unchanged; explicit timing-only non_geometric_source_rebind
+    retains prior audit history. No geometry qualification inferred from timing tests.'
+  evidence: datasets/experiment_results/tesseract_timing_fix_20260908/
+  runtime_example: 'Isolated real Tesseract acquisition passed: native duration 3.52843
+    s; former 200 Hz schedule 1.45 s/291 positions, corrected 5.90 s/1181 positions,
+    exact source geometry unchanged. Planning about 23.5 s. Not a physical execution
+    benchmark.'
+  failure_diagnosis: 'Latest task 94609c2d8d254233bceaa9c1ec8264e1, target (0.30,0,0.12),
+    failed before acquisition motion: 0.35 m standoff pushes centered camera near
+    X=-0.00149 m; recovered IK J5=1.21366 and J6=3.13562 rad violate 0.03-rad inset
+    upper limits 1.19 and 3.11159. Four alternate candidates have no raw IK. Prior
+    task 8572c1e0f4bc44e3bcd1c248bca3e345 ended at five captures after last ray 68
+    failed exact/fallback IK; coverage remained insufficient. Neither terminal reason
+    was stream tracking.'
+  required_retests:
+  - complete mobile Tesseract cuRobo ordinary and GUI suites
+  - native rootless planning and unchanged source-geometry comparison
+  - capability source enforcement and array hashes
+  - package builds and registered focused CTests
+  - supervised physical stream rate tracking hold/cancel and home qualification
+  remaining:
+  - No physical run performed; 200 Hz remains a requested rate, not guaranteed delivery
+    or accurate motion
+  - Superseded by clearance_aware_stream_2026_09_08 below; physical qualification remains pending
+  - Latest acquisition candidate failure diagnosed only; do not relax joint margins
+    to force that pose
+
+clearance_aware_stream_2026_09_08:
+  owner_module: piper_mobile_manipulation.execution
+  allowed_edit_paths:
+  - piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/execution/clearance.py
+  - piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/scan_viewpoint_executor_node.py
+  - piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/configuration.py
+  - piper_ros_foxy/src/piper_mobile_manipulation/config/scan_execution_params.yaml
+  - piper_ros_foxy/src/piper_tesseract_foxy/piper_tesseract_foxy/worker.py
+  - results_campaign/campaign.py
+  - results_campaign/metrics.py
+  must_not_move_without:
+  - execution.motion collision proxies
+  - execution.trajectory feedback recovery
+  - Tesseract capability-map source binding
+  - campaign configuration provenance
+  load_order_contracts:
+  - Freeze approved obstacle boxes at path admission; reuse calibrated FK and existing proxy dimensions.
+  - Before each Tesseract normal-stream command, evaluate cached measured and next-target clearance; tighten
+    lead, then apply existing feedback hold/recovery.
+  - A measured negative margin aborts through collision-fault control-authority handling before another
+    point is sent.
+  behavior:
+    scope: Tesseract only, selected by the accepted plan_backend in the shared executor.
+      cuRobo and dedicated RETURN_HOME bypass this additional monitor.
+    limits: Open-space maximum remains 0.30 rad. Within 0.025 m remaining proxy margin, interpolate
+      toward 0.03 rad. Subtract closing speed times (0.25 s configured reaction allowance plus measured-feedback
+      age) before interpolation.
+    geometry: Existing arm segments, non-adjacent self pairs, CAD holder corners, table and approved
+      obstacle AABBs. Fixed base-height origins do not constrain adaptive floor margin; admission
+      still validates them.
+    bootstrap: Qualified recovery retains internal-self proximity exemption until its cursor has
+      passed and measured pose is fully clear. External/table monitoring remains active throughout.
+      This does not add a bounded physical recovery qualification.
+    timing: Tesseract rounds at the actual requested transport period, retaining native segment durations,
+      all corners and speed/step limits. It no longer pre-rounds to 20 Hz before subdivision. cuRobo
+      normalizer unchanged.
+    provenance: Campaign Runs retain execution_policy_sources hashes for execution YAML, clearance/trajectory
+      helpers and Tesseract worker. Recorded durations remain actual elapsed times.
+  manual_smoke_checks:
+  - 'Supervised same-path open/near-table runs: inspect measured clearance, actual stream rate, pauses
+    and duration before hardware promotion.'
+  - Exercise hold/cancel, feedback loss, bootstrap recovery and dedicated home with safe clearance;
+    verify no command after collision abort.
+  must_retest_if_changed:
+    clearance.py:
+    - test_clearance_stream
+    - test_phase7_viewpoint_components
+    - test_scan_motion
+    configuration.py:
+    - test_configuration
+    worker.py:
+    - Tesseract validation suite
+    - isolated native-timing replay
+    - capability source enforcement and unchanged-array audit
+    campaign.py / metrics.py:
+    - campaign/report tests
+    - GUI campaign tests
+  evidence: datasets/experiment_results/clearance_stream_20260908/
+  runtime_example: 'Same isolated native 3.52843 s path: previous schedule 5.90 s/1181 positions,
+    current 3.66 s/733 positions. This is schedule duration, not measured robot runtime.'
+  remaining:
+  - Physical tracking, braking and sustainable command rate remain unqualified. Reaction allowance
+    is an estimate, not a stopping-distance guarantee.
+  - Compact proxy and frozen scene cannot guarantee collision avoidance for unmodeled or newly moved
+    objects.
+  - Measured clearance may add holds; real mission runtime must be compared with matching policy
+    hashes.
+
+tesseract_partial_success_exclusion_2026_09_09:
+  owner_module: piper_tesseract_foxy/bridge_node.py
+  behavior: For successful Tesseract responses without explicit exhausted_ray_ids, map typed AIM_VARIANTS_EXHAUSTED
+    candidate IDs through the exact pending request. Retire a ray only when every request alternative
+    failed and none was selected. Keep existing generation/population correlation and population-lifetime
+    exclusions.
+  preserved:
+  - cuRobo explicit exhaustion handling
+  - successful and unattempted rays
+  - generic/infrastructure failure handling
+  - worker geometry and capability-map source binding
+  - NBV scoring and collision/authorization gates
+  required_retests:
+  - partial-success Tesseract and cuRobo regressions
+  - selected/shared-ray/unattempted/foreign-ID guards
+  - generation and population reset tests
+  - complete ordinary mobile/Tesseract/GUI/cuRobo suites
+  - five-package build
+  evidence: datasets/experiment_results/tesseract_retry_fix_20260909/
+  physical_status: No live restart or robot command; supervised next-mission exclusion and terminal
+    recovery check pending.

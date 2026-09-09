@@ -535,9 +535,9 @@ class ScanCaptureNode(Node):
             response.success = False
             response.message = reason
             return response
-        mask_message, color_bundle, reason = (
+        burst, mask_message, color_bundle, reason = (
             self.wait_for_correlated_capture_pair(
-                burst, transaction_deadline))
+                burst, transaction_deadline, started_at=burst_started_at))
         if reason:
             self.note_skip(reason)
             self.publish_status('skipped', reason)
@@ -624,7 +624,11 @@ class ScanCaptureNode(Node):
         maximum_age = float(self.get_parameter('max_bundle_age_sec').value)
         last_reason = ''
         for mask_message in reversed(masks):
-            if nearest_stamped_item(burst, mask_message, rgb_slop) is None:
+            native = nearest_stamped_item(burst, mask_message, rgb_slop)
+            if native is None:
+                continue
+            if now - float(native[3]) > maximum_age:
+                last_reason = 'native depth bundle is stale'
                 continue
             color_bundle = exact_stamped_item(
                 color_bundles, mask_message)
@@ -642,34 +646,52 @@ class ScanCaptureNode(Node):
             'no fresh exact mask/RGB-D pair overlaps the settled '
             'native-depth burst%s' % detail)
 
-    def wait_for_correlated_capture_pair(self, burst, deadline):
-        """Wait for a provable capture pair, then freeze that exact pair."""
+    def refreshed_capture_burst(self, started_at, deadline):
+        """Find a complete post-settle window with a fresh exact RGB-D pair."""
+        requested = int(self.get_parameter('capture_burst_frames').value)
+        with self.native_bundle_condition:
+            candidates = [bundle for bundle in self.native_bundle_cache
+                          if float(bundle[3]) > float(started_at)]
+        selected, reason = self.valid_native_depth_bundles(candidates)
+        if reason:
+            return None, None, None
+        # Search bounded cached windows newest first.  Keeping older windows
+        # available lets delayed SAM masks match without chasing the camera.
+        for end in range(len(selected), requested - 1, -1):
+            if time.monotonic() >= float(deadline):
+                break
+            candidate = selected[end - requested:end]
+            mask, color, reason = self.correlated_capture_pair(candidate)
+            if mask is not None and color is not None:
+                return candidate, mask, color
+        return None, None, None
+
+    def wait_for_correlated_capture_pair(
+            self, burst, deadline, started_at=None):
+        """Select a burst and exact pair together, then freeze all three."""
         last_reason = 'correlated mask/RGB-D capture pair is unavailable'
         condition = getattr(self, 'capture_evidence_condition', None)
-        if condition is None:
-            while True:
-                mask_message, color_bundle, reason = (
-                    self.correlated_capture_pair(burst))
-                if mask_message is not None and color_bundle is not None:
-                    return mask_message, color_bundle, ''
-                last_reason = str(reason or last_reason)
-                remaining = float(deadline) - time.monotonic()
-                if remaining <= 0.0:
-                    return None, None, (
-                        'CAPTURE_EVIDENCE_TIMEOUT: ' + last_reason)
+        while time.monotonic() < float(deadline):
+            mask_message, color_bundle, reason = (
+                self.correlated_capture_pair(burst))
+            if mask_message is not None and color_bundle is not None:
+                return burst, mask_message, color_bundle, ''
+            last_reason = str(reason or last_reason)
+            if started_at is not None:
+                refreshed, mask_message, color_bundle = (
+                    self.refreshed_capture_burst(started_at, deadline))
+                if refreshed is not None:
+                    return refreshed, mask_message, color_bundle, ''
+            remaining = float(deadline) - time.monotonic()
+            if remaining <= 0.0:
+                break
+            if condition is None:
                 time.sleep(min(0.05, remaining))
-        with condition:
-            while True:
-                mask_message, color_bundle, reason = (
-                    self.correlated_capture_pair(burst))
-                if mask_message is not None and color_bundle is not None:
-                    return mask_message, color_bundle, ''
-                last_reason = str(reason or last_reason)
-                remaining = float(deadline) - time.monotonic()
-                if remaining <= 0.0:
-                    return None, None, (
-                        'CAPTURE_EVIDENCE_TIMEOUT: ' + last_reason)
-                condition.wait(timeout=min(0.10, remaining))
+            else:
+                with condition:
+                    condition.wait(timeout=min(0.10, remaining))
+        return None, None, None, (
+            'CAPTURE_EVIDENCE_TIMEOUT: ' + last_reason)
 
     def prepare_capture_until_ready(
             self, burst, mask_message, color_bundle, deadline):

@@ -129,8 +129,8 @@ class TrajectoryRunner:
             over_limit_elapsed_sec=None):
         """Bound command lead while retaining the existing hard failure."""
         error = float(following_error_rad)
-        if float(elapsed_sec) < float(grace_sec):
-            return TrajectoryDecision(TrajectoryAction.WAIT)
+        # grace_sec bounds recovery after a hold; it is never a startup
+        # exemption, including for trajectories shorter than one second.
         if not math.isfinite(error):
             return TrajectoryDecision(TrajectoryAction.FAILED_FOLLOWING)
         if error > float(limit_rad):

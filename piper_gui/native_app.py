@@ -44,6 +44,7 @@ from piper_gui.ray_reports import (
 )
 from piper_gui.results_campaign import ResultsCampaignController
 from results_campaign.campaign import DEFAULT_CAMPAIGN_ID
+from results_campaign.modes import MODE_LABELS, MODE_CAMPAIGN_IDS
 from piper_gui.scan_policy import (
     FULL_SPHERE_REGION,
     POLICY_LABELS,
@@ -488,6 +489,9 @@ class PiperGuiApp:
         self.ray_replay_in_progress = False
         self.ray_review_process = RayReviewProcess(PROJECT_ROOT)
         self.results_campaign = ResultsCampaignController(PROJECT_ROOT)
+        self.results_campaign_mode_var = tk.StringVar(value=MODE_LABELS['planner_comparison'])
+        self.results_campaign_backend_var = tk.StringVar(value='curobo')
+        self.results_campaign_design_var = tk.StringVar()
         self.results_campaign_id_var = tk.StringVar(
             value=DEFAULT_CAMPAIGN_ID)
         self.results_campaign_status_var = tk.StringVar(
@@ -581,19 +585,23 @@ class PiperGuiApp:
     def _build_results_campaign(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
         ttk.Label(
-            parent, text='Backend-blocked physical results campaign',
+            parent, text='Matched physical results campaign',
             font=('TkDefaultFont', 16, 'bold')).grid(
                 row=0, column=0, sticky='w')
         ttk.Label(
             parent,
             text=(
                 'This is a passive file recorder. It does not publish ROS '
-                'messages, start missions, change safety decisions, retry '
-                'failures, or command the robot. The fixed design is 15 '
-                'target positions × Tesseract/cuRobo = 30 missions.'),
+                'messages or start missions. Select a trial below to prepare a retry, '
+                'then review and start it using the normal controls. '
+                'Saved campaigns retain their original conditions and order.'),
             wraplength=820, justify='left').grid(
                 row=1, column=0, sticky='ew', pady=(8, 16))
 
+        if not hasattr(self, 'results_campaign_mode_var'):
+            self.results_campaign_mode_var = tk.StringVar(value=MODE_LABELS['planner_comparison'])
+            self.results_campaign_backend_var = tk.StringVar(value='curobo')
+            self.results_campaign_design_var = tk.StringVar()
         campaign = ttk.LabelFrame(parent, text='Campaign', padding=12)
         campaign.grid(row=2, column=0, sticky='ew')
         ttk.Label(campaign, text='Campaign ID').grid(
@@ -609,17 +617,65 @@ class PiperGuiApp:
             campaign, text='Prepare Next Trial',
             command=self.prepare_next_results_trial).grid(
                 row=0, column=3, padx=(8, 0))
+        self.results_campaign_skip_button = ttk.Button(
+            campaign, text='Skip Trial', command=self.skip_results_trial,
+            state='disabled')
+        self.results_campaign_skip_button.grid(row=0, column=4, padx=(8, 0))
+        self.results_campaign_retry_button = ttk.Button(
+            campaign, text='Retry Last Attempt', command=self.retry_results_trial,
+            state='disabled')
+        self.results_campaign_retry_button.grid(row=0, column=5, padx=(8, 0))
         ttk.Label(
             campaign,
             text=(
-                'Prepare Next Trial fills the existing XYZ and planner '
-                'widgets only. You must review them and use the normal '
-                'Apply for Next Mission and Start buttons yourself.'),
+                'Prepare Next Trial fills the target, planner, camera and aim '
+                'controls only. You must review them and use the normal '
+                'Apply for Next Mission and Start buttons yourself. Skip Trial records '
+                'the current pending trial as skipped and prepares the next one. '
+                'Retry Last Attempt prepares the last campaign attempt regardless of outcome '
+                'and preserves its previous attempts.'),
             foreground='#52606d', wraplength=790, justify='left').grid(
-                row=1, column=0, columnspan=4, sticky='w', pady=(8, 0))
+                row=1, column=0, columnspan=5, sticky='w', pady=(8, 0))
+
+        ttk.Label(campaign, text='New campaign mode').grid(row=2, column=0, sticky='w', pady=(10, 0))
+        self.results_campaign_mode_combo = ttk.Combobox(
+            campaign, textvariable=self.results_campaign_mode_var,
+            values=tuple(MODE_LABELS.values()), state='readonly', width=45)
+        self.results_campaign_mode_combo.grid(row=2, column=1, columnspan=3, sticky='w', pady=(10, 0))
+        self.results_campaign_mode_combo.bind('<<ComboboxSelected>>', self._campaign_mode_changed)
+        ttk.Label(campaign, text='Sweep planner').grid(row=3, column=0, sticky='w')
+        ttk.Label(campaign, text='cuRobo only (planner comparison uses both)').grid(
+            row=3, column=1, columnspan=3, sticky='w')
+
+        trials = ttk.LabelFrame(parent, text='Campaign trials — select a row to retry', padding=8)
+        trials.grid(row=3, column=0, sticky='nsew', pady=(12, 0))
+        parent.rowconfigure(3, weight=1)
+        trials.columnconfigure(0, weight=1)
+        trials.rowconfigure(0, weight=1)
+        columns = ('trial', 'planner', 'position', 'condition', 'status', 'outcome', 'attempts')
+        self.results_campaign_table = ttk.Treeview(
+            trials, columns=columns, show='headings', selectmode='browse', height=8)
+        for key, title, width in zip(columns,
+                ('Trial', 'Planner', 'XYZ (m)', 'Condition', 'Status', 'Latest outcome', 'Attempts'),
+                (190, 85, 145, 170, 160, 100, 65)):
+            self.results_campaign_table.heading(key, text=title)
+            self.results_campaign_table.column(key, width=width, minwidth=55)
+        self.results_campaign_table.grid(row=0, column=0, sticky='nsew')
+        scroll = ttk.Scrollbar(trials, orient='vertical', command=self.results_campaign_table.yview)
+        scroll.grid(row=0, column=1, sticky='ns')
+        horizontal = ttk.Scrollbar(trials, orient='horizontal', command=self.results_campaign_table.xview)
+        horizontal.grid(row=1, column=0, sticky='ew')
+        self.results_campaign_table.configure(yscrollcommand=scroll.set, xscrollcommand=horizontal.set)
+        self.results_campaign_selected_retry_button = ttk.Button(
+            trials, text='Retry Selected Trial', command=self.retry_selected_results_trial,
+            state='disabled')
+        self.results_campaign_selected_retry_button.grid(row=2, column=0, sticky='w', pady=(8, 0))
+        self.results_campaign_table.bind('<<TreeviewSelect>>', self._campaign_selection_changed)
+        ttk.Button(trials, text='Refresh Table', command=self.refresh_campaign_table).grid(
+            row=2, column=0, sticky='e', pady=(8, 0))
 
         outputs = ttk.LabelFrame(parent, text='Evidence and outputs', padding=12)
-        outputs.grid(row=3, column=0, sticky='ew', pady=(12, 0))
+        outputs.grid(row=4, column=0, sticky='ew', pady=(12, 0))
         ttk.Button(
             outputs, text='Collect Existing Files Now',
             command=self.collect_results_campaign_now).grid(
@@ -638,52 +694,193 @@ class PiperGuiApp:
             foreground='#52606d', wraplength=790, justify='left').grid(
                 row=1, column=0, columnspan=3, sticky='w', pady=(10, 0))
 
-        design = ttk.LabelFrame(parent, text='Fixed declared design', padding=12)
-        design.grid(row=4, column=0, sticky='ew', pady=(12, 0))
-        ttk.Label(
-            design,
-            text=(
-                'X = 0.30, 0.50, 0.70, 0.90, 1.10 m; Y = 0.00 m; '
-                'Z = 0.00, 0.12, 0.30 m. One mission per planner at each '
-                'position. Run all cuRobo trials first, then all Tesseract '
-                'trials. Reference target: '
-                '35 × 35 × 35 mm cube, six faces. The 120 s line is a '
-                'timing reference only. 30 cm is confirmed; 50 cm is not.'),
-            wraplength=790, justify='left').grid(row=0, column=0, sticky='w')
+        design = ttk.LabelFrame(parent, text='Declared design', padding=12)
+        design.grid(row=5, column=0, sticky='ew', pady=(12, 0))
+        ttk.Label(design, textvariable=self.results_campaign_design_var,
+                  wraplength=790, justify='left').grid(row=0, column=0, sticky='w')
+        self._describe_campaign_mode()
+
+    def _selected_campaign_mode(self):
+        return next(key for key, label in MODE_LABELS.items()
+                    if label == self.results_campaign_mode_var.get())
+
+    def _describe_campaign_mode(self):
+        descriptions = {
+            'planner_comparison': '30 trials: X 0.30–1.10 m in 0.20 m steps, Z 0/0.12/0.30 m. '
+                                  'Adjacent cuRobo/Tesseract pairs; first planner alternates. Aim 5°.',
+            'camera_profiles': '8 RGB profiles at (0.30, 0, 0.30) m: 640×480, 960×540, '
+                               '1280×720, 1920×1080, each at 15 then 30 FPS. Aim 5°. '
+                               'Depth profile is unchanged; saved RGB settings are not measured FPS.',
+            'aim_tolerance': '30 trials: X 0.30, 0.50, 0.70, 0.90, 1.10 m; Y 0, Z 0.30 m. '
+                             'At each distance: 1°, 5°, 10°, 15°, 20°, 25°. '
+                             'Camera profile is frozen at creation. First capture keeps its 5° cap.',
+            'objects': '4 trials at (0.30, 0, 0) m: cube, cup, stick, flower. Aim 5°. '
+                       'Camera profile is frozen at creation. Cube dimensions are nominal; '
+                       'other object dimensions and reference-surface coverage are unknown.',
+        }
+        self.results_campaign_design_var.set(descriptions[self._selected_campaign_mode()])
+
+    def _campaign_mode_changed(self, _event=None):
+        mode = self._selected_campaign_mode()
+        self.results_campaign_id_var.set(MODE_CAMPAIGN_IDS[mode])
+        self._describe_campaign_mode()
+        self._campaign_status('Select Create / Resume to open this campaign. Saved IDs retain their design.')
+
+    def _new_campaign_settings(self):
+        profile = read_camera_profile(self.camera_profile_path)
+        return {
+            'backend': 'curobo',
+            'camera_profile': [profile.width, profile.height, profile.fps],
+            'camera_profiles': [[width, height, fps]
+                                for (width, height), rates in CAMERA_PROFILE_FPS.items()
+                                for fps in rates],
+            'aim_tolerance_deg': 5.0, 'height_m': 0.30,
+            'height_basis': 'declared base_link Z 0.30 m',
+            'cube_label': 'green cube',
+        }
 
     def _campaign_status(self, message):
         self.results_campaign_status_var.set(str(message))
+        self.refresh_campaign_table()
+
+    def refresh_campaign_table(self):
+        if not hasattr(self, 'results_campaign_table') or self.results_campaign.store is None:
+            return
+        try:
+            rows = self.results_campaign.store.trial_rows()
+        except Exception:
+            return  # Passive presentation cannot disrupt mission event handling.
+        selected = self.results_campaign_table.selection()
+        view = self.results_campaign_table.yview()
+        self.results_campaign_table.delete(*self.results_campaign_table.get_children())
+        for row in rows:
+            profile = row.get('camera_profile')
+            condition = row.get('target_label', '')
+            if profile:
+                condition += ' %dx%d@%d; aim %s°' % (*profile, row.get('aim_tolerance_deg', 5))
+            self.results_campaign_table.insert('', 'end', iid=row['trial_id'], values=(
+                row['trial_id'], row['backend'],
+                '%.2f, %.2f, %.2f' % (row['x_m'], row['y_m'], row['z_m']),
+                condition, row['status'], row['outcome'], row['attempts']))
+        if selected and self.results_campaign_table.exists(selected[0]):
+            self.results_campaign_table.selection_set(selected[0])
+        if view:
+            self.results_campaign_table.yview_moveto(view[0])
+        self._campaign_selection_changed()
+
+    def _campaign_selection_changed(self, _event=None):
+        selected = self.results_campaign_table.selection()
+        enabled = bool(selected and self.mission_view_model.state.can_start)
+        self.results_campaign_selected_retry_button.configure(state='normal' if enabled else 'disabled')
+
+    def retry_selected_results_trial(self):
+        selected = self.results_campaign_table.selection()
+        if not self.mission_view_model.state.can_start:
+            self._campaign_status('Wait for the active mission to finish before retrying.')
+            return
+        if not selected:
+            self._campaign_status('Select a campaign trial first.')
+            return
+        try:
+            trial = self.results_campaign.retry_trial(selected[0])
+        except Exception as exc:
+            self._campaign_status('Selected retry was not prepared: %s' % exc)
+            return
+        self.prepare_next_results_trial()
+        self._campaign_status('Retry prepared for %s. Review settings, apply and start. Previous attempts are preserved.' % trial['trial_id'])
 
     def open_results_campaign(self):
         try:
+            if not self.mission_view_model.state.can_start:
+                raise ValueError('wait for the active mission before switching campaigns')
+            mode = self._selected_campaign_mode()
             progress = self.results_campaign.open(
-                self.results_campaign_id_var.get())
+                self.results_campaign_id_var.get(), mode=mode,
+                settings=self._new_campaign_settings() if mode != 'planner_comparison' else None)
+            definition = self.results_campaign.store.definition()
+            saved_mode = definition.get('campaign_mode', 'planner_comparison')
+            self.results_campaign_mode_var.set(MODE_LABELS[saved_mode])
+            self._describe_campaign_mode()
+            if 'settings' in definition:
+                self.results_campaign_backend_var.set(definition['settings']['backend'])
+                self.results_campaign_design_var.set(
+                    '%s — %s, %d trials. Saved conditions are loaded by Prepare Next Trial.' % (
+                        MODE_LABELS[saved_mode], definition['settings']['backend'], len(definition['trials'])))
         except Exception as exc:
             self._campaign_status('Recorder was not opened: %s' % exc)
             return
+        self.results_campaign_skip_button.configure(
+            state='normal' if self.mission_view_model.state.can_start else 'disabled')
+        self.results_campaign_retry_button.configure(
+            state='normal' if self.mission_view_model.state.can_start else 'disabled')
         self._campaign_status(
-            'Passive recorder active: %d/%d terminal trials captured.' % (
-                progress['completed'], progress['total']))
+            'Passive recorder active: %d/%d terminal trials captured; %d skipped.' % (
+                progress['completed'], progress['total'], progress['skipped']))
+
+    def retry_results_trial(self):
+        if not self.mission_view_model.state.can_start:
+            self._campaign_status('Wait for the active mission to finish before retrying.')
+            return
+        try:
+            trial = self.results_campaign.retry_trial()
+        except Exception as exc:
+            self._campaign_status('Retry was not prepared: %s' % exc)
+            return
+        self.prepare_next_results_trial()
+        self._campaign_status('Retry prepared for %s. Review settings, apply and start the mission. Previous attempts are preserved.' % trial['trial_id'])
+
+    def skip_results_trial(self):
+        if not self.mission_view_model.state.can_start:
+            self._campaign_status('Wait for the active mission to finish before skipping.')
+            return
+        try:
+            record = self.results_campaign.skip_trial()
+        except Exception as exc:
+            self._campaign_status('Trial was not skipped: %s' % exc)
+            return
+        self.prepare_next_results_trial()
+        if record is not None:
+            self._campaign_status('Skipped %s. %s' % (
+                record['expected_trial']['trial_id'],
+                self.results_campaign_status_var.get()))
 
     def prepare_next_results_trial(self):
+        if not self.mission_view_model.state.can_start:
+            self._campaign_status('Wait for the active mission before preparing another trial.')
+            return
         try:
             trial = self.results_campaign.next_trial()
         except Exception as exc:
             self._campaign_status('Next trial was not loaded: %s' % exc)
             return
         if trial is None:
-            self._campaign_status('Campaign schedule is complete.')
+            progress = self.results_campaign.store.progress()
+            self._campaign_status(
+                'No trials remaining: %d recorded; %d skipped.' % (
+                    progress['completed'], progress['skipped']))
             return
         for variable, value in zip(
                 self.rough_coordinate_vars,
                 (trial['x_m'], trial['y_m'], trial['z_m'])):
             variable.set('%.2f' % float(value))
         self.planner_backend_var.set(BACKEND_LABELS[trial['backend']])
+        if hasattr(self, 'scan_aim_tolerance_var'):
+            self.scan_aim_tolerance_var.set(trial.get('aim_tolerance_deg', 5.0))
+        condition_text = ' Aim 5°; review and apply the tolerance.'
+        if 'campaign_mode' in trial:
+            self.mission_label_var.set(trial['target_label'])
+            width, height, fps = trial['camera_profile']
+            self.camera_resolution_var.set('%dx%d' % (width, height))
+            self._camera_resolution_changed()
+            self.camera_fps_var.set(str(fps))
+            condition_text = (' Target %s; RGB %dx%d @ %d FPS; aim %.1f°. '
+                              'Review and apply BOTH camera profile and aim tolerance in Automatic Scan.' % (
+                                  trial['target_label'], width, height, fps, trial['aim_tolerance_deg']))
         self._campaign_status(
             'Prepared %s: %s at (%.2f, %.2f, %.2f) m. Review and apply '
             'the planner in Automatic Scan; nothing was submitted.' % (
                 trial['trial_id'], BACKEND_LABELS[trial['backend']],
-                trial['x_m'], trial['y_m'], trial['z_m']))
+                trial['x_m'], trial['y_m'], trial['z_m']) + condition_text)
 
     def collect_results_campaign_now(self):
         def worker():
@@ -1964,6 +2161,16 @@ class PiperGuiApp:
 
     def _render_mission_state(self):
         state = self.mission_view_model.state
+        if hasattr(self, 'results_campaign_skip_button'):
+            self.results_campaign_skip_button.configure(
+                state='normal' if state.can_start and self.results_campaign.store
+                is not None else 'disabled')
+        if hasattr(self, 'results_campaign_selected_retry_button'):
+            self._campaign_selection_changed()
+        if hasattr(self, 'results_campaign_retry_button'):
+            self.results_campaign_retry_button.configure(
+                state='normal' if state.can_start and self.results_campaign.store
+                is not None else 'disabled')
         self.mission_status_var.set(state.status)
         self.mission_start_button.configure(
             state="normal" if state.can_start else "disabled")

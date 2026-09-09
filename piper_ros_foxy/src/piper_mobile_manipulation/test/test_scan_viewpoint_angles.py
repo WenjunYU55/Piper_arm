@@ -574,3 +574,40 @@ def test_raw_camera_frame_target_cannot_replace_base_link_nbv_center():
             'frame base_link')
     assert target_frame_rejection_reason('') == (
         'target frame <empty> is not scan planning frame base_link')
+
+
+@pytest.mark.parametrize('cached', [False, True])
+def test_capture_seed_waits_for_camera_info_before_fov_or_pool_reuse(cached):
+    harness = SimpleNamespace(
+        ray_pool_session_id='session-a',
+        ray_pool_target_envelope={'envelope_sha256': 'e' * 64} if cached else None,
+        camera_info_summary=lambda: {'available': False},
+    )
+    envelope, error = ScanViewpointPlannerNode.target_envelope_for(
+        harness, {'x': 0.4, 'y': 0.0, 'z': 0.1}, {
+            'session_id': 'session-a',
+            'accepted_views': 1,
+            'qualified_target_model_seed': complete_capture_model_seed(),
+        })
+    assert envelope is None
+    assert 'camera intrinsics' in error
+
+
+@pytest.mark.parametrize('fx,width', [(0.0, 640), (float('nan'), 640), (600.0, 0)])
+def test_invalid_camera_info_is_unavailable(fx, width):
+    harness = SimpleNamespace(latest_camera_info=SimpleNamespace(
+        k=[fx, 0, 320, 0, 600, 240, 0, 0, 1], width=width, height=480))
+    assert ScanViewpointPlannerNode.camera_info_summary(harness) == {'available': False}
+
+
+def test_camera_info_subscription_accepts_sensor_data_publisher():
+    import ast
+    import inspect
+    tree = ast.parse(inspect.getsource(planner_module))
+    subscription = next(
+        node for node in ast.walk(tree) if isinstance(node, ast.Assign)
+        and any(isinstance(t, ast.Attribute) and t.attr == 'info_sub'
+                for t in node.targets))
+    qos = eval(compile(ast.Expression(subscription.value.args[-1]), '<qos>', 'eval'),
+               vars(planner_module))
+    assert qos.reliability == planner_module.ReliabilityPolicy.BEST_EFFORT

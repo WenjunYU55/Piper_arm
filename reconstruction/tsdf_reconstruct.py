@@ -57,6 +57,7 @@ MEASURED_COMPONENT_MINIMUM_VIEWS = 2
 
 
 try:
+    from reconstruction import coordinate_frames as _frames
     from reconstruction import input_provenance as _inputs
     from reconstruction import mesh_repair as _mesh_repair
     from reconstruction import native_depth as _native_depth
@@ -64,6 +65,7 @@ try:
 except ModuleNotFoundError as error:
     if error.name != 'reconstruction':
         raise
+    import coordinate_frames as _frames
     import input_provenance as _inputs
     import mesh_repair as _mesh_repair
     import native_depth as _native_depth
@@ -1870,6 +1872,8 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
             (accumulated + cloud_base).voxel_down_sample(DEFAULT_VOXEL_LENGTH_M))
         frame_inputs.append({
             'frame': metadata_path.name,
+            'base_frame': frame['metadata'].get('camera_transform', {}).get(
+                'header', {}).get('frame_id', 'unverified'),
             'T_base_camera': refined_base_camera.tolist(),
             'width': frame['width'], 'height': frame['height'],
             'semantic_mask_source': frame['input_provenance'].get(
@@ -2197,6 +2201,7 @@ def _reconstruct_single(scan, manifest, metadata_paths, metadata_values,
         'visual_review_required': True,
         'frame_inputs': frame_inputs,
     }
+    _frames.write_report_frames(report)
     _atomic_write_json(output.with_suffix(output.suffix + '.quality.json'), report)
     return report
 
@@ -2427,6 +2432,7 @@ def reconstruct(scan_dir, output_path, voxel_length=DEFAULT_VOXEL_LENGTH_M,
             key: value for key, value in reports.items()},
         'candidate_errors': errors,
     })
+    _frames.write_report_frames(selected)
     _atomic_write_json(output.with_suffix(output.suffix + '.quality.json'), selected)
     return selected
 

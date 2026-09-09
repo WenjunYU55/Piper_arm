@@ -114,6 +114,7 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_depth_to_3d test/test_depth_to_3d.py)
   ament_add_pytest_test(test_mask_reprojection test/test_mask_reprojection.py)
   ament_add_pytest_test(test_scan_motion test/test_scan_motion.py)
+  ament_add_pytest_test(test_clearance_stream test/test_clearance_stream.py)
   ament_add_pytest_test(
     test_scan_session_memory test/test_scan_session_memory.py)
   ament_add_pytest_test(test_scan_capture test/test_scan_capture.py)

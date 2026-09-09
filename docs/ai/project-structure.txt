@@ -86,7 +86,7 @@ Piper_arm/
 ├── results_campaign/                ROS-free passive paired-mission schedule, atomic result bookmarks, read-only evidence collector, offline metrics, dependency-free XLSX writer and PNG/PDF report generator; has no mission or hardware authority
 ├── piper_gui/results_campaign.py    Thin generated-file/subprocess controller for the optional Results Campaign tab; no ROS interfaces and every observer failure is display-only
 ├── tools/{record_results_campaign.py,build_results_campaign_report.py}  File-only campaign collector and offline report entry points
-├── docs/experiments/results_campaign.md  Fixed 30-mission design, commands, evidence definitions and interpretation limits
+├── docs/experiments/results_campaign.md  Paired 30-mission design and schema-2 cuRobo parameter/object sweeps, commands, evidence definitions and interpretation limits
 ├── piper_gui_native.py              Compatibility launcher/import facade for existing operator commands and downstream imports; implementation ownership is piper_gui/native_app.py
 ├── piper_gui/ray_reports.py         Command-free canonical datasets/ray_diagnostics plus historical active_scan report discovery, root-qualified unique-directory RayProcesses selection, one-child stdin protocol, compatibility HTML opening and canonical-root immutable historical-dataset replay helpers
 ├── piper_gui/ray_review_model.py    ROS-free schema-v1/v2 event-time state, target-envelope presentation mesh, exact coverage, URDF/FK and read-only capability-map model
@@ -240,3 +240,18 @@ Aligned RGB-D correction:
   L515_camera/patches/realsense-ros-4.0.4-aligned-depth-guard.patch
   L515_camera/test_aligned_depth_guard.cpp
   L515_camera/test_aligned_depth_guard.sh
+
+reconstruction/coordinate_frames.py - shared ROS-free base-frame identity, same-image BundleSDF pose composition, robot-side Z-up viewing cues, per-geometry frame/hash sidecars and immutable retained-result export CLI
+tests/reconstruction/test_coordinate_frames.py - noncommuting transform, handedness, correspondence, source-preservation and all-variant frame-sidecar tests
+docs/ai/93-reconstruction-coordinate-frames.yaml - all reconstruction coordinate/export/viewer ownership, contracts and required retests
+
+# NBV scoring/retry repair record
+docs/ai/94-nbv-scoring-and-retries.yaml
+docs/experiments/nbv_scoring_retry_validation.md
+
+results_campaign/modes.py — Frozen schema-2 camera, aim and object sweep generation plus saved-setting comparison; no ROS or runtime writes.
+tests/results_campaign/test_modes.py — Schedule, resume, condition exclusion and non-cube report checks.
+
+# Clearance-aware execution (2026-09-08)
+# piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/execution/clearance.py — shared FK proxy margin and adaptive lead limit
+# piper_ros_foxy/src/piper_mobile_manipulation/test/test_clearance_stream.py — geometry and command-admission regressions

@@ -1,4 +1,5 @@
 import json
+from functools import partial
 import math
 import os
 import re
@@ -24,6 +25,22 @@ from launch.substitutions import (
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from piper_mobile_manipulation.configuration import load_stream_rates
+from piper_mobile_manipulation.infrastructure.process_supervisor import (
+    record_component_exit,
+)
+
+
+def critical_component_exit(event, context, component):
+    """Let the mission recover before its executor and peer nodes are stopped."""
+    if context.is_shutdown:
+        return []
+    directory = os.environ.get('PIPER_SCAN_COMPONENT_EXIT_DIRECTORY', '')
+    managed = LaunchConfiguration('allow_mission_policy').perform(context)
+    if directory and managed.lower() in ('true', '1'):
+        record_component_exit(directory, component, event.returncode)
+        return []
+    return [EmitEvent(event=Shutdown(
+        reason='critical supervised scan component exited: ' + component))]
 
 
 def cfg(name):
@@ -351,14 +368,15 @@ def generate_launch_description():
     # Optional observer is deliberately not launch-critical: disk failures must
     # not terminate the mission or change the command/safety process lifetime.
     critical_nodes = (
-        bridge, reachability, workflow, executor, planner, acquisition, capture)
+        ('bridge', bridge), ('reachability', reachability),
+        ('workflow', workflow), ('executor', executor), ('planner', planner),
+        ('acquisition', acquisition), ('capture', capture))
     shutdown_handlers = [
         RegisterEventHandler(OnProcessExit(
             target_action=node,
-            on_exit=[EmitEvent(event=Shutdown(
-                reason='critical supervised scan component exited'))],
+            on_exit=partial(critical_component_exit, component=name),
         ))
-        for node in critical_nodes
+        for name, node in critical_nodes
     ]
     return LaunchDescription([
         enable_motion,

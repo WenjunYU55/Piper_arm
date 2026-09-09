@@ -1029,12 +1029,22 @@ def test_collision_qualification_requires_model_evidence_and_operator_opt_in(
 
     monkeypatch.setenv('PIPER_CUROBO_COLLISION_MODEL_QUALIFIED', '1')
     assert Worker.collision_model_qualified(worker) is True
+    for free, contact in ((50, 5), (5, 50), (1, 1), (100, 100)):
+        monkeypatch.setenv('PIPER_VIEWPOINT_SPEED_PERCENT', str(free))
+        monkeypatch.setenv('PIPER_CONTACT_SPEED_PERCENT', str(contact))
+        assert Worker.collision_model_qualified(worker) is True
+    # Historical physical evidence is preserved, not relabelled as a 50% test.
+    assert worker.backend.model_provenance['hardware_qualification']['free_motion_speed_percent'] == 5.0
 
 
 @pytest.mark.parametrize(('name', 'value'), [
     ('PIPER_FLOOR_PROFILE', 'ground'),
-    ('PIPER_VIEWPOINT_SPEED_PERCENT', '5.1'),
-    ('PIPER_CONTACT_SPEED_PERCENT', '4.9'),
+    ('PIPER_VIEWPOINT_SPEED_PERCENT', 'nan'),
+    ('PIPER_VIEWPOINT_SPEED_PERCENT', '0'),
+    ('PIPER_VIEWPOINT_SPEED_PERCENT', '101'),
+    ('PIPER_CONTACT_SPEED_PERCENT', 'inf'),
+    ('PIPER_CONTACT_SPEED_PERCENT', '-1'),
+    ('PIPER_CONTACT_SPEED_PERCENT', 'invalid'),
 ])
 def test_collision_qualification_rejects_runtime_outside_physical_scope(
         monkeypatch, name, value):

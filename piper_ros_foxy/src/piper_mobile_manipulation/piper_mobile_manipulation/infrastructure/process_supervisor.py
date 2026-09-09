@@ -9,6 +9,7 @@ adopted by name; only handles returned by this supervisor are signal targets.
 
 from dataclasses import dataclass, field
 import os
+import json
 from pathlib import Path
 import signal
 import subprocess
@@ -331,3 +332,24 @@ class ProcessSupervisor:
     def stop_all(self):
         """Preserve the coordinator's historical boolean cleanup result."""
         return self.shutdown().complete
+
+
+def record_component_exit(directory, component, returncode):
+    """Persist a child exit for the owning coordinator without stopping peers."""
+    destination = Path(directory) / (component + '.json')
+    temporary = destination.with_suffix('.tmp')
+    temporary.write_text(json.dumps({
+        'component': component, 'returncode': int(returncode),
+    }))
+    os.replace(str(temporary), str(destination))
+
+
+def component_failures(directory):
+    """Read exits from this generation only; absence means no reported exit."""
+    if not directory:
+        return {}
+    result = {}
+    for path in sorted(Path(directory).glob('*.json')):
+        value = json.loads(path.read_text())
+        result[str(value['component'])] = int(value['returncode'])
+    return result

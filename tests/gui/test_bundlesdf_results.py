@@ -79,7 +79,7 @@ def test_active_mission_blocks_offline_gpu_job(tmp_path):
         pytest.skip('Tk display required')
     try:
         panel = module.BundleSDFResults(root, tmp_path, can_reconstruct=lambda: False)
-        panel.build_button.invoke()
+        panel.reconstruct()
         assert panel.job_process is None
         assert 'Finish the active mission' in panel.status.get()
     finally:
@@ -96,7 +96,7 @@ def test_cancel_signals_only_owned_real_child_group(tmp_path, monkeypatch):
     panel = module.BundleSDFResults(root, tmp_path)
     process = None
     try:
-        panel.build_button.invoke()
+        panel.reconstruct()
         process = panel.job_process
         assert process is not None
         panel.cancel_button.invoke()
@@ -161,3 +161,57 @@ def test_real_tk_button_launch_and_failure_reporting(tmp_path, monkeypatch):
         assert str(panel.open_button['state']) == 'normal'
     finally:
         root.destroy()
+
+
+def test_selector_explains_eligibility_and_keeps_path_identity(tmp_path, monkeypatch):
+    monkeypatch.setenv('PIPER_BUNDLESDF_RUNTIME', str(tmp_path / 'runtime'))
+    archive = tmp_path / 'datasets/mission_recordings/opaque.closed'
+    archive.mkdir(parents=True)
+    metadata = dict(state='closed', task_id='task', started_unix_ns=1788787580021363932,
+                    topic_counts={'/camera/color/image_raw': 4358, '/piper/reconstruction_keyframe': 3})
+    (archive / 'recording.json').write_text(json.dumps(metadata))
+    scan = tmp_path / 'datasets/active_scan/scan'
+    scan.mkdir(parents=True)
+    (scan / 'metadata.yaml').write_text('task_id: task\ntarget_label: green cube\n')
+    mesh = make_result(tmp_path / 'runtime/evidence/comparison', True)
+    try:
+        root = tk.Tk()
+    except tk.TclError:
+        pytest.skip('Tk display required')
+    try:
+        panel = module.BundleSDFResults(root, tmp_path)
+        label = next(label for label, path in panel.choices.items() if path == str(archive))
+        assert 'green cube' in label and '4,358 RGB frames' in label
+        assert 'Reconstruct input' in label
+        panel.display_selection.set(label)
+        panel.choose_selection()
+        assert panel.selection.get() == str(archive)
+        assert str(panel.build_button['state']) == 'normal'
+        assert str(panel.open_button['state']) == 'disabled'
+        panel.refresh()
+        assert panel.selection.get() == str(archive)
+        panel.selection.set(str(mesh))
+        panel.show_selection()
+        assert 'View only' in panel.display_selection.get()
+        assert str(panel.build_button['state']) == 'disabled'
+        assert str(panel.open_button['state']) == 'normal'
+        metadata['topic_counts']['/piper/reconstruction_keyframe'] = 0
+        (archive / 'recording.json').write_text(json.dumps(metadata))
+        panel.selection.set(str(archive))
+        panel.show_selection()
+        assert 'No accepted reconstruction keyframe' in panel.status.get()
+        assert str(panel.build_button['state']) == 'disabled'
+        panel.selection.set(str(tmp_path / 'missing'))
+        panel.show_selection()
+        assert str(panel.open_button['state']) == 'disabled'
+    finally:
+        root.destroy()
+
+
+def test_incomplete_output_and_bad_metadata_are_unavailable(tmp_path):
+    (tmp_path / 'run.json').write_text('{}')
+    title, detail, build, view = module.selection_details(str(tmp_path))
+    assert 'Unavailable' in title and 'No exported mesh' in detail
+    assert not build and not view
+    (tmp_path / 'recording.json').write_text('[]')
+    assert module.selection_details(str(tmp_path))[2:] == (False, False)

@@ -257,6 +257,7 @@ def test_service_capture_collects_burst_before_preparing_and_saving():
     color_bundle = object()
     frames = [_native_bundle(30.0 + index / 10.0, 1.0 + index)
               for index in range(20)]
+    selected_frames = [object() for _ in range(20)]
     harness = SimpleNamespace(
         frame_index=0,
         prepared_capture=None,
@@ -270,9 +271,10 @@ def test_service_capture_collects_burst_before_preparing_and_saving():
             events.append('admit') or (True, '', next(admissions))),
         collect_prospective_native_depth_burst=lambda _started_at, deadline: (
             events.append('collect') or (frames, '')),
-        wait_for_correlated_capture_pair=lambda depth_burst, deadline: (
+        wait_for_correlated_capture_pair=lambda depth_burst, deadline,
+        started_at: (
             events.append(('pair', depth_burst))
-            or (mask, color_bundle, '')),
+            or (selected_frames, mask, color_bundle, '')),
         prepare_capture_until_ready=lambda depth_burst, selected_mask,
         selected_color, deadline: (
             events.append(
@@ -291,7 +293,7 @@ def test_service_capture_collects_burst_before_preparing_and_saving():
     assert result.message == 'saved'
     assert events == [
         'admit', 'collect', ('pair', frames),
-        ('prepare', frames, mask, color_bundle), 'admit', 'save']
+        ('prepare', selected_frames, mask, color_bundle), 'admit', 'save']
     assert harness.prepared_capture['capture_admission_diagnostics'] is (
         admission)
 
@@ -429,7 +431,7 @@ def test_capture_pair_waits_for_a_later_provable_mask_rgb_match():
 
     thread = Thread(target=publish_pair)
     thread.start()
-    selected_mask, selected_color, reason = (
+    selected_burst, selected_mask, selected_color, reason = (
         ScanCaptureNode.wait_for_correlated_capture_pair(
             harness, burst, time.monotonic() + 0.5))
     thread.join(timeout=1.0)
@@ -780,3 +782,96 @@ def test_capture_never_attaches_provenance_from_a_different_plan():
 
     assert result['available'] is False
     assert result['reason'] == 'plan provenance ID mismatch'
+
+
+class RefreshBurstHarness(BurstHarness):
+    correlated_capture_pair = ScanCaptureNode.correlated_capture_pair
+    refreshed_capture_burst = ScanCaptureNode.refreshed_capture_burst
+    wait_for_correlated_capture_pair = (
+        ScanCaptureNode.wait_for_correlated_capture_pair)
+
+    def __init__(self, bundles):
+        super().__init__(bundles)
+        self.capture_evidence_condition = self.native_bundle_condition
+        self.mask_cache = []
+        self.color_bundle_cache = []
+
+    @staticmethod
+    def get_parameter(name):
+        if name == 'synchronization_slop_sec':
+            return SimpleNamespace(value=0.08)
+        return BurstHarness.get_parameter(name)
+
+
+def test_capture_refresh_recovers_when_first_burst_pair_has_expired():
+    now = time.monotonic()
+    old = [_native_bundle(10 + i * 0.01, now - 2) for i in range(20)]
+    harness = RefreshBurstHarness(old)
+    harness.mask_cache = [message(10.05)]
+    harness.color_bundle_cache = [
+        (message(10.05), message(10.05), message(10.05), now - 2)]
+    fresh = [_native_bundle(13 + i * 0.01, now) for i in range(20)]
+    mask = message(13.05)
+    color = (message(13.05), message(13.05), message(13.05), now)
+
+    def publish():
+        time.sleep(0.02)
+        with harness.native_bundle_condition:
+            harness.native_bundle_cache.extend(fresh)
+            harness.mask_cache.append(mask)
+            harness.color_bundle_cache.append(color)
+            harness.native_bundle_condition.notify_all()
+
+    thread = Thread(target=publish)
+    thread.start()
+    burst, selected_mask, selected_color, reason = (
+        harness.wait_for_correlated_capture_pair(
+            old, now + 0.5, started_at=now - 3))
+    thread.join(timeout=1)
+    assert reason == ''
+    assert burst == fresh
+    assert selected_mask is mask
+    assert selected_color is color
+    assert len(burst) == 20
+
+
+def test_capture_refresh_retains_delayed_match_behind_latest_window():
+    now = time.monotonic()
+    frames = [_native_bundle(20 + i * 0.03, now) for i in range(60)]
+    harness = RefreshBurstHarness(frames)
+    harness.mask_cache = [message(20.3)]
+    harness.color_bundle_cache = [
+        (message(20.3), message(20.3), message(20.3), now)]
+    burst, mask, color = harness.refreshed_capture_burst(now - 1, now + 0.5)
+    assert burst is not None
+    assert len(burst) == 20
+    assert burst != frames[-20:]
+    assert mask is harness.mask_cache[0]
+    assert color is harness.color_bundle_cache[0]
+
+
+def test_capture_refresh_excludes_pre_settle_and_duplicate_native_frames():
+    now = time.monotonic()
+    frames = [_native_bundle(20 + i * 0.01, now - 1) for i in range(20)]
+    harness = RefreshBurstHarness(frames + [
+        _native_bundle(20.1, now) for _ in range(30)])
+    harness.mask_cache = [message(20.1)]
+    harness.color_bundle_cache = [
+        (message(20.1), message(20.1), message(20.1), now)]
+    assert harness.refreshed_capture_burst(now - 0.5, now + 0.5) == (
+        None, None, None)
+
+
+def test_capture_refresh_never_relaxes_exact_identity_or_deadline():
+    now = time.monotonic()
+    old = [_native_bundle(10 + i * 0.01, now) for i in range(20)]
+    fresh = [_native_bundle(20 + i * 0.01, now) for i in range(20)]
+    harness = RefreshBurstHarness(old + fresh)
+    harness.mask_cache = [message(20.1)]
+    harness.color_bundle_cache = [
+        (message(20.101), message(20.101), message(20.101), now)]
+    burst, mask, color, reason = harness.wait_for_correlated_capture_pair(
+        old, now + 0.04, started_at=now - 0.1)
+    assert (burst, mask, color) == (None, None, None)
+    assert reason.startswith('CAPTURE_EVIDENCE_TIMEOUT:')
+    assert time.monotonic() - now < 0.5

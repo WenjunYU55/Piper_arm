@@ -10,7 +10,7 @@ import rclpy
 import tf2_ros
 from rclpy.node import Node
 from rclpy.qos import (
-    DurabilityPolicy, QoSProfile, ReliabilityPolicy,
+    DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data,
 )
 from sensor_msgs.msg import CameraInfo
 from std_msgs.msg import String
@@ -317,7 +317,9 @@ class ScanViewpointPlannerNode(Node):
             'capability_map_mode': 'enforce',
             'capability_direction_tolerance_deg': 5.0,
             'capability_map_project_root': root,
-            'capability_map_path': str(Path(root) / 'piper_ros_foxy/src/piper_mobile_manipulation/config/piper_camera_capability_map.npz'),
+            'capability_map_path': str(
+                Path(root) / 'piper_ros_foxy/src/piper_mobile_manipulation'
+                / 'config/piper_camera_capability_map.npz'),
             'min_camera_object_distance_m': 0.25,
             'max_camera_object_distance_m': 3.0,
             'floor_z_m': 0.005,
@@ -483,7 +485,7 @@ class ScanViewpointPlannerNode(Node):
             CameraInfo,
             self.get_parameter('camera_info_topic').value,
             self.camera_info_cb,
-            10,
+            qos_profile_sensor_data,
         )
         history_qos = QoSProfile(
             depth=1,
@@ -538,6 +540,8 @@ class ScanViewpointPlannerNode(Node):
 
     def target_envelope_for(self, center, history):
         """Build only from the exact persisted capture-one model seed."""
+        if not self.camera_info_summary().get('available'):
+            return None, 'camera intrinsics are unavailable for target envelope'
         session_id = str(history.get('session_id', ''))
         if (
                 session_id and session_id == self.ray_pool_session_id
@@ -862,6 +866,7 @@ class ScanViewpointPlannerNode(Node):
                 round(float(item['desired_camera_position']['x']), 8),
                 round(float(item['desired_camera_position']['y']), 8),
                 round(float(item['desired_camera_position']['z']), 8),
+                item.get('nbv_scoring_standoff_m'),
             )
             for item in viewpoints)
         cache_key = (
@@ -1603,6 +1608,12 @@ class ScanViewpointPlannerNode(Node):
         if self.latest_camera_info is None:
             return {'available': False}
         intrinsic = list(self.latest_camera_info.k)
+        if (len(intrinsic) != 9
+                or not all(math.isfinite(float(value)) for value in intrinsic)
+                or intrinsic[0] <= 0.0 or intrinsic[4] <= 0.0
+                or self.latest_camera_info.width <= 0
+                or self.latest_camera_info.height <= 0):
+            return {'available': False}
         return {
             'available': True,
             'width': int(self.latest_camera_info.width),

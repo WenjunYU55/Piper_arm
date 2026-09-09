@@ -8,6 +8,8 @@ from pathlib import Path
 import numpy as np
 import open3d as o3d
 
+from coordinate_frames import arrow_transform, file_hash, report_frame, view_layout
+
 
 def camera_axes(transform, size=0.025):
     frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=size)
@@ -37,6 +39,7 @@ def main():
             'textured'),
         default='cleaned')
     parser.add_argument('--show-input', action='store_true')
+    parser.add_argument('--show-cameras', action='store_true')
     args = parser.parse_args()
     report_path = Path(args.report).resolve()
     with open(report_path, 'r', encoding='utf-8') as stream:
@@ -73,17 +76,42 @@ def main():
             str(mesh_path), enable_post_processing=(args.mesh == 'textured'))
         primary.compute_vertex_normals()
     geometries = [primary]
-    if not point_cloud_variant:
-        geometries.append(
-            o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.05))
+    orientation = None
+    try:
+        report_frame(source)
+        asset = cloud_path if point_cloud_variant else mesh_path
+        sidecar = asset.with_name(asset.name + '.frame.json')
+        if sidecar.is_file():
+            frame = json.loads(sidecar.read_text())
+            if frame.get('geometry_sha256') != file_hash(asset) or frame.get('frame_id') != 'base_link':
+                raise ValueError('Coordinate-frame sidecar does not match geometry')
+        points = np.asarray(primary.points if point_cloud_variant else primary.vertices)
+        orientation = view_layout(points)
+        for index, (origin, vector, color) in enumerate(orientation['arrows']):
+            length = np.linalg.norm(vector)
+            arrow = o3d.geometry.TriangleMesh.create_arrow(
+                cylinder_radius=length * .025, cone_radius=length * .065,
+                cylinder_height=length * .75, cone_height=length * .25)
+            arrow.paint_uniform_color(color)
+            arrow.transform(arrow_transform(origin, vector))
+            geometries.append(arrow)
+            if hasattr(o3d.t.geometry.TriangleMesh, 'create_text'):
+                text = o3d.t.geometry.TriangleMesh.create_text(
+                    ('X', 'Y', 'Z UP', 'ROBOT')[index], depth=.1).to_legacy()
+                text.scale(orientation['span'] * .005, center=[0., 0., 0.])
+                pose = orientation['camera_pose'].copy()
+                pose[:3, 3] = origin + vector + pose[:3, 0] * orientation['span'] * .025
+                text.transform(pose)
+                text.paint_uniform_color(color)
+                geometries.append(text)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        print('Base orientation unavailable: ' + str(exc), flush=True)
     wireframe = expected_wireframe(source, primary)
     if wireframe is not None:
         geometries.append(wireframe)
-    if not point_cloud_variant:
+    if args.show_cameras and orientation:
         for frame in source.get('frame_inputs', []):
-            transform = np.asarray(frame.get('T_base_camera'), dtype=float)
-            if transform.shape == (4, 4) and np.all(np.isfinite(transform)):
-                geometries.append(camera_axes(transform))
+            geometries.append(camera_axes(frame['T_base_camera']))
     if args.show_input and not point_cloud_variant:
         cloud_path = Path(str(report.get(
             'measured_cloud_path', report.get(
@@ -93,10 +121,14 @@ def main():
         cloud = o3d.io.read_point_cloud(str(cloud_path))
         cloud.paint_uniform_color([0.1, 0.35, 1.0])
         geometries.append(cloud)
+    view = (dict(front=orientation['front'], up=[0., 0., 1.],
+                 lookat=orientation['center'], zoom=.65) if orientation else {})
+    title = 'PiPER Reconstruction (%s) | %s' % (
+        args.mesh, orientation['legend'] if orientation else 'ORIENTATION UNVERIFIED')
+    print(title, flush=True)
     o3d.visualization.draw_geometries(
         geometries,
-        window_name='PiPER Reconstruction Validation (%s)' % args.mesh,
-        mesh_show_back_face=True)
+        window_name=title, mesh_show_back_face=True, **view)
 
 
 if __name__ == '__main__':
