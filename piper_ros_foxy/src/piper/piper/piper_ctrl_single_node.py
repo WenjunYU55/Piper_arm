@@ -21,6 +21,7 @@ from geometry_msgs.msg import Pose
 from scipy.spatial.transform import Rotation as R  # For Euler angle to quaternion conversion
 from numpy import clip
 from piper import joint_state_policy as _joint_state_policy
+from piper.can_fault_trace import CanFaultTrace, TRACE_CAN_IDS
 
 
 JOINT6_LIMIT_RAD = _joint_state_policy.JOINT6_LIMIT_RAD
@@ -311,10 +312,13 @@ def log_enable_transition_state(node, label):
 
 
 def request_piper_enable_state(piper, enabled, timeout_sec,
-                               monotonic_fn=time.monotonic, sleep_fn=time.sleep):
+                               monotonic_fn=time.monotonic, sleep_fn=time.sleep,
+                               enable_blocked=None):
     """Command and prove one all-six-motor enable/disable transition."""
     deadline = monotonic_fn() + max(0.0, float(timeout_sec))
     while True:
+        if enabled and enable_blocked is not None and enable_blocked():
+            return False
         if enabled:
             piper.EnablePiper()
         else:
@@ -329,7 +333,8 @@ def request_piper_enable_state(piper, enabled, timeout_sec,
 
         states = motor_driver_enable_states(piper)
         faults = motor_driver_faults(piper)
-        if enabled and faults:
+        if enabled and (faults or (
+                enable_blocked is not None and enable_blocked())):
             return False
         target_reached = (
             states is not None
@@ -564,6 +569,10 @@ class PiperRosNode(Node):
         self.joint_states.effort = [0.0] * 8
         self._raw_joint_lock = threading.Lock()
         self._raw_joint_pairs = {}
+        self._joint_feedback_fault = ''
+        self._can_fault_trace = CanFaultTrace(
+            os.path.expanduser('~/.ros/piper_can_faults'),
+            self.get_logger().error)
         self._raw_joint_sequence = 0
         self._raw_joint_last_emitted_sequences = None
         self._raw_joint_last_valid_at = time.monotonic()
@@ -639,13 +648,13 @@ class PiperRosNode(Node):
             self.auto_enable_thread.start()
 
     def GetEnableFlag(self):
-        return self.__enable_flag
+        return self.__enable_flag and not getattr(self, '_joint_feedback_fault', '')
 
     def start_raw_joint_feedback_receiver(self):
         """Start a storage-only CAN reader for coherent joint-pair cycles."""
         filters = [
             {'can_id': can_id, 'can_mask': 0x7FF, 'extended': False}
-            for can_id in JOINT_FEEDBACK_CAN_IDS
+            for can_id in TRACE_CAN_IDS
         ]
         try:
             self._raw_joint_bus = can.interface.Bus(
@@ -671,6 +680,7 @@ class PiperRosNode(Node):
     def _raw_joint_feedback_loop(self):
         """Store raw pair frames; ROS publication remains executor-owned."""
         while not self._raw_joint_stop.is_set():
+            self._can_fault_trace.flush()
             try:
                 message = self._raw_joint_bus.recv(timeout=0.1)
             except (can.CanError, OSError) as exc:
@@ -682,14 +692,19 @@ class PiperRosNode(Node):
                 continue
             if message is None:
                 continue
+            self._can_fault_trace.observe(message)
             if int(message.arbitration_id) not in JOINT_FEEDBACK_CAN_INDEX:
-                # Kernel filters normally prevent this. A frame already queued
-                # while filters are installed is harmless and not a fault.
+                # Limit replies and locally transmitted commands are evidence
+                # only. They never enter the joint decoder.
                 continue
             try:
+                if (message.is_error_frame or message.is_remote_frame
+                        or message.is_extended_id or message.is_fd):
+                    raise ValueError('invalid joint-feedback CAN frame flags')
                 _, values = decode_joint_feedback_pair(
                     message.arbitration_id, message.data)
             except (TypeError, ValueError) as exc:
+                self.latch_joint_feedback_fault(str(exc))
                 now = time.monotonic()
                 if now - self._raw_joint_warning_at >= 1.0:
                     self.get_logger().warn(
@@ -704,10 +719,20 @@ class PiperRosNode(Node):
                     values,
                 )
 
+    def latch_joint_feedback_fault(self, reason):
+        """Latch corrupt feedback until driver restart; never synthesize a hold."""
+        with self._raw_joint_lock:
+            if not self._joint_feedback_fault:
+                self._joint_feedback_fault = 'INVALID_JOINT_FEEDBACK: ' + reason
+                self._raw_joint_pairs.clear()
+        self._can_fault_trace.trigger(self._joint_feedback_fault)
+
     def coherent_raw_joint_positions(self):
         """Consume one fresh complete raw joint-feedback cycle."""
         now = time.monotonic()
         with self._raw_joint_lock:
+            if self._joint_feedback_fault:
+                return None, self._joint_feedback_fault
             positions, sequences, reason = coherent_joint_feedback(
                 dict(self._raw_joint_pairs),
                 self._raw_joint_last_emitted_sequences,
@@ -721,6 +746,9 @@ class PiperRosNode(Node):
     def stop_raw_joint_feedback_receiver(self):
         """Stop and close the passive reader without affecting arm commands."""
         self._raw_joint_stop.set()
+        self._can_fault_trace.flush(force=True)
+        if self._can_fault_trace.writer is not None:
+            self._can_fault_trace.writer.join(timeout=2.0)
         if self._raw_joint_thread is not None:
             self._raw_joint_thread.join(timeout=1.0)
         if self._raw_joint_bus is not None:
@@ -849,7 +877,9 @@ class PiperRosNode(Node):
                 succeeded = self.prepare_enable_transition()
                 if succeeded:
                     succeeded = request_piper_enable_state(
-                        self.piper, True, self.enable_timeout)
+                        self.piper, True, self.enable_timeout,
+                        enable_blocked=lambda: bool(getattr(
+                            self, '_joint_feedback_fault', '')))
                 if not succeeded:
                     self._disable_required = True
                     rollback_succeeded = request_piper_enable_state(
@@ -885,6 +915,9 @@ class PiperRosNode(Node):
 
     def prepare_enable_transition(self):
         """Restore runtime role and prove J6 range before enabling motors."""
+        if getattr(self, '_joint_feedback_fault', ''):
+            self.get_logger().error('Enable rejected: ' + self._joint_feedback_fault)
+            return False
         succeeded, reason = restore_motion_output_role_if_teaching(self.piper)
         if succeeded:
             self.get_logger().info(
@@ -912,6 +945,21 @@ class PiperRosNode(Node):
         faults = motor_driver_faults(self.piper)
         self._latest_motor_states = states
         self._latest_motor_faults = faults
+        feedback_fault = str(getattr(self, '_joint_feedback_fault', ''))
+        if feedback_fault:
+            # Unknown motor state must not suppress stopping. Keep the reason
+            # latched even after six disabled flags are proved.
+            self.__enable_flag = False
+            self._motor_watchdog_reason = feedback_fault
+            self._disable_required = states is None or any(states)
+            if self._disable_required:
+                now = time.monotonic()
+                if now - self._motor_watchdog_disable_at >= 0.1:
+                    self.piper.DisableArm(7)
+                    self._motor_watchdog_disable_at = now
+                    self.get_logger().error(feedback_fault + '; all-axis disable requested')
+                self.reset_command_cache()
+            return
         if states is None or faults is None:
             return
         partial_enable = any(states) and not all(states)
@@ -956,6 +1004,9 @@ class PiperRosNode(Node):
         if active_faults:
             reason_parts.append('motor faults=%s' % ','.join(active_faults))
         reason = '; '.join(reason_parts)
+        trace = getattr(self, '_can_fault_trace', None)
+        if trace is not None:
+            trace.trigger(reason)
         now = time.monotonic()
         if now - self._motor_watchdog_disable_at >= 0.1:
             self.piper.DisableArm(7)
@@ -1248,6 +1299,8 @@ class PiperRosNode(Node):
 
     def pos_callback(self, pos_data):
         """Handle an end-effector pose command."""
+        if getattr(self, '_joint_feedback_fault', ''):
+            return
         factor = 180 / 3.1415926
         self.get_logger().info(f"Received PosCmd:")
         self.get_logger().info(f"x: {pos_data.x}")
@@ -1265,20 +1318,23 @@ class PiperRosNode(Node):
         rx = round(pos_data.roll*1000*factor)
         ry = round(pos_data.pitch*1000*factor)
         rz = round(pos_data.yaw*1000*factor)
-        if(self.GetEnableFlag()):
-            self.piper.MotionCtrl_1(0x00, 0x00, 0x00)
-            self.send_motion_ctrl_2_if_changed(0x01, 0x00, 50)
-            self.piper.EndPoseCtrl(x, y, z, rx, ry, rz)
-            gripper = round(pos_data.gripper * 1000 * 1000)
-            if pos_data.gripper > 80000:
-                gripper = 80000
-            if pos_data.gripper < 0:
-                gripper = 0
-            if self.gripper_exist:
-                self.send_gripper_if_changed(abs(gripper), 1000, 0x01, 0)
+        with self._raw_joint_lock:
+            if(self.GetEnableFlag()):
+                self.piper.MotionCtrl_1(0x00, 0x00, 0x00)
+                self.send_motion_ctrl_2_if_changed(0x01, 0x00, 50)
+                self.piper.EndPoseCtrl(x, y, z, rx, ry, rz)
+                gripper = round(pos_data.gripper * 1000 * 1000)
+                if pos_data.gripper > 80000:
+                    gripper = 80000
+                if pos_data.gripper < 0:
+                    gripper = 0
+                if self.gripper_exist:
+                    self.send_gripper_if_changed(abs(gripper), 1000, 0x01, 0)
 
     def joint_callback(self, joint_data):
         """Handle a joint-angle command."""
+        if getattr(self, '_joint_feedback_fault', ''):
+            return
         factor = 57324.840764  # 1000*180/3.14
         self.get_logger().debug("Received JointState command")
         if len(joint_data.position) < 6:
@@ -1514,39 +1570,40 @@ class PiperRosNode(Node):
             joint_6 = int(clip(joint_6, 0, 80000))
         else:
             joint_6 = 0
-        if(self.GetEnableFlag()):
-            # 设定电机速度
-            if(joint_data.velocity != []):
-                all_zeros = all(v == 0 for v in joint_data.velocity)
-            else:
-                all_zeros = True
-            if not all_zeros:
-                lens = len(joint_data.velocity)
-                if lens >= 7:
-                    vel_all = int(clip(round(self.get_joint_velocity(
-                        joint_data, 'joint7', 6)), 0, 100))
-                    self.get_logger().debug(f"vel_all: {vel_all}")
-                    self.send_motion_ctrl_2_if_changed(0x01, 0x01, vel_all)
+        with self._raw_joint_lock:
+            if(self.GetEnableFlag()):
+                # 设定电机速度
+                if(joint_data.velocity != []):
+                    all_zeros = all(v == 0 for v in joint_data.velocity)
+                else:
+                    all_zeros = True
+                if not all_zeros:
+                    lens = len(joint_data.velocity)
+                    if lens >= 7:
+                        vel_all = int(clip(round(self.get_joint_velocity(
+                            joint_data, 'joint7', 6)), 0, 100))
+                        self.get_logger().debug(f"vel_all: {vel_all}")
+                        self.send_motion_ctrl_2_if_changed(0x01, 0x01, vel_all)
+                    else:
+                        self.send_motion_ctrl_2_if_changed(0x01, 0x01, 30)
                 else:
                     self.send_motion_ctrl_2_if_changed(0x01, 0x01, 30)
-            else:
-                self.send_motion_ctrl_2_if_changed(0x01, 0x01, 30)
-            self.piper.JointCtrl(joint_0, joint_1, joint_2,
-                                 joint_3, joint_4, joint_5)
-            # A six-position JointState is an explicit arm-only MoveJ command.
-            # Do not invent a zero gripper target: automation uses this form so
-            # scan waypoints cannot clip, warn about, or actuate the gripper.
-            if self.gripper_exist and len(joint_data.position) >= 7:
-                if len(joint_data.effort) >= 7:
-                    gripper_effort = float(clip(self.get_joint_effort(
-                        joint_data, 'joint7', 6), 0.5, 3))
-                    self.get_logger().debug(f"gripper_effort: {gripper_effort}")
-                    gripper_effort = round(gripper_effort * 1000)
-                    self.send_gripper_if_changed(
-                        abs(joint_6), gripper_effort, 0x01, 0)
-                else:
-                    self.send_gripper_if_changed(
-                        abs(joint_6), 1000, 0x01, 0)
+                self.piper.JointCtrl(joint_0, joint_1, joint_2,
+                                     joint_3, joint_4, joint_5)
+                # A six-position JointState is an explicit arm-only MoveJ command.
+                # Do not invent a zero gripper target: automation uses this form so
+                # scan waypoints cannot clip, warn about, or actuate the gripper.
+                if self.gripper_exist and len(joint_data.position) >= 7:
+                    if len(joint_data.effort) >= 7:
+                        gripper_effort = float(clip(self.get_joint_effort(
+                            joint_data, 'joint7', 6), 0.5, 3))
+                        self.get_logger().debug(f"gripper_effort: {gripper_effort}")
+                        gripper_effort = round(gripper_effort * 1000)
+                        self.send_gripper_if_changed(
+                            abs(joint_6), gripper_effort, 0x01, 0)
+                    else:
+                        self.send_gripper_if_changed(
+                            abs(joint_6), 1000, 0x01, 0)
 
     def enable_callback(self, enable_flag: Bool):
         """Handle a motor enable or disable topic command."""
@@ -1565,7 +1622,9 @@ class PiperRosNode(Node):
                     succeeded = self.prepare_enable_transition()
                     if succeeded:
                         succeeded = request_piper_enable_state(
-                            self.piper, True, self.enable_timeout)
+                            self.piper, True, self.enable_timeout,
+                            enable_blocked=lambda: bool(getattr(
+                                self, '_joint_feedback_fault', '')))
                 else:
                     succeeded = request_piper_enable_state(
                         self.piper, False, self.enable_timeout)
@@ -1625,6 +1684,8 @@ class PiperRosNode(Node):
                             self.piper,
                             True,
                             self.enable_timeout,
+                            enable_blocked=lambda: bool(getattr(
+                                self, '_joint_feedback_fault', '')),
                         )
                 else:
                     succeeded = request_piper_enable_state(

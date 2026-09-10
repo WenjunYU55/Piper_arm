@@ -17,6 +17,8 @@
     obstacle_displacement_m: 0.050
     # SCAN_READY requires a new request-correlated GroundingDINO/SAM result
     # and a 3D obstacle scene carrying that exact image stamp.
+    # False preserves start-only probing; true probes every saved viewpoint.
+    occlusion_probe_every_viewpoint: false
     occlusion_probe_timeout_sec: 70.0
     target_clearance_m: 0.040
     drop_target_clearance_m: 0.120

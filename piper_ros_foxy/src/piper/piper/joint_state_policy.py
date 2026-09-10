@@ -244,6 +244,24 @@ def reset_startup_joint6_transaction(node):
     node._continuous_joint6_feedback = None
 
 
+# Corruption guard, not planning or command authority. Retain the existing
+# 0.3-rad home feedback allowance and the controller's qualified J6 turns.
+RAW_FEEDBACK_BOUNDS = (
+    (-2.6179, 2.6179), (-0.044796192, 3.14), (-2.967, 0.0),
+    (-1.745, 1.745), (-1.22, 1.22),
+    (-math.radians(545), math.radians(545)),
+)
+
+
+def validate_joint_feedback_values(indices, values):
+    """Reject impossible readings before wrapping or publishing feedback."""
+    for index, value in zip(indices, values):
+        low, high = RAW_FEEDBACK_BOUNDS[index]
+        if not math.isfinite(value) or not low - 0.3 <= value <= high + 0.3:
+            raise ValueError('implausible joint%d feedback %.9f rad'
+                             % (index + 1, value))
+
+
 def decode_joint_feedback_pair(arbitration_id, data):
     """Decode one PiPER joint-pair CAN frame into joint indices and radians."""
     can_id = int(arbitration_id)
@@ -256,13 +274,11 @@ def decode_joint_feedback_pair(arbitration_id, data):
             % (can_id, len(payload)))
     raw_first = int.from_bytes(payload[0:4], byteorder='big', signed=True)
     raw_second = int.from_bytes(payload[4:8], byteorder='big', signed=True)
-    return (
-        JOINT_FEEDBACK_CAN_INDEX[can_id],
-        (
-            raw_first * JOINT_FEEDBACK_RAW_TO_RAD,
-            raw_second * JOINT_FEEDBACK_RAW_TO_RAD,
-        ),
-    )
+    indices = JOINT_FEEDBACK_CAN_INDEX[can_id]
+    values = (raw_first * JOINT_FEEDBACK_RAW_TO_RAD,
+              raw_second * JOINT_FEEDBACK_RAW_TO_RAD)
+    validate_joint_feedback_values(indices, values)
+    return indices, values
 
 
 def coherent_joint_feedback(pairs, last_sequences, now, max_age=None,

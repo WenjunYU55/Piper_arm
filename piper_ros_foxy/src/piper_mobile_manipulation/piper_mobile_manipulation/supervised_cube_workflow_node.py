@@ -92,12 +92,15 @@ class SupervisedCubeWorkflowNode(Node):
             'drop_support_min_points': 16,
             'drop_support_max_stddev_m': 0.008,
             'occlusion_probe_timeout_sec': 70.0,
+            'occlusion_probe_every_viewpoint': False,
             'max_contact_actions': 6,
             'first_push_distance_m': 0.010,
             'later_push_distance_m': 0.030,
         }
         for name, value in defaults.items():
             self.declare_parameter(name, value)
+        self.occlusion_probe_every_viewpoint = bool(self.get_parameter(
+            'occlusion_probe_every_viewpoint').value)
         self.state = 'IDLE'
         self.landmark = None
         self.target_landmark = None
@@ -137,6 +140,7 @@ class SupervisedCubeWorkflowNode(Node):
         self.capture_occlusion_probe_pending = False
         self.pending_capture_occlusion_state = 'UNKNOWN'
         self.latest_capture_occlusion_state = 'UNKNOWN'
+        self.mission_occlusion_probe_passed = False
         self.latest_capture_occlusion_labels = []
         self.contact_actions = 0
         self.push_attempts_by_track = {}
@@ -303,7 +307,7 @@ class SupervisedCubeWorkflowNode(Node):
             ('first RGB-D view saved; checking settled target-facing view for '
              'occlusion before qualifying the target model and next ray set')
             if first_capture else
-            'occluded RGB-D view saved; checking the settled view before '
+            'RGB-D view saved; checking the settled view before '
             'counting its target-only surface')
 
     def accept_saved_view(self, reason):
@@ -324,6 +328,7 @@ class SupervisedCubeWorkflowNode(Node):
 
     def accept_capture_after_probe(self, reason, labels=()):
         """Release one saved capture after its exact probe is qualified."""
+        self.mission_occlusion_probe_passed = True
         was_first = bool(self.first_capture_pending)
         labels = sorted(set(str(label) for label in labels if str(label)))
         self.capture_occlusion_probe_pending = False
@@ -479,6 +484,7 @@ class SupervisedCubeWorkflowNode(Node):
         self.capture_occlusion_probe_pending = False
         self.pending_capture_occlusion_state = 'UNKNOWN'
         self.latest_capture_occlusion_state = 'UNKNOWN'
+        self.mission_occlusion_probe_passed = False
         self.latest_capture_occlusion_labels = []
         self.contact_actions = 0
         self.push_attempts_by_track = {}
@@ -504,6 +510,7 @@ class SupervisedCubeWorkflowNode(Node):
             self.push_attempts_by_track[track_id] = int(
                 self.push_attempts_by_track.get(track_id, 0)) + 1
         self.state = 'INITIALIZING'
+        self.mission_occlusion_probe_passed = False
         self.post_action_verification = True
         self.occlusion_probe_status = None
         self.occlusion_probe_scene = None
@@ -530,18 +537,26 @@ class SupervisedCubeWorkflowNode(Node):
                 response, True,
                 'first RGB-D viewpoint saved; occlusion assessment pending '
                 'before target-model qualification')
+        if (getattr(self, 'mission_occlusion_probe_passed', False)
+                and not getattr(self, 'occlusion_probe_every_viewpoint', False)):
+            self.latest_capture_occlusion_state = 'CLEAR'
+            self.accept_saved_view(
+                'synchronized RGB-D accepted under the mission occlusion assumption')
+            return self.reply(response, True, 'synchronized RGB-D viewpoint accepted')
         if not self.fresh('occlusion') or not isinstance(self.occlusion, dict):
             return self.reply(
                 response, False,
                 'saved RGB-D viewpoint has missing or stale occlusion state')
         occlusion_state = str(
             self.occlusion.get('occlusion_state', 'UNKNOWN')).upper()
-        if occlusion_state in ('PARTIALLY_OCCLUDED', 'HEAVILY_OCCLUDED'):
+        if (occlusion_state in ('PARTIALLY_OCCLUDED', 'HEAVILY_OCCLUDED')
+                or (occlusion_state == 'CLEAR'
+                    and getattr(self, 'occlusion_probe_every_viewpoint', False))):
             self.begin_capture_occlusion_probe(
                 occlusion_state, first_capture=False)
             return self.reply(
                 response, True,
-                'occluded RGB-D viewpoint saved; semantic assessment pending '
+                'RGB-D viewpoint saved; semantic assessment pending '
                 'before target-only surface acceptance')
         if occlusion_state != 'CLEAR':
             return self.reply(
@@ -615,6 +630,14 @@ class SupervisedCubeWorkflowNode(Node):
             'occlusion_labels': list(self.latest_capture_occlusion_labels),
             'accepted_views': self.accepted_views,
             'session_id': self.session_id,
+            'mission_occlusion_probe_passed': bool(getattr(
+                self, 'mission_occlusion_probe_passed', False)),
+            'occlusion_probe_every_viewpoint': bool(getattr(
+                self, 'occlusion_probe_every_viewpoint', False)),
+            'occlusion_policy': (
+                'probe_every_viewpoint'
+                if getattr(self, 'occlusion_probe_every_viewpoint', False)
+                else 'assume_unchanged_after_qualified_probe'),
             'modeled_views': self.modeled_views,
             'data_timeout_sec': timeout,
             'input_age_sec': {
@@ -906,6 +929,15 @@ class SupervisedCubeWorkflowNode(Node):
             'state': self.state, 'reason': reason, 'dry_run': True,
             'real_arm_motion': False, 'accepted_views': self.accepted_views,
             'session_id': self.session_id,
+            'mission_occlusion_probe_passed': bool(getattr(
+                self, 'mission_occlusion_probe_passed', False)),
+            'occlusion_probe_every_viewpoint': bool(getattr(
+                self, 'occlusion_probe_every_viewpoint', False)),
+            'occlusion_policy': (
+                'probe_every_viewpoint'
+                if getattr(self, 'occlusion_probe_every_viewpoint', False)
+                else 'assume_unchanged_after_qualified_probe'),
+            'occlusion_probe_request_id': self.occlusion_probe_request_id,
             'min_views': int(self.get_parameter('min_views').value),
             'max_views': int(self.get_parameter('max_views').value),
             'measured_lock_ready': not bool(lock_rejection),
@@ -924,6 +956,7 @@ class SupervisedCubeWorkflowNode(Node):
         })
 
     def abort(self, reason):
+        self.mission_occlusion_probe_passed = False
         if self.state == 'ABORTED':
             return
         self.capture_occlusion_probe_pending = False

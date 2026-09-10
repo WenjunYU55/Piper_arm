@@ -210,7 +210,7 @@ def test_campaign_modes_prepare_all_conditions_without_applying_settings(tmp_pat
             else:
                 app.skip_results_trial()
                 assert app.mission_label_var.get() == 'cup'
-                assert [v.get() for v in app.rough_coordinate_vars] == ['0.30', '0.00', '0.00']
+                assert [v.get() for v in app.rough_coordinate_vars] == ['0.70', '0.00', '0.00']
                 assert app.scan_aim_tolerance_var.get() == 5
             assert app.camera_profile_path.read_text() == '640,480,30\n'
             assert list(store.task_attempts()) == []

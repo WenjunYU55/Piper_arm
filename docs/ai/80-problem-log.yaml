@@ -1228,3 +1228,45 @@ capture_probe_motion_policy_2026_09_10:
   manual_smoke_checks: [supervised mission through first capture and semantic probe with either planner, verify occlusion rejection still holds capture and cancellation returns home]
   physical_status: Offline validation only; no robot commands issued for this change.
   validation: 1041 mobile behavioral tests passed, one skipped; 28 focused workflow tests passed; package build and YAML validation passed.
+
+
+scan_completion_lateral_policy_2026_09_10:
+  owner_module: piper_mobile_manipulation/scan_session_memory.py achieved_feature_coverage
+  behavior: Default mission completion no longer requires two achieved views on each Y side. Positive/negative Y counts remain diagnostic; achieved_feature_coverage defaults minimum_views_per_y_side to zero.
+  preserved: Required capture count, 25-degree elevation span, measured surface minimum and convergence remain required. NBV ordering and trajectory constraints are unchanged.
+  required_retests: [one-sided achieved coverage, insufficient capture and elevation rejection, unconverged surface rejection, mobile and Tesseract suites, package build]
+  physical_status: Offline only; no arm command or active mission restart.
+
+
+camera_profile_freshness_diagnosis_2026_09_10:
+  reference: docs/experiments/camera_profile_freshness_20260910.md
+  measurements: docs/experiments/camera_profile_freshness_20260910.json
+  finding: Higher-resolution 15 FPS runs retain near-normal CameraInfo cadence but older masks and fewer accepted tracker updates. Latest-mask association is latency-sensitive; three-second post-validation refresh can abort during recovery. Lower-resolution runs also logged stale masks.
+  limitation: Movement-window mask statistics and recorder receipt times are indirect evidence; exact failing callback order and per-stage CPU/GPU/I/O latency remain unmeasured. Camera stall and GPU overload are not established.
+  status: Read-only diagnosis; source-frame pairing and bounded reacquisition remain deferred work, no runtime changes.
+
+
+home_invalid_feedback_2026_09_10:
+  replay_followup: Recorded TF shows J1 and J2 moving approximately +38 degrees within 0.61 seconds after abort, consistent with the unsafe hold conversion. Feedback-derived TF does not recover the transmitted command or identify the packet misassociation boundary.
+  upstream_caveat: AgileX issue 67 concerns MIT-mode twitching; this incident used MoveJ, so it is not a confirmed matching firmware defect.
+  reference: docs/experiments/home_invalid_feedback_20260910.md
+  severity: Unsafe invalid-feedback hold conversion in the incident runtime; offline repair complete, hardware re-enable pending deployment and qualification.
+  owners: [piper/piper_ctrl_single_node.py, piper/joint_state_policy.py, piper_mobile_manipulation/scan_viewpoint_executor_node.py, piper_mobile_manipulation/execution/motion.py]
+  finding: Impossible J1/J2 readings exactly fingerprint a motor-1 limit-response payload. Abort hold clips finite invalid positions into large joint targets; reproduced offline. Actual incident CAN ID and transmitted hold bytes were not recorded.
+  boundary: Do not bypass home checks. Reject implausible feedback and prevent invalid feedback from becoming hold commands; preserve bounded encoder-boundary and J6 multi-turn behavior.
+  status: Offline repair implemented; see invalid_joint_feedback_repair_2026_09_10. Packet misassociation origin remains unproven; physical qualification and runtime restart pending.
+
+invalid_joint_feedback_repair_2026_09_10:
+  reference: docs/ai/50-guardrails.yaml invalid_joint_feedback_repair_2026_09_10
+  evidence: docs/experiments/home_invalid_feedback_20260910.md
+  owner_module: piper/joint_state_policy.py; piper/piper_ctrl_single_node.py; piper/can_fault_trace.py; piper_mobile_manipulation/execution/motion.py
+  behavior: Raw-frame corruption latches command/enable rejection and all-axis disable; invalid measured holds are rejected before clipping; bounded passive CAN fault evidence is persisted off the control callbacks.
+  runtime: Offline implementation and build; live restart and supervised powered qualification pending. Planner behavior unchanged.
+
+mission_occlusion_assumption_2026_09_10:
+  selection: piper_gui/occlusion_policy.py atomically saves occlusion_probe_every_viewpoint in supervised_cube_workflow_params.yaml; native_app.py owns the selector and Apply button. Default false; disabled during active missions; workflow freezes the setting at startup.
+  reference: docs/ai/50-guardrails.yaml mission_occlusion_assumption_2026_09_10
+  behavior: Default start-only mode retains the unchanged-scene assumption after a qualified semantic probe. The Automatic Scan occlusion selector also offers Every viewpoint, which keeps live occlusion admission and repeats the semantic probe for every saved view, including CLEAR views. Both modes require the initial probe.
+  scope: Earlier repeated live-occlusion requirements apply before a passed matching-session receipt; tracking, quality, RGB-D/depth and collision/motor checks remain active. Metadata and accepted history distinguish assumed from measured clearance.
+  owner_module: perception/occlusion.py and supervised_cube_workflow_node.py, with scan_capture_node.py, occlusion_checker_node.py and scan_viewpoint_executor_node.py consumers.
+  status: Implemented and tested offline; supervised physical check pending.

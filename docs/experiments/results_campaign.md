@@ -186,9 +186,9 @@ measured outcome or matched planner comparison. No capture files are deleted.
 
 | Mode | Conditions and order | Position, metres in base_link | Trials |
 | --- | --- | --- | --- |
-| Camera resolution / FPS | 640×480, 960×540, 1280×720, 1920×1080; each at 15 then 30 FPS | (0.30, 0, 0.30) | 8 |
+| Camera resolution / FPS | 640×480, 960×540, 1280×720, 1920×1080; each at 15 then 30 FPS | (0.70, 0, 0.30) | 8 |
 | Camera aim tolerance | At each X: 1°, 5°, 10°, 15°, 20°, 25° | X 0.30/0.50/0.70/0.90/1.10, Y 0, Z 0.30 | 30 |
-| Objects | Green cube benchmark, cup, stick, flower | (0.30, 0, 0) | 4 |
+| Objects | Green cube benchmark, cup, stick, flower | (0.70, 0, 0) | 4 |
 
 All three use cuRobo. Camera and object trials use 5° aim; only the tolerance
 sweep varies it. The existing first-capture min(selected, 5°) gate remains.
@@ -244,3 +244,5 @@ The passive collector now reconciles a missing campaign terminal.json from the m
 Recovery requires exact task identity, a terminal outcome, explicit shutdown status and a valid capture count. It preserves the source result, records its path/hash/modification time, leaves existing terminal records untouched and uses normal campaign completion rules for retries, active-trial clearing and bookmark updates. Collection never commands the arm or changes a mission result.
 
 Validation: 188 campaign and GUI tests passed. The actual saved retry was recovered through collect_task; its row is Done / FAILED, capture count seven, active retry cleared, and original mission result bytes unchanged. Refresh Table displays the repaired durable row; restarting the GUI loads the new collector into its managed sidecar.
+
+Camera-profile distance update (10 September 2026): new campaigns explicitly freeze `camera_distance_m=0.70`. Legacy definitions without the field retain 0.30 m on resume. Empty CameraProfilesFinal and CameraProfiles_Final were updated at user request; original definitions were retained as backups.

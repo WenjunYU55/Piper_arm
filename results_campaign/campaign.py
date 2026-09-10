@@ -465,7 +465,7 @@ class CampaignStore:
                 if submission:
                     attempts.append((submission, load_json(path / 'terminal.json', {}),
                                      (path / 'submission_failure.json').is_file()))
-            attempts.sort(key=lambda item: int(item[0].get('submitted_wall_time_ns', 0)))
+            attempts.sort(key=lambda item: int(item[0].get('submitted_wall_time_ns') or 0))
             matched = [item for item in attempts if item[0].get('matches_schedule') and item[1]]
             status = 'Done' if matched else 'Skipped' if trial['trial_id'] in skipped else 'To do'
             outcome = str(matched[-1][1].get('outcome', 'Unknown')) if matched else ''
@@ -493,8 +493,8 @@ class CampaignStore:
                     old = load_json(older / 'submission.json', {})
                     if (old.get('trial_id') == submission.get('trial_id')
                             and old.get('matches_schedule') is True
-                            and int(old.get('submitted_wall_time_ns', 0))
-                            < int(submission.get('submitted_wall_time_ns', 0))):
+                            and int(old.get('submitted_wall_time_ns') or 0)
+                            < int(submission.get('submitted_wall_time_ns') or 0)):
                         result.add(str(old.get('task_id', '')))
         return result
 
@@ -522,7 +522,7 @@ class CampaignStore:
                 continue
             if submission and (terminal or (attempt / 'submission_failure.json').is_file()):
                 candidates.append((int(submission.get(
-                    'submitted_wall_time_ns', attempt.stat().st_mtime_ns)), submission))
+                    'submitted_wall_time_ns', attempt.stat().st_mtime_ns) or 0), submission))
         if not candidates:
             raise ValueError('no completed campaign attempt is available to retry')
         submission = max(candidates, key=lambda item: item[0])[1]

@@ -34,11 +34,11 @@ def test_sweep_schedule_and_resume_preserve_frozen_conditions(tmp_path, mode, co
         assert {t['z_m'] for t in trials} == {0.3}
     elif mode == 'camera_profiles':
         assert [t['camera_profile'] for t in trials] == settings()['camera_profiles']
-        assert {(t['x_m'], t['y_m'], t['z_m']) for t in trials} == {(0.3, 0.0, 0.3)}
+        assert {(t['x_m'], t['y_m'], t['z_m']) for t in trials} == {(0.7, 0.0, 0.3)}
         assert {t['aim_tolerance_deg'] for t in trials} == {5}
     else:
         assert [t['object_key'] for t in trials] == ['cube', 'cup', 'stick', 'flower']
-        assert {t['z_m'] for t in trials} == {0}
+        assert {(t['x_m'], t['y_m'], t['z_m']) for t in trials} == {(0.7, 0.0, 0.0)}
         assert trials[1]['reference_dimensions_mm'] is None
         assert {t['aim_tolerance_deg'] for t in trials} == {5}
     store.skip_next_trial()
@@ -61,7 +61,7 @@ def write_applied(root, profile, aim):
 def test_mismatched_applied_camera_aim_and_object_are_not_completed(tmp_path):
     store = CampaignStore(tmp_path, 'camera')
     trial = store.create_or_load('camera_profiles', settings())['trials'][0]
-    request = MissionRequest((.3, 0, .3), 'green cube', 'curobo')
+    request = MissionRequest((.7, 0, .3), 'green cube', 'curobo')
     write_applied(tmp_path, [640, 480, 30], 10)
     submission = store.record_submission('wrong', request)
     assert not submission['matches_schedule']
@@ -112,3 +112,27 @@ def test_sweep_report_keeps_conditions_and_avoids_backend_grid(tmp_path):
     assert (output / '03_mission_duration.png').is_file()
     assert not (output / '03_backend_results_grid.png').exists()
     assert json.loads((output / 'report_manifest.json').read_text())['skipped_trials'] == 1
+
+
+def test_legacy_camera_campaign_keeps_original_distance(tmp_path):
+    store = CampaignStore(tmp_path, 'legacy-camera')
+    definition = store.create_or_load('camera_profiles', settings())
+    definition['settings'].pop('camera_distance_m')
+    definition['trials'] = mode_trials('camera_profiles', definition['settings'])
+    store.definition_path.write_text(json.dumps(definition))
+    before = store.definition_path.read_bytes()
+    resumed = store.create_or_load('camera_profiles', settings())
+    assert {t['x_m'] for t in resumed['trials']} == {.3}
+    assert store.definition_path.read_bytes() == before
+
+
+def test_legacy_object_campaign_keeps_original_distance(tmp_path):
+    store = CampaignStore(tmp_path, 'legacy-objects')
+    definition = store.create_or_load('objects', settings())
+    definition['settings'].pop('object_distance_m')
+    definition['trials'] = mode_trials('objects', definition['settings'])
+    store.definition_path.write_text(json.dumps(definition))
+    before = store.definition_path.read_bytes()
+    resumed = store.create_or_load('objects', settings())
+    assert {(t['x_m'], t['z_m']) for t in resumed['trials']} == {(0.3, 0.0)}
+    assert store.definition_path.read_bytes() == before

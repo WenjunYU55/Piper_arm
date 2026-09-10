@@ -579,6 +579,7 @@ class ScanViewpointExecutorNode(Node):
         self.scan_qualified_target_model_seed = None
         self.pending_scan_qualified_target_model_seed = None
         self.pending_capture_occlusion_state = 'UNKNOWN'
+        self.pending_capture_occlusion_policy_evidence = {}
         self.capture_semantic_probe_pending = False
         self.latest_achieved_scan_view = None
         self.scan_coverage_target_center = None
@@ -680,6 +681,7 @@ class ScanViewpointExecutorNode(Node):
         self.capture_heavy_refresh_waiting_for_worker = False
         self.capture_rejection_reason = ''
         self.pending_capture_occlusion_state = 'UNKNOWN'
+        self.pending_capture_occlusion_policy_evidence = {}
         self.capture_semantic_probe_pending = False
         self.finish_scan_future = None
         self.return_home_warning = ''
@@ -3538,6 +3540,11 @@ class ScanViewpointExecutorNode(Node):
             'reconstruction_stamp_ns', 0))
         self.pending_capture_occlusion_state = str(
             capture_result['occlusion_state'])
+        self.pending_capture_occlusion_policy_evidence = {
+            key: capture_result[key] for key in (
+                'occlusion_policy', 'occlusion_policy_session_id',
+                'occlusion_probe_request_id') if key in capture_result}
+
         self.capture_semantic_probe_pending = bool(
             not getattr(self, 'scan_history', [])
             or self.pending_capture_occlusion_state != 'CLEAR')
@@ -3733,10 +3740,12 @@ class ScanViewpointExecutorNode(Node):
                     self, 'pending_capture_occlusion_state', 'UNKNOWN'))
                 in ('PARTIALLY_OCCLUDED', 'HEAVILY_OCCLUDED')),
             'occlusion_labels': occlusion_labels,
+            **dict(getattr(self, 'pending_capture_occlusion_policy_evidence', {})),
             **({'ray_id': int(viewpoint['ray_id'])}
                if viewpoint.get('ray_id') is not None else {}),
         })
         self.pending_capture_occlusion_state = 'UNKNOWN'
+        self.pending_capture_occlusion_policy_evidence = {}
         self.capture_semantic_probe_pending = False
         self.publish_scan_history()
         return True

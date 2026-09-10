@@ -3405,3 +3405,38 @@ def test_legacy_multiview_without_return_segment_still_completes_capture():
 
     assert events[0][0] == 'COMPLETE'
     assert 'captured' in events[0][1]
+
+
+@pytest.mark.parametrize('bad', [
+    [299.364612904, 10537.162911744, 0, 0, 0.399, -3],
+    [0, 0, 0, 0, 0, 1000],
+    [float('nan'), 0, 0, 0, 0, 0],
+])
+def test_invalid_feedback_cannot_publish_an_energized_hold(bad):
+    calls = []
+    node = SimpleNamespace(
+        get_parameter=lambda _: SimpleNamespace(value=0.25),
+        latest_joint_state=bad, current_joints=lambda: bad,
+        fresh=lambda *args: True, real_motion_enabled=lambda: True,
+        publish_joint_command=lambda *args, **kwargs: calls.append(args))
+    assert not ScanViewpointExecutorNode.publish_hold(node)
+    assert calls == []
+
+
+@pytest.mark.parametrize('joints, expected_commands', [
+    ([299.364612904, 10537.162911744, 0, 0, 0.399, -3], 0),
+    ([0.0, 0.2, -0.2, 0.0, 0.399, -3], 1),
+])
+def test_terminal_abort_never_converts_corrupt_feedback_into_motion(joints, expected_commands):
+    calls = []
+    node = SimpleNamespace(
+        get_parameter=lambda _: SimpleNamespace(value=0.25),
+        state='MOVING', now=lambda: 1.0, latest_joint_state=joints,
+        current_joints=lambda: joints, fresh=lambda *args: True,
+        real_motion_enabled=lambda: True, publish_status=lambda: None,
+        get_logger=lambda: SimpleNamespace(error=lambda _: None),
+        publish_joint_command=lambda *args, **kwargs: calls.append(args))
+    node.publish_hold = lambda: ScanViewpointExecutorNode.publish_hold(node)
+    ScanViewpointExecutorNode._terminal_abort(node, 'incident')
+    assert node.state == 'ABORTED'
+    assert len(calls) == expected_commands

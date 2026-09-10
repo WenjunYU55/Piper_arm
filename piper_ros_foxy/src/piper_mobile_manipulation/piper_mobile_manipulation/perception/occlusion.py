@@ -126,3 +126,29 @@ def placement_rejection(candidate, target, obstacles, table_bounds,
         if fx_min <= point[0] <= fx_max and fy_min <= point[1] <= fy_max:
             return 'placement intersects a robot, camera, home, or scan footprint'
     return ''
+
+
+def qualified_probe_assumption(workflow, session_id=None):
+    """Return labelled policy evidence, never infer clearance from scan readiness."""
+    if not isinstance(workflow, dict):
+        return None
+    session = workflow.get('session_id')
+    probe = workflow.get('occlusion_probe_request_id')
+    if (not isinstance(session, str) or not session
+            or not isinstance(probe, str) or not probe.startswith(session + '-occlusion-')
+            or workflow.get('occlusion_probe_every_viewpoint', False) is not False
+            or workflow.get('occlusion_policy') == 'probe_every_viewpoint'
+            or workflow.get('mission_occlusion_probe_passed') is not True
+            or workflow.get('state') != 'SCAN_READY'
+            or workflow.get('capture_occlusion_probe_pending', False)
+            or (session_id is not None and session != session_id)):
+        return None
+    return {
+        'occlusion_state': 'CLEAR',
+        'occlusion_policy': 'assumed_clear_after_qualified_probe',
+        'occlusion_is_live_measurement': False,
+        'occlusion_probe_request_id': probe,
+        'occlusion_policy_session_id': session,
+        'occlusion_probe_labels': list(workflow.get('occlusion_labels', [])),
+        'reason': 'mission assumes no new occlusion after its qualified semantic probe',
+    }

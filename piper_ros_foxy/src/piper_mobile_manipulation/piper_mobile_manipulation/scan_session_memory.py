@@ -276,14 +276,15 @@ def feature_coverage_progress(
 
 def achieved_feature_coverage(
         entries, target_center, minimum_views=9,
-        minimum_views_per_y_side=2, minimum_elevation_span_deg=25.0,
+        minimum_views_per_y_side=0, minimum_elevation_span_deg=25.0,
         surface_coverage=None):
     """
-    Measure achieved face/axis diversity from persisted camera poses.
+    Measure achieved view/elevation coverage and diagnostic lateral counts.
 
     The base-link X direction defines the front hemisphere and Y separates
     the two lateral cube faces.  This is an execution-result gate, not a
     reachability claim: only accepted achieved FK positions contribute.
+    Lateral counts do not gate completion unless explicitly requested.
     """
     try:
         geometry = camera_offset_geometry(entries, target_center)

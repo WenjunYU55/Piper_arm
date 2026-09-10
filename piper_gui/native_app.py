@@ -56,6 +56,10 @@ from piper_gui.scan_policy import (
     read_scan_settings,
     write_scan_settings,
 )
+from piper_gui.occlusion_policy import (
+    OCCLUSION_POLICY_LABELS, default_occlusion_policy_path,
+    read_occlusion_policy, write_occlusion_policy,
+)
 from piper_gui.stream_rate import (
     STREAM_RATE_LABELS, read_stream_rate, write_stream_rate,
 )
@@ -410,6 +414,16 @@ class PiperGuiApp:
             stream_status = 'Stream rate configuration unavailable: %s' % exc
         self.stream_rate_var = tk.StringVar(value=stream_label)
         self.stream_rate_status_var = tk.StringVar(value=stream_status)
+        self.occlusion_policy_path = default_occlusion_policy_path(PROJECT_ROOT)
+        try:
+            saved_occlusion = read_occlusion_policy(self.occlusion_policy_path)
+            occlusion_label = OCCLUSION_POLICY_LABELS[saved_occlusion]
+            occlusion_status = 'Saved for next mission: %s' % occlusion_label
+        except (OSError, ValueError) as exc:
+            occlusion_label = ''
+            occlusion_status = 'Occlusion configuration unavailable: %s' % exc
+        self.occlusion_policy_var = tk.StringVar(value=occlusion_label)
+        self.occlusion_policy_status_var = tk.StringVar(value=occlusion_status)
         self.collision_environment_path = default_collision_environment_path(
             PROJECT_ROOT)
         try:
@@ -1108,6 +1122,28 @@ class PiperGuiApp:
                 'Try 100 Hz first under supervision. The executor timer adjusts '
                 'automatically. This does not enable motion or change an active mission.'),
             foreground='#9a5b13', wraplength=700, justify='left').grid(
+                row=2, column=0, columnspan=2, sticky='w', pady=(4, 0))
+
+        occlusion = ttk.LabelFrame(
+            aim, text='Occlusion probing for next mission', padding=10)
+        occlusion.grid(row=4, column=0, columnspan=4, sticky='ew', pady=(12, 0))
+        self.occlusion_policy_combo = ttk.Combobox(
+            occlusion, textvariable=self.occlusion_policy_var,
+            values=tuple(OCCLUSION_POLICY_LABELS.values()), state='readonly', width=28)
+        self.occlusion_policy_combo.grid(row=0, column=0, sticky='w')
+        self.occlusion_policy_apply_button = ttk.Button(
+            occlusion, text='Apply for Next Mission', command=self.apply_occlusion_policy)
+        self.occlusion_policy_apply_button.grid(row=0, column=1, padx=(8, 0))
+        ttk.Label(
+            occlusion, textvariable=self.occlusion_policy_status_var,
+            foreground='#52606d', wraplength=700, justify='left').grid(
+                row=1, column=0, columnspan=2, sticky='w', pady=(8, 0))
+        ttk.Label(
+            occlusion, text=(
+                'Both options keep the initial semantic probe. Every viewpoint repeats '
+                'it before accepting each saved view. At the start only assumes '
+                'occlusion stays unchanged after the initial probe passes.'),
+            foreground='#52606d', wraplength=700, justify='left').grid(
                 row=2, column=0, columnspan=2, sticky='w', pady=(4, 0))
 
         environment = ttk.LabelFrame(
@@ -2093,6 +2129,25 @@ class PiperGuiApp:
             'Selected planner for next mission: %s'
             % BACKEND_LABELS[backend])
 
+    def apply_occlusion_policy(self):
+        if not self.mission_view_model.state.can_start:
+            self.occlusion_policy_status_var.set(
+                'Occlusion probing was not changed: wait for the active mission to finish.')
+            return
+        selected = {label: value for value, label in OCCLUSION_POLICY_LABELS.items()}.get(
+            self.occlusion_policy_var.get())
+        if selected is None:
+            self.occlusion_policy_status_var.set(
+                'Occlusion probing was not changed: invalid selection.')
+            return
+        try:
+            write_occlusion_policy(self.occlusion_policy_path, selected)
+        except (OSError, ValueError) as exc:
+            self.occlusion_policy_status_var.set('Occlusion probing was not changed: %s' % exc)
+            return
+        self.occlusion_policy_status_var.set(
+            'Saved for next mission: %s' % OCCLUSION_POLICY_LABELS[selected])
+
     def apply_stream_rate(self):
         if not self.mission_view_model.state.can_start:
             self.stream_rate_status_var.set(
@@ -2199,6 +2254,10 @@ class PiperGuiApp:
         self.stream_rate_combo.configure(
             state='readonly' if state.can_start else 'disabled')
         self.stream_rate_apply_button.configure(
+            state='normal' if state.can_start else 'disabled')
+        self.occlusion_policy_combo.configure(
+            state='readonly' if state.can_start else 'disabled')
+        self.occlusion_policy_apply_button.configure(
             state='normal' if state.can_start else 'disabled')
         self.floor_profile_combo.configure(
             state='readonly' if state.can_start else 'disabled')

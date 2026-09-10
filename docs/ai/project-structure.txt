@@ -271,3 +271,19 @@ docs/experiments/joint4_startup_feedback_20260910.md — disabled J4 feedback di
 
 docs/experiments/joint4_vendor_report_20260910.md — unsent evidence-based manufacturer questions
 docs/experiments/joint4_near_zero_histogram_20260910.png — 35-recording near-zero distribution
+
+# Camera profile timing evidence
+docs/experiments/camera_profile_freshness_20260910.md
+docs/experiments/camera_profile_freshness_20260910.json
+
+docs/experiments/home_invalid_feedback_20260910.md
+
+Invalid-feedback repair owners (2026-09-10):
+  piper_ros_foxy/src/piper/piper/can_fault_trace.py — bounded passive pre/post-fault CAN evidence
+  piper_ros_foxy/src/piper/test/test_invalid_feedback.py — command-free corrupt-frame, disable and trace regressions
+
+Mission occlusion assumption (2026-09-10):
+  piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/perception/occlusion.py — passed-session receipt validation (existing pure policy owner)
+  piper_ros_foxy/src/piper_mobile_manipulation/test/test_occlusion_policy.py — unchanged-scene policy, first-probe, lifecycle and capture-quality regressions
+
+Occlusion selection: piper_gui/occlusion_policy.py (atomic next-mission configuration); tests/gui/test_piper_gui_occlusion_policy.py (roundtrip and active-mission guards).

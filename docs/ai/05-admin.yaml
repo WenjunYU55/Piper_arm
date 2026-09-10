@@ -197,10 +197,10 @@ passive_results_campaign_maintenance_2026_09_02:
     owner_module: results_campaign/modes.py
     gui: Results Campaign mode selector; new IDs per mode, existing IDs resume their frozen design
     camera_profiles: cuRobo only; eight admitted RGB profiles, four resolutions each at 15 then 30 FPS;
-      XYZ (0.30,0,0.30) m; aim 5 degrees; depth profile unchanged
+      XYZ (0.70,0,0.30) m for new campaigns; aim 5 degrees; depth profile unchanged; legacy campaigns retain frozen distance
     aim_tolerance: cuRobo only; at each X 0.30/0.50/0.70/0.90/1.10 m, sweep 1/5/10/15/20/25 degrees; Y
       0, Z 0.30 m; freeze saved RGB profile at creation
-    objects: cuRobo only; cube, cup, stick, flower at XYZ (0.30,0,0) m; aim 5 degrees; freeze saved RGB
+    objects: cuRobo only; cube, cup, stick, flower at XYZ (0.70,0,0) m for new campaigns; legacy campaigns retain frozen distance; aim 5 degrees; freeze saved RGB
       profile at creation
     coordinate_basis: base_link Z convention; no table offset inferred from calibration
     preparation: Populate target label, RGB/FPS and aim controls; normal explicit Apply controls are still
@@ -1444,3 +1444,69 @@ capture_probe_motion_policy_2026_09_10:
   manual_smoke_checks: [supervised mission through first capture and semantic probe with either planner, verify occlusion rejection still holds capture and cancellation returns home]
   physical_status: Offline validation only; no robot commands issued for this change.
   validation: 1041 mobile behavioral tests passed, one skipped; 28 focused workflow tests passed; package build and YAML validation passed.
+
+
+scan_completion_lateral_policy_2026_09_10:
+  owner_module: piper_mobile_manipulation/scan_session_memory.py achieved_feature_coverage
+  behavior: Default mission completion no longer requires two achieved views on each Y side. Positive/negative Y counts remain diagnostic; achieved_feature_coverage defaults minimum_views_per_y_side to zero.
+  preserved: Required capture count, 25-degree elevation span, measured surface minimum and convergence remain required. NBV ordering and trajectory constraints are unchanged.
+  required_retests: [one-sided achieved coverage, insufficient capture and elevation rejection, unconverged surface rejection, mobile and Tesseract suites, package build]
+  physical_status: Offline only; no arm command or active mission restart.
+
+
+camera_campaign_distance_2026_09_10:
+  owner_module: results_campaign/modes.py
+  behavior: New camera-profile campaigns freeze camera_distance_m at 0.70 m; Y remains zero and GUI height remains 0.30 m. Missing camera_distance_m means legacy 0.30 m during resume. Other sweep modes are unchanged.
+  existing_data: User-requested update applied to empty CameraProfilesFinal and CameraProfiles_Final schedules with original definitions backed up; no recorded attempts altered.
+  must_retest_if_changed: [camera sweep creation and resume, legacy frozen schedule compatibility, submitted-coordinate matching, campaign and GUI tests]
+
+
+camera_profile_freshness_diagnosis_2026_09_10:
+  reference: docs/experiments/camera_profile_freshness_20260910.md
+  measurements: docs/experiments/camera_profile_freshness_20260910.json
+  finding: Higher-resolution 15 FPS runs retain near-normal CameraInfo cadence but older masks and fewer accepted tracker updates. Latest-mask association is latency-sensitive; three-second post-validation refresh can abort during recovery. Lower-resolution runs also logged stale masks.
+  limitation: Movement-window mask statistics and recorder receipt times are indirect evidence; exact failing callback order and per-stage CPU/GPU/I/O latency remain unmeasured. Camera stall and GPU overload are not established.
+  status: Read-only diagnosis; source-frame pairing and bounded reacquisition remain deferred work, no runtime changes.
+
+
+home_invalid_feedback_2026_09_10:
+  replay_followup: Recorded TF shows J1 and J2 moving approximately +38 degrees within 0.61 seconds after abort, consistent with the unsafe hold conversion. Feedback-derived TF does not recover the transmitted command or identify the packet misassociation boundary.
+  upstream_caveat: AgileX issue 67 concerns MIT-mode twitching; this incident used MoveJ, so it is not a confirmed matching firmware defect.
+  reference: docs/experiments/home_invalid_feedback_20260910.md
+  severity: Unsafe invalid-feedback hold conversion in the incident runtime; offline repair complete, hardware re-enable pending deployment and qualification.
+  owners: [piper/piper_ctrl_single_node.py, piper/joint_state_policy.py, piper_mobile_manipulation/scan_viewpoint_executor_node.py, piper_mobile_manipulation/execution/motion.py]
+  finding: Impossible J1/J2 readings exactly fingerprint a motor-1 limit-response payload. Abort hold clips finite invalid positions into large joint targets; reproduced offline. Actual incident CAN ID and transmitted hold bytes were not recorded.
+  boundary: Do not bypass home checks. Reject implausible feedback and prevent invalid feedback from becoming hold commands; preserve bounded encoder-boundary and J6 multi-turn behavior.
+  status: Offline repair implemented; see invalid_joint_feedback_repair_2026_09_10. Packet misassociation origin remains unproven; physical qualification and runtime restart pending.
+
+invalid_joint_feedback_repair_2026_09_10:
+  reference: docs/ai/50-guardrails.yaml invalid_joint_feedback_repair_2026_09_10
+  evidence: docs/experiments/home_invalid_feedback_20260910.md
+  owner_module: piper/joint_state_policy.py; piper/piper_ctrl_single_node.py; piper/can_fault_trace.py; piper_mobile_manipulation/execution/motion.py
+  behavior: Raw-frame corruption latches command/enable rejection and all-axis disable; invalid measured holds are rejected before clipping; bounded passive CAN fault evidence is persisted off the control callbacks.
+  runtime: Offline implementation and build; live restart and supervised powered qualification pending. Planner behavior unchanged.
+
+mission_occlusion_assumption_2026_09_10:
+  selection: piper_gui/occlusion_policy.py atomically saves occlusion_probe_every_viewpoint in supervised_cube_workflow_params.yaml; native_app.py owns the selector and Apply button. Default false; disabled during active missions; workflow freezes the setting at startup.
+  reference: docs/ai/50-guardrails.yaml mission_occlusion_assumption_2026_09_10
+  behavior: Default start-only mode retains the unchanged-scene assumption after a qualified semantic probe. The Automatic Scan occlusion selector also offers Every viewpoint, which keeps live occlusion admission and repeats the semantic probe for every saved view, including CLEAR views. Both modes require the initial probe.
+  scope: Earlier repeated live-occlusion requirements apply before a passed matching-session receipt; tracking, quality, RGB-D/depth and collision/motor checks remain active. Metadata and accepted history distinguish assumed from measured clearance.
+  owner_module: perception/occlusion.py and supervised_cube_workflow_node.py, with scan_capture_node.py, occlusion_checker_node.py and scan_viewpoint_executor_node.py consumers.
+  status: Implemented and tested offline; supervised physical check pending.
+
+object_campaign_distance_2026_09_10:
+  variedObjects_profile_revision: User confirmed 960x540 at 30 FPS for this saved campaign. Definition and imported cube attempt were explicitly reclassified under that revised design; originals retained under revisions/960x540_30fps. Eight captures remain FAILED but now match the campaign; cup is next. New campaign defaults still freeze their selected saved camera profile.
+  owner_module: results_campaign/modes.py
+  behavior: New object campaigns freeze object_distance_m at 0.70 m; Y and Z are zero. Height metadata now agrees with the zero-Z schedule. Missing object_distance_m preserves legacy 0.30 m on resume.
+  existing_data: User-requested update applied to empty variedObjects schedule; campaign.before_70cm.json retains the original. Bookmarks regenerated; no recorded attempts changed.
+  allowed_edit_paths: [results_campaign/modes.py, tests/results_campaign/test_modes.py, docs/ai, docs/experiments/results_campaign.md]
+  must_retest_if_changed: [object sweep creation and resume, legacy frozen schedule compatibility, campaign and GUI tests]
+  runtime: Reopen the GUI to load updated campaign defaults; Open / Resume variedObjects and Prepare Next Trial reads its updated saved coordinates. No mission started.
+
+imported_campaign_timestamp_2026_09_11:
+  owner_module: results_campaign/campaign.py
+  incident: Retrospective variedObjects import had null submitted_wall_time_ns. trial_rows int conversion raised TypeError, silently leaving the GUI table stale despite valid matching terminal evidence.
+  correction: Table ordering, retry selection and supersession treat explicit null submission times as zero missing-value sentinels. Missing timestamps do not become fabricated measured times.
+  data_repair: Imported cube task gui-sim-0f5b8ade8a1f487987e1d99dc5f2ff62 now uses documented numeric zero sentinels so an already-running GUI can refresh. Original submission retained under variedObjects/revisions/unknown_submission_timestamp. Outcome FAILED and eight captures retained; cube is Done, cup next.
+  allowed_edit_paths: [results_campaign/campaign.py, tests/results_campaign/test_campaign.py, docs/ai]
+  must_retest_if_changed: [null-timestamp table and retry regression, complete campaign and GUI suites, actual Tk refresh against repaired campaign, YAML parse and Python compile]

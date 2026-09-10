@@ -39,7 +39,7 @@ def spherical_entry(azimuth_deg, elevation_deg, radius=0.30):
     )
 
 
-def test_feature_coverage_requires_both_y_sides_and_elevation_diversity():
+def test_feature_coverage_reports_y_sides_and_requires_elevation_diversity():
     target = {'x': 0.4, 'y': 0.0, 'z': 0.03}
     diverse = [
         achieved_entry(0.40, 0.30, 0.18),
@@ -78,7 +78,20 @@ def test_front_and_top_cluster_is_not_distinctive_feature_coverage():
 
     assert not coverage['sufficient']
     assert coverage['negative_y_side_views'] == 0
-    assert any('-Y side' in blocker for blocker in coverage['blockers'])
+    assert not any('Y side' in blocker for blocker in coverage['blockers'])
+    assert any('accepted achieved views' in blocker for blocker in coverage['blockers'])
+
+
+def test_one_sided_scan_can_complete_but_still_requires_elevation_and_surface():
+    target = {'x': 0.0, 'y': 0.0, 'z': 0.0}
+    accepted = [spherical_entry(150.0, elevation) for elevation in range(20, 65, 5)]
+    coverage = achieved_feature_coverage(accepted, target, surface_coverage={'sufficient': True})
+    assert coverage['negative_y_side_views'] == 0
+    assert coverage['sufficient']
+    assert not achieved_feature_coverage(
+        accepted, target, surface_coverage={'sufficient': False})['sufficient']
+    assert not achieved_feature_coverage(
+        [accepted[0]] * 9, target, surface_coverage={'sufficient': True})['sufficient']
 
 
 def test_azimuth_span_is_diagnostic_and_does_not_block_completion():

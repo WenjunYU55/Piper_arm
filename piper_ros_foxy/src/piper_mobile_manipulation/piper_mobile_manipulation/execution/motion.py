@@ -135,8 +135,12 @@ def finite_joints(joints):
 
 
 def energized_hold_target(joints):
-    """Return the nearest pose representable while motor power is enabled."""
+    """Hold plausible feedback, retaining only bounded boundary correction."""
     values = finite_joints(joints)
+    tolerance = MAX_CONFIGURED_HOME_FEEDBACK_LIMIT_TOLERANCE_RAD
+    if np.any(values < URDF_JOINT_LIMITS[:, 0] - tolerance) or np.any(
+            values > URDF_JOINT_LIMITS[:, 1] + tolerance):
+        raise ValueError('invalid joint feedback cannot authorize an energized hold')
     return np.clip(
         values,
         CONTROLLER_COMMAND_LIMITS[:, 0],

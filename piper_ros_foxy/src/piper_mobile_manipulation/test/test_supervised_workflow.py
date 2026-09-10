@@ -436,6 +436,7 @@ def test_clear_first_capture_probe_releases_exactly_one_acceptance():
 
     SupervisedCubeWorkflowNode.assess_scene(node)
 
+    assert node.mission_occlusion_probe_passed
     assert node.accepted_views == 1
     assert node.modeled_views == 1
     assert node.state == 'SCAN_READY'

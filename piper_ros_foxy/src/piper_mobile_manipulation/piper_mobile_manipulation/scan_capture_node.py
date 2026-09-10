@@ -25,6 +25,7 @@ from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformException, TransformListener
 
+from piper_mobile_manipulation.perception.occlusion import qualified_probe_assumption
 from piper_mobile_manipulation.msg import (
     ReconstructionKeyframe, ScanExecutionStatus, Target3D)
 from piper_mobile_manipulation.infrastructure.failure_model import (
@@ -231,6 +232,8 @@ class ScanCaptureNode(Node):
         self.latest_scan_quality = None
         self.latest_scan_quality_at = None
         self.latest_occlusion_status = None
+        self.latest_workflow_status = None
+        self.capture_workflow_session_id = ''
         self.latest_occlusion_status_at = None
         self.diagnostic_lock = Lock()
         self.last_capture_time = None
@@ -389,6 +392,10 @@ class ScanCaptureNode(Node):
             callback_group=self.diagnostic_callback_group,
         ))
 
+        self._retained_subscriptions.append(self.create_subscription(
+            String, '/piper/supervised_workflow_status', self.workflow_status_cb, 10,
+            callback_group=self.diagnostic_callback_group))
+
         # A service capture waits for 20 new camera frames.  Its own callback
         # group lets the image callbacks continue filling that burst.
         self.capture_callback_group = MutuallyExclusiveCallbackGroup()
@@ -469,6 +476,15 @@ class ScanCaptureNode(Node):
         with self.diagnostic_lock:
             self.latest_scan_quality = self.parse_json_msg(msg)
             self.latest_scan_quality_at = time.monotonic()
+        self.notify_capture_evidence()
+
+    def workflow_status_cb(self, msg):
+        """Bind the recorder to the workflow observed before its first capture."""
+        payload = self.parse_json_msg(msg)
+        with self.diagnostic_lock:
+            self.latest_workflow_status = payload
+            if self.frame_index == 0 and isinstance(payload, dict):
+                self.capture_workflow_session_id = str(payload.get('session_id', ''))
         self.notify_capture_evidence()
 
     def occlusion_status_cb(self, msg):
@@ -725,6 +741,7 @@ class ScanCaptureNode(Node):
         now = time.monotonic()
         lock = getattr(self, 'diagnostic_lock', None)
         if lock is None:
+            workflow = deepcopy(getattr(self, 'latest_workflow_status', None))
             quality = deepcopy(getattr(self, 'latest_scan_quality', None))
             quality_at = getattr(self, 'latest_scan_quality_at', None)
             occlusion = deepcopy(getattr(
@@ -732,11 +749,17 @@ class ScanCaptureNode(Node):
             occlusion_at = getattr(self, 'latest_occlusion_status_at', None)
         else:
             with lock:
+                workflow = deepcopy(getattr(self, 'latest_workflow_status', None))
                 quality = deepcopy(self.latest_scan_quality)
                 quality_at = self.latest_scan_quality_at
                 occlusion = deepcopy(self.latest_occlusion_status)
                 occlusion_at = self.latest_occlusion_status_at
+        assumption = None
+        if int(getattr(self, 'frame_index', 0)) > 0:
+            assumption = qualified_probe_assumption(
+                workflow, getattr(self, 'capture_workflow_session_id', ''))
         return {
+            'occlusion_assumption': assumption,
             'admitted_at_monotonic_sec': float(now),
             'scan_quality_age_sec': (
                 None if quality_at is None else float(now - quality_at)),
@@ -747,7 +770,7 @@ class ScanCaptureNode(Node):
             'scan_quality_metadata': (
                 ScanCaptureNode.scan_quality_metadata_from_payload(quality)),
             'occlusion_metadata': (
-                ScanCaptureNode.occlusion_metadata_from_payload(occlusion)),
+                ScanCaptureNode.occlusion_metadata_from_payload(assumption or occlusion)),
         }
 
     def capture_prerequisite_evidence(self):
@@ -789,6 +812,9 @@ class ScanCaptureNode(Node):
                     diagnostics['occlusion_raw']
                     if self.param_bool('require_clear_occlusion_for_service')
                     else {'occlusion_state': 'CLEAR'})
+                assumption = diagnostics.get('occlusion_assumption')
+                if assumption is not None:
+                    occlusion = assumption
                 classified_occlusion_barrier = bool(
                     self.param_bool(
                         'allow_classified_occlusion_for_service'))
@@ -803,7 +829,7 @@ class ScanCaptureNode(Node):
                         'require_good_quality_for_service') else
                      diagnostics['scan_quality_age_sec']),
                     occlusion,
-                    (0.0 if not self.param_bool(
+                    (0.0 if assumption is not None or not self.param_bool(
                         'require_clear_occlusion_for_service') else
                      diagnostics['occlusion_age_sec']),
                     float(self.get_parameter('diagnostic_timeout_sec').value),
@@ -1230,6 +1256,9 @@ class ScanCaptureNode(Node):
                 + int(prepared['color_message'].header.stamp.nanosec)),
             'metadata_file_path': paths['metadata'],
             'occlusion_state': str(metadata['occlusion_state']),
+            'occlusion_policy': metadata.get('occlusion_policy', 'live'),
+            'occlusion_policy_session_id': metadata.get('occlusion_policy_session_id', ''),
+            'occlusion_probe_request_id': metadata.get('occlusion_probe_request_id', ''),
             'occlusion_score': float(metadata['occlusion_score']),
             'qualified_target_model_seed': dict(
                 metadata['qualified_target_model_seed']),
@@ -1344,6 +1373,11 @@ class ScanCaptureNode(Node):
                 prepared.get('capture_admission_diagnostics')),
             'occlusion_available': occlusion['occlusion_available'],
             'occlusion_state': occlusion['occlusion_state'],
+            'occlusion_policy': occlusion.get('occlusion_policy', 'live'),
+            'occlusion_is_live_measurement': occlusion.get('occlusion_is_live_measurement', True),
+            'occlusion_policy_session_id': occlusion.get('occlusion_policy_session_id', ''),
+            'occlusion_probe_request_id': occlusion.get('occlusion_probe_request_id', ''),
+            'occlusion_probe_labels': occlusion.get('occlusion_probe_labels', []),
             'occlusion_score': occlusion['occlusion_score'],
             'closer_region_area_px': occlusion['closer_region_area_px'],
             'closer_region_ratio': occlusion['closer_region_ratio'],
@@ -1600,6 +1634,11 @@ class ScanCaptureNode(Node):
             return ScanCaptureNode.empty_occlusion_metadata()
         return {
             'occlusion_available': True,
+            'occlusion_policy': str(payload.get('occlusion_policy', 'live')),
+            'occlusion_is_live_measurement': payload.get('occlusion_is_live_measurement', True),
+            'occlusion_policy_session_id': str(payload.get('occlusion_policy_session_id', '')),
+            'occlusion_probe_request_id': str(payload.get('occlusion_probe_request_id', '')),
+            'occlusion_probe_labels': list(payload.get('occlusion_probe_labels', [])),
             'occlusion_state': str(payload.get('occlusion_state', 'UNKNOWN')),
             'occlusion_score': float(payload.get('occlusion_score', 0.0)),
             'closer_region_area_px': int(payload.get('closer_region_area_px', 0)),

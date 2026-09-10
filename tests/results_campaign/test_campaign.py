@@ -280,3 +280,25 @@ def test_selected_retry_older_trial_and_table_preserve_schedule(tmp_path):
         store.retry_last_attempt('not-a-trial')
     with pytest.raises(ValueError, match='no completed'):
         store.retry_last_attempt(rows[2]['trial_id'])
+
+
+def test_imported_unknown_submission_time_displays_done_and_allows_retry(tmp_path):
+    store = CampaignStore(tmp_path, 'imported-time')
+    store.create_or_load()
+    trial = store.load_next_trial()
+    request = MissionRequest((trial['x_m'], trial['y_m'], trial['z_m']),
+                             'green cube', trial['backend'])
+    store.record_submission('imported', request)
+    store.record_terminal('imported', {'outcome': 'FAILED', 'capture_count': 8})
+    path = store.attempt_for_task('imported') / 'submission.json'
+    submission = json.loads(path.read_text())
+    submission['submitted_wall_time_ns'] = None
+    path.write_text(json.dumps(submission))
+    row = store.trial_rows()[0]
+    assert row['status'] == 'Done'
+    assert row['outcome'] == 'FAILED'
+    assert row['attempts'] == 1
+    assert store.retry_last_attempt(trial['trial_id']) == trial
+    store.record_submission('retry', request)
+    store.record_terminal('retry', {'outcome': 'SUCCEEDED'})
+    assert store.superseded_tasks() == {'imported'}

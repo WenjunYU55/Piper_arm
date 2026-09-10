@@ -12,6 +12,7 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
 
+from piper_mobile_manipulation.perception.occlusion import qualified_probe_assumption
 from piper_mobile_manipulation.msg import (
     Detection2D,
     ScanExecutionStatus,
@@ -68,6 +69,9 @@ class OcclusionCheckerNode(Node):
         self.latest_detection = None
         self.latest_target = None
         self.latest_scan_quality = None
+        self.latest_workflow_status = None
+        self.workflow_subscription = self.create_subscription(
+            String, '/piper/supervised_workflow_status', self.workflow_status_cb, 10)
         self.latest_color_stamp = 0.0
         self.latest_depth_stamp = 0.0
         self.latest_mask_stamp = 0.0
@@ -162,6 +166,10 @@ class OcclusionCheckerNode(Node):
         self.latest_target = msg
         self.latest_target_stamp = time.monotonic()
 
+    def workflow_status_cb(self, msg):
+        """Use only an explicit passed-probe receipt from the workflow owner."""
+        self.latest_workflow_status = self.parse_json_msg(msg)
+
     def scan_quality_cb(self, msg):
         self.latest_scan_quality = self.parse_json_msg(msg)
         self.latest_quality_stamp = time.monotonic()
@@ -205,7 +213,13 @@ class OcclusionCheckerNode(Node):
             return
         self.last_eval_stamp = now
 
-        payload = self.stabilize_payload(self.evaluate_current_view(now))
+        assumption = qualified_probe_assumption(
+            getattr(self, 'latest_workflow_status', None))
+        if assumption is not None:
+            payload = self.base_payload('CLEAR', assumption['reason'])
+            payload.update(assumption)
+        else:
+            payload = self.stabilize_payload(self.evaluate_current_view(now))
         self.publish_status(payload)
         self.publish_debug(payload)
 

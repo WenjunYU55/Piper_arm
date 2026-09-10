@@ -805,6 +805,8 @@ def test_arm_only_movej_commands_cannot_actuate_the_gripper():
                 warn=lambda *_args: None,
             )
 
+        _raw_joint_lock = threading.Lock()
+
         def GetEnableFlag(self):
             return True
 
@@ -860,6 +862,8 @@ def test_startup_joint6_callback_never_commands_negative_before_raw_wrap():
                 warn=lambda *_args: None,
                 error=lambda *_args: None,
             )
+
+        _raw_joint_lock = threading.Lock()
 
         def GetEnableFlag(self):
             return True
@@ -941,6 +945,8 @@ def test_explicit_startup_command_rearms_from_later_coherent_negative_feedback()
                 error=self.errors.append,
             )
 
+        _raw_joint_lock = threading.Lock()
+
         def GetEnableFlag(self):
             return True
 
@@ -999,6 +1005,8 @@ def test_startup_wrap_bridge_continues_positive_to_raw_two_pi():
                 warn=lambda *_args: None,
                 error=self.errors.append,
             )
+
+        _raw_joint_lock = threading.Lock()
 
         def GetEnableFlag(self):
             return True
@@ -1068,6 +1076,8 @@ def test_startup_joint6_explicit_hold_uses_measured_raw_coordinate():
                 error=lambda *_args: None,
             )
 
+        _raw_joint_lock = threading.Lock()
+
         def GetEnableFlag(self):
             return True
 
@@ -1125,6 +1135,8 @@ def test_commissioning_can_hold_startup_j6_while_moving_other_joints():
                 error=self.errors.append,
             )
 
+        _raw_joint_lock = threading.Lock()
+
         def GetEnableFlag(self):
             return True
 
@@ -1180,6 +1192,8 @@ def test_commissioning_startup_j6_is_positive_only_and_j6_only():
                 warn=lambda *_args: None,
                 error=self.errors.append,
             )
+
+        _raw_joint_lock = threading.Lock()
 
         def GetEnableFlag(self):
             return True
@@ -1241,6 +1255,8 @@ def test_normal_joint6_command_retains_completed_startup_turn_offset():
                 warn=lambda *_args: None,
                 error=lambda *_args: None,
             )
+
+        _raw_joint_lock = threading.Lock()
 
         def GetEnableFlag(self):
             return True
@@ -1307,6 +1323,8 @@ def test_normal_joint6_command_rejects_unqualified_controller_coordinate():
                 warn=lambda *_args: None,
                 error=self.errors.append,
             )
+
+        _raw_joint_lock = threading.Lock()
 
         def GetEnableFlag(self):
             return True

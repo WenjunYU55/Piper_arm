@@ -44,18 +44,26 @@ def mode_trials(mode, settings):
         raise ValueError('a cube target label is required')
     conditions = []
     if mode == 'camera_profiles':
+        # Missing distance identifies an existing 0.30 m frozen campaign.
+        distance = float(settings.get('camera_distance_m', 0.30))
+        if not math.isfinite(distance) or distance <= 0:
+            raise ValueError('camera campaign distance must be positive and finite')
         profiles = settings['camera_profiles']
         if not profiles or len(profiles) != len({tuple(_profile(p)) for p in profiles}):
             raise ValueError('camera comparison needs distinct profiles')
         for profile in profiles:
-            conditions.append((0.30, z, profile, aim, 'cube', target_label))
+            conditions.append((distance, z, profile, aim, 'cube', target_label))
     elif mode == 'aim_tolerance':
         for distance in DISTANCES_M:
             for tolerance in TOLERANCES_DEG:
                 conditions.append((distance, z, camera, tolerance, 'cube', target_label))
     else:
+        # Missing distance preserves existing 0.30 m frozen object campaigns.
+        distance = float(settings.get('object_distance_m', 0.30))
+        if not math.isfinite(distance) or distance <= 0:
+            raise ValueError('object campaign distance must be positive and finite')
         for obj in ('cube', 'cup', 'stick', 'flower'):
-            conditions.append((0.30, 0.0, camera, aim, obj,
+            conditions.append((distance, 0.0, camera, aim, obj,
                                target_label if obj == 'cube' else obj))
     trials = []
     for sequence, (x, height, profile, tolerance, obj, label) in enumerate(conditions, 1):
@@ -73,6 +81,13 @@ def mode_trials(mode, settings):
 
 
 def mode_definition(campaign_id, mode, settings, created_utc):
+    settings = deepcopy(settings)
+    if mode == 'camera_profiles':
+        settings.setdefault('camera_distance_m', 0.70)
+    elif mode == 'objects':
+        settings.setdefault('object_distance_m', 0.70)
+        settings['height_m'] = 0.0
+        settings['height_basis'] = 'declared base_link Z 0.00 m'
     trials = mode_trials(mode, settings)
     return {
         'schema_version': 2, 'campaign_id': campaign_id, 'created_utc': created_utc,
