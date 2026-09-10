@@ -538,3 +538,51 @@ def test_cube_surface_uncertainty_does_not_raise_physical_motion_threshold():
         0.027, 0.020, surface_shift, True, 0.015) == ''
     assert 'cube landmark moved' in corroborated_target_motion_rejection(
         0.040, 0.020, actual_shift, True, 0.015)
+
+
+def test_capture_probe_motion_policy_boundaries():
+    assert not target_motion_is_terminal(True, 'INITIALIZING', True)
+    assert target_motion_is_terminal(False, 'INITIALIZING', True)
+    assert target_motion_is_terminal(True, 'INITIALIZING', False)
+    assert target_motion_is_terminal(True, 'INITIALIZING', True, True)
+    for state in ('IDLE', 'ABORTED', 'COMPLETE', 'PLAN_READY', 'WAIT_OPERATOR_ACTION'):
+        assert target_motion_is_terminal(True, state, True)
+
+
+def test_capture_probe_tracking_callback_and_abort_restart_lifecycle():
+    parameters = dict(target_motion_abort_m=.020,
+                      target_surface_measurement_uncertainty_m=.015,
+                      max_tracking_measurement_age_sec=.5,
+                      allow_target_motion_during_scan=True)
+    errors = []
+    node = SimpleNamespace(
+        state='WAIT_CAPTURE', initial_landmark=(1., 0., 0.),
+        landmark=(1.036, 0., 0.), target_status='TRACKING',
+        target_landmark_status=dict(state='LOCKED', measurement_error_m=.042),
+        post_action_verification=False, updated={},
+        fresh=lambda name: True, mark=lambda name: None,
+        get_parameter=lambda name: SimpleNamespace(value=parameters[name]),
+        now=lambda: 1., publish_occlusion_probe=lambda: None,
+        publish_status=lambda reason: None,
+        get_logger=lambda: SimpleNamespace(error=errors.append),
+        reply=lambda response, success, reason: success,
+    )
+    node.abort = lambda reason: SupervisedCubeWorkflowNode.abort(node, reason)
+    health = SimpleNamespace(lifecycle_state='TRACKING', arm_moving=False,
+                             camera_settled=True, prediction_only=False,
+                             measurement_age_sec=.01)
+    for first in (True, False):
+        SupervisedCubeWorkflowNode.begin_capture_occlusion_probe(node, 'CLEAR', first)
+        SupervisedCubeWorkflowNode.tracking_health_cb(node, health)
+        assert node.state == 'INITIALIZING'
+        assert errors == []
+    parameters['allow_target_motion_during_scan'] = False
+    SupervisedCubeWorkflowNode.tracking_health_cb(node, health)
+    assert node.state == 'ABORTED'
+    assert 'cube landmark moved' in errors[-1]
+    assert not node.capture_occlusion_probe_pending
+    assert not node.first_capture_pending
+    parameters['allow_target_motion_during_scan'] = True
+    assert SupervisedCubeWorkflowNode.start_cb(node, None, None)
+    assert not node.capture_occlusion_probe_pending
+    assert target_motion_is_terminal(True, node.state, node.capture_occlusion_probe_pending)

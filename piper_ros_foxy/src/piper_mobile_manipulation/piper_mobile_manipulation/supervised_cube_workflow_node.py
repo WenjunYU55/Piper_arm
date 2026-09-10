@@ -36,11 +36,16 @@ from piper_mobile_manipulation.supervised_workflow import (
 )
 
 
-def target_motion_is_terminal(allow_motion_during_scan, workflow_state):
+def target_motion_is_terminal(
+        allow_motion_during_scan, workflow_state,
+        capture_probe_pending=False, post_action_verification=False):
     """Keep the pre-scan lock strict without aborting an active moving-target scan."""
     return not (
         bool(allow_motion_during_scan)
-        and str(workflow_state) in ('SCAN_READY', 'WAIT_CAPTURE')
+        and not post_action_verification
+        and (str(workflow_state) in ('SCAN_READY', 'WAIT_CAPTURE')
+             or (str(workflow_state) == 'INITIALIZING'
+                 and capture_probe_pending))
     )
 
 
@@ -382,7 +387,9 @@ class SupervisedCubeWorkflowNode(Node):
                     and target_motion_is_terminal(
                         self.get_parameter(
                             'allow_target_motion_during_scan').value,
-                        self.state)):
+                        self.state,
+                        self.capture_occlusion_probe_pending,
+                        self.post_action_verification)):
                 self.abort(rejection)
 
     def target_status_cb(self, msg):
@@ -919,6 +926,9 @@ class SupervisedCubeWorkflowNode(Node):
     def abort(self, reason):
         if self.state == 'ABORTED':
             return
+        self.capture_occlusion_probe_pending = False
+        self.first_capture_pending = False
+        self.pending_capture_occlusion_state = 'UNKNOWN'
         self.state = 'ABORTED'
         self.publish_status(reason)
         self.get_logger().error(reason)

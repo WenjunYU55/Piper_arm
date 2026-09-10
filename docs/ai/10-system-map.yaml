@@ -1263,3 +1263,16 @@ disabled_j4_startup_spikes_2026_09_10:
   - supervised powered startup before physical qualification
   physical_status: powered startup qualification pending
   validation: 1107 behavioral tests passed, one skipped; recorded failure replay and isolated disabled real-driver callback smoke pass; build and changed-file lint pass. Idle coordinator replaced; powered retest pending.
+
+
+capture_probe_motion_policy_2026_09_10:
+  owner_module: piper_mobile_manipulation/supervised_cube_workflow_node.py
+  allowed_edit_paths: [piper_mobile_manipulation/supervised_cube_workflow_node.py, test/test_supervised_workflow.py]
+  behavior: With allow_target_motion_during_scan enabled, INITIALIZING retains active-scan displacement policy only while capture_occlusion_probe_pending is true and post_action_verification is false. Applies to first and later saved-capture probes.
+  lifecycle: Existing acceptance and new-session paths clear pending capture context; abort now clears it too. Genuine startup, post-action verification, terminal states and disabled movement allowance remain strict.
+  preserved: No thresholds, tracking geometry, camera transforms, planner trajectories, collision checks, probe correlation, occlusion acceptance or capture quality gates changed.
+  limitation: Real target movement can pass this displacement check during capture verification, as during the existing active-scan policy. View-dependent position error remains unresolved; geometry and calibration/timing investigations are deferred by user request.
+  must_retest_if_changed: [first and later capture callback regression, strict mode, startup and post-action boundaries, abort and restart cleanup, mobile behavioral suite, package build]
+  manual_smoke_checks: [supervised mission through first capture and semantic probe with either planner, verify occlusion rejection still holds capture and cancellation returns home]
+  physical_status: Offline validation only; no robot commands issued for this change.
+  validation: 1041 mobile behavioral tests passed, one skipped; 28 focused workflow tests passed; package build and YAML validation passed.
