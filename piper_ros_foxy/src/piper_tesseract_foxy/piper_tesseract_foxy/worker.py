@@ -1674,7 +1674,9 @@ class TesseractBackend:
             )
             attempt = candidate_at_ray_standoff(
                 candidate, target, standoff, seed_index)
-            attempt['look_direction'] = desired_look.tolist()
+            # Report the exact authorized variant; normalization is internal
+            # solver geometry, not a new request identity.
+            attempt['look_direction'] = list(look_direction)
             attempt['_ray_ik_seed'] = joints.tolist()
             report['accepted'] = True
             reports.append(report)

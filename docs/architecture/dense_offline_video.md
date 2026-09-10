@@ -117,3 +117,19 @@ without a terminal workflow event remains an incomplete mission.
 
 See [aligned-depth correction and validation](../experiments/aligned_depth_fix_validation.md)
 for the camera publication guard and conservative recovery of existing recordings.
+
+## Movement-window extraction update
+
+Extraction now selects one second before each recorded MOVING interval through
+one second after it ends, merging overlaps and retaining accepted keyframe pins.
+It produces a single ordered RGB-D sequence with original timestamps; exact depth
+matching, seed authority, TF and calibration remain unchanged. Archives without
+execution events retain an explicitly labelled full-sequence fallback. The
+original archive is never edited. Newly recorded archives already omit idle
+sensor payloads using the separate movement-window recorder.
+
+### Explicit offline storage compaction
+
+`tools/bundlesdf/compact_recordings.py ARCHIVE...` plans read-only; `--apply` permanently removes idle RGB/depth/mask payloads after verifying replacement SQLite segments. It retains exact paired frames over MOVING plus one second before and after, all accepted capture tuples, calibration, TF and events. Frame partners can cross both time-window and database boundaries. Original source timestamps are preserved; BundleSDF receives one ordered RGB-D sequence. Missing partners are reported, never synthesized.
+
+The smallest retained segment is replaced first to work with low free disk space. SHA256 over all retained row fields and payload bytes, topic metadata equality, and SQLite integrity are checked before each atomic replacement. `movement_compaction.json` stores the original metadata, row selection and progress; rerunning resumes an interruption. Extraction refuses an unfinished compaction. Final bag and recording manifests contain actual retained counts. Live/open archives, pending write journals and recordings without movement evidence are skipped. Ordinary extraction remains read-only.

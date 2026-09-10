@@ -1006,7 +1006,12 @@ def validate_response(payload, request=None):
                     or not position_matches \
                     or viewpoint['look_direction'] not in allowed_looks:
                 raise ContractError(
-                    'response selected viewpoint does not match request')
+                    'response selected viewpoint does not match request: '
+                    'id=%s candidate_present=%s position_matches=%s '
+                    'look_matches=%s' % (
+                        viewpoint['id'], candidate is not None,
+                        position_matches,
+                        viewpoint['look_direction'] in allowed_looks))
             nominal = candidate['look_direction']
             reported_nominal = viewpoint.get(
                 'nominal_look_direction', nominal)

@@ -1646,3 +1646,18 @@ def test_tiny_isp_interval_does_not_amplify_whole_path_tick_rounding():
         source, 50., 200., .05, [[-3., 3.]] * 6, [5.] * 6, [10.] * 6)
     assert points[-1]['time_from_start_s'] == pytest.approx(.505)
     assert len(points) == 102
+
+
+def test_ray_ik_preserves_exact_authorized_direction():
+    backend = SimpleNamespace(
+        robot=FakeContinuousRayRobot(),
+        ensure_planning_time=lambda _context: None)
+    look = [-1.0000000000000002, 0., 0.]
+    original = list(look)
+    solutions, _ = TesseractBackend.ray_ik_solutions(
+        backend, [0.1, .03, .04, -.02, .03, .7],
+        target_ray_candidate(), [0., 0., 0.], look, [[-2., 2.]] * 6, 0.)
+    assert solutions
+    assert all(item['candidate']['look_direction'] == original
+               for item in solutions)
+    assert look == original

@@ -15,6 +15,9 @@ import uuid
 
 import numpy as np
 
+from piper_mobile_manipulation.execution.motion import (
+    CONTROLLER_COMMAND_LIMITS)
+
 from piper_mobile_manipulation.visibility import (
     DEFAULT_VISIBILITY_ANGLE_DEG, angle_degrees,
 )
@@ -503,6 +506,7 @@ class CuroboBackend:
             from curobo.types.base import TensorDeviceType
             from curobo.types.math import Pose
             from curobo.types.state import JointState
+            from curobo.types.robot import RobotConfig
             from curobo.wrap.reacher.motion_gen import (
                 MotionGen, MotionGenConfig, MotionGenPlanConfig)
         except Exception as error:
@@ -556,8 +560,22 @@ class CuroboBackend:
         self.MotionGenPlanConfig = MotionGenPlanConfig
         self.tensor_args = TensorDeviceType()
         try:
+            robot = RobotConfig.from_dict(config_document, self.tensor_args)
+            native_names = tuple(
+                robot.kinematics.kinematics_config.joint_names)
+            if native_names != JOINT_NAMES:
+                raise ValueError(
+                    'powered limit mapping requires PiPER joint order')
+            native_limits = robot.kinematics.get_joint_limits().position
+            powered = self.tensor_args.to_device(
+                CONTROLLER_COMMAND_LIMITS.T.copy())
+            native_limits[0] = torch.maximum(native_limits[0], powered[0])
+            native_limits[1] = torch.minimum(native_limits[1], powered[1])
+            if bool(torch.any(native_limits[0] >= native_limits[1])):
+                raise ValueError(
+                    'powered cuRobo joint-limit intersection is empty')
             config = MotionGenConfig.load_from_robot_config(
-                str(config_path),
+                robot,
                 WorldConfig(cuboid=[]),
                 tensor_args=self.tensor_args,
                 interpolation_dt=0.05,
@@ -652,6 +670,53 @@ class CuroboBackend:
             bound.enable_cost()
             self._restore_collision_constraints()
 
+    def _acquisition_start_with_joint2_noise(self, start, request):
+        """Use zero as the commanded home boundary after checking measured geometry.
+
+        This is acquisition-only, at most half of a 0.001-rad display step.
+        The request retains exact feedback; no native solver limit is relaxed.
+        """
+        if not (request.get('plan_kind') == 'ROUGH_ACQUISITION'
+                and request.get('scene', {}).get('observation_mode') == 'bootstrap_static'
+                and -0.0005 <= float(start[1]) < 0.0):
+            return list(start)
+        bounds = request['limits']['position_rad']
+        if any(not low <= value <= high for value, (low, high) in zip(start, bounds)):
+            raise CuroboContractError('measured acquisition start exceeds raw joint limits')
+        normalized = list(start)
+        normalized[1] = 0.0
+        bound = self.motion_gen.rollout_fn.bound_constraint
+        if not bool(bound.enabled):
+            raise CuroboContractError('joint-limit constraint unexpectedly disabled')
+        self_collision_seen = False
+        try:
+            bound.disable_cost()
+            # Evaluate actual feedback and the tiny correction, without moving
+            # collision geometry to the rounded position. Only the existing
+            # acquisition folded-self exception is eligible for recovery.
+            for fraction in (0.0, 0.5, 1.0):
+                measured = list(start)
+                measured[1] *= 1.0 - fraction
+                valid, status = self._start_state_status(measured)
+                if not valid:
+                    if status != 'MotionGenStatus.INVALID_START_STATE_SELF_COLLISION':
+                        raise CuroboCollisionRejected(
+                            'measured Joint 2 boundary transition rejected: %s' % status)
+                    self_collision_seen = True
+        finally:
+            bound.enable_cost()
+            self._restore_collision_constraints()
+        valid, status = self._start_state_status(normalized)
+        if self_collision_seen and status != 'MotionGenStatus.INVALID_START_STATE_SELF_COLLISION':
+            raise CuroboCollisionRejected(
+                'measured boundary self collision requires declared folded-start recovery')
+        self.last_planning_diagnostics['joint2_start_boundary_adjustment'] = {
+            'measured_rad': float(start[1]), 'planning_rad': 0.0,
+            'maximum_excursion_rad': 0.0005,
+            'measured_transition_collision_checked': True,
+        }
+        return normalized
+
     @timed_stage('position_limit_reentry')
     def _position_limit_reentry(self, start, request):
         """Recover only encoder-scale excursions outside cuRobo's inset."""
@@ -663,6 +728,7 @@ class CuroboBackend:
                 start,
                 request['limits']['position_rad'],
                 POSITION_LIMIT_CLIP_RAD,
+                command_limits=CONTROLLER_COMMAND_LIMITS.tolist(),
             )
         except CuroboContractError as error:
             raise CuroboContractError(
@@ -812,6 +878,10 @@ class CuroboBackend:
                 'cuRobo trajectory joint names do not match PiPER')
         positions = positions[:, [
             native_names.index(name) for name in JOINT_NAMES]]
+        position_limits = [
+            [max(raw[0], powered[0]), min(raw[1], powered[1])]
+            for raw, powered in zip(
+                position_limits, CONTROLLER_COMMAND_LIMITS)]
         points = normalize_trajectory(
             positions.tolist(), float(result.interpolation_dt), speed,
             position_limits=position_limits, command_rate_hz=command_rate_hz,
@@ -1582,6 +1652,7 @@ class CuroboBackend:
             'planning_budget_sec': float(planning_budget),
             'attempt_planning_budget_sec': float(attempt_budget),
             'position_limit_reentry_used': False,
+            'powered_command_limits_rad': CONTROLLER_COMMAND_LIMITS.tolist(),
         }
         self._update_world(request)
         self.planning_deadline_monotonic = time.monotonic() + planning_budget
@@ -1607,6 +1678,7 @@ class CuroboBackend:
                     'configured_home_direct_common_policy',
             })
             return [], [segment], 0.0
+        start = self._acquisition_start_with_joint2_noise(start, request)
         position_limit_reentry = self._position_limit_reentry(start, request)
         if position_limit_reentry is not None:
             start = list(position_limit_reentry['positions'][-1])

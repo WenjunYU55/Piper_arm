@@ -665,3 +665,28 @@ worker, acquisition and home regressions. The bounded-fallback test injects a
 nominal failure only; its fallback MotionGen solve and path checks are real.
 The bridge package builds, AI YAML parses and diff whitespace checks pass.
 No physical E2E or timing improvement is claimed by these tests.
+
+### cuRobo float32 boundary canonicalization (2026-09-09)
+
+Before strict trajectory normalization, an out-of-range native coordinate may
+be converted to its exact authoritative joint boundary only when it equals that
+boundary's float32 representation. This handles the recorded -2.9670000076293945
+versus -2.967 rad discrepancy without an epsilon allowance or general clipping.
+Other excursions are rejected; scheduled endpoints use exact source vertices.
+Common response, collision and execution gates and physical limits are unchanged.
+
+### Powered command limits (2026-09-09)
+
+cuRobo now intersects its loaded robot limits with the shared
+`execution.motion.CONTROLLER_COMMAND_LIMITS` before creating any solver.
+This prevents IK or trajectory search using the negative joint-2 feedback band
+as a commandable range. Native output normalization independently enforces
+the same intersection with request limits; the driver remains unchanged.
+Request metrics record the powered limits. Generated geometry and its source
+hashes remain unchanged; this is a worker runtime limit intersection.
+
+Measured feedback still uses the separate raw limits. Existing collision-checked
+position-limit re-entry targets the intersection with powered limits and retains
+its 0.005-rad excursion cap. Larger droop is rejected, not automatically recovered
+under a broader exception. This does not change dedicated configured-home policy
+or Tesseract. Offline tests do not establish physical tracking performance.

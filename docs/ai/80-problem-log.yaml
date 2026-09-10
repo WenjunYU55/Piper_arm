@@ -1181,3 +1181,37 @@ curobo_integration_diagnostics_2026_08_27:
     symptom: In one persistent MotionGen instance, a deliberately world-colliding request followed by the known link2-link5 collision incorrectly classified the second start as valid.
     root_cause: cuRobo v0.7.8 MotionGen.check_start_state disables world and self constraints while classifying an invalid start; its world-collision return exits before re-enabling the self-collision constraint.
     correction: The isolated cuRobo adapter now re-enables both pinned rollout constraints after every world update and in a finally block around every pose or joint-goal attempt. The GPU regression executes world rejection followed by the known self collision and requires the latter to remain rejected.
+
+disabled_j4_startup_spikes_2026_09_10:
+  owner_module: piper_mobile_manipulation/startup_gates.py
+  reference: docs/experiments/joint4_startup_feedback_20260910.md
+  consumer: target_scan_mission_node.py disabled startup joint callback and both pre-enable
+    waits
+  behavior: Preserve raw feedback and strict powered proof; qualify only brief exact-zero
+    J4 excursions from a negative [-0.008,-0.005) rad anchor while fresh all-six-disabled
+    fault-free status is proved.
+  bounds: Other joints retain 0.005 rad drift bound; preceding J4 must be in [-0.008,0].
+    Pending excursion cannot authorize. Over 50 ms excursion, over 10 percent of rolling
+    two-second samples, over 50 ms receipt gap, invalid source, generation changes
+    or unhealthy status reset proof.
+  must_retest_if_changed:
+  - startup gate rejection and source/generation regressions
+  - mission callback raw-telemetry integration
+  - recorded CAN replay
+  - mobile and driver behavioral suites
+  - package build
+  - disabled feedback-only smoke
+  - supervised powered startup before physical qualification
+  physical_status: powered startup qualification pending
+  validation: 1107 behavioral tests passed, one skipped; recorded failure replay and isolated disabled real-driver callback smoke pass; build and changed-file lint pass. Idle coordinator replaced; powered retest pending.
+
+joint4_reporting_cutoff_investigation_2026_09_10:
+  evidence: docs/experiments/joint4_startup_feedback_20260910.md
+  vendor_draft: docs/experiments/joint4_vendor_report_20260910.md
+  finding: '35 folders / 179849 J4 TF samples: 22795 zeros, no nonzero below 0.302
+    degrees. 21 isolated pulses in 11 folders, earliest 7 Sep 14:27 UK. Strong empirical
+    evidence of near-zero suppression around 0.3 degrees; exact controller algorithm
+    unconfirmed. Pulses are not exclusive to the disable instant.'
+  status: Host startup mitigation implemented; controller cause inferred, manufacturer
+    confirmation and firmware-specific remedy pending. No message sent or firmware/configuration
+    changed.

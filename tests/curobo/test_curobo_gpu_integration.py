@@ -421,3 +421,74 @@ def test_real_model_reenters_recorded_joint6_feedback_boundary(backend):
     valid, status = backend._start_state_status(recovery['positions'][-1])
     assert valid is True
     assert status == 'None'
+
+
+def test_powered_joint2_limit_rejects_recorded_uncommandable_goal(backend):
+    """The driver would clamp this recorded target to zero; never plan it."""
+    backend._update_world({'scene': {'obstacles': []}})
+    goal = [1.137163519859314, -.028179526329040527,
+            -.8916021585464478, -.9650981426239014,
+            1.1601653099060059, -2.685499668121338]
+    limits = backend.motion_gen.kinematics.get_joint_limits().position
+    assert float(limits[0, 1]) == 0.
+    valid, status = backend._start_state_status(goal)
+    assert not valid
+    assert 'JOINT_LIMITS' in status
+
+
+@pytest.mark.parametrize('measured', [-0.000139552, -0.0005])
+def test_joint2_home_noise_uses_collision_checked_folded_recovery(backend, measured):
+    from piper_mobile_manipulation.execution.motion import URDF_JOINT_LIMITS
+    request = {'plan_kind': 'ROUGH_ACQUISITION',
+               'scene': {'observation_mode': 'bootstrap_static', 'obstacles': []},
+               'limits': {'position_rad': URDF_JOINT_LIMITS.tolist()}}
+    start = [0., measured, 0., 0., 0.399345492, 0.]
+    backend._update_world(request)
+    assert 'JOINT_LIMITS' in backend._start_state_status(start)[1]
+    normalized = backend._acquisition_start_with_joint2_noise(start, request)
+    assert start[1] == measured  # Raw feedback is never rewritten.
+    assert normalized[1] == 0.
+    assert backend._position_limit_reentry(normalized, request) is None
+    recovery = backend._bootstrap_recovery(normalized, request)
+    assert recovery is not None
+    assert all(p[1] >= 0. for p in recovery['positions'])
+    assert backend._start_state_status(recovery['positions'][-1])[0]
+    assert backend.motion_gen.rollout_fn.bound_constraint.enabled
+
+
+def test_joint2_noise_never_bypasses_world_collision(backend):
+    from motion_planning.curobo.adapter import CuroboCollisionRejected
+    from piper_mobile_manipulation.execution.motion import URDF_JOINT_LIMITS
+    request = {'plan_kind': 'ROUGH_ACQUISITION',
+               'scene': {'observation_mode': 'bootstrap_static', 'obstacles': [{
+                   'id': 'noise_block', 'type': 'box',
+                   'minimum_m': [-2, -2, -2], 'maximum_m': [2, 2, 2]}]},
+               'limits': {'position_rad': URDF_JOINT_LIMITS.tolist()}}
+    backend._update_world(request)
+    try:
+        with pytest.raises(CuroboCollisionRejected, match='boundary transition'):
+            backend._acquisition_start_with_joint2_noise(
+                [0., -0.000139552, 0., 0., 0.399345492, 0.], request)
+        rollout = backend.motion_gen.rollout_fn
+        assert rollout.bound_constraint.enabled
+        assert rollout.primitive_collision_constraint.enabled
+        assert rollout.robot_self_collision_constraint.enabled
+    finally:
+        backend._update_world({'scene': {'obstacles': []}})
+
+
+def test_joint2_noise_full_acquisition_plan_keeps_commands_nonnegative(backend):
+    from piper_mobile_manipulation.execution.motion import URDF_JOINT_LIMITS
+    corpus = json.loads((Path(__file__).resolve().parents[2] /
+                         'benchmarks/planner_backends/recorded_reference_corpus.json').read_text())
+    request = copy.deepcopy(corpus['fixtures'][0]['request_template'])
+    request['planner_backend'] = 'curobo'
+    request['planning'].update(planner='MotionGen', pipeline='CUROBO_V1')
+    request['start_state']['positions_rad'] = [0., -0.000139552, 0., 0., .399345492, 0.]
+    request['limits']['position_rad'] = URDF_JOINT_LIMITS.tolist()
+    selected, segments, duration = backend.plan(request)
+    assert selected and duration >= 0.
+    assert segments[0]['bootstrap_recovery_used']
+    assert backend.last_planning_diagnostics['joint2_start_boundary_adjustment']['measured_rad'] == -0.000139552
+    assert all(p['positions_rad'][1] >= 0. for s in segments for p in s['points'])
+    assert request['start_state']['positions_rad'][1] == -0.000139552

@@ -1,6 +1,6 @@
 schema_version: 1
 date: '2026-09-07'
-title: Whole RGB-D recording to temporal masks and BundleSDF through the GUI
+title: Movement-window RGB-D sequence to temporal masks and BundleSDF through the GUI
 owner_module: reconstruction_recording
 reference: docs/architecture/dense_offline_video.md
 evidence: docs/experiments/dense_offline_video_validation.md
@@ -11,11 +11,11 @@ must_not_move_without: [AI_perception_tests/sam2_live_worker.py, reconstruction_
 architecture:
   - extract_video.py reads SQLite through Foxy deserialization and a local TF buffer; it creates no ROS node, publishers or subscribers.
   - An accepted-history stamp authorizes the exact raw initial pin and frozen target; earlier images cannot establish a competing target.
-  - Recover all available synchronized RGB-D after that seed, including stationary intervals. Exact timestamp pairs are required for legacy recovery; depth is never reused. See 92-aligned-depth-framesets.yaml. Camera calibration must stay fixed.
+  - Recover synchronized RGB-D after that seed within movement plus one-second pre/post-roll windows, retaining accepted pins. Legacy archives without execution events retain the full sequence. Exact timestamp pairs are required for legacy recovery; depth is never reused. See 92-aligned-depth-framesets.yaml. Camera calibration must stay fixed.
   - Retain image-time TF and explicit missing-TF markers; unavailable TF prevents reconstruction admission but does not prevent temporal image propagation.
   - python_sam2.sh invokes the existing isolated perception environment; segment_video.py uses its SAM2 temporal predictor and existing memory compactor, without starting the live worker.
   - Infer every extracted frame, even when its depth or TF is unsuitable for reconstruction. The accepted seed remains conditioning authority and is not replaced by predicted masks.
-  - Preserve angle, edge, depth, blur and perspective-normalized mask expansion gates using recorded configuration. No offline MOVING predicate or 8 Hz cap.
+  - Preserve angle, edge, depth, blur and perspective-normalized mask expansion gates using recorded configuration. Extraction applies movement windows; segmentation adds no further MOVING predicate or 8 Hz cap.
   - Native output remains raw RGB/depth with generated exact-frame masks and model provenance; dataset.py performs calibrated pinhole conversion.
   - reconstruct_job.py owns extraction, segmentation, validation and isolated upstream tracking/global refinement; GUI polls small atomic progress records and can cancel its owned process group.
   - output_validation.py exposes explicit upstream FAIL frame IDs separately from saved pose count and structural mesh success. Accuracy remains unqualified.
@@ -40,7 +40,7 @@ lifecycle:
   - The legacy import_bag.py callback recovery remains available for diagnostic comparison; it is no longer the GUI archive reconstruction path.
 manual_smoke_checks: [deserialize a serialized bag without later masks or MOVING events, GPU temporal mask propagation on saved real frames, native dataset validation and pinned reader, actual GUI Reconstruct action through all stages, inspect mesh and tracking failure report, cancel and inspect partial output]
 must_retest_if_changed: [dense timestamp matching and quality unit tests, serialized bag extraction, interruption and multi-job tests, GUI tests, isolated SAM2 inference, complete recording/converter suite, pinned BundleSDF reader and actual GPU reconstruction]
-invariants: [no robot or mission commands, unchanged captures and NBV, no stale-mask fallback, no latest TF fallback, raw data immutable, no weights or data in Git, no pose-count accuracy claim]
+invariants: [no robot or mission commands, unchanged captures and NBV, no stale-mask fallback, no latest TF fallback, raw data immutable during extraction; explicit offline compaction is separate, no weights or data in Git, no pose-count accuracy claim]
 
 executed_evidence:
   automated: 271 reconstruction/GUI tests and 7 existing SAM2 worker tests passed; package build passed; pre-existing package lint failures remain documented.
@@ -56,3 +56,30 @@ reconstruction_base_frame_orientation_2026_09_08:
   owner_module: reconstruction/coordinate_frames.py
   behavior: All capture reconstruction variants retain base_link geometry with explicit frame/hash sidecars; BundleSDF adds a separate same-image-anchored base_link export. Both viewers open Z-up from the robot side with labelled axes and robot-direction arrows. Unknown orientation remains explicit.
   boundary: Offline export/display only; original geometry, tracking, capture poses, quality gates and evidence ZIPs are preserved.
+
+movement_window_recording_2026_09_09:
+  owner_module: piper_mobile_manipulation/movement_bag_recorder.py
+  helpers: piper_mobile_manipulation/movement_recording.py
+  allowed_edit_paths: [movement_bag_recorder.py, movement_recording.py, mission_archive.py, tools/bundlesdf/extract_video.py, tests/reconstruction, docs/ai]
+  live: A separate command-free recorder buffers at most one second and 128 MiB of idle RGB/depth/mask messages. MOVING flushes pre-roll once; the first following non-MOVING status starts one second of post-roll. Repeated or overlapping moves do not duplicate messages. All calibration, transforms, mission events and accepted keyframe pins remain recorded.
+  storage: Native Foxy-compatible SQLite/CDR bag with version-4 metadata; isolated single-thread subscribers write bounded 0.2-second transactions. Parent retains disk reserve, SIGINT closure, row-count verification and incomplete marking. No extra rosbag2_py dependency.
+  offline: Extraction is read-only; explicitly requested destructive offline compaction uses tools/bundlesdf/compact_recordings.py. BundleSDF extraction selects the same one-second pre/post movement intervals using recorded message times and retains accepted pins. Legacy bags without execution status use explicitly labelled full-sequence fallback.
+  bundle_input: One monotonically ordered frame sequence beginning at the existing accepted mask seed; original RGB/depth timestamps, exact frameset matching, camera calibration, TF and distortion correction remain unchanged. Idle gaps are omitted without fabricating new source timestamps.
+  scope: Saved RGB-D only; capture counts, NBV, motion, safety and planner budgets are unchanged. Pre-roll overflow is reported; transport drops remain unknown, not zero.
+  required_retests: [window overlap and buffer limits, archive lifecycle, serialized ROS recording and playback, dense extraction and conversion, reconstruction and GUI suites, package build]
+
+offline_movement_compaction_2026_09_09:
+  owner_module: tools/bundlesdf/compact_recordings.py
+  allowed_edit_paths: [tools/bundlesdf/compact_recordings.py, tools/bundlesdf/extract_video.py, tests/reconstruction/test_compact_recordings.py, docs/ai, docs/architecture]
+  authority: Explicit user-requested deletion of idle footage; CLI is plan-only unless --apply is supplied.
+  selection: Recorded MOVING intervals with one-second shoulders; global exact RGB/depth header-stamp intersection across splits. A partner arriving outside the shoulder is retained. Unpaired selected images are counted and omitted, never approximately paired. Accepted keyframe tuples and every non-image topic remain byte-identical.
+  mutation: Only closed or incomplete archives with metadata and MOVING evidence; refuse live/open databases and nonempty pending journals. Copy smallest retained segment first, verify every retained row with SHA256 and SQLite quick_check, fsync then atomically replace original. Idle payloads are actually deleted without a second full archive copy.
+  recovery: Durable movement_compaction.json retains selected row IDs, original metadata and progress. Resume the same --apply invocation after interruption. Dense extraction refuses an unfinished compaction. Completion rebuilds bag metadata and manifest counts, preserving original closure and mission outcome.
+  must_retest_if_changed: [serialized split-bag compaction, cross-boundary exact pairing, evidence preservation, interruption resume, metadata counts, dense extraction, native bag readability]
+  limitations: Archives without movement evidence remain untouched. Missing recorded partners cannot be recovered. Compaction preserves original timestamps and geometry; no fabricated continuous capture clock.
+
+executed_offline_compaction_2026_09_09:
+  report: docs/experiments/movement_recording_compaction_20260909.md
+  result: 27 archives compacted; 207.69 GiB permanently reclaimed; all retained payloads verified before replacement and all resulting timestamp sets/counts verified afterward.
+  untouched: Five archives without execution events and one unfinished archive without metadata.
+  validation: Nine focused tests passed; native bag metadata readable; real dense extraction produced 330 ordered exact RGB-D pairs. No physical execution or new GPU geometry qualification.

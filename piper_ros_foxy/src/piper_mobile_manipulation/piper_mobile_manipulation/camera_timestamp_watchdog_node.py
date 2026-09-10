@@ -108,6 +108,10 @@ class CameraTimestampWatchdogNode(Node):
         if self.result.healthy:
             self.unhealthy_frames = 0
             self.recovery_latched = False
+        elif self.result.state == 'STARTING':
+            # This frame is valid; only the consecutive-frame safety gate is
+            # pending. Recovery progress is not evidence for a stack restart.
+            self.unhealthy_frames = 0
         else:
             self.unhealthy_frames += 1
 
@@ -180,6 +184,7 @@ class CameraTimestampWatchdogNode(Node):
 
         can_request = (
             not self.result.healthy
+            and self.result.state != 'STARTING'
             and self.arm_stationary
             and not self.recovery_latched
             and self.param_bool('enable_recovery_request')

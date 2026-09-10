@@ -99,6 +99,29 @@ c.commit();c.close()
     assert all(f['tf_error'] is None for f in data['frames'])
     assert data['frames'][1]['tf_stamp_ns'] == 1_200_000_000
 
+    # A later movement keeps its one-second pre-roll plus the accepted seed.
+    movement = r'''import sqlite3,sys
+from rclpy.serialization import serialize_message
+from piper_mobile_manipulation.msg import ScanExecutionStatus
+c=sqlite3.connect(sys.argv[1]);tid=c.execute("SELECT id FROM topics WHERE name='/piper/scan_execution_status'").fetchone()[0]
+for stamp,state in [(3000000000,'MOVING'),(4000000000,'SETTLING')]:
+ c.execute('INSERT INTO messages(topic_id,timestamp,data) VALUES(?,?,?)',(tid,stamp,serialize_message(ScanExecutionStatus(state=state))))
+c.commit()
+'''
+    subprocess.run([sys.executable, '-c', movement,
+                    str(tmp_path / 'bag/bag_0.db3')], check=True)
+    trimmed = tmp_path / 'movement_dense'
+    result = subprocess.run(
+        [sys.executable, str(root / 'tools/bundlesdf/extract_video.py'),
+         str(tmp_path / 'bag'), str(trimmed)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    selected = json.loads((trimmed / 'extraction.json').read_text())
+    assert [f['rgb_stamp_ns'] for f in selected['frames']] == [1000000000, 2000000000]
+    assert selected['rejected_by_reason']['idle_outside_movement_windows'] == 4
+    with sqlite3.connect(str(tmp_path / 'bag/bag_0.db3')) as db:
+        db.execute("DELETE FROM messages WHERE topic_id IN (SELECT id FROM topics WHERE "
+                   "name='/piper/scan_execution_status')")
+
     # A nearby depth-only frameset must not be relabelled as synchronized RGB-D.
     mutate = r'''import sqlite3, sys
 from rclpy.serialization import deserialize_message, serialize_message

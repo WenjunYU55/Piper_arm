@@ -128,6 +128,8 @@ from piper_mobile_manipulation.scan_session_memory import (
     validate_history_payload,
 )
 from piper_mobile_manipulation.startup_gates import (
+    PreEnableJointStability,
+    disabled_joint_feedback_healthy,
     joint_sample_rejection,
     joint_stability_update,
     post_enable_sample_rejection,
@@ -461,6 +463,8 @@ class TargetScanMissionNode(Node):
         self.joint_generation_started_ns = 0
         self.joint_stream_stable_since = 0.0
         self.joint_stream_reference = None
+        self.pre_enable_stability = PreEnableJointStability()
+        self.pre_enable_stable_since = 0.0
         self.joint_feedback_rejection = 'driver generation has not started'
         self.latest_arm_status = None
         self.latest_arm_status_at = 0.0
@@ -787,6 +791,8 @@ class TargetScanMissionNode(Node):
                 self.joint_feedback_rejection = reason
                 self.joint_stream_stable_since = 0.0
                 self.joint_stream_reference = None
+                self.pre_enable_stability.reset()
+                self.pre_enable_stable_since = 0.0
                 return
             self.joint_stream_reference, self.joint_stream_stable_since = \
                 joint_stability_update(
@@ -795,6 +801,14 @@ class TargetScanMissionNode(Node):
                     positions,
                     received_at,
                 )
+            if disabled_joint_feedback_healthy(
+                    self.latest_arm_status, self.latest_arm_status_at,
+                    received_at):
+                self.pre_enable_stable_since = self.pre_enable_stability.update(
+                    positions, received_at)
+            else:
+                self.pre_enable_stability.reset()
+                self.pre_enable_stable_since = 0.0
             self.latest_joints = msg
             self.latest_joints_at = received_at
             self.latest_joint_source_ns = stamp_ns
@@ -1233,6 +1247,8 @@ class TargetScanMissionNode(Node):
             self.latest_joint_source_ns = 0
             self.joint_stream_stable_since = 0.0
             self.joint_stream_reference = None
+            self.pre_enable_stability = PreEnableJointStability()
+            self.pre_enable_stable_since = 0.0
             self.joint_feedback_rejection = (
                 'waiting for current driver-generation feedback')
             self.latest_arm_status = None
@@ -1364,8 +1380,12 @@ class TargetScanMissionNode(Node):
                     fresh = (
                         observation is not None
                         and not observation.is_stale_at(now, 0.25))
-                stable_since = self.joint_stream_stable_since
-                rejection = self.joint_feedback_rejection
+                stable_since = self.pre_enable_stable_since
+                fresh = fresh and disabled_joint_feedback_healthy(
+                    self.latest_arm_status, self.latest_arm_status_at, now)
+                rejection = (
+                    self.joint_feedback_rejection
+                    or self.pre_enable_stability.reason)
             if (
                     fresh and stable_since > 0.0
                     and now - stable_since >= float(stable_sec)):

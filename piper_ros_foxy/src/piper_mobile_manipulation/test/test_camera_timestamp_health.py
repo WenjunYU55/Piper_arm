@@ -182,3 +182,75 @@ def test_watchdog_uses_small_per_frame_camera_info_clock_sample():
     assert 'rclpy.spin(node)' in source
     assert config['/**']['ros__parameters']['image_topic'] == (
         '/camera/color/camera_info')
+
+
+@pytest.mark.parametrize('fault_count', [1, 5])
+def test_valid_recovery_frames_do_not_restart_stack(fault_count):
+    """Reproduce a fault while moving followed by stationary recovery."""
+    node, requests = recovery_watchdog_stub()
+    node.arm_stationary = False
+    for _ in range(fault_count):
+        feed_clock_sample(node, 100., 101.)
+        CameraTimestampWatchdogNode.tick(node)
+    assert not requests
+    node.arm_stationary = True
+    for index in range(1, 16):
+        feed_clock_sample(node, 101. + index / 30., 101.1 + index / 30.)
+        CameraTimestampWatchdogNode.tick(node)
+        assert node.result.healthy is (index == 15)
+        assert node.unhealthy_frames == 0
+        assert not requests
+    assert not node.recovery_latched
+
+
+def recovery_watchdog_stub():
+    """Run real callbacks without ROS publishers or a recovery-request file."""
+    requests = []
+    now = time.monotonic()
+    parameters = {
+        'joint_state_timeout_sec': 1., 'joint_subscription_retry_sec': 10.,
+        'frame_timeout_sec': 2., 'startup_grace_sec': 3.,
+        'unhealthy_frames_before_recovery': 5,
+    }
+    node = SimpleNamespace(
+        monitor=TimestampHealthMonitor(), unhealthy_frames=0,
+        recovery_latched=False, arm_stationary=True,
+        started_at=now - 10., last_joint_at=now,
+        last_joint_subscription_at=now, last_image_at=now,
+        get_parameter=lambda name: SimpleNamespace(value=parameters[name]),
+        param_bool=lambda name: True, update_arm_stationary=lambda now: None,
+        publish_health=lambda: None,
+        write_recovery_request=lambda: requests.append(True),
+    )
+    return node, requests
+
+
+def feed_clock_sample(node, stamp, now):
+    node.ros_now_sec = lambda: now
+    node.stamp_sec = lambda header: stamp
+    CameraTimestampWatchdogNode.image_cb(
+        node, SimpleNamespace(header=SimpleNamespace(stamp=None)))
+
+
+def test_persistent_clock_fault_still_restarts_once():
+    node, requests = recovery_watchdog_stub()
+    for _ in range(4):
+        feed_clock_sample(node, 100., 101.)
+        CameraTimestampWatchdogNode.tick(node)
+        assert not requests
+    feed_clock_sample(node, 100., 101.)
+    CameraTimestampWatchdogNode.tick(node)
+    CameraTimestampWatchdogNode.tick(node)
+    assert requests == [True]
+    assert node.recovery_latched
+    assert not node.result.healthy
+
+
+def test_missing_frames_during_recovery_still_request_restart():
+    node, requests = recovery_watchdog_stub()
+    feed_clock_sample(node, 100., 100.1)
+    assert node.result.state == 'STARTING'
+    node.last_image_at = time.monotonic() - 3.
+    CameraTimestampWatchdogNode.tick(node)
+    assert node.result.state == 'NO_FRAMES'
+    assert requests == [True]

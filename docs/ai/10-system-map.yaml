@@ -5,7 +5,7 @@ saved_camera_recovery_2026_09_07:
 automatic_scan_recording_2026_09_07:
   reference: docs/ai/88-automatic-scan-recording.yaml
   owner_module: piper_mobile_manipulation/mission_archive.py
-  behavior: Every normal supervised scan defaults to a separate whole-scan RGB-D/mask/calibration/TF/event rosbag plus the existing accepted-frame reconstruction dataset. Archive starts with the scan stack and closes on its shutdown; capture counts, median output and safety are unchanged.
+  behavior: Every normal supervised scan defaults to a movement-window RGB-D/mask rosbag with one-second pre/post-roll, retained calibration/TF/events and accepted capture pins, plus the existing accepted-frame reconstruction dataset. Archive starts with the scan stack and closes on its shutdown; capture counts, median output and safety are unchanged.
   defaults: {mission_archive_enabled: true, reconstruction_recording_enabled: true, mission_archive_minimum_free_bytes: 2147483648}
   boundary: Archive is never launch-critical; best-effort sensor subscriptions and eight-message DDS histories isolate slow storage; Foxy write cache is disabled to preserve shutdown tail messages. Only tf_static is reliable/transient-local. Low disk stops the archive and retains incomplete evidence.
   lifecycle: Unique inprogress folder becomes closed or incomplete. Closed describes the archive, not mission success; mission outcome remains in recorded events. SIGKILL may leave inspectable inprogress data.
@@ -1177,3 +1177,89 @@ tesseract_partial_success_exclusion_2026_09_09:
   evidence: datasets/experiment_results/tesseract_retry_fix_20260909/
   physical_status: No live restart or robot command; supervised next-mission exclusion and terminal
     recovery check pending.
+
+curobo_powered_limits_2026_09_09:
+  owner_module: motion_planning/curobo/worker.py
+  source_of_truth: piper_mobile_manipulation.execution.motion.CONTROLLER_COMMAND_LIMITS
+  incident: gui-sim-792c8f8a4bd649f9a55315692a1af7c1 completed three captures then timed out with joint2 target -0.028179526 rad while the driver clamped it to zero.
+  behavior: Intersect native robot limits with shared powered limits before constructing IK, graph and trajectory solvers or capturing CUDA graphs. Independently intersect request and powered limits when normalizing native output. Joint2 goals cannot be negative.
+  feedback: Raw measured limits remain separate. Existing collision-checked re-entry intersects powered bounds too, retains exact measured start and the 0.005-rad maximum excursion, and rejects larger excursions rather than expanding recovery authority.
+  preserved: Tesseract behavior, driver clamp, physical limits, native inset vector, calibrated model geometry and hashes, configured-home path, collision checks, scheduling and capture gates.
+  diagnostics: Request metrics include powered_command_limits_rad.
+  required_retests: [negative joint2 output rejection, bounded feedback re-entry, complete mobile Tesseract cuRobo GUI suites, native GPU powered-boundary and valid-path and blocked-world checks, AI YAML parse]
+  physical_status: Offline only; no live worker restart or arm commands. A newly started worker loads the fix.
+
+tesseract_response_identity_2026_09_09:
+  owner_module: piper_tesseract_foxy/worker.py ray_ik_solutions and bridge_node.py poll
+  behavior: Ray IK normalizes direction internally but reports the exact requested look variant. Response validation retains exact identity checks and reports candidate ID plus candidate-present, position-match and look-match flags on rejection.
+  evidence: Before consuming an invalid response the bridge archives the original request, unmodified response bytes and rejection reason under spool/failed/<request_id>/ using private atomic queues. Archiving failure retains the original response and still rejects the plan. Successful responses retain normal consumption behavior.
+  scope: Shared bridge diagnostics cover both planners; direction reporting correction is Tesseract only. No goal, collision, trajectory or authorization tolerance is relaxed.
+  provenance: Worker metadata assignment and comment are the only worker change; reversing them reproduces the previously bound hash. Atlas metadata is explicitly rebound; both geometry arrays and all other bound sources remain unchanged.
+  required_retests: [continuous ray IK exact direction identity, rejected response archival and disk-failure retention, strict response contracts, complete mobile Tesseract cuRobo GUI suites, source-verified atlas load, package builds]
+  limitation: The old rejected response was already deleted; this corrects a reproduced defect without proving the exact cause of gui-sim-6e5aa4b2ef9044efb7728faf60e2f0d9. Runtime spool evidence survives consumption but tmpfs does not survive reboot; export it for long-term retention.
+
+movement_window_recording_2026_09_09:
+  owner_module: piper_mobile_manipulation/movement_bag_recorder.py
+  helpers: piper_mobile_manipulation/movement_recording.py
+  allowed_edit_paths: [movement_bag_recorder.py, movement_recording.py, mission_archive.py, tools/bundlesdf/extract_video.py, tests/reconstruction, docs/ai]
+  live: A separate command-free recorder buffers at most one second and 128 MiB of idle RGB/depth/mask messages. MOVING flushes pre-roll once; the first following non-MOVING status starts one second of post-roll. Repeated or overlapping moves do not duplicate messages. All calibration, transforms, mission events and accepted keyframe pins remain recorded.
+  storage: Native Foxy-compatible SQLite/CDR bag with version-4 metadata; isolated single-thread subscribers write bounded 0.2-second transactions. Parent retains disk reserve, SIGINT closure, row-count verification and incomplete marking. No extra rosbag2_py dependency.
+  offline: Extraction is read-only; explicitly requested destructive offline compaction uses tools/bundlesdf/compact_recordings.py. BundleSDF extraction selects the same one-second pre/post movement intervals using recorded message times and retains accepted pins. Legacy bags without execution status use explicitly labelled full-sequence fallback.
+  bundle_input: One monotonically ordered frame sequence beginning at the existing accepted mask seed; original RGB/depth timestamps, exact frameset matching, camera calibration, TF and distortion correction remain unchanged. Idle gaps are omitted without fabricating new source timestamps.
+  scope: Saved RGB-D only; capture counts, NBV, motion, safety and planner budgets are unchanged. Pre-roll overflow is reported; transport drops remain unknown, not zero.
+  required_retests: [window overlap and buffer limits, archive lifecycle, serialized ROS recording and playback, dense extraction and conversion, reconstruction and GUI suites, package build]
+
+offline_movement_compaction_2026_09_09:
+  owner_module: tools/bundlesdf/compact_recordings.py
+  allowed_edit_paths: [tools/bundlesdf/compact_recordings.py, tools/bundlesdf/extract_video.py, tests/reconstruction/test_compact_recordings.py, docs/ai, docs/architecture]
+  authority: Explicit user-requested deletion of idle footage; CLI is plan-only unless --apply is supplied.
+  selection: Recorded MOVING intervals with one-second shoulders; global exact RGB/depth header-stamp intersection across splits. A partner arriving outside the shoulder is retained. Unpaired selected images are counted and omitted, never approximately paired. Accepted keyframe tuples and every non-image topic remain byte-identical.
+  mutation: Only closed or incomplete archives with metadata and MOVING evidence; refuse live/open databases and nonempty pending journals. Copy smallest retained segment first, verify every retained row with SHA256 and SQLite quick_check, fsync then atomically replace original. Idle payloads are actually deleted without a second full archive copy.
+  recovery: Durable movement_compaction.json retains selected row IDs, original metadata and progress. Resume the same --apply invocation after interruption. Dense extraction refuses an unfinished compaction. Completion rebuilds bag metadata and manifest counts, preserving original closure and mission outcome.
+  must_retest_if_changed: [serialized split-bag compaction, cross-boundary exact pairing, evidence preservation, interruption resume, metadata counts, dense extraction, native bag readability]
+  limitations: Archives without movement evidence remain untouched. Missing recorded partners cannot be recovered. Compaction preserves original timestamps and geometry; no fabricated continuous capture clock.
+
+campaign_terminal_recovery_2026_09_09:
+  owner_module: results_campaign/collector.py
+  allowed_edit_paths: [results_campaign/collector.py, tests/results_campaign/test_collector.py, docs/ai, docs/experiments/results_campaign.md]
+  incident: Latest FinalV2_TesVscuR retry gui-sim-bb4f5971ec2c49adb449f7800b7158e9 had a persisted FAILED/DEADLINE_EXPIRED mission result with seven captures and safe shutdown, but no campaign terminal.json. Trial table therefore remained In progress and bookmarks SUBMITTED.
+  cause: Terminal persistence depended on the GUI result callback. The passive collector read the saved result but never recovered a missing terminal record, so reopening or refreshing could not resolve a missed callback. Current GUI started after the result; why the earlier callback was missed is not established by retained evidence.
+  behavior: File-only collection now recovers missing terminal evidence from an exact task-matching finalized SUCCEEDED/FAILED/CANCELLED result with explicit boolean safe_shutdown and nonnegative integer capture_count. Existing terminal records remain unchanged. Normal CampaignStore completion handles active retry clearing, supersession and bookmark refresh.
+  provenance: Recovered terminal includes source result path, SHA256 and source modification time; recovery timestamps are not represented as original mission end timestamps. Raw mission results and captures remain unchanged.
+  must_retest_if_changed: [missed-callback recovery across retries, mismatched and incomplete result rejection, repeated collection idempotence, full campaign and GUI suites]
+  runtime: Already running Python GUI and recorder processes require a restart to load the code change; durable repaired rows can be displayed immediately with Refresh Table.
+  validation: 188 campaign and GUI tests passed; actual saved attempt recovered to Done / FAILED with seven captures, active retry cleared, and original result SHA256 unchanged.
+
+curobo_joint2_start_noise_2026_09_09:
+  owner_module: motion_planning/curobo/worker.py
+  allowed_edit_paths: [motion_planning/curobo/worker.py, tests/curobo, docs/ai, docs/experiments/curobo_start_and_target_jump_20260909.md]
+  incident: Powered-limit intersection caused recorded -0.000139552 rad Joint 2 home feedback to enter strict position re-entry before folded-start recovery.
+  behavior: Only initial ROUGH_ACQUISITION/bootstrap_static feedback in [-0.0005, 0) uses zero as its planning Joint 2 start. Raw request stays intact. Three measured-transition geometry samples retain world checks; existing folded-self exception requires declared bootstrap recovery. Native powered solver bounds and nonnegative Joint 2 output remain enforced.
+  boundary: No global rounding, no camera/TF modification, no new collision exemption. First planned point may differ from exact measured Joint 2 only by this bounded offset; existing downstream measured-start admission remains mandatory. Other joints, later scan moves and direct home are unchanged.
+  diagnostics: joint2_start_boundary_adjustment records measured/planning radians, maximum excursion and measured collision-check completion.
+  must_retest_if_changed: [real GPU noise and tolerance boundary, full acquisition nonnegative output, blocked-world rejection and constraint restoration, powered negative goal and other joint inset, ordinary mobile Tesseract cuRobo campaign GUI suites]
+  evidence: docs/experiments/curobo_start_and_target_jump_20260909.md
+  validation: Seven real GPU checks and 1575 ordinary tests passed; 25 skipped. No physical movement or live-worker restart.
+
+disabled_j4_startup_spikes_2026_09_10:
+  owner_module: piper_mobile_manipulation/startup_gates.py
+  reference: docs/experiments/joint4_startup_feedback_20260910.md
+  consumer: target_scan_mission_node.py disabled startup joint callback and both pre-enable
+    waits
+  behavior: Preserve raw feedback and strict powered proof; qualify only brief exact-zero
+    J4 excursions from a negative [-0.008,-0.005) rad anchor while fresh all-six-disabled
+    fault-free status is proved.
+  bounds: Other joints retain 0.005 rad drift bound; preceding J4 must be in [-0.008,0].
+    Pending excursion cannot authorize. Over 50 ms excursion, over 10 percent of rolling
+    two-second samples, over 50 ms receipt gap, invalid source, generation changes
+    or unhealthy status reset proof.
+  must_retest_if_changed:
+  - startup gate rejection and source/generation regressions
+  - mission callback raw-telemetry integration
+  - recorded CAN replay
+  - mobile and driver behavioral suites
+  - package build
+  - disabled feedback-only smoke
+  - supervised powered startup before physical qualification
+  physical_status: powered startup qualification pending
+  validation: 1107 behavioral tests passed, one skipped; recorded failure replay and isolated disabled real-driver callback smoke pass; build and changed-file lint pass. Idle coordinator replaced; powered retest pending.

@@ -1335,3 +1335,41 @@ def test_failed_terminal_stop_cannot_renew_authority_or_claim_already_home():
     assert not TargetScanMissionNode.prove_return_home_for_shutdown(
         node, session, startup=True)
     assert not session.return_home_proved
+
+
+def test_pre_enable_spike_proof_keeps_raw_telemetry_and_resets_on_bad_source(monkeypatch):
+    from piper_mobile_manipulation.startup_gates import PreEnableJointStability
+    from sensor_msgs.msg import JointState
+    now = [1.0]
+    monkeypatch.setattr(mission_node.time, 'monotonic', lambda: now[0])
+    observed = []
+    status = SimpleNamespace(
+        motor_feedback_valid=True, err_code=0, motor_faults=[],
+        motor_watchdog_reason='', **{
+            'motor_%d_driver_enabled' % i: False for i in range(1, 7)})
+    node = SimpleNamespace(
+        _lock=threading.RLock(), latest_joints=None, latest_joints_at=0,
+        latest_joint_source_ns=0, joint_generation_started_ns=1,
+        joint_stream_reference=None, joint_stream_stable_since=0,
+        pre_enable_stability=PreEnableJointStability(), pre_enable_stable_since=0,
+        latest_arm_status=status, latest_arm_status_at=1.0,
+        get_clock=lambda: SimpleNamespace(now=lambda: SimpleNamespace(
+            nanoseconds=int(now[0] * 1e9))),
+        telemetry_store=SimpleNamespace(update_joints=lambda msg, **kw: observed.append(
+            list(msg.position))))
+    for i in range(601):
+        now[0] = 1 + i * .005
+        node.latest_arm_status_at = now[0]
+        msg = JointState()
+        stamp = int(now[0] * 1e9)
+        msg.header.stamp.sec, msg.header.stamp.nanosec = divmod(stamp, 10**9)
+        msg.position = [0.0, 0.0, 0.0, 0.0 if i % 50 == 49 else -0.0065415, 0.0, 0.0]
+        TargetScanMissionNode.joint_cb(node, msg)
+        assert observed[-1] == list(msg.position)
+    assert now[0] - node.pre_enable_stable_since >= 2
+    assert now[0] - node.joint_stream_stable_since < 2
+    # An unchanged source stamp invalidates both proofs despite a recent receipt.
+    TargetScanMissionNode.joint_cb(node, msg)
+    assert node.pre_enable_stable_since == 0
+    assert node.pre_enable_stability.reference is None
+    assert node.joint_stream_stable_since == 0

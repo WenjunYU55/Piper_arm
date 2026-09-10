@@ -1,9 +1,92 @@
 """Pure validation helpers for sequential automatic-mission startup gates."""
 
 import math
+from collections import deque
 
 
 MAX_JOINT_SOURCE_AGE_NS = 500_000_000
+
+
+class PreEnableJointStability:
+    """Qualify disabled feedback without rewriting any measured position.
+
+    Only brief J4 zero reports from a negative near-zero anchor are eligible.
+    A pending excursion cannot authorize enable. Real drift retains the strict
+    0.005-rad anchor rule; the powered proof does not use this class.
+    """
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.reference = None
+        self.stable_since = 0.0
+        self.last_at = None
+        self.last_positions = None
+        self.excursion_since = None
+        self.samples = deque()
+        self.reason = 'waiting for fresh disabled joint feedback'
+
+    def update(self, positions, received_at):
+        try:
+            values = [float(v) for v in positions]
+            now = float(received_at)
+        except (TypeError, ValueError):
+            self.reset()
+            return 0.0
+        if (len(values) != 6 or not math.isfinite(now)
+                or not all(math.isfinite(v) for v in values)):
+            self.reset()
+            return 0.0
+        if self.last_at is not None and not 0.0 < now - self.last_at <= 0.05:
+            self.reset()
+        self.last_at = now
+        previous = self.last_positions
+        self.last_positions = values
+        if self.reference is None:
+            self.reference = values
+            self.stable_since = now
+        delta = [abs(a - b) for a, b in zip(values, self.reference)]
+        excursion = (
+            delta[3] > 0.005 and values[3] == 0.0
+            and -0.008 <= self.reference[3] < -0.005
+            and previous is not None and -0.008 <= previous[3] <= 0.0
+            and all(d <= 0.005 for i, d in enumerate(delta) if i != 3))
+        self.samples.append((now, excursion))
+        while self.samples and self.samples[0][0] < now - 2.0:
+            self.samples.popleft()
+        excessive = sum(flag for _, flag in self.samples) > 0.10 * len(self.samples)
+        if excursion:
+            if self.excursion_since is None:
+                self.excursion_since = now
+            if now - self.excursion_since <= 0.05 and not excessive:
+                self.reason = 'waiting for Joint 4 zero excursion to return'
+                return 0.0
+        self.excursion_since = None
+        self.reference, self.stable_since = joint_stability_update(
+            self.reference, self.stable_since, values, now)
+        if excessive:
+            self.stable_since = now
+            self.reason = 'Joint 4 zero excursions exceed 10% of recent samples'
+            return 0.0
+        self.reason = 'waiting for two seconds of disabled position stability'
+        return self.stable_since
+
+
+def disabled_joint_feedback_healthy(status, status_at, now):
+    """Allow spike qualification only with fresh, fault-free disabled motors."""
+    if status is None or not 0.0 <= now - status_at <= 0.5:
+        return False
+    return (
+        bool(getattr(status, 'motor_feedback_valid', False))
+        and int(getattr(status, 'err_code', 0)) == 0
+        and not getattr(status, 'motor_faults', ())
+        and not getattr(status, 'motor_watchdog_reason', '')
+        and not any(bool(getattr(status, field, False))
+                    for i in range(1, 7) for field in (
+                        'motor_%d_driver_enabled' % i,
+                        'joint_%d_angle_limit' % i,
+                        'communication_status_joint_%d' % i)))
 
 
 def post_enable_sample_rejection(

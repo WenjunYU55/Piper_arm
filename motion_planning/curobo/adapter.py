@@ -3,6 +3,7 @@
 import hashlib
 import json
 import math
+import struct
 
 from piper_mobile_manipulation.visibility import (
     DEFAULT_VISIBILITY_ANGLE_DEG, visibility_tolerance)
@@ -370,7 +371,8 @@ def position_limit_reentry_path(
         start_positions, position_limits, position_limit_clip,
         maximum_clip_excursion_rad=START_STATE_MAXIMUM_CLIP_EXCURSION_RAD,
         interior_offset_rad=START_STATE_REENTRY_INTERIOR_OFFSET_RAD,
-        maximum_step_rad=START_STATE_REENTRY_MAXIMUM_STEP_RAD):
+        maximum_step_rad=START_STATE_REENTRY_MAXIMUM_STEP_RAD,
+        command_limits=None):
     """Return a bounded path from raw-valid feedback into planner limits.
 
     cuRobo deliberately clips selected PiPER joint limits so planned motion
@@ -404,6 +406,8 @@ def position_limit_reentry_path(
             'position-limit re-entry policy is invalid')
 
     target = list(start)
+    if command_limits is not None:
+        validate_trajectory_position_limits([], command_limits)
     changed = []
     for joint_index, (position, raw_bounds, clip) in enumerate(zip(
             start, position_limits, clips)):
@@ -415,6 +419,10 @@ def position_limit_reentry_path(
                 % (joint_index + 1))
         clipped_low = low + clip
         clipped_high = high - clip
+        if command_limits is not None:
+            command_low, command_high = command_limits[joint_index]
+            clipped_low = max(low, command_low) + clip
+            clipped_high = min(high, command_high) - clip
         if clipped_low + interior_offset >= clipped_high - interior_offset:
             raise CuroboContractError(
                 'position-limit re-entry joint%d interval is empty'
@@ -471,7 +479,8 @@ def normalize_trajectory(
     each segment's speed independently. Geometry and speed ceilings are
     identical, and this can only lengthen the legacy schedule.
     """
-    rows = [finite_vector(row, 6, 'trajectory position') for row in positions]
+    rows = [
+        list(finite_vector(row, 6, 'trajectory position')) for row in positions]
     if len(rows) < 2:
         raise CuroboContractError(
             'native trajectory must contain at least two positions')
@@ -486,6 +495,18 @@ def normalize_trajectory(
     if not math.isfinite(speed) or speed < 1.0 or speed > 100.0:
         raise CuroboContractError('execution speed must be within 1..100')
     if position_limits is not None:
+        validate_trajectory_position_limits([], position_limits)
+        # GPU float32 cannot represent every authoritative decimal boundary.
+        # Canonicalize only that exact representation, never a general epsilon
+        # or an arbitrary out-of-range point. Downstream checks stay strict.
+        for row in rows:
+            for joint_index, (low, high) in enumerate(position_limits):
+                value = row[joint_index]
+                boundary = (
+                    low if value < low else high if value > high else None)
+                if boundary is not None and value == struct.unpack(
+                        'f', struct.pack('f', boundary))[0]:
+                    row[joint_index] = float(boundary)
         validate_trajectory_position_limits(rows, position_limits)
     baseline_period = 1.0 / COMMAND_RATE_HZ
     period = 1.0 / rate
@@ -517,7 +538,7 @@ def normalize_trajectory(
     for left, right, ticks in zip(rows, rows[1:], segment_ticks):
         for tick in range(1, ticks + 1):
             fraction = float(tick) / float(ticks)
-            point = tuple(
+            point = tuple(right) if tick == ticks else tuple(
                 a + (b - a) * fraction for a, b in zip(left, right))
             result.append(point)
     zero = [0.0] * 6

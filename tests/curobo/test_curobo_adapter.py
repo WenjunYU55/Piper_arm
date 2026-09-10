@@ -1152,3 +1152,81 @@ def test_worker_converts_invalid_success_output_to_structured_failure(
     diagnostics = worker.spool.response['planning_diagnostics']
     assert diagnostics['worker_request_wall_sec'] >= 0
     assert diagnostics['worker_timing']['stages']['response_validation']['calls'] == 1
+
+
+@pytest.mark.parametrize('boundary', [-2.967, 2.967])
+@pytest.mark.parametrize('rate', [20.0, 100.0, 200.0])
+def test_exact_float32_boundary_is_canonicalized(boundary, rate):
+    import struct
+    native = struct.unpack('f', struct.pack('f', boundary))[0]
+    limits = [[-2.967, 2.967] for _ in range(6)]
+    positions = [[0.0] * 6, [native] * 6]
+    points = normalize_trajectory(
+        positions, .05, 50., limits, command_rate_hz=rate)
+    assert points[-1]['positions_rad'] == [boundary] * 6
+    assert positions[-1] == [native] * 6
+    validate_trajectory_position_limits(
+        [point['positions_rad'] for point in points], limits)
+    with pytest.raises(CuroboContractError):
+        normalize_trajectory(
+            [[0.0] * 6, [native + math.copysign(1e-8, native)] * 6],
+            .05, 50., limits, command_rate_hz=rate)
+
+
+def test_powered_reentry_keeps_raw_feedback_separate():
+    from piper_mobile_manipulation.execution.motion import (
+        CONTROLLER_COMMAND_LIMITS, URDF_JOINT_LIMITS)
+    raw = URDF_JOINT_LIMITS.tolist()
+    powered = CONTROLLER_COMMAND_LIMITS.tolist()
+    start = [0., -.002, -.7, 0., .5, 0.]
+    path = position_limit_reentry_path(
+        start, raw, [0.] * 6, command_limits=powered)
+    assert path[0] == start
+    assert path[-1][1] > 0.
+    assert all(a[1] <= b[1] for a, b in zip(path, path[1:]))
+    start[1] = -.028179526329040527
+    with pytest.raises(CuroboContractError, match='bounded feedback excursion'):
+        position_limit_reentry_path(
+            start, raw, [0.] * 6, command_limits=powered)
+
+
+def test_worker_rejects_recorded_negative_joint2_output():
+    from motion_planning.curobo.adapter import JOINT_NAMES
+    from types import SimpleNamespace
+    import numpy as np
+    from piper_mobile_manipulation.execution.motion import URDF_JOINT_LIMITS
+
+    class Tensor:
+        def detach(self):
+            return self
+
+        def cpu(self):
+            return self
+
+        def numpy(self):
+            return np.array([[0., .1, -.7, 0., .5, 0.],
+                             [0., -.028179526329040527, -.7, 0., .5, 0.]])
+
+    path = SimpleNamespace(position=Tensor(), joint_names=JOINT_NAMES)
+    result = SimpleNamespace(
+        success=SimpleNamespace(item=lambda: True),
+        get_interpolated_plan=lambda: path, interpolation_dt=.05)
+    backend = object.__new__(CuroboBackend)
+    with pytest.raises(CuroboContractError, match='joint2'):
+        backend._path(result, 50., URDF_JOINT_LIMITS.tolist(), 200.)
+
+
+@pytest.mark.parametrize('kind,mode,joint2', [
+    ('ROUGH_ACQUISITION', 'bootstrap_static', -0.0005001),
+    ('MULTIVIEW_SCAN', 'bootstrap_static', -0.000139552),
+    ('RETURN_HOME', 'bootstrap_static', -0.000139552),
+    ('ROUGH_ACQUISITION', 'live', -0.000139552),
+    ('ROUGH_ACQUISITION', 'bootstrap_static', 0.),
+])
+def test_joint2_noise_admission_is_narrow_and_acquisition_only(kind, mode, joint2):
+    backend = object.__new__(CuroboBackend)
+    start = [0., joint2, 0., 0., .4, 0.]
+    result = backend._acquisition_start_with_joint2_noise(
+        start, {'plan_kind': kind, 'scene': {'observation_mode': mode}})
+    assert result == start
+    assert result is not start

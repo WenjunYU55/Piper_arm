@@ -123,3 +123,77 @@ def test_readiness_requires_one_continuous_good_window():
     assert readiness_stability_update(started, '', 11.5) == 10.0
     assert readiness_stability_update(started, 'camera unhealthy', 11.6) == 0.0
     assert readiness_stability_update(0.0, '', 12.0) == 12.0
+
+
+def test_disabled_j4_spikes_preserve_proof_but_never_authorize_on_spike():
+    from piper_mobile_manipulation.startup_gates import PreEnableJointStability
+    gate = PreEnableJointStability()
+    for i in range(601):
+        now = 1.0 + i * 0.005
+        spike = i > 100 and i % 50 in (0, 1)
+        raw = [0.0, -0.02, 0.01, 0.0 if spike else -0.0065415, 0.4, -3.1]
+        original = list(raw)
+        since = gate.update(raw, now)
+        assert raw == original
+        if spike:
+            assert since == 0.0
+        elif i > 400:
+            assert now - since >= 2.0
+
+
+def test_disabled_filter_rejects_sustained_step_drift_and_other_axis_spikes():
+    from piper_mobile_manipulation.startup_gates import PreEnableJointStability
+    for axis, amplitude in ((0, 0.006), (3, 0.02), (5, 0.006)):
+        gate = PreEnableJointStability()
+        base = [0.0, 0.0, 0.0, -0.0065415, 0.0, 0.0]
+        for i in range(600):
+            now = 1 + i * 0.005
+            raw = list(base)
+            raw[axis] += amplitude if i % 100 == 99 else 0.0
+            since = gate.update(raw, now)
+            assert not (since > 0 and now - since >= 2.0)
+    gate = PreEnableJointStability()
+    for i in range(800):
+        now = 1 + i * 0.005
+        since = gate.update([0, 0, 0, -0.007 + i * 0.00002, 0, 0], now)
+        assert not (since > 0 and now - since >= 2.0)
+
+
+def test_disabled_filter_restarts_for_long_or_frequent_zero_excursions():
+    from piper_mobile_manipulation.startup_gates import PreEnableJointStability
+    for period, length in ((100, 15), (10, 3)):
+        gate = PreEnableJointStability()
+        for i in range(1000):
+            now = 1 + i * 0.005
+            q4 = 0.0 if i % period < length else -0.0065415
+            since = gate.update([0, 0, 0, q4, 0, 0], now)
+            assert not (since > 0 and now - since >= 2.0)
+
+
+def test_disabled_filter_restarts_on_gap_invalid_data_and_generation_reset():
+    from piper_mobile_manipulation.startup_gates import PreEnableJointStability
+    q = [0, 0, 0, -0.0065415, 0, 0]
+    gate = PreEnableJointStability()
+    for i in range(500):
+        gate.update(q, 1 + i * 0.005)
+    assert gate.update(q, 4.0) == 4.0
+    assert gate.update(q, 3.9) == 3.9
+    assert gate.update([float('nan')] * 6, 4.005) == 0.0
+    assert gate.reference is None
+    gate.update(q, 4.01)
+    gate.reset()
+    assert gate.update(q, 4.015) == 4.015
+
+
+def test_disabled_filter_requires_fresh_all_disabled_fault_free_status():
+    from piper_mobile_manipulation.startup_gates import disabled_joint_feedback_healthy
+    values = {'motor_%d_driver_enabled' % i: False for i in range(1, 7)}
+    status = healthy_powered_status(**values)
+    assert disabled_joint_feedback_healthy(status, 1.0, 1.1)
+    assert not disabled_joint_feedback_healthy(status, 1.0, 2.0)
+    for overrides in ({'motor_4_driver_enabled': True}, {'err_code': 1},
+                      {'joint_4_angle_limit': True}, {'motor_feedback_valid': False},
+                      {'motor_faults': ['fault']}, {'motor_watchdog_reason': 'fault'}):
+        bad = vars(status).copy()
+        bad.update(overrides)
+        assert not disabled_joint_feedback_healthy(SimpleNamespace(**bad), 1.0, 1.1)

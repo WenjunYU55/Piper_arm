@@ -1520,17 +1520,33 @@ class MotionPlannerBridge(Node):
         for request_id, state in list(self.pending.items()):
             response_path = self.spool.path('responses', request_id)
             if response_path.is_file():
+                consume_response = False
                 try:
                     payload = self.spool.read('responses', request_id)
                     validate_response(payload, state['request'])
                     self.publish_plan(payload)
+                    consume_response = True
                 except (ContractError, KeyError, OSError, TypeError, ValueError) as error:
+                    try:
+                        archive = Spool(
+                            self.spool.root / 'failed' / request_id)
+                        archive.write('requests', request_id, state['request'])
+                        archive.write('failed', request_id, {
+                            'request_id': request_id, 'reason': str(error)})
+                        # Retain original bytes, including malformed JSON.
+                        response_path.replace(archive.path('responses', request_id))
+                        consume_response = True
+                    except (ContractError, OSError, TypeError, ValueError) as archive_error:
+                        self.get_logger().warning(
+                            'Could not archive rejected planner response; '
+                            'retaining response in spool: %s' % archive_error)
                     self.publish_rejection(request_id, 'RESPONSE_INVALID', str(error))
                 finally:
                     # The validated ROS message is the hand-off artifact. Consume
                     # the spool entry so a long-running bridge stays bounded.
                     try:
-                        response_path.unlink()
+                        if consume_response:
+                            response_path.unlink()
                     except FileNotFoundError:
                         pass
                 self.pending.pop(request_id, None)

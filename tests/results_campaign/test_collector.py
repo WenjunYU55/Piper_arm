@@ -85,3 +85,66 @@ def test_planner_logs_filter_task_and_ignore_partial_json(tmp_path):
     events = _planner_log_events(path, 'wanted')
     assert len(events) == 1
     assert events[0]['request_id'] == 'r'
+
+
+def test_collector_recovers_missed_terminal_callback_and_retry(tmp_path, monkeypatch):
+    import json
+    from results_campaign.campaign import CampaignStore
+    from results_campaign import collector
+    from piper_gui.view_model import MissionRequest
+    store = CampaignStore(tmp_path, 'recovery')
+    store.create_or_load()
+    trial = store.load_next_trial()
+    request = MissionRequest((trial['x_m'], trial['y_m'], trial['z_m']), 'cube', trial['backend'])
+    store.record_submission('earlier', request)
+    store.record_terminal('earlier', {'outcome': 'FAILED', 'safe_shutdown': True})
+    store.retry_last_attempt()
+    store.record_submission('latest', request)
+    attempt = store.attempt_for_task('latest')
+    spool = tmp_path / 'results'
+    spool.mkdir()
+    result = dict(task_id='latest', outcome='FAILED', failure_code='DEADLINE_EXPIRED',
+                  safe_shutdown=True, capture_count=7, reason='mission deadline expired')
+    source = spool / 'latest.json'
+    source.write_text(json.dumps(result))
+    original = source.read_bytes()
+    monkeypatch.setattr(collector, 'MISSION_RESULTS_ROOT', spool)
+    monkeypatch.setattr(collector, '_heavy_roots', lambda *args: [])
+    assert store.trial_rows()[0]['status'] == 'In progress'
+    collector.collect_task(tmp_path, attempt)
+    terminal_path = attempt / 'terminal.json'
+    terminal = json.loads(terminal_path.read_text())
+    assert terminal['capture_count'] == 7
+    assert terminal['failure_code'] == 'DEADLINE_EXPIRED'
+    assert terminal['recovered_from_mission_result']['sha256']
+    assert store.trial_rows()[0]['status'] == 'Done'
+    assert store.trial_rows()[0]['outcome'] == 'FAILED'
+    assert 'earlier' in store.superseded_tasks()
+    assert not store.active_path.exists()
+    assert source.read_bytes() == original
+    before = terminal_path.read_bytes()
+    collector.collect_task(tmp_path, attempt)
+    assert terminal_path.read_bytes() == before
+    assert json.loads((attempt / 'evidence.json').read_text())['terminal']['capture_count'] == 7
+
+
+def test_terminal_recovery_rejects_foreign_and_unfinished_results(tmp_path):
+    import json
+    from results_campaign.campaign import CampaignStore
+    from results_campaign.collector import _recover_terminal
+    from piper_gui.view_model import MissionRequest
+    store = CampaignStore(tmp_path, 'guards')
+    store.create_or_load()
+    trial = store.load_next_trial()
+    submission = store.record_submission('wanted', MissionRequest(
+        (trial['x_m'], trial['y_m'], trial['z_m']), 'cube', trial['backend']))
+    attempt = store.attempt_for_task('wanted')
+    source = tmp_path / 'result.json'
+    for result in [dict(task_id='foreign', outcome='FAILED', safe_shutdown=True, capture_count=7),
+                   dict(task_id='wanted', outcome='RUNNING', safe_shutdown=True, capture_count=7),
+                   dict(task_id='wanted', outcome='FAILED'),
+                   dict(task_id='wanted', outcome='FAILED', safe_shutdown=True, capture_count=-1)]:
+        source.write_text(json.dumps(result))
+        _recover_terminal(tmp_path, attempt, submission, result, source)
+        assert not (attempt / 'terminal.json').exists()
+        assert store.active_path.exists()

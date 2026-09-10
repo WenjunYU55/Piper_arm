@@ -236,3 +236,11 @@ the execution YAML. Runs expose available abbreviated hashes in
 `execution_policy_sources`, so timing comparisons can identify changed execution
 policies. Historical rows without these snapshots leave the field empty; elapsed
 mission durations are never rewritten to compensate for tracking pauses.
+
+### Recovery of a missed GUI completion callback (2026-09-09)
+
+The passive collector now reconciles a missing campaign terminal.json from the matching finalized mission result. Previously only the GUI result callback wrote that record: the observer could repeatedly collect a failed mission result while its trial remained In progress. The latest Tesseract retry bb4f5971ec2c49adb449f7800b7158e9 exhibited this inconsistency after its 20-minute deadline, seven captures and safe shutdown. The current GUI started after mission completion; the exact loss mechanism of the original callback is not retained.
+
+Recovery requires exact task identity, a terminal outcome, explicit shutdown status and a valid capture count. It preserves the source result, records its path/hash/modification time, leaves existing terminal records untouched and uses normal campaign completion rules for retries, active-trial clearing and bookmark updates. Collection never commands the arm or changes a mission result.
+
+Validation: 188 campaign and GUI tests passed. The actual saved retry was recovered through collect_task; its row is Done / FAILED, capture count seven, active retry cleared, and original mission result bytes unchanged. Refresh Table displays the repaired durable row; restarting the GUI loads the new collector into its managed sidecar.

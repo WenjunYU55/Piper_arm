@@ -255,3 +255,19 @@ tests/results_campaign/test_modes.py — Schedule, resume, condition exclusion a
 # Clearance-aware execution (2026-09-08)
 # piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/execution/clearance.py — shared FK proxy margin and adaptive lead limit
 # piper_ros_foxy/src/piper_mobile_manipulation/test/test_clearance_stream.py — geometry and command-admission regressions
+
+Movement-window archive helpers:
+  piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/movement_recording.py
+  piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/movement_bag_recorder.py
+  tests/reconstruction/test_movement_recording.py
+
+# Offline movement archive compaction
+tools/bundlesdf/compact_recordings.py
+tests/reconstruction/test_compact_recordings.py
+docs/experiments/movement_recording_compaction_20260909.md
+docs/experiments/curobo_start_and_target_jump_20260909.md
+
+docs/experiments/joint4_startup_feedback_20260910.md — disabled J4 feedback diagnosis and bounded pre-enable qualification
+
+docs/experiments/joint4_vendor_report_20260910.md — unsent evidence-based manufacturer questions
+docs/experiments/joint4_near_zero_histogram_20260910.png — 35-recording near-zero distribution

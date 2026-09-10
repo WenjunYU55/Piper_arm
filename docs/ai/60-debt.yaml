@@ -2038,3 +2038,57 @@ tesseract_partial_success_exclusion_2026_09_09:
   evidence: datasets/experiment_results/tesseract_retry_fix_20260909/
   physical_status: No live restart or robot command; supervised next-mission exclusion and terminal
     recovery check pending.
+
+tesseract_response_identity_2026_09_09:
+  owner_module: piper_tesseract_foxy/worker.py ray_ik_solutions and bridge_node.py poll
+  behavior: Ray IK normalizes direction internally but reports the exact requested look variant. Response validation retains exact identity checks and reports candidate ID plus candidate-present, position-match and look-match flags on rejection.
+  evidence: Before consuming an invalid response the bridge archives the original request, unmodified response bytes and rejection reason under spool/failed/<request_id>/ using private atomic queues. Archiving failure retains the original response and still rejects the plan. Successful responses retain normal consumption behavior.
+  scope: Shared bridge diagnostics cover both planners; direction reporting correction is Tesseract only. No goal, collision, trajectory or authorization tolerance is relaxed.
+  provenance: Worker metadata assignment and comment are the only worker change; reversing them reproduces the previously bound hash. Atlas metadata is explicitly rebound; both geometry arrays and all other bound sources remain unchanged.
+  required_retests: [continuous ray IK exact direction identity, rejected response archival and disk-failure retention, strict response contracts, complete mobile Tesseract cuRobo GUI suites, source-verified atlas load, package builds]
+  limitation: The old rejected response was already deleted; this corrects a reproduced defect without proving the exact cause of gui-sim-6e5aa4b2ef9044efb7728faf60e2f0d9. Runtime spool evidence survives consumption but tmpfs does not survive reboot; export it for long-term retention.
+
+stationary_target_jump_2026_09_09:
+  user_bookmarks_2026_09_10:
+    status: Deferred at user request; investigate separately from the first-capture lifecycle fix.
+    item_2: Replay existing recordings with a consistent cube-centre estimate from fitted face geometry; compare with the current visible-surface median and validate across viewpoints before any live replacement.
+    item_3: Analyse residual base-frame target error against camera angle and movement speed; separate geometry/hand-eye calibration effects from camera/robot timestamp offsets. Existing image-time TF availability does not prove calibration or clock accuracy.
+  owner_modules: [supervised_cube_workflow_node.py, supervised_workflow.py, target_tracker_node.py, target_landmark_node.py]
+  evidence: docs/experiments/curobo_start_and_target_jump_20260909.md
+  reproduced: Stationary cube retained mask/depth/TF replay shifts 37.34 mm, mostly +35.15 mm Z, across the camera move; tracker and landmark share sensing evidence.
+  lifecycle_issue: First-capture occlusion changes workflow to INITIALIZING and reactivates the strict displacement abort despite an already active scan. This is not fixed by the cuRobo startup patch.
+  next_cut: Preserve active scan/first-capture lifecycle explicitly and distinguish viewpoint-dependent surface measurement changes from physical object motion. Do not blindly increase thresholds or rebase calibration from this replay. Sensor versus calibration contribution remains unisolated.
+
+disabled_j4_startup_spikes_2026_09_10:
+  owner_module: piper_mobile_manipulation/startup_gates.py
+  reference: docs/experiments/joint4_startup_feedback_20260910.md
+  consumer: target_scan_mission_node.py disabled startup joint callback and both pre-enable
+    waits
+  behavior: Preserve raw feedback and strict powered proof; qualify only brief exact-zero
+    J4 excursions from a negative [-0.008,-0.005) rad anchor while fresh all-six-disabled
+    fault-free status is proved.
+  bounds: Other joints retain 0.005 rad drift bound; preceding J4 must be in [-0.008,0].
+    Pending excursion cannot authorize. Over 50 ms excursion, over 10 percent of rolling
+    two-second samples, over 50 ms receipt gap, invalid source, generation changes
+    or unhealthy status reset proof.
+  must_retest_if_changed:
+  - startup gate rejection and source/generation regressions
+  - mission callback raw-telemetry integration
+  - recorded CAN replay
+  - mobile and driver behavioral suites
+  - package build
+  - disabled feedback-only smoke
+  - supervised powered startup before physical qualification
+  physical_status: powered startup qualification pending
+  validation: 1107 behavioral tests passed, one skipped; recorded failure replay and isolated disabled real-driver callback smoke pass; build and changed-file lint pass. Idle coordinator replaced; powered retest pending.
+
+joint4_reporting_cutoff_investigation_2026_09_10:
+  evidence: docs/experiments/joint4_startup_feedback_20260910.md
+  vendor_draft: docs/experiments/joint4_vendor_report_20260910.md
+  finding: '35 folders / 179849 J4 TF samples: 22795 zeros, no nonzero below 0.302
+    degrees. 21 isolated pulses in 11 folders, earliest 7 Sep 14:27 UK. Strong empirical
+    evidence of near-zero suppression around 0.3 degrees; exact controller algorithm
+    unconfirmed. Pulses are not exclusive to the disable instant.'
+  status: Host startup mitigation implemented; controller cause inferred, manufacturer
+    confirmation and firmware-specific remedy pending. No message sent or firmware/configuration
+    changed.

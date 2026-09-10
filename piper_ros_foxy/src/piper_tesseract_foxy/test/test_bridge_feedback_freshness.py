@@ -1610,3 +1610,41 @@ def test_partial_success_remembers_only_fully_exhausted_tesseract_rays(backend, 
         candidates, 's', 3, {'sha256': 'b' * 64})
     assert len(available) == len(candidates)
     assert bridge.remember_planner_exhausted_rays(payload) == []
+
+
+@pytest.mark.parametrize('archive_fails', [False, True])
+def test_rejected_response_preserves_evidence(tmp_path, monkeypatch, archive_fails):
+    from piper_tesseract_foxy.protocol.spool import Spool
+    spool = Spool(tmp_path / 'spool')
+    request_id = 'a' * 32
+    request = {'request_id': request_id, 'original': 'request'}
+    spool.write('responses', request_id, {'original': 'response'})
+    raw = spool.path('responses', request_id).read_bytes()
+    rejected = []
+
+    def reject(*args):
+        raise ContractError('direction mismatch')
+
+    monkeypatch.setattr(bridge_module, 'validate_response', reject)
+    if archive_fails:
+        def fail_write(*args):
+            raise OSError('disk unavailable')
+        monkeypatch.setattr(Spool, 'write', fail_write)
+    node = SimpleNamespace(
+        spool=spool, pending={request_id: {'request': request}},
+        get_parameter=lambda name: SimpleNamespace(value=120.),
+        publish_rejection=lambda *args: rejected.append(args),
+        publish_status=lambda: None, publish_readiness=lambda: None,
+        get_logger=lambda: SimpleNamespace(warning=lambda text: None))
+    TesseractPlanBridge.poll(node)
+    assert rejected == [(request_id, 'RESPONSE_INVALID', 'direction mismatch')]
+    assert not node.pending
+    if archive_fails:
+        assert spool.path('responses', request_id).read_bytes() == raw
+    else:
+        archive = Spool(spool.root / 'failed' / request_id)
+        assert archive.read('requests', request_id) == request
+        assert archive.path('responses', request_id).read_bytes() == raw
+        assert archive.read('failed', request_id)['reason'] == (
+            'direction mismatch')
+        assert not spool.path('responses', request_id).exists()

@@ -16,6 +16,7 @@ import yaml
 from dataset import atomic_json, intrinsics_valid, distortion_valid
 from piper_mobile_manipulation.reconstruction_recording.core import RecorderConfig
 from piper_mobile_manipulation.visibility import validate_transform
+from piper_mobile_manipulation.movement_recording import movement_intervals
 
 
 RGB = '/camera/color/image_raw'
@@ -24,7 +25,8 @@ INFO = '/camera/color/camera_info'
 PIN = '/piper/reconstruction_keyframe'
 HISTORY = '/piper/scan_session_history'
 WORKFLOW = '/piper/supervised_workflow_status'
-TOPICS = (RGB, DEPTH, INFO, PIN, HISTORY, WORKFLOW, '/tf', '/tf_static')
+EXECUTION = '/piper/scan_execution_status'
+TOPICS = (RGB, DEPTH, INFO, PIN, HISTORY, WORKFLOW, EXECUTION, '/tf', '/tf_static')
 
 
 def stamp(message):
@@ -74,6 +76,9 @@ def extract(bag, output):
         bag = bag / 'bag'
     if output.exists():
         raise FileExistsError('Refusing existing extraction output')
+    compaction = bag.parent / 'movement_compaction.json'
+    if compaction.exists() and json.loads(compaction.read_text()).get('state') != 'complete':
+        raise ValueError('Archive compaction is unfinished; resume compact_recordings.py first')
     archive = json.loads((bag.parent / 'recording.json').read_text())
     if archive.get('state') not in ('closed', 'incomplete'):
         raise ValueError('Select a closed recording, not a live archive')
@@ -90,6 +95,8 @@ def extract(bag, output):
     buffer = Buffer(cache_time=Duration(seconds=86400))
     images = {RGB: {}, DEPTH: {}}
     infos, pins, histories, terminals = {}, {}, [], []
+    movements, recorded_colors = [], {}
+    last_recorded_ns = 0
     counts, rejects = Counter(), Counter()
     for relative in metadata['rosbag2_bagfile_information']['relative_file_paths']:
         path = (bag / relative).resolve()
@@ -105,6 +112,11 @@ def extract(bag, output):
                 topic, kind = topics[topic_id]
                 msg = deserialize_message(data, kind)
                 counts[topic] += 1
+                last_recorded_ns = max(last_recorded_ns, recorded_ns)
+                if topic == RGB:
+                    recorded_colors[stamp(msg)] = recorded_ns
+                if topic == EXECUTION:
+                    movements.append((recorded_ns, msg.state))
                 if topic in images:
                     key = stamp(msg)
                     if key in images[topic]:
@@ -170,6 +182,12 @@ def extract(bag, output):
     # Reserve accepted pins; each has a synchronized raw tuple even if the image topic dropped it.
     pinned_stamps = set(accepted) & set(pins)
     color_stamps = sorted(s for s in images[RGB] if first < s <= end_ns and s not in pinned_stamps)
+    windows = movement_intervals(movements, last_recorded_ns)
+    if movements:
+        before = len(color_stamps)
+        color_stamps = [s for s in color_stamps if any(
+            left <= recorded_colors[s] <= right for left, right in windows)]
+        rejects['idle_outside_movement_windows'] += before - len(color_stamps)
     reserved_depth = {stamp(pins[s].depth) for s in accepted if s in pins}
     depth_stamps = [s for s in images[DEPTH] if s not in reserved_depth]
     # Legacy RealSense 4.0.4 can mislabel a depth-only frameset as aligned.
@@ -246,7 +264,9 @@ def extract(bag, output):
                       mission_capture_count=int(history['accepted_views']), configuration=config,
                       coverage_target_center=target, frames=records, seed_mask='00000000/seed.png',
                       source_message_counts=dict(counts), rejected_by_reason=dict(rejects),
-                      selection='Exact RGB-D frameset timestamps after seed; no MOVING or rate gate',
+                      selection=('Movement plus one-second pre/post-roll and accepted pins'
+                                 if movements else 'Legacy archive without movement events; full sequence'),
+                      movement_intervals_recorded_ns=windows,
                       alignment_admission=('Conservative legacy ROS archive recovery; '
                                            'exact stamps are not calibration proof'))
         atomic_json(output / 'extraction.json', report)

@@ -70,7 +70,7 @@ from the existing `scan_quality_params.yaml` by the launch file.
 | Parameter | Default | Meaning |
 |---|---:|---|
 | reconstruction_recording_enabled | true | Launch quality-filtered recorder |
-| mission_archive_enabled | true | Retain whole-scan sensor/event ROS bag |
+| mission_archive_enabled | true | Retain movement-window sensors and mission-wide events |
 | mission_archive_minimum_free_bytes | 2147483648 | Stop archive below 2 GiB free disk |
 | target_visibility_angle_tolerance_deg | 20.0 | Shared movement/acceptance configuration |
 | recorder_visibility_angle_tolerance_deg | 0.0 | Inherit; positive value may only tighten |
@@ -237,18 +237,19 @@ for the initial measured evidence and blocked tests. The later
 [native GPU validation](../experiments/bundlesdf_native_validation.md) records the
 isolated runtime follow-up. Physical arm/camera qualification remains open.
 
-## Automatic whole-scan recording and later reconstruction
+## Automatic movement recording and later reconstruction
 
 Every normal supervised scan now starts a separate ROS bag recorder automatically.
-It records RGB, aligned depth, CameraInfo, masks, dynamic/static TF and the accepted
-capture/mission events from scan-stack startup until shutdown. The existing
+It saves RGB, aligned depth and masks for movement with one second before and
+after. CameraInfo, dynamic/static TF and accepted capture/mission events remain
+recorded from scan-stack startup until shutdown. The existing
 stationary captures still perform their original median-depth operation and count
 as the mission viewpoints. Reconstruction remains offline; recording never runs
 BundleSDF during arm execution.
 
 Two outputs are retained under `PIPER_ARM_ROOT/datasets/`:
 
-- `mission_recordings/scan_recording_UUID.closed/bag/`: whole-scan raw ROS evidence,
+- `mission_recordings/scan_recording_UUID.closed/bag/`: movement-window raw ROS evidence,
   including frames not accepted by the reconstruction quality gates.
 - `reconstruction_sessions/reconstruction_UUID.complete/`: the existing quality-
   filtered synchronized sequence, normally sampled at 8 Hz after capture zero.
@@ -259,10 +260,12 @@ means the bag closed normally, **not** that the mission succeeded. Cancellation
 or failed-mission events remain in the bag; native reconstruction sessions keep
 their existing complete/incomplete mission semantics. Low disk, recorder failure
 or forced termination retains partial evidence as `.incomplete` or `.inprogress`.
-No earlier scan is overwritten or deleted.
+Live recording never overwrites an earlier scan. Explicit offline compaction can
+replace verified bag segments to permanently remove idle payloads.
 
 The archive uses best-effort sensor subscriptions, DDS history depth 8 and a
-disabled write cache (its partial batch loses tail messages on this Foxy build), splitting SQLite files at 1 GiB. Slow storage can drop
+native Foxy-compatible SQLite writer with 0.2-second commits. Legacy archives
+used zero rosbag cache and 1 GiB database splits. Slow storage can drop
 messages rather than backpressure sensor publishers. Foxy does not expose an
 accurate transport-drop total; `dropped_messages` is explicitly unknown. Native
 quality-filtered recording retains its existing precise admission/drop counters.
@@ -273,7 +276,7 @@ To disable either output for the next scan, set its boolean in
 `config/reconstruction_recording_params.yaml` or pass
 `mission_archive_enabled:=false` / `reconstruction_recording_enabled:=false` to
 `supervised_viewpoint_execution.launch.py`. Set `mission_archive_output_root` to
-redirect whole-scan storage. Raw accepted-view pins stay enabled when either
+redirect archive storage. Raw accepted-view pins stay enabled when either
 recorder needs them. Startup changes do not restart an active mission.
 
 For offline processing, prefer the already filtered session if it is usable:
@@ -363,3 +366,27 @@ python3 reconstruction/coordinate_frames.py /path/to/target_mesh.ply.quality.jso
 ```
 
 Include frame sidecars and the export README when sharing; OBJ/PLY viewers may need Z-up selected. Orientation does not establish depth, hand-eye, tracking or dimensional accuracy. See `docs/ai/93-reconstruction-coordinate-frames.yaml` for ownership and checks.
+
+## Movement-window archive selection
+
+New archives retain RGB-D and masks from one second before each MOVING state
+through one second after the first following state. A bounded one-second,
+128-MiB buffer supplies pre-roll; overlapping windows do not duplicate frames.
+Calibration, transforms, events and accepted capture pins are retained. The
+command-free recorder writes Foxy SQLite/CDR bags directly; its parent retains
+disk checks, shutdown handling and metadata verification. Buffer overflow is
+reported, while best-effort transport losses remain unknown.
+
+Existing archives are read-only. BundleSDF extraction applies the same windows
+when execution events exist, retaining accepted pins and the required initial
+mask seed. It produces one ordered sequence with original source timestamps
+and unchanged aligned-depth/calibration/TF rules. Archives lacking execution
+events retain a labelled full-sequence fallback. No physical motion is implied
+by this selection: windows follow executor state rather than a measured-speed
+threshold.
+
+### Explicit offline storage compaction
+
+`tools/bundlesdf/compact_recordings.py ARCHIVE...` plans read-only; `--apply` permanently removes idle RGB/depth/mask payloads after verifying replacement SQLite segments. It retains exact paired frames over MOVING plus one second before and after, all accepted capture tuples, calibration, TF and events. Frame partners can cross both time-window and database boundaries. Original source timestamps are preserved; BundleSDF receives one ordered RGB-D sequence. Missing partners are reported, never synthesized.
+
+The smallest retained segment is replaced first to work with low free disk space. SHA256 over all retained row fields and payload bytes, topic metadata equality, and SQLite integrity are checked before each atomic replacement. `movement_compaction.json` stores the original metadata, row selection and progress; rerunning resumes an interruption. Extraction refuses an unfinished compaction. Final bag and recording manifests contain actual retained counts. Live/open archives, pending write journals and recordings without movement evidence are skipped. Ordinary extraction remains read-only.

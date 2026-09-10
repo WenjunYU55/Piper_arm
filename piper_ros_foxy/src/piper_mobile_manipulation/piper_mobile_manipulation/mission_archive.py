@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Archive whole-scan sensor evidence in a non-critical, separate rosbag process."""
+"""Archive movement-window sensor evidence in a non-critical, separate process."""
 
 import argparse
 import json
@@ -9,6 +9,7 @@ import shutil
 import signal
 import sqlite3
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -26,10 +27,10 @@ TOPICS = (
 
 
 def recording_command(root):
-    """Disable Foxy's unflushed tail cache; bounded DDS queues isolate this writer."""
-    return ['ros2', 'bag', 'record', '--output', str(root / 'bag'),
-            '--max-cache-size', '0', '--max-bag-size', str(1024**3),
-            '--qos-profile-overrides-path', str(root / 'qos.yaml')] + list(TOPICS)
+    """Launch the isolated movement-window recorder with bounded sensor queues."""
+    return [sys.executable, '-m',
+            'piper_mobile_manipulation.movement_bag_recorder',
+            '--output', str(root / 'bag'), '--max-cache-size', '0']
 
 
 def write_json(path, data):
@@ -54,6 +55,7 @@ def record(output_root, minimum_free_bytes, task_id, config_dir=None, stop=None,
                     target_visibility_angle_tolerance_deg=visibility_angle,
                     evidence_class='ROS_SENSOR_ARCHIVE_ORIGIN_UNVERIFIED',
                     started_unix_ns=time.time_ns(), topics=list(TOPICS),
+                    selection='movement_with_one_second_pre_and_post_roll',
                     minimum_free_bytes=minimum_free_bytes,
                     mission_outcome=('Read recorded mission events; '
                                      'archive closure is not mission success'),
@@ -76,7 +78,7 @@ def record(output_root, minimum_free_bytes, task_id, config_dir=None, stop=None,
         with (active / 'rosbag.log').open('w') as log:
             process = subprocess.Popen(recording_command(active), stdout=log,
                                        stderr=subprocess.STDOUT, start_new_session=True)
-            print('Whole-scan recording: ' + str(active), flush=True)
+            print('Movement-window recording: ' + str(active), flush=True)
             while not stop.wait(.5):
                 if process.poll() is not None:
                     reason = 'recorder_exited'

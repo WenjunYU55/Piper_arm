@@ -14,7 +14,33 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import yaml
 
-from .campaign import EVIDENCE_SCHEMA_VERSION, atomic_write_json, load_json, sha256_file, utc_now
+from .campaign import CampaignStore, EVIDENCE_SCHEMA_VERSION, atomic_write_json, load_json, sha256_file, utc_now
+
+
+MISSION_RESULTS_ROOT = Path('/tmp/piper_target_scan_missions/results')
+
+
+def _recover_terminal(root, attempt, submission, result, source):
+    """Recover a missed GUI callback only from a matching finalized result."""
+    if (attempt / 'terminal.json').exists():
+        return
+    if (result.get('task_id') != submission.get('task_id')
+            or result.get('outcome') not in ('SUCCEEDED', 'FAILED', 'CANCELLED')
+            or not isinstance(result.get('safe_shutdown'), bool)
+            or type(result.get('capture_count')) is not int
+            or result['capture_count'] < 0):
+        return
+    store = CampaignStore(root, submission['campaign_id'])
+    if store.attempt_for_task(submission['task_id']) != attempt:
+        raise ValueError('Recovered result does not belong to this campaign attempt')
+    terminal = {key: result[key] for key in (
+        'task_id', 'outcome', 'reason', 'failure_code', 'retryable',
+        'safe_shutdown', 'capture_count', 'dataset_path', 'manifest_sha256',
+        'mesh_job_id') if key in result}
+    terminal['recovered_from_mission_result'] = {
+        'path': str(source), 'sha256': sha256_file(source),
+        'source_mtime_ns': source.stat().st_mtime_ns}
+    store.record_terminal(submission['task_id'], terminal)
 
 
 def _load_yaml(path: Path) -> Any:
@@ -304,12 +330,13 @@ def collect_task(project_root: Path, attempt: Path) -> Path:
         raise ValueError('submission has no task ID')
 
     sources: List[Dict[str, Any]] = [_source(attempt / 'submission.json', root)]
-    mission_path = Path('/tmp/piper_target_scan_missions/results') / (task_id + '.json')
+    mission_path = MISSION_RESULTS_ROOT / (task_id + '.json')
     mission_result = load_json(mission_path, {})
     if not isinstance(mission_result, dict):
         mission_result = {}
     if mission_path.is_file():
         sources.append(_source(mission_path, root))
+        _recover_terminal(root, attempt, submission, mission_result, mission_path)
 
     heavy = []
     submission_ns = int(submission.get('submitted_wall_time_ns') or 0)
