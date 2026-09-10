@@ -1719,7 +1719,7 @@ capture_probe_motion_policy_2026_09_10:
 scan_completion_lateral_policy_2026_09_10:
   owner_module: piper_mobile_manipulation/scan_session_memory.py achieved_feature_coverage
   behavior: Default mission completion no longer requires two achieved views on each Y side. Positive/negative Y counts remain diagnostic; achieved_feature_coverage defaults minimum_views_per_y_side to zero.
-  preserved: Required capture count, 25-degree elevation span, measured surface minimum and convergence remain required. NBV ordering and trajectory constraints are unchanged.
+  preserved: Capture count, 25-degree elevation span, measured surface minimum and convergence are now advisory under ray_exhaustion_completion_2026_09_11. NBV ordering and trajectory constraints are unchanged.
   required_retests: [one-sided achieved coverage, insufficient capture and elevation rejection, unconverged surface rejection, mobile and Tesseract suites, package build]
   physical_status: Offline only; no arm command or active mission restart.
 
@@ -1761,3 +1761,21 @@ imported_campaign_timestamp_2026_09_11:
   data_repair: Imported cube task gui-sim-0f5b8ade8a1f487987e1d99dc5f2ff62 now uses documented numeric zero sentinels so an already-running GUI can refresh. Original submission retained under variedObjects/revisions/unknown_submission_timestamp. Outcome FAILED and eight captures retained; cube is Done, cup next.
   allowed_edit_paths: [results_campaign/campaign.py, tests/results_campaign/test_campaign.py, docs/ai]
   must_retest_if_changed: [null-timestamp table and retry regression, complete campaign and GUI suites, actual Tk refresh against repaired campaign, YAML parse and Python compile]
+
+ray_exhaustion_completion_2026_09_11:
+  retrospective_review: User-authorized review reclassified 47 original FAILED missions with explicit RAY_FRONTIER_EXHAUSTED and safe_shutdown true across 13 campaigns. Original terminal and evidence files retained in datasets/experiment_results/ray_policy_reevaluation_20260911_004415; campaign outcomes updated while raw captures and historical report exports remain unchanged. Settings mismatches and retry supersession still control comparison inclusion.
+  validation: 1622 mobile Tesseract GUI campaign reconstruction tests passed with one skip; package build and changed-production-file lint passed. Recorded cube exhaustion qualifies under the new predicate; invalid-obstacle and joint-limit incidents remain failures. Physical check pending.
+  authority: User requested full ray exhaustion as the scan success condition; other coverage criteria are guidelines.
+  owner_module: piper_mobile_manipulation/mission/engine.py
+  supporting_owner: piper_mobile_manipulation/infrastructure/failure_model.py
+  allowed_edit_paths: [piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission/engine.py, piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/infrastructure/failure_model.py, piper_ros_foxy/src/piper_mobile_manipulation/test, docs/ai]
+  behavior: Explicit RAY_FRONTIER_EXHAUSTED ends the scan successfully, including zero or fewer than eight captures and unconverged coverage. Capture count, elevation, occupied surface voxels, convergence and achieved-history counts remain reported diagnostics, not completion gates. Passing coverage does not stop the scan while rays remain.
+  contracts: Add internal RAY_FRONTIER_EXHAUSTED tag without changing ROS schemas. Do not use the broader legacy SAFE_VIEW_EXHAUSTED tag as full-ray proof. Shortlist exhaustion retries; planner timeout, no-positive-information alone, generic IK failure, invalid obstacle geometry, tracking/capture rejection and cancellation are not full-ray exhaustion.
+  operational_bounds: Existing maximum 24 captures, mission deadlines and bounded retries remain operational limits. At the capture ceiling perform the command-free next-plan check; full exhaustion succeeds, but a remaining plan fails MISSION_FAILED before approval. No extra capture is authorized beyond the bound.
+  shutdown: Success still requires the existing safe terminal recovery. Home/hold, motor disable, process cleanup, collision checks, joint limits and capture-validity checks are unchanged. Unexpected executor COMPLETE without full-ray proof cannot report scan success.
+  interpretation: SUCCEEDED means the available ray population was exhausted and shutdown completed safely, not that reconstruction or surface coverage passed. Zero captures may succeed at this mission boundary; empty datasets remain discarded and reconstruction still rejects missing input.
+  must_not_move_without: [planner full-population exhaustion classification, bridge shortlist reserve handling, mission terminal recovery, recorder and reconstruction input validation]
+  load_order_contracts: [request current generation, consume explicit full-ray exhaustion, retain capture and coverage diagnostics, run terminal home and disable, publish successful mission result only after shutdown proof]
+  must_retest_if_changed: [zero and sub-eight and unconverged full-frontier success, coverage-pass continuation, shortlist retry and generic failure rejection, capture ceiling, mission cancellation and terminal recovery, full mobile Tesseract GUI campaign reconstruction suites, package build, YAML parse]
+  manual_smoke_checks: [supervised exhausted-ray scan reports SUCCEEDED with coverage diagnostics retained, active ray population continues despite coverage passing, invalid geometry and cancellation still stop appropriately, terminal home and disable proved]
+  physical_status: Offline regression validation; running mission coordinators need a restart to load this policy. No live restart or robot command performed.

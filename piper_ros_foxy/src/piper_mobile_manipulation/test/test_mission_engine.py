@@ -27,6 +27,7 @@ LEGACY_SUCCESS_PHASES = (
     'TARGET_LOCK',
     'OCCLUSION_PROBE',
     *('VIEW_PLANNING', 'CAPTURING') * 8,
+    'VIEW_PLANNING',
     'RETURNING_HOME',
     'RETURNING_HOME',
     'RETURNING_HOME',
@@ -298,6 +299,8 @@ class FakeMissionOperations:
         self.plan_requests += 1
         if self.plan_request_failures:
             raise self.plan_request_failures.pop(0)
+        if self.capture_count(context) >= 8:
+            raise MissionFailure('RAY_FRONTIER_EXHAUSTED: no rays remain')
         return 'view-%d' % self.plan_requests
 
     def wait_for_view_generation(self, context, accepted_views, _timeout):
@@ -358,7 +361,7 @@ def test_successful_engine_matches_frozen_legacy_phase_sequence():
     assert context.session.storage_wrist_proved
     assert context.session.disabled_proved
     assert context.session.processes_stopped
-    assert operations.events.count('view_generation') == 8
+    assert operations.events.count('view_generation') == 9
     assert operations.events.index('view_generation') < \
         operations.events.index('view_planning')
     assert operations.events.index('enable') < \
@@ -652,7 +655,7 @@ def test_visual_rejection_retries_with_a_new_view():
     operations, context, result = _execute(operations)
 
     assert result.succeeded
-    assert operations.plan_requests == 9
+    assert operations.plan_requests == 10
     assert context.session.accepted_captures == 8
     assert operations.events.count('multiview_readiness') == 1
 
@@ -666,7 +669,7 @@ def test_ray_shortlist_exhaustion_requests_next_untried_batch():
     operations, context, result = _execute(operations)
 
     assert result.succeeded
-    assert operations.plan_requests == 9
+    assert operations.plan_requests == 10
     assert context.session.accepted_captures == 8
     assert operations.events.count('reuse_generation') == 1
     index = operations.events.index('reuse_generation')
@@ -703,7 +706,7 @@ def test_clipped_target_code_reaches_result_and_shutdown_proofs(failure_code):
     assert context.session.processes_stopped
 
 
-def test_complete_ray_frontier_exhaustion_is_terminal_and_adds_blockers():
+def test_complete_ray_frontier_exhaustion_succeeds_without_capture_floor():
     operations = FakeMissionOperations()
     operations.plan_request_failures = [MissionFailure(
         'request creation failed: RAY_FRONTIER_EXHAUSTED: '
@@ -711,13 +714,12 @@ def test_complete_ray_frontier_exhaustion_is_terminal_and_adds_blockers():
 
     operations, context, result = _execute(operations)
 
-    assert not result.succeeded
-    assert result.failure.failure_code == 'INSUFFICIENT_CAPTURE_QUALITY'
-    assert 'coverage incomplete' in result.reason
+    assert result.succeeded
+    assert result.failure is None
     assert context.session.disabled_proved
 
 
-def test_ray_frontier_exhaustion_with_incomplete_coverage_is_terminal():
+def test_ray_frontier_exhaustion_with_incomplete_coverage_succeeds():
     operations = FakeMissionOperations()
 
     def request_plan(context):
@@ -738,9 +740,8 @@ def test_ray_frontier_exhaustion_with_incomplete_coverage_is_terminal():
 
     operations, context, result = _execute(operations)
 
-    assert not result.succeeded
-    assert result.failure.failure_code == 'INSUFFICIENT_CAPTURE_QUALITY'
-    assert 'coverage incomplete' in result.reason
+    assert result.succeeded
+    assert result.failure is None
     assert context.session.accepted_captures == 7
     assert context.session.disabled_proved
 
@@ -752,7 +753,7 @@ def test_target_drift_replans_through_command_free_request_without_capture():
     operations, context, result = _execute(operations)
 
     assert result.succeeded
-    assert operations.plan_requests == 9
+    assert operations.plan_requests == 10
     assert context.session.accepted_captures == 8
     assert operations.events.count('multiview_readiness') == 1
 
@@ -792,7 +793,7 @@ def test_ambiguous_first_ray_crop_replans_farther_before_capture():
     operations, context, result = _execute(operations)
 
     assert result.succeeded
-    assert operations.plan_requests == 9
+    assert operations.plan_requests == 10
     assert context.session.accepted_captures == 8
 
 
@@ -852,7 +853,7 @@ def test_farther_first_ray_retry_does_not_consume_quality_budget():
     operations, _context, result = _execute(operations)
 
     assert result.succeeded
-    assert operations.plan_requests == 9
+    assert operations.plan_requests == 10
 
 
 @pytest.mark.parametrize('state, expected_code', (
@@ -904,6 +905,40 @@ def test_repeated_missions_do_not_leak_engine_retry_or_capture_state():
     assert first_result.succeeded and second_result.succeeded
     assert first.session.accepted_captures == 8
     assert second.session.accepted_captures == 8
-    assert first_requests == 8
-    assert operations.plan_requests == 8
+    assert first_requests == 9
+    assert operations.plan_requests == 9
     assert first_result.phase_sequence == second_result.phase_sequence
+
+
+@pytest.mark.parametrize('count', [0, 1, 5, 8, 12])
+def test_full_ray_exhaustion_succeeds_with_advisory_coverage_and_safe_shutdown(count):
+    operations = FakeMissionOperations()
+    def request(context):
+        operations.plan_requests += 1
+        if operations.capture_count(context) >= count:
+            raise MissionFailure('RAY_FRONTIER_EXHAUSTED: population exhausted')
+        return 'request'
+    operations.request_multiview_plan = request
+    operations.current_feature_coverage = lambda context: {
+        'accepted_achieved_views': operations.capture_count(context),
+        'sufficient': False, 'blockers': ['too few views', 'elevation', 'surface unconverged']}
+    operations, context, result = _execute(operations)
+    assert result.succeeded
+    assert context.session.accepted_captures == count
+    assert context.session.return_home_proved
+    assert context.session.disabled_proved and context.session.processes_stopped
+
+
+def test_coverage_pass_does_not_stop_while_rays_remain():
+    operations = FakeMissionOperations()
+    def request(context):
+        operations.plan_requests += 1
+        if operations.capture_count(context) >= 10:
+            raise MissionFailure('RAY_FRONTIER_EXHAUSTED: population exhausted')
+        return 'request'
+    operations.request_multiview_plan = request
+    operations.current_feature_coverage = lambda context: {
+        'sufficient': True, 'accepted_achieved_views': operations.capture_count(context)}
+    _, context, result = _execute(operations)
+    assert result.succeeded
+    assert context.session.accepted_captures == 10

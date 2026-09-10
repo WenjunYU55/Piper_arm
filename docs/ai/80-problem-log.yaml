@@ -1233,7 +1233,7 @@ capture_probe_motion_policy_2026_09_10:
 scan_completion_lateral_policy_2026_09_10:
   owner_module: piper_mobile_manipulation/scan_session_memory.py achieved_feature_coverage
   behavior: Default mission completion no longer requires two achieved views on each Y side. Positive/negative Y counts remain diagnostic; achieved_feature_coverage defaults minimum_views_per_y_side to zero.
-  preserved: Required capture count, 25-degree elevation span, measured surface minimum and convergence remain required. NBV ordering and trajectory constraints are unchanged.
+  preserved: Capture count, 25-degree elevation span, measured surface minimum and convergence are now advisory under ray_exhaustion_completion_2026_09_11. NBV ordering and trajectory constraints are unchanged.
   required_retests: [one-sided achieved coverage, insufficient capture and elevation rejection, unconverged surface rejection, mobile and Tesseract suites, package build]
   physical_status: Offline only; no arm command or active mission restart.
 

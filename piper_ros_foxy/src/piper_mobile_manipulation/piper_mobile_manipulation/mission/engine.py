@@ -175,34 +175,19 @@ def first_capture_framing_action(reason):
 
 def safe_view_exhaustion_after_capture(
         reason, accepted_captures, feature_coverage=None):
-    """Recognize a proved end of the adaptive safe-view frontier."""
-    accepted = int(accepted_captures)
-    proved_accepted = int(
-        feature_coverage.get('accepted_achieved_views', 0)
-        if isinstance(feature_coverage, dict) else 0)
-    return (
-        accepted >= 1
-        and isinstance(feature_coverage, dict)
-        and proved_accepted >= accepted
-        and feature_coverage.get('sufficient') is True
-        and as_failure(reason).has(FailureTag.SAFE_VIEW_EXHAUSTED)
-    )
+    """Complete only on explicit full-ray exhaustion; coverage is advisory."""
+    return as_failure(reason).has(FailureTag.RAY_FRONTIER_EXHAUSTED)
 
 
 def feature_capture_decision(
         accepted_captures, required_captures, maximum_captures,
         feature_coverage):
-    """Choose continue, complete, or exhausted from achieved feature proof."""
+    """Continue regardless of coverage, retaining the operational capture ceiling."""
     accepted = int(accepted_captures)
     required = int(required_captures)
     maximum = int(maximum_captures)
     if required < 1 or maximum < required or accepted < 0:
         raise ValueError('feature capture bounds are invalid')
-    sufficient = bool(
-        isinstance(feature_coverage, dict)
-        and feature_coverage.get('sufficient') is True)
-    if accepted >= required and sufficient:
-        return 'COMPLETE'
     if accepted >= maximum:
         return 'EXHAUSTED'
     return 'CONTINUE'
@@ -351,8 +336,8 @@ class MissionEngine:
             session.close_phase_timing()
             session.phase = MissionPhase.SUCCEEDED
             session.reason = (
-                'distinctive-feature target scan completed with %d accepted '
-                'diverse views and PiPER shut down safely'
+                'ray-exhaustion scan completed with %d accepted views; '
+                'PiPER shut down safely; coverage metrics are advisory'
                 % session.accepted_captures)
             outcome = 'SUCCEEDED'
         else:
@@ -612,27 +597,11 @@ class MissionEngine:
             decision = feature_capture_decision(
                 accepted, required, maximum,
                 coverage if history_count >= accepted else {})
-            if decision == 'COMPLETE':
-                session.accepted_captures = accepted
-                adaptive_completion = True
-                self.operations.progress(
-                    context,
-                    'distinctive feature floors are complete after %d '
-                    'accepted views; holding for a fresh current-state home '
-                    'plan' % accepted)
-                break
-            if decision == 'EXHAUSTED':
-                raise MissionFailure(
-                    '%d-view bounded scan limit reached but distinctive '
-                    'feature coverage remained insufficient: %s'
-                    % (accepted, '; '.join(coverage.get('blockers', []))),
-                    failure_code='INSUFFICIENT_CAPTURE_QUALITY',
-                    retryable=True)
             remaining = maximum - accepted
             self._transition(
                 context, MissionPhase.VIEW_PLANNING,
                 'requesting one correlated feature-driven view; up to %d '
-                'bounded views remain (model seed floor %d)'
+                'bounded views remain (advisory capture target %d)'
                 % (remaining, required))
             if retry_shortlist:
                 self.operations.clear_plan_cache(context, preserve_generation=True)
@@ -672,24 +641,18 @@ class MissionEngine:
                     continue
                 if not safe_view_exhaustion_after_capture(
                         exc, accepted, coverage):
-                    if (
-                            as_failure(exc).has(FailureTag.EMPTY_VIEW_FRONTIER)
-                            and coverage.get('blockers')):
-                        raise MissionFailure(
-                            '%s; safe-view frontier ended before distinctive '
-                            'feature coverage was sufficient: %s'
-                            % (exc, '; '.join(coverage['blockers'])),
-                            failure_code='INSUFFICIENT_CAPTURE_QUALITY',
-                            retryable=True)
                     raise
                 session.accepted_captures = accepted
                 adaptive_completion = True
                 self.operations.progress(
                     context,
-                    'adaptive scan complete after %d accepted diverse views; '
-                    'the motion planner proved no meaningfully different collision-free '
-                    'view remains' % accepted)
+                    'scan complete after %d accepted views: the full ray pool is '
+                    'exhausted; coverage metrics are advisory' % accepted)
                 break
+            if decision == 'EXHAUSTED':
+                raise MissionFailure(
+                    '%d-view operational capture limit reached with rays still available'
+                    % maximum, failure_code='MISSION_FAILED', retryable=True)
             try:
                 self.operations.approve_plan(context, plan)
             except MissionFailure as exc:
@@ -719,6 +682,12 @@ class MissionEngine:
                 self.operations.remaining_time(context),
                 ('ABORTED', 'INVALID'))
             if str(execution.state) == 'COMPLETE':
+                if not safe_view_exhaustion_after_capture(
+                        execution.reason, self.operations.capture_count(context)):
+                    raise MissionFailure(
+                        'executor stopped without full ray-exhaustion proof: '
+                        + str(execution.reason))
+                adaptive_completion = True
                 break
             session.accepted_captures = self.operations.capture_count(context)
             if str(execution.state) == 'VIEW_REJECTED':
@@ -761,7 +730,7 @@ class MissionEngine:
             framing_retry_pending = False
             self.operations.progress(
                 context,
-                'accepted view %d (minimum %d, bounded maximum %d); '
+                'accepted view %d (advisory target %d, bounded maximum %d); '
                 'replanning one next view from measured pose and achieved '
                 'feature coverage'
                 % (session.accepted_captures, required, maximum))
@@ -771,26 +740,6 @@ class MissionEngine:
         session.accepted_captures = self.operations.capture_count(context)
         if adaptive_completion:
             return
-        if not required <= session.accepted_captures <= maximum:
-            raise MissionFailure(
-                'executor completed with %d captures outside the bounded '
-                '%d-%d contract'
-                % (session.accepted_captures, required, maximum))
-        if not as_failure(execution.reason).has(FailureTag.HOME_REACHED):
-            raise MissionFailure(
-                'captures completed but return-home was not proved: %s'
-                % execution.reason)
-        session.return_home_proved = True
-        self.operations.wait_for_scan_history(
-            context, self.workflow_config.final_history_timeout_sec)
-        coverage = self.operations.current_feature_coverage(context)
-        if not coverage.get('sufficient'):
-            raise MissionFailure(
-                '%d captures completed but distinctive feature coverage was '
-                'insufficient: %s'
-                % (session.accepted_captures,
-                   '; '.join(coverage.get('blockers', []))),
-                failure_code='INSUFFICIENT_CAPTURE_QUALITY', retryable=True)
 
     def shutdown(self, context, normal_completion, failure=None):
         """Run the existing fail-closed home/hold/disable/cleanup sequence."""

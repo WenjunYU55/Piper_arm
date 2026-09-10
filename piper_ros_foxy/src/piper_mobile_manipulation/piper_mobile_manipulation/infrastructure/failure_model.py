@@ -32,6 +32,7 @@ class FailureTag(str, Enum):
         'PLAN_REQUEST_VISUAL_REACQUISITION')
     TARGET_DRIFT_REPLAN = 'TARGET_DRIFT_REPLAN'
     SAFE_VIEW_EXHAUSTED = 'SAFE_VIEW_EXHAUSTED'
+    RAY_FRONTIER_EXHAUSTED = 'RAY_FRONTIER_EXHAUSTED'
     EMPTY_VIEW_FRONTIER = 'EMPTY_VIEW_FRONTIER'
     PLAN_REJECTION_HOME_ALLOWED = 'PLAN_REJECTION_HOME_ALLOWED'
     CAPTURE_RETRY_SAME_VIEW = 'CAPTURE_RETRY_SAME_VIEW'
@@ -237,6 +238,7 @@ def legacy_failure_adapter(
     if 'ray_shortlist_exhausted' in lowered:
         tags.add(FailureTag.RAY_SHORTLIST_EXHAUSTED)
     if 'ray_frontier_exhausted' in lowered:
+        tags.add(FailureTag.RAY_FRONTIER_EXHAUSTED)
         tags.add(FailureTag.EMPTY_VIEW_FRONTIER)
         tags.add(FailureTag.SAFE_VIEW_EXHAUSTED)
     if (

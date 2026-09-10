@@ -362,10 +362,7 @@ def test_target_drift_requests_new_measured_plan_without_authorizing_motion():
 
 
 def test_only_proved_post_capture_safe_view_exhaustion_completes_adaptively():
-    reason = (
-        'MULTIVIEW_SCAN planning failed: Tesseract proposal rejected: '
-        'PLANNING_FAILED: only 0 viewpoints planned; require at least 1 of 1 '
-        '(view 7: no finite bounded collision-free IK goal for any roll)')
+    reason = 'RAY_FRONTIER_EXHAUSTED: all prequalified rays exhausted'
     complete_history = {
         'sufficient': True,
         'accepted_achieved_views': 7,
@@ -373,11 +370,11 @@ def test_only_proved_post_capture_safe_view_exhaustion_completes_adaptively():
     assert REQUIRED_CAPTURES == 8
     assert safe_view_exhaustion_after_capture(
         reason, 7, complete_history)
-    assert not safe_view_exhaustion_after_capture(
+    assert safe_view_exhaustion_after_capture(
         reason, 7, dict(complete_history, sufficient=False))
-    assert not safe_view_exhaustion_after_capture(
+    assert safe_view_exhaustion_after_capture(
         reason, 7, {'accepted_achieved_views': 6})
-    assert not safe_view_exhaustion_after_capture(
+    assert safe_view_exhaustion_after_capture(
         reason, 0, {'accepted_achieved_views': 0})
     assert not safe_view_exhaustion_after_capture(
         'MULTIVIEW_SCAN planning failed: worker timed out',
@@ -392,9 +389,9 @@ def test_feature_capture_contract_uses_seed_floor_then_bounded_extras():
     assert feature_capture_decision(
         8, 8, 24, {'sufficient': False}) == 'CONTINUE'
     assert feature_capture_decision(
-        8, 8, 24, {'sufficient': True}) == 'COMPLETE'
+        8, 8, 24, {'sufficient': True}) == 'CONTINUE'
     assert feature_capture_decision(
-        19, 8, 24, {'sufficient': True}) == 'COMPLETE'
+        19, 8, 24, {'sufficient': True}) == 'CONTINUE'
     assert feature_capture_decision(
         24, 8, 24, {'sufficient': False}) == 'EXHAUSTED'
 

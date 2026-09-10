@@ -221,6 +221,7 @@ class MissionCharacterizationHarness:
         self.capture_states = []
         self.workflow_state = 'SCAN_READY'
         self.coverage_sufficient = True
+        self.ray_exhaustion_count = 8
         self.required_captures = 8
         self.maximum_captures = 24
         self.latest_capture = {
@@ -464,6 +465,10 @@ class MissionCharacterizationHarness:
     def request_multiview_plan(self, _goal_handle, session):
         self.events.append('viewpoint_planning')
         self.maybe_fail('planning_request', session)
+        if (self.ray_exhaustion_count is not None
+                and int(self.latest_capture['captured_frame_count'])
+                >= self.ray_exhaustion_count):
+            raise MissionFailure('RAY_FRONTIER_EXHAUSTED: no rays remain')
         return 'multiview-request-%d' % (
             int(self.latest_capture['captured_frame_count']) + 1)
 

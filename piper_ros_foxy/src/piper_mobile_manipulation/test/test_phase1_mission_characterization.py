@@ -148,6 +148,7 @@ def test_successful_mission_characterizes_complete_stage_and_shutdown_order(
         'TARGET_LOCK',
         'OCCLUSION_PROBE',
         *['VIEW_PLANNING', 'CAPTURING'] * 8,
+        'VIEW_PLANNING',
         'RETURNING_HOME',
         'RETURNING_HOME',
         'RETURNING_HOME',
@@ -442,11 +443,12 @@ def test_capture_limit_fails_when_achieved_coverage_is_insufficient(
     mission_harness.required_captures = 8
     mission_harness.maximum_captures = 8
     mission_harness.coverage_sufficient = False
+    mission_harness.ray_exhaustion_count = None
 
     _goal_handle, result = _run(mission_harness, goal_handle_factory)
 
     assert result['outcome'] == 'FAILED'
-    assert result['failure_code'] == 'INSUFFICIENT_CAPTURE_QUALITY'
+    assert result['failure_code'] == 'MISSION_FAILED'
     assert result['capture_count'] == 8
     assert result['safe_shutdown'] is True
 
