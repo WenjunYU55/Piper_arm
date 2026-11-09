@@ -5,7 +5,7 @@
 **A safety-gated ROS 2 system for open-label target perception, closed-loop next-best-view planning, autonomous arm motion, and multi-view 3D reconstruction on a tracked mobile manipulator.**
 
 <a href="docs/assets/readme/media/physical_robot_transparent.png">
-  <img src="docs/assets/readme/media/piper-active-scanning.png" alt="PiPER arm planning target-centred camera viewpoints around an object on the Bunker Pro 2 tracked platform" width="900">
+  <img src="docs/assets/readme/media/physical_robot_transparent.png" alt="PiPER arm planning target-centred camera viewpoints around an object on the Bunker Pro 2 tracked platform" width="900">
 </a>
 
 <sub>Target-centred viewpoints and candidate camera rays around the PiPER arm and tracked platform.</sub>
