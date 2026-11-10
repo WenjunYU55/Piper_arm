@@ -9,22 +9,22 @@ ROOT = Path(__file__).resolve().parents[2]
 OUTPUT = ROOT / "assets" / "readme" / "architecture"
 
 COLORS = {
-    "input": ("#EAF3FF", "#2563A6"),
-    "perception": ("#F2EAFF", "#7851A9"),
-    "state": ("#E5F7F3", "#147D70"),
-    "planning": ("#FFF3D9", "#B77900"),
-    "safety": ("#FDE9E7", "#B33A3A"),
-    "actuation": ("#EEF1F4", "#46515E"),
-    "optional": ("#F7F7F8", "#929AA5"),
-    "external": ("#EFF6FF", "#3B6EA5"),
+    "input": ("#13243a", "#58a6ff"),
+    "perception": ("#251c38", "#bc8cff"),
+    "state": ("#102b29", "#3fb9a2"),
+    "planning": ("#302714", "#d29922"),
+    "safety": ("#321c20", "#f97066"),
+    "actuation": ("#20262e", "#9da7b3"),
+    "optional": ("#1b2027", "#8b949e"),
+    "external": ("#17283b", "#79c0ff"),
 }
 
 EDGE_COLORS = {
-    "data": "#52606D",
-    "control": "#2563A6",
-    "feedback": "#147D70",
-    "command": "#B33A3A",
-    "optional": "#929AA5",
+    "data": "#9da7b3",
+    "control": "#58a6ff",
+    "feedback": "#3fb9a2",
+    "command": "#f97066",
+    "optional": "#8b949e",
 }
 
 
@@ -110,8 +110,8 @@ def box(node):
 def lane(y, height, title, subtitle="", x=90, width=1140):
     result = [
         f'<rect x="{x}" y="{y}" width="{width}" height="{height}" rx="18" '
-        'fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>',
-        f'<path d="M {x} {y + 70} H {x + width}" stroke="#D7DDE5" '
+        'fill="#161b22" stroke="#30363d" stroke-width="1.2"/>',
+        f'<path d="M {x} {y + 70} H {x + width}" stroke="#30363d" '
         'stroke-width="1.2"/>',
         text(x + 24, y + 30, title, "lane-title", "start"),
     ]
@@ -189,20 +189,20 @@ def svg_header(width, height, title, subtitle):
         ])
     result.extend([
         "<style>",
-        ".title{font:700 40px Arial,Helvetica,sans-serif;fill:#17212B}",
-        ".subtitle{font:18px Arial,Helvetica,sans-serif;fill:#52606D}",
-        ".lane-title{font:700 20px Arial,Helvetica,sans-serif;fill:#24303C}",
-        ".lane-subtitle{font:14px Arial,Helvetica,sans-serif;fill:#687684}",
-        ".node-title{font:700 21px Arial,Helvetica,sans-serif;fill:#17212B}",
-        ".detail{font:16.5px Arial,Helvetica,sans-serif;fill:#344250}",
-        ".edge-label-bg{fill:#fff;fill-opacity:.96}",
-        ".edge-label{font:700 14.5px Arial,Helvetica,sans-serif;fill:#344250}",
-        ".badge{font:700 12.5px Arial,Helvetica,sans-serif;fill:#fff;letter-spacing:.35px}",
-        ".legend{font:14.5px Arial,Helvetica,sans-serif;fill:#46515E}",
-        ".note{font:15px Arial,Helvetica,sans-serif;fill:#52606D}",
+        ".title{font:700 40px Arial,Helvetica,sans-serif;fill:#f0f6fc}",
+        ".subtitle{font:18px Arial,Helvetica,sans-serif;fill:#8b949e}",
+        ".lane-title{font:700 20px Arial,Helvetica,sans-serif;fill:#f0f6fc}",
+        ".lane-subtitle{font:14px Arial,Helvetica,sans-serif;fill:#8b949e}",
+        ".node-title{font:700 21px Arial,Helvetica,sans-serif;fill:#f0f6fc}",
+        ".detail{font:16.5px Arial,Helvetica,sans-serif;fill:#c9d1d9}",
+        ".edge-label-bg{fill:#0d1117;fill-opacity:.96}",
+        ".edge-label{font:700 14.5px Arial,Helvetica,sans-serif;fill:#c9d1d9}",
+        ".badge{font:700 12.5px Arial,Helvetica,sans-serif;fill:#0d1117;letter-spacing:.35px}",
+        ".legend{font:14.5px Arial,Helvetica,sans-serif;fill:#c9d1d9}",
+        ".note{font:15px Arial,Helvetica,sans-serif;fill:#8b949e}",
         "</style>",
         "</defs>",
-        '<rect width="100%" height="100%" fill="#FFFFFF"/>',
+        '<rect width="100%" height="100%" fill="#0d1117"/>',
         text(width / 2, 49, title, "title"),
         text(width / 2, 78, subtitle, "subtitle"),
     ])

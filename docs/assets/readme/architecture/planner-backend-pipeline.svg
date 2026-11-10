@@ -4,97 +4,97 @@
 <desc>What is common, each backend&#x27;s qualification scope, and how readiness and rejection return to the mission</desc>
 <defs>
 <marker id="data-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
-<path d="M0,0 L0,6 L9,3 z" fill="#52606D"/>
+<path d="M0,0 L0,6 L9,3 z" fill="#9da7b3"/>
 </marker>
 <marker id="control-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
-<path d="M0,0 L0,6 L9,3 z" fill="#2563A6"/>
+<path d="M0,0 L0,6 L9,3 z" fill="#58a6ff"/>
 </marker>
 <marker id="feedback-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
-<path d="M0,0 L0,6 L9,3 z" fill="#147D70"/>
+<path d="M0,0 L0,6 L9,3 z" fill="#3fb9a2"/>
 </marker>
 <marker id="command-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
-<path d="M0,0 L0,6 L9,3 z" fill="#B33A3A"/>
+<path d="M0,0 L0,6 L9,3 z" fill="#f97066"/>
 </marker>
 <marker id="optional-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
-<path d="M0,0 L0,6 L9,3 z" fill="#929AA5"/>
+<path d="M0,0 L0,6 L9,3 z" fill="#8b949e"/>
 </marker>
 <style>
-.title{font:700 40px Arial,Helvetica,sans-serif;fill:#17212B}
-.subtitle{font:18px Arial,Helvetica,sans-serif;fill:#52606D}
-.lane-title{font:700 20px Arial,Helvetica,sans-serif;fill:#24303C}
-.lane-subtitle{font:14px Arial,Helvetica,sans-serif;fill:#687684}
-.node-title{font:700 21px Arial,Helvetica,sans-serif;fill:#17212B}
-.detail{font:16.5px Arial,Helvetica,sans-serif;fill:#344250}
-.edge-label-bg{fill:#fff;fill-opacity:.96}
-.edge-label{font:700 14.5px Arial,Helvetica,sans-serif;fill:#344250}
-.badge{font:700 12.5px Arial,Helvetica,sans-serif;fill:#fff;letter-spacing:.35px}
-.legend{font:14.5px Arial,Helvetica,sans-serif;fill:#46515E}
-.note{font:15px Arial,Helvetica,sans-serif;fill:#52606D}
+.title{font:700 40px Arial,Helvetica,sans-serif;fill:#f0f6fc}
+.subtitle{font:18px Arial,Helvetica,sans-serif;fill:#8b949e}
+.lane-title{font:700 20px Arial,Helvetica,sans-serif;fill:#f0f6fc}
+.lane-subtitle{font:14px Arial,Helvetica,sans-serif;fill:#8b949e}
+.node-title{font:700 21px Arial,Helvetica,sans-serif;fill:#f0f6fc}
+.detail{font:16.5px Arial,Helvetica,sans-serif;fill:#c9d1d9}
+.edge-label-bg{fill:#0d1117;fill-opacity:.96}
+.edge-label{font:700 14.5px Arial,Helvetica,sans-serif;fill:#c9d1d9}
+.badge{font:700 12.5px Arial,Helvetica,sans-serif;fill:#0d1117;letter-spacing:.35px}
+.legend{font:14.5px Arial,Helvetica,sans-serif;fill:#c9d1d9}
+.note{font:15px Arial,Helvetica,sans-serif;fill:#8b949e}
 </style>
 </defs>
-<rect width="100%" height="100%" fill="#FFFFFF"/>
+<rect width="100%" height="100%" fill="#0d1117"/>
 <text x="640.0" y="49" class="title" text-anchor="middle">Frozen Planner Backend and Generic Motion Contract</text>
 <text x="640.0" y="78" class="subtitle" text-anchor="middle">What is common, each backend&#x27;s qualification scope, and how readiness and rejection return to the mission</text>
-<line x1="65" y1="108" x2="103" y2="108" stroke="#52606D" stroke-width="3" marker-end="url(#data-arrow)"/>
+<line x1="65" y1="108" x2="103" y2="108" stroke="#9da7b3" stroke-width="3" marker-end="url(#data-arrow)"/>
 <text x="113" y="112" class="legend" text-anchor="start">data / evidence</text>
-<line x1="270" y1="108" x2="308" y2="108" stroke="#2563A6" stroke-width="3" marker-end="url(#control-arrow)"/>
+<line x1="270" y1="108" x2="308" y2="108" stroke="#58a6ff" stroke-width="3" marker-end="url(#control-arrow)"/>
 <text x="318" y="112" class="legend" text-anchor="start">mission control</text>
-<line x1="475" y1="108" x2="513" y2="108" stroke="#147D70" stroke-width="3" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<line x1="475" y1="108" x2="513" y2="108" stroke="#3fb9a2" stroke-width="3" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
 <text x="523" y="112" class="legend" text-anchor="start">feedback / retry</text>
-<line x1="680" y1="108" x2="718" y2="108" stroke="#B33A3A" stroke-width="3" marker-end="url(#command-arrow)"/>
+<line x1="680" y1="108" x2="718" y2="108" stroke="#f97066" stroke-width="3" marker-end="url(#command-arrow)"/>
 <text x="728" y="112" class="legend" text-anchor="start">motor command</text>
-<line x1="885" y1="108" x2="923" y2="108" stroke="#929AA5" stroke-width="3" stroke-dasharray="8 6" marker-end="url(#optional-arrow)"/>
+<line x1="885" y1="108" x2="923" y2="108" stroke="#8b949e" stroke-width="3" stroke-dasharray="8 6" marker-end="url(#optional-arrow)"/>
 <text x="933" y="112" class="legend" text-anchor="start">optional / unqualified</text>
-<polyline points="640.0000000000001,300 640.0000000000001,365" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
-<polyline points="640.0000000000001,520 640.0000000000001,590" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
-<polyline points="640.0000000000001,780 315.5,860" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
-<polyline points="640.0000000000001,780 964.5000000000001,850" fill="none" stroke="#929AA5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#optional-arrow)"/>
-<polyline points="315.5,1040 315.5,1090 420.00000000000006,1090 420.00000000000006,1212 442.00000000000006,1212.5" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
-<polyline points="964.5000000000001,1050 964.5000000000001,1090 860.0000000000001,1090 860.0000000000001,1212 838.0000000000001,1212.5" fill="none" stroke="#929AA5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#optional-arrow)"/>
-<polyline points="640.0000000000001,1300 640.0000000000001,1370" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
-<polyline points="640.0000000000001,1545 640.0000000000001,1615" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
-<polyline points="442.00000000000006,1212.5 376.0,1457.5" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<polyline points="227.5,1370 227.50000000000003,1335 62.5,1335 62.5,685 442.00000000000006,685 442.00000000000006,685.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<polyline points="95.5,950.0 62.5,950 62.5,685 442.00000000000006,685 442.00000000000006,685.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<polyline points="1184.5000000000002,950.0 1212.0,950 1212.0,685 838.0000000000001,685 838.0000000000001,685.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<rect x="442.00000000000006" y="145" width="396.00000000000006" height="155" rx="14" fill="#EFF6FF" stroke="#3B6EA5" stroke-width="1.6"/>
-<rect x="442.00000000000006" y="145" width="7" height="155" rx="3.5" fill="#3B6EA5" opacity="0.9"/>
+<polyline points="640.0000000000001,300 640.0000000000001,365" fill="none" stroke="#58a6ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="640.0000000000001,520 640.0000000000001,590" fill="none" stroke="#58a6ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="640.0000000000001,780 315.5,860" fill="none" stroke="#9da7b3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="640.0000000000001,780 964.5000000000001,850" fill="none" stroke="#8b949e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#optional-arrow)"/>
+<polyline points="315.5,1040 315.5,1090 420.00000000000006,1090 420.00000000000006,1212 442.00000000000006,1212.5" fill="none" stroke="#9da7b3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="964.5000000000001,1050 964.5000000000001,1090 860.0000000000001,1090 860.0000000000001,1212 838.0000000000001,1212.5" fill="none" stroke="#8b949e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#optional-arrow)"/>
+<polyline points="640.0000000000001,1300 640.0000000000001,1370" fill="none" stroke="#9da7b3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="640.0000000000001,1545 640.0000000000001,1615" fill="none" stroke="#9da7b3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="442.00000000000006,1212.5 376.0,1457.5" fill="none" stroke="#3fb9a2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="227.5,1370 227.50000000000003,1335 62.5,1335 62.5,685 442.00000000000006,685 442.00000000000006,685.0" fill="none" stroke="#3fb9a2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="95.5,950.0 62.5,950 62.5,685 442.00000000000006,685 442.00000000000006,685.0" fill="none" stroke="#3fb9a2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="1184.5000000000002,950.0 1212.0,950 1212.0,685 838.0000000000001,685 838.0000000000001,685.0" fill="none" stroke="#3fb9a2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<rect x="442.00000000000006" y="145" width="396.00000000000006" height="155" rx="14" fill="#17283b" stroke="#79c0ff" stroke-width="1.6"/>
+<rect x="442.00000000000006" y="145" width="7" height="155" rx="3.5" fill="#79c0ff" opacity="0.9"/>
 <text x="466.00000000000006" y="180" class="node-title" text-anchor="start">Next-mission backend selection</text>
 <text x="466.00000000000006" y="211" class="detail" text-anchor="start"><tspan x="466.00000000000006" dy="0">GUI/config: tesseract or curobo</tspan><tspan x="466.00000000000006" dy="23">validated before goal admission</tspan><tspan x="466.00000000000006" dy="23">frozen into RunTargetScan + mission hash</tspan></text>
-<rect x="442.00000000000006" y="365" width="396.00000000000006" height="155" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
-<rect x="442.00000000000006" y="365" width="7" height="155" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<rect x="442.00000000000006" y="365" width="396.00000000000006" height="155" rx="14" fill="#321c20" stroke="#f97066" stroke-width="1.6"/>
+<rect x="442.00000000000006" y="365" width="7" height="155" rx="3.5" fill="#f97066" opacity="0.9"/>
 <text x="466.00000000000006" y="400" class="node-title" text-anchor="start">ProcessSupervisor</text>
 <text x="466.00000000000006" y="431" class="detail" text-anchor="start"><tspan x="466.00000000000006" dy="0">starts exactly one selected worker</tspan><tspan x="466.00000000000006" dy="23">owns process group + generation</tspan><tspan x="466.00000000000006" dy="23">bounded stop also owns CUDA work</tspan></text>
-<rect x="442.00000000000006" y="590" width="396.00000000000006" height="190" rx="14" fill="#FFF3D9" stroke="#B77900" stroke-width="1.6"/>
-<rect x="442.00000000000006" y="590" width="7" height="190" rx="3.5" fill="#B77900" opacity="0.9"/>
+<rect x="442.00000000000006" y="590" width="396.00000000000006" height="190" rx="14" fill="#302714" stroke="#d29922" stroke-width="1.6"/>
+<rect x="442.00000000000006" y="590" width="7" height="190" rx="3.5" fill="#d29922" opacity="0.9"/>
 <text x="466.00000000000006" y="625" class="node-title" text-anchor="start">Generic Foxy planner bridge</text>
 <text x="466.00000000000006" y="656" class="detail" text-anchor="start"><tspan x="466.00000000000006" dy="0">fresh joints, limits, target, camera + scene</tspan><tspan x="466.00000000000006" dy="23">worker generation/heartbeat/readiness</tspan><tspan x="466.00000000000006" dy="23">request ID + model/calibration hashes</tspan><tspan x="466.00000000000006" dy="23">command-free schema-v5 spool request</tspan></text>
-<rect x="95.5" y="860" width="440.00000000000006" height="180" rx="14" fill="#FFF3D9" stroke="#B77900" stroke-width="1.6"/>
-<rect x="95.5" y="860" width="7" height="180" rx="3.5" fill="#B77900" opacity="0.9"/>
+<rect x="95.5" y="860" width="440.00000000000006" height="180" rx="14" fill="#302714" stroke="#d29922" stroke-width="1.6"/>
+<rect x="95.5" y="860" width="7" height="180" rx="3.5" fill="#d29922" opacity="0.9"/>
 <text x="119.5" y="917" class="node-title" text-anchor="start">Tesseract worker</text>
 <text x="119.5" y="948" class="detail" text-anchor="start"><tspan x="119.5" dy="0">exact configured moving/fixed geometry</tspan><tspan x="119.5" dy="23">IK + collision + complete path</tspan><tspan x="119.5" dy="23">baseline + qualified startup recovery</tspan><tspan x="119.5" dy="23">main and integration branch</tspan></text>
-<rect x="119.5" y="873" width="96" height="23" rx="11.5" fill="#B77900"/>
+<rect x="119.5" y="873" width="96" height="23" rx="11.5" fill="#d29922"/>
 <text x="167.5" y="889" class="badge" text-anchor="middle">DEFAULT</text>
-<rect x="744.5000000000001" y="850" width="440.00000000000006" height="200" rx="14" fill="#F7F7F8" stroke="#929AA5" stroke-width="1.6"/>
-<rect x="744.5000000000001" y="850" width="7" height="200" rx="3.5" fill="#929AA5" opacity="0.9"/>
+<rect x="744.5000000000001" y="850" width="440.00000000000006" height="200" rx="14" fill="#1b2027" stroke="#8b949e" stroke-width="1.6"/>
+<rect x="744.5000000000001" y="850" width="7" height="200" rx="3.5" fill="#8b949e" opacity="0.9"/>
 <text x="768.5000000000001" y="907" class="node-title" text-anchor="start">cuRobo 0.7.8 worker</text>
 <text x="768.5000000000001" y="938" class="detail" text-anchor="start"><tspan x="768.5000000000001" dy="0">MotionGen plan_single / plan_single_js</tspan><tspan x="768.5000000000001" dy="23">exact fixed meshes + 69 moving spheres</tspan><tspan x="768.5000000000001" dy="23">CUDA/Python 3.10 isolated</tspan><tspan x="768.5000000000001" dy="23">hardware_qualified=true</tspan><tspan x="768.5000000000001" dy="23">coverage limits remain documented</tspan></text>
-<rect x="768.5000000000001" y="863" width="128.6" height="23" rx="11.5" fill="#929AA5"/>
+<rect x="768.5000000000001" y="863" width="128.6" height="23" rx="11.5" fill="#8b949e"/>
 <text x="832.8000000000001" y="879" class="badge" text-anchor="middle">SUPERVISED 5%</text>
-<rect x="442.00000000000006" y="1125" width="396.00000000000006" height="175" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
-<rect x="442.00000000000006" y="1125" width="7" height="175" rx="3.5" fill="#147D70" opacity="0.9"/>
+<rect x="442.00000000000006" y="1125" width="396.00000000000006" height="175" rx="14" fill="#102b29" stroke="#3fb9a2" stroke-width="1.6"/>
+<rect x="442.00000000000006" y="1125" width="7" height="175" rx="3.5" fill="#3fb9a2" opacity="0.9"/>
 <text x="466.00000000000006" y="1160" class="node-title" text-anchor="start">Validated planner response</text>
 <text x="466.00000000000006" y="1191" class="detail" text-anchor="start"><tspan x="466.00000000000006" dy="0">backend/version + request identity</tspan><tspan x="466.00000000000006" dy="23">collision qualification + rejection codes</tspan><tspan x="466.00000000000006" dy="23">timed six-joint trajectories + metrics</tspan><tspan x="466.00000000000006" dy="23">atomic response consumed once</tspan></text>
-<rect x="442.00000000000006" y="1370" width="396.00000000000006" height="175" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
-<rect x="442.00000000000006" y="1370" width="7" height="175" rx="3.5" fill="#147D70" opacity="0.9"/>
+<rect x="442.00000000000006" y="1370" width="396.00000000000006" height="175" rx="14" fill="#102b29" stroke="#3fb9a2" stroke-width="1.6"/>
+<rect x="442.00000000000006" y="1370" width="7" height="175" rx="3.5" fill="#3fb9a2" opacity="0.9"/>
 <text x="466.00000000000006" y="1405" class="node-title" text-anchor="start">ROS planner transport</text>
 <text x="466.00000000000006" y="1436" class="detail" text-anchor="start"><tspan x="466.00000000000006" dy="0">main: TesseractPlan</tspan><tspan x="466.00000000000006" dy="23">integration branch: generic MotionPlan</tspan><tspan x="466.00000000000006" dy="23">Tesseract aliases only in Tesseract mode</tspan><tspan x="466.00000000000006" dy="23">status, readiness and provenance topics</tspan></text>
-<rect x="442.00000000000006" y="1615" width="396.00000000000006" height="180" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
-<rect x="442.00000000000006" y="1615" width="7" height="180" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<rect x="442.00000000000006" y="1615" width="396.00000000000006" height="180" rx="14" fill="#321c20" stroke="#f97066" stroke-width="1.6"/>
+<rect x="442.00000000000006" y="1615" width="7" height="180" rx="3.5" fill="#f97066" opacity="0.9"/>
 <text x="466.00000000000006" y="1650" class="node-title" text-anchor="start">Unchanged common execution path</text>
 <text x="466.00000000000006" y="1681" class="detail" text-anchor="start"><tspan x="466.00000000000006" dy="0">schedule normalization + validation</tspan><tspan x="466.00000000000006" dy="23">ScanExecutionPlan + PlanAuthorizer</tspan><tspan x="466.00000000000006" dy="23">runtime gates + TrajectoryRunner</tspan><tspan x="466.00000000000006" dy="23">executor alone may publish joints</tspan></text>
-<rect x="79.0" y="1370" width="297.0" height="175" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
-<rect x="79.0" y="1370" width="7" height="175" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<rect x="79.0" y="1370" width="297.0" height="175" rx="14" fill="#321c20" stroke="#f97066" stroke-width="1.6"/>
+<rect x="79.0" y="1370" width="7" height="175" rx="3.5" fill="#f97066" opacity="0.9"/>
 <text x="103.0" y="1405" class="node-title" text-anchor="start">Structured failure</text>
 <text x="103.0" y="1436" class="detail" text-anchor="start"><tspan x="103.0" dy="0">stale/malformed/unsupported/unready</tspan><tspan x="103.0" dy="23">publish correlated rejection</tspan><tspan x="103.0" dy="23">mission/NBV decides bounded next action</tspan><tspan x="103.0" dy="23">never switch backend automatically</tspan></text>
 <rect x="577.8000000000001" y="308.5" width="124.39999999999999" height="23" rx="5" class="edge-label-bg"/>
