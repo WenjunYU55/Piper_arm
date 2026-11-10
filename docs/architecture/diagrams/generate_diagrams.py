@@ -517,20 +517,20 @@ def render_perception():
 def render_nbv():
     nodes = {
         "accepted": dict(x=380, y=150, w=340, h=150, title="Accepted schema-2 capture", lines=("manifest-verified target depth/support", "capture-time camera transform + achieved FK", "rejected observations are excluded"), color="state"),
-        "coverage": dict(x=380, y=365, w=340, h=160, title="Measured surface coverage", lines=("rebuild at exact accepted generation", "unknown / observed / visible voxels", "completion and novelty evidence"), color="state"),
+        "coverage": dict(x=380, y=365, w=340, h=160, title="Measured surface coverage", lines=("rebuild at exact accepted generation", "unknown / observed / visible voxels", "coverage and novelty diagnostics"), color="state"),
         "candidate": dict(x=380, y=595, w=340, h=180, title="Candidate policy", lines=("legacy points | voxel_nbv | frozen ray_nbv", "seed from current FK when no model exists", "marginal information before travel", "duplicate directions and hard culls removed"), color="planning"),
         "prequal": dict(x=380, y=845, w=340, h=160, title="Prequalification and shortlist", lines=("workspace / capability evidence", "safe target-facing aim + bounded fallback", "12 voxel points or 6 ray directions max"), color="planning"),
         "planner": dict(x=380, y=1075, w=340, h=150, title="Exact planner backend", lines=("fresh scene, joints, limits and hashes", "first feasible complete collision-qualified path", "structured rejection remains correlated"), color="planning"),
         "execute": dict(x=380, y=1295, w=340, h=160, title="Authorize, execute and settle", lines=("common safety path; one view", "record actual FK even if capture is rejected", "final aim, target drift and framing checks"), color="safety"),
         "decision": dict(x=380, y=1525, w=340, h=150, title="Observation decision", lines=("ACCEPT -> immutable commit", "RETRY -> one same-pose refresh", "REJECT -> exclude and replan"), color="safety"),
-        "complete": dict(x=760, y=365, w=280, h=160, title="Completion decision", lines=("bounded 8-24 view policy", "useful-face / convergence evidence", "or safe-frontier exhaustion"), color="state"),
+        "complete": dict(x=760, y=365, w=280, h=160, title="Completion decision", lines=("24-view ceiling; bounded retries", "full ray-population exhaustion", "safe terminal recovery required"), color="state"),
         "reacquire": dict(x=40, y=1075, w=280, h=150, title="Visual reacquisition", lines=("hold current pose; no command", "recover fresh measured target", "new plan must be re-approved"), color="perception"),
     }
     edges = [
         dict(src="accepted", dst="coverage", kind="data", label="commit generation", src_side="bottom", dst_side="top"),
         dict(src="coverage", dst="candidate", kind="data", label="measured evidence", src_side="bottom", dst_side="top"),
         dict(src="coverage", dst="complete", kind="data", src_side="right", dst_side="left"),
-        dict(src="complete", dst="candidate", kind="feedback", label="more surface required", src_side="bottom", dst_side="right", via=((900, 560), (740, 560), (740, 685)), label_at=(840, 553)),
+        dict(src="complete", dst="candidate", kind="feedback", label="rays remain", src_side="bottom", dst_side="right", via=((900, 560), (740, 560), (740, 685)), label_at=(840, 553)),
         dict(src="candidate", dst="prequal", kind="data", src_side="bottom", dst_side="top"),
         dict(src="prequal", dst="planner", kind="data", label="bounded shortlist", src_side="bottom", dst_side="top"),
         dict(src="planner", dst="execute", kind="data", label="qualified proposal", src_side="bottom", dst_side="top"),

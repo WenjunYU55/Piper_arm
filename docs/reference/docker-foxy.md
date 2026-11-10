@@ -1,4 +1,7 @@
-# Legacy Docker Foxy Commands
+# Legacy Docker and ROS 2 Foxy setup
+
+This optional, historical container workflow is retained for environments that still require it. The canonical native installation is [`CLEAN_INSTALL.md`](../../CLEAN_INSTALL.md). Commands below document the Docker workflow and may depend on its original host/container assumptions; use current repository scripts where paths are shown. Do not infer hardware qualification from a successful container build.
+
 
 > [!WARNING]
 > Historical reference only. This describes an earlier Ubuntu 22.04/Docker
@@ -22,11 +25,7 @@ Docker image:
 piper-arm-foxy:local
 ```
 
-For the full operator reference, including what each script does, also read:
-
-```bash
-/home/wenjun/prl/Piper_arm/OPERATOR_COMMANDS.md
-```
+For current instructions, use [`OPERATOR_COMMANDS.md`](../../OPERATOR_COMMANDS.md).
 
 ## Start A Foxy Terminal
 
@@ -124,16 +123,10 @@ cd /home/wenjun/prl/Piper_arm
 ./L515_camera/run_heavy_model_worker.sh
 ```
 
-Terminal 4, Docker: run temporal tracking after the heavy target mask is available.
+Terminal 4, Docker: run the viewer-only read-only tracking overlay. This script displays an existing debug image topic; it does not launch or replace a temporal tracker process.
 
 ```bash
-./L515_camera/run_temporal_tracking_readonly.sh /piper/heavy_target_mask
-```
-
-Terminal 5, Docker: view the tracking debug image.
-
-```bash
-./L515_camera/view_l515_opencv.sh /piper/temporal_tracking_debug_image
+./L515_camera/view_tracking_debug.sh
 ```
 
 ## Real PiPER Arm Runtime

@@ -160,7 +160,7 @@ python3 reconstruction/coordinate_frames.py /path/to/bundlesdf-run --output /new
 python3 reconstruction/coordinate_frames.py /path/to/target_mesh.ply.quality.json --report --output /new/capture-export
 ```
 
-Include frame sidecars and the export README when sharing; OBJ/PLY viewers may need Z-up selected. Orientation does not establish depth, hand-eye, tracking or dimensional accuracy. See `docs/ai/93-reconstruction-coordinate-frames.yaml` for ownership and checks.
+Include frame sidecars and the export README when sharing; OBJ/PLY viewers may need Z-up selected. Orientation does not establish depth, hand-eye, tracking or dimensional accuracy. See the [recording and frame contracts](recording-and-frame-contracts.md) for ownership and checks.
 
 ### Result selector labels
 

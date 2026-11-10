@@ -109,8 +109,10 @@ Primary system descriptions:
 
 - [`ARCHITECTURE.md`](../../ARCHITECTURE.md)
 - [`docs/architecture/system-overview.md`](system-overview.md)
-- [`docs/ai/10-system-map.yaml`](../ai/10-system-map.yaml)
-- [`docs/ai/40-flows.yaml`](../ai/40-flows.yaml)
+- [component design](component-design.md)
+- [interface contracts](../reference/interface-contracts.md)
+- [recording and coordinate-frame contracts](recording-and-frame-contracts.md)
+- [NBV scoring and retry policy](nbv-policy.md)
 
 Planner integration evidence:
 

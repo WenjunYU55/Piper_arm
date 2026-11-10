@@ -1,47 +1,8 @@
-# Final refactor architecture
-
-> 2026-08-20 focused tracking repair: `depth_to_3d_node.py` now requires a
-> fresh correlated semantic mask and never creates a target measurement from
-> an unmasked ROI. The existing `target_tracker_node.py` remains the sole
-> target estimate, using near-static prediction, Mahalanobis innovation gating
-> and bounded prediction-only output through the existing status interfaces.
-> NBV, Tesseract, capture coverage, motion and mission sequencing are unchanged.
-
-> 2026-08-20 live cadence/shortlist qualification: measured valid-target gaps
-> reached 3.8868 seconds, so the same authoritative stationary tracker now
-> retains prediction for five seconds with 0.01 process noise and gates with
-> base measurement noise rather than confidence-scaled noise. The existing
-> Tesseract bridge keeps global NBV leaders and reserves one of its existing
-> fallback slots for a nearby positive-information continuity candidate. This
-> changes neither NBV gain/coverage nor Tesseract feasibility ownership.
-
-> 2026-08-20 NBV repair: target measurement remains owned by
-> `depth_to_3d_node.py` and timestamped base-frame estimation by
-> `target_tracker_node.py`; `nbv_coverage.py` owns cumulative accepted coverage
-> and information ranking; the Tesseract bridge/worker own bounded exact-aim
-> feasibility; the executor owns achieved physical pose and retry handoff; the
-> capture node alone validates persistence. Accepted reconstruction stays fixed
-> in `base_link`. These remain separate owners rather than a new manager.
-
-> 2026-08-17 update: the later integration simplification made
-> `MissionEngine` the sole mission/shutdown authority, removed the uncalled
-> frozen mission bodies, and replaced the duplicate shadow evaluator with the
-> small immutable `RuntimeGatePolicy` mapping. Direct home now re-qualifies
-> from current arm/control evidence on every owned controllable failure; only
-> confirmed motor-control loss suppresses commands. This post-audit change is
-> software-tested (609 mobile tests, 82 affected driver/GUI/diagnostic tests,
-> changed-file lint clean, normal five-package Foxy build) but requires
-> supervised physical requalification. Historical package-wide lint debt
-> remains outside the changed files.
+# Component design
 
 ## Scope
 
-This is the Phase 10 architecture after the behavior-preserving Phase 0--9
-extractions. It records ownership and dependency direction; it does not replace
-the public interface catalog in `external_contracts.md` or the numerical rules
-in `safety_invariants.md`. No ROS name, QoS policy, message field, parameter
-default, threshold, motion command, TF meaning, calibration value, perception
-algorithm, or Tesseract behavior changed during Phase 10.
+This reference records current component ownership and dependency direction. See the [interface catalog](../reference/interface-contracts.md) for public ROS and persistence contracts and [safety invariants](../reference/safety-invariants.md) for numerical limits.
 
 ## Module structure
 
@@ -229,37 +190,7 @@ diagnostics, and explicit manual commissioning. Production mission and safety
 behavior is reached only through the existing action interface. Commissioning
 publishing is locked while an autonomous action owns the arm.
 
-## Phase 10 cleanup disposition
-
-Repository reference search and the complete characterization suite proved the
-following production code inert and it was removed:
-
-- `utils/transforms.py`, whose two accessors had no repository import or call;
-- unused `point_distance`, `make_pose_stamped`, and `point_from_xyz` helpers
-  from `utils/geometry.py`;
-- an unused velocity-array calculation in the coordinator's final-hold proof;
-- an unused qualification-only import of `reverse_sdk_movej_points`.
-
-Four pre-existing formatting-only lint findings in touched files were also
-removed; these edits do not change an expression or control-flow branch.
-
-The `tf2_geometry_msgs` import in `target_tracker_node.py` is intentionally
-retained and annotated: importing it registers geometry conversions with tf2.
-Repeated node-local parsing/parameter helpers were not consolidated because
-their callback, configuration, or synchronization ownership differs.
-
-The following apparent cleanup candidates are intentionally retained:
-
-- `latest_*` and executor receipt-time mirrors still consumed by diagnostics
-  and characterization seams;
-- `ManagedProcessSet` and configuration exports used by compatibility tests;
-- `tests/fixtures/piper_gui_automation.py`, retained as archived Phase 1 characterization for
-  the review period specified in `docs/ai/60-debt.yaml`;
-- legacy/fake commissioning ROS nodes, whose installed ROS interfaces remain
-  documented external contracts;
-- vendor, calibration, model, generated-message, and isolated-runtime code.
-
-## Change rule after Phase 10
+## Compatibility and maintenance
 
 New behavior belongs in the owner above and must preserve dependency direction.
 The uncalled `_legacy_run_pipeline`/`_legacy_safe_shutdown` bodies and duplicate
@@ -267,30 +198,42 @@ The uncalled `_legacy_run_pipeline`/`_legacy_safe_shutdown` bodies and duplicate
 reference search and focused characterization; their public compatibility
 delegates and the one authoritative executor gate remain.
 
-Removing a retained compatibility surface requires satisfying its explicit
-evidence gate in `docs/ai/60-debt.yaml`, updating `docs/ai`, and rerunning the
+Removing a retained compatibility surface requires satisfying the explicit
+evidence gate recorded in the [immutable 2026-08-17 baseline debt record](https://github.com/WenjunYU55/Piper_arm/blob/d03cbfe40605cd43d2cdfaaa31f2384962ee60ae/docs/ai/60-debt.yaml),
+updating the maintained [interface contracts](../reference/interface-contracts.md)
+and [safety invariants](../reference/safety-invariants.md), and rerunning the
 linked characterization, build, and command-free planning checks. The
 2026-08-17 policy cleanup did not promote a new safety authority; it removed
 the unused duplicate and requires separate physical requalification.
 
-## Final cleanup validation record
 
-Validation on 2026-08-27 was software-only. No arm, camera, driver, GUI,
-coordinator, or other hardware-facing process was started.
 
-- complete `piper_mobile_manipulation` suite: 863 passed, 1 hardware skip;
-- complete Tesseract Python suite: 163 passed;
-- driver functional, description, cross-package GUI/driver/planning, L515,
-  reconstruction and GroundingDINO selection: 305 passed, 1 environment skip;
-- isolated perception suites: 6 heavy-worker and 7 SAM2-worker tests passed;
-- normal five-package Foxy `colcon build --symlink-install`: passed;
-- registered `colcon test`: every functional, message, XML, and CMake-lint
-  target passed; the existing mobile-package Flake8/PEP257 targets reproduce
-  76 historical style findings;
-- all added Python files pass Flake8 at the repository's 99-column convention;
-- Python byte compilation, all 12 AI YAML files, interface-tree comparison and
-  `git diff --check` passed;
-- rootless Tesseract compact qualification passed with backend `0.35.0.6`,
-  collision qualification true and `real_arm_motion=false`; the core suite
-  passed all preceding stages and reproduced the baseline 150-second planning
-  limit at `dual_limit_start_acquisition`.
+## Component behavior and cross-cutting contracts
+
+### Typed failures
+
+`infrastructure/failure_model.py` defines stable public `FailureCode` values, finer internal `FailureTag` decisions, and immutable failure evidence (detail, retryability, operator requirement, outcome, and machine-readable blocker). `legacy_failure_adapter` is the sole bridge from string-only legacy ROS/status boundaries; typed failures pass through unchanged. ROS action results retain their existing string fields and explanations. Text parsing remains necessary where Foxy messages expose only text; structured enum/state normalization is separate from failure classification.
+
+### Telemetry snapshots
+
+Mission and executor nodes each own a `TelemetryStore` because they receive independent ROS subscriptions. Callback observations retain copied values, monotonic receipt times, optional source stamps and frame IDs. A decision reads one immutable, revisioned snapshot so related channels are evaluated coherently. The store applies caller-supplied freshness bounds with the strict `age > maximum` stale rule; it does not own thresholds, plans, retry counters, process handles, capture history, or shutdown proofs. Compatibility mirrors may remain for diagnostics and characterization, but the migrated decision paths use snapshots.
+
+### Process supervision
+
+`ProcessSupervisor` owns exact process groups started for a mission generation. It does not discover or adopt processes by executable name. Startup environment, generation logs, health reporting, reverse dependency cleanup, and bounded SIGINT/SIGTERM escalation are centralized; the autonomous coordinator does not enable forced kill. GUI commissioning children, the preview RViz editor, camera wrapper groups, gateway reconstruction subprocess, and Tesseract worker lifecycle retain separate owners because their lifecycle policies differ.
+
+### Executor decision components
+
+The executor keeps ROS transport and command publication in its node while using small application components for exact plan authorization, one authorized trajectory's schedule/feedback decisions, settled capture sequencing, and typed retry/reacquire/replan/abort decisions. These components receive immutable evidence and return typed decisions; they do not publish commands or take over telemetry callbacks, geometry/path construction, ROS futures, or home/terminal authority. Exact Tesseract points and timestamps remain the executor's command schedule.
+
+### Runtime safety profiles
+
+The executor remains the authoritative command gate. `RuntimeGatePolicy` names a complete evidence profile for a decision context; it is a mapping, not a second evaluator, threshold store, or permission authority. Tesseract owns IK/collision/path feasibility; the executor owns live plan identity, telemetry freshness, limit, attached-tool, target, timing, and command-publication gates; the PiPER driver owns low-level enable/fault/watchdog authority. Dedicated staged home has its own narrowly scoped evidence and clearance rules. The GUI does not authorize autonomous motion.
+
+### Mission and GUI boundaries
+
+`MissionEngine` owns the admitted mission and terminal shutdown sequence; the ROS action node owns admission, queueing, conversion, feedback/results, durable boundaries, and dependency adapters. Cancellation is forwarded into application state; committed terminal recovery/shutdown is not interrupted. The native GUI sends autonomous work through `/piper/run_target_scan`, maps typed client events to presentation state, and keeps direct commissioning controls visibly separate. It does not own production retries, replanning, occlusion decisions, sequencing, safety, or mission process lifecycle.
+
+### Configuration precedence
+
+Coordinator and executor startup configuration is declared and read once into immutable typed groups. ROS launch/YAML overrides therefore supply final values before configuration validation; Python defaults are fallback defaults, not replacements for package YAML. Calibration, robot-description, Tesseract model, and mission-data files remain their own authoritative inputs. Mission input, telemetry, and derived/session state are not static configuration. Similar numeric values in separate components may have different meanings and should not be deduplicated by value alone.

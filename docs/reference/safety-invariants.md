@@ -1,10 +1,6 @@
-# Safety invariants and numerical baseline
+# Safety invariants
 
-These values are recorded, not endorsed or changed. A Phase 1 extraction must
-preserve the effective value, units, comparison direction, clock source,
-evaluation point and failure behavior. Node defaults can differ from launch
-YAML overrides; the deployed `supervised_viewpoint_execution`/GPU launch path
-and the files named below are authoritative for that composition.
+These values are recorded, not endorsed or changed. They document effective defaults, units, comparison direction, clock source, evaluation point and failure behavior. The running code and its deployed launch/configuration take precedence; for operator procedures use [`OPERATOR_COMMANDS.md`](../../OPERATOR_COMMANDS.md). Node defaults can differ from launch YAML overrides, so this table does not override the deployed `supervised_viewpoint_execution`/GPU composition or its source files.
 
 Previous-generation cleanup may signal only exact handles retained by the same
 `ProcessSupervisor`. Non-command groups may be released after mission authority
@@ -55,7 +51,7 @@ blocked and no process or arm command is started.
 14. Hand/person/unknown/unprojectable obstacles block; semantic uncertainty is
     never converted into contact authorization.
 15. TF frame meanings, optical-axis conventions and the accepted hand-eye
-    composition are immutable in this phase.
+    composition remain fixed compatibility contracts.
 
 ## Driver, feedback and controller limits
 
@@ -96,7 +92,7 @@ blocked and no process or arm command is started.
 | Pending missions | maximum `8` |
 | Queue coalescing | `1.0 s`, then closest first |
 | Optional gateway heartbeat stale | `5.0 s`; on-disk wall heartbeat accepted up to `2.0 s` old |
-| Required/maximum captures | `8 / 24` |
+| Recorded capture target / operational ceiling | `8 / 24` (8 is advisory; 24 is enforced, with a command-free exhaustion check) |
 | Acquisition looks | maximum `5` |
 | Occlusion/contact actions | maximum `6` (contact execution currently blocked) |
 | Quality replacement replans | maximum `8` |
@@ -156,8 +152,7 @@ blocked and no process or arm command is started.
 Home profile schema 3 fixes rough home to
 `[0, 0, 0, 0, 0.399345492, 0] rad`, mission-ready J6 to `0`, and storage J6
 to `-3.139536232 rad`. Startup J6 direction is increasing and terminal storage
-direction decreasing. These are calibrated operator data, not refactor
-constants to normalize or recompute.
+direction decreasing. These are calibrated operator data, not generic constants to normalize or recompute.
 
 ## Target visibility, acquisition and NBV
 
@@ -181,13 +176,15 @@ constants to normalize or recompute.
 | Duplicate pose/look | `0.012 m` and `2 deg`, both must be close |
 | Target plan translation/min period/refresh | `0.01 m / 0.50 s / 0.50 s` |
 | Coverage Y-side definition | normalized lateral fraction `>= +0.35` or `<= -0.35` |
-| Coverage per side | at least `2` accepted achieved views |
-| Coverage total floor | geometric helper `9`; mission capture seed `8` |
-| Coverage span | at least `120 deg` azimuth and `25 deg` elevation |
+| Coverage per side | recorded guideline: `2` accepted achieved views (advisory diagnostic, not a success gate) |
+| Coverage total / seed values | geometric helper `9`; mission capture seed `8` (diagnostics; do not gate success) |
+| Coverage span | recorded guideline: `120 deg` azimuth and `25 deg` elevation (advisory diagnostic, not a success gate) |
 | Side non-regression tolerance | `0.02` normalized lateral exposure |
 | Measured surface voxels | `0.010 m`, pixel stride `3`, at least `100` occupied voxels |
 | Measured surface convergence | `3` consecutive novel fractions `<= 0.02` |
 | Surface depth range | `(0.10, 1.50) m` |
+
+Mission success currently requires explicit full-population `RAY_FRONTIER_EXHAUSTED` followed by safe terminal recovery. Capture target, Y-side counts, elevation span, measured surface minimum/convergence, and achieved-history counts are reported diagnostics, not completion gates. The 24-capture ceiling remains enforced; at the ceiling a command-free next-plan check permits success only if the full ray population is exhausted. See [NBV completion policy](../architecture/nbv-policy.md) and [mission implementation](../../piper_ros_foxy/src/piper_mobile_manipulation/piper_mobile_manipulation/mission/engine.py).
 
 The static reach values (`0.20..0.75 m` arm reach, `0.25..3.00 m`
 camera-target distance, `0.40 m` height change and the rectangular workspace)
@@ -237,6 +234,30 @@ interface change; exact selected-planner feasibility is always mandatory.
 | State/lost confirmations | `1 / 2` |
 | Reference initialization | `8 frames`, minimum `300 px`, alpha `0.05` |
 | Partial/heavy visible ratio | `0.94 / 0.44` |
+
+### Occlusion probe and session assumption
+
+The `occlusion_probe_every_viewpoint` parameter defaults to `false` in
+[`supervised_cube_workflow_params.yaml`](../../piper_ros_foxy/src/piper_mobile_manipulation/config/supervised_cube_workflow_params.yaml).
+Both policies require the correlated semantic probe for the first capture. In
+default start-only mode, after that probe passes, later workflow acceptance
+does not consult live occlusion. The recorder and checker use an explicit
+passed-probe receipt bound to the exact active workflow session; the receipt
+must identify that session, have no pending probe, and show `SCAN_READY`.
+Only the accepted probe sets the receipt. A new session, abort, or
+post-action verification clears it. The checker publishes
+`assumed_clear_after_qualified_probe` with
+`occlusion_is_live_measurement=false`; capture metadata and accepted history
+retain the policy, session ID, probe request ID, and initial probe labels.
+
+With `occlusion_probe_every_viewpoint=true`, live occlusion admission remains
+active and each saved view, including a live CLEAR view, receives the correlated
+semantic probe before acceptance. The GUI's two-choice selector applies and
+atomically persists only this boolean for the next stack; the workflow reads it
+at startup, and selector plus Apply are disabled during an active mission.
+Start-only assumes the scene remains unchanged: a new occluder may go
+undetected, and target, depth, and quality checks do not guarantee detection of
+every scene change. Physical qualification remains pending.
 
 ### Tracking and temporal recovery
 
@@ -308,5 +329,4 @@ The active calibration's fixed-board validation used five distinct stable arm
 poses, 17 mm squares, 12 mm markers, translation limit `15 mm`, and rotation
 limit `1.5 deg`. It reported mean/worst translation `5.73/12.22 mm` and
 mean/worst rotation `0.87/1.25 deg`. Capture stability uses `0.001 rad` for
-`0.75 s`. These values are provenance and must not be silently re-fitted during
-code extraction.
+`0.75 s`. These values are provenance and must not be silently re-fitted during unrelated code changes.

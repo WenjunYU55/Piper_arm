@@ -1,68 +1,58 @@
 # Documentation
 
-Use this page to find the authoritative document for a task. Operator-facing
-instructions are kept separate from architecture history and machine-oriented
-maintenance records.
+Start here for installation, operation and technical explanations. Current code
+and configuration define behavior; use the operator guide for supported hardware
+procedures and the qualification references for their limits.
 
 ## Get started
 
-| Task | Start here |
-|---|---|
-| Understand the project | [`README.md`](../README.md) |
-| Install a clean workstation | [`CLEAN_INSTALL.md`](../CLEAN_INSTALL.md) |
-| Verify hardware and software versions | [`reference/validated-environments.md`](reference/validated-environments.md) |
-| Run, cancel, recover, or shut down | [`OPERATOR_COMMANDS.md`](../OPERATOR_COMMANDS.md) |
-| Diagnose the L515 | [`L515_camera/README.md`](../L515_camera/README.md) |
+| Task | Document |
+| --- | --- |
+| Understand the project | [Project overview](../README.md) |
+| Install a workstation | [Clean installation](../CLEAN_INSTALL.md) |
+| Check supported versions | [Validated environments](reference/validated-environments.md) |
+| Run, cancel, recover or shut down | [Operator commands](../OPERATOR_COMMANDS.md) |
+| Inspect or manufacture the enclosure | [CAD and fabrication files](../CAD/README.md) |
+| Use the optional legacy Docker setup | [Foxy Docker reference](reference/docker-foxy.md) |
 
 ## Understand the system
 
 | Topic | Document |
-|---|---|
-| End-to-end runtime and process boundaries | [`architecture/system-overview.md`](architecture/system-overview.md) |
-| Package responsibilities and dependency direction | [`ARCHITECTURE.md`](../ARCHITECTURE.md) |
-| Tesseract/cuRobo selection and generic plan contract | [`architecture/motion_planner_backends.md`](architecture/motion_planner_backends.md) |
-| Canonical and generated asset policy | [`architecture/asset_policy.md`](architecture/asset_policy.md) |
-| Current architecture and limitations | [`ARCHITECTURE.md`](../ARCHITECTURE.md) and [`reference/validated-environments.md`](reference/validated-environments.md) |
-| Dated August 2026 handoff snapshot | [`historical/system_handoff_2026_08_11.md`](historical/system_handoff_2026_08_11.md) |
-| Tracked-robot integration contract | [`integration/track_robot_description/README.md`](../integration/track_robot_description/README.md) |
+| --- | --- |
+| Responsibilities and dependency direction | [Architecture](../ARCHITECTURE.md) |
+| Runtime pipeline and process boundaries | [System overview](architecture/system-overview.md) |
+| Detailed system and feedback diagrams | [System diagrams](architecture/system-diagrams.md) |
+| Component design and compatibility | [Component design](architecture/component-design.md) |
+| ROS, configuration and persistence interfaces | [Interface contracts](reference/interface-contracts.md) |
+| Command authority and runtime safety | [Safety invariants](reference/safety-invariants.md) |
+| Physical qualification procedure | [Requalification checklist](reference/physical-requalification.md) |
+| Qualified scope, known limits and incident evidence | [Runtime qualification](reference/runtime-qualification.md) |
+| Canonical CAD, meshes and generated assets | [Asset policy](architecture/asset_policy.md) |
 
-## Develop and test
+## Subsystems
 
-| Area | Document or command |
-|---|---|
-| Repository-wide test ownership | [`tests/README.md`](../tests/README.md) |
-| Perception environment and tests | [`AI_perception_tests/README.md`](../AI_perception_tests/README.md) |
-| Reconstruction setup | [`CLEAN_INSTALL.md` section 9](../CLEAN_INSTALL.md#9-optional-offline-tsdf-reconstruction) |
-| Refactor baseline and equivalence evidence | [`refactor/`](refactor/) |
-| Full Tesseract/cuRobo test commands | [`architecture/motion_planner_backends.md`](architecture/motion_planner_backends.md#running-and-testing) |
-| Record paired scan results and build Excel/figures | [`experiments/results_campaign.md`](experiments/results_campaign.md) |
+| Area | Document |
+| --- | --- |
+| L515 build, calibration and camera checks | [Camera guide](../L515_camera/README.md) |
+| GroundingDINO and SAM2 setup/workers | [Perception guide](../AI_perception_tests/README.md) |
+| Tesseract/cuRobo selection, setup and plan contract | [Planner backends](architecture/motion_planner_backends.md) |
+| NBV scoring, retries and completion | [NBV policy](architecture/nbv-policy.md) |
+| Planner latency and cache behavior | [Planning latency](architecture/planning_latency_improvements.md) |
+| Motion stream and GUI rates | [Trajectory stream rates](architecture/trajectory_stream_rates.md) |
+| Recording, replay and reconstruction commands | [Reconstruction recording](architecture/reconstruction_recording.md) |
+| Recorder, depth pairing, distortion and output frames | [Recording and frame contracts](architecture/recording-and-frame-contracts.md) |
+| Offline GPU reconstruction | [Native BundleSDF setup](architecture/bundlesdf_native_runtime.md) |
+| Temporal segmentation and dense inputs | [Dense offline video](architecture/dense_offline_video.md) |
+| Tracked-platform description integration | [Integration contract](../integration/track_robot_description/README.md) |
 
-## Research and maintenance records
+## Develop, test and interpret results
 
-- `historical/` contains old experiment and session notes. It is not the
-  current operator procedure.
-- `refactor/` contains architecture-audit, characterization, test, and
-  equivalence evidence.
-- `ai/` is the machine-readable architecture and maintenance map. Its required
-  first-pass order is `00-index.yaml`, `05-admin.yaml`, `10-system-map.yaml`,
-  and `30-contracts.yaml`.
+- [Contribution and test guidance](../CONTRIBUTING.md)
+- [Repository development tests](../tests/README.md)
+- [Experiment evidence and historical source provenance](experiments/README.md)
+- [Paired results-campaign methods and commands](experiments/results_campaign.md)
+- [Method comparisons and evidence classification](chapter5_results_summary.md)
 
-## Document authority
-
-When documents disagree, use this order:
-
-1. Current code, configuration, and generated interface definitions.
-2. `docs/ai/` architecture contracts and guardrails.
-3. `OPERATOR_COMMANDS.md` for supported operation and physical safety.
-4. `CLEAN_INSTALL.md` for workstation reproduction.
-5. Current architecture documents.
-6. Historical/refactor records only as evidence of earlier decisions.
-
-Do not use an old handoff, session note, or copied command as authority for
-physical motion.
-
-## Reconstruction-only RGB-D recording
-
-See [recording, replay and offline BundleSDF commands](architecture/reconstruction_recording.md) and the linked executed validation report. Normal scans now record a whole-scan ROS bag and the filtered reconstruction sequence by default; either can be disabled explicitly.
-
-The optional offline BundleSDF runner now uses a [dedicated native GPU environment](architecture/bundlesdf_native_runtime.md) by default, following the cuRobo interpreter boundary. Docker remains available explicitly.
+Experiment records describe particular software versions, inputs and trials.
+They do not override current operator procedures or extend hardware qualification.
+A successful software test is not permission to move the robot.

@@ -1,20 +1,12 @@
-# PiPER supervised physical requalification checklist
+# Physical requalification
 
-> 2026-08-17 scope extension: this checklist must also qualify the later
-> mission-shutdown/runtime-gate simplification. In particular, prove that a
-> controllable non-motor failure cannot veto fresh staged home, that stale
-> camera/tracking/workflow/obstacle or Tesseract-limit telemetry is not direct
-> home authority, and that autonomous startup/terminal shutdown does not issue
-> a redundant hold-service request. Do not physically induce a motor fault;
-> the motor-loss no-command route is software/simulation tested only.
+This is a staged operator qualification guide. It does not authorize motion by itself; a trained operator must authorize each hardware stage, remain at the emergency stop, and stop on any unexpected direction, contact, vibration, following error, stale telemetry, publisher overlap, or process leak.
+
+Current behavior is defined by deployed code/configuration and [`OPERATOR_COMMANDS.md`](../../OPERATOR_COMMANDS.md); recorded defaults in other references do not override that composition. For current scan completion semantics, see [NBV completion policy](../architecture/nbv-policy.md).
 
 ## Authority and stop rule
 
-This checklist is the only progression authorized by the final equivalence
-audit. It does not itself authorize motion. A trained operator must explicitly
-authorize each hardware stage, remain at the emergency stop, and stop on any
-unexpected direction, contact, vibration, following error, stale telemetry,
-publisher overlap, or process leak.
+Use this checklist to stage and record qualification. Each hardware stage requires explicit operator authorization and must stop on any unexpected direction, contact, vibration, following error, stale telemetry, publisher overlap, or process leak.
 
 Complete stages in order. Do not skip a stage because a later test appears more
 convenient. A failed or ambiguous stage blocks every later stage until the
@@ -66,7 +58,7 @@ off.
 - [ ] Confirm the holder-floor incident remains rejected below 5 mm.
 
 Exit criterion: results equal or improve on
-`final_equivalence_report.md`, with no new functional failure.
+[baseline commit](https://github.com/WenjunYU55/Piper_arm/tree/d03cbfe40605cd43d2cdfaaa31f2384962ee60ae), with no new functional failure.
 
 ## 2. ROS graph with no hardware
 
@@ -76,7 +68,7 @@ command publisher.
 - [ ] Start the coordinator/gateway and the intended no-hardware composition.
 - [ ] Capture `ros2 node list`, `ros2 topic list -t`, `ros2 service list -t`,
   and `ros2 action list -t`.
-- [ ] Compare the graph to `external_contracts.md`.
+- [ ] Compare the graph to [`interface-contracts.md`](../reference/interface-contracts.md).
 - [ ] Inspect QoS for plan/history/sensor channels.
 - [ ] Submit a fake mission and confirm the public feedback/result schema.
 - [ ] Exercise queued cancel, active cancel, deadline, and fake child crash.
@@ -220,11 +212,11 @@ intentionally insufficient because of the cap.
 
 ## 10. Complete scan
 
-Use the same simple non-contact target and production 8/24 capture limits.
+Use the same simple non-contact target and deployed configuration. The recorded defaults are an advisory capture target of 8 and an enforced ceiling of 24; the current mission does not require eight captures for success.
 
 - [ ] Run one complete production mission without manual control overlap.
-- [ ] Verify adaptive planning stops only on achieved useful coverage or the
-  documented bounded terminal condition.
+- [ ] Verify the mission continues while rays remain and reports scan success only after explicit full-population ray exhaustion and safe terminal recovery.
+- [ ] Confirm coverage, the minimum capture target, Y-side counts, elevation span, and surface convergence are diagnostic. At the 24-capture ceiling, verify the command-free next-plan check and failure if rays remain.
 - [ ] Check both feasible Y sides, azimuth/elevation diversity, measured
   surface novelty, duplicate rejection, and capture quality.
 - [ ] Inspect all stored bundles and run reconstruction after the tracked-base
@@ -233,8 +225,7 @@ Use the same simple non-contact target and production 8/24 capture limits.
   manifest hash, mesh job ID, and process-health record.
 - [ ] Confirm the system accepts a new mission after completion.
 
-Exit criterion: one complete mission passes every behavior and shutdown check;
-no contact manipulation is introduced.
+Exit criterion: a mission reaches full ray exhaustion and passes every required behavior and shutdown check; no contact manipulation is introduced. A safe early failure at the capture ceiling with rays remaining is a qualification failure, not a complete scan.
 
 ## 11. Repeated complete missions
 

@@ -6,11 +6,12 @@ behavioral change.
 
 ## Before editing
 
-1. Read `docs/ai/00-index.yaml`, `docs/ai/05-admin.yaml`,
-   `docs/ai/10-system-map.yaml`, and `docs/ai/30-contracts.yaml`.
-2. Use `docs/ai/20-modules.yaml` to identify the owner and allowed edit paths.
-3. Use `docs/ai/40-flows.yaml` and `docs/ai/50-guardrails.yaml` to identify the
-   required regression and smoke checks.
+1. Read `ARCHITECTURE.md` and the relevant subsystem page in `docs/README.md`.
+2. Check `docs/reference/interface-contracts.md` and
+   `docs/reference/safety-invariants.md` for behavior that must be preserved.
+3. Review `docs/reference/runtime-qualification.md` and
+   `docs/reference/physical-requalification.md` for affected qualification gates.
+   Identify the required regression and smoke checks before changing behavior.
 4. Start from a clean feature branch. Do not mix datasets, generated models,
    build outputs, virtual environments, or unrelated refactors into the change.
 
@@ -44,10 +45,11 @@ hardware qualification.
 
 ## Documentation
 
-Update all stale `docs/ai/*.yaml` records after changing ownership, contracts,
-topics, services, parameters, process order, failure behavior, required tests,
+Update the relevant architecture and reference pages after changing ownership,
+contracts, topics, services, parameters, process order, failure behavior, tests
 or paths. Update operator and installation documentation when a supported
-command changes.
+command changes. Keep local assistant metadata and generated session reports out
+of the repository.
 
 ## Pull requests
 
