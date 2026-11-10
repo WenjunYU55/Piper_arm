@@ -524,4 +524,4 @@ A stationary real-camera validation is required before claiming physical qualifi
 
 Existing bags cannot prove SDK frameset membership. BundleSDF recovery now uses
 exact timestamp pairs conservatively and records `ambiguous_aligned_depth_pair`
-rejections. See `docs/ai/92-aligned-depth-framesets.yaml`.
+rejections. See the [recording and frame contracts](../docs/architecture/recording-and-frame-contracts.md).

@@ -3,7 +3,7 @@
 This follow-up replaces the earlier Docker installation blocker with an isolated
 native runtime, following the existing cuRobo explicit-interpreter approach.
 Development started on `feature/bundlesdf-rootless` from clean `main` / `origin/main`
-commit `8e591e1f69f841d82bcacd85ff1513dedb7b2b66`. The [exact changed-file list](bundlesdf_native_files.txt) is tracked alongside this record.
+commit `8e591e1f69f841d82bcacd85ff1513dedb7b2b66`. The [exact changed-file list](https://github.com/WenjunYU55/Piper_arm/blob/d03cbfe40605cd43d2cdfaaa31f2384962ee60ae/docs/experiments/bundlesdf_native_files.txt) remains available in that source snapshot.
 No ROS package, mission process,
 planner selection, controller or camera configuration changed in this follow-up.
 The active saved planner remains cuRobo.

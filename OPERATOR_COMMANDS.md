@@ -42,10 +42,9 @@ Current operating boundary:
 | Tesseract + tracked-robot ground profile | Proposal-only; `qualified_for_hardware: false`. |
 | cuRobo + tabletop profile | Hardware-qualified for supervised 5% target-scan missions; requires the independent collision-model and real-motion opt-ins plus every runtime gate. |
 
-Historical incidents, qualification runs, and detailed acceptance evidence are
-kept in [`docs/historical/system_handoff_2026_08_11.md`](docs/historical/system_handoff_2026_08_11.md) and
-[`docs/ai/80-problem-log.yaml`](docs/ai/80-problem-log.yaml), not in this quick
-start.
+Qualification limits, current incident references and acceptance evidence are
+kept in [runtime qualification](docs/reference/runtime-qualification.md) and
+[experiment evidence](docs/experiments/README.md), alongside this quick start.
 
 ## One-time host setup
 
@@ -320,7 +319,15 @@ perception, hand-eye TF, the frozen planner backend and the scan stack, enables
 the arm, performs
 rough acquisition, runs a separate request-correlated semantic occlusion probe,
 then plans and captures at most one synchronized RGB-D view per measured-state
-transaction until 8-24 are accepted and feature/coverage gates pass. Eight is only the model-seed floor; measured convergence selects the terminal count. Each next automatic view is selected by cumulative global information gain across the configured target-centric region; the bounded Tesseract handoff retains global leaders plus one informative continuity fallback and imposes no maximum angular step. The executor rejects a joint
+transaction, with at most 24 accepted captures. Explicit exhaustion of the full
+ray population selects successful completion; the nominal eight-view target and
+feature/coverage metrics are advisory. A command-free next-plan check at the
+capture ceiling fails before approval if work remains. Safe terminal recovery is
+still mandatory. See [NBV completion and retry rules](docs/architecture/nbv-policy.md).
+Each next automatic view is selected by cumulative global information gain across
+the configured target-centric region; the bounded Tesseract handoff retains
+global leaders plus one informative continuity fallback and imposes no maximum
+angular step. The executor rejects a joint
 path that turns the camera off the measured target. The mission then returns to
 the saved home through direct ROUGH_HOME and STORAGE_WRIST requests with
 robot self-collision validation explicitly exempted but CAD-derived

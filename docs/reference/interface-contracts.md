@@ -1,9 +1,6 @@
-# External contracts baseline
+# Interface contracts
 
-This inventory is backward-compatibility authority for Phase 1. Names, message
-fields, type constants, QoS compatibility, JSON keys, frame meanings, file
-formats, environment variables and process entry points listed here must remain
-compatible unless a later phase explicitly versions and migrates them.
+This inventory describes the established public compatibility surface. Names, message fields, type constants, QoS compatibility, JSON keys, frame meanings, file formats, environment variables and process entry points listed here must remain compatible unless explicitly versioned and migrated.
 
 The 2026-08-20 previous-generation reconciliation is internal and additive:
 no ROS action, topic, service, QoS, parameter, TF, motion, timeout, or result
@@ -197,7 +194,7 @@ keys and, in several cases, exact state/reason text:
 - Executor diagnostic/status: plan/state/reason, current/total view, speed,
   tracking scale, maximum joint error and approval requirements.
 
-Before extraction, Phase 1 must characterize these payloads with golden tests;
+Changes to these payloads require characterization with golden tests;
 silently changing a key, capitalization, state or reason fragment can alter
 retry, cancellation or failure classification.
 
@@ -251,9 +248,9 @@ console scripts `piper_single_ctrl`, `tesseract_plan_bridge`, and
 
 ## Complete ROS parameter declaration catalog
 
-This is the exhaustive source-level parameter-name inventory for Python ROS nodes in the workspace at the baseline commit. Defaults remain authoritative in the named source files and deployed overrides in the configuration/launch files listed in `current_architecture.md`.
+This is the exhaustive source-level parameter-name inventory for Python ROS nodes in the workspace at the 2026-09-11 baseline commit. It is a historical inventory, not a claim that names or defaults describe every later revision. Defaults remain authoritative in the named source files; deployed overrides are in the retained package `config/` YAML files and launch files, with component ownership described in [component design](../architecture/component-design.md).
 
-Phase 9 preserves every name in this catalog. The coordinator and executor
+The typed coordinator and executor configuration preserves every name in this catalog. The coordinator and executor
 defaults are now owned by `piper_mobile_manipulation/configuration.py`, while
 the named nodes remain the ROS declaration/override boundaries. Independent
 default-equivalence tests freeze all 98 values.
@@ -322,8 +319,14 @@ The additive parameter names are `view_generation_receipt_topic` and
 YAML files.
 
 All declared parameter names are external configuration interfaces. The full
-source inventory is the 34 node files containing 424 `declare_parameter`
-calls plus the configuration files listed in `current_architecture.md`.
+historical source inventory is the 34 node files containing 424 `declare_parameter`
+calls, alongside the package `config/` YAML and launch files. The
+`occlusion_probe_every_viewpoint` parameter and additive workflow receipt fields
+`mission_occlusion_probe_passed`, `occlusion_policy`, and
+`occlusion_probe_request_id`, plus capture metadata
+`occlusion_is_live_measurement`, `occlusion_policy_session_id`, and
+`occlusion_probe_request_id`, are described in [safety invariants](safety-invariants.md#occlusion-probe-and-session-assumption)
+and the [supervised workflow defaults](../../piper_ros_foxy/src/piper_mobile_manipulation/config/supervised_cube_workflow_params.yaml).
 Especially sensitive groups are:
 
 - driver CAN/enable/limit query parameters;
@@ -336,5 +339,5 @@ Especially sensitive groups are:
 - Tesseract model, collision, timing, hash, TTL and worker-health parameters;
 - reconstruction executable and timeout parameters.
 
-Phase 1 may move parameter declaration code only if names, types, defaults,
+Parameter declaration changes are compatible only if names, types, defaults,
 launch overrides and evaluation timing remain behaviorally identical.

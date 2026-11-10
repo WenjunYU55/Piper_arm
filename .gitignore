@@ -62,6 +62,13 @@ AI_perception_tests/groundingdino_test/hf_cache/
 piper_ros_foxy/.git.agilex-backup/
 
 # Local editor/system files
+# Local assistant metadata and instructions
+/.agents/
+/.codex/
+/.claude/
+/AGENTS.md
+/CLAUDE.md
+/GEMINI.md
 .vscode/
 .idea/
 *.swp

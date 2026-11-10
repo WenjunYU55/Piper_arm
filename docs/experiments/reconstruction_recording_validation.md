@@ -27,7 +27,7 @@ meshes, build products or raw logs are included in this change.
 
 Local raw evidence: `/tmp/piper-bundlesdf-evidence/`. These temporary files are
 machine-local; this tracked report and automated tests preserve the reproducible
-record. Exact implementation file list is in `reconstruction_recording_files.txt`.
+record. The original implementation file list is preserved in the [historical source snapshot](https://github.com/WenjunYU55/Piper_arm/blob/d03cbfe40605cd43d2cdfaaa31f2384962ee60ae/docs/experiments/reconstruction_recording_files.txt).
 Operator commands and complete parameters/defaults are in
 [reconstruction_recording.md](../architecture/reconstruction_recording.md).
 

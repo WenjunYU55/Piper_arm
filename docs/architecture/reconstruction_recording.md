@@ -348,7 +348,7 @@ bounded ROS candidate synchronizer delivers a nearby pair. Such pairs increment
 `rgb_depth_unsynchronised`; they never enter the dataset. The configured slop
 remains in historical metadata but does not relax this requirement. Accepted raw
 pins and offline native validation follow the same rule. See
-[the camera frameset fix](../ai/92-aligned-depth-framesets.yaml).
+[the camera frameset contract](recording-and-frame-contracts.md).
 
 ## Robot-base orientation (8 September 2026)
 
@@ -365,7 +365,7 @@ python3 reconstruction/coordinate_frames.py /path/to/bundlesdf-run --output /new
 python3 reconstruction/coordinate_frames.py /path/to/target_mesh.ply.quality.json --report --output /new/capture-export
 ```
 
-Include frame sidecars and the export README when sharing; OBJ/PLY viewers may need Z-up selected. Orientation does not establish depth, hand-eye, tracking or dimensional accuracy. See `docs/ai/93-reconstruction-coordinate-frames.yaml` for ownership and checks.
+Include frame sidecars and the export README when sharing; OBJ/PLY viewers may need Z-up selected. Orientation does not establish depth, hand-eye, tracking or dimensional accuracy. See the [recording and frame contracts](recording-and-frame-contracts.md) for ownership and checks.
 
 ## Movement-window archive selection
 

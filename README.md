@@ -4,7 +4,7 @@
 
 **A safety-gated ROS 2 system for open-label target perception, closed-loop next-best-view planning, autonomous arm motion, and multi-view 3D reconstruction on a tracked mobile manipulator.**
 
-<a href="docs/assets/readme/media/Tracked inspection robot with green cube.png>
+<a href="docs/assets/readme/media/Tracked inspection robot with green cube.png">
   <img src="docs/assets/readme/media/Tracked inspection robot with green cube.png" alt="PiPER arm planning target-centred camera viewpoints around an object on the Bunker Pro 2 tracked platform" width="450">
 </a>
 
@@ -89,7 +89,11 @@ The three observation outcomes have different effects:
 - **Retry:** hold the achieved pose, run one correlated heavy perception refresh, and re-evaluate without inventing coverage.
 - **Reject:** record the achieved FK, exclude or retire the failed view, and replan. A planner rejection can also retire a hard-infeasible ray.
 
-The mission is bounded to 8–24 views, but completion is based on measured surface/feature convergence or safe-frontier exhaustion rather than an unconditional view count.
+The mission permits at most 24 accepted views. Successful completion requires
+explicit exhaustion of the full ray population and safe terminal recovery;
+coverage, convergence and the nominal eight-view target are diagnostics rather
+than success gates. Reaching the capture ceiling with rays still available fails
+before another motion approval. See the [current NBV policy](docs/architecture/nbv-policy.md).
 
 ## Frozen planner backend and common motion contract
 
@@ -117,7 +121,7 @@ Runtime joint error, timeout, settle state, holder/floor clearance, camera healt
   <a href="docs/assets/readme/architecture/capture-reconstruction-pipeline.svg"><img src="docs/assets/readme/architecture/capture-reconstruction-pipeline.svg" alt="Settled RGB-D burst admission, immutable commit, rejection feedback, base-home correlation, and reconstruction" width="1000"></a>
 </div>
 
-A settled capture uses the exact mask/RGB stamp plus 20 new native depth/confidence frames. Admission requires calibrated intrinsics and TF, confidence grade ≥ 8, at least 0.50 target support, fresh quality/occlusion evidence, achieved FK, and the matching plan provenance. Partial artifacts never count: the accepted schema-2 record and SHA-256 manifest are committed atomically.
+A settled capture uses the exact mask/RGB stamp plus 20 new native depth/confidence frames. Admission requires calibrated intrinsics and TF, confidence grade ≥ 8, at least 0.50 target support, fresh quality evidence, achieved FK, and the matching plan provenance. Occlusion admission is live before the required first-capture probe; afterward the default start-only policy records assumed CLEAR for that active session, while Every viewpoint retains live admission and probes each capture. The start-only assumption does not detect every scene change. Partial artifacts never count: the accepted schema-2 record and SHA-256 manifest are committed atomically. See [safety invariants](docs/reference/safety-invariants.md#occlusion-probe-and-session-assumption).
 
 After safe terminal/home-and-disable evidence—and tracked-base-home correlation where required—offline reconstruction validates immutable inputs and runs target-only TSDF fusion (3 mm voxels, 15 mm truncation by default), with optional bounded GICP and scene pose-graph refinement. The command-free GUI can retain that legacy projected-colour input or separately reconstruct the exact accepted samples on the contiguous native L515 depth grid; both paths keep the same confidence, semantic, registration and quality gates. A separate default-off wall-repair comparison can triangulate only bounded TSDF openings up to a 6 mm radius, labels every added triangle as interpolated, retains object-sized openings and never changes the untouched raw TSDF. Reconstruction failure is reported separately and does not rewrite the mission result.
 
@@ -215,7 +219,9 @@ Manufacturing CAD is not a substitute for collision-qualified URDF/planner geome
 - [Operator commands and safety procedures](OPERATOR_COMMANDS.md)
 - [Tracked-platform integration contract](integration/track_robot_description/README.md)
 - [L515 camera and calibration](L515_camera/README.md)
-- [AI-first contracts and flows](docs/ai/00-index.yaml)
+- [Documentation guide](docs/README.md)
+- [Interface contracts](docs/reference/interface-contracts.md)
+- [Runtime qualification and limitations](docs/reference/runtime-qualification.md)
 - [Mechanical CAD](CAD/README.md)
 
 ## Safety status

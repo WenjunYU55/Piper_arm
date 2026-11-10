@@ -10,6 +10,10 @@ accuracy. The numerical source tables are in
 machine-readable analysis plus source provenance is in
 [`chapter5_method_comparison.json`](chapter5_method_comparison.json).
 
+Historical source paths in those artifacts resolve against the immutable source
+snapshot described in [experiment provenance](experiments/README.md#historical-source-provenance).
+They are citations to the evaluated version, not runtime file dependencies.
+
 The evidence was updated on 1 September 2026 from the `curobo-integration`
 worktree at commit `36d12f5`, with the analysis state explicitly marked dirty
 because this benchmark and its diagnostic timing changes are the work under

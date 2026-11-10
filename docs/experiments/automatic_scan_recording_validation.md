@@ -8,7 +8,7 @@ planning and safety policies are unchanged. Both recording paths can be disabled
 explicitly. No live mission or camera was started or restarted during this work.
 
 See [operation, parameters and replay commands](../architecture/reconstruction_recording.md)
-and [ownership and lifecycle contracts](../ai/88-automatic-scan-recording.yaml).
+and [ownership and lifecycle contracts](../architecture/recording-and-frame-contracts.md).
 
 ## Executed checks
 

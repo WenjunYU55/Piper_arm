@@ -2,8 +2,8 @@
 
 This repository is organised around responsibility boundaries while retaining
 its established ROS 2 Foxy, operator-script, dataset and hardware interfaces.
-The detailed machine-readable routing map is in `docs/ai/`; start with
-`docs/ai/00-index.yaml`.
+Start with the [documentation guide](docs/README.md). Detailed component design,
+interface contracts and safety rules are maintained as readable references.
 
 ## Repository structure
 
@@ -23,9 +23,8 @@ Piper_arm/
 ├── motion_planning/curobo/         isolated ROS-free cuRobo adapter and worker
 ├── tools/                          diagnostics, validation and replay utilities
 ├── tests/                          cross-package GUI, driver and planning tests
-├── docs/ai/                        authoritative architecture YAML
-├── docs/refactor/                  audit, phase and equivalence records
-├── docs/architecture/              maintainer-facing policies
+├── docs/architecture/              system design, subsystem contracts and diagrams
+├── docs/reference/                 interfaces, safety, setup and qualification
 └── *.sh                            stable operator entrypoints
 ```
 
@@ -116,8 +115,9 @@ RunTargetScan goal
 
 ROS names, schemas, QoS, launch/config semantics, mission phases, safety gates,
 trajectory behavior and dataset formats are external contracts. Consult
-`docs/ai/30-contracts.yaml`, `40-flows.yaml`, and `50-guardrails.yaml` before
-changing them.
+[interface contracts](docs/reference/interface-contracts.md),
+[safety invariants](docs/reference/safety-invariants.md), and the
+[component design](docs/architecture/component-design.md) before changing them.
 
 ## Compatibility policy
 
@@ -126,8 +126,8 @@ Former flat mobile-package modules remain import-only facades for the new
 Legacy Tesseract ROS aliases and the old Tesseract contract path, GUI
 `PiperGuiRos` export, reconstruction input
 exports and driver policy exports are also retained. Remove a facade only in a
-separate change after all callers migrate and its `docs/ai/60-debt.yaml`
-evidence gate is satisfied.
+separate change after all callers migrate, compatibility tests pass, and any
+affected hardware or interface qualification has been repeated.
 
 ## Adding functionality
 
