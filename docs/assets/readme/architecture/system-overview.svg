@@ -4,35 +4,35 @@
 <desc>One command path, accepted-only evidence, and explicit feedback from request to reconstruction</desc>
 <defs>
 <marker id="data-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
-<path d="M0,0 L0,6 L9,3 z" fill="#52606D"/>
+<path d="M0,0 L0,6 L9,3 z" fill="#9da7b3"/>
 </marker>
 <marker id="control-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
-<path d="M0,0 L0,6 L9,3 z" fill="#2563A6"/>
+<path d="M0,0 L0,6 L9,3 z" fill="#58a6ff"/>
 </marker>
 <marker id="feedback-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
-<path d="M0,0 L0,6 L9,3 z" fill="#147D70"/>
+<path d="M0,0 L0,6 L9,3 z" fill="#3fb9a2"/>
 </marker>
 <marker id="command-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
-<path d="M0,0 L0,6 L9,3 z" fill="#B33A3A"/>
+<path d="M0,0 L0,6 L9,3 z" fill="#f97066"/>
 </marker>
 <marker id="optional-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
-<path d="M0,0 L0,6 L9,3 z" fill="#929AA5"/>
+<path d="M0,0 L0,6 L9,3 z" fill="#8b949e"/>
 </marker>
 <style>
-.title{font:700 40px Arial,Helvetica,sans-serif;fill:#17212B}
-.subtitle{font:18px Arial,Helvetica,sans-serif;fill:#52606D}
-.lane-title{font:700 20px Arial,Helvetica,sans-serif;fill:#24303C}
-.lane-subtitle{font:14px Arial,Helvetica,sans-serif;fill:#687684}
-.node-title{font:700 21px Arial,Helvetica,sans-serif;fill:#17212B}
-.detail{font:16.5px Arial,Helvetica,sans-serif;fill:#344250}
-.edge-label-bg{fill:#fff;fill-opacity:.96}
-.edge-label{font:700 14.5px Arial,Helvetica,sans-serif;fill:#344250}
-.badge{font:700 12.5px Arial,Helvetica,sans-serif;fill:#fff;letter-spacing:.35px}
-.legend{font:14.5px Arial,Helvetica,sans-serif;fill:#46515E}
-.note{font:15px Arial,Helvetica,sans-serif;fill:#52606D}
+.title{font:700 40px Arial,Helvetica,sans-serif;fill:#f0f6fc}
+.subtitle{font:18px Arial,Helvetica,sans-serif;fill:#8b949e}
+.lane-title{font:700 20px Arial,Helvetica,sans-serif;fill:#f0f6fc}
+.lane-subtitle{font:14px Arial,Helvetica,sans-serif;fill:#8b949e}
+.node-title{font:700 21px Arial,Helvetica,sans-serif;fill:#f0f6fc}
+.detail{font:16.5px Arial,Helvetica,sans-serif;fill:#c9d1d9}
+.edge-label-bg{fill:#0d1117;fill-opacity:.96}
+.edge-label{font:700 14.5px Arial,Helvetica,sans-serif;fill:#c9d1d9}
+.badge{font:700 12.5px Arial,Helvetica,sans-serif;fill:#0d1117;letter-spacing:.35px}
+.legend{font:14.5px Arial,Helvetica,sans-serif;fill:#c9d1d9}
+.note{font:15px Arial,Helvetica,sans-serif;fill:#8b949e}
 </style>
 </defs>
-<rect width="100%" height="100%" fill="#FFFFFF"/>
+<rect width="100%" height="100%" fill="#0d1117"/>
 <text x="660.0" y="49" class="title" text-anchor="middle">PiPER Active-View Scanning: Detailed System Architecture</text>
 <text x="660.0" y="78" class="subtitle" text-anchor="middle">One command path, accepted-only evidence, and explicit feedback from request to reconstruction</text>
 <style>
@@ -47,226 +47,226 @@
 .system-map .badge{font-size:12.5px}
 .system-map .note{font-size:15px}
 </style>
-<line x1="170" y1="112" x2="208" y2="112" stroke="#52606D" stroke-width="3" marker-end="url(#data-arrow)"/>
+<line x1="170" y1="112" x2="208" y2="112" stroke="#9da7b3" stroke-width="3" marker-end="url(#data-arrow)"/>
 <text x="218" y="116" class="legend" text-anchor="start">data / evidence</text>
-<line x1="395" y1="112" x2="433" y2="112" stroke="#2563A6" stroke-width="3" marker-end="url(#control-arrow)"/>
+<line x1="395" y1="112" x2="433" y2="112" stroke="#58a6ff" stroke-width="3" marker-end="url(#control-arrow)"/>
 <text x="443" y="116" class="legend" text-anchor="start">mission control</text>
-<line x1="620" y1="112" x2="658" y2="112" stroke="#147D70" stroke-width="3" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<line x1="620" y1="112" x2="658" y2="112" stroke="#3fb9a2" stroke-width="3" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
 <text x="668" y="116" class="legend" text-anchor="start">feedback / retry</text>
-<line x1="845" y1="112" x2="883" y2="112" stroke="#B33A3A" stroke-width="3" marker-end="url(#command-arrow)"/>
+<line x1="845" y1="112" x2="883" y2="112" stroke="#f97066" stroke-width="3" marker-end="url(#command-arrow)"/>
 <text x="893" y="116" class="legend" text-anchor="start">motor command</text>
-<line x1="1070" y1="112" x2="1108" y2="112" stroke="#929AA5" stroke-width="3" stroke-dasharray="8 6" marker-end="url(#optional-arrow)"/>
+<line x1="1070" y1="112" x2="1108" y2="112" stroke="#8b949e" stroke-width="3" stroke-dasharray="8 6" marker-end="url(#optional-arrow)"/>
 <text x="1118" y="116" class="legend" text-anchor="start">optional / unqualified</text>
 <g class="system-map">
-<rect x="90" y="140" width="1140" height="590" rx="18" fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>
-<path d="M 90 210 H 1230" stroke="#D7DDE5" stroke-width="1.2"/>
+<rect x="90" y="140" width="1140" height="590" rx="18" fill="#161b22" stroke="#30363d" stroke-width="1.2"/>
+<path d="M 90 210 H 1230" stroke="#30363d" stroke-width="1.2"/>
 <text x="114" y="170" class="lane-title" text-anchor="start">1  Request and freeze mission intent</text>
 <text x="114" y="194" class="lane-subtitle" text-anchor="start">External task ownership; the tracked base is never commanded here.</text>
-<rect x="90" y="735" width="1140" height="670" rx="18" fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>
-<path d="M 90 805 H 1230" stroke="#D7DDE5" stroke-width="1.2"/>
+<rect x="90" y="735" width="1140" height="670" rx="18" fill="#161b22" stroke="#30363d" stroke-width="1.2"/>
+<path d="M 90 805 H 1230" stroke="#30363d" stroke-width="1.2"/>
 <text x="114" y="765" class="lane-title" text-anchor="start">2  Orchestrate one owned mission</text>
 <text x="114" y="789" class="lane-subtitle" text-anchor="start">Admission, process generations and terminal lifecycle remain correlated.</text>
-<rect x="90" y="1410" width="1140" height="900" rx="18" fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>
-<path d="M 90 1480 H 1230" stroke="#D7DDE5" stroke-width="1.2"/>
+<rect x="90" y="1410" width="1140" height="900" rx="18" fill="#161b22" stroke="#30363d" stroke-width="1.2"/>
+<path d="M 90 1480 H 1230" stroke="#30363d" stroke-width="1.2"/>
 <text x="114" y="1440" class="lane-title" text-anchor="start">3  Produce measured target and scene evidence</text>
 <text x="114" y="1464" class="lane-subtitle" text-anchor="start">Timestamped RGB-D, calibration and isolated AI feed ROS safety evidence.</text>
-<rect x="90" y="2320" width="1140" height="650" rx="18" fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>
-<path d="M 90 2390 H 1230" stroke="#D7DDE5" stroke-width="1.2"/>
+<rect x="90" y="2320" width="1140" height="650" rx="18" fill="#161b22" stroke="#30363d" stroke-width="1.2"/>
+<path d="M 90 2390 H 1230" stroke="#30363d" stroke-width="1.2"/>
 <text x="114" y="2350" class="lane-title" text-anchor="start">4  Select the next useful and feasible view</text>
 <text x="114" y="2374" class="lane-subtitle" text-anchor="start">Accepted captures alone change measured coverage.</text>
-<rect x="90" y="2980" width="1140" height="985" rx="18" fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>
-<path d="M 90 3050 H 1230" stroke="#D7DDE5" stroke-width="1.2"/>
+<rect x="90" y="2980" width="1140" height="985" rx="18" fill="#161b22" stroke="#30363d" stroke-width="1.2"/>
+<path d="M 90 3050 H 1230" stroke="#30363d" stroke-width="1.2"/>
 <text x="114" y="3010" class="lane-title" text-anchor="start">5  Propose motion through one frozen backend</text>
 <text x="114" y="3034" class="lane-subtitle" text-anchor="start">Both backends are integrated; cuRobo is qualified for supervised 5% target scans.</text>
-<rect x="90" y="3975" width="1140" height="720" rx="18" fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>
-<path d="M 90 4045 H 1230" stroke="#D7DDE5" stroke-width="1.2"/>
+<rect x="90" y="3975" width="1140" height="720" rx="18" fill="#161b22" stroke="#30363d" stroke-width="1.2"/>
+<path d="M 90 4045 H 1230" stroke="#30363d" stroke-width="1.2"/>
 <text x="114" y="4005" class="lane-title" text-anchor="start">6  Authorize and execute through one command owner</text>
 <text x="114" y="4029" class="lane-subtitle" text-anchor="start">All planner backends traverse the same fail-closed physical boundary.</text>
-<rect x="90" y="4705" width="1140" height="930" rx="18" fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>
-<path d="M 90 4775 H 1230" stroke="#D7DDE5" stroke-width="1.2"/>
+<rect x="90" y="4705" width="1140" height="930" rx="18" fill="#161b22" stroke="#30363d" stroke-width="1.2"/>
+<path d="M 90 4775 H 1230" stroke="#30363d" stroke-width="1.2"/>
 <text x="114" y="4735" class="lane-title" text-anchor="start">7  Admit or reject the settled observation</text>
 <text x="114" y="4759" class="lane-subtitle" text-anchor="start">Acceptance, retry and rejection deliberately have different feedback effects.</text>
-<rect x="90" y="5645" width="1140" height="600" rx="18" fill="#FAFBFC" stroke="#D7DDE5" stroke-width="1.2"/>
-<path d="M 90 5715 H 1230" stroke="#D7DDE5" stroke-width="1.2"/>
+<rect x="90" y="5645" width="1140" height="600" rx="18" fill="#161b22" stroke="#30363d" stroke-width="1.2"/>
+<path d="M 90 5715 H 1230" stroke="#30363d" stroke-width="1.2"/>
 <text x="114" y="5675" class="lane-title" text-anchor="start">8  Recover safely, correlate base home and reconstruct</text>
 <text x="114" y="5699" class="lane-subtitle" text-anchor="start">Offline reconstruction consumes immutable evidence after the required safe state.</text>
-<polyline points="380,390 380,462 480,462 480,475" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
-<polyline points="940,390 940,462 840,462 840,475" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
-<polyline points="660,630 660,805 380,805 380,825" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
-<polyline points="630,907.5 690,912.5" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
-<polyline points="940,1000 940,1085" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
-<polyline points="380,1295 380,1500" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
-<polyline points="630,1580.0 690,1592.5" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
-<polyline points="380,1650 380,1755" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
-<polyline points="940,1670 940,1755" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
-<polyline points="630,1847.5 690,1847.5" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
-<polyline points="850,1930 850,1942 380,1942 380,2010" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
-<polyline points="1030,1930 1030,1942 940,1942 940,2010" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
-<polyline points="630,2515.0 690,2515.0" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
-<polyline points="380,2135 380,2270 1210,2270 1210,2390 940,2390 940,2410" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
-<polyline points="940,2135 1220,2135 1220,2625 940,2625 940,2705" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
-<polyline points="940,2620 940,2692 760,2692 760,2705" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
-<polyline points="660,2870 660,3070" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
-<polyline points="520,3280 520,3352 380,3352 380,3365" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
-<polyline points="800,3280 800,3352 940,3352 940,3365" fill="none" stroke="#929AA5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#optional-arrow)"/>
-<polyline points="380,3570 380,3642 520,3642 520,3655" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
-<polyline points="940,3570 940,3642 800,3642 800,3655" fill="none" stroke="#929AA5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#optional-arrow)"/>
-<polyline points="520,3865 520,4045 380,4045 380,4065" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
-<polyline points="630,4147.5 690,4147.5" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
-<polyline points="940,4230 940,4302 380,4302 380,4315" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
-<polyline points="630,4395 690,4395" fill="none" stroke="#B33A3A" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#command-arrow)"/>
-<polyline points="690,4475 630,4475" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<polyline points="380,4535 380,4795" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
-<polyline points="630,4885.0 690,4890.0" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
-<polyline points="940,4975 940,4987 380,4987 380,5060" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
-<polyline points="630,5155.0 690,5155.0" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
-<polyline points="380,5250 380,5330" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<polyline points="940,5250 940,5330" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
-<polyline points="690,5402.5 75,5402 75,2515 130,2515 130,2515.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<polyline points="130,5402.5 45,5402 45,1842 130,1842 130,1847.5" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<polyline points="270,5330 270,5315 60,5315 60,2515 690,2515 690,2515.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<polyline points="220,3175.0 55,3175 55,2485 690,2485 690,2515.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<polyline points="1190,2072.5 1240,2072 1240,4425 630,4425 630,4425.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<polyline points="1190,4425.0 1270,4425 1270,3165 1100,3165 1100,3175.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<polyline points="1190,4375 1290,4375 1290,1180 1100,1180 1100,1190.0" fill="none" stroke="#147D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
-<polyline points="1100,1190.0 1250,1190 1250,5715 630,5715 630,5822.5" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
-<polyline points="630,5822.5 690,5822.5" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
-<polyline points="940,5910 940,5982 800,5982 800,5995" fill="none" stroke="#2563A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
-<polyline points="1190,5155.0 1215,5155 1215,6090 1100,6090 1100,6090.0" fill="none" stroke="#52606D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
-<rect x="130" y="230" width="500" height="160" rx="14" fill="#EFF6FF" stroke="#3B6EA5" stroke-width="1.6"/>
-<rect x="130" y="230" width="7" height="160" rx="3.5" fill="#3B6EA5" opacity="0.9"/>
+<polyline points="380,390 380,462 480,462 480,475" fill="none" stroke="#58a6ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="940,390 940,462 840,462 840,475" fill="none" stroke="#58a6ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="660,630 660,805 380,805 380,825" fill="none" stroke="#9da7b3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="630,907.5 690,912.5" fill="none" stroke="#58a6ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="940,1000 940,1085" fill="none" stroke="#58a6ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="380,1295 380,1500" fill="none" stroke="#58a6ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="630,1580.0 690,1592.5" fill="none" stroke="#9da7b3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="380,1650 380,1755" fill="none" stroke="#9da7b3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="940,1670 940,1755" fill="none" stroke="#9da7b3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="630,1847.5 690,1847.5" fill="none" stroke="#9da7b3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="850,1930 850,1942 380,1942 380,2010" fill="none" stroke="#9da7b3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="1030,1930 1030,1942 940,1942 940,2010" fill="none" stroke="#9da7b3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="630,2515.0 690,2515.0" fill="none" stroke="#9da7b3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="380,2135 380,2270 1210,2270 1210,2390 940,2390 940,2410" fill="none" stroke="#9da7b3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="940,2135 1220,2135 1220,2625 940,2625 940,2705" fill="none" stroke="#9da7b3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="940,2620 940,2692 760,2692 760,2705" fill="none" stroke="#9da7b3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="660,2870 660,3070" fill="none" stroke="#9da7b3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="520,3280 520,3352 380,3352 380,3365" fill="none" stroke="#9da7b3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="800,3280 800,3352 940,3352 940,3365" fill="none" stroke="#8b949e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#optional-arrow)"/>
+<polyline points="380,3570 380,3642 520,3642 520,3655" fill="none" stroke="#9da7b3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="940,3570 940,3642 800,3642 800,3655" fill="none" stroke="#8b949e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#optional-arrow)"/>
+<polyline points="520,3865 520,4045 380,4045 380,4065" fill="none" stroke="#9da7b3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="630,4147.5 690,4147.5" fill="none" stroke="#9da7b3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="940,4230 940,4302 380,4302 380,4315" fill="none" stroke="#58a6ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="630,4395 690,4395" fill="none" stroke="#f97066" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#command-arrow)"/>
+<polyline points="690,4475 630,4475" fill="none" stroke="#3fb9a2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="380,4535 380,4795" fill="none" stroke="#58a6ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="630,4885.0 690,4890.0" fill="none" stroke="#58a6ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="940,4975 940,4987 380,4987 380,5060" fill="none" stroke="#9da7b3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="630,5155.0 690,5155.0" fill="none" stroke="#9da7b3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="380,5250 380,5330" fill="none" stroke="#3fb9a2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="940,5250 940,5330" fill="none" stroke="#9da7b3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<polyline points="690,5402.5 75,5402 75,2515 130,2515 130,2515.0" fill="none" stroke="#3fb9a2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="130,5402.5 45,5402 45,1842 130,1842 130,1847.5" fill="none" stroke="#3fb9a2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="270,5330 270,5315 60,5315 60,2515 690,2515 690,2515.0" fill="none" stroke="#3fb9a2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="220,3175.0 55,3175 55,2485 690,2485 690,2515.0" fill="none" stroke="#3fb9a2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="1190,2072.5 1240,2072 1240,4425 630,4425 630,4425.0" fill="none" stroke="#3fb9a2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="1190,4425.0 1270,4425 1270,3165 1100,3165 1100,3175.0" fill="none" stroke="#3fb9a2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="1190,4375 1290,4375 1290,1180 1100,1180 1100,1190.0" fill="none" stroke="#3fb9a2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback-arrow)"/>
+<polyline points="1100,1190.0 1250,1190 1250,5715 630,5715 630,5822.5" fill="none" stroke="#58a6ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="630,5822.5 690,5822.5" fill="none" stroke="#58a6ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="940,5910 940,5982 800,5982 800,5995" fill="none" stroke="#58a6ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control-arrow)"/>
+<polyline points="1190,5155.0 1215,5155 1215,6090 1100,6090 1100,6090.0" fill="none" stroke="#9da7b3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#data-arrow)"/>
+<rect x="130" y="230" width="500" height="160" rx="14" fill="#17283b" stroke="#79c0ff" stroke-width="1.6"/>
+<rect x="130" y="230" width="7" height="160" rx="3.5" fill="#79c0ff" opacity="0.9"/>
 <text x="154" y="267" class="node-title" text-anchor="start">Operator, native GUI and E-stop</text>
 <text x="154" y="300" class="detail" text-anchor="start"><tspan x="154" dy="0">choose target and next-mission settings</tspan><tspan x="154" dy="23">review rays, status and diagnostics</tspan><tspan x="154" dy="23">start, observe or cancel</tspan><tspan x="154" dy="23">emergency stop remains independent</tspan></text>
-<rect x="690" y="230" width="500" height="160" rx="14" fill="#EFF6FF" stroke="#3B6EA5" stroke-width="1.6"/>
-<rect x="690" y="230" width="7" height="160" rx="3.5" fill="#3B6EA5" opacity="0.9"/>
+<rect x="690" y="230" width="500" height="160" rx="14" fill="#17283b" stroke="#79c0ff" stroke-width="1.6"/>
+<rect x="690" y="230" width="7" height="160" rx="3.5" fill="#79c0ff" opacity="0.9"/>
 <text x="714" y="267" class="node-title" text-anchor="start">Tracked-robot gateway</text>
 <text x="714" y="300" class="detail" text-anchor="start"><tspan x="714" dy="0">SCAN_3D request + rough target</tspan><tspan x="714" dy="23">odom -&gt; piper_base_link snapshot</tspan><tspan x="714" dy="23">task heartbeat + home report</tspan><tspan x="714" dy="23">base remains stationary and braked</tspan></text>
-<rect x="220" y="475" width="880" height="155" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
-<rect x="220" y="475" width="7" height="155" rx="3.5" fill="#147D70" opacity="0.9"/>
+<rect x="220" y="475" width="880" height="155" rx="14" fill="#102b29" stroke="#3fb9a2" stroke-width="1.6"/>
+<rect x="220" y="475" width="7" height="155" rx="3.5" fill="#3fb9a2" opacity="0.9"/>
 <text x="244" y="512" class="node-title" text-anchor="start">Frozen mission contract</text>
 <text x="244" y="545" class="detail" text-anchor="start"><tspan x="244" dy="0">target profile + scan/NBV policy</tspan><tspan x="244" dy="23">planner backend + speed + motion opt-ins</tspan><tspan x="244" dy="23">validated before admission; immutable in flight</tspan><tspan x="244" dy="23">canonical mission SHA-256 binds every downstream result</tspan></text>
-<rect x="130" y="825" width="500" height="165" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
-<rect x="130" y="825" width="7" height="165" rx="3.5" fill="#147D70" opacity="0.9"/>
+<rect x="130" y="825" width="500" height="165" rx="14" fill="#102b29" stroke="#3fb9a2" stroke-width="1.6"/>
+<rect x="130" y="825" width="7" height="165" rx="3.5" fill="#3fb9a2" opacity="0.9"/>
 <text x="154" y="862" class="node-title" text-anchor="start">RunTargetScan coordinator</text>
 <text x="154" y="895" class="detail" text-anchor="start"><tspan x="154" dy="0">queues and admits one immutable goal</tspan><tspan x="154" dy="23">binds task, target and backend identity</tspan><tspan x="154" dy="23">publishes typed action feedback</tspan><tspan x="154" dy="23">returns mission result + dataset reference</tspan></text>
-<rect x="690" y="825" width="500" height="175" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
-<rect x="690" y="825" width="7" height="175" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<rect x="690" y="825" width="500" height="175" rx="14" fill="#321c20" stroke="#f97066" stroke-width="1.6"/>
+<rect x="690" y="825" width="7" height="175" rx="3.5" fill="#f97066" opacity="0.9"/>
 <text x="714" y="862" class="node-title" text-anchor="start">ProcessSupervisor</text>
 <text x="714" y="895" class="detail" text-anchor="start"><tspan x="714" dy="0">owns one exact process generation</tspan><tspan x="714" dy="23">starts driver -&gt; vision -&gt; calibration</tspan><tspan x="714" dy="23">starts exactly one selected planner</tspan><tspan x="714" dy="23">monitors heartbeats and bounded cleanup</tspan><tspan x="714" dy="23">never adopts unrelated processes</tspan></text>
-<rect x="220" y="1085" width="880" height="210" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
-<rect x="220" y="1085" width="7" height="210" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<rect x="220" y="1085" width="880" height="210" rx="14" fill="#321c20" stroke="#f97066" stroke-width="1.6"/>
+<rect x="220" y="1085" width="7" height="210" rx="3.5" fill="#f97066" opacity="0.9"/>
 <text x="244" y="1122" class="node-title" text-anchor="start">MissionEngine lifecycle</text>
 <text x="244" y="1155" class="detail" text-anchor="start"><tspan x="244" dy="0">preflight -&gt; enable/hold -&gt; startup wrist</tspan><tspan x="244" dy="23">rough home -&gt; bounded target acquisition</tspan><tspan x="244" dy="23">workflow ready -&gt; one-view closed loop</tspan><tspan x="244" dy="23">terminal PRE_HOME -&gt; ROUGH_HOME -&gt; STORAGE_WRIST</tspan><tspan x="244" dy="23">prove all-six disable and revoke authorization</tspan><tspan x="244" dy="23">motor-authority loss permits no new command</tspan></text>
-<rect x="130" y="1500" width="500" height="160" rx="14" fill="#EAF3FF" stroke="#2563A6" stroke-width="1.6"/>
-<rect x="130" y="1500" width="7" height="160" rx="3.5" fill="#2563A6" opacity="0.9"/>
+<rect x="130" y="1500" width="500" height="160" rx="14" fill="#13243a" stroke="#58a6ff" stroke-width="1.6"/>
+<rect x="130" y="1500" width="7" height="160" rx="3.5" fill="#58a6ff" opacity="0.9"/>
 <text x="154" y="1537" class="node-title" text-anchor="start">Eye-in-hand L515 evidence</text>
 <text x="154" y="1570" class="detail" text-anchor="start"><tspan x="154" dy="0">RGB + aligned/native depth</tspan><tspan x="154" dy="23">4-bit confidence + CameraInfo</tspan><tspan x="154" dy="23">source timestamps at 30 Hz</tspan><tspan x="154" dy="23">settled capture uses new synchronized frames</tspan></text>
-<rect x="690" y="1500" width="500" height="185" rx="14" fill="#EAF3FF" stroke="#2563A6" stroke-width="1.6"/>
-<rect x="690" y="1500" width="7" height="185" rx="3.5" fill="#2563A6" opacity="0.9"/>
+<rect x="690" y="1500" width="500" height="185" rx="14" fill="#13243a" stroke="#58a6ff" stroke-width="1.6"/>
+<rect x="690" y="1500" width="7" height="185" rx="3.5" fill="#58a6ff" opacity="0.9"/>
 <text x="714" y="1537" class="node-title" text-anchor="start">Timing, TF and hand-eye calibration</text>
 <text x="714" y="1570" class="detail" text-anchor="start"><tspan x="714" dy="0">camera timestamp watchdog</tspan><tspan x="714" dy="23">accepted optical-frame transform</tspan><tspan x="714" dy="23">base_link &lt;-&gt; optical frame</tspan><tspan x="714" dy="23">fresh joints and camera pose</tspan><tspan x="714" dy="23">fault may restart only owned vision work</tspan></text>
-<rect x="130" y="1755" width="500" height="185" rx="14" fill="#F2EAFF" stroke="#7851A9" stroke-width="1.6"/>
-<rect x="130" y="1755" width="7" height="185" rx="3.5" fill="#7851A9" opacity="0.9"/>
+<rect x="130" y="1755" width="500" height="185" rx="14" fill="#251c38" stroke="#bc8cff" stroke-width="1.6"/>
+<rect x="130" y="1755" width="7" height="185" rx="3.5" fill="#bc8cff" opacity="0.9"/>
 <text x="154" y="1792" class="node-title" text-anchor="start">Isolated CUDA perception</text>
 <text x="154" y="1825" class="detail" text-anchor="start"><tspan x="154" dy="0">GroundingDINO acquire / correlated refresh</tspan><tspan x="154" dy="23">SAM 2 seed + live mask propagation</tspan><tspan x="154" dy="23">permission-bounded request/result spools</tspan><tspan x="154" dy="23">current-generation readiness and heartbeat</tspan><tspan x="154" dy="23">ROS-free workers; no motor interface</tspan></text>
-<rect x="690" y="1755" width="500" height="185" rx="14" fill="#F2EAFF" stroke="#7851A9" stroke-width="1.6"/>
-<rect x="690" y="1755" width="7" height="185" rx="3.5" fill="#7851A9" opacity="0.9"/>
+<rect x="690" y="1755" width="500" height="185" rx="14" fill="#251c38" stroke="#bc8cff" stroke-width="1.6"/>
+<rect x="690" y="1755" width="7" height="185" rx="3.5" fill="#bc8cff" opacity="0.9"/>
 <text x="714" y="1792" class="node-title" text-anchor="start">ROS perception geometry</text>
 <text x="714" y="1825" class="detail" text-anchor="start"><tspan x="714" dy="0">mask -&gt; detection -&gt; qualified depth</tspan><tspan x="714" dy="23">Target3D + Kalman target tracker</tspan><tspan x="714" dy="23">target cloud, landmark and envelope</tspan><tspan x="714" dy="23">obstacles + quality + occlusion</tspan><tspan x="714" dy="23">freshness and correlation metadata</tspan></text>
-<rect x="130" y="2010" width="500" height="125" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
-<rect x="130" y="2010" width="7" height="125" rx="3.5" fill="#147D70" opacity="0.9"/>
+<rect x="130" y="2010" width="500" height="125" rx="14" fill="#102b29" stroke="#3fb9a2" stroke-width="1.6"/>
+<rect x="130" y="2010" width="7" height="125" rx="3.5" fill="#3fb9a2" opacity="0.9"/>
 <text x="154" y="2047" class="node-title" text-anchor="start">Measured target state</text>
 <text x="154" y="2080" class="detail" text-anchor="start"><tspan x="154" dy="0">stable base-frame target + covariance</tspan><tspan x="154" dy="23">TRACKING / LOW_CONFIDENCE / LOST</tspan></text>
-<rect x="690" y="2010" width="500" height="125" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
-<rect x="690" y="2010" width="7" height="125" rx="3.5" fill="#147D70" opacity="0.9"/>
+<rect x="690" y="2010" width="500" height="125" rx="14" fill="#102b29" stroke="#3fb9a2" stroke-width="1.6"/>
+<rect x="690" y="2010" width="7" height="125" rx="3.5" fill="#3fb9a2" opacity="0.9"/>
 <text x="714" y="2047" class="node-title" text-anchor="start">Scene safety evidence</text>
 <text x="714" y="2080" class="detail" text-anchor="start"><tspan x="714" dy="0">obstacles, target envelope and framing</tspan><tspan x="714" dy="23">occlusion, quality and tracking health</tspan></text>
-<rect x="130" y="2410" width="500" height="210" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
-<rect x="130" y="2410" width="7" height="210" rx="3.5" fill="#147D70" opacity="0.9"/>
+<rect x="130" y="2410" width="500" height="210" rx="14" fill="#102b29" stroke="#3fb9a2" stroke-width="1.6"/>
+<rect x="130" y="2410" width="7" height="210" rx="3.5" fill="#3fb9a2" opacity="0.9"/>
 <text x="154" y="2447" class="node-title" text-anchor="start">Accepted-only scan memory</text>
 <text x="154" y="2480" class="detail" text-anchor="start"><tspan x="154" dy="0">schema-2 captures + achieved FK</tspan><tspan x="154" dy="23">5 mm measured coverage grid</tspan><tspan x="154" dy="23">unknown / observed target surface</tspan><tspan x="154" dy="23">accepted generation is explicit</tspan><tspan x="154" dy="23">rejected views never add coverage</tspan></text>
-<rect x="690" y="2410" width="500" height="210" rx="14" fill="#FFF3D9" stroke="#B77900" stroke-width="1.6"/>
-<rect x="690" y="2410" width="7" height="210" rx="3.5" fill="#B77900" opacity="0.9"/>
+<rect x="690" y="2410" width="500" height="210" rx="14" fill="#302714" stroke="#d29922" stroke-width="1.6"/>
+<rect x="690" y="2410" width="7" height="210" rx="3.5" fill="#d29922" opacity="0.9"/>
 <text x="714" y="2447" class="node-title" text-anchor="start">Closed-loop NBV and ray policy</text>
 <text x="714" y="2480" class="detail" text-anchor="start"><tspan x="714" dy="0">legacy, voxel_nbv or frozen ray_nbv</tspan><tspan x="714" dy="23">seed from actual current FK</tspan><tspan x="714" dy="23">rank marginal information before travel</tspan><tspan x="714" dy="23">direction novelty + bounded standoff</tspan><tspan x="714" dy="23">one accepted view per generation</tspan><tspan x="714" dy="23">complete or exhaust the safe frontier</tspan></text>
-<rect x="220" y="2705" width="880" height="165" rx="14" fill="#FFF3D9" stroke="#B77900" stroke-width="1.6"/>
-<rect x="220" y="2705" width="7" height="165" rx="3.5" fill="#B77900" opacity="0.9"/>
+<rect x="220" y="2705" width="880" height="165" rx="14" fill="#302714" stroke="#d29922" stroke-width="1.6"/>
+<rect x="220" y="2705" width="7" height="165" rx="3.5" fill="#d29922" opacity="0.9"/>
 <text x="244" y="2742" class="node-title" text-anchor="start">Command-free prequalification</text>
 <text x="244" y="2775" class="detail" text-anchor="start"><tspan x="244" dy="0">workspace/capability evidence removes hard culls</tspan><tspan x="244" dy="23">target-facing aim with bounded orientation fallback</tspan><tspan x="244" dy="23">shortlist at most 12 voxel points or 6 ray directions</tspan><tspan x="244" dy="23">no motor command is possible at this stage</tspan></text>
-<rect x="220" y="3070" width="880" height="210" rx="14" fill="#FFF3D9" stroke="#B77900" stroke-width="1.6"/>
-<rect x="220" y="3070" width="7" height="210" rx="3.5" fill="#B77900" opacity="0.9"/>
+<rect x="220" y="3070" width="880" height="210" rx="14" fill="#302714" stroke="#d29922" stroke-width="1.6"/>
+<rect x="220" y="3070" width="7" height="210" rx="3.5" fill="#d29922" opacity="0.9"/>
 <text x="244" y="3107" class="node-title" text-anchor="start">MotionPlannerBridge (ROS 2 Foxy)</text>
 <text x="244" y="3140" class="detail" text-anchor="start"><tspan x="244" dy="0">freezes tesseract or curobo for the mission</tspan><tspan x="244" dy="23">requires matching worker generation and readiness</tspan><tspan x="244" dy="23">snapshots joints, limits, target, camera and scene</tspan><tspan x="244" dy="23">binds robot/world/calibration hashes and requested views</tspan><tspan x="244" dy="23">writes private command-free schema-v5 request</tspan><tspan x="244" dy="23">publishes correlated status, blockers and provenance</tspan></text>
-<rect x="130" y="3365" width="500" height="205" rx="14" fill="#FFF3D9" stroke="#B77900" stroke-width="1.6"/>
-<rect x="130" y="3365" width="7" height="205" rx="3.5" fill="#B77900" opacity="0.9"/>
+<rect x="130" y="3365" width="500" height="205" rx="14" fill="#302714" stroke="#d29922" stroke-width="1.6"/>
+<rect x="130" y="3365" width="7" height="205" rx="3.5" fill="#d29922" opacity="0.9"/>
 <text x="154" y="3422" class="node-title" text-anchor="start">Tesseract 0.35 worker</text>
 <text x="154" y="3453" class="detail" text-anchor="start"><tspan x="154" dy="0">ROS-free exact IK, collision and path</tspan><tspan x="154" dy="23">configured moving + fixed meshes</tspan><tspan x="154" dy="23">qualified baseline and startup recovery</tspan><tspan x="154" dy="23">atomic request/response spool</tspan></text>
-<rect x="154" y="3378" width="128.6" height="23" rx="11.5" fill="#B77900"/>
+<rect x="154" y="3378" width="128.6" height="23" rx="11.5" fill="#d29922"/>
 <text x="218.3" y="3394" class="badge" text-anchor="middle">MAIN + BRANCH</text>
-<rect x="690" y="3365" width="500" height="205" rx="14" fill="#F7F7F8" stroke="#929AA5" stroke-width="1.6"/>
-<rect x="690" y="3365" width="7" height="205" rx="3.5" fill="#929AA5" opacity="0.9"/>
+<rect x="690" y="3365" width="500" height="205" rx="14" fill="#1b2027" stroke="#8b949e" stroke-width="1.6"/>
+<rect x="690" y="3365" width="7" height="205" rx="3.5" fill="#8b949e" opacity="0.9"/>
 <text x="714" y="3422" class="node-title" text-anchor="start">cuRobo 0.7.8 MotionGen worker</text>
 <text x="714" y="3453" class="detail" text-anchor="start"><tspan x="714" dy="0">Python 3.10 + CUDA; ROS-free</tspan><tspan x="714" dy="23">exact fixed Bunker meshes</tspan><tspan x="714" dy="23">69-sphere articulated approximation</tspan><tspan x="714" dy="23">operator-qualified for supervised 5% test</tspan><tspan x="714" dy="23">no automatic Tesseract fallback</tspan></text>
-<rect x="714" y="3378" width="153.2" height="23" rx="11.5" fill="#929AA5"/>
+<rect x="714" y="3378" width="153.2" height="23" rx="11.5" fill="#8b949e"/>
 <text x="790.6" y="3394" class="badge" text-anchor="middle">LIMITED GEOMETRY</text>
-<rect x="220" y="3655" width="880" height="210" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
-<rect x="220" y="3655" width="7" height="210" rx="3.5" fill="#147D70" opacity="0.9"/>
+<rect x="220" y="3655" width="880" height="210" rx="14" fill="#102b29" stroke="#3fb9a2" stroke-width="1.6"/>
+<rect x="220" y="3655" width="7" height="210" rx="3.5" fill="#3fb9a2" opacity="0.9"/>
 <text x="244" y="3692" class="node-title" text-anchor="start">Validated planner transport</text>
 <text x="244" y="3725" class="detail" text-anchor="start"><tspan x="244" dy="0">main: TesseractPlan</tspan><tspan x="244" dy="23">integration branch: generic MotionPlan</tspan><tspan x="244" dy="23">backend, request, plan and trajectory hashes</tspan><tspan x="244" dy="23">complete timed six-joint trajectory + metrics</tspan><tspan x="244" dy="23">collision qualification and rejection diagnostics</tspan><tspan x="244" dy="23">planner output remains a proposal only</tspan></text>
-<rect x="130" y="4065" width="500" height="165" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
-<rect x="130" y="4065" width="7" height="165" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<rect x="130" y="4065" width="500" height="165" rx="14" fill="#321c20" stroke="#f97066" stroke-width="1.6"/>
+<rect x="130" y="4065" width="7" height="165" rx="3.5" fill="#f97066" opacity="0.9"/>
 <text x="154" y="4102" class="node-title" text-anchor="start">Common plan normalization</text>
 <text x="154" y="4135" class="detail" text-anchor="start"><tspan x="154" dy="0">six finite joints in canonical order</tspan><tspan x="154" dy="23">20 Hz schedule + 0.05 rad step</tspan><tspan x="154" dy="23">speed-scaled MoveJ limits</tspan><tspan x="154" dy="23">fresh-start and trajectory hashes</tspan></text>
-<rect x="690" y="4065" width="500" height="165" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
-<rect x="690" y="4065" width="7" height="165" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<rect x="690" y="4065" width="500" height="165" rx="14" fill="#321c20" stroke="#f97066" stroke-width="1.6"/>
+<rect x="690" y="4065" width="7" height="165" rx="3.5" fill="#f97066" opacity="0.9"/>
 <text x="714" y="4102" class="node-title" text-anchor="start">PlanAuthorizer</text>
 <text x="714" y="4135" class="detail" text-anchor="start"><tspan x="714" dy="0">live mission + backend authorization</tspan><tspan x="714" dy="23">exact plan and trajectory identity</tspan><tspan x="714" dy="23">TTL, target drift and dependencies</tspan><tspan x="714" dy="23">fresh complete-path revalidation</tspan></text>
-<rect x="130" y="4315" width="500" height="220" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
-<rect x="130" y="4315" width="7" height="220" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<rect x="130" y="4315" width="500" height="220" rx="14" fill="#321c20" stroke="#f97066" stroke-width="1.6"/>
+<rect x="130" y="4315" width="7" height="220" rx="3.5" fill="#f97066" opacity="0.9"/>
 <text x="154" y="4372" class="node-title" text-anchor="start">scan_viewpoint_executor</text>
 <text x="154" y="4403" class="detail" text-anchor="start"><tspan x="154" dy="0">sole autonomous joint publisher</tspan><tspan x="154" dy="23">TrajectoryRunner owns the 20 Hz schedule</tspan><tspan x="154" dy="23">runtime freshness + scene gates</tspan><tspan x="154" dy="23">following error, timeout and settle proof</tspan><tspan x="154" dy="23">hold, refresh, replan or recover</tspan><tspan x="154" dy="23">publishes ScanExecutionStatus</tspan></text>
-<rect x="154" y="4328" width="128.6" height="23" rx="11.5" fill="#B33A3A"/>
+<rect x="154" y="4328" width="128.6" height="23" rx="11.5" fill="#f97066"/>
 <text x="218.3" y="4344" class="badge" text-anchor="middle">COMMAND OWNER</text>
-<rect x="690" y="4315" width="500" height="220" rx="14" fill="#EEF1F4" stroke="#46515E" stroke-width="1.6"/>
-<rect x="690" y="4315" width="7" height="220" rx="3.5" fill="#46515E" opacity="0.9"/>
+<rect x="690" y="4315" width="500" height="220" rx="14" fill="#20262e" stroke="#9da7b3" stroke-width="1.6"/>
+<rect x="690" y="4315" width="7" height="220" rx="3.5" fill="#9da7b3" opacity="0.9"/>
 <text x="714" y="4372" class="node-title" text-anchor="start">PiPER driver / SocketCAN</text>
 <text x="714" y="4403" class="detail" text-anchor="start"><tspan x="714" dy="0">/joint_ctrl_single -&gt; MoveJ</tspan><tspan x="714" dy="23">SocketCAN at 1 Mbps</tspan><tspan x="714" dy="23">enable/disable + motor watchdogs</tspan><tspan x="714" dy="23">six motors + coherent joint feedback</tspan></text>
-<rect x="714" y="4328" width="96" height="23" rx="11.5" fill="#46515E"/>
+<rect x="714" y="4328" width="96" height="23" rx="11.5" fill="#9da7b3"/>
 <text x="762.0" y="4344" class="badge" text-anchor="middle">CAN OWNER</text>
-<rect x="130" y="4795" width="500" height="180" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
-<rect x="130" y="4795" width="7" height="180" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<rect x="130" y="4795" width="500" height="180" rx="14" fill="#321c20" stroke="#f97066" stroke-width="1.6"/>
+<rect x="130" y="4795" width="7" height="180" rx="3.5" fill="#f97066" opacity="0.9"/>
 <text x="154" y="4832" class="node-title" text-anchor="start">Settled capture request</text>
 <text x="154" y="4865" class="detail" text-anchor="start"><tspan x="154" dy="0">actual FK + target-facing aim</tspan><tspan x="154" dy="23">stationary joints + healthy clock</tspan><tspan x="154" dy="23">fresh target/scene evidence</tspan><tspan x="154" dy="23">executor enters CAPTURING_RGBD</tspan></text>
-<rect x="690" y="4795" width="500" height="190" rx="14" fill="#EAF3FF" stroke="#2563A6" stroke-width="1.6"/>
-<rect x="690" y="4795" width="7" height="190" rx="3.5" fill="#2563A6" opacity="0.9"/>
+<rect x="690" y="4795" width="500" height="190" rx="14" fill="#13243a" stroke="#58a6ff" stroke-width="1.6"/>
+<rect x="690" y="4795" width="7" height="190" rx="3.5" fill="#58a6ff" opacity="0.9"/>
 <text x="714" y="4832" class="node-title" text-anchor="start">Confidence-qualified RGB-D burst</text>
 <text x="714" y="4865" class="detail" text-anchor="start"><tspan x="714" dy="0">exact mask/RGB stamp identity</tspan><tspan x="714" dy="23">20 new depth + confidence frames</tspan><tspan x="714" dy="23">grade &gt;=8 and &gt;=0.50 support</tspan><tspan x="714" dy="23">median depth + capture-time TF</tspan><tspan x="714" dy="23">target-component ambiguity gate</tspan></text>
-<rect x="130" y="5060" width="500" height="190" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
-<rect x="130" y="5060" width="7" height="190" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<rect x="130" y="5060" width="500" height="190" rx="14" fill="#321c20" stroke="#f97066" stroke-width="1.6"/>
+<rect x="130" y="5060" width="7" height="190" rx="3.5" fill="#f97066" opacity="0.9"/>
 <text x="154" y="5097" class="node-title" text-anchor="start">Capture admission</text>
 <text x="154" y="5130" class="detail" text-anchor="start"><tspan x="154" dy="0">GOOD target + fresh diagnostics</tspan><tspan x="154" dy="23">CLEAR or correlated occlusion proof</tspan><tspan x="154" dy="23">matching achieved FK and plan provenance</tspan><tspan x="154" dy="23">atomic artifacts + manifest hashes</tspan><tspan x="154" dy="23">decide ACCEPT, RETRY or REJECT</tspan></text>
-<rect x="690" y="5060" width="500" height="190" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
-<rect x="690" y="5060" width="7" height="190" rx="3.5" fill="#147D70" opacity="0.9"/>
+<rect x="690" y="5060" width="500" height="190" rx="14" fill="#102b29" stroke="#3fb9a2" stroke-width="1.6"/>
+<rect x="690" y="5060" width="7" height="190" rx="3.5" fill="#3fb9a2" opacity="0.9"/>
 <text x="714" y="5097" class="node-title" text-anchor="start">Immutable schema-2 dataset</text>
 <text x="714" y="5130" class="detail" text-anchor="start"><tspan x="714" dy="0">RGB, raw/qualified depth and mask</tspan><tspan x="714" dy="23">intrinsics, joints and capture-time TF</tspan><tspan x="714" dy="23">view/plan provenance + quality</tspan><tspan x="714" dy="23">target support and model seed</tspan><tspan x="714" dy="23">transactional manifest SHA-256</tspan></text>
-<rect x="130" y="5330" width="500" height="145" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
-<rect x="130" y="5330" width="7" height="145" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<rect x="130" y="5330" width="500" height="145" rx="14" fill="#321c20" stroke="#f97066" stroke-width="1.6"/>
+<rect x="130" y="5330" width="7" height="145" rx="3.5" fill="#f97066" opacity="0.9"/>
 <text x="154" y="5367" class="node-title" text-anchor="start">Retry / rejected observation</text>
 <text x="154" y="5400" class="detail" text-anchor="start"><tspan x="154" dy="0">hold achieved FK; add no coverage</tspan><tspan x="154" dy="23">one correlated heavy refresh</tspan><tspan x="154" dy="23">then exclude and replan from actual pose</tspan></text>
-<rect x="690" y="5330" width="500" height="145" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
-<rect x="690" y="5330" width="7" height="145" rx="3.5" fill="#147D70" opacity="0.9"/>
+<rect x="690" y="5330" width="500" height="145" rx="14" fill="#102b29" stroke="#3fb9a2" stroke-width="1.6"/>
+<rect x="690" y="5330" width="7" height="145" rx="3.5" fill="#3fb9a2" opacity="0.9"/>
 <text x="714" y="5367" class="node-title" text-anchor="start">Accepted history generation</text>
 <text x="714" y="5400" class="detail" text-anchor="start"><tspan x="714" dy="0">commit achieved pose + evidence</tspan><tspan x="714" dy="23">rebuild measured coverage</tspan><tspan x="714" dy="23">request the next qualified view</tspan></text>
-<rect x="130" y="5735" width="500" height="175" rx="14" fill="#FDE9E7" stroke="#B33A3A" stroke-width="1.6"/>
-<rect x="130" y="5735" width="7" height="175" rx="3.5" fill="#B33A3A" opacity="0.9"/>
+<rect x="130" y="5735" width="500" height="175" rx="14" fill="#321c20" stroke="#f97066" stroke-width="1.6"/>
+<rect x="130" y="5735" width="7" height="175" rx="3.5" fill="#f97066" opacity="0.9"/>
 <text x="154" y="5772" class="node-title" text-anchor="start">Safe terminal recovery</text>
 <text x="154" y="5805" class="detail" text-anchor="start"><tspan x="154" dy="0">cancel, completion or bounded failure</tspan><tspan x="154" dy="23">PRE_HOME -&gt; ROUGH_HOME -&gt; STORAGE_WRIST</tspan><tspan x="154" dy="23">disable all six and revoke authorization</tspan><tspan x="154" dy="23">stop only mission-owned child processes</tspan></text>
-<rect x="690" y="5735" width="500" height="175" rx="14" fill="#EFF6FF" stroke="#3B6EA5" stroke-width="1.6"/>
-<rect x="690" y="5735" width="7" height="175" rx="3.5" fill="#3B6EA5" opacity="0.9"/>
+<rect x="690" y="5735" width="500" height="175" rx="14" fill="#17283b" stroke="#79c0ff" stroke-width="1.6"/>
+<rect x="690" y="5735" width="7" height="175" rx="3.5" fill="#79c0ff" opacity="0.9"/>
 <text x="714" y="5772" class="node-title" text-anchor="start">Tracked-base correlation</text>
 <text x="714" y="5805" class="detail" text-anchor="start"><tspan x="714" dy="0">arm result may wait for base home</tspan><tspan x="714" dy="23">bind task, job and manifest identity</tspan><tspan x="714" dy="23">gateway accepts idempotent report</tspan><tspan x="714" dy="23">this repository sends no chassis command</tspan></text>
-<rect x="220" y="5995" width="880" height="190" rx="14" fill="#E5F7F3" stroke="#147D70" stroke-width="1.6"/>
-<rect x="220" y="5995" width="7" height="190" rx="3.5" fill="#147D70" opacity="0.9"/>
+<rect x="220" y="5995" width="880" height="190" rx="14" fill="#102b29" stroke="#3fb9a2" stroke-width="1.6"/>
+<rect x="220" y="5995" width="7" height="190" rx="3.5" fill="#3fb9a2" opacity="0.9"/>
 <text x="244" y="6032" class="node-title" text-anchor="start">Offline reconstruction</text>
 <text x="244" y="6065" class="detail" text-anchor="start"><tspan x="244" dy="0">admit immutable inputs and verify every hash</tspan><tspan x="244" dy="23">target-only Open3D TSDF; 3 mm voxels by default</tspan><tspan x="244" dy="23">optional bounded GICP / scene pose graph</tspan><tspan x="244" dy="23">mesh + cloud + quality metrics + provenance</tspan><tspan x="244" dy="23">failure is separate and never rewrites mission safety</tspan></text>
 <rect x="462.6" y="711" width="154.79999999999998" height="23" rx="5" class="edge-label-bg"/>

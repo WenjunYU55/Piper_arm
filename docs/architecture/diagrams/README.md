@@ -10,6 +10,8 @@ python3 docs/architecture/diagrams/generate_diagrams.py
 
 The generator uses only the Python standard library and writes deterministic UTF-8 SVG.
 
+The SVGs use a fixed dark palette designed for GitHub dark mode: canvas `#0d1117`, lane surfaces `#161b22`, dividers `#30363d`, headings `#f0f6fc`, body text `#c9d1d9` and muted text `#8b949e`. Node and edge category colors are defined in `generate_diagrams.py`. Regenerate all seven assets with the command above after palette or diagram-source changes.
+
 Run the structural checks after regeneration:
 
 ```bash
